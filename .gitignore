@@ -27,3 +27,7 @@ dist-ssr
 .amplify
 amplify_outputs*
 amplifyconfiguration*
+
+# rulesync generated files
+.claude/
+.github/

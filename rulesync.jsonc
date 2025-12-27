@@ -1,0 +1,10 @@
+{
+  "targets": ["copilot", "claudecode"],
+  "features": ["rules", "ignore", "commands", "subagents"],
+  "baseDirs": ["."],
+  "delete": true,
+  "verbose": false,
+  "global": false,
+  "simulatedCommands": true,
+  "simulatedSubagents": true,
+}
