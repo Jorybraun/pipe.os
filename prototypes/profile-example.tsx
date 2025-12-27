@@ -4,7 +4,6 @@ import {
   Mail,
   Briefcase,
   CheckCircle,
-  AlertTriangle,
   Phone,
   Activity,
   Zap,
@@ -49,36 +48,6 @@ const assessments = [
   { name: "PLANNING", status: "pending", score: null, icon: Users },
   { name: "VOICE", status: "pending", score: null, icon: Mic },
   { name: "PANEL", status: "pending", score: null, icon: Users },
-];
-
-const signals = [
-  {
-    type: "strength",
-    title: "PROMPT CLARITY",
-    desc: "Clear, specific prompts that effectively guided AI.",
-    confidence: 92,
-  },
-  {
-    type: "strength",
-    title: "CODE REVIEW",
-    desc: "Found 3 bugs including subtle edge case.",
-    confidence: 88,
-  },
-  {
-    type: "concern",
-    title: "FRONTEND EXP",
-    desc: "Backend focused. May need ramp-up time.",
-    confidence: 72,
-  },
-];
-
-const skills = [
-  { name: "PYTHON", level: 95 },
-  { name: "GO", level: 78 },
-  { name: "DISTRIBUTED", level: 90 },
-  { name: "K8S", level: 72 },
-  { name: "AWS", level: 80 },
-  { name: "SYS DESIGN", level: 92 },
 ];
 
 export default function ProfileExample() {

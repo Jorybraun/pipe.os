@@ -86,7 +86,7 @@ describe('Toggle', () => {
     });
 
     it('should not call onChange when no onChange handler provided', () => {
-      const { container } = render(<Toggle checked={false} ariaLabel="Test toggle" />);
+      render(<Toggle checked={false} ariaLabel="Test toggle" />);
 
       const toggle = screen.getByRole('switch');
 

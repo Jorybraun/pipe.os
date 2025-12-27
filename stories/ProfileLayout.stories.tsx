@@ -3,7 +3,6 @@ import {
   Layout,
   ProfileHeader,
   LiquidMetalCard,
-  MetalScoreRing,
 } from "../src/components/shared/index";
 
 // Layout Story

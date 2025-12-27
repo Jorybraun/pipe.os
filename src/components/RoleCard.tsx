@@ -21,7 +21,6 @@ interface RoleCardProps {
   totalStages: number;
   createdAt: string;
   onClick?: () => void;
-  animationDelay?: number;
   style?: React.CSSProperties;
   className?: string;
 }
@@ -37,12 +36,9 @@ export function RoleCard({
   totalStages,
   createdAt,
   onClick,
-  animationDelay = 0,
   style = {},
   className = "",
 }: RoleCardProps) {
-  const mounted = true;
-
   const getStatusStyle = (status: RoleStatus) => {
     switch (status) {
       case "active":

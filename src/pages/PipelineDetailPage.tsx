@@ -1,16 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Phone,
-  Zap,
-  Code,
-  FileText,
-  Mic,
-  Users,
-  CheckCircle,
-  ArrowLeft,
-} from "lucide-react";
-import {
   LiquidMetalCard,
   SubTitle,
 } from "../components";
@@ -35,122 +25,6 @@ type StageType =
   | "PLANNING"
   | "VOICE"
   | "PANEL";
-
-interface StageConfig {
-  id: StageType;
-  name: string;
-  icon: typeof Phone;
-  configured: boolean;
-  order: number;
-}
-
-// Mock stage configurations
-const initialStages: StageConfig[] = [
-  {
-    id: "SCREENING",
-    name: "Screening",
-    icon: Phone,
-    configured: true,
-    order: 1,
-  },
-  {
-    id: "AI_COLLAB",
-    name: "AI Collaboration",
-    icon: Zap,
-    configured: false,
-    order: 2,
-  },
-  {
-    id: "CODE_REVIEW",
-    name: "Code Review",
-    icon: Code,
-    configured: false,
-    order: 3,
-  },
-  {
-    id: "PLANNING",
-    name: "Planning",
-    icon: FileText,
-    configured: false,
-    order: 4,
-  },
-  {
-    id: "VOICE",
-    name: "Voice Interview",
-    icon: Mic,
-    configured: false,
-    order: 5,
-  },
-  {
-    id: "PANEL",
-    name: "Panel Interview",
-    icon: Users,
-    configured: false,
-    order: 6,
-  },
-];
-
-// Stage card component
-function StageCard({
-  stage,
-  isSelected,
-  onClick,
-}: {
-  stage: StageConfig;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  const Icon = stage.icon;
-
-  return (
-    <LiquidMetalCard
-      data-testid="stage-card"
-      variant={isSelected ? "chrome" : "default"}
-      hover
-      onClick={onClick}
-      style={{
-        padding: 20,
-        cursor: "pointer",
-        position: "relative",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 16,
-        }}
-      >
-        <Icon size={18} color={isSelected ? "#fff" : "rgba(255,255,255,0.4)"} />
-        {stage.configured && (
-          <CheckCircle size={14} color="rgba(150,255,150,0.8)" />
-        )}
-      </div>
-
-      <div
-        style={{
-          fontSize: 9,
-          letterSpacing: "0.2em",
-          color: isSelected ? "#fff" : "rgba(255,255,255,0.5)",
-          marginBottom: 8,
-        }}
-      >
-        {stage.name.toUpperCase()}
-      </div>
-
-      <div
-        style={{
-          fontSize: 24,
-          fontWeight: 800,
-          color: stage.configured ? "#fff" : "rgba(255,255,255,0.3)",
-        }}
-      >
-        {stage.configured ? "✓" : stage.order}
-      </div>
-    </LiquidMetalCard>
-  );
-}
 
 // Helper card components
 function RubricCard({ title, points }: { title: string; points: string[] }) {
@@ -461,12 +335,7 @@ function PanelStageConfig() {
 }
 
 export default function PipelineDetailPage(): JSX.Element {
-  const navigate = useNavigate();
-  const { questionId } = useParams<{ questionId?: string }>();
-  const [selectedStage, setSelectedStage] = useState<StageType>("SCREENING");
-  const [stages] = useState<StageConfig[]>(initialStages);
-
-  const configuredCount = stages.filter((s) => s.configured).length;
+  const [selectedStage] = useState<StageType>("SCREENING");
 
   const renderStageConfig = () => {
     switch (selectedStage) {

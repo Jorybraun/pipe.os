@@ -194,7 +194,7 @@ export default function ListingPage(): JSX.Element {
               gap: 16,
             }}
           >
-            {filteredRoles.map((role, i) => (
+            {filteredRoles.map((role) => (
               <RoleCard
                 key={role.id}
                 title={role.title}
@@ -207,7 +207,6 @@ export default function ListingPage(): JSX.Element {
                 totalStages={role.stageCount}
                 createdAt={role.createdAt}
                 onClick={() => handleRoleClick(role)}
-                animationDelay={i * 80}
               />
             ))}
 

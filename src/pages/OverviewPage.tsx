@@ -260,83 +260,10 @@ function CandidateKanbanCard({
   );
 }
 
-// Pipeline column component
-function StageColumn({
-  stage,
-  candidates,
-  isActive,
-  onStageClick,
-  onCandidateClick,
-  stageIndex,
-}: {
-  stage: Stage;
-  candidates: Candidate[];
-  isActive: boolean;
-  onStageClick: () => void;
-  onCandidateClick: (candidateId: string) => void;
-  stageIndex: number;
-}) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), stageIndex * 80);
-    return () => clearTimeout(timer);
-  }, [stageIndex]);
-
-  return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: 280,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
-      }}
-    >
-      {/* Stage header card */}
-      <StageHeaderCard stage={stage} candidates={candidates} isActive={isActive} onClick={onStageClick} />
-
-      {/* Candidates list */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {candidates.map((candidate, i) => (
-          <CandidateKanbanCard
-            key={candidate.id}
-            candidate={candidate}
-            index={i}
-            stageIndex={stageIndex}
-            onClick={() => onCandidateClick(candidate.id)}
-          />
-        ))}
-
-        {candidates.length === 0 && (
-          <div
-            style={{
-              flex: 1,
-              minHeight: 120,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '1px dashed rgba(255,255,255,0.08)',
-            }}
-          >
-            <span style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)' }}>
-              NO CANDIDATES
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function OverviewPage(): JSX.Element {
   const { id, stage, questionId } = useParams<{ id: string; stage?: string; questionId?: string }>();
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('pipeline');
-  const [activeStage, setActiveStage] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
