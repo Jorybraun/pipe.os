@@ -1,5 +1,3 @@
-import React from "react";
-
 interface MetalScoreRingProps {
   value: number;
   size?: number;

@@ -124,6 +124,7 @@ export function StageCardLarge({
       onClick={onClick}
       style={{
         padding: 24,
+        opacity: isPending ? 0.4 : 1,
         cursor: onClick ? "pointer" : "default",
         ...style,
       }}

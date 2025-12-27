@@ -1,4 +1,3 @@
-import React from "react";
 import { LucideIcon, TrendingUp, TrendingDown } from "lucide-react";
 import { LiquidMetalCard } from "./LiquidMetalCard";
 

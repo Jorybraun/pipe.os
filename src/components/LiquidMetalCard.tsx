@@ -1,4 +1,4 @@
-import React, { useState, CSSProperties, ReactNode } from "react";
+import { useState, CSSProperties, ReactNode } from "react";
 
 interface LiquidMetalCardProps {
   children: ReactNode;
@@ -6,6 +6,7 @@ interface LiquidMetalCardProps {
   variant?: "default" | "chrome" | "mercury" | "dark";
   hover?: boolean;
   className?: string;
+  onClick?: () => void;
 }
 
 export function LiquidMetalCard({
@@ -14,6 +15,7 @@ export function LiquidMetalCard({
   variant = "default",
   hover = false,
   className = "",
+  onClick,
 }: LiquidMetalCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -74,6 +76,7 @@ export function LiquidMetalCard({
       className={className}
       onMouseEnter={() => hover && setIsHovered(true)}
       onMouseLeave={() => hover && setIsHovered(false)}
+      onClick={onClick}
       style={{
         background: v.background,
         backdropFilter: "blur(40px) saturate(150%)",

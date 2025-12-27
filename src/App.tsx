@@ -1,39 +1,42 @@
-import { useEffect, useState } from "react";
-import type { Schema } from "../amplify/data/resource";
-import { generateClient } from "aws-amplify/data";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import ListingPage from './pages/ListingPage';
+import OverviewPage from './pages/OverviewPage';
+import PipelineBuilderPage from './pages/PipelineBuilderPage';
+import ScreeningStageBuilderPage from './pages/ScreeningStageBuilderPage';
+import CandidateProfilePage from './pages/CandidateProfilePage';
+import CandidateScreeningPage from './pages/CandidateScreeningPage';
 
-const client = generateClient<Schema>();
-
-function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
-
-  useEffect(() => {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
-    });
-  }, []);
-
-  function createTodo() {
-    client.models.Todo.create({ content: window.prompt("Todo content") });
-  }
-
+/**
+ * App - Main application component with routing configuration
+ *
+ * Routes:
+ * - / → ListingPage (main entry point)
+ * - /pipelines/:id → OverviewPage (pipeline detail)
+ * - /pipelines/new → PipelineBuilderPage
+ * - /pipelines/new/stages → ScreeningStageBuilderPage
+ * - /candidates/:id → CandidateProfilePage
+ * - /screenings/:id/preview → CandidateScreeningPage
+ */
+function App(): JSX.Element {
   return (
-    <main>
-      <h1>My todos</h1>
-      <button onClick={createTodo}>+ new</button>
-      <ul>
-        {todos.map((todo) => (
-          <li key={todo.id}>{todo.content}</li>
-        ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted. Try creating a new todo.
-        <br />
-        <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
-          Review next step of this tutorial.
-        </a>
-      </div>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        {/* Main entry point */}
+        <Route path="/" element={<ListingPage />} />
+
+        {/* Pipeline routes */}
+        <Route path="/pipelines/:id" element={<OverviewPage />} />
+        <Route path="/pipelines/new" element={<PipelineBuilderPage />} />
+        <Route path="/pipelines/new/stages" element={<ScreeningStageBuilderPage />} />
+
+        {/* Candidate routes */}
+        <Route path="/candidates/:id" element={<CandidateProfilePage />} />
+        <Route path="/screenings/:id/preview" element={<CandidateScreeningPage />} />
+
+        {/* Catch-all redirect */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

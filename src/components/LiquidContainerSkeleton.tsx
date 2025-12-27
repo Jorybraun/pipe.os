@@ -1,4 +1,3 @@
-import React from "react";
 import { LiquidMetal } from "@paper-design/shaders-react";
 
 export const LiquidContainerSkeleton = () => {
@@ -165,7 +164,7 @@ export const LiquidContainerSkeleton = () => {
             image="/mario-pipe.svg"
             colorBack="#111111"
             colorTint="#666666"
-            shape="square"
+            shape="diamond"
             repetition={0}
             softness={0.2}
             shiftRed={0.1}

@@ -32,11 +32,13 @@ export function SubTitle({ children }: SubTitleProps) {
 interface ProfileHeaderProps {
   title?: string;
   subtitle?: string;
+  actions?: React.ReactNode;
 }
 
 export function ProfileHeader({
   title = "CANDIDATE_PROFILE",
   subtitle = "PIPE_OS // V.2.0.4",
+  actions,
 }: ProfileHeaderProps) {
   return (
     <header
@@ -66,6 +68,7 @@ export function ProfileHeader({
           {title}
         </h1>
       </div>
+      {actions && <div>{actions}</div>}
     </header>
   );
 }

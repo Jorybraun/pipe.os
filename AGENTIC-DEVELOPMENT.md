@@ -1,8 +1,6 @@
 # AI-Assisted Development with Rulesync
 
-**Rulesync** is an AI agent system that helps developers build features faster while maintaining high code quality. This guide explains how to use AI agents effectively in the Gheeggle codebase.
-
-For the complete AI agent reference (auto-generated), see [AGENTS.md](AGENTS.md).
+**Rulesync** is an AI agent system that helps developers build features faster while maintaining high code quality. This guide explains how to use AI agents effectively in the Pipe platform codebase.
 
 ---
 
@@ -35,11 +33,10 @@ The `.rulesync/` directory contains all AI agent configuration:
 
 ### Rule Synchronization
 
-Rules are automatically synced to your AI coding tool via the `pnpm rulesync` command:
+Rules are automatically synced to your AI coding tool via the `npm run rulesync` command:
 
-- **Cursor**: `.cursor/rules/` (synced from `.rulesync/rules/`)
-- **Claude**: `.claude/memories/` (synced from `.rulesync/rules/`)
-- etc
+- **Claude (Cursor/Windsurf/etc)**: `.claude/` directory
+- **GitHub Copilot**: `.github/instructions/` directory
 
 This ensures AI agents always follow the latest project standards.
 
@@ -92,22 +89,20 @@ Use these for working with existing code:
 
 The `.rulesync/rules/` directory contains project-specific standards:
 
-| Rule File               | Description                                                               |
-| ----------------------- | ------------------------------------------------------------------------- |
-| **overview.md**         | Project overview and entry point for AI agents                            |
-| **architecture.md**     | Next.js App Router, tRPC, Server Components                            |
-| **code-quality.md**     | TypeScript standards, error handling with TRPCError, Zod validation       |
-| **database.md**         | Prisma with SQLite/LibSQL, query optimization, authorization patterns     |
-| **documentation.md**    | JSDoc standards, inline comments, README structure                        |
-| **integrations.md**     | Event handling and integrations                                           |
-| **performance.md**      | Query optimization, bundle size                                           |
-| **security.md**         | Authentication, authorization, input validation, SQL injection prevention |
-| **unit-testing.md**     | Vitest unit and integration tests, test patterns                            |
-| **e2e-testing.md**      | Playwright E2E tests, page objects, test patterns                         |
-| **ui-ux.md**            | shadcn/ui, Tailwind CSS, accessibility (WCAG 2.1 AA)                      |
-| **react-components.md** | Component structure and patterns                                          |
-| **react-hooks.md**      | Hook best practices and performance optimization                          |
-| **types.md**            | TypeScript type patterns and derivation                                   |
+| Rule File               | Description                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| **overview.md**         | Project mission, tech stack, architecture overview, and development workflow             |
+| **architecture.md**     | AWS Amplify Gen 2 architecture patterns, project structure, and backend infrastructure   |
+| **code-quality.md**     | TypeScript strict mode, linting rules, naming conventions, and code quality standards    |
+| **database.md**         | AWS Amplify Data patterns, GraphQL schema design, and database best practices            |
+| **documentation.md**    | JSDoc comments, README structure, and component documentation requirements               |
+| **performance.md**      | Core Web Vitals targets, React performance optimization, and bundle size budgets         |
+| **security.md**         | AWS Amplify Auth patterns, security best practices, and data protection guidelines       |
+| **testing.md**          | Vitest unit testing, Playwright E2E testing, Storybook component testing patterns        |
+| **ui-ux.md**            | AWS Amplify UI components, responsive design, and accessibility guidelines               |
+| **react-components.md** | Functional component patterns, prop types, component structure, and React best practices |
+| **react-hooks.md**      | React Hooks rules, custom hooks patterns, and hooks best practices                       |
+| **types.md**            | TypeScript strict mode configuration, type inference, and type safety best practices     |
 
 Each rule file contains:
 
@@ -223,8 +218,8 @@ Each command:
 2. Ask: "Should I proceed with full implementation?"
 3. Create feature branch (if approved)
 4. Implement following architecture.md patterns:
-   - Database schema (Prisma)
-   - tRPC routers
+   - AWS Amplify Data schema
+   - Backend functions
    - Frontend components
 5. Write comprehensive tests (Vitest + Playwright)
 6. Run quality gates (lint, typecheck, test)
@@ -315,8 +310,7 @@ This ensures rules stay current with actual code patterns and team learnings.
 ### Project Documentation
 
 - **[README.md](README.md)** - Developer onboarding and setup instructions
-- **[PRODUCT.md](PRODUCT.md)** - Complete product scope, features, and architecture
-- **[AGENTS.md](AGENTS.md)** - Auto-generated AI agent reference
+- **[docs/](docs/)** - Product requirements, business requirements, and technical specifications
 
 ### Rules & Standards
 
@@ -326,10 +320,10 @@ This ensures rules stay current with actual code patterns and team learnings.
 
 ### External Documentation
 
-- [Next.js Documentation](https://nextjs.org/docs)
-- [tRPC Documentation](https://trpc.io/docs)
-- [Prisma Documentation](https://www.prisma.io/docs)
-- [shadcn/ui Documentation](https://ui.shadcn.com/)
+- [AWS Amplify Documentation](https://docs.amplify.aws/)
+- [React Documentation](https://react.dev/)
+- [Vite Documentation](https://vitejs.dev/)
+- [AWS Amplify UI Documentation](https://ui.docs.amplify.aws/)
 - [Playwright Documentation](https://playwright.dev/docs/intro)
 
 ---

@@ -1,4 +1,4 @@
-import React, { ReactNode } from "react";
+import { ReactNode } from "react";
 import { LiquidMetal } from "@paper-design/shaders-react";
 
 interface ProfileLayoutProps {
@@ -80,13 +80,16 @@ export function Layout({
       {/* <FloatingOrbs /> */}
 
       {/* Header */}
-      {header}
+      <div style={{ position: "relative", zIndex: 1 }}>
+        {header}
+      </div>
 
       {/* Layout with sidebar and agent panel */}
       <div
         style={{
           display: "flex",
           position: "relative",
+          zIndex: 1,
         }}
       >
         {/* Sidebar */}
@@ -162,52 +165,5 @@ export function Layout({
         }
       `}</style>
     </div>
-  );
-}
-
-function FloatingOrbs() {
-  const [time, setTime] = React.useState(0);
-
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      setTime((t) => t + 0.02);
-    }, 50);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <>
-      {[...Array(5)].map((_, i) => (
-        <div
-          key={i}
-          style={{
-            position: "fixed",
-            width: 200 + i * 100,
-            height: 200 + i * 100,
-            borderRadius: "50%",
-            background: `
-              radial-gradient(
-                ellipse at ${30 + Math.sin(time + i) * 20}% ${
-              30 + Math.cos(time + i) * 20
-            }%,
-                rgba(255,255,255,0.15) 0%,
-                rgba(200,210,230,0.08) 30%,
-                rgba(180,190,220,0.04) 60%,
-                transparent 100%
-              )
-            `,
-            left: `${10 + i * 20}%`,
-            top: `${20 + (i % 3) * 25}%`,
-            filter: "blur(60px)",
-            pointerEvents: "none",
-            transform: `translate(${Math.sin(time * 0.5 + i) * 30}px, ${
-              Math.cos(time * 0.3 + i) * 30
-            }px)`,
-            transition: "transform 2s ease-out",
-          }}
-        />
-      ))}
-    </>
   );
 }
