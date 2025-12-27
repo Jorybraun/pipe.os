@@ -31,3 +31,8 @@ amplifyconfiguration*
 # rulesync generated files
 .claude/
 .github/
+
+# Test artifacts
+test-results/
+playwright-report/
+playwright/.cache/

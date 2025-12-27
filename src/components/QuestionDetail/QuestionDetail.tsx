@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { FileQuestion, Video, ClipboardList, Settings, BarChart3 } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { FileQuestion, Video, ClipboardList, Settings, BarChart3, ArrowLeft } from 'lucide-react';
 import { getQuestionById } from '../../mocks/questions';
 import { TabNav, type Tab } from '../ui/TabNav';
 import { QuestionTab } from './tabs/QuestionTab';
@@ -24,6 +24,7 @@ type TabId = 'question' | 'video' | 'rubric' | 'settings';
  */
 export function QuestionDetail(): JSX.Element {
   const { questionId } = useParams<{ questionId: string }>();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('question');
 
   // Find question from mock data
@@ -82,8 +83,38 @@ export function QuestionDetail(): JSX.Element {
         transition: 'opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.2s',
       }}
     >
-      {/* Section title */}
-      <div style={{ marginBottom: 24 }}>
+      {/* Section title with back button */}
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
+        <button
+          onClick={() => navigate(-1)}
+          aria-label="Go back to questions list"
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.6)',
+            padding: '8px 12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 9,
+            letterSpacing: '0.1em',
+            transition: 'all 0.2s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+            e.currentTarget.style.color = 'rgba(255,255,255,0.8)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+            e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+          }}
+        >
+          <ArrowLeft size={12} />
+          BACK
+        </button>
         <SubTitle>QUESTION_DETAIL</SubTitle>
       </div>
 
