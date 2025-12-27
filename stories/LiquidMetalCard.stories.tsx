@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { LiquidMetalCard } from "../src/components/shared";
+import { LiquidMetalCard } from "../src/components/ui/LiquidMetalCard";
 
 const meta = {
-  title: "Components/Profile/LiquidMetalCard",
+  title: "Components/UI/LiquidMetalCard",
   component: LiquidMetalCard,
   parameters: {
     layout: "centered",
@@ -13,7 +13,7 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <div style={{ padding: 40, minWidth: 400 }}>
+      <div style={{ padding: 60, width: 400 }}>
         <Story />
       </div>
     ),
@@ -27,105 +27,94 @@ export const Default: Story = {
   args: {
     children: (
       <div style={{ padding: 24 }}>
-        <h3 style={{ color: "#fff", margin: 0, marginBottom: 8 }}>
-          Default Card
-        </h3>
-        <p style={{ color: "rgba(255,255,255,0.6)", margin: 0, fontSize: 14 }}>
-          This is a default liquid metal card with subtle chrome gradient.
+        <h3 style={{ margin: 0, marginBottom: 8, color: "#fff" }}>Default Variant</h3>
+        <p style={{ margin: 0, color: "rgba(255,255,255,0.6)", fontSize: 14 }}>
+          This is the default liquid metal card with subtle gradient background.
         </p>
       </div>
     ),
+    variant: "default",
   },
 };
 
 export const Chrome: Story = {
   args: {
-    variant: "chrome",
     children: (
       <div style={{ padding: 24 }}>
-        <h3 style={{ color: "#fff", margin: 0, marginBottom: 8 }}>
-          Chrome Variant
-        </h3>
-        <p style={{ color: "rgba(255,255,255,0.6)", margin: 0, fontSize: 14 }}>
-          Brighter chrome effect with enhanced metallic sheen.
+        <h3 style={{ margin: 0, marginBottom: 8, color: "#fff" }}>Chrome Variant</h3>
+        <p style={{ margin: 0, color: "rgba(255,255,255,0.6)", fontSize: 14 }}>
+          Chrome variant with cooler metallic gradient effect.
         </p>
       </div>
     ),
+    variant: "chrome",
   },
 };
 
 export const Mercury: Story = {
   args: {
-    variant: "mercury",
     children: (
       <div style={{ padding: 24 }}>
-        <h3 style={{ color: "#fff", margin: 0, marginBottom: 8 }}>
-          Mercury Variant
-        </h3>
-        <p style={{ color: "rgba(255,255,255,0.6)", margin: 0, fontSize: 14 }}>
-          Liquid mercury effect with flowing gradient.
+        <h3 style={{ margin: 0, marginBottom: 8, color: "#fff" }}>Mercury Variant</h3>
+        <p style={{ margin: 0, color: "rgba(255,255,255,0.6)", fontSize: 14 }}>
+          Mercury variant with liquid metallic appearance.
         </p>
       </div>
     ),
+    variant: "mercury",
   },
 };
 
 export const Dark: Story = {
   args: {
-    variant: "dark",
     children: (
       <div style={{ padding: 24 }}>
-        <h3 style={{ color: "#fff", margin: 0, marginBottom: 8 }}>
-          Dark Variant
-        </h3>
-        <p style={{ color: "rgba(255,255,255,0.6)", margin: 0, fontSize: 14 }}>
-          Darker background for contrast or nested content.
+        <h3 style={{ margin: 0, marginBottom: 8, color: "#fff" }}>Dark Variant</h3>
+        <p style={{ margin: 0, color: "rgba(255,255,255,0.6)", fontSize: 14 }}>
+          Dark variant with deeper background suitable for danger zones.
         </p>
       </div>
     ),
+    variant: "dark",
   },
 };
 
-export const WithHover: Story = {
+export const Clickable: Story = {
   args: {
-    variant: "chrome",
-    hover: true,
     children: (
       <div style={{ padding: 24 }}>
-        <h3 style={{ color: "#fff", margin: 0, marginBottom: 8 }}>
-          Hover Effect
-        </h3>
-        <p style={{ color: "rgba(255,255,255,0.6)", margin: 0, fontSize: 14 }}>
-          Hover over this card to see the chrome sweep animation.
+        <h3 style={{ margin: 0, marginBottom: 8, color: "#fff" }}>Clickable Card</h3>
+        <p style={{ margin: 0, color: "rgba(255,255,255,0.6)", fontSize: 14 }}>
+          Click me! This card has an onClick handler.
         </p>
       </div>
     ),
+    variant: "default",
+    onClick: () => alert("Card clicked!"),
   },
 };
 
 export const AllVariants: Story = {
   render: () => (
-    <div
-      style={{ display: "flex", flexDirection: "column", gap: 16, width: 500 }}
-    >
-      <LiquidMetalCard variant="default" hover>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, width: 400 }}>
+      <LiquidMetalCard variant="default">
         <div style={{ padding: 20 }}>
-          <strong style={{ color: "#fff" }}>Default</strong>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Default</div>
         </div>
       </LiquidMetalCard>
-      <LiquidMetalCard variant="chrome" hover>
+      <LiquidMetalCard variant="chrome">
         <div style={{ padding: 20 }}>
-          <strong style={{ color: "#fff" }}>Chrome</strong>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Chrome</div>
         </div>
       </LiquidMetalCard>
-      <LiquidMetalCard variant="mercury" hover>
+      <LiquidMetalCard variant="mercury">
         <div style={{ padding: 20 }}>
-          <strong style={{ color: "#fff" }}>Mercury</strong>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Mercury</div>
         </div>
       </LiquidMetalCard>
-      <LiquidMetalCard variant="dark" hover>
+      <LiquidMetalCard variant="dark">
         <div style={{ padding: 20 }}>
-          <strong style={{ color: "#fff" }}>Dark</strong>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>Dark</div>
         </div>
       </LiquidMetalCard>
     </div>

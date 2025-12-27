@@ -12,6 +12,7 @@ import {
   Mic,
   Users,
   FileText,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   Layout,
@@ -175,6 +176,33 @@ export default function CandidateProfilePage(): JSX.Element {
         </div>
       }
     >
+      {/* Back button */}
+      <div style={{ marginBottom: 32 }}>
+        <button
+          onClick={() => navigate(-1)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: 'transparent',
+            border: 'none',
+            color: 'rgba(255,255,255,0.6)',
+            cursor: 'pointer',
+            fontSize: 10,
+            letterSpacing: '0.15em',
+            transition: 'color 0.2s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = '#fff';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+          }}
+        >
+          <ArrowLeft size={12} /> BACK TO PIPELINE
+        </button>
+      </div>
+
       {/* Hero Grid: Avatar + AI Verdict + Score Stack */}
       <section
         style={{

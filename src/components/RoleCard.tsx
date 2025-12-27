@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import {
   Building,
   MapPin,
@@ -42,12 +41,7 @@ export function RoleCard({
   style = {},
   className = "",
 }: RoleCardProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), animationDelay);
-    return () => clearTimeout(timer);
-  }, [animationDelay]);
+  const mounted = true;
 
   const getStatusStyle = (status: RoleStatus) => {
     switch (status) {
@@ -81,23 +75,17 @@ export function RoleCard({
     .toUpperCase();
 
   return (
-    <div
+    <LiquidMetalCard
+      data-testid="pipeline-card"
+      variant={status === "active" ? "chrome" : "default"}
+      hover
+      onClick={onClick}
       style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0)" : "translateY(20px)",
-        transition: "all 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+        cursor: onClick ? "pointer" : "default",
+        ...style,
       }}
+      className={className}
     >
-      <LiquidMetalCard
-        variant={status === "active" ? "chrome" : "default"}
-        hover
-        onClick={onClick}
-        style={{
-          cursor: onClick ? "pointer" : "default",
-          ...style,
-        }}
-        className={className}
-      >
         {/* Header */}
         <div
           style={{
@@ -353,6 +341,5 @@ export function RoleCard({
           />
         </div>
       </LiquidMetalCard>
-    </div>
   );
 }

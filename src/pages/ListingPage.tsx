@@ -59,11 +59,11 @@ export default function ListingPage(): JSX.Element {
   };
 
   const handleRoleClick = (role: Role): void => {
-    navigate(`/pipelines/${role.id}`);
+    navigate(`/pipeline/${role.id}`);
   };
 
   const handleNewRole = (): void => {
-    navigate('/pipelines/new');
+    navigate('/pipeline/new');
   };
 
   return (

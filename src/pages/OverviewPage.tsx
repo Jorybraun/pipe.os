@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Outlet } from 'react-router-dom';
 import {
   ArrowLeft,
   Building,
@@ -56,6 +56,7 @@ function StageHeaderCard({
 
   return (
     <LiquidMetalCard
+      data-testid="stage-card"
       variant={isActive ? 'chrome' : 'default'}
       hover
       onClick={onClick}
@@ -332,7 +333,7 @@ function StageColumn({
 }
 
 export default function OverviewPage(): JSX.Element {
-  const { id } = useParams<{ id: string }>();
+  const { id, stage, questionId } = useParams<{ id: string; stage?: string; questionId?: string }>();
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('pipeline');
   const [activeStage, setActiveStage] = useState<string | null>(null);
@@ -345,6 +346,9 @@ export default function OverviewPage(): JSX.Element {
   const role = id ? getRoleById(id) : undefined;
   const stages = id ? getStagesByPipelineId(id) : [];
   const allCandidates = id ? getCandidatesByPipelineId(id) : [];
+
+  // Find current stage for back button text
+  const currentStage = stage ? stages.find((s) => s.id === stage) : undefined;
 
   // Group candidates by their current stage
   const candidatesByStage = stages.reduce(
@@ -427,7 +431,18 @@ export default function OverviewPage(): JSX.Element {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                if (questionId && stage) {
+                  // From question detail -> stage detail
+                  navigate(`/pipeline/${id}/${stage}`);
+                } else if (stage) {
+                  // From stage detail -> overview
+                  navigate(`/pipeline/${id}`);
+                } else {
+                  // From overview -> home
+                  navigate('/');
+                }
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -440,7 +455,12 @@ export default function OverviewPage(): JSX.Element {
                 letterSpacing: '0.15em',
               }}
             >
-              <ArrowLeft size={12} /> BACK TO ROLES
+              <ArrowLeft size={12} />{' '}
+              {questionId && currentStage
+                ? `BACK TO ${currentStage.name.toUpperCase()}`
+                : stage
+                  ? 'BACK TO OVERVIEW'
+                  : 'BACK TO ROLES'}
             </button>
 
             <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,0.08)' }} />
@@ -491,27 +511,76 @@ export default function OverviewPage(): JSX.Element {
           <SubTitle>PIPELINE_STATUS</SubTitle>
         </div>
 
-        {/* Pipeline kanban columns */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 12,
-            overflowX: 'auto',
-            paddingBottom: 24,
-          }}
-        >
-          {stages.map((stage, i) => (
-            <StageColumn
-              key={stage.id}
-              stage={stage}
-              candidates={candidatesByStage[stage.id] || []}
-              isActive={activeStage === stage.id}
-              onStageClick={() => setActiveStage(stage.id)}
-              onCandidateClick={(candidateId) => navigate(`/candidates/${candidateId}`)}
-              stageIndex={i}
-            />
+        {/* Stage headers (always visible) */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+          {stages.map((s) => (
+            <div key={s.id} style={{ flex: 1, minWidth: 280 }}>
+              <StageHeaderCard
+                stage={s}
+                candidates={candidatesByStage[s.id] || []}
+                isActive={stage === s.id}
+                onClick={() => navigate(`/pipeline/${id}/${s.id}`)}
+              />
+            </div>
           ))}
         </div>
+
+        {/* Content area - stage detail OR kanban candidate cards */}
+        {stage ? (
+          <Outlet />
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              overflowX: 'auto',
+              paddingBottom: 24,
+            }}
+          >
+            {stages.map((s, i) => {
+              const stageCandidates = candidatesByStage[s.id] || [];
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    flex: 1,
+                    minWidth: 280,
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  {/* Candidates list */}
+                  {stageCandidates.map((candidate, idx) => (
+                    <CandidateKanbanCard
+                      key={candidate.id}
+                      candidate={candidate}
+                      index={idx}
+                      stageIndex={i}
+                      onClick={() => navigate(`/candidates/${candidate.id}`)}
+                    />
+                  ))}
+
+                  {stageCandidates.length === 0 && (
+                    <div
+                      style={{
+                        flex: 1,
+                        minHeight: 120,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1px dashed rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <span style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)' }}>
+                        NO CANDIDATES
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </Layout>
   );

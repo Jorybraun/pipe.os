@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { MetalScoreRing } from "../src/components/shared";
+import { MetalScoreRing } from "../src/components";
 
 const meta = {
   title: "Components/Profile/MetalScoreRing",

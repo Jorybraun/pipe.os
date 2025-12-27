@@ -7,6 +7,7 @@ interface LiquidMetalCardProps {
   hover?: boolean;
   className?: string;
   onClick?: () => void;
+  "data-testid"?: string;
 }
 
 export function LiquidMetalCard({
@@ -16,6 +17,7 @@ export function LiquidMetalCard({
   hover = false,
   className = "",
   onClick,
+  "data-testid": dataTestId,
 }: LiquidMetalCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -74,6 +76,7 @@ export function LiquidMetalCard({
   return (
     <div
       className={className}
+      data-testid={dataTestId}
       onMouseEnter={() => hover && setIsHovered(true)}
       onMouseLeave={() => hover && setIsHovered(false)}
       onClick={onClick}
@@ -111,3 +114,5 @@ export function LiquidMetalCard({
     </div>
   );
 }
+
+export default LiquidMetalCard;
