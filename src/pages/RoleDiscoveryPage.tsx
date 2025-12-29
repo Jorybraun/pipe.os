@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { ArrowRight } from "lucide-react";
+import { useState, useEffect, Fragment } from "react";
+import { ArrowRight, Check } from "lucide-react";
 import { AgentPanel } from "../components/RoleDiscovery/AgentPanel";
 import { BaselineForm } from "../components/RoleDiscovery/BaselineForm";
 import type {
@@ -8,6 +8,85 @@ import type {
   RoleDynamicContext,
   RoleDiscoveryProgress,
 } from "../types/roleDiscovery";
+
+function PhaseProgress({ current }) {
+  const phases = ["ROLE DISCOVERY", "PIPELINE STAGES", "QUESTIONS", "METRICS"];
+
+  return (
+    <div
+      style={{
+        padding: "14px 0px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+      }}
+    >
+      {phases.map((phase, i) => {
+        const isActive = i === current - 1;
+        const isComplete = i < current - 1;
+        return (
+          <Fragment key={phase}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  background: isComplete
+                    ? "rgba(150,255,150,0.2)"
+                    : isActive
+                    ? "rgba(139,92,246,0.3)"
+                    : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${
+                    isComplete
+                      ? "rgba(150,255,150,0.4)"
+                      : isActive
+                      ? "rgba(139,92,246,0.5)"
+                      : "rgba(255,255,255,0.1)"
+                  }`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: isComplete
+                    ? "rgba(150,255,150,0.9)"
+                    : isActive
+                    ? "rgba(139,92,246,0.9)"
+                    : "rgba(255,255,255,0.3)",
+                  fontSize: 10,
+                  fontWeight: 700,
+                }}
+              >
+                {isComplete ? <Check size={14} /> : i + 1}
+              </div>
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.1em",
+                  color: isActive ? "#fff" : "rgba(255,255,255,0.4)",
+                  fontWeight: isActive ? 700 : 400,
+                }}
+              >
+                {phase}
+              </span>
+            </div>
+            {i < phases.length - 1 && (
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: isComplete
+                    ? "rgba(150,255,150,0.3)"
+                    : "rgba(255,255,255,0.08)",
+                  maxWidth: 50,
+                }}
+              />
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 /**
  * RoleDiscoveryPage - Phase 1: Role Discovery
@@ -162,6 +241,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
             zIndex: 1,
           }}
         >
+          <PhaseProgress current={1} />
           {/* Stats Bar */}
           {/* <div
             style={{

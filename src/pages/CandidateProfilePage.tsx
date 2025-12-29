@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   MapPin,
   Mail,
@@ -13,7 +13,7 @@ import {
   Users,
   FileText,
   ArrowLeft,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   Layout,
   ProfileHeader,
@@ -21,8 +21,8 @@ import {
   MetalScoreRing,
   SubTitle,
   SidebarNav,
-} from '../components';
-import { getCandidateById } from '../mocks';
+} from "../components";
+import { getCandidateById } from "../mocks";
 
 /**
  * CandidateProfilePage - Detailed candidate profile
@@ -33,96 +33,68 @@ import { getCandidateById } from '../mocks';
 
 // Map stage names to icons
 const stageIcons: Record<string, typeof Phone> = {
-  'Code Review': Code,
-  'Voice Interview': Mic,
-  'System Design': FileText,
-  'Screening': Phone,
-  'AI Collaboration': Zap,
-  'Panel Interview': Users,
+  "Code Review": Code,
+  "Voice Interview": Mic,
+  "System Design": FileText,
+  Screening: Phone,
+  "AI Collaboration": Zap,
+  "Panel Interview": Users,
 };
 
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState('profile');
+  const [activeSection, setActiveSection] = useState("profile");
   const [isAgentOpen, setIsAgentOpen] = useState(false);
 
   const candidate = id ? getCandidateById(id) : undefined;
 
   if (!candidate) {
     return (
-      <Layout
-        header={<ProfileHeader title="CANDIDATE NOT FOUND" subtitle="PIPE_OS // V.2.0.4" />}
-        sidebar={
-          <SidebarNav
-            activeSection={activeSection}
-            onSectionChange={setActiveSection}
-            isAgentOpen={isAgentOpen}
-            onAgentToggle={() => setIsAgentOpen(!isAgentOpen)}
-          />
-        }
-        isAgentOpen={isAgentOpen}
-        agentPanel={
-          <div style={{ padding: 24 }}>
-            <div
-              style={{
-                fontSize: 11,
-                letterSpacing: '0.2em',
-                color: 'rgba(139, 92, 246, 0.8)',
-                marginBottom: 8,
-              }}
-            >
-              AI AGENT
-            </div>
-            <h2
-              style={{
-                fontSize: 24,
-                fontWeight: 700,
-                color: '#fff',
-                margin: '0 0 24px 0',
-              }}
-            >
-              Assistant
-            </h2>
-            <p
-              style={{
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: 'rgba(255,255,255,0.6)',
-              }}
-            >
-              Agent panel content goes here.
-            </p>
-          </div>
-        }
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "60vh",
+        }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-          <LiquidMetalCard variant="mercury" style={{ padding: 60, textAlign: 'center' }}>
-            <h2 style={{ fontSize: 24, marginBottom: 16 }}>Candidate Not Found</h2>
-            <button
-              onClick={() => navigate('/')}
-              style={{
-                padding: '12px 24px',
-                background: 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: '#fff',
-                cursor: 'pointer',
-              }}
-            >
-              Back to Roles
-            </button>
-          </LiquidMetalCard>
-        </div>
-      </Layout>
+        <LiquidMetalCard
+          variant="mercury"
+          style={{ padding: 60, textAlign: "center" }}
+        >
+          <h2 style={{ fontSize: 24, marginBottom: 16 }}>
+            Candidate Not Found
+          </h2>
+          <button
+            onClick={() => navigate("/")}
+            style={{
+              padding: "12px 24px",
+              background: "rgba(255,255,255,0.1)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Back to Roles
+          </button>
+        </LiquidMetalCard>
+      </div>
     );
   }
 
   // Mock AI profile data - would come from backend in real app
   const aiProfile = {
-    verdict: candidate.signal === 'STRONG' ? 'STRONG\nYES' : candidate.signal === 'YES' ? 'YES' : 'MAYBE',
-    reasoning: candidate.signal === 'STRONG'
-      ? "Exceeds requirements in technical depth and AI collaboration. Strong contributor from day one."
-      : candidate.signal === 'YES'
+    verdict:
+      candidate.signal === "STRONG"
+        ? "STRONG\nYES"
+        : candidate.signal === "YES"
+        ? "YES"
+        : "MAYBE",
+    reasoning:
+      candidate.signal === "STRONG"
+        ? "Exceeds requirements in technical depth and AI collaboration. Strong contributor from day one."
+        : candidate.signal === "YES"
         ? "Meets requirements with solid technical skills. Good fit for the role with some ramp-up time."
         : "Shows potential but may need additional development. Consider for junior positions.",
     roleFitScore: candidate.score / 100,
@@ -131,83 +103,137 @@ export default function CandidateProfilePage(): JSX.Element {
   };
 
   return (
-    <Layout
-      header={<ProfileHeader title="CANDIDATE_PROFILE" subtitle="PIPE_OS // V.2.0.4" />}
-      sidebar={
-        <SidebarNav
-          activeSection={activeSection}
-          onSectionChange={setActiveSection}
-          isAgentOpen={isAgentOpen}
-          onAgentToggle={() => setIsAgentOpen(!isAgentOpen)}
-        />
-      }
-      isAgentOpen={isAgentOpen}
-      agentPanel={
-        <div style={{ padding: 24 }}>
-          <div
-            style={{
-              fontSize: 11,
-              letterSpacing: '0.2em',
-              color: 'rgba(139, 92, 246, 0.8)',
-              marginBottom: 8,
-            }}
-          >
-            AI AGENT
-          </div>
-          <h2
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              color: '#fff',
-              margin: '0 0 24px 0',
-            }}
-          >
-            Assistant
-          </h2>
-          <p
-            style={{
-              fontSize: 13,
-              lineHeight: 1.6,
-              color: 'rgba(255,255,255,0.6)',
-            }}
-          >
-            Ready to analyze candidate performance and provide insights.
-          </p>
-        </div>
-      }
-    >
+    <>
       {/* Back button */}
       <div style={{ marginBottom: 32 }}>
         <button
           onClick={() => navigate(-1)}
           style={{
-            display: 'flex',
-            alignItems: 'center',
+            display: "flex",
+            alignItems: "center",
             gap: 8,
-            background: 'transparent',
-            border: 'none',
-            color: 'rgba(255,255,255,0.6)',
-            cursor: 'pointer',
+            background: "transparent",
+            border: "none",
+            color: "rgba(255,255,255,0.6)",
+            cursor: "pointer",
             fontSize: 10,
-            letterSpacing: '0.15em',
-            transition: 'color 0.2s ease',
+            letterSpacing: "0.15em",
+            transition: "color 0.2s ease",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = '#fff';
+            e.currentTarget.style.color = "#fff";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+            e.currentTarget.style.color = "rgba(255,255,255,0.6)";
           }}
         >
           <ArrowLeft size={12} /> BACK TO PIPELINE
         </button>
       </div>
 
+      {/* <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+        {stages.map((s) => (
+          <div key={s.id} style={{ flex: 1, minWidth: 280 }}>
+            <StageHeaderCard
+              stage={s}
+              candidates={candidatesByStage[s.id] || []}
+              isActive={stage === s.id}
+              onClick={() => navigate(`/pipeline/${id}/${s.id}`)}
+            />
+          </div>
+        ))}
+      </div> */}
+
+      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+        {candidate.stages.map((stage) => {
+          const Icon = stageIcons[stage.name] || FileText;
+          const isComplete = stage.status === "COMPLETED";
+          const isActive = stage.status === "IN_PROGRESS";
+
+          return (
+            <div key={stage.id} style={{ flex: 1, minWidth: 280 }}>
+              <LiquidMetalCard
+                key={stage.id}
+                variant={isActive ? "chrome" : "default"}
+                hover
+                style={{
+                  padding: 24,
+                  opacity: !isComplete && !isActive ? 0.4 : 1,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Icon
+                    size={16}
+                    color={isActive ? "#fff" : "rgba(255,255,255,0.4)"}
+                  />
+                  {isComplete && (
+                    <CheckCircle size={12} color="rgba(150,255,150,0.8)" />
+                  )}
+                  {isActive && (
+                    <Activity
+                      size={12}
+                      color="rgba(255,255,255,0.8)"
+                      style={{
+                        animation: "pulse 1.5s ease-in-out infinite",
+                      }}
+                    />
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.2em",
+                    color: isActive ? "#fff" : "rgba(255,255,255,0.5)",
+                    marginBottom: 8,
+                  }}
+                >
+                  {stage.name.toUpperCase()}
+                </div>
+
+                {isComplete && stage.score && (
+                  <div
+                    style={{
+                      fontSize: 28,
+                      fontWeight: 800,
+                      background:
+                        "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                    }}
+                  >
+                    {stage.score}
+                  </div>
+                )}
+
+                {!isComplete && !isActive && (
+                  <div
+                    style={{
+                      fontSize: 28,
+                      fontWeight: 800,
+                      color: "rgba(255,255,255,0.15)",
+                    }}
+                  >
+                    —
+                  </div>
+                )}
+              </LiquidMetalCard>
+            </div>
+          );
+        })}
+      </div>
       {/* Hero Grid: Avatar + AI Verdict + Score Stack */}
       <section
         style={{
-          display: 'grid',
-          gridTemplateColumns: '320px 1fr 200px',
+          display: "grid",
+          gridTemplateColumns: "320px 1fr 200px",
           gap: 24,
           marginBottom: 60,
         }}
@@ -217,10 +243,10 @@ export default function CandidateProfilePage(): JSX.Element {
           <div
             style={{
               height: 320,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              position: 'relative',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              position: "relative",
               background: `
                 radial-gradient(
                   ellipse at 30% 30%,
@@ -250,10 +276,10 @@ export default function CandidateProfilePage(): JSX.Element {
                     rgba(255,255,255,1) 100%
                   )
                 `,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                filter: 'drop-shadow(0 10px 40px rgba(200,210,230,0.3))',
-                letterSpacing: '0.05em',
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                filter: "drop-shadow(0 10px 40px rgba(200,210,230,0.3))",
+                letterSpacing: "0.05em",
               }}
             >
               {candidate.initials}
@@ -261,27 +287,28 @@ export default function CandidateProfilePage(): JSX.Element {
           </div>
 
           {/* Contact info */}
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
             {[
-              { icon: Briefcase, value: candidate.company || 'Not specified' },
+              { icon: Briefcase, value: candidate.company || "Not specified" },
               { icon: MapPin, value: candidate.location },
               { icon: Mail, value: candidate.email },
             ].map((item, i) => (
               <div
                 key={i}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
+                  display: "flex",
+                  alignItems: "center",
                   gap: 16,
-                  padding: '16px 24px',
-                  borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                  padding: "16px 24px",
+                  borderBottom:
+                    i < 2 ? "1px solid rgba(255,255,255,0.04)" : "none",
                   fontSize: 11,
-                  letterSpacing: '0.05em',
-                  color: 'rgba(255,255,255,0.5)',
+                  letterSpacing: "0.05em",
+                  color: "rgba(255,255,255,0.5)",
                 }}
               >
                 <item.icon size={14} color="rgba(255,255,255,0.25)" />
-                {(item.value || '').toUpperCase()}
+                {(item.value || "").toUpperCase()}
               </div>
             ))}
           </div>
@@ -291,9 +318,9 @@ export default function CandidateProfilePage(): JSX.Element {
         <LiquidMetalCard variant="mercury" hover style={{ padding: 48 }}>
           <div
             style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
               marginBottom: 40,
             }}
           >
@@ -307,7 +334,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   fontSize: 72,
                   fontWeight: 900,
                   lineHeight: 0.85,
-                  letterSpacing: '-0.03em',
+                  letterSpacing: "-0.03em",
                   background: `
                     linear-gradient(135deg,
                       #fff 0%,
@@ -317,10 +344,10 @@ export default function CandidateProfilePage(): JSX.Element {
                       rgba(240,240,250,0.9) 100%
                     )
                   `,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  filter: 'drop-shadow(0 4px 30px rgba(200,210,230,0.2))',
-                  whiteSpace: 'pre-line',
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  filter: "drop-shadow(0 4px 30px rgba(200,210,230,0.2))",
+                  whiteSpace: "pre-line",
                 }}
               >
                 {aiProfile.verdict}
@@ -333,12 +360,12 @@ export default function CandidateProfilePage(): JSX.Element {
           <div
             style={{
               padding: 24,
-              background: 'rgba(0,0,0,0.2)',
-              borderLeft: '2px solid rgba(255,255,255,0.2)',
+              background: "rgba(0,0,0,0.2)",
+              borderLeft: "2px solid rgba(255,255,255,0.2)",
               fontSize: 13,
               lineHeight: 1.7,
-              color: 'rgba(255,255,255,0.6)',
-              letterSpacing: '0.02em',
+              color: "rgba(255,255,255,0.6)",
+              letterSpacing: "0.02em",
             }}
           >
             {aiProfile.reasoning}
@@ -346,26 +373,26 @@ export default function CandidateProfilePage(): JSX.Element {
         </LiquidMetalCard>
 
         {/* Score Stack */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {[
-            { label: 'ROLE', value: aiProfile.roleFitScore },
-            { label: 'CULTURE', value: aiProfile.cultureFitScore },
-            { label: 'GROWTH', value: aiProfile.growthPotentialScore },
+            { label: "ROLE", value: aiProfile.roleFitScore },
+            { label: "CULTURE", value: aiProfile.cultureFitScore },
+            { label: "GROWTH", value: aiProfile.growthPotentialScore },
           ].map((item, i) => (
             <LiquidMetalCard key={i} hover style={{ flex: 1, padding: 20 }}>
               <div
                 style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  height: '100%',
-                  justifyContent: 'space-between',
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  justifyContent: "space-between",
                 }}
               >
                 <span
                   style={{
                     fontSize: 8,
-                    letterSpacing: '0.3em',
-                    color: 'rgba(255,255,255,0.3)',
+                    letterSpacing: "0.3em",
+                    color: "rgba(255,255,255,0.3)",
                   }}
                 >
                   {item.label}
@@ -375,10 +402,11 @@ export default function CandidateProfilePage(): JSX.Element {
                   style={{
                     fontSize: 36,
                     fontWeight: 800,
-                    background: 'linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    letterSpacing: '-0.02em',
+                    background:
+                      "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    letterSpacing: "-0.02em",
                   }}
                 >
                   {Math.round(item.value * 100)}
@@ -388,21 +416,21 @@ export default function CandidateProfilePage(): JSX.Element {
                 <div
                   style={{
                     height: 3,
-                    background: 'rgba(255,255,255,0.06)',
-                    position: 'relative',
-                    overflow: 'hidden',
+                    background: "rgba(255,255,255,0.06)",
+                    position: "relative",
+                    overflow: "hidden",
                   }}
                 >
                   <div
                     style={{
-                      position: 'absolute',
+                      position: "absolute",
                       left: 0,
                       top: 0,
-                      height: '100%',
+                      height: "100%",
                       width: `${item.value * 100}%`,
                       background:
-                        'linear-gradient(90deg, rgba(255,255,255,0.4), rgba(255,255,255,0.8), rgba(200,210,230,0.6))',
-                      boxShadow: '0 0 15px rgba(255,255,255,0.3)',
+                        "linear-gradient(90deg, rgba(255,255,255,0.4), rgba(255,255,255,0.8), rgba(200,210,230,0.6))",
+                      boxShadow: "0 0 15px rgba(255,255,255,0.3)",
                     }}
                   />
                 </div>
@@ -411,14 +439,13 @@ export default function CandidateProfilePage(): JSX.Element {
           ))}
         </div>
       </section>
-
-      {/* Assessment Pipeline */}
+      {/* Assessment Pipeline
       <section style={{ marginBottom: 60 }}>
         <div
           style={{
             fontSize: 9,
-            letterSpacing: '0.4em',
-            color: 'rgba(255,255,255,0.3)',
+            letterSpacing: "0.4em",
+            color: "rgba(255,255,255,0.3)",
             marginBottom: 20,
           }}
         >
@@ -427,88 +454,12 @@ export default function CandidateProfilePage(): JSX.Element {
 
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
             gap: 2,
           }}
-        >
-          {candidate.stages.map((stage) => {
-            const Icon = stageIcons[stage.name] || FileText;
-            const isComplete = stage.status === 'COMPLETED';
-            const isActive = stage.status === 'IN_PROGRESS';
-
-            return (
-              <LiquidMetalCard
-                key={stage.id}
-                variant={isActive ? 'chrome' : 'default'}
-                hover
-                style={{
-                  padding: 24,
-                  opacity: !isComplete && !isActive ? 0.4 : 1,
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: 16,
-                  }}
-                >
-                  <Icon size={16} color={isActive ? '#fff' : 'rgba(255,255,255,0.4)'} />
-                  {isComplete && <CheckCircle size={12} color="rgba(150,255,150,0.8)" />}
-                  {isActive && (
-                    <Activity
-                      size={12}
-                      color="rgba(255,255,255,0.8)"
-                      style={{
-                        animation: 'pulse 1.5s ease-in-out infinite',
-                      }}
-                    />
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    fontSize: 9,
-                    letterSpacing: '0.2em',
-                    color: isActive ? '#fff' : 'rgba(255,255,255,0.5)',
-                    marginBottom: 8,
-                  }}
-                >
-                  {stage.name.toUpperCase()}
-                </div>
-
-                {isComplete && stage.score && (
-                  <div
-                    style={{
-                      fontSize: 28,
-                      fontWeight: 800,
-                      background: 'linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                    }}
-                  >
-                    {stage.score}
-                  </div>
-                )}
-
-                {!isComplete && !isActive && (
-                  <div
-                    style={{
-                      fontSize: 28,
-                      fontWeight: 800,
-                      color: 'rgba(255,255,255,0.15)',
-                    }}
-                  >
-                    —
-                  </div>
-                )}
-              </LiquidMetalCard>
-            );
-          })}
-        </div>
-      </section>
-    </Layout>
+        ></div>
+      </section> */}
+    </>
   );
 }

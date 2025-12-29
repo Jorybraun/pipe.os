@@ -134,10 +134,12 @@ function AppLayout(): JSX.Element {
           title="PIPE_OS"
           subtitle="V.2.0.4"
           actions={
-            <Actions
-              progress={mockProgress}
-              onContinue={handlePhase2Continue}
-            />
+            null
+            // <Actions
+            //   progress={mockProgress}
+            //   onContinue={handlePhase2Continue}
+            // />
+            // <InfoBar />
           }
         />
       }
