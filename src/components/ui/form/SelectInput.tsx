@@ -1,0 +1,46 @@
+interface SelectInputProps {
+  value?: string;
+  onChange?: (value: string) => void;
+  placeholder?: string;
+  options: string[];
+}
+
+const inputStyle = {
+  width: '100%',
+  padding: '12px 16px',
+  background: 'rgba(0,0,0,0.2)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  color: '#fff',
+  fontSize: 12,
+  fontFamily: '"Space Mono", monospace',
+  outline: 'none',
+};
+
+/**
+ * SelectInput - Dropdown select input with options
+ */
+export function SelectInput({
+  value,
+  onChange,
+  placeholder,
+  options,
+}: SelectInputProps): JSX.Element {
+  return (
+    <select
+      value={value || ''}
+      onChange={(e) => onChange?.(e.target.value)}
+      style={{
+        ...inputStyle,
+        cursor: 'pointer',
+        color: value ? '#fff' : 'rgba(255,255,255,0.3)',
+      }}
+    >
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
+  );
+}

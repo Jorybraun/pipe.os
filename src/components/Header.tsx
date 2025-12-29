@@ -47,7 +47,6 @@ export function ProfileHeader({
         display: "flex",
         justifyContent: "space-between",
         alignItems: "flex-start",
-        marginBottom: 24,
       }}
     >
       <div>
@@ -68,6 +67,7 @@ export function ProfileHeader({
           {title}
         </h1>
       </div>
+
       {actions && <div>{actions}</div>}
     </header>
   );

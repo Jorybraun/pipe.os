@@ -14,7 +14,7 @@ import {
   Mic,
   Users,
 } from 'lucide-react';
-import { Layout, ProfileHeader, LiquidMetalCard, SidebarNav, SubTitle } from '../components';
+import { LiquidMetalCard, SubTitle } from '../components';
 import { getRoleById, getStagesByPipelineId, getCandidatesByPipelineId } from '../mocks';
 import type { Candidate, Stage } from '../types';
 
@@ -23,6 +23,8 @@ import type { Candidate, Stage } from '../types';
  *
  * Displays a horizontal kanban board with columns for each pipeline stage,
  * showing candidates organized by their current stage progress.
+ *
+ * Note: Layout is provided by AppLayout wrapper in App.tsx
  */
 
 // Map stage types to icons
@@ -263,7 +265,6 @@ function CandidateKanbanCard({
 export default function OverviewPage(): JSX.Element {
   const { id, stage, questionId } = useParams<{ id: string; stage?: string; questionId?: string }>();
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState('pipeline');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -307,44 +308,35 @@ export default function OverviewPage(): JSX.Element {
 
   if (!role) {
     return (
-      <Layout
-        header={<ProfileHeader title="PIPELINE NOT FOUND" subtitle="PIPE_OS // V.2.0.4" />}
-        sidebar={<SidebarNav activeSection={activeSection} onSectionChange={setActiveSection} />}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-          <LiquidMetalCard variant="mercury" style={{ padding: 60, textAlign: 'center' }}>
-            <h2 style={{ fontSize: 24, marginBottom: 16 }}>Pipeline Not Found</h2>
-            <button
-              onClick={() => navigate('/')}
-              style={{
-                padding: '12px 24px',
-                background: 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: '#fff',
-                cursor: 'pointer',
-              }}
-            >
-              Back to Roles
-            </button>
-          </LiquidMetalCard>
-        </div>
-      </Layout>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <LiquidMetalCard variant="mercury" style={{ padding: 60, textAlign: 'center' }}>
+          <h2 style={{ fontSize: 24, marginBottom: 16 }}>Pipeline Not Found</h2>
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              padding: '12px 24px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            Back to Roles
+          </button>
+        </LiquidMetalCard>
+      </div>
     );
   }
 
   const totalCandidates = allCandidates.length;
 
   return (
-    <Layout
-      header={<ProfileHeader title="PIPELINE_VIEW" subtitle="PIPE_OS // V.2.0.4" />}
-      sidebar={<SidebarNav activeSection={activeSection} onSectionChange={setActiveSection} />}
+    <div
+      style={{
+        opacity: mounted ? 1 : 0,
+        transition: 'opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
     >
-      <div
-        style={{
-          opacity: mounted ? 1 : 0,
-          transition: 'opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
-        }}
-      >
         {/* Back button and position info bar */}
         <div
           style={{
@@ -508,7 +500,6 @@ export default function OverviewPage(): JSX.Element {
             })}
           </div>
         )}
-      </div>
-    </Layout>
+    </div>
   );
 }

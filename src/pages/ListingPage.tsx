@@ -9,10 +9,7 @@ import {
   Plus,
 } from 'lucide-react';
 import {
-  Layout,
-  ProfileHeader,
   LiquidMetalCard,
-  SidebarNav,
   RoleCard,
   StatsCard,
 } from '../components';
@@ -27,10 +24,11 @@ import type { Role } from '../types';
  * - Search and filter functionality
  * - Grid of role cards
  * - Navigation to pipeline builder and detail views
+ *
+ * Note: Layout is provided by AppLayout wrapper in App.tsx
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState('roles');
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<'all' | 'ACTIVE' | 'DRAFT' | 'ARCHIVED'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,11 +65,7 @@ export default function ListingPage(): JSX.Element {
   };
 
   return (
-    <Layout
-      header={<ProfileHeader title="ROLES" subtitle="PIPE_OS // V.2.0.4" />}
-      sidebar={<SidebarNav activeSection={activeSection} onSectionChange={setActiveSection} />}
-    >
-      <div style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+    <div style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
         {/* Create New Role Button */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
           <button
@@ -252,7 +246,6 @@ export default function ListingPage(): JSX.Element {
               </LiquidMetalCard>
             </div>
           </div>
-        </div>
-    </Layout>
+    </div>
   );
 }
