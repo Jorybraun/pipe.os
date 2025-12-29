@@ -5,6 +5,8 @@ import {
   Route,
   Navigate,
   Outlet,
+  useNavigate,
+  useParams,
 } from "react-router-dom";
 import { Layout, ProfileHeader, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
@@ -14,7 +16,8 @@ import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import { QuestionDetail } from "./components/QuestionDetail";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
+import { SubTitle } from "./components/ui/SubTitle";
 
 /**
  * AppLayout - Wrapper component that provides consistent Layout to child routes
@@ -32,88 +35,124 @@ interface ActionsProps {
   onContinue?: () => void;
 }
 
-const Actions = ({
-  progress = { completeness: 45, isReady: false },
-  onContinue,
-}: ActionsProps) => {
-  const handleContinue = () => {
-    if (onContinue) {
-      onContinue();
-    } else {
-      console.log("Continue to Phase 2");
-    }
-  };
+const SubHeader = () => {
+  const navigate = useNavigate();
+  const { id, stage, questionId } = useParams();
+
+  // Mock data
+  const role = { title: "Senior Full-Stack Engineer" };
+  const totalCandidates = 42;
+  const currentStage = stage ? { name: stage } : null;
 
   return (
-    <>
-      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-        <span
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 32,
+        paddingBottom: 20,
+        borderBottom: "1px solid rgba(255,255,255,0.04)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+        <button
+          onClick={() => {
+            if (questionId && stage) {
+              // From question detail -> stage detail
+              navigate(`/pipeline/${id}/${stage}`);
+            } else if (stage) {
+              // From stage detail -> overview
+              navigate(`/pipeline/${id}`);
+            } else {
+              // From overview -> home
+              navigate("/");
+            }
+          }}
           style={{
-            fontSize: 9,
-            letterSpacing: "0.2em",
-            color: "rgba(255,255,255,0.3)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "transparent",
+            border: "none",
+            color: "rgba(255,255,255,0.6)",
+            cursor: "pointer",
+            fontSize: 10,
+            letterSpacing: "0.15em",
           }}
         >
-          COMPLETENESS
-        </span>
+          <ArrowLeft size={12} />{" "}
+          {questionId && currentStage
+            ? `BACK TO ${currentStage.name.toUpperCase()}`
+            : stage
+            ? "BACK TO OVERVIEW"
+            : "BACK TO ROLES"}
+        </button>
+
         <div
-          style={{
-            width: 140,
-            height: 4,
-            background: "rgba(255,255,255,0.06)",
-          }}
-        >
+          style={{ width: 1, height: 40, background: "rgba(255,255,255,0.08)" }}
+        />
+
+        <div>
           <div
             style={{
-              width: `${progress.completeness}%`,
-              height: "100%",
-              background:
-                progress.completeness >= 60
-                  ? "linear-gradient(90deg, rgba(150,255,150,0.5), rgba(150,255,150,0.9))"
-                  : "linear-gradient(90deg, rgba(139, 92, 246, 0.4), rgba(139, 92, 246, 0.8))",
-              boxShadow:
-                progress.completeness >= 60
-                  ? "0 0 12px rgba(150,255,150,0.4)"
-                  : "0 0 10px rgba(139, 92, 246, 0.3)",
-              transition: "width 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+              fontSize: 9,
+              letterSpacing: "0.2em",
+              color: "rgba(255,255,255,0.3)",
+              marginBottom: 6,
             }}
-          />
+          >
+            POSITION
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#fff",
+              letterSpacing: "0.05em",
+            }}
+          >
+            {role.title.toUpperCase()}
+          </div>
         </div>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
-          {progress.completeness}%
-        </span>
+
+        <div
+          style={{ width: 1, height: 40, background: "rgba(255,255,255,0.08)" }}
+        />
+
+        <div>
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: "0.2em",
+              color: "rgba(255,255,255,0.3)",
+              marginBottom: 6,
+            }}
+          >
+            ACTIVE CANDIDATES
+          </div>
+          <div
+            style={{
+              fontSize: 24,
+              fontWeight: 800,
+              background:
+                "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            {totalCandidates}
+          </div>
+        </div>
       </div>
 
-      <button
-        onClick={handleContinue}
-        disabled={!progress.isReady}
-        style={{
-          padding: "12px 24px",
-          background: progress.isReady
-            ? "linear-gradient(135deg, rgba(150,255,150,0.2), rgba(100,200,100,0.15))"
-            : "rgba(255,255,255,0.05)",
-          border: `1px solid ${
-            progress.isReady ? "rgba(150,255,150,0.3)" : "rgba(255,255,255,0.1)"
-          }`,
-          color: progress.isReady ? "#fff" : "rgba(255,255,255,0.3)",
-          fontSize: 10,
-          letterSpacing: "0.15em",
-          fontWeight: 700,
-          cursor: progress.isReady ? "pointer" : "not-allowed",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          fontFamily: '"Space Mono", monospace',
-        }}
-      >
-        CONTINUE TO PHASE 2
-        <ArrowRight size={14} />
-      </button>
-    </>
+      <SubTitle>PIPELINE_STATUS</SubTitle>
+    </div>
   );
 };
 
 function AppLayout(): JSX.Element {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
 
   // Mock progress data for Actions component
@@ -127,6 +166,10 @@ function AppLayout(): JSX.Element {
     // Add navigation logic here
   };
 
+  const handleNewRole = (): void => {
+    navigate("/pipeline/new");
+  };
+
   return (
     <Layout
       header={
@@ -134,12 +177,28 @@ function AppLayout(): JSX.Element {
           title="PIPE_OS"
           subtitle="V.2.0.4"
           actions={
-            null
-            // <Actions
-            //   progress={mockProgress}
-            //   onContinue={handlePhase2Continue}
-            // />
-            // <InfoBar />
+            <button
+              onClick={handleNewRole}
+              style={{
+                padding: "14px 28px",
+                background:
+                  "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
+                border: "1px solid rgba(255,255,255,0.2)",
+                color: "#fff",
+                fontSize: 11,
+                letterSpacing: "0.15em",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+              }}
+            >
+              <Plus size={16} />
+              CREATE NEW PIPE
+            </button>
           }
         />
       }
@@ -150,6 +209,7 @@ function AppLayout(): JSX.Element {
         />
       }
     >
+      <SubHeader />
       <Outlet />
     </Layout>
   );

@@ -1,9 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  LiquidMetalCard,
-  SubTitle,
-} from "../components";
+import { LiquidMetalCard, SubTitle } from "../components";
 import { questions } from "../mocks/questions";
 import QuestionCard from "../components/QuestionCard";
 
@@ -72,7 +69,7 @@ function RubricCard({ title, points }: { title: string; points: string[] }) {
 
 function TimeCard({ duration, label }: { duration: string; label: string }) {
   return (
-    <LiquidMetalCard variant="dark" style={{ padding: 20 }}>
+    <LiquidMetalCard variant="chrome" style={{ padding: 20 }}>
       <div
         style={{
           fontSize: 9,

@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from "react";
-import { ArrowRight, Check } from "lucide-react";
-import { AgentPanel } from "../components/RoleDiscovery/AgentPanel";
+import { Activity, ArrowRight, Check, CheckCircle } from "lucide-react";
+import AgentPanel from "../components/RoleDiscovery/AgentPanel";
 import { BaselineForm } from "../components/RoleDiscovery/BaselineForm";
 import type {
   RoleDiscoveryData,
@@ -8,6 +8,8 @@ import type {
   RoleDynamicContext,
   RoleDiscoveryProgress,
 } from "../types/roleDiscovery";
+import { LiquidMetalCard } from "../components";
+import { mockStages } from "../mocks";
 
 function PhaseProgress({ current }) {
   const phases = ["ROLE DISCOVERY", "PIPELINE STAGES", "QUESTIONS", "METRICS"];
@@ -15,7 +17,7 @@ function PhaseProgress({ current }) {
   return (
     <div
       style={{
-        padding: "14px 0px",
+        padding: "0px 0px 12px",
         borderBottom: "1px solid rgba(255,255,255,0.06)",
         display: "flex",
         gap: 8,
@@ -218,12 +220,100 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
   return (
     <>
-      <div
+      {/* <div
         style={{
           display: "flex",
           position: "relative",
         }}
       >
+        <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+          {mockStages.map((stage) => {
+            const Icon = stage.icon;
+            const isComplete = stage.status === "COMPLETED";
+            const isActive = stage.status === "ACTIVE";
+
+            return (
+              <div key={stage.id} style={{ flex: 1, minWidth: 280 }}>
+                <LiquidMetalCard
+                  key={stage.id}
+                  variant={isActive ? "chrome" : "default"}
+                  hover
+                  style={{
+                    padding: 24,
+                    opacity: !isComplete && !isActive ? 0.4 : 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 16,
+                    }}
+                  >
+                    <Icon
+                      size={16}
+                      color={isActive ? "#fff" : "rgba(255,255,255,0.4)"}
+                    />
+                    {isComplete && (
+                      <CheckCircle size={12} color="rgba(150,255,150,0.8)" />
+                    )}
+                    {isActive && (
+                      <Activity
+                        size={12}
+                        color="rgba(255,255,255,0.8)"
+                        style={{
+                          animation: "pulse 1.5s ease-in-out infinite",
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: "0.2em",
+                      color: isActive ? "#fff" : "rgba(255,255,255,0.5)",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {stage.name.toUpperCase()}
+                  </div>
+
+                  {isComplete && stage.score && (
+                    <div
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 800,
+                        background:
+                          "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                      }}
+                    >
+                      {stage.score}
+                    </div>
+                  )}
+
+                  {!isComplete && !isActive && (
+                    <div
+                      style={{
+                        fontSize: 28,
+                        fontWeight: 800,
+                        color: "rgba(255,255,255,0.15)",
+                      }}
+                    >
+                      —
+                    </div>
+                  )}
+                </LiquidMetalCard>
+              </div>
+            );
+          })}
+        </div>
+      </div> */}
+
+      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {/* Left Panel - Agent */}
         <AgentPanel
           baseline={baseline}
@@ -242,111 +332,6 @@ export default function RoleDiscoveryPage(): JSX.Element {
           }}
         >
           <PhaseProgress current={1} />
-          {/* Stats Bar */}
-          {/* <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 32,
-              marginBottom: 32,
-              paddingBottom: 20,
-              borderBottom: "1px solid rgba(255,255,255,0.04)",
-              opacity: mounted ? 1 : 0,
-              transition: "opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.3s",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: 9,
-                  letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
-                  marginBottom: 6,
-                }}
-              >
-                SECTIONS
-              </div>
-              <div
-                style={{
-                  fontSize: 24,
-                  fontWeight: 800,
-                  background:
-                    "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                {Object.keys(sections).length}
-              </div>
-            </div>
-            <div
-              style={{
-                width: 1,
-                height: 40,
-                background: "rgba(255,255,255,0.08)",
-              }}
-            />
-            <div>
-              <div
-                style={{
-                  fontSize: 9,
-                  letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
-                  marginBottom: 6,
-                }}
-              >
-                COMPLETE
-              </div>
-              <div
-                style={{
-                  fontSize: 24,
-                  fontWeight: 800,
-                  background:
-                    progress.completeness >= 60
-                      ? "linear-gradient(180deg, rgba(150,255,150,0.9) 0%, rgba(150,255,150,0.6) 100%)"
-                      : "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                {progress.completeness}%
-              </div>
-            </div>
-            <div
-              style={{
-                width: 1,
-                height: 40,
-                background: "rgba(255,255,255,0.08)",
-              }}
-            />
-            <div>
-              <div
-                style={{
-                  fontSize: 9,
-                  letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
-                  marginBottom: 6,
-                }}
-              >
-                GAPS
-              </div>
-              <div
-                style={{
-                  fontSize: 24,
-                  fontWeight: 800,
-                  background:
-                    progress.gaps.length === 0
-                      ? "linear-gradient(180deg, rgba(150,255,150,0.9) 0%, rgba(150,255,150,0.6) 100%)"
-                      : "linear-gradient(180deg, rgba(255,200,100,0.9) 0%, rgba(255,200,100,0.6) 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                {progress.gaps.length}
-              </div>
-            </div>
-          </div> */}
-
           {/* Form Sections */}
           <BaselineForm
             data={data}

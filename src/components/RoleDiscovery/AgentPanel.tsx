@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
-import { Brain, Send, AlertCircle } from 'lucide-react';
-import { LiquidMetalCard } from '../ui/LiquidMetalCard';
-import { SubTitle } from '../ui/SubTitle';
+import { useState, useRef, useEffect } from "react";
+import { Brain, FileText, Send } from "lucide-react";
+import LiquidMetalCard from "../LiquidMetalCard";
+import { SubTitle } from "../ui/SubTitle";
 import type {
   RoleBaseline,
   RoleDynamicContext,
   AgentMessage,
-} from '../../types/roleDiscovery';
+} from "../../types/roleDiscovery";
 
 interface AgentPanelProps {
   baseline: RoleBaseline | null;
@@ -16,34 +16,41 @@ interface AgentPanelProps {
 }
 
 /**
- * AgentPanel - Right sidebar with agent chat and role model display
+ * AgentPanel - Interactive panel for role discovery with agent chat and context display
  *
  * Features:
- * - Tab navigation between AGENT and ROLE MODEL views
- * - Real-time chat interface with the discovery agent
- * - Progress indicator showing completeness
- * - Role model display showing baseline and accumulated context
- * - Gaps indicator showing missing critical information
+ * - Two-tab interface: AGENT (chat) and CONTEXT (role model view)
+ * - Real-time progress tracking and gap indicators
+ * - Mock chat interface (Phase 1A - to be replaced with LLM in Phase 1B)
+ * - Static mockup with no backend data (Phase 1A)
+ *
+ * Phase 1A (Current): Static UI with mock agent responses, progress display
+ * Phase 1B (Future): Will use baseline/context props to display actual role data from LLM
+ *
+ * @param baseline - Role baseline data (not used in Phase 1A)
+ * @param context - Dynamic context from agent (not used in Phase 1A)
+ * @param progress - Completion percentage (0-100)
+ * @param gaps - Array of missing section descriptions
  *
  * @example
  * ```tsx
  * <AgentPanel
- *   baseline={baselineData}
- *   context={dynamicContext}
+ *   baseline={null}
+ *   context={{}}
  *   progress={75}
  *   gaps={['Team context incomplete']}
  * />
  * ```
  */
 export function AgentPanel({
-  baseline,
-  context,
+  baseline: _baseline, // TODO Phase 1B: Use to display actual role baseline data
+  context: _context, // TODO Phase 1B: Use to display dynamic context from agent
   progress,
   gaps,
 }: AgentPanelProps): JSX.Element {
-  const [tab, setTab] = useState<'AGENT' | 'ROLE MODEL'>('AGENT');
+  const [tab, setTab] = useState<"AGENT" | "CONTEXT">("AGENT");
   const [messages, setMessages] = useState<AgentMessage[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const chatRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll chat to bottom when messages change
@@ -57,32 +64,32 @@ export function AgentPanel({
     if (!input.trim()) return;
 
     const userMessage: AgentMessage = {
-      from: 'user',
+      from: "user",
       text: input.trim(),
       timestamp: new Date(),
     };
 
     setMessages((m) => [...m, userMessage]);
-    setInput('');
+    setInput("");
 
-    // Mock agent response (Phase 1A: dummy data)
+    // Phase 1A: Mock agent responses
+    // TODO Phase 1B: Replace with LLM API call
     setTimeout(() => {
-      const q = input.toLowerCase();
-      let response = 'Ask me about the interview design process.';
+      const query = input.toLowerCase();
+      let response = "Ask me about the interview design process.";
 
-      if (q.includes('why')) {
+      if (query.includes("why")) {
         response =
-          'Each field shapes the interview. Title sets difficulty, stack targets questions.';
-      } else if (q.includes('skip')) {
+          "Each field shapes the interview. Title sets difficulty, stack targets questions.";
+      } else if (query.includes("skip")) {
         response =
-          '60% completeness unlocks Phase 2. More context = better results.';
-      } else if (q.includes('next')) {
-        response =
-          'Next, we select interview stages based on this role model.';
+          "60% completeness unlocks Phase 2. More context = better results.";
+      } else if (query.includes("next")) {
+        response = "Next, we select interview stages based on this role model.";
       }
 
       const agentMessage: AgentMessage = {
-        from: 'agent',
+        from: "agent",
         text: response,
         timestamp: new Date(),
       };
@@ -92,210 +99,186 @@ export function AgentPanel({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleSend();
     }
   };
 
+  const completedSections = Math.round(progress / 16.67);
+
+  const tabs = [
+    { id: "AGENT" as const, icon: Brain, label: "AGENT" },
+    { id: "CONTEXT" as const, icon: FileText, label: "CONTEXT" },
+  ];
+
   return (
-    <div
-      style={{
-        width: 360,
-        background:
-          'linear-gradient(180deg, rgba(20,20,30,0.95) 0%, rgba(15,15,25,0.98) 100%)',
-        borderRight: '1px solid rgba(255,255,255,0.04)',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* Tab Navigation */}
-      <div
-        style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-      >
-        {(['AGENT', 'ROLE MODEL'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              flex: 1,
-              padding: '16px 20px',
-              background: tab === t ? 'rgba(255,255,255,0.02)' : 'transparent',
-              border: 'none',
-              borderBottom:
-                tab === t
-                  ? '2px solid rgba(139, 92, 246, 0.8)'
-                  : '2px solid transparent',
-              color: tab === t ? '#fff' : 'rgba(255,255,255,0.4)',
-              fontSize: 9,
-              letterSpacing: '0.15em',
-              cursor: 'pointer',
-              fontFamily: '"Space Mono", monospace',
-            }}
-          >
-            {t}
-          </button>
-        ))}
+    <div style={{ maxWidth: "380px" }}>
+      {/* Section Title */}
+      <div style={{ marginBottom: 24 }}>
+        <SubTitle>AGENT_PANEL</SubTitle>
       </div>
 
-      {/* Agent Tab */}
-      {tab === 'AGENT' ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {/* Agent Header */}
-          <div style={{ padding: 24 }}>
-            <div
+      {/* Main content card with dark variant - matches QuestionDetail */}
+      <LiquidMetalCard variant="chrome">
+        {/* Top Status Bar - Meta information matching QuestionDetail */}
+        <div
+          style={{
+            padding: 24,
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            display: "flex",
+            alignItems: "center",
+            gap: 20,
+            flexWrap: "wrap",
+          }}
+        >
+          <LiquidMetalCard variant="mercury">
+            <span
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-                marginBottom: 20,
+                padding: "6px 12px",
+                fontSize: 8,
+                fontWeight: 600,
+                letterSpacing: "0.15em",
+                border: "1px solid rgba(139, 92, 246, 0.3)",
               }}
             >
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  background:
-                    'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.2))',
-                  border: '1px solid rgba(139, 92, 246, 0.4)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'rgba(139, 92, 246, 0.9)',
-                }}
-              >
-                <Brain size={20} />
-              </div>
-              <div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: '#fff',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  ROLE DISCOVERY AGENT
-                </div>
-                <div
-                  style={{
-                    fontSize: 9,
-                    color: 'rgba(139, 92, 246, 0.8)',
-                    letterSpacing: '0.15em',
-                    marginTop: 4,
-                  }}
-                >
-                  PHASE 1
-                </div>
-              </div>
-            </div>
-
-            <LiquidMetalCard variant="dark" style={{ padding: 16 }}>
-              <div
-                style={{
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                  color:
-                    progress >= 60
-                      ? 'rgba(150,255,150,0.8)'
-                      : 'rgba(255,255,255,0.4)',
-                }}
-              >
-                {progress >= 60 ? '✓ READY TO PROCEED' : 'WAITING FOR INPUT'}
-              </div>
-            </LiquidMetalCard>
-          </div>
-
-          {/* Progress Bar */}
-          <div style={{ padding: '0 24px 20px' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 8,
-                  letterSpacing: '0.2em',
-                  color: 'rgba(255,255,255,0.3)',
-                }}
-              >
-                COMPLETENESS
-              </span>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
-                {progress}%
-              </span>
-            </div>
-            <div style={{ height: 4, background: 'rgba(255,255,255,0.06)' }}>
-              <div
-                style={{
-                  width: `${progress}%`,
-                  height: '100%',
-                  background:
-                    progress >= 60
-                      ? 'linear-gradient(90deg, rgba(150,255,150,0.5), rgba(150,255,150,0.9))'
-                      : 'linear-gradient(90deg, rgba(139, 92, 246, 0.4), rgba(139, 92, 246, 0.8))',
-                  boxShadow:
-                    progress >= 60
-                      ? '0 0 12px rgba(150,255,150,0.4)'
-                      : '0 0 10px rgba(139, 92, 246, 0.3)',
-                  transition: 'width 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Chat Messages */}
-          <div
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
+              PHASE 1
+            </span>
+          </LiquidMetalCard>
+          <span
+            style={{
+              fontSize: 9,
+              color: "rgba(255,255,255,0.4)",
+              letterSpacing: "0.1em",
+            }}
           >
+            {completedSections}/6 SECTIONS
+          </span>
+          <span
+            style={{
+              fontSize: 9,
+              color: progress >= 60 ? "#86efac" : "#fcd34d",
+              letterSpacing: "0.1em",
+            }}
+          >
+            {progress >= 60 ? "READY" : "IN PROGRESS"}
+          </span>
+
+          {/* Divider */}
+          <div
+            style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }}
+          />
+
+          {/* Gaps indicator */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div
-              ref={chatRef}
-              style={{ flex: 1, overflowY: 'auto', padding: '0 24px 16px' }}
+              style={{
+                width: 8,
+                height: 8,
+                background: gaps.length === 0 ? "#86efac" : "#fcd34d",
+                boxShadow:
+                  gaps.length === 0 ? "0 0 6px rgba(150,255,150,0.5)" : "none",
+              }}
+            />
+            <span
+              style={{
+                fontSize: 9,
+                color: "rgba(255,255,255,0.4)",
+                letterSpacing: "0.1em",
+              }}
             >
-              {messages.length === 0 ? (
-                <p
+              {gaps.length} GAPS
+            </span>
+          </div>
+        </div>
+
+        {/* Tab Navigation - matching QuestionDetail TabNav */}
+        <div style={{ padding: "0 24px" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              borderBottom: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            {tabs.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
                   style={{
-                    fontSize: 11,
-                    color: 'rgba(255,255,255,0.4)',
-                    lineHeight: 1.7,
-                    margin: 0,
+                    padding: "16px 28px",
+                    background: "transparent",
+                    border: "none",
+                    borderBottom:
+                      tab === t.id
+                        ? "2px solid rgba(255,255,255,0.4)"
+                        : "2px solid transparent",
+                    color:
+                      tab === t.id
+                        ? "rgba(255,255,255,0.85)"
+                        : "rgba(255,255,255,0.3)",
+                    fontSize: 9,
+                    letterSpacing: "0.12em",
+                    cursor: "pointer",
+                    fontFamily: '"Space Mono", monospace',
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    transition: "all 0.2s ease",
                   }}
                 >
-                  Ask me anything about this phase or what information helps design
-                  better interviews.
-                </p>
-              ) : (
-                messages.map((m, i) => (
-                  <LiquidMetalCard
+                  <Icon size={14} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        <div style={{ padding: 24 }}>
+          {tab === "AGENT" && (
+            <>
+              {/* Section Label */}
+              <div
+                ref={chatRef}
+                style={{
+                  maxHeight: 160,
+                  overflowY: "auto",
+                  marginBottom: messages.length > 0 ? 18 : 0,
+                }}
+              >
+                {messages.map((m, i) => (
+                  <div
                     key={i}
-                    variant={m.from === 'user' ? 'dark' : 'mercury'}
-                    style={{ padding: 12, marginBottom: 8 }}
+                    style={{
+                      padding: 12,
+                      marginBottom: 10,
+                      background:
+                        m.from === "user"
+                          ? "rgba(255,255,255,0.02)"
+                          : "rgba(139, 92, 246, 0.08)",
+                      border: `1px solid ${
+                        m.from === "user"
+                          ? "rgba(255,255,255,0.03)"
+                          : "rgba(139, 92, 246, 0.15)"
+                      }`,
+                    }}
                   >
                     <p
                       style={{
                         fontSize: 11,
-                        color: 'rgba(255,255,255,0.7)',
+                        color: "rgba(255,255,255,0.65)",
                         lineHeight: 1.6,
                         margin: 0,
                       }}
                     >
                       {m.text}
                     </p>
-                  </LiquidMetalCard>
-                ))
-              )}
-            </div>
-
-            {/* Chat Input */}
-            <div
-              style={{
-                padding: '16px 24px 24px',
-                borderTop: '1px solid rgba(255,255,255,0.04)',
-              }}
-            >
-              <div style={{ display: 'flex', gap: 8 }}>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -303,159 +286,303 @@ export function AgentPanel({
                   placeholder="Ask me anything..."
                   style={{
                     flex: 1,
-                    padding: '12px 16px',
-                    background: 'rgba(0,0,0,0.2)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#fff',
+                    padding: "12px 16px",
+                    background: "rgba(0,0,0,0.2)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                    color: "#fff",
                     fontSize: 11,
                     fontFamily: '"Space Mono", monospace',
-                    outline: 'none',
+                    outline: "none",
                   }}
                 />
                 <button
                   onClick={handleSend}
                   style={{
-                    padding: '12px 14px',
-                    background:
-                      'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.2))',
-                    border: '1px solid rgba(139, 92, 246, 0.4)',
-                    color: 'rgba(139, 92, 246, 0.9)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
+                    padding: "12px 14px",
+                    background: "rgba(139, 92, 246, 0.15)",
+                    border: "1px solid rgba(139, 92, 246, 0.25)",
+                    color: "#fff",
+                    cursor: "pointer",
                   }}
                 >
                   <Send size={14} />
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Role Model Tab */
-        <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-          {baseline ? (
-            <LiquidMetalCard variant="chrome" style={{ padding: 20, marginBottom: 20 }}>
-              <div
-                style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}
-              >
-                {baseline.level} {baseline.title}
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: 'rgba(255,255,255,0.4)',
-                  marginBottom: 16,
-                  letterSpacing: '0.1em',
-                }}
-              >
-                {baseline.department} · {baseline.location}
-              </div>
-              <div
-                style={{
-                  fontSize: 9,
-                  color: 'rgba(255,255,255,0.3)',
-                  marginBottom: 12,
-                }}
-              >
-                {baseline.teamSize} → {baseline.reportsTo}
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {baseline.stack?.map((tech, i) => (
-                  <span
-                    key={i}
-                    style={{
-                      padding: '4px 8px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      fontSize: 9,
-                      color: 'rgba(255,255,255,0.6)',
-                    }}
-                  >
-                    {tech}
-                  </span>
-                ))}
-              </div>
-            </LiquidMetalCard>
-          ) : (
-            <div style={{ textAlign: 'center', padding: 40 }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', margin: 0 }}>
-                Complete the baseline to build the role model
-              </p>
-            </div>
+            </>
           )}
 
-          {/* Dynamic Context */}
-          {Object.keys(context).filter((k) => context[k]).length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <SubTitle>CONTEXT</SubTitle>
-              <div style={{ marginTop: 16 }}>
-                {Object.entries(context)
-                  .filter(([, v]) => v)
-                  .map(([k, v]) => (
-                    <LiquidMetalCard
-                      key={k}
-                      variant="dark"
-                      style={{ padding: 16, marginBottom: 8 }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 8,
-                          letterSpacing: '0.15em',
-                          color: 'rgba(139, 92, 246, 0.8)',
-                          marginBottom: 8,
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {k.replace(/_/g, ' ')}
-                      </div>
-                      <p
-                        style={{
-                          fontSize: 11,
-                          color: 'rgba(255,255,255,0.6)',
-                          lineHeight: 1.6,
-                          margin: 0,
-                        }}
-                      >
-                        {v}
-                      </p>
-                    </LiquidMetalCard>
-                  ))}
-              </div>
-            </div>
-          )}
+          {tab === "CONTEXT" && (
+            <>
+              {/* Section Label */}
+              {/* Main Status Card - mercury variant */}
 
-          {/* Gaps Indicator */}
-          {gaps.length > 0 && (
-            <div>
-              <SubTitle>GAPS</SubTitle>
-              <div style={{ marginTop: 16 }}>
-                {gaps.map((g, i) => (
+              {/* Stats Row - mercury variant */}
+              <div style={{ display: "flex", gap: 14, marginBottom: 20 }}>
+                <LiquidMetalCard
+                  variant="mercury"
+                  style={{ flex: 1, padding: 20 }}
+                >
                   <div
-                    key={i}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '12px 16px',
-                      background: 'rgba(255,200,100,0.1)',
-                      border: '1px solid rgba(255,200,100,0.2)',
-                      marginBottom: 8,
+                      fontSize: 8,
+                      letterSpacing: "0.1em",
+                      color: "rgba(255,255,255,0.25)",
+                      marginBottom: 12,
                     }}
                   >
-                    <span style={{ color: 'rgba(255,200,100,0.9)' }}>
-                      <AlertCircle size={14} />
+                    COMPLETENESS
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "baseline", gap: 6 }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 32,
+                        fontWeight: 300,
+                        color: "rgba(255,255,255,0.85)",
+                      }}
+                    >
+                      {progress}
                     </span>
-                    <span style={{ fontSize: 10, color: 'rgba(255,200,100,0.9)' }}>
+                    <span
+                      style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}
+                    >
+                      %
+                    </span>
+                  </div>
+                </LiquidMetalCard>
+
+                <LiquidMetalCard
+                  variant="mercury"
+                  style={{ flex: 1, padding: 20 }}
+                >
+                  <div
+                    style={{
+                      fontSize: 8,
+                      letterSpacing: "0.1em",
+                      color: "rgba(255,255,255,0.25)",
+                      marginBottom: 12,
+                    }}
+                  >
+                    SECTIONS
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "baseline", gap: 6 }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 32,
+                        fontWeight: 300,
+                        color: "rgba(255,255,255,0.85)",
+                      }}
+                    >
+                      {completedSections}
+                    </span>
+                    <span
+                      style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}
+                    >
+                      /6
+                    </span>
+                  </div>
+                </LiquidMetalCard>
+              </div>
+
+              {/* Bottom Row - mercury variant */}
+              <div style={{ display: "flex", gap: 14, marginBottom: 28 }}>
+                <LiquidMetalCard
+                  variant="mercury"
+                  style={{ flex: 1, padding: 20 }}
+                >
+                  <div
+                    style={{
+                      fontSize: 8,
+                      letterSpacing: "0.1em",
+                      color: "rgba(255,255,255,0.25)",
+                      marginBottom: 12,
+                    }}
+                  >
+                    GAPS
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        background: gaps.length === 0 ? "#86efac" : "#fcd34d",
+                      }}
+                    />
+                    <span
+                      style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}
+                    >
+                      {gaps.length === 0
+                        ? "All complete"
+                        : `${gaps.length} missing`}
+                    </span>
+                  </div>
+                </LiquidMetalCard>
+
+                <LiquidMetalCard
+                  variant="mercury"
+                  style={{ flex: 1, padding: 20 }}
+                >
+                  <div
+                    style={{
+                      fontSize: 8,
+                      letterSpacing: "0.1em",
+                      color: "rgba(255,255,255,0.25)",
+                      marginBottom: 12,
+                    }}
+                  >
+                    STATUS
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        background: progress >= 60 ? "#86efac" : "#a78bfa",
+                      }}
+                    />
+                    <span
+                      style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}
+                    >
+                      {progress >= 60 ? "Ready" : "Gathering"}
+                    </span>
+                  </div>
+                </LiquidMetalCard>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    width: 5,
+                    height: 5,
+                    background: "rgba(255,255,255,0.25)",
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.12em",
+                    color: "rgba(255,255,255,0.25)",
+                  }}
+                >
+                  ROLE_MODEL
+                </span>
+              </div>
+
+              <LiquidMetalCard
+                variant="mercury"
+                style={{ padding: 24, marginBottom: 20 }}
+              >
+                <div
+                  style={{
+                    fontSize: 8,
+                    letterSpacing: "0.1em",
+                    color: "rgba(255,255,255,0.25)",
+                    marginBottom: 14,
+                  }}
+                >
+                  BASELINE
+                </div>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "rgba(255,255,255,0.6)",
+                    margin: 0,
+                    lineHeight: 1.7,
+                  }}
+                >
+                  Complete the baseline sections to build the role model. This
+                  will show the accumulated context from your inputs.
+                </p>
+              </LiquidMetalCard>
+
+              {/* Gaps */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    width: 5,
+                    height: 5,
+                    background: "rgba(255,255,255,0.25)",
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.12em",
+                    color: "rgba(255,255,255,0.25)",
+                  }}
+                >
+                  MISSING_SECTIONS
+                </span>
+              </div>
+
+              {gaps.map((g, i) => (
+                <LiquidMetalCard
+                  key={i}
+                  variant="mercury"
+                  style={{ padding: 16, marginBottom: 10 }}
+                >
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 12 }}
+                  >
+                    <div
+                      style={{ width: 5, height: 5, background: "#fcd34d" }}
+                    />
+                    <span
+                      style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}
+                    >
                       {g}
                     </span>
                   </div>
-                ))}
-              </div>
-            </div>
+                </LiquidMetalCard>
+              ))}
+            </>
           )}
         </div>
-      )}
+
+        {/* Bottom accent line - matching QuestionDetail */}
+        <div
+          style={{
+            height: 2,
+            background:
+              progress >= 60
+                ? "linear-gradient(90deg, rgba(134,239,172,0.3), rgba(134,239,172,0.6), rgba(134,239,172,0.3))"
+                : "linear-gradient(90deg, rgba(252,211,77,0.2), rgba(252,211,77,0.4), rgba(252,211,77,0.2))",
+          }}
+        />
+      </LiquidMetalCard>
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        input::placeholder { color: rgba(255,255,255,0.2); }
+        input:focus { border-color: rgba(139, 92, 246, 0.3) !important; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+      `}</style>
     </div>
   );
 }
+
+export default AgentPanel;

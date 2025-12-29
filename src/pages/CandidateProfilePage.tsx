@@ -22,7 +22,7 @@ import {
   SubTitle,
   SidebarNav,
 } from "../components";
-import { getCandidateById } from "../mocks";
+import { getCandidateById, mockStages } from "../mocks";
 
 /**
  * CandidateProfilePage - Detailed candidate profile
@@ -59,26 +59,7 @@ export default function CandidateProfilePage(): JSX.Element {
           minHeight: "60vh",
         }}
       >
-        <LiquidMetalCard
-          variant="mercury"
-          style={{ padding: 60, textAlign: "center" }}
-        >
-          <h2 style={{ fontSize: 24, marginBottom: 16 }}>
-            Candidate Not Found
-          </h2>
-          <button
-            onClick={() => navigate("/")}
-            style={{
-              padding: "12px 24px",
-              background: "rgba(255,255,255,0.1)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Back to Roles
-          </button>
-        </LiquidMetalCard>
+        No Candidate Found
       </div>
     );
   }
@@ -104,33 +85,6 @@ export default function CandidateProfilePage(): JSX.Element {
 
   return (
     <>
-      {/* Back button */}
-      <div style={{ marginBottom: 32 }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "transparent",
-            border: "none",
-            color: "rgba(255,255,255,0.6)",
-            cursor: "pointer",
-            fontSize: 10,
-            letterSpacing: "0.15em",
-            transition: "color 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = "#fff";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = "rgba(255,255,255,0.6)";
-          }}
-        >
-          <ArrowLeft size={12} /> BACK TO PIPELINE
-        </button>
-      </div>
-
       {/* <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {stages.map((s) => (
           <div key={s.id} style={{ flex: 1, minWidth: 280 }}>
@@ -145,10 +99,10 @@ export default function CandidateProfilePage(): JSX.Element {
       </div> */}
 
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-        {candidate.stages.map((stage) => {
+        {mockStages.map((stage) => {
           const Icon = stageIcons[stage.name] || FileText;
           const isComplete = stage.status === "COMPLETED";
-          const isActive = stage.status === "IN_PROGRESS";
+          const isActive = stage.status === "ACTIVE";
 
           return (
             <div key={stage.id} style={{ flex: 1, minWidth: 280 }}>
