@@ -28,6 +28,11 @@ dist-ssr
 amplify_outputs*
 amplifyconfiguration*
 
+# Environment variables (contains secrets)
+.env
+.env.local
+amplify/functions/**/.env
+
 # rulesync generated files
 .claude/
 .github/
