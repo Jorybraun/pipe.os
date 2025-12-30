@@ -38,6 +38,16 @@ type Story = StoryObj<typeof meta>;
  */
 export const Default: Story = {
   args: {
+    baseline: {
+      title: "Software Engineer",
+      level: "Mid",
+      department: "Engineering",
+    },
+    context: {
+      successCriteria: "Deliver MVP in 90 days",
+      challenges: "Legacy code migration",
+      culture: "Remote-first, async communication",
+    },
     progress: 33,
     gaps: [
       "Role identity incomplete",
@@ -53,6 +63,16 @@ export const Default: Story = {
  */
 export const HalfComplete: Story = {
   args: {
+    baseline: {
+      title: "Software Engineer",
+      level: "Mid",
+      department: "Engineering",
+    },
+    context: {
+      successCriteria: "Deliver MVP in 90 days",
+      challenges: "Legacy code migration",
+      culture: "Remote-first, async communication",
+    },
     progress: 50,
     gaps: ["Technical stack needs more detail", "Team structure incomplete"],
   },
@@ -64,6 +84,16 @@ export const HalfComplete: Story = {
  */
 export const Ready: Story = {
   args: {
+    baseline: {
+      title: "Software Engineer",
+      level: "Mid",
+      department: "Engineering",
+    },
+    context: {
+      successCriteria: "Deliver MVP in 90 days",
+      challenges: "Legacy code migration",
+      culture: "Remote-first, async communication",
+    },
     progress: 67,
     gaps: ["Optional: Add more team context"],
   },
@@ -75,6 +105,16 @@ export const Ready: Story = {
  */
 export const Complete: Story = {
   args: {
+    baseline: {
+      title: "Software Engineer",
+      level: "Mid",
+      department: "Engineering",
+    },
+    context: {
+      successCriteria: "Deliver MVP in 90 days",
+      challenges: "Legacy code migration",
+      culture: "Remote-first, async communication",
+    },
     progress: 100,
     gaps: [],
   },
@@ -86,6 +126,16 @@ export const Complete: Story = {
  */
 export const EarlyProgress: Story = {
   args: {
+    baseline: {
+      title: "Software Engineer",
+      level: "Mid",
+      department: "Engineering",
+    },
+    context: {
+      successCriteria: "Deliver MVP in 90 days",
+      challenges: "Legacy code migration",
+      culture: "Remote-first, async communication",
+    },
     progress: 16,
     gaps: [
       "Role identity incomplete",
