@@ -5,6 +5,9 @@ backend:
       commands:
         - nvm install 20
         - nvm use 20
+        - cd amplify/functions/questionAgent && npm ci
+        - cd ../jobDescriptionAgent && npm ci
+        - cd ../../..
     build:
       commands:
         - npm ci --cache .npm --prefer-offline
