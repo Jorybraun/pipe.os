@@ -1,14 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Briefcase,
-  Activity,
-  Users,
-  TrendingUp,
   Search,
-  Plus,
 } from "lucide-react";
-import { LiquidMetalCard, RoleCard, StatsCard } from "../components";
+import { RoleCard } from "../components";
 import { mockRoles, searchRoles } from "../mocks";
 import type { Role } from "../types";
 
@@ -45,17 +40,7 @@ export default function ListingPage(): JSX.Element {
   });
 
   // Calculate stats
-  const stats = {
-    totalRoles: mockRoles.length,
-    activeRoles: mockRoles.filter((r) => r.status === "ACTIVE").length,
-    totalCandidates: mockRoles.reduce((sum, r) => sum + r.candidateCount, 0),
-    avgScore: Math.round(
-      mockRoles
-        .filter((r) => r.avgScore > 0)
-        .reduce((sum, r) => sum + r.avgScore, 0) /
-        mockRoles.filter((r) => r.avgScore > 0).length
-    ),
-  };
+
 
   const handleRoleClick = (role: Role): void => {
     navigate(`/pipeline/${role.id}`);

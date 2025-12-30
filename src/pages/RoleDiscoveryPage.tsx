@@ -1,5 +1,5 @@
-import { useState, useEffect, Fragment } from "react";
-import { Activity, ArrowRight, Check, CheckCircle } from "lucide-react";
+import { useState, Fragment } from "react";
+import { Check } from "lucide-react";
 import AgentPanel from "../components/RoleDiscovery/AgentPanel";
 import { BaselineForm } from "../components/RoleDiscovery/BaselineForm";
 import type {
@@ -8,10 +8,10 @@ import type {
   RoleDynamicContext,
   RoleDiscoveryProgress,
 } from "../types/roleDiscovery";
-import { LiquidMetalCard } from "../components";
-import { mockStages } from "../mocks";
 
-function PhaseProgress({ current }) {
+
+
+function PhaseProgress({ current }: { current: number }) {
   const phases = ["ROLE DISCOVERY", "PIPELINE STAGES", "QUESTIONS", "METRICS"];
 
   return (
@@ -112,13 +112,11 @@ function PhaseProgress({ current }) {
  * - Phase 1C (future): Internal testing and refinement
  */
 export default function RoleDiscoveryPage(): JSX.Element {
-  const [mounted, setMounted] = useState(false);
+  // const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<Partial<RoleDiscoveryData>>({});
   const [openSection, setOpenSection] = useState<string>("identity");
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+
 
   // Update a single field
   const handleChange = (
@@ -206,17 +204,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
   if (data.challenges) context.challenges = data.challenges;
   if (data.culture) context.culture = data.culture;
 
-  const handleContinue = (): void => {
-    if (progress.isReady) {
-      console.log("[RoleDiscovery] Ready to proceed to Phase 2", {
-        baseline,
-        context,
-        progress,
-      });
-      // TODO: Navigate to Phase 2 (Pipeline Builder)
-      // navigate('/pipeline/:id/builder')
-    }
-  };
+
 
   return (
     <>

@@ -16,7 +16,7 @@ import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import { QuestionDetail } from "./components/QuestionDetail";
-import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { SubTitle } from "./components/ui/SubTitle";
 
 /**
@@ -27,13 +27,7 @@ import { SubTitle } from "./components/ui/SubTitle";
  * - Shared sidebar navigation
  * - Outlet for nested route content
  */
-interface ActionsProps {
-  progress?: {
-    completeness: number;
-    isReady: boolean;
-  };
-  onContinue?: () => void;
-}
+
 
 const SubHeader = () => {
   const navigate = useNavigate();
@@ -155,16 +149,7 @@ function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
 
-  // Mock progress data for Actions component
-  const mockProgress = {
-    completeness: 75,
-    isReady: true,
-  };
 
-  const handlePhase2Continue = () => {
-    console.log("Navigating to Phase 2");
-    // Add navigation logic here
-  };
 
   const handleNewRole = (): void => {
     navigate("/pipeline/new");

@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import {
   MapPin,
   Mail,
@@ -12,15 +11,11 @@ import {
   Mic,
   Users,
   FileText,
-  ArrowLeft,
 } from "lucide-react";
 import {
-  Layout,
-  ProfileHeader,
   LiquidMetalCard,
   MetalScoreRing,
   SubTitle,
-  SidebarNav,
 } from "../components";
 import { getCandidateById, mockStages } from "../mocks";
 
@@ -43,9 +38,9 @@ const stageIcons: Record<string, typeof Phone> = {
 
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState("profile");
-  const [isAgentOpen, setIsAgentOpen] = useState(false);
+  // const navigate = useNavigate();
+  // const [activeSection, setActiveSection] = useState("profile");
+  // const [isAgentOpen, setIsAgentOpen] = useState(false);
 
   const candidate = id ? getCandidateById(id) : undefined;
 

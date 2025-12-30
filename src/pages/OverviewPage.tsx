@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Outlet } from "react-router-dom";
 import {
-  ArrowLeft,
-  Building,
-  MapPin,
-  User,
   CheckCircle,
   Activity,
   Phone,
@@ -13,8 +9,10 @@ import {
   FileText,
   Mic,
   Users,
+  Building,
+  MapPin,
 } from "lucide-react";
-import { LiquidMetalCard, SubTitle } from "../components";
+import { LiquidMetalCard } from "../components";
 import {
   getRoleById,
   getStagesByPipelineId,
@@ -265,7 +263,7 @@ function CandidateKanbanCard({
 
             {/* Name */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <User size={12} color="rgba(255,255,255,0.25)" />
+              <Users size={12} color="rgba(255,255,255,0.25)" />
               <span
                 style={{
                   fontSize: 10,
@@ -334,7 +332,7 @@ function CandidateKanbanCard({
 }
 
 export default function OverviewPage(): JSX.Element {
-  const { id, stage, questionId } = useParams<{
+  const { id, stage } = useParams<{
     id: string;
     stage?: string;
     questionId?: string;
@@ -351,7 +349,7 @@ export default function OverviewPage(): JSX.Element {
   const allCandidates = id ? getCandidatesByPipelineId(id) : [];
 
   // Find current stage for back button text
-  const currentStage = stage ? stages.find((s) => s.id === stage) : undefined;
+
 
   // Group candidates by their current stage
   const candidatesByStage = stages.reduce((acc, stage) => {
@@ -412,7 +410,7 @@ export default function OverviewPage(): JSX.Element {
     );
   }
 
-  const totalCandidates = allCandidates.length;
+
 
   return (
     <div
