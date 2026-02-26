@@ -61,7 +61,6 @@ export function Layout({
           fit="cover"
         />
       </div>
-
       {/* Chrome mesh grid */}
       <div
         style={{
@@ -75,15 +74,8 @@ export function Layout({
           pointerEvents: "none",
         }}
       />
-
-      {/* Floating chrome orbs */}
-      {/* <FloatingOrbs /> */}
-
       {/* Header */}
-      <div style={{ position: "relative", zIndex: 1 }}>
-        {header}
-      </div>
-
+      <div style={{ position: "relative", zIndex: 1 }}>{header}</div>
       {/* Layout with sidebar and agent panel */}
       <div
         style={{
@@ -147,7 +139,6 @@ export function Layout({
           {children}
         </main>
       </div>
-
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
         

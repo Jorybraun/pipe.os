@@ -1,12 +1,92 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 
 const schema = a.schema({
-  // Legacy Todo model (keeping for now, can remove later)
-  Todo: a
+  /**
+   * Pipeline Model
+   *
+   * Core entity for the Pipe platform. Represents a hiring pipeline
+   * with a role definition, stages, and candidate assessments.
+   *
+   * MVP fields only — rich role context (JD generation, agent discovery)
+   * is deferred to post-MVP via RoleContext model.
+   */
+  Pipeline: a
     .model({
-      content: a.string(),
+      // Role identity
+      title: a.string().required(),
+      level: a.enum(['Junior', 'Mid', 'Senior', 'Staff', 'Principal', 'Lead', 'Manager']),
+      stack: a.string().array(),
+      description: a.string(),
+
+      // Pipeline status
+      status: a.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']),
+
+      // Relations
+      stages: a.hasMany('Stage', 'pipelineId'),
+      candidates: a.hasMany('Candidate', 'pipelineId'),
+
+      // Metadata
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
     })
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [
+      allow.owner(), // Only the creator can access their pipelines
+    ]),
+
+  /**
+   * Stage Model
+   *
+   * A single assessment stage within a pipeline.
+   * MVP only supports CODE_REVIEW type.
+   */
+  Stage: a
+    .model({
+      pipelineId: a.id().required(),
+      pipeline: a.belongsTo('Pipeline', 'pipelineId'),
+      type: a.enum(['CODE_REVIEW']),
+      order: a.integer(),
+      config: a.json(), // stage-specific settings (e.g. which code snippet to use)
+      assessments: a.hasMany('Assessment', 'stageId'),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  /**
+   * Candidate Model
+   *
+   * A person invited to complete a pipeline assessment.
+   * inviteToken is a UUID used in candidate-facing URL (no auth required).
+   */
+  Candidate: a
+    .model({
+      pipelineId: a.id().required(),
+      pipeline: a.belongsTo('Pipeline', 'pipelineId'),
+      name: a.string(),
+      email: a.email(),
+      inviteToken: a.string(), // UUID used in candidate-facing URL, no auth required
+      status: a.enum(['INVITED', 'IN_PROGRESS', 'COMPLETED']),
+
+      // Relations
+      assessments: a.hasMany('Assessment', 'candidateId'),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  /**
+   * Assessment Model
+   *
+   * A candidate's submission for a specific stage.
+   * submission is the raw candidate annotations; score is computed on submission.
+   */
+  Assessment: a
+    .model({
+      candidateId: a.id().required(),
+      candidate: a.belongsTo('Candidate', 'candidateId'),
+      stageId: a.id().required(),
+      stage: a.belongsTo('Stage', 'stageId'),
+      submission: a.json(),  // candidate's annotations
+      score: a.float(),
+      completedAt: a.datetime(),
+    })
+    .authorization((allow) => [allow.owner()]),
 
   /**
    * RoleContext Model
@@ -65,38 +145,7 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: 'userPool',  // Changed to userPool for owner auth
-    apiKeyAuthorizationMode: {
-      expiresInDays: 30,
-    },
+    defaultAuthorizationMode: 'userPool',
   },
 });
 
-/*== STEP 2 ===============================================================
-Go to your frontend source code. From your client-side code, generate a
-Data client to make CRUDL requests to your table. (THIS SNIPPET WILL ONLY
-WORK IN THE FRONTEND CODE FILE.)
-
-Using JavaScript or Next.js React Server Components, Middleware, Server 
-Actions or Pages Router? Review how to generate Data clients for those use
-cases: https://docs.amplify.aws/gen2/build-a-backend/data/connect-to-API/
-=========================================================================*/
-
-/*
-"use client"
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "@/amplify/data/resource";
-
-const client = generateClient<Schema>() // use this Data client for CRUDL requests
-*/
-
-/*== STEP 3 ===============================================================
-Fetch records from the database and use them in your frontend component.
-(THIS SNIPPET WILL ONLY WORK IN THE FRONTEND CODE FILE.)
-=========================================================================*/
-
-/* For example, in a React component, you can use this snippet in your
-  function's RETURN statement */
-// const { data: todos } = await client.models.Todo.list()
-
-// return <ul>{todos.map(todo => <li key={todo.id}>{todo.content}</li>)}</ul>

@@ -41,3 +41,9 @@ amplify/functions/**/.env
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Gemini CLI
+.gemini/
+
+# Vite
+vite.config.ts.timestamp-*

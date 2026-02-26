@@ -18,71 +18,43 @@ Build a multi-agent system for role discovery:
 
 ```
 amplify/
-├── backend.ts                  # Backend definition (update to include functions)
+├── backend.ts                  # Backend definition
 ├── data/
-│   └── resource.ts             # Data schema (add RoleContext model)
-├── auth/
-│   └── resource.ts             # Cognito auth (already configured)
+│   └── resource.ts             # Data schema (RoleContext model)
 └── functions/
     ├── questionAgent/
-    │   ├── resource.ts         # Function definition (already exists)
-    │   ├── handler.ts          # Main lambda (TO BE CREATED)
-    │   ├── costTracker.ts      # Cost tracking middleware (TO BE CREATED)
-    │   ├── validation.ts       # Input validation with Zod (TO BE CREATED)
-    │   ├── extractor.ts        # Extract facts from responses (TO BE CREATED)
-    │   ├── assessor.ts         # Evaluate readiness (TO BE CREATED)
-    │   ├── generator.ts        # Generate questions (TO BE CREATED)
-    │   ├── reviewer.ts         # Quality check loop (TO BE CREATED)
-    │   ├── prompts.ts          # All prompt templates (TO BE CREATED)
-    │   ├── types.ts            # Shared types (TO BE CREATED)
-    │   └── package.json        # Dependencies (TO BE CREATED)
-    │
+    │   ├── handler.ts          # Main lambda (NEXT STEP)
+    │   └── prompts.ts          # All prompt templates (NEXT STEP)
     └── jobDescriptionAgent/
-        ├── resource.ts         # Function definition (already exists)
-        ├── handler.ts          # Main lambda (TO BE CREATED)
-        ├── generator.ts        # Generate JD (TO BE CREATED)
-        ├── prompts.ts          # Prompt templates (TO BE CREATED)
-        ├── types.ts            # Shared types (TO BE CREATED)
-        └── package.json        # Dependencies (TO BE CREATED)
+        └── handler.ts          # Main lambda (NEXT STEP)
 
 src/
 ├── pages/
-│   └── RoleDiscoveryPage.tsx   # Main page (already exists - will be updated)
+│   └── RoleDiscoveryPage.tsx   # ✅ UI Shell Implemented
 ├── hooks/
-│   └── useRoleDiscovery.ts     # Client state management (TO BE CREATED)
-├── types/
-│   └── roleDiscovery.ts        # Type definitions (already exists - will be extended)
+│   └── useRoleDiscovery.ts     # Client state management (TO BE WIRED)
 └── components/
-    ├── RoleDiscovery/
-    │   ├── BaselineForm.tsx    # Part 1 form (already exists)
-    │   ├── DynamicSection.tsx  # Part 2 dynamic form (TO BE CREATED)
-    │   └── AgentPanel.tsx      # Agent panel (already exists - will be updated)
-    └── ui/
-        ├── FormSection.tsx     # Collapsible section (already exists)
-        └── form/
-            ├── FieldGroup.tsx      # Form field container (already exists)
-            ├── TextInput.tsx       # Text input (already exists)
-            ├── TextareaInput.tsx   # Textarea (already exists)
-            ├── TagsInput.tsx       # Tags input (already exists)
-            ├── SelectInput.tsx     # Select dropdown (already exists)
-            └── RadioGroup.tsx      # Radio buttons (already exists)
+    └── RoleDiscovery/
+        └── Conversational/
+            ├── ConversationalForm.tsx # ✅ Implemented (Grid Stacked)
+            ├── FormFieldSet.tsx       # ✅ Implemented
+            └── PhaseProgress.tsx      # ✅ Implemented
 ```
 
-**Legend:**
-- `(already exists)` - File exists in codebase, may need updates
-- `(TO BE CREATED)` - New file to be implemented
-- `(will be updated)` - Existing file needs modification for backend integration
+---
 
-**⚠️ IMPORTANT: AWS MCP Server Usage**
+## UI Architecture (Implemented)
 
-For ALL AWS Amplify operations (deployment, secrets management, configuration, troubleshooting), use the **AWS MCP server** rather than running commands manually. This includes:
+The UI uses a **Grid Stacking** strategy for phase transitions:
+- All phases are stacked in `grid-area: 1 / 1`.
+- Navigation between phases triggers a horizontal slide (`translateX`) and opacity fade.
+- The sidebar uses `TabNav` to switch between **SUMMARY** and **SETTINGS**.
 
-- Setting secrets: Use MCP server instead of `npx ampx sandbox secret set`
-- Deploying: Use MCP server instead of `npx ampx sandbox`
-- Checking status: Use MCP server for resource information
-- Debugging: Use MCP server to inspect Amplify resources and logs
-
-The AWS MCP server provides better error handling, context awareness, and integration with the development workflow.
+### Client Hook Integration (Next Step)
+The hook needs to be wired to the `ConversationalForm` to:
+1. Trigger Lambda calls on phase completion.
+2. Update the `RoleContext` state with agent responses.
+3. Manage the `allowFollowUps` setting from the sidebar.
 
 ---
 

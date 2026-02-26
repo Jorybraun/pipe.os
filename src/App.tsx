@@ -7,16 +7,19 @@ import {
   Outlet,
   useNavigate,
   useParams,
+  useLocation,
 } from "react-router-dom";
+import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
 import { Layout, ProfileHeader, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
 import OverviewPage from "./pages/OverviewPage";
 import PipelineDetailPage from "./pages/PipelineDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
-import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
+import RoleDiscoveryPage from "./pages/RoleDiscoveryPage"; // Legacy — preserved for post-MVP agentic discovery
+import PipelineCreatePage from "./pages/PipelineCreatePage";
 import { QuestionDetail } from "./components/QuestionDetail";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import { SubTitle } from "./components/ui/SubTitle";
 
 /**
@@ -28,10 +31,17 @@ import { SubTitle } from "./components/ui/SubTitle";
  * - Outlet for nested route content
  */
 
-
 const SubHeader = () => {
   const navigate = useNavigate();
   const { id, stage, questionId } = useParams();
+  const location = useLocation();
+
+  // Only render on pipeline context routes — not on shell pages like / or /pipeline/new
+  const isPipelineContext =
+    location.pathname.startsWith("/pipeline/") &&
+    !location.pathname.startsWith("/pipeline/new");
+
+  if (!isPipelineContext) return null;
 
   // Mock data
   const role = { title: "Senior Full-Stack Engineer" };
@@ -148,8 +158,7 @@ const SubHeader = () => {
 function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
-
-
+  const { signOut } = useAuthenticator();
 
   const handleNewRole = (): void => {
     navigate("/pipeline/new");
@@ -162,28 +171,50 @@ function AppLayout(): JSX.Element {
           title="PIPE_OS"
           subtitle="V.2.0.4"
           actions={
-            <button
-              onClick={handleNewRole}
-              style={{
-                padding: "14px 28px",
-                background:
-                  "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
-                border: "1px solid rgba(255,255,255,0.2)",
-                color: "#fff",
-                fontSize: 11,
-                letterSpacing: "0.15em",
-                fontWeight: 700,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-              }}
-            >
-              <Plus size={16} />
-              CREATE NEW PIPE
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                onClick={handleNewRole}
+                style={{
+                  padding: "14px 28px",
+                  background:
+                    "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  color: "#fff",
+                  fontSize: 11,
+                  letterSpacing: "0.15em",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                }}
+              >
+                <Plus size={16} />
+                CREATE NEW PIPE
+              </button>
+              <button
+                onClick={signOut}
+                style={{
+                  padding: "14px 18px",
+                  background: "transparent",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "rgba(255,255,255,0.5)",
+                  fontSize: 11,
+                  letterSpacing: "0.15em",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  transition: "all 0.2s ease",
+                }}
+                title="Sign out"
+              >
+                <LogOut size={14} />
+                SIGN OUT
+              </button>
+            </div>
           }
         />
       }
@@ -218,11 +249,9 @@ function AppLayout(): JSX.Element {
  * - /screenings/:id/preview → CandidateScreeningPage
  */
 function App(): JSX.Element {
-  return (
+  const content = (
     <BrowserRouter>
       <Routes>
-        {/* Role Discovery - Phase 1 (custom layout, no AppLayout wrapper) */}
-
         {/* Routes with shared Layout */}
         <Route element={<AppLayout />}>
           {/* Main entry point */}
@@ -235,7 +264,12 @@ function App(): JSX.Element {
             <Route path=":stage/:questionId" element={<QuestionDetail />} />
           </Route>
 
+          {/* MVP: simplified create form. RoleDiscoveryPage preserved for post-MVP agent flow. */}
           <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+          <Route
+            path="/pipeline/new/discovery"
+            element={<RoleDiscoveryPage />}
+          />
 
           {/* Candidate routes */}
           <Route path="/candidates/:id" element={<CandidateProfilePage />} />
@@ -250,6 +284,13 @@ function App(): JSX.Element {
       </Routes>
     </BrowserRouter>
   );
+
+  // Temporary bypass for E2E tests
+  if (import.meta.env.VITE_SKIP_AUTH === 'true') {
+    return content;
+  }
+
+  return <Authenticator>{content}</Authenticator>;
 }
 
 export default App;

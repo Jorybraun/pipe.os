@@ -74,6 +74,7 @@ export interface RoleDynamicContext {
  * Combines structured baseline + optional fields + dynamic context
  */
 export interface RoleDiscoveryData extends RoleBaseline, RoleBaselineOptional {
+  allowFollowUps?: boolean;
   // Dynamic context fields (optional)
   successCriteria?: string;
   challenges?: string;

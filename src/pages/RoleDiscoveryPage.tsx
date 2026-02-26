@@ -1,348 +1,215 @@
-import { useState, Fragment } from "react";
-import { Check } from "lucide-react";
-import AgentPanel from "../components/RoleDiscovery/AgentPanel";
-import { BaselineForm } from "../components/RoleDiscovery/BaselineForm";
-import type {
-  RoleDiscoveryData,
-  RoleBaseline,
-  RoleDynamicContext,
-  RoleDiscoveryProgress,
-} from "../types/roleDiscovery";
-
-
-
-function PhaseProgress({ current }: { current: number }) {
-  const phases = ["ROLE DISCOVERY", "PIPELINE STAGES", "QUESTIONS", "METRICS"];
-
-  return (
-    <div
-      style={{
-        padding: "0px 0px 12px",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-        display: "flex",
-        gap: 8,
-        alignItems: "center",
-      }}
-    >
-      {phases.map((phase, i) => {
-        const isActive = i === current - 1;
-        const isComplete = i < current - 1;
-        return (
-          <Fragment key={phase}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div
-                style={{
-                  width: 26,
-                  height: 26,
-                  background: isComplete
-                    ? "rgba(150,255,150,0.2)"
-                    : isActive
-                    ? "rgba(139,92,246,0.3)"
-                    : "rgba(255,255,255,0.05)",
-                  border: `1px solid ${
-                    isComplete
-                      ? "rgba(150,255,150,0.4)"
-                      : isActive
-                      ? "rgba(139,92,246,0.5)"
-                      : "rgba(255,255,255,0.1)"
-                  }`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: isComplete
-                    ? "rgba(150,255,150,0.9)"
-                    : isActive
-                    ? "rgba(139,92,246,0.9)"
-                    : "rgba(255,255,255,0.3)",
-                  fontSize: 10,
-                  fontWeight: 700,
-                }}
-              >
-                {isComplete ? <Check size={14} /> : i + 1}
-              </div>
-              <span
-                style={{
-                  fontSize: 9,
-                  letterSpacing: "0.1em",
-                  color: isActive ? "#fff" : "rgba(255,255,255,0.4)",
-                  fontWeight: isActive ? 700 : 400,
-                }}
-              >
-                {phase}
-              </span>
-            </div>
-            {i < phases.length - 1 && (
-              <div
-                style={{
-                  flex: 1,
-                  height: 1,
-                  background: isComplete
-                    ? "rgba(150,255,150,0.3)"
-                    : "rgba(255,255,255,0.08)",
-                  maxWidth: 50,
-                }}
-              />
-            )}
-          </Fragment>
-        );
-      })}
-    </div>
-  );
-}
+import { useState } from "react";
+import { ConversationalForm } from "../components/RoleDiscovery/Conversational/ConversationalForm";
+import { PhaseProgress } from "../components/RoleDiscovery/Conversational/PhaseProgress";
+import { LiquidMetalCard } from "../components/ui/LiquidMetalCard";
+import { TabNav } from "../components/ui/TabNav";
+import { FieldGroup, RadioGroup } from "../components/ui/form";
+import { Layout } from "lucide-react";
+import { Settings } from "lucide-react";
+import type { RoleDiscoveryData } from "../types/roleDiscovery";
 
 /**
- * RoleDiscoveryPage - Phase 1: Role Discovery
+ * RoleDiscoveryPage - Conversational Role Discovery Flow
  *
- * Two-part flow for gathering role context:
- * 1. Structured Baseline (7 required fields)
- * 2. Dynamic Agent Exploration (contextual Q&A)
- *
- * Features:
- * - Collapsible form sections with completion indicators
- * - Real-time progress calculation
- * - Agent chat interface (Phase 1A: mock responses)
- * - Role model visualization
- * - 60% completion threshold to proceed to Phase 2
- *
- * Route: /pipeline/new
- *
- * Timeline:
- * - Phase 1A (current): Layout with dummy data, no LLM integration
- * - Phase 1B (future): Live LLM-powered agent
- * - Phase 1C (future): Internal testing and refinement
+ * A multi-phase, guided onboarding experience for gathering role context.
+ * Implements a single semantic form with sliding transitions between phases.
  */
 export default function RoleDiscoveryPage(): JSX.Element {
-  // const [mounted, setMounted] = useState(false);
-  const [data, setData] = useState<Partial<RoleDiscoveryData>>({});
-  const [openSection, setOpenSection] = useState<string>("identity");
-
-
+  const [data, setData] = useState<Partial<RoleDiscoveryData & { allowFollowUps: boolean }>>({
+    allowFollowUps: true, // Default to enabled
+    stack: [],
+  });
+  const [currentPhase, setCurrentPhase] = useState(0); // 0-indexed internally
+  const [activeTab, setActiveTab] = useState("summary");
 
   // Update a single field
   const handleChange = (
-    field: keyof RoleDiscoveryData,
-    value: string | string[]
+    field: string,
+    value: any,
   ): void => {
     setData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Field definitions for each section
-  const sections = {
-    identity: ["title", "level", "department", "location"] as const,
-    team: ["teamSize", "reportsTo"] as const,
-    tech: ["stack"] as const,
-    success: ["successCriteria"] as const,
-    challenges: ["challenges"] as const,
-    culture: ["culture"] as const,
+  const handleComplete = (finalData: any) => {
+    console.log("Conversational Form Complete:", finalData);
   };
 
-  // Check if a section is complete (all required fields filled)
-  const isSectionComplete = (sectionId: string): boolean => {
-    const fields = sections[sectionId as keyof typeof sections];
-    if (!fields) return false;
+  const phases = [
+    "Role Identity",
+    "Team Context",
+    "Technical Environment",
+    "Success Criteria",
+    "Challenges",
+    "Culture",
+    "Final Review"
+  ];
 
-    return fields.every((field) => {
-      const value = data[field];
-      if (Array.isArray(value)) {
-        return value.length > 0;
-      }
-      return value?.toString().trim();
-    });
-  };
-
-  // Calculate progress
-  const calculateProgress = (): RoleDiscoveryProgress => {
-    const allFields = Object.values(sections).flat();
-    const filledFields = allFields.filter((field) => {
-      const value = data[field];
-      if (Array.isArray(value)) {
-        return value.length > 0;
-      }
-      return value?.toString().trim();
-    }).length;
-
-    const completeness = Math.round((filledFields / allFields.length) * 100);
-    const isReady = completeness >= 60;
-
-    const gaps: string[] = [];
-    if (!isSectionComplete("identity")) gaps.push("Role identity incomplete");
-    if (!isSectionComplete("team")) gaps.push("Team context incomplete");
-    if (!isSectionComplete("tech"))
-      gaps.push("Technical environment incomplete");
-    if (!isSectionComplete("success")) gaps.push("Success criteria undefined");
-
-    return {
-      completeness,
-      isReady,
-      gaps,
-      filledFields,
-      totalFields: allFields.length,
-    };
-  };
-
-  const progress = calculateProgress();
-
-  // Extract baseline data (7 required fields)
-  const baseline: RoleBaseline | null =
-    isSectionComplete("identity") &&
-    isSectionComplete("team") &&
-    isSectionComplete("tech")
-      ? {
-          title: data.title!,
-          level: data.level!,
-          department: data.department!,
-          location: data.location!,
-          teamSize: data.teamSize!,
-          reportsTo: data.reportsTo!,
-          stack: data.stack!,
-        }
-      : null;
-
-  // Extract dynamic context (optional enrichment fields)
-  const context: RoleDynamicContext = {};
-  if (data.successCriteria) context.successCriteria = data.successCriteria;
-  if (data.challenges) context.challenges = data.challenges;
-  if (data.culture) context.culture = data.culture;
-
-
+  const sidebarTabs = [
+    { id: "summary", label: "SUMMARY", icon: <Layout size={14} /> },
+    { id: "settings", label: "SETTINGS", icon: <Settings size={14} /> }
+  ];
 
   return (
-    <>
-      {/* <div
-        style={{
-          display: "flex",
-          position: "relative",
-        }}
-      >
-        <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-          {mockStages.map((stage) => {
-            const Icon = stage.icon;
-            const isComplete = stage.status === "COMPLETED";
-            const isActive = stage.status === "ACTIVE";
+    <div style={{ padding: "0 20px", maxWidth: 1400, margin: "0 auto" }}>
+      {/* Header / Progress Indicator */}
+      <PhaseProgress current={currentPhase + 1} phases={phases} />
 
-            return (
-              <div key={stage.id} style={{ flex: 1, minWidth: 280 }}>
-                <LiquidMetalCard
-                  key={stage.id}
-                  variant={isActive ? "chrome" : "default"}
-                  hover
-                  style={{
-                    padding: 24,
-                    opacity: !isComplete && !isActive ? 0.4 : 1,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: 16,
-                    }}
-                  >
-                    <Icon
-                      size={16}
-                      color={isActive ? "#fff" : "rgba(255,255,255,0.4)"}
-                    />
-                    {isComplete && (
-                      <CheckCircle size={12} color="rgba(150,255,150,0.8)" />
-                    )}
-                    {isActive && (
-                      <Activity
-                        size={12}
-                        color="rgba(255,255,255,0.8)"
-                        style={{
-                          animation: "pulse 1.5s ease-in-out infinite",
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 9,
-                      letterSpacing: "0.2em",
-                      color: isActive ? "#fff" : "rgba(255,255,255,0.5)",
-                      marginBottom: 8,
-                    }}
-                  >
-                    {stage.name.toUpperCase()}
-                  </div>
-
-                  {isComplete && stage.score && (
-                    <div
-                      style={{
-                        fontSize: 28,
-                        fontWeight: 800,
-                        background:
-                          "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                        WebkitBackgroundClip: "text",
-                        WebkitTextFillColor: "transparent",
-                      }}
-                    >
-                      {stage.score}
-                    </div>
-                  )}
-
-                  {!isComplete && !isActive && (
-                    <div
-                      style={{
-                        fontSize: 28,
-                        fontWeight: 800,
-                        color: "rgba(255,255,255,0.15)",
-                      }}
-                    >
-                      —
-                    </div>
-                  )}
-                </LiquidMetalCard>
-              </div>
-            );
-          })}
-        </div>
-      </div> */}
-
-      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-        {/* Left Panel - Agent */}
-        <AgentPanel
-          baseline={baseline}
-          context={context}
-          progress={progress.completeness}
-          gaps={progress.gaps}
-        />
-
-        {/* Main Content - Form */}
-        <main
+      <div style={{ display: "flex", gap: 24, marginTop: 32 }}>
+        {/* Main Content Area */}
+        <section
           style={{
             flex: 1,
-            padding: "0 32px 120px",
             position: "relative",
-            zIndex: 1,
+            minHeight: "70vh",
           }}
         >
-          <PhaseProgress current={1} />
-          {/* Form Sections */}
-          <BaselineForm
-            data={data}
-            onChange={handleChange}
-            openSection={openSection}
-            onSectionToggle={setOpenSection}
-            isComplete={isSectionComplete}
-          />
-        </main>
-      </div>
+          <LiquidMetalCard 
+            variant="default"
+            style={{ 
+              padding: '48px',
+              minHeight: '640px'
+            }}
+          >
+            <ConversationalForm
+              data={data}
+              onChange={handleChange}
+              onComplete={handleComplete}
+              currentPhase={currentPhase}
+              onPhaseChange={setCurrentPhase}
+            />
+          </LiquidMetalCard>
+        </section>
 
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { overflow-x: hidden; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
-        input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.25); }
-        input:focus, textarea:focus, select:focus { border-color: rgba(139, 92, 246, 0.5) !important; outline: none; }
-        select option { background: #1a1a24; color: #fff; }
-      `}</style>
-    </>
+        {/* Right Sidebar - Dynamic Context / Settings */}
+        <aside style={{ width: 400 }}>
+           <div 
+             style={{ 
+               padding: 32,
+               height: 'fit-content',
+               minHeight: '500px',
+               background: 'rgba(255, 255, 255, 0.03)',
+               backdropFilter: 'blur(40px) saturate(150%)',
+               border: '1px solid rgba(255, 255, 255, 0.1)',
+               borderRadius: 16,
+               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+               position: 'relative',
+               overflow: 'hidden'
+             }}
+           >
+             {/* Decorative Gradient Glow */}
+             <div style={{
+               position: 'absolute',
+               top: -50,
+               right: -50,
+               width: 150,
+               height: 150,
+               background: 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)',
+               filter: 'blur(30px)',
+               pointerEvents: 'none'
+             }} />
+
+             <TabNav 
+               tabs={sidebarTabs} 
+               activeTab={activeTab} 
+               onTabChange={setActiveTab} 
+             />
+
+             {activeTab === "summary" && (
+               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                  <div style={{ 
+                    fontSize: 22, 
+                    fontWeight: 800,
+                    color: data.title ? '#fff' : 'rgba(255,255,255,0.15)',
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: '-0.02em',
+                    textTransform: 'uppercase',
+                    lineHeight: 1.2
+                  }}>
+                    {data.title || 'ROLE_TITLE...'}
+                  </div>
+                  
+                  <div style={{ 
+                    height: '1px', 
+                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)',
+                  }} />
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em' }}>LEVEL</span>
+                      <span style={{ fontSize: 11, color: data.level ? '#fff' : 'rgba(255,255,255,0.1)', fontWeight: 700 }}>{data.level || 'NOT_SET'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em' }}>DEPT</span>
+                      <span style={{ fontSize: 11, color: data.department ? '#fff' : 'rgba(255,255,255,0.1)', fontWeight: 700 }}>{data.department?.toUpperCase() || 'NOT_SET'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em' }}>LOC</span>
+                      <span style={{ fontSize: 11, color: data.location ? '#fff' : 'rgba(255,255,255,0.1)', fontWeight: 700 }}>{data.location?.toUpperCase() || 'NOT_SET'}</span>
+                    </div>
+                  </div>
+                  
+                  {data.stack && data.stack.length > 0 && (
+                    <>
+                      <div style={{ 
+                        height: '1px', 
+                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)',
+                      }} />
+                      <div>
+                        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em', display: 'block', marginBottom: 12 }}>TECH_STACK</span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {data.stack.map(s => (
+                            <div key={s} style={{ 
+                              fontSize: 9, 
+                              padding: '6px 10px', 
+                              background: 'rgba(139, 92, 246, 0.08)', 
+                              border: '1px solid rgba(139, 92, 246, 0.2)',
+                              borderRadius: 4,
+                              color: '#a78bfa',
+                              fontWeight: 700
+                            }}>
+                              {s.toUpperCase()}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+               </div>
+             )}
+
+             {activeTab === "settings" && (
+               <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                 <div style={{ 
+                    fontSize: 14, 
+                    fontWeight: 700,
+                    color: '#fff',
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase'
+                  }}>
+                    AGENT_CONFIGURATION
+                 </div>
+                 
+                 <div style={{ 
+                    height: '1px', 
+                    background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)',
+                  }} />
+
+                  <FieldGroup 
+                    label="AI FOLLOW-UP QUESTIONS" 
+                    hint="Should the AI agent ask clarifying questions to deepen the role discovery?"
+                  >
+                    <RadioGroup
+                      value={data.allowFollowUps ? 'Enabled' : 'Disabled'}
+                      onChange={(val) => handleChange('allowFollowUps', val === 'Enabled')}
+                      options={['Enabled', 'Disabled']}
+                    />
+                  </FieldGroup>
+               </div>
+             )}
+           </div>
+        </aside>
+      </div>
+    </div>
   );
 }
