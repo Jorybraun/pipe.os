@@ -16,7 +16,7 @@
 - [x] `Assessment` model in Amplify schema
 - [x] Remove legacy `Todo` model
 - [x] Fix schema auth — add guest access to Stage/Candidate/Assessment for candidate flow
-- [ ] **Run `npx ampx sandbox`** — confirm schema deploys cleanly. Fix any errors before continuing. ~15 min
+- [x] **Run `npx ampx sandbox`** — confirm schema deploys cleanly. Fix any errors before continuing. ✅
 
 ---
 
@@ -26,9 +26,9 @@
 >
 > This is the most important thing to build. Everything else depends on it.
 
-### Step 1: Invite link generation
-- [ ] **Generate `inviteToken` when creating a candidate** — UUID, stored on `Candidate.inviteToken`. Add a utility `src/lib/generateInviteToken.ts` that returns `crypto.randomUUID()`. ~30 min
-- [ ] **Recruiter copy-link button** — On `OverviewPage.tsx`, show each candidate's invite URL (`/assess/:inviteToken`). Button copies to clipboard. ~45 min
+### Step 1: Invite link generation ✅
+- [x] **Generate `inviteToken` when creating a candidate** — UUID, stored on `Candidate.inviteToken`. Add a utility `src/lib/generateInviteToken.ts` that returns `crypto.randomUUID()`. ✅
+- [x] **Recruiter copy-link button** — On `OverviewPage.tsx`, show each candidate's invite URL (`/assess/:inviteToken`). Button copies to clipboard. ✅
 
 ### Step 2: Candidate assessment hook
 - [ ] **Create `src/hooks/useAssessment.ts`** — handles all candidate-side data:

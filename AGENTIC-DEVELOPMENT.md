@@ -35,6 +35,7 @@ The `.rulesync/` directory contains all AI agent configuration:
 
 Rules are automatically synced to your AI coding tool via the `npm run rulesync` command:
 
+- **Gemini CLI**: `.gemini/` directory
 - **Claude (Cursor/Windsurf/etc)**: `.claude/` directory
 - **GitHub Copilot**: `.github/instructions/` directory
 
