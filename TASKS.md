@@ -30,14 +30,14 @@
 - [x] **Generate `inviteToken` when creating a candidate** — UUID, stored on `Candidate.inviteToken`. Add a utility `src/lib/generateInviteToken.ts` that returns `crypto.randomUUID()`. ✅
 - [x] **Recruiter copy-link button** — On `OverviewPage.tsx`, show each candidate's invite URL (`/assess/:inviteToken`). Button copies to clipboard. ✅
 
-### Step 2: Candidate assessment hook
-- [ ] **Create `src/hooks/useAssessment.ts`** — handles all candidate-side data:
+### Step 2: Candidate assessment hook ✅
+- [x] **Create `src/hooks/useAssessment.ts`** — handles all candidate-side data:
   - Input: `inviteToken` (from URL param)
   - Load `Candidate` record by filtering on `inviteToken` field (unauthenticated / guest query)
   - Load `Stage` records for the candidate's pipeline
   - Expose `submitAssessment(stageId, submission)` — creates an `Assessment` record (unauthenticated)
   - States: `loading`, `error`, `candidate`, `stages`, `isSubmitted`
-  - ~2 hours
+  - ~2 hours ✅
 
 ### Step 3: Candidate assessment page
 - [ ] **Create `src/pages/CandidateAssessmentPage.tsx`** — no auth wrapper:
