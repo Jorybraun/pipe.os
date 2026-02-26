@@ -39,18 +39,18 @@
   - States: `loading`, `error`, `candidate`, `stages`, `isSubmitted`
   - ~2 hours ✅
 
-### Step 3: Candidate assessment page
-- [ ] **Create `src/pages/CandidateAssessmentPage.tsx`** — no auth wrapper:
+### Step 3: Candidate assessment page ✅
+- [x] **Create `src/pages/CandidateAssessmentPage.tsx`** — no auth wrapper:
   - Reads `inviteToken` from URL param via `useParams()`
   - Uses `useAssessment` hook
   - Shows: role title + stage name + instructions
   - Code viewer with syntax highlighting and line numbers (use a lightweight lib — `react-syntax-highlighter` or similar)
   - Annotation UI: click a line → type a comment → mark severity (critical / major / minor)
   - Submit button → calls `submitAssessment()` → shows confirmation screen
-  - ~4–6 hours
+  - ~4–6 hours ✅
 
-### Step 4: Route
-- [ ] **Add `/assess/:token` route in `App.tsx`** — outside the `<Authenticator>` wrapper (no auth required). ~15 min
+### Step 4: Route ✅
+- [x] **Add `/assess/:token` route in `App.tsx`** — outside the `<Authenticator>` wrapper (no auth required). ~15 min ✅
 
 ### Step 5: Smoke test
 - [ ] **End-to-end candidate flow test** — manually: create pipeline in sandbox, add candidate with token, open `/assess/:token`, submit review, confirm `Assessment` record appears in DynamoDB. ~30 min

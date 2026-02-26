@@ -18,32 +18,25 @@ import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage"; // Legacy — preserved for post-MVP agentic discovery
 import PipelineCreatePage from "./pages/PipelineCreatePage";
+import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import { QuestionDetail } from "./components/QuestionDetail";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import { SubTitle } from "./components/ui/SubTitle";
 
 /**
  * AppLayout - Wrapper component that provides consistent Layout to child routes
- *
- * Features:
- * - Shared header with title and subtitle
- * - Shared sidebar navigation
- * - Outlet for nested route content
  */
-
 const SubHeader = () => {
   const navigate = useNavigate();
   const { id, stage, questionId } = useParams();
   const location = useLocation();
 
-  // Only render on pipeline context routes — not on shell pages like / or /pipeline/new
   const isPipelineContext =
     location.pathname.startsWith("/pipeline/") &&
     !location.pathname.startsWith("/pipeline/new");
 
   if (!isPipelineContext) return null;
 
-  // Mock data
   const role = { title: "Senior Full-Stack Engineer" };
   const totalCandidates = 42;
   const currentStage = stage ? { name: stage } : null;
@@ -63,13 +56,10 @@ const SubHeader = () => {
         <button
           onClick={() => {
             if (questionId && stage) {
-              // From question detail -> stage detail
               navigate(`/pipeline/${id}/${stage}`);
             } else if (stage) {
-              // From stage detail -> overview
               navigate(`/pipeline/${id}`);
             } else {
-              // From overview -> home
               navigate("/");
             }
           }}
@@ -93,63 +83,22 @@ const SubHeader = () => {
             : "BACK TO ROLES"}
         </button>
 
-        <div
-          style={{ width: 1, height: 40, background: "rgba(255,255,255,0.08)" }}
-        />
+        <div style={{ width: 1, height: 40, background: "rgba(255,255,255,0.08)" }} />
 
         <div>
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: "0.2em",
-              color: "rgba(255,255,255,0.3)",
-              marginBottom: 6,
-            }}
-          >
-            POSITION
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 700,
-              color: "#fff",
-              letterSpacing: "0.05em",
-            }}
-          >
-            {role.title.toUpperCase()}
-          </div>
+          <div style={{ fontSize: 9, letterSpacing: "0.2em", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>POSITION</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}>{role.title.toUpperCase()}</div>
         </div>
 
-        <div
-          style={{ width: 1, height: 40, background: "rgba(255,255,255,0.08)" }}
-        />
+        <div style={{ width: 1, height: 40, background: "rgba(255,255,255,0.08)" }} />
 
         <div>
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: "0.2em",
-              color: "rgba(255,255,255,0.3)",
-              marginBottom: 6,
-            }}
-          >
-            ACTIVE CANDIDATES
-          </div>
-          <div
-            style={{
-              fontSize: 24,
-              fontWeight: 800,
-              background:
-                "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
+          <div style={{ fontSize: 9, letterSpacing: "0.2em", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>ACTIVE CANDIDATES</div>
+          <div style={{ fontSize: 24, fontWeight: 800, background: "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
             {totalCandidates}
           </div>
         </div>
       </div>
-
       <SubTitle>PIPELINE_STATUS</SubTitle>
     </div>
   );
@@ -176,8 +125,7 @@ function AppLayout(): JSX.Element {
                 onClick={handleNewRole}
                 style={{
                   padding: "14px 28px",
-                  background:
-                    "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
+                  background: "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
                   border: "1px solid rgba(255,255,255,0.2)",
                   color: "#fff",
                   fontSize: 11,
@@ -219,10 +167,7 @@ function AppLayout(): JSX.Element {
         />
       }
       sidebar={
-        <SidebarNav
-          activeSection={activeSection}
-          onSectionChange={setActiveSection}
-        />
+        <SidebarNav activeSection={activeSection} onSectionChange={setActiveSection} />
       }
     >
       <SubHeader />
@@ -233,64 +178,40 @@ function AppLayout(): JSX.Element {
 
 /**
  * App - Main application component with routing configuration
- *
- * Architecture:
- * - AppLayout wraps routes that need consistent header/sidebar
- * - RoleDiscoveryPage has custom layout (no AppLayout wrapper)
- * - Nested routes use Outlet pattern for composition
- *
- * Routes:
- * - / → ListingPage (main entry point)
- * - /pipeline/new → RoleDiscoveryPage (Phase 1: Role Discovery, custom layout)
- * - /pipeline/:id → OverviewPage (pipeline overview)
- * - /pipeline/:id/:stage → PipelineDetailPage (stage detail, questions list)
- * - /pipeline/:id/:stage/:questionId → QuestionDetail (nested route, question detail)
- * - /candidates/:id → CandidateProfilePage
- * - /screenings/:id/preview → CandidateScreeningPage
  */
 function App(): JSX.Element {
-  const content = (
+  return (
     <BrowserRouter>
       <Routes>
-        {/* Routes with shared Layout */}
-        <Route element={<AppLayout />}>
-          {/* Main entry point */}
-          <Route path="/" element={<ListingPage />} />
+        {/* Public Candidate Assessment Route */}
+        <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
 
-          {/* Pipeline routes */}
-          <Route path="/pipeline/:id" element={<OverviewPage />}>
-            <Route index element={null} />
-            <Route path=":stage" element={<PipelineDetailPage />} />
-            <Route path=":stage/:questionId" element={<QuestionDetail />} />
-          </Route>
-
-          {/* MVP: simplified create form. RoleDiscoveryPage preserved for post-MVP agent flow. */}
-          <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
-          <Route
-            path="/pipeline/new/discovery"
-            element={<RoleDiscoveryPage />}
-          />
-
-          {/* Candidate routes */}
-          <Route path="/candidates/:id" element={<CandidateProfilePage />} />
-          <Route
-            path="/screenings/:id/preview"
-            element={<CandidateScreeningPage />}
-          />
-        </Route>
-
-        {/* Catch-all redirect */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Protected Recruiter Routes */}
+        <Route
+          path="*"
+          element={
+            <Authenticator>
+              <Routes>
+                <Route element={<AppLayout />}>
+                  <Route path="/" element={<ListingPage />} />
+                  <Route path="/pipeline/:id" element={<OverviewPage />}>
+                    <Route index element={null} />
+                    <Route path=":stage" element={<PipelineDetailPage />} />
+                    <Route path=":stage/:questionId" element={<QuestionDetail />} />
+                  </Route>
+                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
+                  <Route path="/pipeline/new/discovery" element={<RoleDiscoveryPage />} />
+                  <Route path="/candidates/:id" element={<CandidateProfilePage />} />
+                  <Route path="/screenings/:id/preview" element={<CandidateScreeningPage />} />
+                </Route>
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Authenticator>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );
-
-  // Temporary bypass for E2E tests
-  if (import.meta.env.VITE_SKIP_AUTH === 'true') {
-    return content;
-  }
-
-  return <Authenticator>{content}</Authenticator>;
 }
 
 export default App;
