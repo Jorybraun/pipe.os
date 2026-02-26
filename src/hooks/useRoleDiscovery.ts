@@ -28,7 +28,14 @@ const initialContext: RoleContext = {
   gaps: [],
   createdAt: Date.now(),
   updatedAt: Date.now(),
+  // New configuration defaults
+  questionLimit: '5',
+  questionMode: 'Custom AI Questions',
+  codeReviewMode: 'AI Generated',
 };
+
+// Configuration for development
+const USE_MOCK = import.meta.env.VITE_USE_MOCK_AGENT === 'true';
 
 export interface UseRoleDiscoveryReturn {
   // State
@@ -45,50 +52,16 @@ export interface UseRoleDiscoveryReturn {
   isReady: boolean;
 
   // Actions
-  submitBaseline: (baseline: Baseline) => Promise<void>;
+  submitBaseline: (baseline: Baseline, config?: { 
+    questionLimit?: string, 
+    questionMode?: string, 
+    codeReviewMode?: string 
+  }) => Promise<void>;
   submitResponses: (responses: Array<{ questionId: string; response: string | string[] }>) => Promise<void>;
   generateJobDescription: () => Promise<JobDescriptionResponse>;
   reset: () => void;
 }
 
-/**
- * Custom hook for managing role discovery flow.
- *
- * @returns Role discovery state and actions
- *
- * @example
- * ```tsx
- * function RoleDiscoveryPage() {
- *   const {
- *     roleContext,
- *     currentSection,
- *     isLoading,
- *     isReady,
- *     submitBaseline,
- *     submitResponses,
- *     generateJobDescription,
- *   } = useRoleDiscovery();
- *
- *   const handleBaselineSubmit = async (baseline: Baseline) => {
- *     await submitBaseline(baseline);
- *   };
- *
- *   return (
- *     <div>
- *       {roleContext.status === 'baseline' && (
- *         <BaselineForm onSubmit={handleBaselineSubmit} />
- *       )}
- *       {currentSection && (
- *         <DynamicSection section={currentSection} onSubmit={submitResponses} />
- *       )}
- *       {isReady && (
- *         <button onClick={generateJobDescription}>Generate JD</button>
- *       )}
- *     </div>
- *   );
- * }
- * ```
- */
 export function useRoleDiscovery(): UseRoleDiscoveryReturn {
   const [roleContext, setRoleContext] = useState<RoleContext>(initialContext);
   const [currentSection, setCurrentSection] = useState<FormSection | null>(null);
@@ -104,58 +77,82 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
   /**
    * Submits baseline data and gets first set of questions.
    */
-  const submitBaseline = useCallback(async (baseline: Baseline): Promise<void> => {
+  const submitBaseline = useCallback(async (
+    baseline: Baseline, 
+    config?: { questionLimit?: string, questionMode?: string, codeReviewMode?: string }
+  ): Promise<void> => {
     setIsLoading(true);
     setError(null);
 
-    try {
-      // TODO: Replace with actual Lambda invocation once custom mutations are set up
-      // For now, this is a placeholder that will be updated when backend integration is complete
-      console.warn('[useRoleDiscovery] Lambda invocation not yet implemented. Using mock data.');
+    const updatedContext: RoleContext = {
+      ...roleContext,
+      baseline,
+      status: 'exploring',
+      updatedAt: Date.now(),
+      ...config, // Merge in new config options
+    };
 
-      // Mock response for development
-      const mockResponse: QuestionAgentResponse = {
-        updatedContext: {},
-        newExchanges: [],
-        nextSection: {
-          id: uuid(),
-          title: 'SUCCESS_CRITERIA',
-          description: 'Let me understand what success looks like for this role.',
-          questions: [
-            {
-              id: uuid(),
-              text: 'What would this person need to accomplish in their first 90 days?',
-              type: 'textarea',
-              placeholder: 'Specific projects, milestones, or outcomes...',
-            },
-          ],
-        },
-        status: 'exploring',
-        gaps: ['success_criteria', 'challenges', 'culture'],
-        reasoning: 'Need to understand success metrics and role challenges.',
-        costTracking: {
-          sessionCost: 0.02,
-          remainingBudget: 0.48,
-          callCount: 1,
-        },
-        processingTime: 1500,
-      };
+    try {
+      let data: QuestionAgentResponse;
+
+      if (USE_MOCK) {
+        // Mock response for development
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate latency
+        data = {
+          updatedContext: {},
+          newExchanges: [],
+          nextSection: {
+            id: uuid(),
+            title: 'SUCCESS_CRITERIA',
+            description: 'Let me understand what success looks like for this role.',
+            questions: [
+              {
+                id: uuid(),
+                text: 'What would this person need to accomplish in their first 90 days?',
+                type: 'textarea',
+                placeholder: 'Specific projects, milestones, or outcomes...',
+              },
+            ],
+          },
+          status: 'exploring',
+          gaps: ['success_criteria', 'challenges', 'culture'],
+          reasoning: 'Need to understand success metrics and role challenges.',
+          costTracking: {
+            sessionCost: 0.02,
+            remainingBudget: 0.48,
+            callCount: 1,
+          },
+          processingTime: 1500,
+        };
+      } else {
+        // Real Lambda invocation via Amplify Mutation
+        const response = await client.mutations.generateQuestions({
+          roleContext: updatedContext as any, // Cast to any for JSON arg
+        });
+
+        if (response.errors) {
+          throw new Error(response.errors[0].message);
+        }
+
+        data = response.data as unknown as QuestionAgentResponse;
+      }
 
       setRoleContext((prev: RoleContext) => ({
         ...prev,
         baseline,
-        context: mockResponse.updatedContext,
-        status: mockResponse.status,
-        gaps: mockResponse.gaps,
-        userSignals: mockResponse.userSignals,
+        context: data.updatedContext,
+        status: data.status,
+        gaps: data.gaps,
+        userSignals: data.userSignals,
         updatedAt: Date.now(),
+        ...config,
       }));
-      setCurrentSection(mockResponse.nextSection);
-      setReasoning(mockResponse.reasoning);
-      setCostTracking(mockResponse.costTracking);
+      setCurrentSection(data.nextSection);
+      setReasoning(data.reasoning);
+      setCostTracking(data.costTracking);
 
     } catch (err) {
-      const errorObj = err instanceof Error ? err : new Error('Unknown error');
+      const errorObj = err instanceof Error ? err : new Error('Failed to connect to agent');
       console.error('[useRoleDiscovery] submitBaseline error:', errorObj);
       setError(errorObj);
     } finally {
@@ -173,50 +170,62 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
     setError(null);
 
     try {
-      // TODO: Replace with actual Lambda invocation
-      console.warn('[useRoleDiscovery] Lambda invocation not yet implemented. Using mock data.');
+      let data: QuestionAgentResponse;
 
-      // Mock response
-      const mockResponse: QuestionAgentResponse = {
-        updatedContext: {
-          ...roleContext.context,
-          success_criteria: 'Ship payment API v2, reduce latency by 40%',
-        },
-        newExchanges: responses.map(r => ({
-          id: uuid(),
-          questionId: r.questionId,
-          agentQuestion: 'What would this person need to accomplish in their first 90 days?',
-          userResponse: typeof r.response === 'string' ? r.response : r.response.join(', '),
-          extractedFacts: ['90-day goal: ship payment API v2', 'performance target: 40% latency reduction'],
-          timestamp: Date.now(),
-        })),
-        nextSection: null,
-        status: 'ready',
-        gaps: [],
-        reasoning: 'I now have enough context to generate a job description.',
-        costTracking: {
-          sessionCost: 0.15,
-          remainingBudget: 0.35,
-          callCount: 5,
-        },
-        processingTime: 2300,
-      };
+      if (USE_MOCK) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        data = {
+          updatedContext: {
+            ...roleContext.context,
+            success_criteria: 'Ship payment API v2, reduce latency by 40%',
+          },
+          newExchanges: responses.map(r => ({
+            id: uuid(),
+            questionId: r.questionId,
+            agentQuestion: 'What would this person need to accomplish in their first 90 days?',
+            userResponse: typeof r.response === 'string' ? r.response : r.response.join(', '),
+            extractedFacts: ['90-day goal: ship payment API v2', 'performance target: 40% latency reduction'],
+            timestamp: Date.now(),
+          })),
+          nextSection: null,
+          status: 'ready',
+          gaps: [],
+          reasoning: 'I now have enough context to generate a job description.',
+          costTracking: {
+            sessionCost: 0.15,
+            remainingBudget: 0.35,
+            callCount: 5,
+          },
+          processingTime: 2000,
+        };
+      } else {
+        const response = await client.mutations.generateQuestions({
+          roleContext: roleContext as any,
+          responses: responses as any,
+        });
+
+        if (response.errors) {
+          throw new Error(response.errors[0].message);
+        }
+
+        data = response.data as unknown as QuestionAgentResponse;
+      }
 
       setRoleContext((prev: RoleContext) => ({
         ...prev,
-        exchanges: [...prev.exchanges, ...mockResponse.newExchanges],
-        context: mockResponse.updatedContext,
-        status: mockResponse.status,
-        gaps: mockResponse.gaps,
-        userSignals: mockResponse.userSignals,
+        exchanges: [...prev.exchanges, ...data.newExchanges],
+        context: data.updatedContext,
+        status: data.status,
+        gaps: data.gaps,
+        userSignals: data.userSignals,
         updatedAt: Date.now(),
       }));
-      setCurrentSection(mockResponse.nextSection);
-      setReasoning(mockResponse.reasoning);
-      setCostTracking(mockResponse.costTracking);
+      setCurrentSection(data.nextSection);
+      setReasoning(data.reasoning);
+      setCostTracking(data.costTracking);
 
     } catch (err) {
-      const errorObj = err instanceof Error ? err : new Error('Unknown error');
+      const errorObj = err instanceof Error ? err : new Error('Agent failed to process responses');
       console.error('[useRoleDiscovery] submitResponses error:', errorObj);
       setError(errorObj);
     } finally {
@@ -236,47 +245,57 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
     setError(null);
 
     try {
-      // TODO: Replace with actual Lambda invocation
-      console.warn('[useRoleDiscovery] Lambda invocation not yet implemented. Using mock data.');
+      let data: JobDescriptionResponse;
 
-      // Mock response
-      const mockResponse: JobDescriptionResponse = {
-        jobDescription: {
-          title: roleContext.baseline!.title,
-          summary: 'Lead backend engineering efforts for our payment platform.',
-          responsibilities: [
-            'Design and implement payment API v2',
-            'Optimize system latency and throughput',
-            'Mentor junior engineers',
-          ],
-          requirements: {
-            required: [
-              '5+ years backend engineering experience',
-              'Strong Node.js/TypeScript skills',
-              'Experience with payment systems',
+      if (USE_MOCK) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        data = {
+          jobDescription: {
+            title: roleContext.baseline!.title,
+            summary: 'Lead backend engineering efforts for our payment platform.',
+            responsibilities: [
+              'Design and implement payment API v2',
+              'Optimize system latency and throughput',
+              'Mentor junior engineers',
             ],
-            preferred: [
-              'AWS architecture experience',
-              'System design expertise',
+            requirements: {
+              required: [
+                '5+ years backend engineering experience',
+                'Strong Node.js/TypeScript skills',
+                'Experience with payment systems',
+              ],
+              preferred: [
+                'AWS architecture experience',
+                'System design expertise',
+              ],
+            },
+            successIndicators: [
+              '90 days: Ship payment API v2',
+              '1 year: Reduce latency by 40%',
             ],
+            teamContext: '5-person platform team, async-first culture.',
+            growthOpportunity: 'Path to Staff Engineer or Engineering Manager.',
+            rawMarkdown: '# Senior Backend Engineer\n\n...',
           },
-          successIndicators: [
-            '90 days: Ship payment API v2',
-            '1 year: Reduce latency by 40%',
-          ],
-          teamContext: '5-person platform team, async-first culture.',
-          growthOpportunity: 'Path to Staff Engineer or Engineering Manager.',
-          rawMarkdown: '# Senior Backend Engineer\n\n...',
-        },
-        candidateFilters: [],
-        suggestedStages: [],
-        processingTime: 3500,
-      };
+          candidateFilters: [],
+          suggestedStages: [],
+          processingTime: 3000,
+        };
+      } else {
+        const response = await client.mutations.generateJobDescription({
+          roleContext: roleContext as any,
+        });
 
-      // Save to DynamoDB
+        if (response.errors) {
+          throw new Error(response.errors[0].message);
+        }
+
+        data = response.data as unknown as JobDescriptionResponse;
+      }
+
+      // Persist to RoleContext model in DynamoDB
       await client.models.RoleContext.create({
         id: roleContext.id,
-        owner: undefined, // Will be set by Amplify auth
         title: roleContext.baseline!.title,
         level: roleContext.baseline!.level,
         department: roleContext.baseline!.department,
@@ -289,17 +308,17 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
         status: roleContext.status,
         gaps: roleContext.gaps,
         userSignals: roleContext.userSignals ? JSON.stringify(roleContext.userSignals) : undefined,
-        jobDescription: JSON.stringify(mockResponse.jobDescription),
-        candidateFilters: JSON.stringify(mockResponse.candidateFilters),
-        suggestedStages: JSON.stringify(mockResponse.suggestedStages),
+        jobDescription: JSON.stringify(data.jobDescription),
+        candidateFilters: JSON.stringify(data.candidateFilters),
+        suggestedStages: JSON.stringify(data.suggestedStages),
         createdAt: new Date(roleContext.createdAt).toISOString(),
         updatedAt: new Date().toISOString(),
       });
 
-      return mockResponse;
+      return data;
 
     } catch (err) {
-      const errorObj = err instanceof Error ? err : new Error('Unknown error');
+      const errorObj = err instanceof Error ? err : new Error('Failed to generate job description');
       console.error('[useRoleDiscovery] generateJobDescription error:', errorObj);
       setError(errorObj);
       throw errorObj;
