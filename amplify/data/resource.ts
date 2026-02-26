@@ -56,7 +56,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),                // Recruiters manage stages
-      allow.guest().to(['read']),   // Candidates (unauthenticated) read stage config via invite token
+      allow.publicApiKey().to(['read']), // Candidates (unauthenticated) read stage config via API Key
     ]),
 
   /**
@@ -81,8 +81,8 @@ const schema = a.schema({
       assessments: a.hasMany('Assessment', 'candidateId'),
     })
     .authorization((allow) => [
-      allow.owner(),                // Recruiters manage candidates
-      allow.guest().to(['read']),   // Candidates look themselves up by inviteToken
+      allow.owner(),                        // Recruiters manage candidates
+      allow.publicApiKey().to(['read', 'update']), // Candidates look themselves up and update status via API Key
     ]),
 
   /**
@@ -104,7 +104,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),                        // Recruiters read/score assessments
-      allow.guest().to(['create', 'read']), // Candidates submit and check their own assessment
+      allow.publicApiKey().to(['create', 'read']), // Candidates submit via API Key
     ]),
 
   /**

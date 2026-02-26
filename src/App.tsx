@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -22,6 +22,7 @@ import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import { QuestionDetail } from "./components/QuestionDetail";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import { SubTitle } from "./components/ui/SubTitle";
+import { seedSmokeTest } from "./test/seed-smoke-test";
 
 /**
  * AppLayout - Wrapper component that provides consistent Layout to child routes
@@ -180,6 +181,11 @@ function AppLayout(): JSX.Element {
  * App - Main application component with routing configuration
  */
 function App(): JSX.Element {
+  useEffect(() => {
+    // @ts-ignore
+    window.seed = seedSmokeTest;
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>
@@ -199,7 +205,8 @@ function App(): JSX.Element {
                     <Route path=":stage" element={<PipelineDetailPage />} />
                     <Route path=":stage/:questionId" element={<QuestionDetail />} />
                   </Route>
-                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
+                  <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+                  <Route path="/pipeline/new/simple" element={<PipelineCreatePage />} />
                   <Route path="/pipeline/new/discovery" element={<RoleDiscoveryPage />} />
                   <Route path="/candidates/:id" element={<CandidateProfilePage />} />
                   <Route path="/screenings/:id/preview" element={<CandidateScreeningPage />} />

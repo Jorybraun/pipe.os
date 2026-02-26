@@ -1,12 +1,17 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { ConversationalForm } from "../components/RoleDiscovery/Conversational/ConversationalForm";
 import { PhaseProgress } from "../components/RoleDiscovery/Conversational/PhaseProgress";
 import { LiquidMetalCard } from "../components/ui/LiquidMetalCard";
 import { FieldGroup, RadioGroup, SelectInput } from "../components/ui/form";
 import { Settings, Loader2, Zap, Shield, Target } from "lucide-react";
 import { useRoleDiscovery } from "../hooks/useRoleDiscovery";
+import { generateClient } from 'aws-amplify/api';
+import type { Schema } from "../../amplify/data/resource";
 import type { RoleDiscoveryData } from "../types/roleDiscovery";
 import type { Baseline } from "../types/discovery";
+
+const client = generateClient<Schema>();
 
 /**
  * RoleDiscoveryPage - Conversational Role Discovery Flow
@@ -15,15 +20,17 @@ import type { Baseline } from "../types/discovery";
  * Implements a single semantic form with a powerful configuration sidebar.
  */
 export default function RoleDiscoveryPage(): JSX.Element {
+  const navigate = useNavigate();
   const {
     roleContext,
-    isLoading,
+    isLoading: isAgentLoading,
     error,
     costTracking,
     submitBaseline,
   } = useRoleDiscovery();
 
   const [currentPhase, setCurrentPhase] = useState(0);
+  const [isCreating, setIsCreating] = useState(false);
 
   // Local state for the form inputs and pipeline configuration
   const [formData, setFormData] = useState<Partial<RoleDiscoveryData & { 
@@ -70,8 +77,91 @@ export default function RoleDiscoveryPage(): JSX.Element {
     setCurrentPhase(nextPhase);
   };
 
-  const handleComplete = (finalData: any) => {
-    console.log("Conversational Form Complete:", finalData);
+  const handleComplete = async (finalData: any) => {
+    setIsCreating(true);
+    try {
+      // 1. Create Pipeline
+      const { data: pipeline, errors: pErrors } = await client.models.Pipeline.create({
+        title: finalData.title,
+        level: finalData.level as any,
+        stack: finalData.stack,
+        description: finalData.challenges,
+        status: 'ACTIVE',
+      });
+
+      if (pErrors || !pipeline) throw new Error(pErrors?.[0].message || 'Failed to create pipeline');
+
+      // 2. Create Stages (Hardcoded for Phase 2 MVP)
+      const stagesToCreate = [];
+
+      if (formData.includeCodeReview) {
+        stagesToCreate.push({
+          pipelineId: pipeline.id,
+          type: 'CODE_REVIEW' as const,
+          order: 1,
+          config: JSON.stringify({
+            code: `export function calculateTotal(items: { price: number; quantity: number }[]) {
+  // FIND THE BUG: Incorrect initialization of total
+  let total = "0"; 
+  
+  items.forEach(item => {
+    total += item.price * item.quantity;
+  });
+  
+  return total;
+}`,
+            language: 'typescript'
+          }),
+        });
+      }
+
+      if (formData.includeQuiz) {
+        stagesToCreate.push({
+          pipelineId: pipeline.id,
+          type: 'QUIZ' as const,
+          order: stagesToCreate.length + 1,
+          config: JSON.stringify({
+            questions: [
+              {
+                q: "What is the primary difference between 'let' and 'var' in JavaScript?",
+                options: [
+                  "let is block-scoped, var is function-scoped",
+                  "var is block-scoped, let is function-scoped",
+                  "let cannot be reassigned, var can",
+                  "There is no difference"
+                ],
+                correct: 0
+              },
+              {
+                q: "In React, what is the purpose of useEffect's dependency array?",
+                options: [
+                  "To list all variables used in the effect",
+                  "To control when the effect should re-run",
+                  "To define the order of execution",
+                  "To store previous state values"
+                ],
+                correct: 1
+              }
+            ]
+          }),
+        });
+      }
+
+      // Create stages sequentially
+      for (const stage of stagesToCreate) {
+        const { errors: sErrors } = await client.models.Stage.create(stage);
+        if (sErrors) console.error('Error creating stage:', sErrors);
+      }
+
+      // 3. Redirect to Pipeline Overview
+      navigate(`/pipeline/${pipeline.id}`);
+
+    } catch (err) {
+      console.error('Final Pipeline Creation Failed:', err);
+      alert('Failed to save pipeline. Please try again.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const phases = [
@@ -83,6 +173,8 @@ export default function RoleDiscoveryPage(): JSX.Element {
     "Culture",
     "Agent Review"
   ];
+
+  const isLoading = isAgentLoading || isCreating;
 
   return (
     <div style={{ padding: "0 20px", maxWidth: 1400, margin: "0 auto" }}>
@@ -121,7 +213,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 gap: 20
               }}>
                 <Loader2 size={40} className="animate-spin" color="#8b5cf6" />
-                <div style={{ fontSize: 12, letterSpacing: '0.2em', color: '#fff' }}>AGENT_THINKING...</div>
+                <div style={{ fontSize: 12, letterSpacing: '0.2em', color: '#fff' }}>
+                  {isCreating ? 'BUILDING_PIPELINE...' : 'AGENT_THINKING...'}
+                </div>
               </div>
             )}
 
