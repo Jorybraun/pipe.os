@@ -181,40 +181,40 @@
 > **MVP scope:** Build only the panels needed for the 65 existing templates. `PreviewPanel` (Sandpack) and `TestPanel` (Piston) are deferred — no templates have test cases yet.
 > **Full design:** `docs/design/monaco-challenge-architecture.md` | **Runbook:** `docs/ops/HANDOFF-monaco-challenge.md`
 
-- [x] **Build `StageShell` component** — `src/components/Assessment/StageShell.tsx`. ✅
-- [x] **Rename `StageRegistry` → `ChallengeRegistry`** — `src/components/Assessment/ChallengeRegistry.tsx`. ✅
-- [x] **Update `useAssessment.ts`** — handles challenge-level loading and submission. ✅
-- [x] **Update `CandidateAssessmentPage.tsx`** — uses `StageShell` and `ChallengeRenderer`. ✅
+- [x] **Build `StageShell` component** — `src/components/Assessment/StageShell.tsx`. ✅ [`a3e1539`]
+- [x] **Rename `StageRegistry` → `ChallengeRegistry`** — `src/components/Assessment/ChallengeRegistry.tsx`. ✅ [`a3e1539`]
+- [x] **Update `useAssessment.ts`** — handles challenge-level loading and submission. ✅ [`a3e1539`]
+- [x] **Update `CandidateAssessmentPage.tsx`** — uses `StageShell` and `ChallengeRenderer`. ✅ [`a3e1539`]
 
 #### Step 4A — Foundation
 
-- [x] **Install dependencies** — `npm i @monaco-editor/react react-markdown remark-gfm`. ~5 min. *(Skip sandpack — not needed for MVP)*
+- [x] **Install dependencies** — `npm i @monaco-editor/react react-markdown remark-gfm`. ~5 min. *(Skip sandpack — not needed for MVP)* [`a3e1539`]
 
-- [x] **Write ADR-005** — `docs/decisions/ADR-005-composable-challenge-system.md`. Documents the Shell + Panel composition pattern. Copy `ADR-000-template.md`, add to `docs/decisions/README.md` index. ~30 min.
+- [x] **Write ADR-005** — `docs/decisions/ADR-005-composable-challenge-system.md`. Documents the Shell + Panel composition pattern. Copy `ADR-000-template.md`, add to `docs/decisions/README.md` index. ~30 min. [`a3e1539`]
 
-- [x] **Create `src/lib/challenge/resolveLayout.ts`** — maps `challenge.type` → `{ leftPanel, centerPanel, rightPanel }`. MVP only needs: `CODE_REVIEW → [null, DiffCanvas, null]`, `CODE_IMPLEMENTATION → [ProblemPanel, MonacoPanel, null]`, `QUIZ_MCQ → [ProblemPanel, OptionsPanel, null]`, `QUIZ_SHORT_ANSWER → [ProblemPanel, TextareaPanel, null]`. ~45 min.
+- [x] **Create `src/lib/challenge/resolveLayout.ts`** — maps `challenge.type` → `{ leftPanel, centerPanel, rightPanel }`. MVP only needs: `CODE_REVIEW → [null, DiffCanvas, null]`, `CODE_IMPLEMENTATION → [ProblemPanel, MonacoPanel, null]`, `QUIZ_MCQ → [ProblemPanel, OptionsPanel, null]`, `QUIZ_SHORT_ANSWER → [ProblemPanel, TextareaPanel, null]`. ~45 min. [`a3e1539`]
 
-- [x] **Create `src/lib/challenge/resolveShells.ts`** — maps `challenge.config` → `{ timer: { enabled, timeLimit } }`. ~20 min.
+- [x] **Create `src/lib/challenge/resolveShells.ts`** — maps `challenge.config` → `{ timer: { enabled, timeLimit } }`. ~20 min. [`a3e1539`]
 
 #### Step 4B — Shell Components
 
-- [x] **Create `src/components/Shells/TimerShell.tsx`** — countdown wrapper. Props: `timeLimit: number | null`, `onExpire?: () => void`. No-op when `timeLimit` is null. ~45 min.
+- [x] **Create `src/components/Shells/TimerShell.tsx`** — countdown wrapper. Props: `timeLimit: number | null`, `onExpire?: () => void`. No-op when `timeLimit` is null. ~45 min. [`a3e1539`]
 
 #### Step 4C — Panel Components (MVP set only)
 
-- [x] **Create `src/components/Assessment/WorkspaceLayout.tsx`** — 3-column CSS Grid (28% | 47% | 25%). Props: `leftPanel`, `centerPanel`, `rightPanel` (each `ReactNode | null`). ~30 min.
+- [x] **Create `src/components/Assessment/WorkspaceLayout.tsx`** — 3-column CSS Grid (28% | 47% | 25%). Props: `leftPanel`, `centerPanel`, `rightPanel` (each `ReactNode | null`). ~30 min. [`a3e1539`]
 
-- [x] **Create `src/components/Panels/ProblemPanel.tsx`** — renders `challenge.instructions` as Markdown via `react-markdown + remark-gfm`. Scrollable. ~30 min.
+- [x] **Create `src/components/Panels/ProblemPanel.tsx`** — renders `challenge.instructions` as Markdown via `react-markdown + remark-gfm`. Scrollable. ~30 min. [`a3e1539`]
 
-- [x] **Create `src/components/Panels/MonacoPanel.tsx`** — wraps `@monaco-editor/react`. Props: `language`, `value`, `onChange`, `readOnly?`. Dark theme, Space Mono font. ~45 min.
+- [x] **Create `src/components/Panels/MonacoPanel.tsx`** — wraps `@monaco-editor/react`. Props: `language`, `value`, `onChange`, `readOnly?`. Dark theme, Space Mono font. ~45 min. [`a3e1539`]
 
-- [x] **Create `src/components/Panels/OptionsPanel.tsx`** — MCQ radio list from `config.options[]`. Props: `options`, `selectedId`, `onChange`. ~30 min.
+- [x] **Create `src/components/Panels/OptionsPanel.tsx`** — MCQ radio list from `config.options[]`. Props: `options`, `selectedId`, `onChange`. ~30 min. [`a3e1539`]
 
-- [x] **Create `src/components/Panels/TextareaPanel.tsx`** — short answer textarea. Props: `value`, `onChange`, `placeholder?`. ~20 min.
+- [x] **Create `src/components/Panels/TextareaPanel.tsx`** — short answer textarea. Props: `value`, `onChange`, `placeholder?`. ~20 min. [`a3e1539`]
 
 #### Step 4D — Wire It Together
 
-- [x] **Update `ChallengeRegistry.tsx`** — replace current if/switch with composable assembly: `resolveLayout()` + `resolveShells()` → `WorkspaceLayout` wrapped in shells. `CODE_REVIEW` still uses `DiffReviewCanvas` as its center panel — keep that path intact. ~1.5 hours.
+- [x] **Update `ChallengeRegistry.tsx`** — replace current if/switch with composable assembly: `resolveLayout()` + `resolveShells()` → `WorkspaceLayout` wrapped in shells. `CODE_REVIEW` still uses `DiffReviewCanvas` as its center panel — keep that path intact. ~1.5 hours. [`a3e1539`]
 
 #### Step 4E — Verify
 
@@ -271,9 +271,9 @@
 
 > Decisions log and commit discipline — runs forever, not a phase.
 
-- [x] **Create `CHANGELOG.md`** — Keep a Changelog format, retroactively documenting Phases 0–7. Every commit that touches source must update it. ✅
-- [x] **Create `docs/decisions/` ADR system** — Template + index + 4 seed decisions (Amplify Gen 2, challenge architecture, Assessment FK strategy, static challenge library). ✅
-- [x] **Install pre-commit hook** — `scripts/check-changelog.sh` + `scripts/install-hooks.sh`. Blocks commits that modify source files without updating `CHANGELOG.md`. Bypass via `--no-verify` or `SKIP_CHANGELOG=1` for doc/config-only commits. ✅
+- [x] **Create `CHANGELOG.md`** — Keep a Changelog format, retroactively documenting Phases 0–7. Every commit that touches source must update it. ✅ [`a5b30a4`]
+- [x] **Create `docs/decisions/` ADR system** — Template + index + 4 seed decisions (Amplify Gen 2, challenge architecture, Assessment FK strategy, static challenge library). ✅ [`a5b30a4`]
+- [x] **Install pre-commit hook** — `scripts/check-changelog.sh` + `scripts/install-hooks.sh`. Blocks commits that modify source files without updating `CHANGELOG.md`. Bypass via `--no-verify` or `SKIP_CHANGELOG=1` for doc/config-only commits. ✅ [`a5b30a4`]
 
 **Rule going forward:** Every commit = one `[Unreleased]` entry in `CHANGELOG.md`. Every significant architectural decision = one ADR in `docs/decisions/`.
 
