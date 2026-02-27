@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `pending` — Live Preview & Library-Driven Presets
+- **Detailed Log**: [docs/changelogs/live-preview-and-presets.md](docs/changelogs/live-preview-and-presets.md)
+- **Status**: 🟡 PENDING REVIEW
+
 ### `40397f9` — Content Visibility & MCQ Editor Enhancement
 - **Detailed Log**: [docs/changelogs/content-visibility-and-mcq-fix.md](docs/changelogs/content-visibility-and-mcq-fix.md)
 - **Status**: 🟡 PENDING REVIEW

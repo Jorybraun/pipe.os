@@ -1,4 +1,4 @@
-import { quizQuestions } from '../content/quizQuestions';
+import { TEMPLATE_BY_ID } from '../content/challengeLibrary';
 
 export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER';
 
@@ -7,7 +7,6 @@ export interface PresetChallenge {
   title: string;
   instructions: string;
   config: any;
-  snippetId?: string;
 }
 
 export interface PresetStage {
@@ -22,6 +21,21 @@ export interface PipelinePreset {
   stages: PresetStage[];
 }
 
+// Helper to pull from library
+const fromLibrary = (id: string) => {
+  const template = TEMPLATE_BY_ID[id];
+  if (!template) {
+    console.warn(`[Presets] Template not found: ${id}`);
+    return null;
+  }
+  return {
+    type: template.type,
+    title: template.title,
+    instructions: template.instructions,
+    config: template.config,
+  };
+};
+
 export const PIPELINE_PRESETS: Record<string, PipelinePreset> = {
   DEFAULT: {
     id: 'DEFAULT',
@@ -31,22 +45,10 @@ export const PIPELINE_PRESETS: Record<string, PipelinePreset> = {
       {
         name: 'Technical Assessment',
         challenges: [
-          {
-            type: 'CODE_REVIEW',
-            title: 'JS Auth Middleware Review',
-            instructions: 'Identify security and logic flaws in this Express middleware.',
-            snippetId: 'js-auth-logic',
-            config: { renderer: 'DIFF_VIEW' }
-          },
-          {
-            type: 'QUIZ_MCQ',
-            title: 'React & TS Fundamentals',
-            instructions: 'Complete this brief quiz on modern frontend development.',
-            config: {
-              questions: quizQuestions.filter(q => q.id.startsWith('react') || q.id.startsWith('ts'))
-            }
-          }
-        ]
+          fromLibrary('cr-jwt-auth-bypass'),
+          fromLibrary('mcq-react-use-effect'),
+          fromLibrary('mcq-ts-interface-vs-type'),
+        ].filter(Boolean) as PresetChallenge[]
       }
     ]
   },
