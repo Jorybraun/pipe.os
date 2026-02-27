@@ -188,10 +188,11 @@ Every AI Lambda must follow the `questionAgent` pattern — separate files for h
 ## Engineering process
 
 **Commit & Review Workflow (Standard):**
-1. **Update `CHANGELOG.md`** under `[Unreleased]` with a detailed list of modified files and technical changes.
-2. **Commit changes** with a descriptive message and capture the short commit ID (`git rev-parse --short HEAD`).
-3. **Request Code Review in `MASTER_CLAUDE.md`** by adding a new bullet point under `🔍 Code Review Requests` containing the commit ID and a brief summary.
-4. **Finalize**: Run `npx tsc --noEmit` to ensure type safety before finishing.
+1. **Create a Detailed Log**: For every significant commit, create a Markdown file in `docs/changelogs/[commit-id].md`. List every file modified and provide a technical summary of changes.
+2. **Update `CHANGELOG.md`**: Add the commit ID to the main index and link to the detailed log.
+3. **Commit changes** with a descriptive message and capture the short commit ID (`git rev-parse --short HEAD`).
+4. **Request Code Review in `MASTER_CLAUDE.md`** by adding a new bullet point under `🔍 Code Review Requests` containing the commit ID and a link to the detailed log.
+5. **Finalize**: Run `npx tsc --noEmit` before finishing.
 
 **Every commit:**
 1. Update `CHANGELOG.md` under `[Unreleased]` — what was added, changed, or fixed
