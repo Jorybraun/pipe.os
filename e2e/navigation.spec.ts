@@ -24,35 +24,37 @@ test.describe('Role Management Flow', () => {
     
     // 3. COMPLETE DISCOVERY PHASES
     // Phase 1: Identity
-    await page.locator('input[placeholder*="Senior Software Engineer"]').fill(roleName);
-    await page.locator('fieldset:has-text("ROLE IDENTITY") select').selectOption('Senior');
-    await page.locator('input[placeholder*="Engineering"]').fill('E2E Team');
+    await page.getByPlaceholder('e.g., Senior Software Engineer').fill(roleName);
+    await page.locator('select').selectOption('Senior');
+    await page.getByPlaceholder('e.g., Engineering, Platform').fill('E2E Team');
     await page.locator('text=Remote').click();
-    await page.locator('button:has-text("NEXT_STEP")').click();
+    await page.getByRole('button', { name: 'NEXT_STEP' }).click();
 
     // Phase 2: Team Context
-    await page.locator('input[placeholder*="6 engineers"]').fill('4 engineers');
-    await page.locator('input[placeholder*="Engineering Manager"]').fill('E2E Lead');
-    await page.locator('button:has-text("NEXT_STEP")').click();
+    await page.getByPlaceholder('e.g., 6 engineers').fill('4 engineers');
+    await page.getByPlaceholder('e.g., Engineering Manager').fill('E2E Lead');
+    await page.getByRole('button', { name: 'NEXT_STEP' }).click();
 
     // Phase 3: Tech
-    const stackInput = page.locator('input[placeholder*="Enter to add"]');
+    const stackInput = page.getByPlaceholder('Press Enter to add');
     await stackInput.fill('React');
     await stackInput.press('Enter');
-    await page.locator('button:has-text("NEXT_STEP")').click();
+    await page.getByRole('button', { name: 'NEXT_STEP' }).click();
 
     // Phase 4: Success
-    await page.locator('button:has-text("NEXT_STEP")').click();
+    await page.getByRole('button', { name: 'NEXT_STEP' }).click();
 
     // Phase 5: Challenges
-    await page.locator('button:has-text("NEXT_STEP")').click();
+    await page.getByRole('button', { name: 'NEXT_STEP' }).click();
 
     // Phase 6: Culture
-    await page.locator('button:has-text("FINISH_ROLE_DISCOVERY")').click();
+    await page.getByRole('button', { name: 'FINISH_ROLE_DISCOVERY' }).click();
 
     // 4. VERIFY REDIRECT TO OVERVIEW
     await expect(page).toHaveURL(/\/pipeline\/[^/]+$/);
-    await expect(page.locator('h1')).toContainText(roleName);
+    // Find the pipeline title in the Overview page
+    const pageTitle = page.locator('h1').filter({ hasText: new RegExp(roleName, 'i') });
+    await expect(pageTitle).toBeVisible({ timeout: 15000 });
 
     // 5. NAVIGATE THROUGH PIPELINE
     const stageCard = page.locator('[data-testid="stage-card"]').first();

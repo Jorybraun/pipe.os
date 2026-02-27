@@ -43,9 +43,6 @@ const schema = a.schema({
       pipeline: a.belongsTo('Pipeline', 'pipelineId'),
       order: a.integer(),
       challenges: a.hasMany('Challenge', 'stageId'),
-      // Legacy - deprecated in Phase 7
-      type: a.enum(['QUIZ', 'CODE_REVIEW']),
-      config: a.json(),
     })
     .authorization((allow) => [
       allow.owner(),                
@@ -182,32 +179,6 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-    ]),
-
-  /**
-   * ChallengeTemplate Model (formerly Challenge)
-   *
-   * A global repository of pre-validated assessment content.
-   */
-  ChallengeTemplate: a
-    .model({
-      type: a.enum(['QUIZ', 'CODE_REVIEW']),
-      title: a.string().required(),
-      description: a.string(),
-
-      // Tags for matching (e.g., ['React', 'TypeScript', 'Senior'])
-      tags: a.string().array(),
-      difficulty: a.enum(['Entry', 'Mid', 'Senior', 'Staff']),
-
-      // The actual assessment data (questions, code, bugs, etc.)
-      config: a.json().required(),
-
-      // Verification status
-      isVerified: a.boolean().default(false),
-    })
-    .authorization((allow) => [
-      allow.authenticated().to(['read']),                         
-      allow.groups(['Admin']).to(['create', 'update', 'delete']), 
     ]),
 
   /**

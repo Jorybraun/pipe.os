@@ -1,6 +1,6 @@
 # Pipe — Architecture
 
-**Last updated:** 2026-02-27
+**Last updated:** 2026-02-27 (Phase 7 pre-flight complete; Engineering Process + Content Seeding added)
 **Source of truth:** This file supersedes all earlier specs that conflict with it.
 
 ---
@@ -21,7 +21,7 @@ The MVP covers one end-to-end flow:
 4. Candidate opens the link (no sign-in required), works through challenges in sequence, submits
 5. Recruiter sees the candidate ranked by score in their dashboard
 
-The current deployed version (Phases 1–5) uses a simplified model where stages map 1:1 to a challenge type. Phase 7 migrates to the full challenge architecture described here.
+Phase 7 has migrated to the full challenge architecture described here. The dual-FK strategy (Assessment holds both `stageId` and `challengeId`) ensures backward compatibility with existing data — see `docs/decisions/ADR-003-assessment-fk-strategy.md`.
 
 ---
 
@@ -111,7 +111,7 @@ Assessment
   └── reviewedByRecruiter (boolean — true after manual review)
 ```
 
-> **Migration note:** The current deployed schema uses `Stage.type` and `Assessment.stageId`. The Phase 7 migration script converts these to the new model. See `TASKS.md Phase 7 Step 1`.
+> **Migration note:** The Phase 7 migration script (`scripts/migrateStageConfigToChallenges.ts`) converts existing `Stage.type` + `Assessment.stageId` records to this model. Run it once after deploying the Phase 7 schema — not before.
 
 ### Challenge config JSON by type
 
@@ -204,34 +204,38 @@ The candidate can read their own `Candidate` record by querying on `inviteToken`
 
 ## Epics
 
-### Epic: Candidate Flow ✅ Done (Phases 1–5)
-Core flow is complete. Needs Phase 7 migration to work with Challenge model.
+### Epic: Candidate Flow ✅ Done (Phases 1–5, updated Phase 7)
+Core flow is complete and updated for challenge-level loading in Phase 7.
 
 Key files:
 - `src/hooks/useAssessment.ts`
 - `src/pages/CandidateAssessmentPage.tsx`
 - `/assess/:token` route in `App.tsx`
 
-### Epic: Challenge Architecture (Phase 7) 🎯 Next
+### Epic: Challenge Architecture (Phase 7) 🎯 In progress (Steps 1–4 partial done)
 Migrates from Stage-as-challenge-type to Stage-as-container with ordered Challenges.
 
-Key deliverables:
-- `Challenge` + `CodeArtifact` schema models
-- `ChallengeRegistry` (replaces `StageRegistry`)
-- `MonacoChallenge`, `MCQChallenge`, `ShortAnswerChallenge` components
-- `StageShell` (timer + progress + navigation wrapper)
-- `ChallengeCard`, `ChallengePicker`, `ChallengeEditor` (pipeline builder UI)
-- Per-challenge recruiter review interface
+Done:
+- ✅ `Challenge` + `CodeArtifact` schema models
+- ✅ `ChallengeRegistry` (replaces `StageRegistry`) + `StageShell`
+- ✅ `ChallengeCard`, `ChallengePicker`, `ChallengeEditorPage` (pipeline builder UI)
+- ✅ `useAssessment.ts` — challenge-level loading/submission, `StageWithChallenges` typed
+- ✅ Phase 7 pre-flight P0/P1 bugs resolved
+- ✅ `src/content/challengeLibrary.ts` — 65 pre-built challenge templates
 
-Full design: `docs/design/challenge-architecture.md`
+Remaining:
+- ⏳ `MonacoChallenge`, `MCQChallenge`, `ShortAnswerChallenge` renderer components (Step 4)
+- ⏳ Per-challenge recruiter review in `CandidateProfilePage` + manual scoring (Step 5)
+- ⏳ Score rollup: challenge → stage → candidate signal label (Step 5)
+- ⏳ Wire `ChallengePicker` to `challengeLibrary.ts` with search + filter
 
-### Epic: Bug Fixes (Phase 6) — must do before Phase 7
-- P0: Dev buttons (`CLEAR_STAGES`, `SEED_MVP_STAGES`) render in production
-- P0: Avg score reads from `Candidate` (has no score field) instead of `Assessment`
-- P1: N+2 query in `ListingPage` — fix with `selectionSet`
-- P1: `useState<any>` in `CandidateProfilePage`
+Full design: `docs/design/challenge-architecture.md` | ADR: `docs/decisions/ADR-002-challenge-architecture.md`
 
-Full details: `docs/reviews/phase-2-code-review.md`
+### Epic: Bug Fixes (Phase 6) ✅ Done
+- ✅ P0: Dev buttons gated behind `import.meta.env.DEV`
+- ✅ P0: Avg score fixed — reads from `Assessment`, not `Candidate`
+- ✅ P1: N+2 query in `ListingPage` fixed with `selectionSet`
+- ✅ P1: `useState<any>` in `CandidateProfilePage` replaced with proper types
 
 ### Epic: Code Review Stage ✅ Done (Phase 2)
 - `src/content/codeReviewSnippets.ts` — 3 buggy snippets with ground truth
@@ -275,16 +279,16 @@ src/
 ├── App.tsx                                   # Routes
 ├── main.tsx                                  # Amplify.configure() entry point
 ├── pages/
-│   ├── ListingPage.tsx                       # Recruiter: pipeline list ✅ ⚠️ N+2 bug
+│   ├── ListingPage.tsx                       # Recruiter: pipeline list ✅
 │   ├── PipelineCreatePage.tsx                # Recruiter: create pipeline ✅
-│   ├── OverviewPage.tsx                      # Recruiter: pipeline detail ✅ ⚠️ dev buttons
-│   ├── CandidateProfilePage.tsx              # Recruiter: candidate review ✅ ⚠️ type safety
+│   ├── OverviewPage.tsx                      # Recruiter: pipeline detail ✅
+│   ├── CandidateProfilePage.tsx              # Recruiter: candidate review ✅
 │   ├── ChallengeEditorPage.tsx               # Recruiter: edit a challenge — Phase 7
-│   ├── CandidateAssessmentPage.tsx           # Candidate: assessment UI ✅ ⚠️ needs Phase 7
+│   ├── CandidateAssessmentPage.tsx           # Candidate: assessment UI ✅ Phase 7 updated
 │   └── RoleDiscoveryPage.tsx                 # Post-MVP: agentic discovery 🔒
 ├── hooks/
 │   ├── usePipelineCreate.ts                  # Pipeline creation ✅
-│   ├── useAssessment.ts                      # Candidate flow ✅ ⚠️ needs Phase 7
+│   ├── useAssessment.ts                      # Candidate flow ✅ Phase 7 updated — challenge-level
 │   └── useRoleDiscovery.ts                   # Post-MVP 🔒
 ├── components/
 │   ├── ui/                                   # Design system primitives
@@ -303,10 +307,12 @@ src/
 │       ├── ChallengePicker.tsx               # Add challenge modal (Phase 7)
 │       └── CodeArtifactManager.tsx           # Manage reusable code snippets (Phase 7)
 ├── content/
-│   ├── codeReviewSnippets.ts                 # Buggy code + ground truth ✅
-│   └── quizQuestions.ts                      # MCQ bank ✅
+│   ├── codeReviewSnippets.ts                 # Original 3 buggy snippets + ground truth ✅
+│   ├── quizQuestions.ts                      # Original 10 MCQ questions ✅
+│   └── challengeLibrary.ts                   # 65 challenge templates (all 4 types) ✅ New
 └── lib/
     ├── generateInviteToken.ts                # crypto.randomUUID() wrapper ✅
+    ├── pipelinePresets.ts                    # DEFAULT + BLANK presets ✅ Phase 7
     └── scoring/
         ├── codeReview.ts                     # Pure scoring function ✅
         └── quiz.ts                           # Pure scoring function ✅
@@ -323,6 +329,8 @@ src/
 - **Logging prefix** — `console.error('[hookName] what failed:', context)`.
 - **Hooks** in `src/hooks/`, pages in `src/pages/`, reusable components in `src/components/`.
 - **`npx tsc --noEmit` must pass** before any commit.
+- **`CHANGELOG.md` must be updated** on every commit that touches source files — add entry under `[Unreleased]`. Enforced by pre-commit hook (`scripts/check-changelog.sh`). Bypass with `--no-verify` for doc/config-only commits.
+- **ADRs** — write one in `docs/decisions/` for every significant architectural decision. Copy `ADR-000-template.md`, use next sequence number, add to `README.md` index.
 
 ---
 
@@ -364,10 +372,13 @@ npx ampx pipeline-deploy
 | Document | Purpose |
 |---|---|
 | `TASKS.md` | Ordered task list — what to build next |
+| `CHANGELOG.md` | Required on every source commit — update `[Unreleased]` section |
 | `docs/ARCHITECTURE.md` | This file — system overview |
+| `docs/decisions/README.md` | ADR index — write one for every architectural decision |
 | `docs/design/challenge-architecture.md` | Challenge architecture design — read before Phase 7 |
+| `docs/design/content-seeding-strategy.md` | Three-phase content strategy for challenge library |
 | `docs/specs/candidate-flow-spec.md` | Detailed spec for the candidate flow |
 | `docs/specs/engineering-standards.md` | Agent Lambda pattern — required reading before building any Lambda |
 | `docs/design/design-system.md` | Component library and visual language |
-| `docs/reviews/phase-2-code-review.md` | Code review of Phase 2/4 — read before Phase 6 |
+| `docs/reviews/phase-7-code-review.md` | Code review of Phase 7 work |
 | `amplify/data/resource.ts` | Canonical data schema |

@@ -5,12 +5,10 @@ import {
   Activity,
   Code,
   FileText,
-  Mic,
   Building,
   Copy,
   Plus,
   X,
-  Zap,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -18,8 +16,6 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import { useCandidateCreate } from "../hooks/useCandidateCreate";
 import { FieldGroup, TextInput } from "../components/ui/form";
-import { codeReviewSnippets } from "../content/codeReviewSnippets";
-import { quizQuestions } from "../content/quizQuestions";
 
 const client = generateClient<Schema>();
 
@@ -74,28 +70,17 @@ const OverviewSkeleton = () => (
  * OverviewPage - Kanban-style pipeline view showing candidates by stage
  */
 
-// Map stage types to icons
-const stageIcons: Record<string, typeof Code> = {
-  CODE_REVIEW: Code,
-  VOICE_INTERVIEW: Mic,
-  PLANNING: FileText,
-  QUIZ: FileText,
-  AI_COLLAB: Zap,
-};
-
 // Stage header card
 function StageHeaderCard({
-  stage,
   candidates,
   isActive,
   onClick,
 }: {
-  stage: any;
   candidates: any[];
   isActive: boolean;
   onClick: () => void;
 }) {
-  const Icon = stage.type ? (stageIcons[stage.type] || FileText) : FileText;
+  const Icon = FileText;
   const scoredCandidates = candidates.filter(c => c.score !== undefined && c.score !== null);
   const avgScore = scoredCandidates.length > 0
     ? Math.round(
@@ -137,7 +122,7 @@ function StageHeaderCard({
           marginBottom: 12,
         }}
       >
-        {stage.type ? stage.type.replace('_', ' ').toUpperCase() : 'STAGE'}
+        {'STAGE'}
       </div>
 
       {avgScore !== null ? (
@@ -426,13 +411,13 @@ export default function OverviewPage(): JSX.Element {
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'order', 'type', 'challenges.id']
+          selectionSet: ['id', 'order', 'challenges.id']
         }),
       ]);
 
       setPipeline(pipelineData.data);
       setCandidates(candidatesData.data);
-      setStages(stagesData.data.sort((a, b) => (a.order || 0) - (b.order || 0)));
+      setStages((stagesData.data as any[]).sort((a, b) => (a.order || 0) - (b.order || 0)));
     } catch (err) {
       console.error("Error fetching pipeline data:", err);
       setError(err instanceof Error ? err : new Error("Failed to load pipeline data"));
@@ -489,36 +474,16 @@ export default function OverviewPage(): JSX.Element {
     setIsLoading(true);
     try {
       console.log('[Overview] Seeding MVP stages...');
-      // 1. CODE_REVIEW
+      // 1. Technical Screen
       await client.models.Stage.create({
         pipelineId: id,
-        type: 'CODE_REVIEW',
         order: 0,
-        config: JSON.stringify({
-          renderer: 'DIFF_VIEW',
-          snippets: codeReviewSnippets.map(s => ({
-            id: s.id,
-            title: s.title,
-            code: s.code,
-            language: s.language,
-            groundTruth: s.groundTruth,
-          }))
-        }),
       });
 
-      // 2. QUIZ
+      // 2. Final Round
       await client.models.Stage.create({
         pipelineId: id,
-        type: 'QUIZ',
         order: 1,
-        config: JSON.stringify({
-          questions: quizQuestions.map(q => ({
-            id: q.id,
-            q: q.q,
-            options: q.options,
-            correct: q.correct
-          }))
-        }),
       });
 
       console.log('[Overview] Stages seeded. Refreshing...');
@@ -760,7 +725,6 @@ export default function OverviewPage(): JSX.Element {
             <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Header */}
               <StageHeaderCard
-                stage={s}
                 candidates={stageCandidates}
                 isActive={false}
                 onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}

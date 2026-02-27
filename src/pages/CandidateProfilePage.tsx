@@ -5,11 +5,6 @@ import {
   Mail,
   Briefcase,
   CheckCircle,
-  Phone,
-  Zap,
-  Code,
-  Mic,
-  Users,
   FileText,
 } from "lucide-react";
 import {
@@ -80,16 +75,6 @@ const ProfileSkeleton = () => (
  * Matches the profile-example.tsx design
  */
 
-// Map stage names to icons
-const stageIcons: Record<string, typeof Phone> = {
-  "Code Review": Code,
-  "Voice Interview": Mic,
-  "System Design": FileText,
-  Screening: Phone,
-  "AI Collaboration": Zap,
-  "Panel Interview": Users,
-};
-
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const [candidate, setCandidate] = useState<Schema['Candidate']['type'] | null>(null);
@@ -115,7 +100,7 @@ export default function CandidateProfilePage(): JSX.Element {
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: cand.pipelineId } },
-          selectionSet: ['id', 'order', 'type', 'challenges.id', 'challenges.title', 'challenges.type', 'challenges.order']
+          selectionSet: ['id', 'order', 'challenges.id', 'challenges.title', 'challenges.type', 'challenges.order']
         }),
       ]);
 
@@ -233,7 +218,7 @@ export default function CandidateProfilePage(): JSX.Element {
 
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {stages.map((stage) => {
-          const Icon = stage.type ? (stageIcons[stage.type] || FileText) : FileText;
+          const Icon = FileText;
           
           // Calculate stage score as average of challenge assessments
           const challengeIds = (stage.challenges || []).map((c: any) => c.id);
@@ -285,7 +270,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     marginBottom: 8,
                   }}
                 >
-                  {stage.type ? stage.type.replace('_', ' ').toUpperCase() : 'STAGE'}
+                  {'STAGE'}
                 </div>
 
                 {stageScore !== null ? (
@@ -533,7 +518,7 @@ export default function CandidateProfilePage(): JSX.Element {
         <section style={{ marginBottom: 100 }}>
           <div style={{ marginBottom: 32 }}>
             <SubTitle>
-              {stages.find(s => s.id === selectedStageId)?.type?.replace('_', ' ') || 'STAGE'}_RESULTS
+              {'STAGE'}_RESULTS
             </SubTitle>
           </div>
 

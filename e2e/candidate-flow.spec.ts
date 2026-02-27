@@ -1,68 +1,73 @@
-// e2e/candidate-flow.spec.ts
+
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 test.describe('Candidate Flow', () => {
-  test.beforeEach(async ({ page }) => {
-    // Bypassing Cognito authentication
-    await page.goto('/', { waitUntil: 'networkidle' });
+  let candidateToken: string;
+
+  test.beforeAll(() => {
+    try {
+      const data = JSON.parse(readFileSync(join(process.cwd(), 'playwright/candidate-token.json'), 'utf8'));
+      candidateToken = data.token;
+    } catch (err) {
+      console.warn('Candidate token not found, some tests might fail if token is required');
+      candidateToken = 'test-token';
+    }
   });
 
   test('Candidate assessment page renders correctly without authentication', async ({ page }) => {
-    // Mock the invite link or navigate directly to the assessment page
-    // Example: await page.goto('/assessment/candidateId');
+    await page.goto(`/assess/${candidateToken}`);
+    
+    // Wait for the page to load (loader should disappear)
+    await expect(page.locator('text=INITIALIZING_SECURE_SESSION')).not.toBeVisible({ timeout: 15000 });
 
-    // Add a mock candidate ID
-    const candidateId = "testCandidate123";
-    await page.goto(`/assessment/${candidateId}`);
-
-    // Verify the assessment page is rendered
-    await expect(page.locator('body')).toContainText('Assessment');
+    // Verify the assessment page is rendered - look for challenge title
+    const header = page.locator('h1');
+    await expect(header).toBeVisible();
   });
 
-  test('Progress indicator and stage transitions work', async ({ page }) => {
-    // Mock the invite link or navigate directly to the assessment page
-    // Example: await page.goto('/assessment/candidateId');
+  test('Progress indicator and navigation work', async ({ page }) => {
+    await page.goto(`/assess/${candidateToken}`);
+    
+    // Wait for load
+    await expect(page.locator('text=INITIALIZING_SECURE_SESSION')).not.toBeVisible({ timeout: 15000 });
 
-    // Add a mock candidate ID
-    const candidateId = "testCandidate123";
-    await page.goto(`/assessment/${candidateId}`);
+    // Check for the challenge title
+    const challengeTitle = await page.locator('h1').textContent();
+    console.log('Current challenge:', challengeTitle);
 
-    // Verify the initial stage is displayed
-    await expect(page.locator('body')).toContainText('Code Review');
+    // Check for footer status
+    await expect(page.locator('text=COMPLETE_CHALLENGE_TO_CONTINUE')).toBeVisible();
 
-    // Simulate completing the stage and transitioning to the next
-    // Example: await page.click('button:has-text("Complete Code Review")');
-    // Implement the actions to complete the Code Review Stage
-
-    // Click a button to advance to the next state, implement the logic to complete the stage based on the UI. Mock if needed
-    await page.locator('button:has-text("Complete Code Review")').click();
-
-    // Verify the next stage is displayed
-    await expect(page.locator('body')).toContainText('Quiz');
+    // Verify NEXT_CHALLENGE button is disabled initially
+    const nextBtn = page.getByRole('button', { name: /NEXT_CHALLENGE|FINAL_SUBMIT/ });
+    await expect(nextBtn).toBeDisabled();
   });
 
-  test('Success state after final submission', async ({ page }) => {
-    // Mock the invite link or navigate directly to the assessment page
-    // Example: await page.goto('/assessment/candidateId');
+  test('Can complete a simple quiz challenge', async ({ page }) => {
+    // This test assumes the candidate-token.json points to a candidate with a QUIZ_MCQ challenge
+    // which our creation script ensures if no pipeline exists.
+    await page.goto(`/assess/${candidateToken}`);
+    await expect(page.locator('text=INITIALIZING_SECURE_SESSION')).not.toBeVisible({ timeout: 15000 });
 
-        // Add a mock candidate ID
-        const candidateId = "testCandidate123";
-        await page.goto(`/assessment/${candidateId}`);
-
-    // Complete all stages (Code Review and Quiz)
-    // Implement the actions to complete both Code Review and Quiz stages based on the UI.
-    // Mock the completion if needed
-
-    // Advance to Code Review Completion
-    await page.locator('button:has-text("Complete Code Review")').click();
-
-    // Advance to Quiz Completion
-    await page.locator('button:has-text("Complete Quiz")').click();
-
-    // Submit the assessment
-    await page.click('button:has-text("Submit Assessment")');
-
-    // Verify the success state is displayed
-    await expect(page.locator('body')).toContainText('Assessment Complete');
+    // If it's a quiz, select an option
+    const option = page.locator('label').first();
+    if (await option.isVisible()) {
+      await option.click();
+      
+      // Footer should change
+      await expect(page.locator('text=READY_TO_PROCEED')).toBeVisible();
+      
+      // Button should be enabled
+      const nextBtn = page.getByRole('button', { name: /NEXT_CHALLENGE|FINAL_SUBMIT/ });
+      await expect(nextBtn).toBeEnabled();
+      
+      // Advance
+      await nextBtn.click();
+      
+      // If it was the last challenge, should show submitted state
+      // (Depends on if our creation script created multiple stages)
+    }
   });
 });

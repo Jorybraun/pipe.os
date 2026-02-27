@@ -41,7 +41,7 @@ setup('authenticate', async ({ page }) => {
   await page.locator('button[type="submit"]').click();
 
   // Wait for the app to load (e.g., look for a header or something that indicates successful login)
-  await expect(page.locator('text=PIPE_OS')).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('text=PIPE_OS').first()).toBeVisible({ timeout: 20000 });
 
   // Save storage state to a file
   await page.context().storageState({ path: authFile });
