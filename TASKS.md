@@ -198,23 +198,23 @@
 
 #### Step 4B — Shell Components
 
-- [ ] **Create `src/components/Shells/TimerShell.tsx`** — countdown wrapper. Props: `timeLimit: number | null`, `onTimeExpired?: () => void`. No-op when `timeLimit` is null. ~45 min.
+- [x] **Create `src/components/Shells/TimerShell.tsx`** — countdown wrapper. Props: `timeLimit: number | null`, `onExpire?: () => void`. No-op when `timeLimit` is null. ~45 min.
 
 #### Step 4C — Panel Components (MVP set only)
 
-- [ ] **Create `src/components/Assessment/WorkspaceLayout.tsx`** — 3-column CSS Grid (28% | 47% | 25%). Props: `leftPanel`, `centerPanel`, `rightPanel` (each `ReactNode | null`). ~30 min.
+- [x] **Create `src/components/Assessment/WorkspaceLayout.tsx`** — 3-column CSS Grid (28% | 47% | 25%). Props: `leftPanel`, `centerPanel`, `rightPanel` (each `ReactNode | null`). ~30 min.
 
-- [ ] **Create `src/components/Panels/ProblemPanel.tsx`** — renders `challenge.instructions` as Markdown via `react-markdown + remark-gfm`. Scrollable. ~30 min.
+- [x] **Create `src/components/Panels/ProblemPanel.tsx`** — renders `challenge.instructions` as Markdown via `react-markdown + remark-gfm`. Scrollable. ~30 min.
 
-- [ ] **Create `src/components/Panels/MonacoPanel.tsx`** — wraps `@monaco-editor/react`. Props: `language`, `value`, `onChange`, `readOnly?`. Dark theme, Space Mono font. ~45 min.
+- [x] **Create `src/components/Panels/MonacoPanel.tsx`** — wraps `@monaco-editor/react`. Props: `language`, `value`, `onChange`, `readOnly?`. Dark theme, Space Mono font. ~45 min.
 
-- [ ] **Create `src/components/Panels/OptionsPanel.tsx`** — MCQ radio list from `config.options[]`. Props: `options`, `selectedId`, `onChange`. ~30 min.
+- [x] **Create `src/components/Panels/OptionsPanel.tsx`** — MCQ radio list from `config.options[]`. Props: `options`, `selectedId`, `onChange`. ~30 min.
 
-- [ ] **Create `src/components/Panels/TextareaPanel.tsx`** — short answer textarea. Props: `value`, `onChange`, `placeholder?`. ~20 min.
+- [x] **Create `src/components/Panels/TextareaPanel.tsx`** — short answer textarea. Props: `value`, `onChange`, `placeholder?`. ~20 min.
 
 #### Step 4D — Wire It Together
 
-- [ ] **Update `ChallengeRegistry.tsx`** — replace current if/switch with composable assembly: `resolveLayout()` + `resolveShells()` → `WorkspaceLayout` wrapped in shells. `CODE_REVIEW` still uses `DiffReviewCanvas` as its center panel — keep that path intact. ~1.5 hours.
+- [x] **Update `ChallengeRegistry.tsx`** — replace current if/switch with composable assembly: `resolveLayout()` + `resolveShells()` → `WorkspaceLayout` wrapped in shells. `CODE_REVIEW` still uses `DiffReviewCanvas` as its center panel — keep that path intact. ~1.5 hours.
 
 #### Step 4E — Verify
 

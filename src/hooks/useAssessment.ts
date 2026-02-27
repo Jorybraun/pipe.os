@@ -27,6 +27,7 @@ export type StageSubmission = CodeReviewSubmission | QuizSubmission | Record<str
 export interface StageWithChallenges {
   id: string;
   order: number | null;
+  timeLimit?: number | null;
   type?: string | null;
   challenges: {
     id: string;
@@ -119,6 +120,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         selectionSet: [
           'id', 
           'order', 
+          'timeLimit',
           'challenges.id', 
           'challenges.type', 
           'challenges.title', 

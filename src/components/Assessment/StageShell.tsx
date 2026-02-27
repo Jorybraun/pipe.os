@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { Clock, ChevronRight, CheckCircle, AlertCircle } from 'lucide-react';
+import { ChevronRight, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { useTimer } from './TimerContext';
 
 interface StageShellProps {
   title: string;
   totalChallenges: number;
   currentChallengeIndex: number;
-  timeLimit?: number; // in minutes
   children: React.ReactNode;
   onNext: () => void;
   isLastChallenge: boolean;
@@ -15,45 +14,24 @@ interface StageShellProps {
 
 /**
  * StageShell - Layout wrapper for the candidate assessment experience.
- * Manages timer, progress, and primary navigation.
+ * Manages progress and primary navigation. Displays timer from TimerContext.
  */
 export function StageShell({
   title,
   totalChallenges,
   currentChallengeIndex,
-  timeLimit,
   children,
   onNext,
   isLastChallenge,
   canAdvance,
   isSubmitting,
 }: StageShellProps): JSX.Element {
-  const initialTimeLimit = useRef(timeLimit);
-  const [secondsRemaining, setSecondsRemaining] = useState(initialTimeLimit.current ? initialTimeLimit.current * 60 : 0);
-
-  useEffect(() => {
-    if (!initialTimeLimit.current) return;
-    
-    const timer = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  const { secondsRemaining, formatTime } = useTimer();
 
   const progressPercent = ((currentChallengeIndex + 1) / totalChallenges) * 100;
+
+  const isWarning = secondsRemaining !== null && secondsRemaining < 90;
+  const isCritical = secondsRemaining !== null && secondsRemaining < 30;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -109,21 +87,22 @@ export function StageShell({
           </div>
         </div>
 
-        {timeLimit && (
+        {secondsRemaining !== null && (
           <div style={{ 
             display: 'flex', 
             alignItems: 'center', 
             gap: 12, 
             padding: '8px 16px', 
-            background: secondsRemaining < 60 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${secondsRemaining < 60 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.08)'}`,
-            borderRadius: 4
+            background: isCritical ? 'rgba(239, 68, 68, 0.1)' : isWarning ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${isCritical ? 'rgba(239, 68, 68, 0.2)' : isWarning ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: 4,
+            transition: 'all 0.3s'
           }}>
-            <Clock size={14} color={secondsRemaining < 60 ? '#f87171' : 'rgba(255,255,255,0.4)'} />
+            <Clock size={14} color={isCritical ? '#f87171' : isWarning ? '#fbbf24' : 'rgba(255,255,255,0.4)'} />
             <span style={{ 
               fontSize: 14, 
               fontWeight: 700, 
-              color: secondsRemaining < 60 ? '#f87171' : '#fff',
+              color: isCritical ? '#f87171' : isWarning ? '#fbbf24' : '#fff',
               fontFamily: 'Space Mono'
             }}>
               {formatTime(secondsRemaining)}

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAssessment } from '../hooks/useAssessment';
-import { ChallengeRenderer } from '../components/Assessment/ChallengeRegistry';
+import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
 import { StageShell } from '../components/Assessment/StageShell';
+import { TimerProvider } from '../components/Assessment/TimerContext';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -131,41 +132,27 @@ export default function CandidateAssessmentPage(): JSX.Element {
     <div style={{ minHeight: '100vh', background: '#0c0c0e', position: 'relative' }}>
       <ChromeMeshGrid />
       
-      <StageShell
-        title={currentChallenge.title}
-        totalChallenges={currentStage.challenges.length}
-        currentChallengeIndex={currentChallengeIndex}
-        onNext={handleSubmit}
-        isLastChallenge={isLastChallenge}
-        canAdvance={
-          currentSubmission !== null && 
-          (currentChallenge.type !== 'CODE_REVIEW' || Object.keys(currentSubmission.annotations || {}).length > 0)
-        }
-        isSubmitting={isLoading}
-      >
-        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-          <header style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)', marginBottom: 8, fontFamily: 'Space Mono' }}>
-              CHALLENGE_{currentChallengeIndex + 1}
-            </div>
-            <h1 style={{ fontSize: 28, fontWeight: 800, color: '#fff', margin: 0 }}>
-              {currentChallenge.title}
-            </h1>
-            {currentChallenge.instructions && (
-              <p style={{ marginTop: 12, fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>
-                {currentChallenge.instructions}
-              </p>
-            )}
-          </header>
-
-          <ChallengeRenderer
-            type={currentChallenge.type as any}
-            config={currentChallenge.config}
-            context={{ codeArtifact: currentChallenge.codeArtifact }}
+      <TimerProvider>
+        <StageShell
+          title={currentChallenge.title}
+          totalChallenges={currentStage.challenges.length}
+          currentChallengeIndex={currentChallengeIndex}
+          onNext={handleSubmit}
+          isLastChallenge={isLastChallenge}
+          canAdvance={
+            currentSubmission !== null && 
+            (currentChallenge.type !== 'CODE_REVIEW' || Object.keys(currentSubmission.annotations || {}).length > 0)
+          }
+          isSubmitting={isLoading}
+        >
+          <ChallengeRegistry
+            challenge={currentChallenge}
+            stageTimeLimit={currentStage.order !== null ? (currentStage as any).timeLimit : null}
             onSubmissionChange={setCurrentSubmission}
+            onSubmit={handleSubmit}
           />
-        </div>
-      </StageShell>
+        </StageShell>
+      </TimerProvider>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');

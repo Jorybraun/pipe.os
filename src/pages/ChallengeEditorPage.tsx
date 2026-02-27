@@ -13,7 +13,7 @@ import { LiquidMetalCard, SubTitle } from '../components';
 import { Skeleton } from '../components/ui/Skeleton';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { ChallengeRenderer } from '../components/Assessment/ChallengeRegistry';
+import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
 
 const client = generateClient<Schema>();
 
@@ -208,11 +208,10 @@ export default function ChallengeEditorPage(): JSX.Element {
               <div>
                 <SubTitle>CANDIDATE_PREVIEW</SubTitle>
                 <div style={{ marginTop: 32, opacity: 0.8 }}>
-                  <ChallengeRenderer 
-                    type={challenge.type as any} 
-                    config={typeof challenge.config === 'string' ? JSON.parse(challenge.config) : challenge.config}
-                    context={{ codeArtifact: (challenge as any).codeArtifact }}
+                  <ChallengeRegistry 
+                    challenge={challenge as any}
                     onSubmissionChange={() => {}}
+                    onSubmit={() => {}}
                   />
                 </div>
               </div>

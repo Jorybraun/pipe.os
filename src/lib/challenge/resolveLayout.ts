@@ -1,4 +1,3 @@
-import type { Schema } from '../../../amplify/data/resource';
 
 export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER';
 

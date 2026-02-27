@@ -1,147 +1,185 @@
-import React from 'react';
-import { ReviewCanvas } from '../ReviewCanvas';
-import { QuizRenderer } from '../QuizRenderer';
-import { DiffReviewCanvas } from './CodeReview/DiffReviewCanvas';
+import { useState, ReactNode, useMemo, useEffect } from 'react';
+import { resolveLayout, PanelType } from '../../lib/challenge/resolveLayout';
+import { resolveShells } from '../../lib/challenge/resolveShells';
+import { WorkspaceLayout } from './WorkspaceLayout';
+import { TimerShell } from '../Shells/TimerShell';
+import { ProblemPanel } from '../Panels/ProblemPanel';
+import { MonacoPanel } from '../Panels/MonacoPanel';
+import { OptionsPanel } from '../Panels/OptionsPanel';
+import { TextareaPanel } from '../Panels/TextareaPanel';
+import { DiffAnnotationPanel } from '../Panels/DiffAnnotationPanel';
 
 // ============================================================================
-// Types & Contracts
+// Types
 // ============================================================================
 
-export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER';
-
-export interface ChallengeDefinition<TConfig = any, TProps = any> {
-  type: ChallengeType;
-  resolve: (config: TConfig, onDataChange: (data: any) => void, context?: any) => {
-    Component: React.ComponentType<any>;
-    props: TProps;
+interface ChallengeRegistryProps {
+  challenge: {
+    id: string;
+    type: string | null;
+    title: string;
+    instructions: string | null;
+    config: any;
+    codeArtifact?: any;
   };
-}
-
-// ============================================================================
-// Challenge Definitions
-// ============================================================================
-
-const CodeReviewDefinition: ChallengeDefinition = {
-  type: 'CODE_REVIEW',
-  resolve: (config, onDataChange, context) => {
-    const parsed = typeof config === 'string' ? JSON.parse(config) : (config || {});
-    const renderer = parsed?.renderer || 'DIFF_VIEW';
-    
-    // In the new architecture, snippets might come from a linked CodeArtifact
-    // For now, we'll support both inline and linked
-    const snippets = context?.codeArtifact ? [context.codeArtifact] : (parsed?.snippets || (parsed?.code ? [parsed] : []));
-
-    return {
-      Component: renderer === 'CUSTOM' ? ReviewCanvas : DiffReviewCanvas,
-      props: {
-        snippets: snippets.map((s: any, i: number) => ({
-          id: s.id || `snippet-${i}`,
-          title: s.title || 'Code Review',
-          code: s.code || '',
-          language: s.language || 'javascript'
-        })),
-        onAnnotationsChange: onDataChange
-      }
-    };
-  }
-};
-
-const QuizMCQDefinition: ChallengeDefinition = {
-  type: 'QUIZ_MCQ',
-  resolve: (config, onDataChange) => {
-    const parsed = typeof config === 'string' ? JSON.parse(config) : (config || {});
-    // Adapt to QuizRenderer's expected format
-    const questions = parsed?.q ? [parsed] : (parsed?.questions || []);
-    
-    return {
-      Component: QuizRenderer,
-      props: {
-        questions: questions,
-        onAnswersChange: (answers: any) => onDataChange({ answers })
-      }
-    };
-  }
-};
-
-function ShortAnswerInput({ onSubmissionChange }: { onSubmissionChange: (data: any) => void }) {
-  return (
-    <div style={{ padding: 32, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
-      <textarea 
-        onChange={(e) => onSubmissionChange({ text: e.target.value })}
-        placeholder="Type your response here..."
-        style={{ width: '100%', height: 300, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: 20, color: '#fff', fontSize: 14, outline: 'none' }}
-      />
-    </div>
-  );
-}
-
-const QuizShortAnswerDefinition: ChallengeDefinition = {
-  type: 'QUIZ_SHORT_ANSWER',
-  resolve: (_, onDataChange) => {
-    return {
-      Component: ShortAnswerInput,
-      props: {
-        onSubmissionChange: onDataChange
-      }
-    };
-  }
-};
-
-function MonacoPlaceholder() {
-  return (
-    <div style={{ padding: 60, textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)' }}>
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-        MONACO_EDITOR_IMPLEMENTATION_COMING_SOON
-      </div>
-    </div>
-  );
-}
-
-// Placeholder for Monaco based implementation
-const CodeImplementationDefinition: ChallengeDefinition = {
-  type: 'CODE_IMPLEMENTATION',
-  resolve: () => {
-    return {
-      Component: MonacoPlaceholder,
-      props: {}
-    };
-  }
-};
-
-// ============================================================================
-// The Registry
-// ============================================================================
-
-const Definitions: Record<ChallengeType, ChallengeDefinition> = {
-  CODE_REVIEW: CodeReviewDefinition,
-  CODE_IMPLEMENTATION: CodeImplementationDefinition,
-  QUIZ_MCQ: QuizMCQDefinition,
-  QUIZ_SHORT_ANSWER: QuizShortAnswerDefinition,
-};
-
-// ============================================================================
-// The Auto-Mapping Renderer
-// ============================================================================
-
-interface ChallengeRendererProps {
-  type: ChallengeType;
-  config: any;
+  stageTimeLimit?: number | null;
   onSubmissionChange: (submission: any) => void;
-  context?: any;
+  onSubmit: (submission: any) => void;
 }
+
+// ============================================================================
+// Component
+// ============================================================================
 
 /**
- * ChallengeRenderer - Generic engine that resolves and renders individual challenges.
+ * ChallengeRegistry - Assembler that composes shells and panels for a challenge.
+ * This is the primary entry point for rendering any challenge type.
  */
-export function ChallengeRenderer({ type, config, onSubmissionChange, context }: ChallengeRendererProps): JSX.Element | null {
-  const definition = Definitions[type];
+export function ChallengeRegistry({
+  challenge,
+  stageTimeLimit,
+  onSubmissionChange,
+  onSubmit,
+}: ChallengeRegistryProps): JSX.Element {
+  const layout = useMemo(() => resolveLayout(challenge), [challenge]);
+  const shells = useMemo(() => resolveShells(challenge, stageTimeLimit), [challenge, stageTimeLimit]);
+  
+  const config = useMemo(() => {
+    return typeof challenge.config === 'string' 
+      ? JSON.parse(challenge.config) 
+      : (challenge.config || {});
+  }, [challenge.config]);
 
-  if (!definition) {
-    console.warn(`[ChallengeRenderer] No definition found for challenge type: ${type}`);
-    return null;
+  // Submission State
+  const [submission, setSubmission] = useState<any>(() => {
+    if (challenge.type === 'QUIZ_MCQ') return { answers: {} };
+    if (challenge.type === 'CODE_REVIEW') return { annotations: {} };
+    if (challenge.type === 'QUIZ_SHORT_ANSWER') return { text: '' };
+    if (challenge.type === 'CODE_IMPLEMENTATION') return { code: config.starterCode || '' };
+    return {};
+  });
+
+  // Notify parent of submission changes
+  useEffect(() => {
+    onSubmissionChange(submission);
+  }, [submission, onSubmissionChange]);
+
+  // ---------------------------------------------------------------------------
+  // Panel Rendering
+  // ---------------------------------------------------------------------------
+
+  const renderPanel = (panelType: PanelType | null): ReactNode => {
+    if (!panelType) return null;
+
+    switch (panelType) {
+      case 'problem':
+        return (
+          <ProblemPanel
+            markdown={challenge.instructions || 'No instructions provided.'}
+            examples={config.examples}
+            constraints={config.constraints}
+            linkedArtifact={config.originalCode ? {
+              label: 'View original code',
+              code: config.originalCode,
+              language: config.language || 'javascript'
+            } : undefined}
+          />
+        );
+
+      case 'monaco':
+        return (
+          <MonacoPanel
+            language={config.language || 'javascript'}
+            value={submission.code || config.starterCode || ''}
+            onChange={(code) => setSubmission((prev: any) => ({ ...prev, code }))}
+          />
+        );
+
+      case 'options':
+        return (
+          <OptionsPanel
+            question={config.question || challenge.title}
+            options={config.options || []}
+            selectedId={submission.answers?.current || null}
+            onSelect={(id) => setSubmission((prev: any) => ({ ...prev, answers: { current: id } }))}
+          />
+        );
+
+      case 'textarea':
+        return (
+          <TextareaPanel
+            question={config.question || challenge.title}
+            value={submission.text || ''}
+            onChange={(text) => setSubmission((prev: any) => ({ ...prev, text }))}
+            maxLength={config.maxLength}
+          />
+        );
+
+      case 'diff-annotation': {
+        const artifact = challenge.codeArtifact;
+        const snippets = artifact 
+          ? [{ id: artifact.id, title: artifact.title || 'Code Review', code: artifact.code || '', language: artifact.language || 'javascript' }]
+          : (config.snippets || (config.code ? [config] : []));
+
+        return (
+          <DiffAnnotationPanel
+            snippets={snippets.map((s: any, i: number) => ({
+              id: s.id || `snippet-${i}`,
+              title: s.title || 'Code Review',
+              code: s.code || '',
+              language: s.language || 'javascript'
+            }))}
+            onAnnotationsChange={(annotations) => setSubmission((prev: any) => ({ ...prev, annotations }))}
+          />
+        );
+      }
+
+      case 'preview':
+        return (
+          <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono', fontSize: 10 }}>
+            PREVIEW_PANEL_COMING_SOON
+          </div>
+        );
+
+      case 'tests':
+        return (
+          <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono', fontSize: 10 }}>
+            TEST_PANEL_COMING_SOON
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Assembly
+  // ---------------------------------------------------------------------------
+
+  const workspace = (
+    <WorkspaceLayout
+      leftPanel={renderPanel(layout.leftPanel)}
+      centerPanel={renderPanel(layout.centerPanel) as ReactNode}
+      rightPanel={renderPanel(layout.rightPanel)}
+    />
+  );
+
+  // Wrap with shells
+  let content = workspace;
+
+  if (shells.timer.enabled) {
+    content = (
+      <TimerShell
+        timeLimit={shells.timer.timeLimit}
+        onExpire={() => onSubmit(submission)}
+      >
+        {content}
+      </TimerShell>
+    );
   }
 
-  const { Component, props } = definition.resolve(config, onSubmissionChange, context);
+  // Future: if (shells.recording.enabled) content = <RecordingShell>{content}</RecordingShell>
 
-  return <Component key={type} {...props} />;
+  return content;
 }

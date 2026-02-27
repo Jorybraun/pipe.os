@@ -17,10 +17,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `stage.type` UI references in `OverviewPage.tsx` and `CandidateProfilePage.tsx` (field no longer exists)
 
 ### Added
+- Robust, context-backed timer system with auto-submission on expiry
+- `TimerShell` behavioral wrapper and `TimerContext` for synchronized state
+- `WorkspaceLayout` — responsive 3-panel grid for the assessment environment
+- `ProblemPanel` — high-fidelity Markdown instructions renderer
+- `MonacoPanel` — professional code editor integration
+- `OptionsPanel` & `TextareaPanel` — specialized Quiz MCQ and Short Answer renderers
+- `DiffAnnotationPanel` — composable wrapper for code review annotations
+- `Stage.timeLimit` added to Amplify schema for stage-level timer defaults
 - `src/lib/challenge/resolveLayout.ts` — maps challenge type + subtype to panel layouts for the composable architecture
 - `src/lib/challenge/resolveShells.ts` — maps challenge config to behavioral shells (timer, recording)
 - `docs/decisions/ADR-005-composable-challenge-system.md` — architectural decision for Shell + Panel composition
 - `src/content/challengeLibrary.ts` — comprehensive static challenge template library with 65 templates across all 4 challenge types (15 CODE_REVIEW, 31 QUIZ_MCQ, 12 QUIZ_SHORT_ANSWER, 7 CODE_IMPLEMENTATION)
+
+### Changed
+- `ChallengeRegistry` refactored into a dynamic assembler for the Shell + Panel architecture
+- `CandidateAssessmentPage` updated to use the new composable rendering engine
+- `StageShell` refactored to consume the global timer state via context
+- `useAssessment` hook updated to fetch and type stage-level time limits
+- `ChallengeEditorPage` updated to use the new `ChallengeRegistry` assembler
 - `docs/design/content-seeding-strategy.md` — three-phase content seeding strategy (static → DynamoDB → AI generation)
 - `CHANGELOG.md` — this file; enforced via git pre-commit hook
 - `docs/decisions/` — Architecture Decision Record (ADR) system

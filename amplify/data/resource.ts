@@ -42,6 +42,7 @@ const schema = a.schema({
       pipelineId: a.id().required(),
       pipeline: a.belongsTo('Pipeline', 'pipelineId'),
       order: a.integer(),
+      timeLimit: a.integer(), // Minutes
       challenges: a.hasMany('Challenge', 'stageId'),
     })
     .authorization((allow) => [
