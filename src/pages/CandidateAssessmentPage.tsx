@@ -28,6 +28,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
     error,
     isSubmitted,
     submitStage,
+    reset,
   } = useAssessment(token || '');
 
   const [currentSubmission, setCurrentSubmission] = useState<any>(null);
@@ -78,8 +79,25 @@ export default function CandidateAssessmentPage(): JSX.Element {
               ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
               : isCompleted
               ? 'You have already submitted this assessment. Thank you for your time!'
-              : 'There was an error connecting to our secure servers. Please try refreshing the page.'}
+              : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
+          {!isInvalid && !isCompleted && (
+            <button
+              onClick={() => reset()}
+              style={{
+                padding: '12px 24px',
+                background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#fff',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: 'pointer'
+              }}
+            >
+              RETRY_CONNECTION
+            </button>
+          )}
         </LiquidMetalCard>
       </div>
     );

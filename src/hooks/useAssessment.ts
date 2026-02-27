@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { scoreCodeReview } from '../lib/scoring/codeReview';
+import { scoreQuiz } from '../lib/scoring/quiz';
 
 const client = generateClient<Schema>({ authMode: 'apiKey' });
 
@@ -13,7 +14,15 @@ export type Candidate = Schema['Candidate']['type'];
 export type Stage = Schema['Stage']['type'];
 export type Assessment = Schema['Assessment']['type'];
 
-export type StageSubmission = any;
+export interface CodeReviewSubmission {
+  annotations: Record<string, any[]>;
+}
+
+export interface QuizSubmission {
+  answers: Record<string, number>;
+}
+
+export type StageSubmission = CodeReviewSubmission | QuizSubmission | Record<string, any>;
 
 interface UseAssessmentState {
   candidate: Candidate | null;
@@ -151,12 +160,20 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
-        // Compute score for CODE_REVIEW
+        // Compute score
         let computedScore = 0;
+        const config = typeof currentStage.config === 'string' 
+          ? JSON.parse(currentStage.config) 
+          : currentStage.config;
+
         if (currentStage.type === 'CODE_REVIEW') {
-          const result = scoreCodeReview(submission, (currentStage.config as any).snippets || []);
+          const result = scoreCodeReview(submission as any, config.snippets || []);
           computedScore = result.total;
-          console.log('[useAssessment] Calculated score:', computedScore, result.breakdown);
+          console.log('[useAssessment] Calculated Code Review score:', computedScore, result.breakdown);
+        } else if (currentStage.type === 'QUIZ') {
+          const result = scoreQuiz(submission as any, config.questions || []);
+          computedScore = result.total;
+          console.log('[useAssessment] Calculated Quiz score:', computedScore, result.breakdown);
         }
 
         // Create Assessment record

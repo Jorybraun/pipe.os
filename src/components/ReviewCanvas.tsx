@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, MouseEvent } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { LiquidMetalCard } from './ui/LiquidMetalCard';
-import { AlertTriangle, Info, AlertCircle, X } from 'lucide-react';
+import { AlertTriangle, AlertCircle, X } from 'lucide-react';
 
 // ============================================================================
 // Types
@@ -180,10 +180,10 @@ export function ReviewCanvas({
                   transition: 'background 0.2s ease',
                 },
                 onClick: () => handleLineClick(line),
-                onMouseEnter: (e: any) => {
+                onMouseEnter: (e: MouseEvent<HTMLElement>) => {
                   if (!hasAnnotation) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
                 },
-                onMouseLeave: (e: any) => {
+                onMouseLeave: (e: MouseEvent<HTMLElement>) => {
                   if (!hasAnnotation) e.currentTarget.style.background = 'transparent';
                 }
               };
@@ -211,12 +211,13 @@ export function ReviewCanvas({
           {activeLine && (
             <div
               style={{
-                position: 'fixed',
+                position: 'absolute', // Absolute instead of fixed to stay inside LiquidMetalCard context
                 top: '50%',
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
                 zIndex: 100,
-                width: 400,
+                width: 'calc(100% - 48px)',
+                maxWidth: 400,
                 background: '#161618',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: 8,
@@ -310,29 +311,6 @@ export function ReviewCanvas({
               </div>
             </div>
           )}
-
-          {/* Indicators for existing annotations */}
-          <div style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', width: '100%', height: '100%' }}>
-            {(annotations[currentSnippet.id] || []).map((a, i) => (
-              <div 
-                key={i}
-                style={{
-                  position: 'absolute',
-                  left: 8,
-                  top: `${(a.line - 1) * 20.8 + 24}px`, // Rough calculation based on line height
-                  zIndex: 10,
-                }}
-              >
-                {a.severity === 'critical' ? (
-                  <AlertCircle size={12} color="#f87171" />
-                ) : a.severity === 'major' ? (
-                  <AlertTriangle size={12} color="#fbbf24" />
-                ) : (
-                  <Info size={12} color="#60a5fa" />
-                )}
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* Footer / Controls */}

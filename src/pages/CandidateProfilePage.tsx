@@ -12,17 +12,67 @@ import {
   Mic,
   Users,
   FileText,
-  Loader2,
 } from "lucide-react";
 import {
   LiquidMetalCard,
   MetalScoreRing,
   SubTitle,
 } from "../components";
+import { Skeleton } from "../components/ui/Skeleton";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 
 const client = generateClient<Schema>();
+
+const ProfileSkeleton = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    {/* Stages Skeleton */}
+    <div style={{ display: "flex", gap: 12 }}>
+      {[1, 2, 3].map(i => (
+        <LiquidMetalCard key={i} style={{ flex: 1, minWidth: 280, height: 140, padding: 24 }}>
+          <Skeleton width={20} height={20} style={{ marginBottom: 16 }} />
+          <Skeleton width={80} height={8} style={{ marginBottom: 16 }} />
+          <Skeleton width={60} height={28} />
+        </LiquidMetalCard>
+      ))}
+    </div>
+
+    {/* Hero Grid Skeleton */}
+    <div style={{ display: "grid", gridTemplateColumns: "320px 1fr 200px", gap: 24 }}>
+      <LiquidMetalCard variant="chrome" style={{ height: 480, padding: 0 }}>
+        <div style={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Skeleton width={120} height={120} />
+        </div>
+        <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Skeleton width="80%" height={12} />
+          <Skeleton width="60%" height={12} />
+          <Skeleton width="70%" height={12} />
+        </div>
+      </LiquidMetalCard>
+
+      <LiquidMetalCard variant="mercury" style={{ padding: 48 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 40 }}>
+          <div style={{ flex: 1 }}>
+            <Skeleton width={100} height={12} style={{ marginBottom: 20 }} />
+            <Skeleton width="80%" height={60} />
+          </div>
+          <Skeleton width={120} height={120} circle />
+        </div>
+        <Skeleton width="100%" height={100} />
+      </LiquidMetalCard>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {[1, 2, 3].map(i => (
+          <LiquidMetalCard key={i} style={{ flex: 1, padding: 20 }}>
+            <Skeleton width="40%" height={8} style={{ marginBottom: 12 }} />
+            <Skeleton width="60%" height={32} style={{ marginBottom: 12 }} />
+            <Skeleton width="100%" height={4} />
+          </LiquidMetalCard>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 /**
  * CandidateProfilePage - Detailed candidate profile
@@ -47,11 +97,13 @@ export default function CandidateProfilePage(): JSX.Element {
   const [assessments, setAssessments] = useState<any[]>([]);
   const [stages, setStages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
     try {
       setIsLoading(true);
+      setError(null);
       const { data: cand } = await client.models.Candidate.get({ id });
       if (!cand) return;
       setCandidate(cand);
@@ -65,6 +117,7 @@ export default function CandidateProfilePage(): JSX.Element {
       setStages(stagesData.data.sort((a, b) => (a.order || 0) - (b.order || 0)));
     } catch (err) {
       console.error("[CandidateProfilePage] Error fetching data:", err);
+      setError(err instanceof Error ? err : new Error("Failed to load candidate profile"));
     } finally {
       setIsLoading(false);
     }
@@ -75,14 +128,35 @@ export default function CandidateProfilePage(): JSX.Element {
   }, [fetchData]);
 
   if (isLoading) {
+    return <ProfileSkeleton />;
+  }
+
+  if (error) {
     return (
       <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.2)" />
-          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
-            FETCHING_CANDIDATE_PROFILE...
+        <LiquidMetalCard variant="mercury" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
+          <div style={{ color: '#f87171', marginBottom: 16, fontSize: 12, fontWeight: 700, fontFamily: '"Space Mono", monospace' }}>
+            ERROR_LOADING_PROFILE
           </div>
-        </div>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+            {error.message}
+          </p>
+          <button
+            onClick={() => fetchData()}
+            style={{
+              padding: '12px 24px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer'
+            }}
+          >
+            RETRY_CONNECTION
+          </button>
+        </LiquidMetalCard>
       </div>
     );
   }

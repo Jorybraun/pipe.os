@@ -85,50 +85,50 @@
 
 ---
 
-## Phase 3 — Quiz Stage
+## Phase 3 — Quiz Stage ✅ (done)
 
 > Goal: A pipeline has a quiz stage. Candidates answer multiple-choice questions. Scores are stored.
 
-### Step 1: Write questions
-- [ ] **Write 10 multiple-choice questions** — TypeScript/JavaScript/React focused. Save as JSON in `src/content/quizQuestions.ts`. Each question: `{ q, options: string[4], correct: number }`. ~1 hour
+### Step 1: Write questions ✅
+- [x] **Write 10 multiple-choice questions** — TypeScript/JavaScript/React focused. Save as JSON in `src/content/quizQuestions.ts`. Each question: `{ q, options: string[4], correct: number }`. ~1 hour ✅
 
-### Step 2: Seed stage content
-- [ ] **Add Quiz stage to pipeline creation** — when a recruiter creates a pipeline, automatically create 1 Stage of type QUIZ with the 10 questions in `Stage.config`. ~30 min
+### Step 2: Seed stage content ✅
+- [x] **Add Quiz stage to pipeline creation** — when a recruiter creates a pipeline, automatically create 1 Stage of type QUIZ with the 10 questions in `Stage.config`. ~30 min ✅
 
-### Step 3: Quiz UI
-- [ ] **Create `src/components/QuizRenderer.tsx`** — shows one question at a time, 4 options, next/back navigation. Builds up a `submission` object `{ [questionId]: selectedIndex }`. ~2 hours
-- [ ] **Add quiz flow to `CandidateAssessmentPage.tsx`** — after code review, show quiz stage. ~1 hour
+### Step 3: Quiz UI ✅
+- [x] **Create `src/components/QuizRenderer.tsx`** — shows one question at a time, 4 options, next/back navigation. Builds up a `submission` object `{ [questionId]: selectedIndex }`. ~2 hours ✅
+- [x] **Add quiz flow to `CandidateAssessmentPage.tsx`** — after code review, show quiz stage. ~1 hour ✅
 
-### Step 4: Scoring
-- [ ] **Create `src/lib/scoring/quiz.ts`** — compare candidate answers to `correct` field. Score = (correct / total) * 100. ~30 min
-- [ ] **Wire quiz scoring on submission**. ~30 min
+### Step 4: Scoring ✅
+- [x] **Create `src/lib/scoring/quiz.ts`** — compare candidate answers to `correct` field. Score = (correct / total) * 100. ~30 min ✅
+- [x] **Wire quiz scoring on submission**. ~30 min ✅
 
 ---
 
-## Phase 4 — Recruiter Dashboard (real data)
+## Phase 4 — Recruiter Dashboard (real data) ✅ (done)
 
 > Goal: Recruiter logs in, sees their pipelines, clicks into one, sees candidates ranked by score.
 
-- [ ] **`ListingPage.tsx` — real pipelines** — replace mock data with `client.models.Pipeline.list()`. ~1 hour
-- [ ] **`OverviewPage.tsx` — real candidates** — load candidates with `client.models.Candidate.list({ filter: { pipelineId: { eq: id } } })`. ~1 hour
-- [ ] **`CandidateProfilePage.tsx` — real assessment** — load `Assessment` by `candidateId`, show score and submission annotations. ~1.5 hours
-- [ ] **Signal label** — map score to STRONG / YES / MAYBE / NO:
+- [x] **`ListingPage.tsx` — real pipelines** — replace mock data with `client.models.Pipeline.list()`. ~1 hour ✅
+- [x] **`OverviewPage.tsx` — real candidates** — load candidates with `client.models.Candidate.list({ filter: { pipelineId: { eq: id } } })`. ~1 hour ✅
+- [x] **`CandidateProfilePage.tsx` — real assessment** — load `Assessment` by `candidateId`, show score and submission annotations. ~1.5 hours ✅
+- [x] **Signal label** — map score to STRONG / YES / MAYBE / NO:
   - STRONG: ≥ 85%
   - YES: 70–84%
   - MAYBE: 50–69%
   - NO: < 50%
-  ~30 min
-- [ ] **Sort candidates by score descending** on `OverviewPage`. ~15 min
-- [ ] **Remove all remaining mock data** from all pages. ~1 hour
+  ~30 min ✅
+- [x] **Sort candidates by score descending** on `OverviewPage`. ~15 min ✅
+- [x] **Remove all remaining mock data** from all pages. ~1 hour ✅
 
 ---
 
-## Phase 5 — Polish & Ship
+## Phase 5 — Polish & Ship ✅ (done)
 
-- [ ] **Error states** — all data-fetching pages show a recoverable error message with retry if the query fails. ~2 hours
-- [ ] **Loading skeletons** — listing page, overview page, candidate profile. ~2 hours
-- [ ] **`npx ampx pipeline-deploy`** — deploy to production. ~1 hour
-- [ ] **End-to-end smoke test** — as recruiter: sign up, create pipeline, copy invite link. As candidate: open link, complete review + quiz, submit. As recruiter: view score and signal. ~1 hour
+- [x] **Error states** — all data-fetching pages show a recoverable error message with retry if the query fails. ~2 hours ✅
+- [x] **Loading skeletons** — listing page, overview page, candidate profile. ~2 hours ✅
+- [x] **`npx ampx pipeline-deploy`** — deploy to production. ~1 hour ✅
+- [x] **End-to-end smoke test** — as recruiter: sign up, create pipeline, copy invite link. As candidate: open link, complete review + quiz, submit. As recruiter: view score and signal. ~1 hour ✅
 - [ ] **Send to 3 real people.** 🎉
 
 ---
@@ -157,14 +157,13 @@ These are real ideas — don't discard them. Just don't start them yet.
 |---|---|---|
 | `amplify/data/resource.ts` | All data models + auth rules | ✅ Complete — guest auth added |
 | `amplify/auth/resource.ts` | Cognito config + groups | ✅ Admin group added |
-| `src/App.tsx` | All routes | 🟡 Missing `/assess/:token` |
-| `src/pages/PipelineCreatePage.tsx` | Recruiter create form | ✅ Built |
-| `src/hooks/usePipelineCreate.ts` | Create hook | ✅ Built |
-| `src/pages/ListingPage.tsx` | Recruiter pipeline list | 🔴 Mock data |
-| `src/pages/OverviewPage.tsx` | Pipeline detail + candidates | 🔴 Mock data |
-| `src/pages/CandidateProfilePage.tsx` | Individual candidate + score | 🔴 Mock data |
-| `src/pages/CandidateAssessmentPage.tsx` | Candidate-facing assessment | 🔴 Does not exist yet |
-| `src/hooks/useAssessment.ts` | Candidate flow hook | 🔴 Does not exist yet |
-| `src/lib/scoring/codeReview.ts` | Scoring function | 🔴 Does not exist yet |
+| `src/App.tsx` | All routes | ✅ Wired to real data |
+| `src/pages/CandidateAssessmentPage.tsx` | Candidate-facing assessment | ✅ Complete — uses StageRegistry |
+| `src/hooks/useAssessment.ts` | Candidate flow hook | ✅ Complete — scoring wired |
+| `src/pages/ListingPage.tsx` | Recruiter pipeline list | ✅ Live data |
+| `src/pages/OverviewPage.tsx` | Pipeline detail + candidates | ✅ Live data |
+| `src/pages/CandidateProfilePage.tsx` | Individual candidate + score | ✅ Live data |
+| `src/lib/scoring/codeReview.ts` | Code review scoring function | ✅ Complete |
+| `src/lib/scoring/quiz.ts` | Quiz scoring function | ✅ Complete |
 | `src/pages/RoleDiscoveryPage.tsx` | Agentic discovery (post-MVP) | 🔒 Preserved |
 | `src/hooks/useRoleDiscovery.ts` | Agentic hook (post-MVP) | 🔒 Preserved |

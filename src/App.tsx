@@ -17,7 +17,6 @@ import PipelineDetailPage from "./pages/PipelineDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage"; // Legacy — preserved for post-MVP agentic discovery
-import PipelineCreatePage from "./pages/PipelineCreatePage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import { QuestionDetail } from "./components/QuestionDetail";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
@@ -247,7 +246,6 @@ function App(): JSX.Element {
                     <Route path=":stage/:questionId" element={<QuestionDetail />} />
                   </Route>
                   <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
-                  <Route path="/pipeline/new/simple" element={<PipelineCreatePage />} />
                   <Route path="/pipeline/new/discovery" element={<RoleDiscoveryPage />} />
                   <Route path="/candidates/:id" element={<CandidateProfilePage />} />
                   <Route path="/screenings/:id/preview" element={<CandidateScreeningPage />} />

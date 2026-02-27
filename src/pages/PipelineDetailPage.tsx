@@ -46,15 +46,18 @@ export default function PipelineDetailPage(): JSX.Element {
   const { stage: stageId } = useParams<{ stage: string }>();
   const [stageData, setStageData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   const fetchStage = useCallback(async () => {
     if (!stageId) return;
     try {
       setIsLoading(true);
+      setError(null);
       const { data } = await client.models.Stage.get({ id: stageId });
       setStageData(data);
     } catch (err) {
       console.error("[PipelineDetailPage] Error fetching stage:", err);
+      setError(err instanceof Error ? err : new Error("Failed to load stage details"));
     } finally {
       setIsLoading(false);
     }
@@ -68,6 +71,36 @@ export default function PipelineDetailPage(): JSX.Element {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', fontSize: 10 }}>
         FETCHING_STAGE_DETAILS...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <LiquidMetalCard variant="mercury" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
+          <div style={{ color: '#f87171', marginBottom: 16, fontSize: 12, fontWeight: 700, fontFamily: '"Space Mono", monospace' }}>
+            ERROR_LOADING_STAGE
+          </div>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+            {error.message}
+          </p>
+          <button
+            onClick={() => fetchStage()}
+            style={{
+              padding: '12px 24px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer'
+            }}
+          >
+            RETRY_CONNECTION
+          </button>
+        </LiquidMetalCard>
       </div>
     );
   }

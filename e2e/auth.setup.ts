@@ -12,7 +12,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 const authFile = path.join(__dirname, '../playwright/.auth/user.json');
 
 setup('authenticate', async ({ page }) => {
-  test.setTimeout(120000);
+  setup.setTimeout(120000);
   // Go to the home page (which should redirect to login because of <Authenticator>)
   await page.goto('/');
 

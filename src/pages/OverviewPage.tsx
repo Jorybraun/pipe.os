@@ -13,13 +13,62 @@ import {
   Zap,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
+import { Skeleton } from "../components/ui/Skeleton";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import { useCandidateCreate } from "../hooks/useCandidateCreate";
 import { FieldGroup, TextInput } from "../components/ui/form";
 import { codeReviewSnippets } from "../content/codeReviewSnippets";
+import { quizQuestions } from "../content/quizQuestions";
 
 const client = generateClient<Schema>();
+
+const OverviewSkeleton = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+    {/* Header Skeleton */}
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      <div>
+        <Skeleton width={100} height={8} style={{ marginBottom: 12 }} />
+        <Skeleton width={200} height={32} />
+      </div>
+      <Skeleton width={120} height={40} />
+    </div>
+
+    {/* Stage Headers Skeleton */}
+    <div style={{ display: 'flex', gap: 12 }}>
+      {[1, 2, 3].map(i => (
+        <LiquidMetalCard key={i} style={{ flex: 1, minWidth: 280, height: 180, padding: 24 }}>
+          <Skeleton width={20} height={20} style={{ marginBottom: 24 }} />
+          <Skeleton width={80} height={8} style={{ marginBottom: 16 }} />
+          <Skeleton width={60} height={42} />
+          <Skeleton width="100%" height={2} style={{ marginTop: 20 }} />
+        </LiquidMetalCard>
+      ))}
+    </div>
+
+    {/* Kanban Grid Skeleton */}
+    <div style={{ display: "flex", gap: 12 }}>
+      {[1, 2, 3].map(col => (
+        <div key={col} style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 8 }}>
+          {[1, 2].map(row => (
+            <LiquidMetalCard key={row} style={{ height: 100, padding: 0 }}>
+              <div style={{ display: 'flex', height: '100%' }}>
+                <div style={{ width: 80, borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Skeleton width={40} height={40} />
+                </div>
+                <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Skeleton width="60%" height={12} />
+                  <Skeleton width="40%" height={8} />
+                  <Skeleton width="30%" height={8} />
+                </div>
+              </div>
+            </LiquidMetalCard>
+          ))}
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 /**
  * OverviewPage - Kanban-style pipeline view showing candidates by stage
@@ -344,6 +393,7 @@ export default function OverviewPage(): JSX.Element {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [stages, setStages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
   // Add Candidate Form State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -353,6 +403,8 @@ export default function OverviewPage(): JSX.Element {
   const fetchData = useCallback(async () => {
     if (!id) return;
     try {
+      setIsLoading(true);
+      setError(null);
       const [pipelineData, candidatesData, stagesData] = await Promise.all([
         client.models.Pipeline.get({ id }),
         client.models.Candidate.list({ filter: { pipelineId: { eq: id } } }),
@@ -362,8 +414,9 @@ export default function OverviewPage(): JSX.Element {
       setPipeline(pipelineData.data);
       setCandidates(candidatesData.data);
       setStages(stagesData.data.sort((a, b) => (a.order || 0) - (b.order || 0)));
-    } catch (error) {
-      console.error("Error fetching pipeline data:", error);
+    } catch (err) {
+      console.error("Error fetching pipeline data:", err);
+      setError(err instanceof Error ? err : new Error("Failed to load pipeline data"));
     } finally {
       setIsLoading(false);
     }
@@ -433,28 +486,12 @@ export default function OverviewPage(): JSX.Element {
         type: 'QUIZ',
         order: 1,
         config: {
-          questions: [
-            {
-              q: "What is the primary difference between 'let' and 'var' in JavaScript?",
-              options: [
-                "let is block-scoped, var is function-scoped",
-                "var is block-scoped, let is function-scoped",
-                "let cannot be reassigned, var can",
-                "There is no difference"
-              ],
-              correct: 0
-            },
-            {
-              q: "In React, what is the purpose of useEffect's dependency array?",
-              options: [
-                "To list all variables used in the effect",
-                "To control when the effect should re-run",
-                "To define the order of execution",
-                "To store previous state values"
-              ],
-              correct: 1
-            }
-          ]
+          questions: quizQuestions.map(q => ({
+            id: q.id,
+            q: q.q,
+            options: q.options,
+            correct: q.correct
+          }))
         },
       });
 
@@ -484,9 +521,35 @@ export default function OverviewPage(): JSX.Element {
   }, {} as Record<string, any[]>);
 
   if (isLoading) {
+    return <OverviewSkeleton />;
+  }
+
+  if (error) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-        LOADING_PIPELINE...
+      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <LiquidMetalCard variant="mercury" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
+          <div style={{ color: '#f87171', marginBottom: 16, fontSize: 12, fontWeight: 700, fontFamily: '"Space Mono", monospace' }}>
+            ERROR_LOADING_PIPELINE
+          </div>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+            {error.message}
+          </p>
+          <button
+            onClick={() => fetchData()}
+            style={{
+              padding: '12px 24px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer'
+            }}
+          >
+            RETRY_CONNECTION
+          </button>
+        </LiquidMetalCard>
       </div>
     );
   }
@@ -516,45 +579,49 @@ export default function OverviewPage(): JSX.Element {
 
         {!showAddForm && (
           <div style={{ display: 'flex', gap: 12 }}>
-            <button
-              onClick={handleClearStages}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '10px 20px',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.4)',
-                fontSize: 10,
-                letterSpacing: '0.1em',
-                fontFamily: 'Space Mono',
-                cursor: 'pointer',
-              }}
-            >
-              <X size={14} />
-              CLEAR_STAGES
-            </button>
-            {stages.length === 0 && (
-              <button
-                onClick={handleSeedStage}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '10px 20px',
-                  background: 'rgba(255,100,100,0.1)',
-                  border: '1px solid rgba(255,100,100,0.2)',
-                  color: '#ffaaaa',
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                  fontFamily: 'Space Mono',
-                  cursor: 'pointer',
-                }}
-              >
-                <Code size={14} />
-                SEED_MVP_STAGES
-              </button>
+            {import.meta.env.DEV && (
+              <>
+                <button
+                  onClick={handleClearStages}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 20px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.4)',
+                    fontSize: 10,
+                    letterSpacing: '0.1em',
+                    fontFamily: 'Space Mono',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <X size={14} />
+                  CLEAR_STAGES
+                </button>
+                {stages.length === 0 && (
+                  <button
+                    onClick={handleSeedStage}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '10px 20px',
+                      background: 'rgba(255,100,100,0.1)',
+                      border: '1px solid rgba(255,100,100,0.2)',
+                      color: '#ffaaaa',
+                      fontSize: 10,
+                      letterSpacing: '0.1em',
+                      fontFamily: 'Space Mono',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Code size={14} />
+                    SEED_MVP_STAGES
+                  </button>
+                )}
+              </>
             )}
             <button
               onClick={() => setShowAddForm(true)}

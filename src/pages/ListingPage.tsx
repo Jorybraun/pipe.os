@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import {
   Search,
   Plus,
-  Loader2,
 } from "lucide-react";
 import { RoleCard, LiquidMetalCard } from "../components";
+import { Skeleton } from "../components/ui/Skeleton";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 
@@ -16,6 +16,45 @@ type PipelineWithStats = Schema['Pipeline']['type'] & {
   stageCount: number;
   avgScore: number | null;
 };
+
+const ListingSkeleton = () => (
+  <div style={{
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+    gap: 16,
+  }}>
+    {[1, 2, 3, 4, 5, 6].map((i) => (
+      <LiquidMetalCard key={i} style={{ minHeight: 280, padding: 0 }}>
+        <div style={{ padding: '24px 24px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <Skeleton width={60} height={16} style={{ marginBottom: 16 }} />
+          <Skeleton width="80%" height={24} style={{ marginBottom: 12 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Skeleton width="40%" height={10} />
+            <Skeleton width="30%" height={10} />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ padding: 20, borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+            <Skeleton width={40} height={8} style={{ marginBottom: 8 }} />
+            <Skeleton width={30} height={28} />
+          </div>
+          <div style={{ padding: 20, borderRight: '1px solid rgba(255,255,255,0.06)' }}>
+            <Skeleton width={40} height={8} style={{ marginBottom: 8 }} />
+            <Skeleton width={30} height={28} />
+          </div>
+          <div style={{ padding: 20 }}>
+            <Skeleton width={40} height={8} style={{ marginBottom: 8 }} />
+            <Skeleton width={30} height={28} />
+          </div>
+        </div>
+        <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between' }}>
+          <Skeleton width={80} height={10} />
+          <Skeleton width={60} height={10} />
+        </div>
+      </LiquidMetalCard>
+    ))}
+  </div>
+);
 
 /**
  * ListingPage - Main entry point showing all roles/pipelines
@@ -33,6 +72,7 @@ export default function ListingPage(): JSX.Element {
   const [mounted, setMounted] = useState(false);
   const [pipelines, setPipelines] = useState<PipelineWithStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
   const [filter, setFilter] = useState<"all" | "ACTIVE" | "DRAFT" | "ARCHIVED">(
     "all"
   );
@@ -41,33 +81,50 @@ export default function ListingPage(): JSX.Element {
   const fetchPipelines = useCallback(async () => {
     try {
       setIsLoading(true);
-      const { data: pipelineData } = await client.models.Pipeline.list();
+      setError(null);
+      // Use selectionSet to batch load related stages and candidates in one trip
+      const { data: pipelineData } = await client.models.Pipeline.list({
+        selectionSet: [
+          'id',
+          'title',
+          'status',
+          'level',
+          'createdAt',
+          'stages.*',
+          'candidates.id',
+          'candidates.name',
+          'candidates.assessments.score',
+        ],
+      });
       
-      const enrichedPipelines = await Promise.all(
-        pipelineData.map(async (p) => {
-          const [stages, candidates] = await Promise.all([
-            client.models.Stage.list({ filter: { pipelineId: { eq: p.id } } }),
-            client.models.Candidate.list({ filter: { pipelineId: { eq: p.id } } }),
-          ]);
+      const enrichedPipelines = pipelineData.map((p) => {
+        // Calculate average score across all candidates in all assessments for this pipeline
+        let totalScore = 0;
+        let scoreCount = 0;
 
-          // Calculate average score for candidates who have one
-          const scoredCandidates = candidates.data.filter(c => (c as any).score !== undefined && (c as any).score !== null);
-          const avgScore = scoredCandidates.length > 0 
-            ? Math.round(scoredCandidates.reduce((acc, c) => acc + ((c as any).score || 0), 0) / scoredCandidates.length)
-            : null;
+        p.candidates?.forEach(cand => {
+          cand.assessments?.forEach(ass => {
+            if (typeof ass.score === 'number') {
+              totalScore += ass.score;
+              scoreCount++;
+            }
+          });
+        });
 
-          return {
-            ...p,
-            stageCount: stages.data.length,
-            candidateCount: candidates.data.length,
-            avgScore,
-          };
-        })
-      );
+        const avgScore = scoreCount > 0 ? Math.round(totalScore / scoreCount) : null;
 
-      setPipelines(enrichedPipelines);
+        return {
+          ...p,
+          stageCount: p.stages?.length || 0,
+          candidateCount: p.candidates?.length || 0,
+          avgScore,
+        };
+      });
+
+      setPipelines(enrichedPipelines as unknown as PipelineWithStats[]);
     } catch (err) {
       console.error("[ListingPage] Error fetching pipelines:", err);
+      setError(err instanceof Error ? err : new Error("Failed to load pipelines"));
     } finally {
       setIsLoading(false);
     }
@@ -92,14 +149,35 @@ export default function ListingPage(): JSX.Element {
   };
 
   if (isLoading && pipelines.length === 0) {
+    return <ListingSkeleton />;
+  }
+
+  if (error) {
     return (
       <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.2)" />
-          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
-            FETCHING_PIPELINES...
+        <LiquidMetalCard variant="mercury" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
+          <div style={{ color: '#f87171', marginBottom: 16, fontSize: 12, fontWeight: 700, fontFamily: '"Space Mono", monospace' }}>
+            ERROR_LOADING_PIPELINES
           </div>
-        </div>
+          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+            {error.message}
+          </p>
+          <button
+            onClick={() => fetchPipelines()}
+            style={{
+              padding: '12px 24px',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: '#fff',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer'
+            }}
+          >
+            RETRY_CONNECTION
+          </button>
+        </LiquidMetalCard>
       </div>
     );
   }

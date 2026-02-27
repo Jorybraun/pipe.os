@@ -6,10 +6,12 @@ import { LiquidMetalCard } from "../components/ui/LiquidMetalCard";
 import { FieldGroup, RadioGroup, SelectInput } from "../components/ui/form";
 import { Settings, Loader2, Zap, Shield, Target } from "lucide-react";
 import { useRoleDiscovery } from "../hooks/useRoleDiscovery";
-import { generateClient } from 'aws-amplify/api';
+import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import type { RoleDiscoveryData } from "../types/roleDiscovery";
 import type { Baseline } from "../types/discovery";
+import { codeReviewSnippets } from "../content/codeReviewSnippets";
+import { quizQuestions } from "../content/quizQuestions";
 
 const client = generateClient<Schema>();
 
@@ -99,19 +101,16 @@ export default function RoleDiscoveryPage(): JSX.Element {
           pipelineId: pipeline.id,
           type: 'CODE_REVIEW' as const,
           order: 1,
-          config: JSON.stringify({
-            code: `export function calculateTotal(items: { price: number; quantity: number }[]) {
-  // FIND THE BUG: Incorrect initialization of total
-  let total = "0"; 
-  
-  items.forEach(item => {
-    total += item.price * item.quantity;
-  });
-  
-  return total;
-}`,
-            language: 'typescript'
-          }),
+          config: {
+            renderer: 'DIFF_VIEW',
+            snippets: codeReviewSnippets.map(s => ({
+              id: s.id,
+              title: s.title,
+              code: s.code,
+              language: s.language,
+              groundTruth: s.groundTruth,
+            }))
+          },
         });
       }
 
@@ -120,30 +119,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
           pipelineId: pipeline.id,
           type: 'QUIZ' as const,
           order: stagesToCreate.length + 1,
-          config: JSON.stringify({
-            questions: [
-              {
-                q: "What is the primary difference between 'let' and 'var' in JavaScript?",
-                options: [
-                  "let is block-scoped, var is function-scoped",
-                  "var is block-scoped, let is function-scoped",
-                  "let cannot be reassigned, var can",
-                  "There is no difference"
-                ],
-                correct: 0
-              },
-              {
-                q: "In React, what is the purpose of useEffect's dependency array?",
-                options: [
-                  "To list all variables used in the effect",
-                  "To control when the effect should re-run",
-                  "To define the order of execution",
-                  "To store previous state values"
-                ],
-                correct: 1
-              }
-            ]
-          }),
+          config: {
+            questions: quizQuestions.map(q => ({
+              id: q.id,
+              q: q.q,
+              options: q.options,
+              correct: q.correct
+            }))
+          },
         });
       }
 

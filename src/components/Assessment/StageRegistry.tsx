@@ -56,6 +56,11 @@ const QuizDefinition: StageDefinition = {
   type: 'QUIZ',
   resolve: (config, onDataChange) => {
     const parsed = typeof config === 'string' ? JSON.parse(config) : config;
+    
+    // NOTE: 'correct' field is included in the client bundle for MVP.
+    // Server-side scoring would require a Lambda — deferred post-MVP.
+    // See: docs/specs/engineering-standards.md for Lambda pattern.
+    
     return {
       Component: QuizRenderer,
       props: {
