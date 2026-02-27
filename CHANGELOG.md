@@ -6,7 +6,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `pending` — Live Preview & Library-Driven Presets
+### `44191ff` — Live Preview & Library-Driven Presets
 - **Detailed Log**: [docs/changelogs/live-preview-and-presets.md](docs/changelogs/live-preview-and-presets.md)
 - **Status**: 🟡 PENDING REVIEW
 

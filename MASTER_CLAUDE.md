@@ -9,6 +9,7 @@ This document is the high-level orchestration hub for Pipe. It tracks strategic 
 
 ## 🔍 Code Review Requests
 
+- **Commit `44191ff`**: Implemented **Live Preview** (Sandpack) and refactored **Pipeline Presets** to pull from the high-fidelity template library. [Detailed Log](docs/changelogs/live-preview-and-presets.md)
 - **Commit `40397f9`**: Resolved critical visibility bugs in Code Review and implemented a professional **MCQ Option Editor**. Added **PR Description** support for higher-fidelity code reviews. [Detailed Log](docs/changelogs/content-visibility-and-mcq-fix.md)
 - **Commit `d4dbb95`**: Fixed Code Review snippet visibility, added time limit indicators to `ChallengeCard`, and documented the **Challenge Generation Agent** spec.
 - **Commit `b1fc690`**: Fixed a runtime crash in `ChallengeEditorPage` by providing the required `TimerProvider` to the candidate preview tab.
