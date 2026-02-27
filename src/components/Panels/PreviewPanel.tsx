@@ -1,4 +1,4 @@
-import { SandpackProvider, SandpackCodeEditor, SandpackPreview, SandpackLayout } from "@codesandbox/sandpack-react";
+import { SandpackProvider, SandpackPreview, SandpackLayout } from "@codesandbox/sandpack-react";
 import { useMemo } from 'react';
 
 interface PreviewPanelProps {
