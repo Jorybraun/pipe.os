@@ -6,7 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `3f0750c` — Fix Build-Blocking Type Errors in RoleDiscovery
+### `pending` — Fix Code Review Annotation Interactivity
+- **Detailed Log**: [docs/changelogs/fix-annotation-click.md](docs/changelogs/fix-annotation-click.md)
+- **Status**: 🟡 PENDING REVIEW
+
+### `3f0750c` — Fix Build-Blocking Type Errors
+ in RoleDiscovery
 - **Detailed Log**: [docs/changelogs/fix-build-errors.md](docs/changelogs/fix-build-errors.md)
 - **Status**: 🟡 PENDING REVIEW
 

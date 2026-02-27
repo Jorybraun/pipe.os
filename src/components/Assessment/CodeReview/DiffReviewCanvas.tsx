@@ -267,16 +267,18 @@ export function DiffReviewCanvas({
               diffType="add" 
               widgets={widgets}
             >
-              {hunks => hunks.map(hunk => {
-                const HunkComponent = Hunk as any;
-                return (
-                  <HunkComponent 
-                    key={hunk.content} 
-                    hunk={hunk} 
-                    onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
-                  />
-                );
-              })}
+                          {hunks => hunks.map(hunk => {
+                            const HunkComponent = Hunk as any;
+                            return (
+                              <HunkComponent 
+                                key={hunk.content} 
+                                hunk={hunk} 
+                                onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
+                                onLineClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
+                              />
+                            );
+                          })}
+              
             </Diff>
           ) : (
             <div style={{ padding: 40 }}>
@@ -330,6 +332,7 @@ export function DiffReviewCanvas({
           padding-left: 20px !important;
           background: transparent;
           line-height: 1.6;
+          cursor: pointer;
         }
         .diff-review-container .diff-line {
           background: transparent;
