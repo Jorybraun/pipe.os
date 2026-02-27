@@ -1,4 +1,4 @@
-# Commit [id] — Content Visibility Fixes & MCQ Editor Enhancement
+# Commit 40397f9 — Content Visibility Fixes & MCQ Editor Enhancement
 
 **Date:** 2026-02-27
 **Review Status:** 🟡 PENDING

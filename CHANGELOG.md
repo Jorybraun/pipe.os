@@ -6,7 +6,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `pending` — Content Visibility & MCQ Editor Enhancement
+### `40397f9` — Content Visibility & MCQ Editor Enhancement
 - **Detailed Log**: [docs/changelogs/content-visibility-and-mcq-fix.md](docs/changelogs/content-visibility-and-mcq-fix.md)
 - **Status**: 🟡 PENDING REVIEW
 
