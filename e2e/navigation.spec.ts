@@ -24,26 +24,31 @@ test.describe('Role Management Flow', () => {
     
     // 3. COMPLETE DISCOVERY PHASES
     // Phase 1: Identity
-    await page.locator('input[placeholder*="Job Title"]').fill(roleName);
-    await page.locator('button:has-text("NEXT")').first().click();
+    await page.locator('input[placeholder*="Senior Software Engineer"]').fill(roleName);
+    await page.locator('fieldset:has-text("ROLE IDENTITY") select').selectOption('Senior');
+    await page.locator('input[placeholder*="Engineering"]').fill('E2E Team');
+    await page.locator('text=Remote').click();
+    await page.locator('button:has-text("NEXT_STEP")').click();
 
-    // Phase 2: Team Context (Radio buttons)
-    await page.locator('text=Individual Contributor').click();
-    await page.locator('button:has-text("NEXT")').first().click();
+    // Phase 2: Team Context
+    await page.locator('input[placeholder*="6 engineers"]').fill('4 engineers');
+    await page.locator('input[placeholder*="Engineering Manager"]').fill('E2E Lead');
+    await page.locator('button:has-text("NEXT_STEP")').click();
 
-    // Phase 3: Tech (Just skip for now or fill one)
-    await page.locator('button:has-text("NEXT")').first().click();
+    // Phase 3: Tech
+    const stackInput = page.locator('input[placeholder*="Enter to add"]');
+    await stackInput.fill('React');
+    await stackInput.press('Enter');
+    await page.locator('button:has-text("NEXT_STEP")').click();
 
-    // Continue clicking NEXT until the final phase
-    // There are 7 phases total (0 to 6)
-    for (let i = 0; i < 4; i++) {
-        await page.locator('button:has-text("NEXT")').first().click();
-        await page.waitForTimeout(500); // Small wait for transition
-    }
+    // Phase 4: Success
+    await page.locator('button:has-text("NEXT_STEP")').click();
 
-    // Final click should be "BUILD PIPELINE" or similar in Phase 6
-    const buildBtn = page.locator('button:has-text("BUILD PIPELINE"), button:has-text("COMPLETE")').first();
-    await buildBtn.click();
+    // Phase 5: Challenges
+    await page.locator('button:has-text("NEXT_STEP")').click();
+
+    // Phase 6: Culture
+    await page.locator('button:has-text("FINISH_ROLE_DISCOVERY")').click();
 
     // 4. VERIFY REDIRECT TO OVERVIEW
     await expect(page).toHaveURL(/\/pipeline\/[^/]+$/);

@@ -1,57 +1,55 @@
 # Technical Spec: Candidate Flow
 
-**Priority:** 1 — build this before anything else.
-**Status:** Ready to implement.
-**Last updated:** 2026-02-26
+**Priority:** 1 — core flow is complete. This spec now reflects the Phase 7 target state.
+**Status:** Phase 1–5 implementation is done. Phase 7 updates described below.
+**Last updated:** 2026-02-27
 
 ---
 
 ## Goal
 
-A candidate receives a link, opens it without signing in, completes a code review and a quiz, submits, and sees a confirmation screen.
+A candidate receives a link, opens it without signing in, works through an ordered set of challenges (code review, code implementation, MCQ, free text), submits, and sees a confirmation screen. The recruiter sees a per-challenge breakdown with scores.
 
 ---
 
-## User journey (step by step)
+## User journey (target state after Phase 7)
 
 1. Recruiter creates a pipeline and adds a candidate (name + email)
-2. System generates a UUID `inviteToken` and stores it on the `Candidate` record
+2. System generates a UUID `inviteToken` stored on `Candidate.inviteToken`
 3. Recruiter copies the invite URL from the pipeline overview page
-4. Recruiter sends the link to the candidate (manually, for MVP — email automation is post-MVP)
+4. Recruiter sends the link to the candidate (manually for MVP — email automation is post-MVP)
 5. Candidate opens `/assess/:inviteToken` in a browser — no sign-in prompt
-6. App loads the candidate's name, pipeline title, and the first stage config
-7. Candidate completes the code review, then the quiz
-8. Candidate hits Submit
-9. App saves an `Assessment` record per stage (unauthenticated write)
-10. App shows a confirmation screen: "Submitted — thank you."
-11. Recruiter logs in, sees the candidate's score on the overview page
+6. App loads: candidate name, pipeline title, and the first stage with its challenges
+7. `StageShell` renders: stage name, time limit countdown, challenge progress dots
+8. Candidate works through challenges in order — each has its own renderer
+9. After each challenge, candidate clicks NEXT CHALLENGE (or submits final)
+10. Each challenge submission creates one `Assessment` record (unauthenticated write, `authMode: 'apiKey'`)
+11. After the final challenge: `Candidate.status` → `COMPLETED`, confirmation screen shown
+12. Recruiter logs in, sees per-challenge scores on `CandidateProfilePage`
 
 ---
 
-## Files to create
-
-### `src/lib/generateInviteToken.ts`
+## Data loading sequence (Phase 7)
 
 ```typescript
-/**
- * Generates a secure random UUID for use as a candidate invite token.
- * The token is stored on the Candidate record and embedded in the invite URL.
- */
-export function generateInviteToken(): string {
-  return crypto.randomUUID();
-}
+// useAssessment.ts loads:
+// 1. Candidate by inviteToken (guest query)
+// 2. Pipeline stages with challenges via selectionSet
+const { data: stages } = await client.models.Stage.list({
+  filter: { pipelineId: { eq: candidate.pipelineId } },
+  selectionSet: ['id', 'name', 'order', 'timeLimit', 'challenges.*'],
+  authMode: 'apiKey',
+});
+// Sort stages by order, sort challenges within each stage by order
+// 3. Existing Assessments (to resume if candidate returns mid-session)
 ```
 
 ---
 
-### `src/hooks/useAssessment.ts`
+## Hook: `src/hooks/useAssessment.ts`
 
-Manages all state for the candidate-facing assessment flow.
+### Phase 1–5 state (current)
 
-**Inputs:**
-- `inviteToken: string` — from URL param
-
-**State exposed:**
 ```typescript
 interface UseAssessmentResult {
   candidate: Schema['Candidate']['type'] | null;
@@ -65,227 +63,216 @@ interface UseAssessmentResult {
 }
 ```
 
-**Logic:**
-1. On mount: query `Candidate` with `filter: { inviteToken: { eq: token } }` using guest auth
-2. If candidate found: query `Stage` records for `candidate.pipelineId`, ordered by `stage.order`
-3. If candidate not found or error: set `error` state
-4. `submitStage(submission)`: creates an `Assessment` record (guest write), then calls `nextStage()`
-5. When all stages are submitted: set `isSubmitted = true`
-6. Update `Candidate.status` to `IN_PROGRESS` on first load, `COMPLETED` after final submission
+### Phase 7 target state
 
-**Auth note:** Use `generateClient({ authMode: 'apiKey' })` for guest queries and mutations. See Amplify Gen 2 docs for multi-auth client usage.
+```typescript
+interface UseAssessmentResult {
+  candidate: Schema['Candidate']['type'] | null;
+  stages: StageWithChallenges[];
+  currentStageIndex: number;
+  currentChallengeIndex: number;
+  isLoading: boolean;
+  error: Error | null;
+  isSubmitted: boolean;
+  completedChallengeIds: Set<string>;
+  submitChallenge: (challengeId: string, submission: ChallengeSubmission) => Promise<void>;
+  nextChallenge: () => void;
+}
 
-**Error handling:**
-- Invalid / expired token → set a specific `error.code = 'INVALID_TOKEN'` so the page can show a helpful message ("This link is invalid or has expired")
-- Network error → set `error.code = 'NETWORK_ERROR'` — show retry button
-- Submission failed → do not advance to next stage; show error inline
+interface StageWithChallenges {
+  id: string;
+  name: string;
+  order: number;
+  timeLimit: number | null;
+  challenges: Schema['Challenge']['type'][];
+}
+```
+
+**Logic changes in Phase 7:**
+1. Load `challenges` as nested data via `selectionSet` on `Stage.list`
+2. Track current challenge index (separate from stage index)
+3. `submitChallenge(challengeId, submission)`: compute score for auto-scored types (CODE_REVIEW, QUIZ_MCQ), create `Assessment` with `challengeId` (not `stageId`), advance to next challenge
+4. `nextChallenge()`: when challenges are exhausted in current stage, advance to next stage
+5. Strip `correctOptionId` from `QUIZ_MCQ` config before returning from hook (never expose to rendering layer)
+
+**Auth:** Use `generateClient({ authMode: 'apiKey' })` initialized once at module level — not per-call.
+
+**Error codes:**
+- `INVALID_TOKEN` — candidate not found → "This link is invalid or has expired"
+- `ALREADY_COMPLETED` — `candidate.status === 'COMPLETED'` → "You have already submitted"
+- `NETWORK_ERROR` — retry button
+- `SUBMIT_FAILED` — do not advance; show inline error
 
 **Logging prefix:** `[useAssessment]`
 
 ---
 
-### `src/pages/CandidateAssessmentPage.tsx`
+## Page: `src/pages/CandidateAssessmentPage.tsx`
 
-**Route:** `/assess/:token` — outside `<Authenticator>`, no sign-in required.
+**Route:** `/assess/:token` — outside `<Authenticator>`. Never import or reference `<Authenticator>` here.
 
 **Renders one of:**
-1. **Loading state** — skeleton or spinner while hook fetches data
-2. **Error state** — friendly message if token is invalid or network failed
-3. **Stage view** — current stage content (code review or quiz)
-4. **Confirmation screen** — shown after final submission
+1. **Loading state** — skeleton while hook fetches
+2. **Error state** — friendly message (`INVALID_TOKEN`, `ALREADY_COMPLETED`, `NETWORK_ERROR`)
+3. **Stage view** — `StageShell` wrapping current challenge via `ChallengeRegistry`
+4. **Confirmation screen** — shown after final challenge submitted
 
-**Stage routing logic:**
-- Read `currentStageIndex` from the hook
-- If `stages[currentStageIndex].type === 'CODE_REVIEW'` → render `<ReviewCanvas>`
-- If `stages[currentStageIndex].type === 'QUIZ'` → render `<QuizRenderer>`
-
-**Page structure (high level):**
+**Page structure (Phase 7):**
 ```
-<header>
-  Pipeline title + candidate name
-  Stage N of M indicator
-</header>
-
-<main>
-  <ReviewCanvas /> or <QuizRenderer />
-</main>
-
-<footer>
-  <SubmitButton />  (calls submitStage with current answers)
-</footer>
+<StageShell
+  stage={currentStage}
+  currentChallengeIndex={currentChallengeIndex}
+  completedChallengeIds={completedChallengeIds}
+>
+  <ChallengeRegistry
+    challenge={currentChallenge}
+    onSubmit={(submission) => submitChallenge(currentChallenge.id, submission)}
+  />
+</StageShell>
 ```
-
-**Important:** This page must not import or reference `<Authenticator>`. It is explicitly a public route.
 
 ---
 
-### `src/components/ReviewCanvas.tsx`
+## Component: `StageShell` (Phase 7 — new)
 
-Displays a code snippet with line numbers and allows inline annotation.
+**Location:** `src/components/Assessment/StageShell.tsx`
 
 **Props:**
 ```typescript
-interface ReviewCanvasProps {
-  snippet: {
-    code: string;
-  };
-  onAnnotationsChange: (annotations: Annotation[]) => void;
-}
-
-interface Annotation {
-  line: number;
-  comment: string;
-  severity: 'critical' | 'major' | 'minor';
+interface StageShellProps {
+  stage: StageWithChallenges;
+  currentChallengeIndex: number;
+  completedChallengeIds: Set<string>;
+  children: ReactNode;
+  onNextChallenge: () => void;
 }
 ```
 
-**Interactions:**
-- Clicking a line number opens an inline form: comment textarea + severity selector
-- Saving the annotation attaches it to that line visually (highlighted)
-- Clicking an existing annotation opens it for edit/delete
-- All annotation state is local — only committed on submit
-
-**Library:** Use `react-syntax-highlighter` (already likely in package.json or easy to add) for syntax highlighting. Do not use Monaco for this — it's too heavy for a candidate-facing page.
+**Renders:**
+- Top bar: pipeline name + stage name + time remaining
+- Progress dots: one per challenge, filled when `completedChallengeIds` contains its id
+- Main: `children` (the challenge renderer)
+- Bottom bar: NEXT CHALLENGE button (disabled until current challenge has a submission)
 
 ---
 
-### `src/components/QuizRenderer.tsx`
+## Component: `ChallengeRegistry` (Phase 7 — replaces StageRegistry)
 
-Displays multiple-choice questions one at a time.
+**Location:** `src/components/Assessment/ChallengeRegistry.tsx`
 
-**Props:**
-```typescript
-interface QuizRendererProps {
-  questions: Array<{
-    q: string;
-    options: string[];
-    correct: number;  // do NOT pass this to the component — strip it before passing
-  }>;
-  onAnswersChange: (answers: Record<number, number>) => void;
-}
-```
-
-**Note:** Strip the `correct` field before passing questions to this component. The component never sees the answers.
-
-**Interactions:**
-- Shows one question at a time
-- 4 option buttons (radio-style)
-- Previous / Next navigation
-- Selecting an option highlights it and saves to `answers` state
-- Does not reveal correctness until after submission (post-MVP feature)
-
----
-
-## Route change in `App.tsx`
-
-The `/assess/:token` route must be **outside** the `<Authenticator>` wrapper:
+Routes challenge type to its renderer. Each renderer receives `config` and `onSubmit`.
 
 ```typescript
-// Inside Authenticator (recruiter routes):
-<Route path="/" element={<ListingPage />} />
-<Route path="/pipeline/new" element={<PipelineCreatePage />} />
-// ... other recruiter routes
-
-// Outside Authenticator (public candidate route):
-<Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+const Definitions: Record<ChallengeType, ChallengeDefinition> = {
+  CODE_REVIEW: { Component: DiffReviewCanvas, ... },
+  CODE_IMPLEMENTATION: { Component: MonacoChallenge, ... },
+  QUIZ_MCQ: { Component: MCQChallenge, ... },
+  QUIZ_SHORT_ANSWER: { Component: ShortAnswerChallenge, ... },
+};
 ```
 
-If the current `App.tsx` uses `<Authenticator>` as a top-level wrapper around all routes, refactor so the candidate route is rendered outside it.
+**Important:** `QUIZ_MCQ` config must have `correctOptionId` stripped before being passed to `MCQChallenge`. Strip it in the hook, not the registry.
 
 ---
 
-## Recruiter side: invite link UI
+## Challenge renderers (Phase 7 — new)
 
-On `OverviewPage.tsx`, for each candidate in the list:
+### `MonacoChallenge` (`CODE_IMPLEMENTATION`)
 
+Split-pane layout. Left pane: problem statement (markdown rendered), examples list, constraints list. Right pane: Monaco editor with starter code pre-loaded, language set from config.
+
+If `codeArtifactId` is set: show "View original code" button that opens a drawer showing the source code for context (e.g. the buggy version reviewed in a prior challenge).
+
+Submit captures `{ code: string }` as submission.
+
+### `MCQChallenge` (`QUIZ_MCQ`)
+
+Question text, then 4 option buttons. One tap selects and immediately locks the answer. No back navigation — once selected, cannot change. Submit captures `{ selectedOptionId: string }`.
+
+### `ShortAnswerChallenge` (`QUIZ_SHORT_ANSWER`)
+
+Question text, resizable textarea, optional character counter. Submit captures `{ text: string }`.
+
+---
+
+## Scoring (called in `submitChallenge`)
+
+Auto-scored challenge types compute score before writing `Assessment`:
+
+```typescript
+// In useAssessment.ts submitChallenge():
+let score: number | null = null;
+
+if (challenge.type === 'CODE_REVIEW') {
+  const artifact = challenge.codeArtifactId
+    ? await loadCodeArtifact(challenge.codeArtifactId)
+    : null;
+  const groundTruth = artifact?.groundTruth ?? [];
+  const result = scoreCodeReview(submission as CodeReviewSubmission, groundTruth);
+  score = result.total;
+}
+
+if (challenge.type === 'QUIZ_MCQ') {
+  const config = challenge.config as QuizMCQConfig;
+  score = (submission as QuizMCQSubmission).selectedOptionId === config.correctOptionId
+    ? 100
+    : 0;
+}
+
+// CODE_IMPLEMENTATION and QUIZ_SHORT_ANSWER: score = null (manual review)
+
+await client.models.Assessment.create({
+  candidateId: candidate.id,
+  challengeId: challenge.id,
+  submission: JSON.stringify(submission),
+  score,
+  maxScore: 100,
+  scoredAt: score !== null ? new Date().toISOString() : null,
+});
+```
+
+---
+
+## Recruiter side: invite link (unchanged)
+
+On `OverviewPage.tsx`, for each candidate:
 ```
 [ Candidate Name ]  [ INVITED / IN_PROGRESS / COMPLETED ]  [ Copy Link ]
 ```
 
-The "Copy Link" button constructs the URL:
 ```typescript
 const inviteUrl = `${window.location.origin}/assess/${candidate.inviteToken}`;
 navigator.clipboard.writeText(inviteUrl);
 ```
 
-Show a brief "Copied!" toast or state change after clicking.
-
 ---
 
-## Data writes (candidate-side)
-
-All writes use guest auth (`authMode: 'apiKey'`).
-
-### On first load (status update)
-```typescript
-await client.models.Candidate.update(
-  { id: candidate.id, status: 'IN_PROGRESS' },
-  { authMode: 'apiKey' }
-);
-```
-
-### On stage submit (assessment creation)
-```typescript
-await client.models.Assessment.create(
-  {
-    candidateId: candidate.id,
-    stageId: stage.id,
-    submission: JSON.stringify(submission),
-    score: computedScore,
-    completedAt: new Date().toISOString(),
-  },
-  { authMode: 'apiKey' }
-);
-```
-
-### On final submit (candidate completion)
-```typescript
-await client.models.Candidate.update(
-  { id: candidate.id, status: 'COMPLETED' },
-  { authMode: 'apiKey' }
-);
-```
-
----
-
-## Scoring (called client-side on submit)
-
-For MVP, scoring is computed on the client before writing the Assessment. This is acceptable for MVP — server-side scoring is post-MVP.
-
-```typescript
-import { scoreCodeReview } from '../lib/scoring/codeReview';
-import { scoreQuiz } from '../lib/scoring/quiz';
-
-// In submitStage():
-const score = stage.type === 'CODE_REVIEW'
-  ? scoreCodeReview(submission, stage.config.snippets)
-  : scoreQuiz(submission, stage.config.questions);
-```
-
----
-
-## Edge cases to handle
+## Edge cases
 
 | Scenario | Behavior |
 |---|---|
 | Token not found | Show "This link is invalid or has expired" — no retry |
 | Candidate already COMPLETED | Show "You have already submitted your assessment" |
 | Network error on load | Show error with retry button |
-| Network error on submit | Do not advance stage; show error inline with retry |
-| Partial submission (tab closed mid-way) | No auto-save in MVP — candidate must restart. Auto-save is post-MVP. |
-| Stage has no config | Show "This stage is not yet ready" — should not happen in production |
+| Network error on submit | Do not advance challenge; show inline error with retry |
+| Challenge has no config | Show "This challenge is not yet configured" — recruiter issue, not candidate error |
+| Partial completion (tab closed) | No auto-save in MVP — `completedChallengeIds` is not persisted. Auto-save is post-MVP. |
+| `codeArtifactId` references missing artifact | Gracefully fall back to inline code config if present; show error if neither exists |
 
 ---
 
-## Acceptance criteria
+## Acceptance criteria (Phase 7)
 
 - [ ] `/assess/:token` renders without redirecting to sign-in
 - [ ] Invalid token shows a clear error message (not a crash)
-- [ ] Valid token loads candidate name and pipeline title
-- [ ] Code review: candidate can annotate lines and submit
-- [ ] Quiz: candidate can select answers and submit
-- [ ] Submitting creates `Assessment` records visible in DynamoDB
-- [ ] After final submit, confirmation screen is shown
-- [ ] `Candidate.status` changes to `COMPLETED` after submit
-- [ ] Recruiter sees candidate score on `OverviewPage` after submission
-- [ ] `npx tsc --noEmit` passes with zero errors after implementation
+- [ ] Valid token loads candidate name, pipeline title, and first stage
+- [ ] `StageShell` shows progress dots, one per challenge, updating as challenges complete
+- [ ] `CODE_REVIEW`: candidate can annotate lines and submit; `Assessment` created with score
+- [ ] `CODE_IMPLEMENTATION`: candidate can write code in Monaco and submit; `Assessment` created with `score: null`
+- [ ] `QUIZ_MCQ`: candidate selects one option; answer locked immediately; `Assessment` created with 0 or 100
+- [ ] `QUIZ_SHORT_ANSWER`: candidate types response; `Assessment` created with `score: null`
+- [ ] After all challenges in a stage: stage completion shown, advance to next stage (or finish)
+- [ ] After final challenge: confirmation screen shown, `Candidate.status = 'COMPLETED'`
+- [ ] Recruiter sees per-challenge scores on `CandidateProfilePage`
+- [ ] `QUIZ_MCQ.correctOptionId` never appears in the client-side challenge config
+- [ ] `npx tsc --noEmit` passes with zero errors

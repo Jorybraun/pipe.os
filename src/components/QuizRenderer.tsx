@@ -54,6 +54,16 @@ export function QuizRenderer({
   const currentQuestion = questions[currentIndex];
   const selectedOption = answers[currentIndex];
 
+  if (!currentQuestion) {
+    return (
+      <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
+        <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+          NO_QUESTIONS_FOUND_FOR_QUIZ
+        </div>
+      </LiquidMetalCard>
+    );
+  }
+
   return (
     <LiquidMetalCard variant="dark" style={{ padding: 40 }}>
       {/* Header */}

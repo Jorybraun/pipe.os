@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { codeReviewSnippets } from '../content/codeReviewSnippets';
 
 const client = generateClient<Schema>();
 
@@ -23,6 +22,7 @@ export interface PipelineCreateInput {
   level: PipelineLevel;
   stack: string[];
   description?: string;
+  presetId?: string;
 }
 
 interface UsePipelineCreateState {
@@ -37,55 +37,9 @@ interface UsePipelineCreateReturn extends UsePipelineCreateState {
 }
 
 // ============================================================================
-// Validation
-// ============================================================================
-
-export function validatePipelineInput(
-  input: Partial<PipelineCreateInput>
-): Partial<Record<keyof PipelineCreateInput, string>> {
-  const errors: Partial<Record<keyof PipelineCreateInput, string>> = {};
-
-  if (!input.title?.trim()) {
-    errors.title = 'Role title is required';
-  } else if (input.title.trim().length > 100) {
-    errors.title = 'Role title must be 100 characters or less';
-  }
-
-  if (!input.level) {
-    errors.level = 'Seniority level is required';
-  }
-
-  if (!input.stack || input.stack.length === 0) {
-    errors.stack = 'At least one technology is required';
-  }
-
-  if (input.description && input.description.length > 1000) {
-    errors.description = 'Description must be 1000 characters or less';
-  }
-
-  return errors;
-}
-
-// ============================================================================
 // Hook
 // ============================================================================
 
-/**
- * usePipelineCreate - Handles pipeline creation with form state and Amplify Data persistence.
- *
- * Provides a thin wrapper around the Amplify Data `Pipeline.create` mutation.
- * Returns the created pipeline ID on success for redirect.
- *
- * @example
- * ```tsx
- * const { create, isSubmitting, error } = usePipelineCreate();
- *
- * const handleSubmit = async () => {
- *   const id = await create({ title: 'Senior Engineer', level: 'Senior', stack: ['React', 'TypeScript'] });
- *   if (id) navigate(`/pipeline/${id}`);
- * };
- * ```
- */
 export function usePipelineCreate(): UsePipelineCreateReturn {
   const [state, setState] = useState<UsePipelineCreateState>({
     isSubmitting: false,
@@ -98,64 +52,24 @@ export function usePipelineCreate(): UsePipelineCreateReturn {
       setState({ isSubmitting: true, error: null, createdId: null });
 
       try {
-        const { data, errors } = await client.models.Pipeline.create({
+        // 1. Create the Pipeline
+        const { data: pipeline, errors } = await client.models.Pipeline.create({
           title: input.title.trim(),
           level: input.level,
           stack: input.stack,
           description: input.description?.trim() || undefined,
-          status: 'DRAFT',
-        });
+          status: 'ACTIVE',
+          creationMode: input.presetId === 'BLANK' ? 'BLANK' : 'PRESET',
+        } as any);
 
-        if (errors && errors.length > 0) {
-          const err = new Error(errors[0].message ?? 'Failed to create pipeline');
-          console.error('[usePipelineCreate] GraphQL errors:', errors);
-          setState({ isSubmitting: false, error: err, createdId: null });
-          return null;
-        }
+        if (errors && errors.length > 0) throw new Error(errors[0].message);
+        if (!pipeline) throw new Error('Failed to create pipeline');
 
-        if (!data?.id) {
-          const err = new Error('Pipeline was created but no ID was returned');
-          console.error('[usePipelineCreate] No ID returned from create mutation');
-          setState({ isSubmitting: false, error: err, createdId: null });
-          return null;
-        }
-
-        console.log('[usePipelineCreate] Pipeline created:', data.id);
-
-        // ---------------------------------------------------------------------
-        // PHASE 2 MVP: Auto-create Stage
-        // ---------------------------------------------------------------------
-        console.log('[usePipelineCreate] Auto-creating default CODE_REVIEW stage...');
-        
-        const { errors: stageErrors } = await client.models.Stage.create({
-          pipelineId: data.id,
-          type: 'CODE_REVIEW',
-          order: 0,
-          config: {
-            renderer: 'DIFF_VIEW',
-            snippets: codeReviewSnippets.map(s => ({
-              id: s.id,
-              title: s.title,
-              code: s.code,
-              language: s.language,
-              groundTruth: s.groundTruth,
-            }))
-          },
-        });
-
-        if (stageErrors) {
-          console.error('[usePipelineCreate] Failed to create default stage:', stageErrors);
-          // We don't fail the whole creation because the pipeline exists
-          // but this is a critical warning for MVP
-        } else {
-          console.log('[usePipelineCreate] Default stage created successfully');
-        }
-
-        setState({ isSubmitting: false, error: null, createdId: data.id });
-        return data.id;
+        console.log('[usePipelineCreate] Pipeline created:', pipeline.id);
+        setState({ isSubmitting: false, error: null, createdId: pipeline.id });
+        return pipeline.id;
       } catch (err) {
-        const error =
-          err instanceof Error ? err : new Error('An unexpected error occurred');
+        const error = err instanceof Error ? err : new Error('An unexpected error occurred');
         console.error('[usePipelineCreate] Unexpected error:', error);
         setState({ isSubmitting: false, error, createdId: null });
         return null;

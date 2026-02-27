@@ -4,14 +4,13 @@ import { ConversationalForm } from "../components/RoleDiscovery/Conversational/C
 import { PhaseProgress } from "../components/RoleDiscovery/Conversational/PhaseProgress";
 import { LiquidMetalCard } from "../components/ui/LiquidMetalCard";
 import { FieldGroup, RadioGroup, SelectInput } from "../components/ui/form";
-import { Settings, Loader2, Zap, Shield, Target } from "lucide-react";
+import { Settings, Loader2, Check } from "lucide-react";
 import { useRoleDiscovery } from "../hooks/useRoleDiscovery";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import type { RoleDiscoveryData } from "../types/roleDiscovery";
 import type { Baseline } from "../types/discovery";
-import { codeReviewSnippets } from "../content/codeReviewSnippets";
-import { quizQuestions } from "../content/quizQuestions";
+import { PIPELINE_PRESETS } from "../lib/pipelinePresets";
 
 const client = generateClient<Schema>();
 
@@ -37,15 +36,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // Local state for the form inputs and pipeline configuration
   const [formData, setFormData] = useState<Partial<RoleDiscoveryData & { 
     allowFollowUps: boolean,
-    includeAlgorithm: boolean,
-    includeQuiz: boolean,
-    includeCodeReview: boolean,
+    selectedPresetId: string,
     questionLimit: string
   }>>({
     allowFollowUps: true,
-    includeAlgorithm: true,
-    includeQuiz: true,
-    includeCodeReview: true,
+    selectedPresetId: 'DEFAULT',
     questionLimit: '5',
     stack: [],
   });
@@ -67,14 +62,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
       };
 
       const config = {
-        questionLimit: formData.questionLimit,
-        includeAlgorithm: formData.includeAlgorithm,
-        includeQuiz: formData.includeQuiz,
-        includeCodeReview: formData.includeCodeReview,
+        selectedPresetId: formData.selectedPresetId,
         allowFollowUps: formData.allowFollowUps
       };
 
-      await submitBaseline(baseline, config);
+      await submitBaseline(baseline, config as any);
     }
     setCurrentPhase(nextPhase);
   };
@@ -89,52 +81,50 @@ export default function RoleDiscoveryPage(): JSX.Element {
         stack: finalData.stack,
         description: finalData.challenges,
         status: 'ACTIVE',
-      });
+        creationMode: formData.selectedPresetId === 'BLANK' ? 'BLANK' : 'PRESET',
+      } as any);
 
       if (pErrors || !pipeline) throw new Error(pErrors?.[0].message || 'Failed to create pipeline');
 
-      // 2. Create Stages (Hardcoded for Phase 2 MVP)
-      const stagesToCreate = [];
+      // 2. Create Stages and Challenges from Preset
+      const preset = PIPELINE_PRESETS[formData.selectedPresetId || 'DEFAULT'] || PIPELINE_PRESETS['BLANK'];
+      
+      if (preset && preset.stages.length > 0) {
+        console.log(`[RoleDiscovery] Creating ${preset.stages.length} stages from preset: ${preset.name}...`);
+        
+        for (let sIdx = 0; sIdx < preset.stages.length; sIdx++) {
+          const pStage = preset.stages[sIdx];
+          
+          // Create Stage record
+          const { data: stage, errors: sErrors } = await client.models.Stage.create({
+            pipelineId: pipeline.id,
+            order: sIdx,
+          });
 
-      if (formData.includeCodeReview) {
-        stagesToCreate.push({
-          pipelineId: pipeline.id,
-          type: 'CODE_REVIEW' as const,
-          order: 1,
-          config: {
-            renderer: 'DIFF_VIEW',
-            snippets: codeReviewSnippets.map(s => ({
-              id: s.id,
-              title: s.title,
-              code: s.code,
-              language: s.language,
-              groundTruth: s.groundTruth,
-            }))
-          },
-        });
+          if (sErrors || !stage) {
+            console.error('Error creating stage:', sErrors);
+            continue;
+          }
+
+          // Create Challenges for this stage
+          for (let cIdx = 0; cIdx < pStage.challenges.length; cIdx++) {
+            const pChallenge = pStage.challenges[cIdx];
+            
+            await client.models.Challenge.create({
+              stageId: stage.id,
+              type: pChallenge.type as any,
+              order: cIdx,
+              title: pChallenge.title,
+              instructions: pChallenge.instructions,
+              config: JSON.stringify(pChallenge.config),
+            });
+          }
+        }
+        console.log('[RoleDiscovery] All stages and challenges created.');
       }
 
-      if (formData.includeQuiz) {
-        stagesToCreate.push({
-          pipelineId: pipeline.id,
-          type: 'QUIZ' as const,
-          order: stagesToCreate.length + 1,
-          config: {
-            questions: quizQuestions.map(q => ({
-              id: q.id,
-              q: q.q,
-              options: q.options,
-              correct: q.correct
-            }))
-          },
-        });
-      }
-
-      // Create stages sequentially
-      for (const stage of stagesToCreate) {
-        const { errors: sErrors } = await client.models.Stage.create(stage);
-        if (sErrors) console.error('Error creating stage:', sErrors);
-      }
+      // Small delay to ensure consistency before redirect
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       // 3. Redirect to Pipeline Overview
       navigate(`/pipeline/${pipeline.id}`);
@@ -288,60 +278,46 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
                 <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
 
-                {/* Pipeline Stages Config */}
+                {/* Pipeline Presets Config */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                   <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
-                    PIPELINE_STAGES
+                    PIPELINE_PRESETS
                   </span>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[
-                      { id: 'includeAlgorithm', label: 'ALGORITHM_QUESTION', icon: Zap },
-                      { id: 'includeQuiz', label: 'TECHNICAL_QUIZ', icon: Shield },
-                      { id: 'includeCodeReview', label: 'CODE_REVIEW_CHALLENGE', icon: Target },
-                    ].map((stage) => (
+                    {Object.values(PIPELINE_PRESETS).map((preset) => (
                       <div 
-                        key={stage.id}
-                        onClick={() => handleChange(stage.id, !formData[stage.id as keyof typeof formData])}
+                        key={preset.id}
+                        onClick={() => handleChange('selectedPresetId', preset.id)}
                         style={{
                           padding: '16px',
-                          background: formData[stage.id as keyof typeof formData] 
+                          background: formData.selectedPresetId === preset.id 
                             ? 'rgba(139, 92, 246, 0.1)' 
                             : 'rgba(255,255,255,0.02)',
-                          border: `1px solid ${formData[stage.id as keyof typeof formData] 
+                          border: `1px solid ${formData.selectedPresetId === preset.id 
                             ? 'rgba(139, 92, 246, 0.3)' 
                             : 'rgba(255,255,255,0.05)'}`,
                           display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
+                          flexDirection: 'column',
+                          gap: 4,
                           cursor: 'pointer',
                           transition: 'all 0.2s ease'
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <stage.icon size={14} color={formData[stage.id as keyof typeof formData] ? '#a78bfa' : 'rgba(255,255,255,0.2)'} />
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span style={{ 
                             fontSize: 10, 
-                            color: formData[stage.id as keyof typeof formData] ? '#fff' : 'rgba(255,255,255,0.4)',
-                            fontWeight: 600,
+                            color: formData.selectedPresetId === preset.id ? '#fff' : 'rgba(255,255,255,0.4)',
+                            fontWeight: 700,
                             letterSpacing: '0.05em'
                           }}>
-                            {stage.label}
+                            {preset.name.toUpperCase()}
                           </span>
+                          {formData.selectedPresetId === preset.id && <Check size={12} color="#a78bfa" />}
                         </div>
-                        <div style={{
-                          width: 12,
-                          height: 12,
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          background: formData[stage.id as keyof typeof formData] ? '#8b5cf6' : 'transparent',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}>
-                          {formData[stage.id as keyof typeof formData] && (
-                            <div style={{ width: 6, height: 6, background: '#fff' }} />
-                          )}
-                        </div>
+                        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', lineHeight: 1.4 }}>
+                          {preset.description}
+                        </span>
                       </div>
                     ))}
                   </div>

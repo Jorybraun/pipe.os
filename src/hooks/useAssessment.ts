@@ -26,16 +26,17 @@ export type StageSubmission = CodeReviewSubmission | QuizSubmission | Record<str
 
 interface UseAssessmentState {
   candidate: Candidate | null;
-  stages: Stage[];
+  stages: any[];
   currentStageIndex: number;
+  currentChallengeIndex: number;
   isLoading: boolean;
   error: Error | null;
   isSubmitted: boolean;
 }
 
 interface UseAssessmentReturn extends UseAssessmentState {
-  submitStage: (submission: StageSubmission) => Promise<void>;
-  nextStage: () => void;
+  submitChallenge: (submission: StageSubmission) => Promise<void>;
+  nextChallenge: () => void;
   reset: () => void;
 }
 
@@ -44,13 +45,14 @@ interface UseAssessmentReturn extends UseAssessmentState {
 // ============================================================================
 
 /**
- * useAssessment - Handles candidate-side data fetching and submission.
+ * useAssessment - Handles candidate-side data fetching and submission for challenges.
  */
 export function useAssessment(inviteToken: string): UseAssessmentReturn {
   const [state, setState] = useState<UseAssessmentState>({
     candidate: null,
     stages: [],
     currentStageIndex: 0,
+    currentChallengeIndex: 0,
     isLoading: true,
     error: null,
     isSubmitted: false,
@@ -67,31 +69,20 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       return;
     }
 
-    console.log('[useAssessment] 1. START_FETCH for token:', inviteToken);
-
     try {
       // 1. Find candidate by token
-      console.log('[useAssessment] 2. LOOKING_UP_CANDIDATE...');
-      const { data: candidates, errors: candidateErrors } = await client.models.Candidate.list({
+      const { data: candidates } = await client.models.Candidate.list({
         filter: { inviteToken: { eq: inviteToken } },
       });
 
-      if (candidateErrors && candidateErrors.length > 0) {
-        console.error('[useAssessment] ❌ Candidate lookup failed:', candidateErrors);
-        throw new Error(candidateErrors[0].message);
-      }
-
       if (!candidates || candidates.length === 0) {
-        console.error('[useAssessment] ❌ Token not found in database');
         throw new Error('INVALID_TOKEN');
       }
 
       const candidate = candidates[0];
-      console.log('[useAssessment] 3. FOUND_CANDIDATE:', candidate.name, '| Status:', candidate.status);
 
       // 2. Check if already completed
       if (candidate.status === 'COMPLETED') {
-        console.warn('[useAssessment] ⚠️ Candidate already COMPLETED');
         setState((prev) => ({
           ...prev,
           candidate,
@@ -101,36 +92,43 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         return;
       }
 
-      // 3. Fetch stages for the pipeline
-      console.log('[useAssessment] 4. FETCHING_STAGES for pipeline:', candidate.pipelineId);
-      const { data: stages, errors: stageErrors } = await client.models.Stage.list({
+      // 3. Fetch stages and nested challenges
+      const { data: stages } = await client.models.Stage.list({
         filter: { pipelineId: { eq: candidate.pipelineId } },
+        selectionSet: [
+          'id', 
+          'order', 
+          'challenges.id', 
+          'challenges.type', 
+          'challenges.title', 
+          'challenges.instructions', 
+          'challenges.config', 
+          'challenges.order',
+          'challenges.codeArtifact.id',
+          'challenges.codeArtifact.code',
+          'challenges.codeArtifact.language',
+          'challenges.codeArtifact.title',
+          'challenges.codeArtifact.groundTruth'
+        ]
       });
 
-      if (stageErrors && stageErrors.length > 0) {
-        console.error('[useAssessment] ❌ Stage fetch failed:', stageErrors);
-        throw new Error(stageErrors[0].message);
-      }
-
       const sortedStages = [...stages].sort((a, b) => (a.order || 0) - (b.order || 0));
-      console.log('[useAssessment] 5. LOADED_STAGES:', sortedStages.length);
+      
+      // Sort challenges within each stage
+      sortedStages.forEach(s => {
+        if (s.challenges) {
+          (s as any).challenges = [...s.challenges].sort((a, b) => (a.order || 0) - (b.order || 0));
+        }
+      });
 
       // 4. Update status to IN_PROGRESS if it was INVITED
       if (candidate.status === 'INVITED') {
-        console.log('[useAssessment] 6. UPDATING_STATUS -> IN_PROGRESS...');
-        try {
-          await client.models.Candidate.update({
-            id: candidate.id,
-            status: 'IN_PROGRESS',
-          });
-          console.log('[useAssessment] 7. STATUS_UPDATE_SUCCESS');
-        } catch (updateErr) {
-          console.warn('[useAssessment] ⚠️ Status update failed (non-fatal):', updateErr);
-          // We continue anyway so the candidate can still see their assessment
-        }
+        await client.models.Candidate.update({
+          id: candidate.id,
+          status: 'IN_PROGRESS',
+        });
       }
 
-      console.log('[useAssessment] 8. FETCH_COMPLETE_SUCCESS');
       setState((prev) => ({
         ...prev,
         candidate,
@@ -140,7 +138,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       }));
     } catch (err) {
       const error = err instanceof Error ? err : new Error('An unexpected error occurred');
-      console.error('[useAssessment] ❌ FATAL_HOOK_ERROR:', error);
+      console.error('[useAssessment] ❌ Error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
     }
   }, [inviteToken]);
@@ -149,68 +147,77 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     fetchData();
   }, [fetchData]);
 
-  const submitStage = useCallback(
+  const submitChallenge = useCallback(
     async (submission: StageSubmission): Promise<void> => {
-      const { candidate, stages, currentStageIndex } = state;
+      const { candidate, stages, currentStageIndex, currentChallengeIndex } = state;
       if (!candidate || stages.length === 0) return;
 
       const currentStage = stages[currentStageIndex];
-      console.log('[useAssessment] SUBMIT_STAGE:', currentStage.type, '| Index:', currentStageIndex);
+      const challenges = currentStage.challenges || [];
+      const currentChallenge = challenges[currentChallengeIndex];
+      
+      if (!currentChallenge) return;
 
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
-        // Compute score
-        let computedScore = 0;
-        const config = typeof currentStage.config === 'string' 
-          ? JSON.parse(currentStage.config) 
-          : currentStage.config;
+        // Parse config for scoring
+        const config = typeof currentChallenge.config === 'string' 
+          ? JSON.parse(currentChallenge.config) 
+          : currentChallenge.config;
 
-        if (currentStage.type === 'CODE_REVIEW') {
-          const result = scoreCodeReview(submission as any, config.snippets || []);
+        let computedScore = 0;
+        
+        // Scoring logic based on challenge type
+        if (currentChallenge.type === 'CODE_REVIEW') {
+          // Use artifact ground truth if available, else fall back to inline config
+          const artifact = currentChallenge.codeArtifact;
+          const groundTruth = artifact?.groundTruth 
+            ? (typeof artifact.groundTruth === 'string' ? JSON.parse(artifact.groundTruth) : artifact.groundTruth)
+            : (config.groundTruth || []);
+            
+          const result = scoreCodeReview(submission as any, [{ id: 'current', groundTruth }]);
           computedScore = result.total;
-          console.log('[useAssessment] Calculated Code Review score:', computedScore, result.breakdown);
-        } else if (currentStage.type === 'QUIZ') {
-          const result = scoreQuiz(submission as any, config.questions || []);
+        } else if (currentChallenge.type === 'QUIZ_MCQ') {
+          const questions = config.q ? [config] : (config.questions || []);
+          const result = scoreQuiz(submission as any, questions);
           computedScore = result.total;
-          console.log('[useAssessment] Calculated Quiz score:', computedScore, result.breakdown);
         }
 
         // Create Assessment record
-        const { errors } = await client.models.Assessment.create({
+        await client.models.Assessment.create({
           candidateId: candidate.id,
-          stageId: currentStage.id,
+          challengeId: currentChallenge.id,
           submission: JSON.stringify(submission),
           score: computedScore,
           completedAt: new Date().toISOString(),
         });
 
-        if (errors && errors.length > 0) {
-          console.error('[useAssessment] ❌ Assessment creation failed:', errors);
-          throw new Error(errors[0].message);
-        }
+        // Determine next step
+        const isLastChallengeInStage = currentChallengeIndex === challenges.length - 1;
+        const isLastStage = currentStageIndex === stages.length - 1;
 
-        console.log('[useAssessment] ✅ Assessment created');
-
-        // If this was the last stage, mark candidate as COMPLETED
-        if (currentStageIndex === stages.length - 1) {
-          console.log('[useAssessment] FINALIZING_CANDIDATE...');
+        if (isLastChallengeInStage && isLastStage) {
+          // Final submission
           await client.models.Candidate.update({
             id: candidate.id,
             status: 'COMPLETED',
           });
-          console.log('[useAssessment] ✅ Candidate COMPLETED');
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            isSubmitted: true,
-          }));
-        } else {
-          console.log('[useAssessment] ADVANCING_STAGE');
+          setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+        } else if (isLastChallengeInStage) {
+          // Move to next stage
           setState((prev) => ({
             ...prev,
             isLoading: false,
             currentStageIndex: prev.currentStageIndex + 1,
+            currentChallengeIndex: 0
+          }));
+        } else {
+          // Move to next challenge in same stage
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            currentChallengeIndex: prev.currentChallengeIndex + 1
           }));
         }
       } catch (err) {
@@ -222,11 +229,8 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     [state]
   );
 
-  const nextStage = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      currentStageIndex: Math.min(prev.currentStageIndex + 1, prev.stages.length - 1),
-    }));
+  const nextChallenge = useCallback(() => {
+    // Handled by submitChallenge
   }, []);
 
   const reset = useCallback(() => {
@@ -235,8 +239,8 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
   return {
     ...state,
-    submitStage,
-    nextStage,
+    submitChallenge,
+    nextChallenge,
     reset,
   };
 }

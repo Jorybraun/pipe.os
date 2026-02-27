@@ -245,14 +245,16 @@ export function DiffReviewCanvas({
             diffType="add" 
             widgets={widgets}
           >
-            {hunks => hunks.map(hunk => (
-              <Hunk 
-                key={hunk.content} 
-                hunk={hunk} 
-                // @ts-ignore: onGutterClick exists at runtime but missing in type definition
-                onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
-              />
-            ))}
+            {hunks => hunks.map(hunk => {
+              const HunkComponent = Hunk as any;
+              return (
+                <HunkComponent 
+                  key={hunk.content} 
+                  hunk={hunk} 
+                  onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
+                />
+              );
+            })}
           </Diff>
         </div>
 
@@ -271,6 +273,13 @@ export function DiffReviewCanvas({
         .diff-review-container .diff {
           font-family: "Space Mono", monospace;
           font-size: 13px;
+          border: none;
+          background: transparent;
+        }
+        .diff-review-container .diff-table {
+          background: transparent;
+          border-collapse: collapse;
+          width: 100%;
         }
         .diff-review-container .diff-gutter {
           background: rgba(255,255,255,0.02);
@@ -280,24 +289,43 @@ export function DiffReviewCanvas({
           min-width: 50px;
           text-align: right;
           padding-right: 12px !important;
+          user-select: none;
         }
         .diff-review-container .diff-gutter:hover {
           color: #fff;
           background: rgba(255,255,255,0.05);
         }
         .diff-review-container .diff-code {
-          color: rgba(255,255,255,0.8);
+          color: rgba(255,255,255,0.85);
           padding-left: 20px !important;
+          background: transparent;
+          line-height: 1.6;
+        }
+        .diff-review-container .diff-line {
+          background: transparent;
         }
         .diff-review-container .diff-line-add {
           background: transparent;
         }
+        .diff-review-container .diff-line-add .diff-code {
+          background: transparent;
+        }
         .diff-review-container .diff-widget-content {
           background: transparent;
+          padding: 0;
         }
         .diff-review-container .diff-hunk-header {
           display: none;
         }
+        
+        /* Syntax highlighting overrides for the diff view */
+        .diff-review-container .diff-code .token.keyword { color: #c678dd; }
+        .diff-review-container .diff-code .token.function { color: #61afef; }
+        .diff-review-container .diff-code .token.string { color: #98c379; }
+        .diff-review-container .diff-code .token.comment { color: #5c6370; font-style: italic; }
+        .diff-review-container .diff-code .token.operator { color: #56b6c2; }
+        .diff-review-container .diff-code .token.class-name { color: #e5c07b; }
+        .diff-review-container .diff-code .token.number { color: #d19a66; }
       `}</style>
     </div>
   );

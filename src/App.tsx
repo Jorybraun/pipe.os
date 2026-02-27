@@ -13,12 +13,12 @@ import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
 import { Layout, ProfileHeader, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
 import OverviewPage from "./pages/OverviewPage";
-import PipelineDetailPage from "./pages/PipelineDetailPage";
+import StageDetailPage from "./pages/StageDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage"; // Legacy — preserved for post-MVP agentic discovery
+import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
-import { QuestionDetail } from "./components/QuestionDetail";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import { SubTitle } from "./components/ui/SubTitle";
 
@@ -240,11 +240,9 @@ function App(): JSX.Element {
               <Routes>
                 <Route element={<AppLayout />}>
                   <Route path="/" element={<ListingPage />} />
-                  <Route path="/pipeline/:id" element={<OverviewPage />}>
-                    <Route index element={null} />
-                    <Route path=":stage" element={<PipelineDetailPage />} />
-                    <Route path=":stage/:questionId" element={<QuestionDetail />} />
-                  </Route>
+                  <Route path="/pipeline/:id" element={<OverviewPage />} />
+                  <Route path="/pipeline/:id/stages/:stageId" element={<StageDetailPage />} />
+                  <Route path="/pipeline/:pipelineId/challenges/:challengeId" element={<ChallengeEditorPage />} />
                   <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
                   <Route path="/pipeline/new/discovery" element={<RoleDiscoveryPage />} />
                   <Route path="/candidates/:id" element={<CandidateProfilePage />} />

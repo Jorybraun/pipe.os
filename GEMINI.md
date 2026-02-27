@@ -13,22 +13,20 @@ You are working on **Pipe**, an AI-native developer interview platform. Solo-fou
 
 ---
 
-## Current state (2026-02-26)
+## Current state (2026-02-27)
 
 ### Done
-- Recruiter auth via Cognito (`<Authenticator>` wrapping recruiter routes)
-- Sign-out button in `ProfileHeader`
-- Pipeline creation form (`PipelineCreatePage.tsx`, `usePipelineCreate.ts`)
-- Full data schema: `Pipeline`, `Stage`, `Candidate`, `Assessment`, `RoleContext`, `Challenge`
-- Schema auth fixed: `Stage` and `Candidate` are guest-readable, `Assessment` is guest-writable (candidate flow)
-- `questionAgent` Lambda — complete, used as engineering standard
-- `RoleDiscoveryPage` and `useRoleDiscovery` — preserved for post-MVP agentic discovery
-
-### Not done yet (start here)
-See `TASKS.md` Phase 0 (last item: run `npx ampx sandbox`) and then Phase 1 (candidate flow).
-
-The next unchecked task is: **`npx ampx sandbox`** — deploy schema, confirm no errors.
-After that: **Phase 1 — Candidate Flow** (see `docs/specs/candidate-flow-spec.md`).
+- Full Phase 1–5 Roadmap complete.
+- Recruiter auth via Cognito (`<Authenticator>` wrapping recruiter routes).
+- Pipeline creation consolidated in `RoleDiscoveryPage.tsx` (using presets).
+- **CRITICAL:** `PipelineCreatePage.tsx` has been deleted. Do not recreate it.
+- Generic `StageRegistry` (Inversion of Control) for assessments.
+- `react-diff-view` integration for dark-themed, interactive code reviews.
+- Full data schema: `Pipeline`, `Stage`, `Challenge`, `CodeArtifact`, `Candidate`, `Assessment`.
+- Schema auth: `Stage`, `Challenge`, and `Candidate` are guest-readable for candidate flow.
+- Real data powers Listing, Overview, and Profile pages.
+- Phase 6 bug fixes (type safety, N+2 query optimization, gated dev buttons) complete.
+- Phase 7 Challenge Architecture Step 4 complete.
 
 ---
 

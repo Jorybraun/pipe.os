@@ -17,10 +17,12 @@ const schema = a.schema({
 
       // Pipeline status
       status: a.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']),
+      creationMode: a.enum(['BLANK', 'PRESET', 'AI_DRIVEN']),
 
       // Relations
       stages: a.hasMany('Stage', 'pipelineId'),
       candidates: a.hasMany('Candidate', 'pipelineId'),
+      codeArtifacts: a.hasMany('CodeArtifact', 'pipelineId'),
 
       // Link to discovery context (post-MVP: agentic discovery)
       roleContextId: a.id(),
@@ -32,41 +34,76 @@ const schema = a.schema({
   /**
    * Stage Model
    *
-   * Represents a specific assessment step in the pipeline.
-   * Candidates (unauthenticated) need read access to load stage config
-   * when completing their assessment via invite token.
-   *
-   * Supported stage types for MVP:
-   * - QUIZ: Multiple-choice questions
-   * - CODE_REVIEW: Annotate buggy code snippets
+   * Represents a container for challenges in the pipeline.
+   * Stages define the high-level flow (e.g. "Technical Round 1").
    */
   Stage: a
     .model({
       pipelineId: a.id().required(),
       pipeline: a.belongsTo('Pipeline', 'pipelineId'),
-      type: a.enum(['QUIZ', 'CODE_REVIEW']),
       order: a.integer(),
-      /**
-       * Stage config JSON structure by type:
-       * QUIZ:        { questions: Array<{ q: string, options: string[], correct: number }> }
-       * CODE_REVIEW: { snippets: Array<{ code: string, bugs: Array<{ line: number, type: string }> }> }
-       */
+      challenges: a.hasMany('Challenge', 'stageId'),
+      // Legacy - deprecated in Phase 7
+      type: a.enum(['QUIZ', 'CODE_REVIEW']),
       config: a.json(),
       assessments: a.hasMany('Assessment', 'stageId'),
     })
     .authorization((allow) => [
-      allow.owner(),                // Recruiters manage stages
-      allow.publicApiKey().to(['read']), // Candidates (unauthenticated) read stage config via API Key
+      allow.owner(),                
+      allow.publicApiKey().to(['read']), 
+    ]),
+
+  /**
+   * Challenge Model
+   * 
+   * Atomic unit of assessment. 
+   */
+  Challenge: a
+    .model({
+      stageId: a.id().required(),
+      stage: a.belongsTo('Stage', 'stageId'),
+      type: a.enum(['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER']),
+      order: a.integer(),
+      title: a.string().required(),
+      instructions: a.string(),
+      config: a.json(), // Challenge-specific settings (e.g. MCQ options)
+      
+      // Linked code if applicable
+      codeArtifactId: a.id(),
+      codeArtifact: a.belongsTo('CodeArtifact', 'codeArtifactId'),
+
+      assessments: a.hasMany('Assessment', 'challengeId'),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.publicApiKey().to(['read']),
+    ]),
+
+  /**
+   * CodeArtifact Model
+   * 
+   * Stores code snippets and ground truth for code-based challenges.
+   * Separated from Challenge to allow multiple challenges to reference the same artifact.
+   */
+  CodeArtifact: a
+    .model({
+      pipelineId: a.id().required(),
+      pipeline: a.belongsTo('Pipeline', 'pipelineId'),
+      title: a.string(),
+      language: a.string(),
+      code: a.string(),
+      groundTruth: a.json(), // Server-side bug answer key / scoring rubric
+      challenges: a.hasMany('Challenge', 'codeArtifactId'),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.publicApiKey().to(['read']),
     ]),
 
   /**
    * Candidate Model
    *
    * Represents a candidate invited to a pipeline.
-   * The inviteToken is a UUID embedded in the candidate-facing URL.
-   * Candidates are unauthenticated — they access their assessment via token only.
-   *
-   * Invite URL pattern: /assess/:inviteToken
    */
   Candidate: a
     .model({
@@ -81,38 +118,40 @@ const schema = a.schema({
       assessments: a.hasMany('Assessment', 'candidateId'),
     })
     .authorization((allow) => [
-      allow.owner(),                        // Recruiters manage candidates
-      allow.publicApiKey().to(['read', 'update']), // Candidates look themselves up and update status via API Key
+      allow.owner(),                        
+      allow.publicApiKey().to(['read', 'update']), 
     ]),
 
   /**
    * Assessment Model
    *
-   * Stores a candidate's submission for a specific stage.
-   * Candidates (unauthenticated) create assessments when submitting their work.
-   * Recruiters read and score them.
+   * Stores a candidate's submission for a specific challenge.
    */
   Assessment: a
     .model({
       candidateId: a.id().required(),
       candidate: a.belongsTo('Candidate', 'candidateId'),
-      stageId: a.id().required(),
+      
+      challengeId: a.id(), // New relationship in Phase 7
+      challenge: a.belongsTo('Challenge', 'challengeId'),
+
+      // Deprecated - kept for migration
+      stageId: a.id(),
       stage: a.belongsTo('Stage', 'stageId'),
+
       submission: a.json(),    // Candidate's answers/annotations
       score: a.float(),
       completedAt: a.datetime(),
     })
     .authorization((allow) => [
-      allow.owner(),                        // Recruiters read/score assessments
-      allow.publicApiKey().to(['create', 'read']), // Candidates submit via API Key
+      allow.owner(),                        
+      allow.publicApiKey().to(['create', 'read']), 
     ]),
 
   /**
    * RoleContext Model
    *
    * Stores role discovery session state and outputs.
-   * Post-MVP: used by the agentic discovery flow.
-   * Not used in MVP — pipeline creation uses a simple form.
    */
   RoleContext: a
     .model({
@@ -151,13 +190,11 @@ const schema = a.schema({
     ]),
 
   /**
-   * Challenge Model (Post-MVP)
+   * ChallengeTemplate Model (formerly Challenge)
    *
    * A global repository of pre-validated assessment content.
-   * Challenges are tagged by technology and difficulty for easy selection.
-   * Not used in MVP — stages are authored directly in the stage editor.
    */
-  Challenge: a
+  ChallengeTemplate: a
     .model({
       type: a.enum(['QUIZ', 'CODE_REVIEW']),
       title: a.string().required(),
@@ -174,18 +211,12 @@ const schema = a.schema({
       isVerified: a.boolean().default(false),
     })
     .authorization((allow) => [
-      allow.authenticated().to(['read']),                         // Any recruiter can browse the library
-      allow.groups(['Admin']).to(['create', 'update', 'delete']), // Only admins can curate
+      allow.authenticated().to(['read']),                         
+      allow.groups(['Admin']).to(['create', 'update', 'delete']), 
     ]),
 
   /**
    * AI Agent Mutations
-   *
-   * Custom mutations that invoke Lambda functions.
-   * Each agent follows the questionAgent engineering standard — see docs/specs/engineering-standards.md.
-   *
-   * Post-MVP: these power the agentic role discovery flow.
-   * MVP: pipeline creation uses a simple form — agents not yet called.
    */
   generateQuestions: a
     .mutation()
@@ -213,8 +244,6 @@ export const data = defineData({
   schema,
   authorizationModes: {
     defaultAuthorizationMode: 'userPool',
-    // Guest (unauthenticated) access is enabled to support the candidate assessment flow.
-    // Candidates access their assessment via /assess/:inviteToken without a Cognito account.
     apiKeyAuthorizationMode: {
       expiresInDays: 365,
     },

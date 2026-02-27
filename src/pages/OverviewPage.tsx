@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, Outlet } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   CheckCircle,
   Activity,
@@ -95,7 +95,7 @@ function StageHeaderCard({
   isActive: boolean;
   onClick: () => void;
 }) {
-  const Icon = stageIcons[stage.type] || FileText;
+  const Icon = stage.type ? (stageIcons[stage.type] || FileText) : FileText;
   const scoredCandidates = candidates.filter(c => c.score !== undefined && c.score !== null);
   const avgScore = scoredCandidates.length > 0
     ? Math.round(
@@ -137,7 +137,7 @@ function StageHeaderCard({
           marginBottom: 12,
         }}
       >
-        {stage.type.replace('_', ' ').toUpperCase()}
+        {stage.type ? stage.type.replace('_', ' ').toUpperCase() : 'STAGE'}
       </div>
 
       {avgScore !== null ? (
@@ -383,10 +383,7 @@ function CandidateKanbanCard({
 }
 
 export default function OverviewPage(): JSX.Element {
-  const { id, stage: activeStageId } = useParams<{
-    id: string;
-    stage?: string;
-  }>();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
   const [pipeline, setPipeline] = useState<any>(null);
@@ -400,6 +397,22 @@ export default function OverviewPage(): JSX.Element {
   const [newCandidate, setNewCandidate] = useState({ name: '', email: '' });
   const { create: createCandidate, isSubmitting: isAdding } = useCandidateCreate();
 
+  const handleAddStage = async () => {
+    if (!id) return;
+    setIsLoading(true);
+    try {
+      await client.models.Stage.create({
+        pipelineId: id,
+        order: stages.length,
+      });
+      await fetchData();
+    } catch (err) {
+      console.error("Failed to add stage:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const fetchData = useCallback(async () => {
     if (!id) return;
     try {
@@ -407,8 +420,14 @@ export default function OverviewPage(): JSX.Element {
       setError(null);
       const [pipelineData, candidatesData, stagesData] = await Promise.all([
         client.models.Pipeline.get({ id }),
-        client.models.Candidate.list({ filter: { pipelineId: { eq: id } } }),
-        client.models.Stage.list({ filter: { pipelineId: { eq: id } } }),
+        client.models.Candidate.list({ 
+          filter: { pipelineId: { eq: id } },
+          selectionSet: ['id', 'name', 'email', 'status', 'inviteToken', 'assessments.id', 'assessments.stageId']
+        }),
+        client.models.Stage.list({ 
+          filter: { pipelineId: { eq: id } },
+          selectionSet: ['id', 'order', 'type']
+        }),
       ]);
 
       setPipeline(pipelineData.data);
@@ -443,6 +462,8 @@ export default function OverviewPage(): JSX.Element {
 
   const handleClearStages = async () => {
     if (!id) return;
+    if (!window.confirm("Are you sure you want to delete ALL stages for this pipeline?")) return;
+    
     setIsLoading(true);
     try {
       // Fetch all stages first
@@ -451,6 +472,9 @@ export default function OverviewPage(): JSX.Element {
       });
       // Delete them
       await Promise.all(stagesToDelete.map(s => client.models.Stage.delete({ id: s.id })));
+      
+      // Wait for consistency
+      await new Promise(resolve => setTimeout(resolve, 500));
       await fetchData();
     } catch (err) {
       console.error("Failed to clear stages:", err);
@@ -463,12 +487,13 @@ export default function OverviewPage(): JSX.Element {
     if (!id) return;
     setIsLoading(true);
     try {
+      console.log('[Overview] Seeding MVP stages...');
       // 1. CODE_REVIEW
       await client.models.Stage.create({
         pipelineId: id,
         type: 'CODE_REVIEW',
         order: 0,
-        config: {
+        config: JSON.stringify({
           renderer: 'DIFF_VIEW',
           snippets: codeReviewSnippets.map(s => ({
             id: s.id,
@@ -477,7 +502,7 @@ export default function OverviewPage(): JSX.Element {
             language: s.language,
             groundTruth: s.groundTruth,
           }))
-        },
+        }),
       });
 
       // 2. QUIZ
@@ -485,16 +510,19 @@ export default function OverviewPage(): JSX.Element {
         pipelineId: id,
         type: 'QUIZ',
         order: 1,
-        config: {
+        config: JSON.stringify({
           questions: quizQuestions.map(q => ({
             id: q.id,
             q: q.q,
             options: q.options,
             correct: q.correct
           }))
-        },
+        }),
       });
 
+      console.log('[Overview] Stages seeded. Refreshing...');
+      // Wait for consistency
+      await new Promise(resolve => setTimeout(resolve, 800));
       await fetchData();
     } catch (err) {
       console.error("Failed to seed stages:", err);
@@ -506,16 +534,18 @@ export default function OverviewPage(): JSX.Element {
   // Group candidates by their current stage
   const candidatesByStage = stages.reduce((acc, s, idx) => {
     acc[s.id] = candidates.filter(c => {
-      // For MVP simplicity:
-      // If it's the first stage, show candidates who are INVITED or IN_PROGRESS
-      if (idx === 0 && (c.status === 'INVITED' || c.status === 'IN_PROGRESS')) {
-        return true;
-      }
-      // If it's the last stage, show candidates who are COMPLETED
-      if (idx === stages.length - 1 && c.status === 'COMPLETED') {
-        return true;
-      }
-      return false;
+      // Get count of unique stages this candidate has submitted assessments for
+      const completedStageIds = new Set((c.assessments || []).map((a: any) => a.stageId));
+      const completedCount = completedStageIds.size;
+
+      // If they finished everything, they are in the last stage
+      if (c.status === 'COMPLETED' && idx === stages.length - 1) return true;
+      if (c.status === 'COMPLETED') return false;
+
+      // Otherwise, they are in the stage corresponding to their progress
+      // e.g. 0 stages completed -> in stage 0
+      // 1 stage completed -> in stage 1
+      return idx === completedCount;
     });
     return acc;
   }, {} as Record<string, any[]>);
@@ -584,17 +614,17 @@ export default function OverviewPage(): JSX.Element {
                 <button
                   onClick={handleClearStages}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
+                    display: "flex",
+                    alignItems: "center",
                     gap: 8,
-                    padding: '10px 20px',
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'rgba(255,255,255,0.4)',
+                    padding: "10px 20px",
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(255,255,255,0.4)",
                     fontSize: 10,
-                    letterSpacing: '0.1em',
-                    fontFamily: 'Space Mono',
-                    cursor: 'pointer',
+                    letterSpacing: "0.1em",
+                    fontFamily: "Space Mono",
+                    cursor: "pointer",
                   }}
                 >
                   <X size={14} />
@@ -604,17 +634,17 @@ export default function OverviewPage(): JSX.Element {
                   <button
                     onClick={handleSeedStage}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
+                      display: "flex",
+                      alignItems: "center",
                       gap: 8,
-                      padding: '10px 20px',
-                      background: 'rgba(255,100,100,0.1)',
-                      border: '1px solid rgba(255,100,100,0.2)',
-                      color: '#ffaaaa',
+                      padding: "10px 20px",
+                      background: "rgba(255,100,100,0.1)",
+                      border: "1px solid rgba(255,100,100,0.2)",
+                      color: "#ffaaaa",
                       fontSize: 10,
-                      letterSpacing: '0.1em',
-                      fontFamily: 'Space Mono',
-                      cursor: 'pointer',
+                      letterSpacing: "0.1em",
+                      fontFamily: "Space Mono",
+                      cursor: "pointer",
                     }}
                   >
                     <Code size={14} />
@@ -707,44 +737,22 @@ export default function OverviewPage(): JSX.Element {
         </div>
       )}
 
-      {/* Stage headers */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-        {stages.map((s) => (
-          <div key={s.id} style={{ flex: 1, minWidth: 280 }}>
-            <StageHeaderCard
-              stage={s}
-              candidates={candidatesByStage[s.id] || []}
-              isActive={activeStageId === s.id}
-              onClick={() => navigate(`/pipeline/${id}/${s.id}`)}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Content area */}
-      {activeStageId ? (
-        <Outlet />
-      ) : (
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            overflowX: "auto",
-            paddingBottom: 24,
-          }}
-        >
-          {stages.map((s, i) => {
-            const stageCandidates = candidatesByStage[s.id] || [];
-            return (
-              <div
-                key={s.id}
-                style={{
-                  flex: 1,
-                  minWidth: 280,
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
+      {/* Stage Headers and Kanban Grid */}
+      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 24, alignItems: 'flex-start' }}>
+        {stages.map((s, i) => {
+          const stageCandidates = candidatesByStage[s.id] || [];
+          return (
+            <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Header */}
+              <StageHeaderCard
+                stage={s}
+                candidates={stageCandidates}
+                isActive={false}
+                onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}
+              />
+              
+              {/* Candidate Cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {stageCandidates.map((candidate: any, idx: number) => (
                   <CandidateKanbanCard
                     key={candidate.id}
@@ -758,12 +766,12 @@ export default function OverviewPage(): JSX.Element {
                 {stageCandidates.length === 0 && (
                   <div
                     style={{
-                      flex: 1,
-                      minHeight: 120,
+                      height: 120,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       border: "1px dashed rgba(255,255,255,0.08)",
+                      borderRadius: 12
                     }}
                   >
                     <span style={{ fontSize: 8, letterSpacing: "0.2em", color: "rgba(255,255,255,0.2)" }}>
@@ -772,10 +780,37 @@ export default function OverviewPage(): JSX.Element {
                   </div>
                 )}
               </div>
-            );
-          })}
+            </div>
+          );
+        })}
+
+        {/* Add Stage Column */}
+        <div style={{ flex: '0 0 320px' }}>
+          <button
+            onClick={handleAddStage}
+            style={{
+              width: '100%',
+              height: 180, 
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px dashed rgba(255,255,255,0.1)',
+              borderRadius: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+            onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+          >
+            <Plus size={20} />
+            <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

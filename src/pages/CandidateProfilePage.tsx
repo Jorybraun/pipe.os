@@ -5,7 +5,6 @@ import {
   Mail,
   Briefcase,
   CheckCircle,
-  Activity,
   Phone,
   Zap,
   Code,
@@ -93,11 +92,12 @@ const stageIcons: Record<string, typeof Phone> = {
 
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
-  const [candidate, setCandidate] = useState<any>(null);
-  const [assessments, setAssessments] = useState<any[]>([]);
+  const [candidate, setCandidate] = useState<Schema['Candidate']['type'] | null>(null);
+  const [assessments, setAssessments] = useState<Schema['Assessment']['type'][]>([]);
   const [stages, setStages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -109,12 +109,23 @@ export default function CandidateProfilePage(): JSX.Element {
       setCandidate(cand);
 
       const [assData, stagesData] = await Promise.all([
-        client.models.Assessment.list({ filter: { candidateId: { eq: id } } }),
-        client.models.Stage.list({ filter: { pipelineId: { eq: cand.pipelineId } } }),
+        client.models.Assessment.list({ 
+          filter: { candidateId: { eq: id } },
+          selectionSet: ['id', 'challengeId', 'score', 'submission', 'completedAt']
+        }),
+        client.models.Stage.list({ 
+          filter: { pipelineId: { eq: cand.pipelineId } },
+          selectionSet: ['id', 'order', 'type', 'challenges.id', 'challenges.title', 'challenges.type', 'challenges.order']
+        }),
       ]);
 
-      setAssessments(assData.data);
-      setStages(stagesData.data.sort((a, b) => (a.order || 0) - (b.order || 0)));
+      setAssessments(assData.data as any);
+      const sortedStages = stagesData.data.sort((a, b) => (a.order || 0) - (b.order || 0));
+      setStages(sortedStages);
+      
+      if (sortedStages.length > 0) {
+        setSelectedStageId(sortedStages[0].id);
+      }
     } catch (err) {
       console.error("[CandidateProfilePage] Error fetching data:", err);
       setError(err instanceof Error ? err : new Error("Failed to load candidate profile"));
@@ -222,10 +233,18 @@ export default function CandidateProfilePage(): JSX.Element {
 
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {stages.map((stage) => {
-          const Icon = stageIcons[stage.type] || FileText;
-          const assessment = assessments.find(a => a.stageId === stage.id);
-          const isComplete = !!assessment;
-          const isActive = !isComplete && candidate.status === 'IN_PROGRESS';
+          const Icon = stage.type ? (stageIcons[stage.type] || FileText) : FileText;
+          
+          // Calculate stage score as average of challenge assessments
+          const challengeIds = (stage.challenges || []).map((c: any) => c.id);
+          const stageAssessments = assessments.filter(a => challengeIds.includes(a.challengeId));
+          const isComplete = stageAssessments.length > 0 && stageAssessments.length === challengeIds.length;
+          
+          const stageScore = stageAssessments.length > 0
+            ? Math.round(stageAssessments.reduce((sum, a) => sum + (a.score || 0), 0) / stageAssessments.length)
+            : null;
+
+          const isActive = selectedStageId === stage.id;
 
           return (
             <div key={stage.id} style={{ flex: 1, minWidth: 280 }}>
@@ -233,9 +252,12 @@ export default function CandidateProfilePage(): JSX.Element {
                 key={stage.id}
                 variant={isActive ? "chrome" : "default"}
                 hover
+                onClick={() => setSelectedStageId(stage.id)}
                 style={{
                   padding: 24,
-                  opacity: !isComplete && !isActive ? 0.4 : 1,
+                  cursor: 'pointer',
+                  opacity: !isComplete && !isActive ? 0.6 : 1,
+                  border: isActive ? '1px solid rgba(255,255,255,0.4)' : undefined
                 }}
               >
                 <div
@@ -253,15 +275,6 @@ export default function CandidateProfilePage(): JSX.Element {
                   {isComplete && (
                     <CheckCircle size={12} color="rgba(150,255,150,0.8)" />
                   )}
-                  {isActive && (
-                    <Activity
-                      size={12}
-                      color="rgba(255,255,255,0.8)"
-                      style={{
-                        animation: "pulse 1.5s ease-in-out infinite",
-                      }}
-                    />
-                  )}
                 </div>
 
                 <div
@@ -272,10 +285,10 @@ export default function CandidateProfilePage(): JSX.Element {
                     marginBottom: 8,
                   }}
                 >
-                  {stage.type.replace('_', ' ').toUpperCase()}
+                  {stage.type ? stage.type.replace('_', ' ').toUpperCase() : 'STAGE'}
                 </div>
 
-                {isComplete && (
+                {stageScore !== null ? (
                   <div
                     style={{
                       fontSize: 28,
@@ -286,11 +299,9 @@ export default function CandidateProfilePage(): JSX.Element {
                       WebkitTextFillColor: "transparent",
                     }}
                   >
-                    {assessment.score || 0}
+                    {stageScore}
                   </div>
-                )}
-
-                {!isComplete && !isActive && (
+                ) : (
                   <div
                     style={{
                       fontSize: 28,
@@ -516,27 +527,89 @@ export default function CandidateProfilePage(): JSX.Element {
           ))}
         </div>
       </section>
-      {/* Assessment Pipeline
-      <section style={{ marginBottom: 60 }}>
-        <div
-          style={{
-            fontSize: 9,
-            letterSpacing: "0.4em",
-            color: "rgba(255,255,255,0.3)",
-            marginBottom: 20,
-          }}
-        >
-          PIPELINE STATUS
-        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-            gap: 2,
-          }}
-        ></div>
-      </section> */}
+      {/* Challenge Results for Selected Stage */}
+      {selectedStageId && (
+        <section style={{ marginBottom: 100 }}>
+          <div style={{ marginBottom: 32 }}>
+            <SubTitle>
+              {stages.find(s => s.id === selectedStageId)?.type?.replace('_', ' ') || 'STAGE'}_RESULTS
+            </SubTitle>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {stages.find(s => s.id === selectedStageId)?.challenges?.map((challenge: any) => {
+              const assessment = assessments.find(a => a.challengeId === challenge.id);
+              const submission = assessment?.submission ? (typeof assessment.submission === 'string' ? JSON.parse(assessment.submission) : assessment.submission) : null;
+
+              return (
+                <LiquidMetalCard key={challenge.id} variant="dark" style={{ padding: 32 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+                    <div>
+                      <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: 'Space Mono' }}>
+                        {challenge.type}
+                      </div>
+                      <h4 style={{ fontSize: 18, fontWeight: 700, color: '#fff', margin: 0 }}>{challenge.title}</h4>
+                    </div>
+                    {assessment && (
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: '#fff' }}>{assessment.score}</div>
+                        <div style={{ fontSize: 8, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>CHALLENGE SCORE</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {!assessment ? (
+                    <div style={{ padding: '24px', border: '1px dashed rgba(255,255,255,0.05)', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 12 }}>
+                      NO_SUBMISSION_YET
+                    </div>
+                  ) : (
+                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: 24, borderRadius: 4 }}>
+                      {challenge.type === 'QUIZ_MCQ' && submission?.answers && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {Object.entries(submission.answers).map(([qId, ans]: [string, any]) => (
+                            <div key={qId} style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+                              <span style={{ color: 'rgba(255,255,255,0.3)', marginRight: 8 }}>Q_{qId}:</span>
+                              Selected Option {ans}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {challenge.type === 'CODE_REVIEW' && submission?.annotations && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          {Object.entries(submission.annotations).map(([snippetId, snipAnnotations]: [string, any]) => (
+                            <div key={snippetId}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>SNIPPET: {snippetId}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {snipAnnotations.map((ann: any, idx: number) => (
+                                  <div key={idx} style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
+                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>LINE {ann.line}</span>
+                                      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>{ann.severity}</span>
+                                    </div>
+                                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{ann.comment}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {challenge.type === 'QUIZ_SHORT_ANSWER' && (
+                        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                          {submission.text}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </LiquidMetalCard>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </>
   );
 }

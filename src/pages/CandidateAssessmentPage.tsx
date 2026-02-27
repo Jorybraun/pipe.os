@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAssessment } from '../hooks/useAssessment';
-import { StageRenderer, StageType } from '../components/Assessment/StageRegistry';
+import { ChallengeRenderer } from '../components/Assessment/ChallengeRegistry';
+import { StageShell } from '../components/Assessment/StageShell';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
-import { CheckCircle, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
+import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 // ============================================================================
 // Component
@@ -14,9 +15,6 @@ import { CheckCircle, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
  * CandidateAssessmentPage - Unauthenticated entry point for candidates.
  *
  * Route: /assess/:token
- *
- * This page uses the useAssessment hook to load data based on the inviteToken.
- * It manages the transitions between assessment stages and final submission.
  */
 export default function CandidateAssessmentPage(): JSX.Element {
   const { token } = useParams<{ token: string }>();
@@ -24,10 +22,11 @@ export default function CandidateAssessmentPage(): JSX.Element {
     candidate,
     stages,
     currentStageIndex,
+    currentChallengeIndex,
     isLoading,
     error,
     isSubmitted,
-    submitStage,
+    submitChallenge,
     reset,
   } = useAssessment(token || '');
 
@@ -38,9 +37,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // ---------------------------------------------------------------------------
 
   const handleSubmit = async () => {
-    // For MVP, we might allow empty submissions for the code review preview
-    // If currentSubmission is null, we send an empty object
-    await submitStage(currentSubmission || {});
+    await submitChallenge(currentSubmission || {});
     setCurrentSubmission(null);
   };
 
@@ -48,7 +45,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // Render Helpers
   // ---------------------------------------------------------------------------
 
-  if (isLoading && !candidate) {
+  if (isLoading && !candidate && !isSubmitted) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
         <ChromeMeshGrid />
@@ -121,82 +118,51 @@ export default function CandidateAssessmentPage(): JSX.Element {
   }
 
   const currentStage = stages[currentStageIndex];
-  if (!currentStage) return <></>;
+  if (!currentStage || !currentStage.challenges) return <></>;
+  
+  const currentChallenge = currentStage.challenges[currentChallengeIndex];
+  if (!currentChallenge) return <></>;
+
+  const isLastChallenge = 
+    currentStageIndex === stages.length - 1 && 
+    currentChallengeIndex === currentStage.challenges.length - 1;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0c0c0e', position: 'relative', padding: '40px 24px' }}>
+    <div style={{ minHeight: '100vh', background: '#0c0c0e', position: 'relative' }}>
       <ChromeMeshGrid />
       
-      <div style={{ maxWidth: 1000, margin: '0 auto', position: 'relative', zIndex: 1 }}>
-        {/* Header */}
-        <header style={{ marginBottom: 40, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <div>
-            <div style={{ fontSize: 10, letterSpacing: '0.25em', color: 'rgba(255,255,255,0.2)', marginBottom: 12, fontFamily: '"Space Mono", monospace' }}>
-              SECURE_ASSESSMENT_SESSION
+      <StageShell
+        title={currentChallenge.title}
+        totalChallenges={currentStage.challenges.length}
+        currentChallengeIndex={currentChallengeIndex}
+        onNext={handleSubmit}
+        isLastChallenge={isLastChallenge}
+        canAdvance={!!currentSubmission || currentChallenge.type === 'CODE_REVIEW'}
+        isSubmitting={isLoading}
+      >
+        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+          <header style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)', marginBottom: 8, fontFamily: 'Space Mono' }}>
+              CHALLENGE_{currentChallengeIndex + 1}
             </div>
-            <h1 style={{ fontSize: 32, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.01em' }}>
-              {candidate?.name || 'Candidate'}
+            <h1 style={{ fontSize: 28, fontWeight: 800, color: '#fff', margin: 0 }}>
+              {currentChallenge.title}
             </h1>
-            <div style={{ marginTop: 8, fontSize: 14, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
-              Technical Assessment for Senior Software Engineer
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.25)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
-              PROGRESS
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', fontFamily: '"Space Mono", monospace' }}>
-              {currentStageIndex + 1} / {stages.length}
-            </div>
-          </div>
-        </header>
+            {currentChallenge.instructions && (
+              <p style={{ marginTop: 12, fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>
+                {currentChallenge.instructions}
+              </p>
+            )}
+          </header>
 
-        {/* Content */}
-        <main style={{ marginBottom: 40 }}>
-          <StageRenderer
-            type={currentStage.type as StageType}
-            config={currentStage.config}
+          <ChallengeRenderer
+            type={currentChallenge.type}
+            config={currentChallenge.config}
+            context={{ codeArtifact: currentChallenge.codeArtifact }}
             onSubmissionChange={setCurrentSubmission}
           />
-        </main>
-
-        {/* Footer Actions */}
-        <footer style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            onClick={handleSubmit}
-            disabled={isLoading}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: '16px 40px',
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05))',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: 4,
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: '0.15em',
-              fontFamily: '"Space Mono", monospace',
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-            }}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="animate-spin" size={16} />
-                UPLOADING...
-              </>
-            ) : (
-              <>
-                {currentStageIndex === stages.length - 1 ? 'FINAL_SUBMIT' : 'COMPLETE_STAGE'}
-                <ArrowRight size={16} />
-              </>
-            )}
-          </button>
-        </footer>
-      </div>
+        </div>
+      </StageShell>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
