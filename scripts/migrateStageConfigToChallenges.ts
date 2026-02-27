@@ -1,5 +1,5 @@
 import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../src/amplify/data/resource';
+import type { Schema } from '../amplify/data/resource';
 
 /**
  * Migration Script: Stage Config -> Challenges

@@ -60,7 +60,7 @@ export function usePipelineCreate(): UsePipelineCreateReturn {
           description: input.description?.trim() || undefined,
           status: 'ACTIVE',
           creationMode: input.presetId === 'BLANK' ? 'BLANK' : 'PRESET',
-        } as any);
+        });
 
         if (errors && errors.length > 0) throw new Error(errors[0].message);
         if (!pipeline) throw new Error('Failed to create pipeline');

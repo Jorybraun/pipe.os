@@ -24,9 +24,30 @@ export interface QuizSubmission {
 
 export type StageSubmission = CodeReviewSubmission | QuizSubmission | Record<string, any>;
 
+export interface StageWithChallenges {
+  id: string;
+  order: number | null;
+  type?: string | null;
+  challenges: {
+    id: string;
+    type: string | null;
+    title: string;
+    instructions: string | null;
+    config: unknown;
+    order: number | null;
+    codeArtifact: {
+      id: string;
+      code: string | null;
+      language: string | null;
+      title: string | null;
+      groundTruth: unknown;
+    } | null;
+  }[];
+}
+
 interface UseAssessmentState {
   candidate: Candidate | null;
-  stages: any[];
+  stages: StageWithChallenges[];
   currentStageIndex: number;
   currentChallengeIndex: number;
   isLoading: boolean;
@@ -123,10 +144,14 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
       // 4. Update status to IN_PROGRESS if it was INVITED
       if (candidate.status === 'INVITED') {
-        await client.models.Candidate.update({
-          id: candidate.id,
-          status: 'IN_PROGRESS',
-        });
+        try {
+          await client.models.Candidate.update({
+            id: candidate.id,
+            status: 'IN_PROGRESS',
+          });
+        } catch (updateErr) {
+          console.warn('[useAssessment] Status update failed (non-fatal):', updateErr);
+        }
       }
 
       setState((prev) => ({

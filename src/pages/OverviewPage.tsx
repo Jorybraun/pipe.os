@@ -422,11 +422,11 @@ export default function OverviewPage(): JSX.Element {
         client.models.Pipeline.get({ id }),
         client.models.Candidate.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'name', 'email', 'status', 'inviteToken', 'assessments.id', 'assessments.stageId']
+          selectionSet: ['id', 'name', 'email', 'status', 'inviteToken', 'assessments.id', 'assessments.challengeId']
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'order', 'type']
+          selectionSet: ['id', 'order', 'type', 'challenges.id']
         }),
       ]);
 
@@ -473,7 +473,8 @@ export default function OverviewPage(): JSX.Element {
       // Delete them
       await Promise.all(stagesToDelete.map(s => client.models.Stage.delete({ id: s.id })));
       
-      // Wait for consistency
+      // Wait for consistency. Amplify Data backend is eventually consistent.
+      // This arbitrary delay allows DynamoDB streams to sync before we re-fetch.
       await new Promise(resolve => setTimeout(resolve, 500));
       await fetchData();
     } catch (err) {
@@ -521,7 +522,9 @@ export default function OverviewPage(): JSX.Element {
       });
 
       console.log('[Overview] Stages seeded. Refreshing...');
-      // Wait for consistency
+      // Wait for consistency. Amplify Data backend is eventually consistent.
+      // 800ms is usually sufficient for standard sandbox deployments, but may
+      // need backoff/retry in heavy load scenarios.
       await new Promise(resolve => setTimeout(resolve, 800));
       await fetchData();
     } catch (err) {
@@ -531,11 +534,23 @@ export default function OverviewPage(): JSX.Element {
     }
   };
 
+  // Map challenge IDs to stage IDs for grouping
+  const challengeToStageMap = stages.reduce((acc, stage) => {
+    (stage.challenges || []).forEach((c: any) => {
+      acc[c.id] = stage.id;
+    });
+    return acc;
+  }, {} as Record<string, string>);
+
   // Group candidates by their current stage
   const candidatesByStage = stages.reduce((acc, s, idx) => {
     acc[s.id] = candidates.filter(c => {
       // Get count of unique stages this candidate has submitted assessments for
-      const completedStageIds = new Set((c.assessments || []).map((a: any) => a.stageId));
+      const completedStageIds = new Set(
+        (c.assessments || [])
+          .map((a: any) => challengeToStageMap[a.challengeId])
+          .filter(Boolean)
+      );
       const completedCount = completedStageIds.size;
 
       // If they finished everything, they are in the last stage
@@ -784,32 +799,34 @@ export default function OverviewPage(): JSX.Element {
           );
         })}
 
-        {/* Add Stage Column */}
-        <div style={{ flex: '0 0 320px' }}>
-          <button
-            onClick={handleAddStage}
-            style={{
-              width: '100%',
-              height: 180, 
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px dashed rgba(255,255,255,0.1)',
-              borderRadius: 12,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 12,
-              color: 'rgba(255,255,255,0.4)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-            onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-          >
-            <Plus size={20} />
-            <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
-          </button>
-        </div>
+        {/* Add Stage Column (DEV Only) */}
+        {import.meta.env.DEV && (
+          <div style={{ flex: '0 0 320px' }}>
+            <button
+              onClick={handleAddStage}
+              style={{
+                width: '100%',
+                height: 180, 
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px dashed rgba(255,255,255,0.1)',
+                borderRadius: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+              onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+            >
+              <Plus size={20} />
+              <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

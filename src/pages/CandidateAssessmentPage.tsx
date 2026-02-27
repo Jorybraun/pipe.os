@@ -137,7 +137,10 @@ export default function CandidateAssessmentPage(): JSX.Element {
         currentChallengeIndex={currentChallengeIndex}
         onNext={handleSubmit}
         isLastChallenge={isLastChallenge}
-        canAdvance={!!currentSubmission || currentChallenge.type === 'CODE_REVIEW'}
+        canAdvance={
+          currentSubmission !== null && 
+          (currentChallenge.type !== 'CODE_REVIEW' || Object.keys(currentSubmission.annotations || {}).length > 0)
+        }
         isSubmitting={isLoading}
       >
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>
@@ -156,7 +159,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
           </header>
 
           <ChallengeRenderer
-            type={currentChallenge.type}
+            type={currentChallenge.type as any}
             config={currentChallenge.config}
             context={{ codeArtifact: currentChallenge.codeArtifact }}
             onSubmissionChange={setCurrentSubmission}

@@ -63,19 +63,23 @@ const QuizMCQDefinition: ChallengeDefinition = {
   }
 };
 
+function ShortAnswerInput({ onSubmissionChange }: { onSubmissionChange: (data: any) => void }) {
+  return (
+    <div style={{ padding: 32, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
+      <textarea 
+        onChange={(e) => onSubmissionChange({ text: e.target.value })}
+        placeholder="Type your response here..."
+        style={{ width: '100%', height: 300, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: 20, color: '#fff', fontSize: 14, outline: 'none' }}
+      />
+    </div>
+  );
+}
+
 const QuizShortAnswerDefinition: ChallengeDefinition = {
   type: 'QUIZ_SHORT_ANSWER',
   resolve: (_, onDataChange) => {
     return {
-      Component: ({ onSubmissionChange }: any) => (
-        <div style={{ padding: 32, background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
-          <textarea 
-            onChange={(e) => onSubmissionChange({ text: e.target.value })}
-            placeholder="Type your response here..."
-            style={{ width: '100%', height: 300, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: 20, color: '#fff', fontSize: 14, outline: 'none' }}
-          />
-        </div>
-      ),
+      Component: ShortAnswerInput,
       props: {
         onSubmissionChange: onDataChange
       }
@@ -83,18 +87,22 @@ const QuizShortAnswerDefinition: ChallengeDefinition = {
   }
 };
 
+function MonacoPlaceholder() {
+  return (
+    <div style={{ padding: 60, textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)' }}>
+      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
+        MONACO_EDITOR_IMPLEMENTATION_COMING_SOON
+      </div>
+    </div>
+  );
+}
+
 // Placeholder for Monaco based implementation
 const CodeImplementationDefinition: ChallengeDefinition = {
   type: 'CODE_IMPLEMENTATION',
   resolve: () => {
     return {
-      Component: () => (
-        <div style={{ padding: 60, textAlign: 'center', border: '1px dashed rgba(255,255,255,0.1)' }}>
-          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-            MONACO_EDITOR_IMPLEMENTATION_COMING_SOON
-          </div>
-        </div>
-      ),
+      Component: MonacoPlaceholder,
       props: {}
     };
   }

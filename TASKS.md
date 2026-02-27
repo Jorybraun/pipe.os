@@ -101,27 +101,27 @@
 > Full design: `docs/design/challenge-architecture.md`
 > Code review of current work: `docs/reviews/phase-7-code-review.md`
 
-### ⚠️ Pre-flight: Fix P0/P1 bugs before committing or deploying
+### ⚠️ Pre-flight: Fix P0/P1 bugs before committing or deploying ✅ (done)
 
 > These bugs were introduced in the `gemini-work` branch. Nothing can be deployed until #1 and #2 are resolved — they will break the candidate flow in production.
 
-- [ ] **[P0] Resolve `Assessment` FK conflict** — `Stage.assessments` uses `stageId` hasMany but `Challenge.assessments` uses `challengeId` hasMany. New assessments only set `challengeId`, so the Stage hasMany will always return empty and the Kanban will be broken. Decision: either populate both FKs on Assessment write, or remove `stageId` from `Assessment` entirely and remove `Stage.assessments hasMany`. Read `docs/reviews/phase-7-code-review.md` for details. ~45 min.
+- [x] **[P0] Resolve `Assessment` FK conflict** — `Stage.assessments` uses `stageId` hasMany but `Challenge.assessments` uses `challengeId` hasMany. New assessments only set `challengeId`, so the Stage hasMany will always return empty and the Kanban will be broken. Decision: either populate both FKs on Assessment write, or remove `stageId` from `Assessment` entirely and remove `Stage.assessments hasMany`. Read `docs/reviews/phase-7-code-review.md` for details. ~45 min. ✅
 
-- [ ] **[P0] Fix Kanban candidate placement** — `OverviewPage.tsx` computes `candidatesByStage` by reading `assessments.stageId` (now null for Phase 7 data). Change to read `assessments.challengeId`, then map challenge → stage via the stage's challenge list. ~30 min.
+- [x] **[P0] Fix Kanban candidate placement** — `OverviewPage.tsx` computes `candidatesByStage` by reading `assessments.stageId` (now null for Phase 7 data). Change to read `assessments.challengeId`, then map challenge → stage via the stage's challenge list. ~30 min. ✅
 
-- [ ] **[P0] Remove `as any` cast in `usePipelineCreate`** — the Pipeline create call uses `} as any` because `creationMode` isn't being typed correctly. Fix the type; don't suppress it. ~15 min.
+- [x] **[P0] Remove `as any` cast in `usePipelineCreate`** — the Pipeline create call uses `} as any` because `creationMode` isn't being typed correctly. Fix the type; don't suppress it. ~15 min. ✅
 
-- [ ] **[P1] Gate or replace `handleAddStage`** — the ADD_STAGE button in the Kanban is not behind a DEV guard. It creates an empty Stage with no name, type, or challenges. Either hide it in production or wire it to the ChallengePicker flow first. ~30 min.
+- [x] **[P1] Gate or replace `handleAddStage`** — the ADD_STAGE button in the Kanban is not behind a DEV guard. It creates an empty Stage with no name, type, or challenges. Either hide it in production or wire it to the ChallengePicker flow first. ~30 min. ✅
 
-- [ ] **[P1] Restore non-fatal try/catch on `IN_PROGRESS` status update** — `useAssessment.ts` lost its protective try/catch around the candidate status update. If this fails, candidates see a hard error instead of their assessment. ~10 min.
+- [x] **[P1] Restore non-fatal try/catch on `IN_PROGRESS` status update** — `useAssessment.ts` lost its protective try/catch around the candidate status update. If this fails, candidates see a hard error instead of their assessment. ~10 min. ✅
 
-- [ ] **[P1] Fix `stages: any[]` in `useAssessment`** — type regressed. Define a `StageWithChallenges` interface and use it. ~20 min.
+- [x] **[P1] Fix `stages: any[]` in `useAssessment`** — type regressed. Define a `StageWithChallenges` interface and use it. ~20 min. ✅
 
-- [ ] **[P1] Fix migration script import path** — `scripts/migrateStageConfigToChallenges.ts` imports from `'../src/amplify/data/resource'` — should be `'../amplify/data/resource'`. ~2 min.
+- [x] **[P1] Fix migration script import path** — `scripts/migrateStageConfigToChallenges.ts` imports from `'../src/amplify/data/resource'` — should be `'../amplify/data/resource'`. ~2 min. ✅
 
-- [ ] **[P2] Extract inline component in `ChallengeRegistry`** — `QUIZ_SHORT_ANSWER` definition returns a new component function on every call, causing unmount/remount on each render. Extract as a named component. ~20 min.
+- [x] **[P2] Extract inline component in `ChallengeRegistry`** — `QUIZ_SHORT_ANSWER` definition returns a new component function on every call, causing unmount/remount on each render. Extract as a named component. ~20 min. ✅
 
-- [ ] **Run `npx tsc --noEmit`** — confirm zero new errors after fixes (2 pre-existing errors in `useRoleDiscovery.ts` are acceptable for now — that file is post-MVP).
+- [x] **Run `npx tsc --noEmit`** — confirm zero new errors after fixes (2 pre-existing errors in `useRoleDiscovery.ts` are acceptable for now — that file is post-MVP). ✅
 
 ---
 

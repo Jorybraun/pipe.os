@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Clock, ChevronRight, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface StageShellProps {
@@ -28,10 +28,11 @@ export function StageShell({
   canAdvance,
   isSubmitting,
 }: StageShellProps): JSX.Element {
-  const [secondsRemaining, setSecondsRemaining] = useState(timeLimit ? timeLimit * 60 : 0);
+  const initialTimeLimit = useRef(timeLimit);
+  const [secondsRemaining, setSecondsRemaining] = useState(initialTimeLimit.current ? initialTimeLimit.current * 60 : 0);
 
   useEffect(() => {
-    if (!timeLimit) return;
+    if (!initialTimeLimit.current) return;
     
     const timer = setInterval(() => {
       setSecondsRemaining((prev) => {
@@ -44,7 +45,7 @@ export function StageShell({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [timeLimit]);
+  }, []);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
