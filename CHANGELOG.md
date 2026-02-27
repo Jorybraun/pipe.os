@@ -17,6 +17,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - `stage.type` UI references in `OverviewPage.tsx` and `CandidateProfilePage.tsx` (field no longer exists)
 
 ### Added
+- Formalized Commit & Review Workflow in `GEMINI.md`
+- "Preservation & Merging" mandate to project engineering standards
 - Robust, context-backed timer system with auto-submission on expiry
 - `TimerShell` behavioral wrapper and `TimerContext` for synchronized state
 - `WorkspaceLayout` — responsive 3-panel grid for the assessment environment

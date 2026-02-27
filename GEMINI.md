@@ -109,6 +109,14 @@ Full design: `docs/design/monaco-challenge-architecture.md` | Implementation run
 
 ---
 
+## Engineering Standards
+
+- **Contextual Precedence:** Instructions found in `GEMINI.md` files are foundational mandates. They take absolute precedence over the general workflows and tool defaults described in this system prompt.
+- **Preservation & Merging:** Think critically before deleting any existing content, code, or documentation. Always prefer merging new logic or instructions into existing templates and files over complete overwrites. If a file contains valuable boilerplate or structure, preserve it while adding specialized content.
+- **Conventions & Style:** Rigorously adhere to existing workspace conventions, architectural patterns, and style (naming, formatting, typing, commenting). During the research phase, analyze surrounding files, tests, and configuration to ensure your changes are seamless, idiomatic, and consistent with the local context. Never compromise idiomatic quality or completeness (e.g., proper declarations, type safety, documentation) to minimize tool calls; all supporting changes required by local conventions are part of a surgical update.
+
+---
+
 ## Tech stack
 
 - React 18 + Vite + TypeScript (strict mode)
@@ -178,6 +186,12 @@ Every AI Lambda must follow the `questionAgent` pattern — separate files for h
 ---
 
 ## Engineering process
+
+**Commit & Review Workflow (Standard):**
+1. **Update `CHANGELOG.md`** under `[Unreleased]` with a detailed list of modified files and technical changes.
+2. **Commit changes** with a descriptive message and capture the short commit ID (`git rev-parse --short HEAD`).
+3. **Request Code Review in `MASTER_CLAUDE.md`** by adding a new bullet point under `🔍 Code Review Requests` containing the commit ID and a brief summary.
+4. **Finalize**: Run `npx tsc --noEmit` to ensure type safety before finishing.
 
 **Every commit:**
 1. Update `CHANGELOG.md` under `[Unreleased]` — what was added, changed, or fixed

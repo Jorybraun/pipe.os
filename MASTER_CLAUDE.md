@@ -7,6 +7,12 @@ This document is the high-level orchestration hub for Pipe. It tracks strategic 
 
 ---
 
+## 🔍 Code Review Requests
+
+- **Commit `a3e1539`**: Implemented the Composable Challenge System (Phase 7 Step 4A-4D). This includes the `TimerShell` (with `TimerContext`), the responsive `WorkspaceLayout`, and all the base panels (`ProblemPanel`, `MonacoPanel`, `OptionsPanel`, `TextareaPanel`). The `ChallengeRegistry` now acts as a dynamic assembler based on `resolveLayout` and `resolveShells`. Please review the Shell + Panel architecture and the context-backed timer enforcement.
+
+---
+
 ## ✅ Dual FK — Resolved (2026-02-27)
 **Context:** During the Phase 7 migration, `Assessment` was updated to include `challengeId`. A dual-FK concern was raised about retaining `stageId` for backward compatibility.
 
