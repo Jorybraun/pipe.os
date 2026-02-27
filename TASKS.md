@@ -190,11 +190,11 @@
 
 - [x] **Install dependencies** — `npm i @monaco-editor/react react-markdown remark-gfm`. ~5 min. *(Skip sandpack — not needed for MVP)*
 
-- [ ] **Write ADR-005** — `docs/decisions/ADR-005-composable-challenge-system.md`. Documents the Shell + Panel composition pattern. Copy `ADR-000-template.md`, add to `docs/decisions/README.md` index. ~30 min.
+- [x] **Write ADR-005** — `docs/decisions/ADR-005-composable-challenge-system.md`. Documents the Shell + Panel composition pattern. Copy `ADR-000-template.md`, add to `docs/decisions/README.md` index. ~30 min.
 
-- [ ] **Create `src/lib/challenge/resolveLayout.ts`** — maps `challenge.type` → `{ leftPanel, centerPanel, rightPanel }`. MVP only needs: `CODE_REVIEW → [null, DiffCanvas, null]`, `CODE_IMPLEMENTATION → [ProblemPanel, MonacoPanel, null]`, `QUIZ_MCQ → [ProblemPanel, OptionsPanel, null]`, `QUIZ_SHORT_ANSWER → [ProblemPanel, TextareaPanel, null]`. ~45 min.
+- [x] **Create `src/lib/challenge/resolveLayout.ts`** — maps `challenge.type` → `{ leftPanel, centerPanel, rightPanel }`. MVP only needs: `CODE_REVIEW → [null, DiffCanvas, null]`, `CODE_IMPLEMENTATION → [ProblemPanel, MonacoPanel, null]`, `QUIZ_MCQ → [ProblemPanel, OptionsPanel, null]`, `QUIZ_SHORT_ANSWER → [ProblemPanel, TextareaPanel, null]`. ~45 min.
 
-- [ ] **Create `src/lib/challenge/resolveShells.ts`** — maps `challenge.config` → `{ timer: { enabled, timeLimit } }`. ~20 min.
+- [x] **Create `src/lib/challenge/resolveShells.ts`** — maps `challenge.config` → `{ timer: { enabled, timeLimit } }`. ~20 min.
 
 #### Step 4B — Shell Components
 

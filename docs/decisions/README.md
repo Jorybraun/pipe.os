@@ -36,3 +36,4 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-002](ADR-002-challenge-architecture.md) | Stage = container, Challenge = atomic unit | Accepted | 2026-02-26 |
 | [ADR-003](ADR-003-assessment-fk-strategy.md) | Assessment holds both stageId and challengeId | Accepted | 2026-02-26 |
 | [ADR-004](ADR-004-static-challenge-library.md) | Static TypeScript files for challenge library at MVP | Accepted | 2026-02-27 |
+| [ADR-005](ADR-005-composable-challenge-system.md) | Composable Shell + Panel challenge architecture | Accepted | 2026-02-27 |
