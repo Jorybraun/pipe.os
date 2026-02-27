@@ -14,6 +14,7 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
+import { TimerProvider } from '../components/Assessment/TimerContext';
 
 const client = generateClient<Schema>();
 
@@ -297,11 +298,13 @@ export default function ChallengeEditorPage(): JSX.Element {
               <div>
                 <SubTitle>CANDIDATE_PREVIEW</SubTitle>
                 <div style={{ marginTop: 32, opacity: 0.8 }}>
-                  <ChallengeRegistry 
-                    challenge={challenge as any}
-                    onSubmissionChange={() => {}}
-                    onSubmit={() => {}}
-                  />
+                  <TimerProvider>
+                    <ChallengeRegistry 
+                      challenge={challenge as any}
+                      onSubmissionChange={() => {}}
+                      onSubmit={() => {}}
+                    />
+                  </TimerProvider>
                 </div>
               </div>
             )}
