@@ -6,7 +6,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `pending` — Recruiter UI & Template Library Integration
+### `dc8651a` — Recruiter UI & Template Library Integration
 - **Detailed Log**: [docs/changelogs/recruiter-ui-integration.md](docs/changelogs/recruiter-ui-integration.md)
 - **Status**: 🟡 PENDING REVIEW
 

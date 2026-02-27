@@ -234,20 +234,20 @@
 
 #### Part A — ChallengePicker: wire to library
 
-- [ ] **Wire `ChallengePicker.tsx` to `challengeLibrary.ts`** — replace the hardcoded 4-card grid + dead preset list with live search + filter over `ALL_CHALLENGE_TEMPLATES`. Filter by `type` (tabs) and `topic` (dropdown). Show title, difficulty badge, estimated time. On select: call `onSelect(template)` passing the full template object. ~1.5 hours.
+- [x] **Wire `ChallengePicker.tsx` to `challengeLibrary.ts`** — replace the hardcoded 4-card grid + dead preset list with live search + filter over `ALL_CHALLENGE_TEMPLATES`. Filter by `type` (tabs) and `topic` (dropdown). Show title, difficulty badge, estimated time. On select: call `onSelect(template)` passing the full template object. ~1.5 hours. [`dc8651a`]
 
-- [ ] **Update `onSelect` handler in `OverviewPage.tsx`** — currently receives `(type: ChallengeType)`. Update to receive the full template. On pick: call `Challenge.create({ type, title, instructions, config: template.config })` so the created challenge has full content from the start, not an empty shell. ~30 min.
+- [x] **Update `onSelect` handler in `OverviewPage.tsx`** — currently receives `(type: ChallengeType)`. Update to receive the full template. On pick: call `Challenge.create({ type, title, instructions, config: template.config })` so the created challenge has full content from the start, not an empty shell. ~30 min. [`dc8651a`]
 
 #### Part B — ChallengeEditorPage: CONTENT tab
 
 > The CONTENT tab currently shows `CONTENT_EDITOR_FOR_{type}_COMING_SOON`. Replace with simple per-type forms that write into `challenge.config`.
 > No `resolveEditorLayout` abstraction needed for MVP — inline switch is fine given only 3 real forms.
 
-- [ ] **CODE_REVIEW content form** — two fields: (1) code textarea (sets `config.code`), (2) language dropdown (`javascript` / `typescript` / `python` / `go`). Save writes to `challenge.config`. ~45 min.
+- [x] **CODE_REVIEW content form** — two fields: (1) code textarea (sets `config.code`), (2) language dropdown (`javascript` / `typescript` / `python` / `go`). Save writes to `challenge.config`. ~45 min. [`dc8651a`]
 
-- [ ] **QUIZ_MCQ content form** — question textarea + 4 option inputs (A/B/C/D) + correct answer radio. Save writes `config.question`, `config.options[]`, `config.correctOptionId`. ~45 min.
+- [x] **QUIZ_MCQ content form** — question textarea + 4 option inputs (A/B/C/D) + correct answer radio. Save writes `config.question`, `config.options[]`, `config.correctOptionId`. ~45 min. [`dc8651a`]
 
-- [ ] **QUIZ_SHORT_ANSWER content form** — question textarea + rubric textarea + optional max-length number input. Save writes `config.question`, `config.rubric`, `config.maxLength`. ~30 min.
+- [x] **QUIZ_SHORT_ANSWER content form** — question textarea + rubric textarea + optional max-length number input. Save writes `config.question`, `config.rubric`, `config.maxLength`. ~30 min. [`dc8651a`]
 
 - [ ] **CODE_IMPLEMENTATION notice** — replace COMING_SOON with a read-only notice: "This challenge was loaded from a template. Edit the instructions above. Custom test authoring coming soon." ~10 min.
 

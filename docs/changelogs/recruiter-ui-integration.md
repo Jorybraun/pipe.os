@@ -1,4 +1,4 @@
-# Commit [id] — Recruiter UI & Template Library Integration
+# Commit dc8651a — Recruiter UI & Template Library Integration
 
 **Date:** 2026-02-27
 **Review Status:** 🟡 PENDING
