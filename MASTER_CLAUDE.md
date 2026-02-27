@@ -9,6 +9,7 @@ This document is the high-level orchestration hub for Pipe. It tracks strategic 
 
 ## 🔍 Code Review Requests
 
+- **Commit `a5b30a4`**: Formalized the **Commit & Review Workflow** and the **Preservation & Merging** mandate within `GEMINI.md`. This ensures all future AI agents follow the project's tracking and integrity standards.
 - **Commit `a3e1539`**: Implemented the Composable Challenge System (Phase 7 Step 4A-4D). This includes the `TimerShell` (with `TimerContext`), the responsive `WorkspaceLayout`, and all the base panels (`ProblemPanel`, `MonacoPanel`, `OptionsPanel`, `TextareaPanel`). The `ChallengeRegistry` now acts as a dynamic assembler based on `resolveLayout` and `resolveShells`. Please review the Shell + Panel architecture and the context-backed timer enforcement.
 
 ---
