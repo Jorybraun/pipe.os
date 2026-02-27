@@ -46,7 +46,6 @@ const schema = a.schema({
       // Legacy - deprecated in Phase 7
       type: a.enum(['QUIZ', 'CODE_REVIEW']),
       config: a.json(),
-      assessments: a.hasMany('Assessment', 'stageId'),
     })
     .authorization((allow) => [
       allow.owner(),                
@@ -134,10 +133,6 @@ const schema = a.schema({
       
       challengeId: a.id(), // New relationship in Phase 7
       challenge: a.belongsTo('Challenge', 'challengeId'),
-
-      // Deprecated - kept for migration
-      stageId: a.id(),
-      stage: a.belongsTo('Stage', 'stageId'),
 
       submission: a.json(),    // Candidate's answers/annotations
       score: a.float(),
