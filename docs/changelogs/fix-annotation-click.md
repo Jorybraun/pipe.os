@@ -1,4 +1,4 @@
-# Commit [id] — Fix Code Review Annotation Interactivity
+# Commit b97b8eb — Fix Code Review Annotation Interactivity
 
 **Date:** 2026-02-27
 **Review Status:** 🟡 PENDING

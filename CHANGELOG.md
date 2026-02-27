@@ -6,7 +6,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `pending` — Fix Code Review Annotation Interactivity
+### `b97b8eb` — Fix Code Review Annotation Interactivity
 - **Detailed Log**: [docs/changelogs/fix-annotation-click.md](docs/changelogs/fix-annotation-click.md)
 - **Status**: 🟡 PENDING REVIEW
 
