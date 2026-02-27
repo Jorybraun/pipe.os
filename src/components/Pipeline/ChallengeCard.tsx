@@ -1,4 +1,4 @@
-import { GripVertical, Code, Shield, FileText, Trash2, Edit3 } from 'lucide-react';
+import { GripVertical, Code, Shield, FileText, Trash2, Edit3, Clock } from 'lucide-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
 import type { Schema } from '../../../amplify/data/resource';
 
@@ -29,6 +29,9 @@ export function ChallengeCard({
 }: ChallengeCardProps): JSX.Element {
   const typeStyle = TYPE_COLORS[challenge.type as keyof typeof TYPE_COLORS] || TYPE_COLORS.QUIZ_MCQ;
   const TypeIcon = typeStyle.icon;
+
+  const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+  const timeLimit = config.timeLimit;
 
   return (
     <LiquidMetalCard variant="dark" style={{ padding: 0, marginBottom: 12, borderRadius: 8 }}>
@@ -84,6 +87,21 @@ export function ChallengeCard({
             }}>
               {challenge.title}
             </h4>
+            
+            {timeLimit && (
+              <div style={{ 
+                marginLeft: 'auto', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 6, 
+                color: 'rgba(255,255,255,0.3)',
+                fontSize: 10,
+                fontFamily: 'Space Mono'
+              }}>
+                <Clock size={12} />
+                <span>{timeLimit}M</span>
+              </div>
+            )}
           </div>
           
           <p style={{ 

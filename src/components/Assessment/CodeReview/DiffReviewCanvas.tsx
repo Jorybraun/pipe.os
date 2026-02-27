@@ -240,7 +240,7 @@ export function DiffReviewCanvas({
 
         <div style={{ background: '#0c0c0e', padding: '12px 0' }}>
           <Diff 
-            hunks={diff.hunks} 
+            hunks={diff.hunks || []} 
             viewType="unified" 
             diffType="add" 
             widgets={widgets}

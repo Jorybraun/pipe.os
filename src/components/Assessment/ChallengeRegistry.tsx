@@ -117,15 +117,18 @@ export function ChallengeRegistry({
 
       case 'diff-annotation': {
         const artifact = challenge.codeArtifact;
+        
         const snippets = artifact 
           ? [{ id: artifact.id, title: artifact.title || 'Code Review', code: artifact.code || '', language: artifact.language || 'javascript' }]
-          : (config.snippets || (config.code ? [config] : []));
+          : (config.code ? [config] : (config.snippets || []));
+
+        console.log('[ChallengeRegistry] Rendering snippets:', snippets);
 
         return (
           <DiffAnnotationPanel
             snippets={snippets.map((s: any, i: number) => ({
               id: s.id || `snippet-${i}`,
-              title: s.title || 'Code Review',
+              title: s.title || challenge.title || 'Code Review',
               code: s.code || '',
               language: s.language || 'javascript'
             }))}

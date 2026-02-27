@@ -6,7 +6,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `pending` — Fix useTimer Context Error in Editor Preview
+### `pending` — Code Review Fixes & Challenge Enhancements
+- **Detailed Log**: [docs/changelogs/code-review-fix.md](docs/changelogs/code-review-fix.md)
+- **Status**: 🟡 PENDING REVIEW
+
+### `b1fc690` — Fix useTimer Context Error in Editor Preview
 - **Detailed Log**: [docs/changelogs/fix-editor-preview-context.md](docs/changelogs/fix-editor-preview-context.md)
 - **Status**: 🟡 PENDING REVIEW
 

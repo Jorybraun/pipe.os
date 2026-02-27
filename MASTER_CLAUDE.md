@@ -9,6 +9,8 @@ This document is the high-level orchestration hub for Pipe. It tracks strategic 
 
 ## 🔍 Code Review Requests
 
+- **Commit `b1fc690`**: Fixed a runtime crash in `ChallengeEditorPage` by providing the required `TimerProvider` to the candidate preview tab.
+- **Commit `3b33c8a`**: Implemented **Bi-Directional Tracking** between `TASKS.md` and `docs/changelogs/`. Every task now references its fulfilling commit ID.
 - **Commit `39e8289`**: Implemented the **Granular Changelog System** and updated the project standards. Every significant commit now has a dedicated log in `docs/changelogs/`.
 - **Commit `a5b30a4`**: Formalized the **Commit & Review Workflow** and the **Preservation & Merging** mandate within `GEMINI.md`. [Detailed Log](docs/changelogs/a5b30a4.md)
 - **Commit `a3e1539`**: Implemented the **Composable Challenge System** (Phase 7 Step 4A-4D). [Detailed Log](docs/changelogs/a3e1539.md). Please review the Shell + Panel architecture and the context-backed timer enforcement.
@@ -47,6 +49,8 @@ We need a comprehensive strategy for how challenges are born, tested, and render
 - **Lists & Templates:** How recruiters browse, search, and clone challenge templates.
 - **Content & Components:** Mapping `ChallengeType` to specific UI renderers and validation logic.
 - **Testing:** Automated tests for each challenge type (MCQ, Monaco, Short Answer).
+- **Code Review Robustness:** (NEW) Code review challenges must resemble real-world reviews. They should include a proper Diff, a PR Description, and context. The current "React List Sorter" is too weak and ambiguous.
+- **AI-Generation Specs:** (NEW) We need clear instructions/rubrics for each challenge type so an AI Agent can generate high-quality content. We should create a dedicated Agent (spec/prompt) that MASTER_CLAUDE can use to orchestrate better challenge creation.
 
 ---
 
