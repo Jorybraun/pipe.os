@@ -32,6 +32,7 @@ export interface CodeReviewConfig {
   language: string;
   title: string;
   groundTruth: Bug[];
+  prDescription?: string; // High-fidelity context for the review
 }
 
 export interface CodeImplementationConfig {
@@ -85,6 +86,15 @@ export const CODE_REVIEW_TEMPLATES: ChallengeTemplate[] = [
     config: {
       language: 'javascript',
       title: 'JWT Auth Middleware',
+      prDescription: `## PR: Implement stateless authentication middleware
+
+This PR adds a new middleware to handle JWT authentication. 
+It decodes the token from the authorization header and attaches the user to the request object. 
+If the user is an admin, it skips the session check for better performance.
+
+**Testing performed:**
+- Verified that requests with valid tokens are accepted.
+- Verified that requests without tokens return 401.`,
       code: `async function authMiddleware(req, res, next) {
   const token = req.headers['authorization'];
 

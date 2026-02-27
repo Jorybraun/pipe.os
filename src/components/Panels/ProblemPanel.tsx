@@ -11,6 +11,7 @@ interface Example {
 
 interface ProblemPanelProps {
   markdown: string;
+  prDescription?: string;
   examples?: Example[];
   constraints?: string[];
   linkedArtifact?: {
@@ -25,6 +26,7 @@ interface ProblemPanelProps {
  */
 export function ProblemPanel({
   markdown,
+  prDescription,
   examples,
   constraints,
   linkedArtifact
@@ -33,6 +35,20 @@ export function ProblemPanel({
 
   return (
     <div style={{ padding: '32px', color: 'rgba(255,255,255,0.8)', fontSize: 15, lineHeight: 1.6 }}>
+      {/* PR Description Section */}
+      {prDescription && (
+        <div style={{ marginBottom: 40, padding: 24, background: 'rgba(96, 165, 250, 0.05)', border: '1px solid rgba(96, 165, 250, 0.1)', borderRadius: 8 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.1em', color: '#60a5fa', marginBottom: 12, fontFamily: 'Space Mono', fontWeight: 700 }}>
+            PULL_REQUEST_DESCRIPTION
+          </div>
+          <div className="prose prose-invert" style={{ maxWidth: 'none', fontSize: 14 }}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {prDescription}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
+
       {/* Markdown Content */}
       <div className="prose prose-invert" style={{ maxWidth: 'none' }}>
         <ReactMarkdown remarkPlugins={[remarkGfm]}>

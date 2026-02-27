@@ -8,6 +8,7 @@ import { MonacoPanel } from '../Panels/MonacoPanel';
 import { OptionsPanel } from '../Panels/OptionsPanel';
 import { TextareaPanel } from '../Panels/TextareaPanel';
 import { DiffAnnotationPanel } from '../Panels/DiffAnnotationPanel';
+import { PreviewPanel } from '../Panels/PreviewPanel';
 
 // ============================================================================
 // Types
@@ -76,6 +77,7 @@ export function ChallengeRegistry({
         return (
           <ProblemPanel
             markdown={challenge.instructions || 'No instructions provided.'}
+            prDescription={config.prDescription}
             examples={config.examples}
             constraints={config.constraints}
             linkedArtifact={config.originalCode ? {
@@ -118,17 +120,30 @@ export function ChallengeRegistry({
       case 'diff-annotation': {
         const artifact = challenge.codeArtifact;
         
-        const snippets = artifact 
-          ? [{ id: artifact.id, title: artifact.title || 'Code Review', code: artifact.code || '', language: artifact.language || 'javascript' }]
-          : (config.code ? [config] : (config.snippets || []));
+        // Snippets can come from: 
+        // 1. A linked CodeArtifact model (Phase 7+)
+        // 2. The challenge.config.code field (cloned from template)
+        // 3. The challenge.config.snippets array (Legacy/other)
+        let rawSnippets: any[] = [];
+        
+        if (artifact) {
+          rawSnippets = [artifact];
+        } else if (config.code) {
+          rawSnippets = [config];
+        } else if (Array.isArray(config.snippets)) {
+          rawSnippets = config.snippets;
+        }
 
-        console.log('[ChallengeRegistry] Rendering snippets:', snippets);
+        console.log('[ChallengeRegistry] Mapping snippets for DiffView:', { 
+          count: rawSnippets.length, 
+          source: artifact ? 'artifact' : config.code ? 'config.code' : 'config.snippets' 
+        });
 
         return (
           <DiffAnnotationPanel
-            snippets={snippets.map((s: any, i: number) => ({
+            snippets={rawSnippets.map((s: any, i: number) => ({
               id: s.id || `snippet-${i}`,
-              title: s.title || challenge.title || 'Code Review',
+              title: s.title || challenge.title || 'File for Review',
               code: s.code || '',
               language: s.language || 'javascript'
             }))}
@@ -139,9 +154,10 @@ export function ChallengeRegistry({
 
       case 'preview':
         return (
-          <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono', fontSize: 10 }}>
-            PREVIEW_PANEL_COMING_SOON
-          </div>
+          <PreviewPanel 
+            code={submission.code || config.starterCode || ''} 
+            language={config.language || 'javascript'} 
+          />
         );
 
       case 'tests':

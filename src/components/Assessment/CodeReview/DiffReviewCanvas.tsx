@@ -40,10 +40,31 @@ export function DiffReviewCanvas({
 
   // Parse the code into a "fake" addition diff
   const diff = useMemo(() => {
-    if (!currentSnippet) return null;
-    const diffText = formatCustomDiff(currentSnippet.code, currentSnippet.title || 'file.ts');
-    const [parsed] = parseDiff(diffText);
-    return parsed;
+    if (!currentSnippet) {
+      console.warn('[DiffReviewCanvas] No current snippet provided.');
+      return null;
+    }
+    
+    if (!currentSnippet.code) {
+      console.warn('[DiffReviewCanvas] Snippet code is empty:', currentSnippet.id);
+      return null;
+    }
+
+    try {
+      const diffText = formatCustomDiff(currentSnippet.code, currentSnippet.title || 'file.ts');
+      const [parsed] = parseDiff(diffText);
+      
+      console.log('[DiffReviewCanvas] Parsed diff successfully:', {
+        id: currentSnippet.id,
+        lineCount: currentSnippet.code.split('\n').length,
+        hunkCount: parsed?.hunks?.length
+      });
+      
+      return parsed;
+    } catch (err) {
+      console.error('[DiffReviewCanvas] Failed to parse diff:', err);
+      return null;
+    }
   }, [currentSnippet]);
 
   if (!currentSnippet || !diff) {
@@ -239,23 +260,32 @@ export function DiffReviewCanvas({
         </div>
 
         <div style={{ background: '#0c0c0e', padding: '12px 0' }}>
-          <Diff 
-            hunks={diff.hunks || []} 
-            viewType="unified" 
-            diffType="add" 
-            widgets={widgets}
-          >
-            {hunks => hunks.map(hunk => {
-              const HunkComponent = Hunk as any;
-              return (
-                <HunkComponent 
-                  key={hunk.content} 
-                  hunk={hunk} 
-                  onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
-                />
-              );
-            })}
-          </Diff>
+          {diff.hunks ? (
+            <Diff 
+              hunks={diff.hunks || []} 
+              viewType="unified" 
+              diffType="add" 
+              widgets={widgets}
+            >
+              {hunks => hunks.map(hunk => {
+                const HunkComponent = Hunk as any;
+                return (
+                  <HunkComponent 
+                    key={hunk.content} 
+                    hunk={hunk} 
+                    onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
+                  />
+                );
+              })}
+            </Diff>
+          ) : (
+            <div style={{ padding: 40 }}>
+              <div style={{ color: '#f87171', fontSize: 11, marginBottom: 20, fontFamily: 'Space Mono' }}>DIFF_PARSER_FAILED_SHOWING_RAW_CODE</div>
+              <pre style={{ color: '#fff', fontSize: 13, fontFamily: 'Space Mono', lineHeight: 1.6 }}>
+                {currentSnippet.code}
+              </pre>
+            </div>
+          )}
         </div>
 
         <div style={{ padding: '20px 24px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

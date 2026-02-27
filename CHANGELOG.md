@@ -6,7 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `pending` — Code Review Fixes & Challenge Enhancements
+### `pending` — Content Visibility & MCQ Editor Enhancement
+- **Detailed Log**: [docs/changelogs/content-visibility-and-mcq-fix.md](docs/changelogs/content-visibility-and-mcq-fix.md)
+- **Status**: 🟡 PENDING REVIEW
+
+### `FIX-BUGS-1-2` — MCQ Editor & Live Preview Implementation
+- Added MCQ options editor to `ChallengeEditorPage`.
+- Implemented `PreviewPanel` using Sandpack for live code previews.
+- Fixed `DEFAULT` pipeline preset to align with new Challenge schema and include missing code snippets.
+- Refactored `pipelinePresets.ts` to leverage the centralized `challengeLibrary`.
+
+### `d4dbb95` — Code Review Fixes & Challenge Enhancements
 - **Detailed Log**: [docs/changelogs/code-review-fix.md](docs/changelogs/code-review-fix.md)
 - **Status**: 🟡 PENDING REVIEW
 

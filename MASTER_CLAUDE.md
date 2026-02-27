@@ -9,6 +9,7 @@ This document is the high-level orchestration hub for Pipe. It tracks strategic 
 
 ## 🔍 Code Review Requests
 
+- **Commit `d4dbb95`**: Fixed Code Review snippet visibility, added time limit indicators to `ChallengeCard`, and documented the **Challenge Generation Agent** spec.
 - **Commit `b1fc690`**: Fixed a runtime crash in `ChallengeEditorPage` by providing the required `TimerProvider` to the candidate preview tab.
 - **Commit `3b33c8a`**: Implemented **Bi-Directional Tracking** between `TASKS.md` and `docs/changelogs/`. Every task now references its fulfilling commit ID.
 - **Commit `39e8289`**: Implemented the **Granular Changelog System** and updated the project standards. Every significant commit now has a dedicated log in `docs/changelogs/`.
