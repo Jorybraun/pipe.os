@@ -45,15 +45,17 @@ export default function StageDetailPage(): JSX.Element {
     fetchData();
   }, [fetchData]);
 
-  const handleChallengeSelect = async (type: any) => {
+  const handleChallengeSelect = async (template: any) => {
     if (!stageId) return;
     setPickerOpen(false);
     setIsLoading(true);
     try {
       await client.models.Challenge.create({
         stageId: stageId,
-        type,
-        title: `New ${type.replace('_', ' ')}`,
+        type: template.type,
+        title: template.title,
+        instructions: template.instructions,
+        config: JSON.stringify(template.config),
         order: stage?.challenges?.length || 0,
       });
       await fetchData();
@@ -168,8 +170,42 @@ export default function StageDetailPage(): JSX.Element {
               <Settings size={14} color="rgba(255,255,255,0.4)" />
               <div style={{ fontSize: 10, letterSpacing: '0.1em', fontWeight: 700, color: '#fff', fontFamily: 'Space Mono' }}>STAGE_SETTINGS</div>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
-              Settings for this stage container. You can add multiple challenges that the candidate will complete in sequence.
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: 'Space Mono' }}>
+                  DEFAULT_TIME_LIMIT (MINS)
+                </label>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <input 
+                    type="number"
+                    value={stage.timeLimit || ''}
+                    onChange={async (e) => {
+                      const val = e.target.value ? parseInt(e.target.value) : null;
+                      setStage({ ...stage, timeLimit: val });
+                      await client.models.Stage.update({ id: stage.id, timeLimit: val });
+                    }}
+                    placeholder="Untimed"
+                    style={{ 
+                      flex: 1,
+                      background: 'rgba(0,0,0,0.2)', 
+                      border: '1px solid rgba(255,255,255,0.1)', 
+                      padding: '8px 12px', 
+                      color: '#fff', 
+                      fontSize: 13, 
+                      outline: 'none',
+                      fontFamily: 'Space Mono'
+                    }}
+                  />
+                </div>
+                <p style={{ marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.2)', lineHeight: 1.4 }}>
+                  Applied to all challenges in this stage unless overridden.
+                </p>
+              </div>
+
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 20 }}>
+                This stage acts as a container. Add technical challenges or questions that the candidate will complete in sequence.
+              </div>
             </div>
           </LiquidMetalCard>
         </aside>

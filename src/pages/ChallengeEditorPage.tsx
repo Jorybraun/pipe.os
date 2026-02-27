@@ -164,6 +164,26 @@ export default function ChallengeEditorPage(): JSX.Element {
                     />
                   </div>
                   <div>
+                    <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>TIME_LIMIT_OVERRIDE (MINS)</label>
+                    <input 
+                      type="number"
+                      value={(() => {
+                        const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                        return config.timeLimit || '';
+                      })()}
+                      onChange={e => {
+                        const val = e.target.value ? parseInt(e.target.value) : null;
+                        const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                        setChallenge({
+                          ...challenge,
+                          config: JSON.stringify({ ...config, timeLimit: val })
+                        });
+                      }}
+                      placeholder="Inherit from stage"
+                      style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none' }}
+                    />
+                  </div>
+                  <div>
                     <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>CANDIDATE_INSTRUCTIONS</label>
                     <textarea 
                       value={challenge.instructions || ''}
@@ -179,13 +199,82 @@ export default function ChallengeEditorPage(): JSX.Element {
               <div>
                 <SubTitle>CHALLENGE_CONTENT</SubTitle>
                 <div style={{ marginTop: 32 }}>
-                  {/* Specialized editor would go here based on challenge.type */}
-                  <div style={{ padding: 40, border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
-                    <AlertCircle size={24} color="rgba(255,255,255,0.2)" style={{ marginBottom: 16 }} />
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-                      CONTENT_EDITOR_FOR_{challenge.type}_COMING_SOON
+                  {challenge.type === 'CODE_REVIEW' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>BUGGY_CODE_SNIPPET</label>
+                        <textarea 
+                          value={(() => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return config.code || '';
+                          })()}
+                          onChange={e => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            setChallenge({
+                              ...challenge,
+                              config: JSON.stringify({ ...config, code: e.target.value })
+                            });
+                          }}
+                          style={{ width: '100%', height: 400, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#60a5fa', fontSize: 13, outline: 'none', resize: 'none', lineHeight: 1.6, fontFamily: 'Space Mono' }}
+                        />
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {challenge.type === 'QUIZ_MCQ' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>QUESTION_TEXT</label>
+                        <input 
+                          value={(() => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return config.question || '';
+                          })()}
+                          onChange={e => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            setChallenge({
+                              ...challenge,
+                              config: JSON.stringify({ ...config, question: e.target.value })
+                            });
+                          }}
+                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none' }}
+                        />
+                      </div>
+                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>MCQ Option editing coming in Phase 2. Currently inherits from template.</p>
+                    </div>
+                  )}
+
+                  {challenge.type === 'QUIZ_SHORT_ANSWER' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>QUESTION_PROMPT</label>
+                        <textarea 
+                          value={(() => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return config.question || '';
+                          })()}
+                          onChange={e => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            setChallenge({
+                              ...challenge,
+                              config: JSON.stringify({ ...config, question: e.target.value })
+                            });
+                          }}
+                          style={{ width: '100%', height: 120, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none', resize: 'none' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {challenge.type === 'CODE_IMPLEMENTATION' && (
+                    <div style={{ padding: 40, border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
+                      <AlertCircle size={24} color="rgba(255,255,255,0.2)" style={{ marginBottom: 16 }} />
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
+                        CODE_IMPLEMENTATION_EDITOR_COMING_SOON
+                      </div>
+                      <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>Templates are pre-configured. Edit instructions in the DETAILS tab.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `pending` — Recruiter UI & Template Library Integration
+- **Detailed Log**: [docs/changelogs/recruiter-ui-integration.md](docs/changelogs/recruiter-ui-integration.md)
+- **Status**: 🟡 PENDING REVIEW
+
 ### `a5b30a4` — Engineering Standards & Workflow
 - **Detailed Log**: [docs/changelogs/a5b30a4.md](docs/changelogs/a5b30a4.md)
 - **Status**: 🟡 PENDING REVIEW
