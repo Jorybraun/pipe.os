@@ -311,8 +311,6 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
         jobDescription: JSON.stringify(data.jobDescription),
         candidateFilters: JSON.stringify(data.candidateFilters),
         suggestedStages: JSON.stringify(data.suggestedStages),
-        createdAt: new Date(roleContext.createdAt).toISOString(),
-        updatedAt: new Date().toISOString(),
       });
 
       return data;

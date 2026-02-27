@@ -60,6 +60,11 @@ export interface RoleContext {
   createdAt: number;
   updatedAt: number;
 
+  // Configuration options (Phase 7)
+  questionLimit?: string;
+  questionMode?: string;
+  codeReviewMode?: string;
+
   // User persona signals (for adaptive questioning)
   userSignals?: {
     knowledgeDepth: 'surface' | 'moderate' | 'deep';

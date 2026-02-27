@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `pending` — Fix Build-Blocking Type Errors in RoleDiscovery
+- **Detailed Log**: [docs/changelogs/fix-build-errors.md](docs/changelogs/fix-build-errors.md)
+- **Status**: 🟡 PENDING REVIEW
+
 ### `44191ff` — Live Preview & Library-Driven Presets
 - **Detailed Log**: [docs/changelogs/live-preview-and-presets.md](docs/changelogs/live-preview-and-presets.md)
 - **Status**: 🟡 PENDING REVIEW
