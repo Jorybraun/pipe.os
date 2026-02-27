@@ -41,6 +41,8 @@ amplify/functions/**/.env
 test-results/
 playwright-report/
 playwright/.cache/
+playwright/.auth/
+playwright/.auth/*.json
 
 # Gemini CLI
 .gemini/

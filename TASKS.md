@@ -57,31 +57,31 @@
 
 ---
 
-## Phase 2 — Code Review Stage Content & Scoring
+## Phase 2 — Code Review Stage Content & Scoring ✅ (done)
 
 > Goal: The code review has real content (buggy code) and produces a meaningful score.
 
-### Step 1: Write code snippets
-- [ ] **Write 3 code snippets with intentional bugs** — TypeScript/JavaScript. Save as JSON in `src/content/codeReviewSnippets.ts`. Each snippet needs:
+### Step 1: Write code snippets ✅
+- [x] **Write 3 code snippets with intentional bugs** — TypeScript/JavaScript. Save as JSON in `src/content/codeReviewSnippets.ts`. Each snippet needs:
   - The code string
   - Ground truth: which lines have bugs, the type of bug, severity (critical / major / minor)
   - Snippet 1: security bug + logic bug
   - Snippet 2: performance bug + edge case
   - Snippet 3: all four types
-  - ~2 hours
+  - ~2 hours ✅
 
-### Step 2: Seed stage content
-- [ ] **Hardcode stage config in pipeline creation** — For MVP, when a recruiter creates a pipeline, automatically create 1 Stage of type CODE_REVIEW with the 3 snippets from Step 1 loaded into `Stage.config`. No manual stage builder yet. ~1 hour
+### Step 2: Seed stage content ✅
+- [x] **Hardcode stage config in pipeline creation** — For MVP, when a recruiter creates a pipeline, automatically create 1 Stage of type CODE_REVIEW with the 3 snippets from Step 1 loaded into `Stage.config`. No manual stage builder yet. ~1 hour ✅
 
-### Step 3: Scoring
-- [ ] **Create `src/lib/scoring/codeReview.ts`** — pure function:
+### Step 3: Scoring ✅
+- [x] **Create `src/lib/scoring/codeReview.ts`** — pure function:
   ```
   scoreCodeReview(submission, groundTruth) → { total: number, breakdown: object }
   ```
   Rubric: bugs found (40%) + severity accuracy (25%) + false positives penalty (−10%) + fix quality (25%)
-  ~2 hours
-- [ ] **Unit test scoring** — `src/lib/scoring/codeReview.test.ts`. Cover: all bugs found, no bugs found, all false positives, partial. ~1 hour
-- [ ] **Wire scoring on submission** — in `useAssessment.ts`, after saving the raw submission, compute the score and write it to `Assessment.score`. ~30 min
+  ~2 hours ✅
+- [x] **Unit test scoring** — `src/lib/scoring/codeReview.test.ts`. Cover: all bugs found, no bugs found, all false positives, partial. ~1 hour ✅
+- [x] **Wire scoring on submission** — in `useAssessment.ts`, after saving the raw submission, compute the score and write it to `Assessment.score`. ~30 min ✅
 
 ---
 

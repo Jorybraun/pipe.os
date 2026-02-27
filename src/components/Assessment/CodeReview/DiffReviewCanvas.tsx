@@ -1,0 +1,304 @@
+import { useState, useMemo } from 'react';
+import { parseDiff, Diff, Hunk } from 'react-diff-view';
+import 'react-diff-view/style/index.css';
+import { formatCustomDiff } from './diffUtils';
+import { LiquidMetalCard } from '../../ui/LiquidMetalCard';
+import { Annotation } from '../../ReviewCanvas';
+import { AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface Snippet {
+  id: string;
+  code: string;
+  language?: string;
+  title?: string;
+}
+
+interface DiffReviewCanvasProps {
+  snippets: Snippet[];
+  onAnnotationsChange: (annotations: Record<string, Annotation[]>) => void;
+}
+
+// ============================================================================
+// Component
+// ============================================================================
+
+export function DiffReviewCanvas({
+  snippets = [],
+  onAnnotationsChange,
+}: DiffReviewCanvasProps): JSX.Element {
+  const [currentSnippetIndex, setCurrentSnippetIndex] = useState(0);
+  const [annotations, setAnnotations] = useState<Record<string, Annotation[]>>({});
+  const [activeLine, setActiveLine] = useState<{ snippetId: string; line: number } | null>(null);
+  const [comment, setComment] = useState('');
+  const [severity, setSeverity] = useState<Annotation['severity']>('major');
+
+  const currentSnippet = snippets[currentSnippetIndex];
+
+  // Parse the code into a "fake" addition diff
+  const diff = useMemo(() => {
+    if (!currentSnippet) return null;
+    const diffText = formatCustomDiff(currentSnippet.code, currentSnippet.title || 'file.ts');
+    const [parsed] = parseDiff(diffText);
+    return parsed;
+  }, [currentSnippet]);
+
+  if (!currentSnippet || !diff) {
+    return (
+      <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
+        <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+          NO_SNIPPETS_AVAILABLE_FOR_REVIEW
+        </div>
+      </LiquidMetalCard>
+    );
+  }
+
+  const handleLineClick = (line: number) => {
+    setActiveLine({ snippetId: currentSnippet.id, line });
+    const existing = (annotations[currentSnippet.id] || []).find(a => a.line === line);
+    if (existing) {
+      setComment(existing.comment);
+      setSeverity(existing.severity);
+    } else {
+      setComment('');
+      setSeverity('major');
+    }
+  };
+
+  const saveAnnotation = () => {
+    if (!activeLine) return;
+    const snippetAnnotations = annotations[currentSnippet.id] || [];
+    const otherAnnotations = snippetAnnotations.filter(a => a.line !== activeLine.line);
+    
+    let newSnippetAnnotations;
+    if (comment.trim() === '') {
+      newSnippetAnnotations = otherAnnotations;
+    } else {
+      newSnippetAnnotations = [
+        ...otherAnnotations,
+        { line: activeLine.line, comment: comment.trim(), severity }
+      ];
+    }
+
+    const newAnnotations = { ...annotations, [currentSnippet.id]: newSnippetAnnotations };
+    setAnnotations(newAnnotations);
+    onAnnotationsChange(newAnnotations);
+    setActiveLine(null);
+  };
+
+  const handleNext = () => {
+    if (currentSnippetIndex < snippets.length - 1) {
+      setCurrentSnippetIndex(currentSnippetIndex + 1);
+      setActiveLine(null);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentSnippetIndex > 0) {
+      setCurrentSnippetIndex(currentSnippetIndex - 1);
+      setActiveLine(null);
+    }
+  };
+
+  // Create widgets array for react-diff-view
+  const widgets = useMemo(() => {
+    const currentSnippetAnnotations = annotations[currentSnippet.id] || [];
+    const widgetList: Record<string, JSX.Element> = {};
+
+    currentSnippetAnnotations.forEach(a => {
+      widgetList[`+${a.line}`] = (
+        <div key={`view-${a.line}`} style={{
+          padding: '16px 24px',
+          background: 'rgba(255,255,255,0.03)',
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 16
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              {a.severity === 'critical' ? <AlertCircle size={14} color="#f87171" /> : 
+               a.severity === 'major' ? <AlertTriangle size={14} color="#fbbf24" /> : 
+               <Info size={14} color="#60a5fa" />}
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+                {a.severity.toUpperCase()}
+              </span>
+            </div>
+            <div style={{ fontSize: 13, color: '#fff', lineHeight: 1.6 }}>{a.comment}</div>
+          </div>
+          <button 
+            onClick={() => handleLineClick(a.line)}
+            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.2)', cursor: 'pointer', fontSize: 11, fontFamily: '"Space Mono", monospace' }}
+          >
+            EDIT
+          </button>
+        </div>
+      );
+    });
+
+    if (activeLine && activeLine.snippetId === currentSnippet.id) {
+      widgetList[`+${activeLine.line}`] = (
+        <div key="editor" style={{
+          padding: 24,
+          background: '#161618',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', fontFamily: '"Space Mono", monospace' }}>
+              NEW_ANNOTATION: LINE {activeLine.line}
+            </div>
+            <button onClick={() => setActiveLine(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['critical', 'major', 'minor'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSeverity(s)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 4px',
+                    fontSize: 9,
+                    fontFamily: '"Space Mono", monospace',
+                    background: severity === s ? 'rgba(255,255,255,0.1)' : 'transparent',
+                    border: severity === s ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.05)',
+                    color: severity === s ? '#fff' : 'rgba(255,255,255,0.3)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {s.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <textarea
+            autoFocus
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Describe the bug or suggest a fix..."
+            style={{
+              width: '100%',
+              height: 100,
+              background: 'rgba(0,0,0,0.2)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: '#fff',
+              padding: 12,
+              fontSize: 13,
+              fontFamily: 'inherit',
+              resize: 'none',
+              outline: 'none',
+              marginBottom: 16
+            }}
+          />
+
+          <button
+            onClick={saveAnnotation}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: '#fff',
+              color: '#000',
+              border: 'none',
+              fontSize: 11,
+              fontWeight: 700,
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer',
+            }}
+          >
+            SAVE_ANNOTATION
+          </button>
+        </div>
+      );
+    }
+
+    return widgetList;
+  }, [annotations, currentSnippet.id, activeLine, comment, severity]);
+
+  return (
+    <div className="diff-review-container">
+      <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>CODE_REVIEW_DIFF_VIEW</div>
+            <div style={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>{currentSnippet.title || 'Untitled Snippet'}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>SNIPPET {currentSnippetIndex + 1} OF {snippets.length}</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>{currentSnippet.language?.toUpperCase() || 'TYPESCRIPT'}</div>
+          </div>
+        </div>
+
+        <div style={{ background: '#0c0c0e', padding: '12px 0' }}>
+          <Diff 
+            hunks={diff.hunks} 
+            viewType="unified" 
+            diffType="add" 
+            widgets={widgets}
+          >
+            {hunks => hunks.map(hunk => (
+              <Hunk 
+                key={hunk.content} 
+                hunk={hunk} 
+                // @ts-ignore: onGutterClick exists at runtime but missing in type definition
+                onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
+              />
+            ))}
+          </Diff>
+        </div>
+
+        <div style={{ padding: '20px 24px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+            CLICK_LINE_NUMBER_TO_ANNOTATE
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handlePrev} disabled={currentSnippetIndex === 0} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: currentSnippetIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: '"Space Mono", monospace', cursor: currentSnippetIndex === 0 ? 'not-allowed' : 'pointer' }}>PREVIOUS</button>
+            <button onClick={handleNext} disabled={currentSnippetIndex === snippets.length - 1} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: currentSnippetIndex === snippets.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: '"Space Mono", monospace', cursor: currentSnippetIndex === snippets.length - 1 ? 'not-allowed' : 'pointer' }}>NEXT</button>
+          </div>
+        </div>
+      </LiquidMetalCard>
+
+      <style>{`
+        .diff-review-container .diff {
+          font-family: "Space Mono", monospace;
+          font-size: 13px;
+        }
+        .diff-review-container .diff-gutter {
+          background: rgba(255,255,255,0.02);
+          color: rgba(255,255,255,0.2);
+          border-right: 1px solid rgba(255,255,255,0.05);
+          cursor: pointer;
+          min-width: 50px;
+          text-align: right;
+          padding-right: 12px !important;
+        }
+        .diff-review-container .diff-gutter:hover {
+          color: #fff;
+          background: rgba(255,255,255,0.05);
+        }
+        .diff-review-container .diff-code {
+          color: rgba(255,255,255,0.8);
+          padding-left: 20px !important;
+        }
+        .diff-review-container .diff-line-add {
+          background: transparent;
+        }
+        .diff-review-container .diff-widget-content {
+          background: transparent;
+        }
+        .diff-review-container .diff-hunk-header {
+          display: none;
+        }
+      `}</style>
+    </div>
+  );
+}

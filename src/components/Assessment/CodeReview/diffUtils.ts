@@ -1,0 +1,23 @@
+/**
+ * formatCustomDiff - Generates a fake "addition" diff for a block of code.
+ * react-diff-view expects git-style diff strings.
+ */
+export function formatCustomDiff(code: string, filename: string): string {
+  const lines = code.split('\n');
+  const lineCount = lines.length;
+  
+  // Create a git-style diff header
+  const header = [
+    `diff --git a/${filename} b/${filename}`,
+    `new file mode 100644`,
+    `index 0000000..0000000`,
+    `--- /dev/null`,
+    `+++ b/${filename}`,
+    `@@ -0,0 +1,${lineCount} @@`
+  ];
+
+  // Prefix every line with '+' to indicate addition
+  const diffLines = lines.map(line => `+${line}`);
+  
+  return [...header, ...diffLines].join('\n');
+}

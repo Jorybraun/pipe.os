@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import {
   MapPin,
@@ -11,13 +12,17 @@ import {
   Mic,
   Users,
   FileText,
+  Loader2,
 } from "lucide-react";
 import {
   LiquidMetalCard,
   MetalScoreRing,
   SubTitle,
 } from "../components";
-import { getCandidateById, mockStages } from "../mocks";
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from "../../amplify/data/resource";
+
+const client = generateClient<Schema>();
 
 /**
  * CandidateProfilePage - Detailed candidate profile
@@ -38,11 +43,49 @@ const stageIcons: Record<string, typeof Phone> = {
 
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
-  // const navigate = useNavigate();
-  // const [activeSection, setActiveSection] = useState("profile");
-  // const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const [candidate, setCandidate] = useState<any>(null);
+  const [assessments, setAssessments] = useState<any[]>([]);
+  const [stages, setStages] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const candidate = id ? getCandidateById(id) : undefined;
+  const fetchData = useCallback(async () => {
+    if (!id) return;
+    try {
+      setIsLoading(true);
+      const { data: cand } = await client.models.Candidate.get({ id });
+      if (!cand) return;
+      setCandidate(cand);
+
+      const [assData, stagesData] = await Promise.all([
+        client.models.Assessment.list({ filter: { candidateId: { eq: id } } }),
+        client.models.Stage.list({ filter: { pipelineId: { eq: cand.pipelineId } } }),
+      ]);
+
+      setAssessments(assData.data);
+      setStages(stagesData.data.sort((a, b) => (a.order || 0) - (b.order || 0)));
+    } catch (err) {
+      console.error("[CandidateProfilePage] Error fetching data:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  if (isLoading) {
+    return (
+      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.2)" />
+          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
+            FETCHING_CANDIDATE_PROFILE...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!candidate) {
     return (
@@ -52,31 +95,41 @@ export default function CandidateProfilePage(): JSX.Element {
           alignItems: "center",
           justifyContent: "center",
           minHeight: "60vh",
+          color: 'rgba(255,255,255,0.4)',
+          fontFamily: 'Space Mono'
         }}
       >
-        No Candidate Found
+        CANDIDATE_NOT_FOUND
       </div>
     );
   }
 
-  // Mock AI profile data - would come from backend in real app
+  const avgScore = assessments.length > 0
+    ? Math.round(assessments.reduce((sum, a) => sum + (a.score || 0), 0) / assessments.length)
+    : 0;
+
+  const signal = avgScore >= 85 ? "STRONG" : avgScore >= 70 ? "YES" : avgScore >= 50 ? "MAYBE" : "NO";
+
   const aiProfile = {
-    verdict:
-      candidate.signal === "STRONG"
-        ? "STRONG\nYES"
-        : candidate.signal === "YES"
-        ? "YES"
-        : "MAYBE",
-    reasoning:
-      candidate.signal === "STRONG"
-        ? "Exceeds requirements in technical depth and AI collaboration. Strong contributor from day one."
-        : candidate.signal === "YES"
-        ? "Meets requirements with solid technical skills. Good fit for the role with some ramp-up time."
-        : "Shows potential but may need additional development. Consider for junior positions.",
-    roleFitScore: candidate.score / 100,
-    cultureFitScore: Math.min((candidate.score - 5) / 100, 0.99),
-    growthPotentialScore: Math.min((candidate.score + 5) / 100, 0.99),
+    verdict: signal === "STRONG" ? "STRONG\nYES" : signal === "YES" ? "YES" : signal === "MAYBE" ? "MAYBE" : "NO_GO",
+    reasoning: signal === "STRONG" 
+      ? "Exceeds requirements in technical depth and problem solving. Highly recommended."
+      : signal === "YES"
+      ? "Solid performance. Meets technical requirements for the role."
+      : signal === "MAYBE"
+      ? "Showing potential but inconsistent. Further investigation recommended."
+      : "Technical performance below threshold for this role.",
+    roleFitScore: avgScore / 100,
+    cultureFitScore: Math.min((avgScore + 5) / 100, 0.95),
+    growthPotentialScore: Math.min((avgScore + 10) / 100, 0.98),
   };
+
+  const initials = (candidate.name || "")
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
 
   return (
     <>
@@ -94,10 +147,11 @@ export default function CandidateProfilePage(): JSX.Element {
       </div> */}
 
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-        {mockStages.map((stage) => {
-          const Icon = stageIcons[stage.name] || FileText;
-          const isComplete = stage.status === "COMPLETED";
-          const isActive = stage.status === "ACTIVE";
+        {stages.map((stage) => {
+          const Icon = stageIcons[stage.type] || FileText;
+          const assessment = assessments.find(a => a.stageId === stage.id);
+          const isComplete = !!assessment;
+          const isActive = !isComplete && candidate.status === 'IN_PROGRESS';
 
           return (
             <div key={stage.id} style={{ flex: 1, minWidth: 280 }}>
@@ -144,10 +198,10 @@ export default function CandidateProfilePage(): JSX.Element {
                     marginBottom: 8,
                   }}
                 >
-                  {stage.name.toUpperCase()}
+                  {stage.type.replace('_', ' ').toUpperCase()}
                 </div>
 
-                {isComplete && stage.score && (
+                {isComplete && (
                   <div
                     style={{
                       fontSize: 28,
@@ -158,7 +212,7 @@ export default function CandidateProfilePage(): JSX.Element {
                       WebkitTextFillColor: "transparent",
                     }}
                   >
-                    {stage.score}
+                    {assessment.score || 0}
                   </div>
                 )}
 
@@ -231,15 +285,15 @@ export default function CandidateProfilePage(): JSX.Element {
                 letterSpacing: "0.05em",
               }}
             >
-              {candidate.initials}
+              {initials}
             </div>
           </div>
 
           {/* Contact info */}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
             {[
-              { icon: Briefcase, value: candidate.company || "Not specified" },
-              { icon: MapPin, value: candidate.location },
+              { icon: Briefcase, value: "Candidate" },
+              { icon: MapPin, value: "Remote" },
               { icon: Mail, value: candidate.email },
             ].map((item, i) => (
               <div
@@ -287,15 +341,15 @@ export default function CandidateProfilePage(): JSX.Element {
                   background: `
                     linear-gradient(135deg,
                       #fff 0%,
-                      rgba(200,210,230,0.8) 25%,
+                      rgba(200, 210, 230, 0.8) 25%,
                       #fff 50%,
-                      rgba(180,190,220,0.7) 75%,
-                      rgba(240,240,250,0.9) 100%
+                      rgba(180, 190, 220, 0.7) 75%,
+                      rgba(240, 240, 250, 0.9) 100%
                     )
                   `,
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
-                  filter: "drop-shadow(0 4px 30px rgba(200,210,230,0.2))",
+                  filter: "drop-shadow(0 4px 30px rgba(200, 210, 230, 0.2))",
                   whiteSpace: "pre-line",
                 }}
               >
@@ -303,7 +357,7 @@ export default function CandidateProfilePage(): JSX.Element {
               </div>
             </div>
 
-            <MetalScoreRing value={candidate.score} label="AVG" />
+            <MetalScoreRing value={avgScore} label="AVG" />
           </div>
 
           <div

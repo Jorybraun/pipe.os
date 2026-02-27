@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { scoreCodeReview } from '../lib/scoring/codeReview';
 
-const client = generateClient<Schema>();
+const client = generateClient<Schema>({ authMode: 'apiKey' });
 
 // ============================================================================
 // Types
@@ -64,7 +65,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       console.log('[useAssessment] 2. LOOKING_UP_CANDIDATE...');
       const { data: candidates, errors: candidateErrors } = await client.models.Candidate.list({
         filter: { inviteToken: { eq: inviteToken } },
-      }, { authMode: 'apiKey' });
+      });
 
       if (candidateErrors && candidateErrors.length > 0) {
         console.error('[useAssessment] ❌ Candidate lookup failed:', candidateErrors);
@@ -95,7 +96,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       console.log('[useAssessment] 4. FETCHING_STAGES for pipeline:', candidate.pipelineId);
       const { data: stages, errors: stageErrors } = await client.models.Stage.list({
         filter: { pipelineId: { eq: candidate.pipelineId } },
-      }, { authMode: 'apiKey' });
+      });
 
       if (stageErrors && stageErrors.length > 0) {
         console.error('[useAssessment] ❌ Stage fetch failed:', stageErrors);
@@ -112,7 +113,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           await client.models.Candidate.update({
             id: candidate.id,
             status: 'IN_PROGRESS',
-          }, { authMode: 'apiKey' });
+          });
           console.log('[useAssessment] 7. STATUS_UPDATE_SUCCESS');
         } catch (updateErr) {
           console.warn('[useAssessment] ⚠️ Status update failed (non-fatal):', updateErr);
@@ -150,14 +151,22 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
+        // Compute score for CODE_REVIEW
+        let computedScore = 0;
+        if (currentStage.type === 'CODE_REVIEW') {
+          const result = scoreCodeReview(submission, (currentStage.config as any).snippets || []);
+          computedScore = result.total;
+          console.log('[useAssessment] Calculated score:', computedScore, result.breakdown);
+        }
+
         // Create Assessment record
         const { errors } = await client.models.Assessment.create({
           candidateId: candidate.id,
           stageId: currentStage.id,
           submission: JSON.stringify(submission),
-          score: 0,
+          score: computedScore,
           completedAt: new Date().toISOString(),
-        }, { authMode: 'apiKey' });
+        });
 
         if (errors && errors.length > 0) {
           console.error('[useAssessment] ❌ Assessment creation failed:', errors);
@@ -172,7 +181,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           await client.models.Candidate.update({
             id: candidate.id,
             status: 'COMPLETED',
-          }, { authMode: 'apiKey' });
+          });
           console.log('[useAssessment] ✅ Candidate COMPLETED');
           setState((prev) => ({
             ...prev,

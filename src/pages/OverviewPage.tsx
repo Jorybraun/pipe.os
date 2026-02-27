@@ -3,22 +3,21 @@ import { useParams, useNavigate, Outlet } from "react-router-dom";
 import {
   CheckCircle,
   Activity,
-  Zap,
   Code,
   FileText,
   Mic,
-  Users,
   Building,
-  MapPin,
   Copy,
   Plus,
   X,
+  Zap,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
-import { generateClient } from 'aws-amplify/api';
+import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import { useCandidateCreate } from "../hooks/useCandidateCreate";
 import { FieldGroup, TextInput } from "../components/ui/form";
+import { codeReviewSnippets } from "../content/codeReviewSnippets";
 
 const client = generateClient<Schema>();
 
@@ -48,7 +47,6 @@ function StageHeaderCard({
   onClick: () => void;
 }) {
   const Icon = stageIcons[stage.type] || FileText;
-  const hasScore = candidates.some(c => c.score !== undefined && c.score !== null);
   const scoredCandidates = candidates.filter(c => c.score !== undefined && c.score !== null);
   const avgScore = scoredCandidates.length > 0
     ? Math.round(
@@ -390,12 +388,97 @@ export default function OverviewPage(): JSX.Element {
     }
   };
 
+  const handleClearStages = async () => {
+    if (!id) return;
+    setIsLoading(true);
+    try {
+      // Fetch all stages first
+      const { data: stagesToDelete } = await client.models.Stage.list({
+        filter: { pipelineId: { eq: id } }
+      });
+      // Delete them
+      await Promise.all(stagesToDelete.map(s => client.models.Stage.delete({ id: s.id })));
+      await fetchData();
+    } catch (err) {
+      console.error("Failed to clear stages:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSeedStage = async () => {
+    if (!id) return;
+    setIsLoading(true);
+    try {
+      // 1. CODE_REVIEW
+      await client.models.Stage.create({
+        pipelineId: id,
+        type: 'CODE_REVIEW',
+        order: 0,
+        config: {
+          renderer: 'DIFF_VIEW',
+          snippets: codeReviewSnippets.map(s => ({
+            id: s.id,
+            title: s.title,
+            code: s.code,
+            language: s.language,
+            groundTruth: s.groundTruth,
+          }))
+        },
+      });
+
+      // 2. QUIZ
+      await client.models.Stage.create({
+        pipelineId: id,
+        type: 'QUIZ',
+        order: 1,
+        config: {
+          questions: [
+            {
+              q: "What is the primary difference between 'let' and 'var' in JavaScript?",
+              options: [
+                "let is block-scoped, var is function-scoped",
+                "var is block-scoped, let is function-scoped",
+                "let cannot be reassigned, var can",
+                "There is no difference"
+              ],
+              correct: 0
+            },
+            {
+              q: "In React, what is the purpose of useEffect's dependency array?",
+              options: [
+                "To list all variables used in the effect",
+                "To control when the effect should re-run",
+                "To define the order of execution",
+                "To store previous state values"
+              ],
+              correct: 1
+            }
+          ]
+        },
+      });
+
+      await fetchData();
+    } catch (err) {
+      console.error("Failed to seed stages:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Group candidates by their current stage
-  const candidatesByStage = stages.reduce((acc, s) => {
+  const candidatesByStage = stages.reduce((acc, s, idx) => {
     acc[s.id] = candidates.filter(c => {
-      // For MVP, candidates stay in the first stage until they start.
-      // We'll refine this logic as we build the assessment flow.
-      return s.order === 1;
+      // For MVP simplicity:
+      // If it's the first stage, show candidates who are INVITED or IN_PROGRESS
+      if (idx === 0 && (c.status === 'INVITED' || c.status === 'IN_PROGRESS')) {
+        return true;
+      }
+      // If it's the last stage, show candidates who are COMPLETED
+      if (idx === stages.length - 1 && c.status === 'COMPLETED') {
+        return true;
+      }
+      return false;
     });
     return acc;
   }, {} as Record<string, any[]>);
@@ -432,28 +515,70 @@ export default function OverviewPage(): JSX.Element {
         </div>
 
         {!showAddForm && (
-          <button
-            onClick={() => setShowAddForm(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 20px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: '#fff',
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              fontFamily: 'Space Mono',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-          >
-            <Plus size={14} />
-            ADD_CANDIDATE
-          </button>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              onClick={handleClearStages}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 20px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.4)',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: 'Space Mono',
+                cursor: 'pointer',
+              }}
+            >
+              <X size={14} />
+              CLEAR_STAGES
+            </button>
+            {stages.length === 0 && (
+              <button
+                onClick={handleSeedStage}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'rgba(255,100,100,0.1)',
+                  border: '1px solid rgba(255,100,100,0.2)',
+                  color: '#ffaaaa',
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  fontFamily: 'Space Mono',
+                  cursor: 'pointer',
+                }}
+              >
+                <Code size={14} />
+                SEED_MVP_STAGES
+              </button>
+            )}
+            <button
+              onClick={() => setShowAddForm(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 20px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: '#fff',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: 'Space Mono',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            >
+              <Plus size={14} />
+              ADD_CANDIDATE
+            </button>
+          </div>
         )}
       </div>
 
@@ -553,7 +678,7 @@ export default function OverviewPage(): JSX.Element {
                   flexDirection: "column",
                 }}
               >
-                {stageCandidates.map((candidate, idx) => (
+                {stageCandidates.map((candidate: any, idx: number) => (
                   <CandidateKanbanCard
                     key={candidate.id}
                     candidate={candidate}

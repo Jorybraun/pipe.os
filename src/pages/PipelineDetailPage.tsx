@@ -1,72 +1,18 @@
-import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
+import { useParams } from "react-router-dom";
 import { LiquidMetalCard, SubTitle } from "../components";
-import { questions } from "../mocks/questions";
-import QuestionCard from "../components/QuestionCard";
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from "../../amplify/data/resource";
+import { StageRenderer, StageType } from "../components/Assessment/StageRegistry";
+
+const client = generateClient<Schema>();
 
 /**
- * PipelineBuilderPage - Configure assessment pipeline with AI assistance
- *
- * Features:
- * - Stage selection and configuration
- * - AI agent assistance for rubric generation
- * - Preview and save pipeline
- * - Stage-specific configuration panels
+ * PipelineDetailPage - Configure assessment pipeline with AI assistance
+ * Displays a preview of the stage content and rubric.
  */
 
-// Stage types
-type StageType =
-  | "SCREENING"
-  | "AI_COLLAB"
-  | "CODE_REVIEW"
-  | "PLANNING"
-  | "VOICE"
-  | "PANEL";
-
 // Helper card components
-function RubricCard({ title, points }: { title: string; points: string[] }) {
-  return (
-    <LiquidMetalCard variant="dark" style={{ padding: 20, marginBottom: 12 }}>
-      <div
-        style={{
-          fontSize: 9,
-          letterSpacing: "0.2em",
-          color: "rgba(255,255,255,0.3)",
-          marginBottom: 12,
-        }}
-      >
-        {title.toUpperCase()}
-      </div>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {points.map((point, i) => (
-          <li
-            key={i}
-            style={{
-              fontSize: 11,
-              lineHeight: 1.6,
-              color: "rgba(255,255,255,0.6)",
-              marginBottom: 8,
-              paddingLeft: 16,
-              position: "relative",
-            }}
-          >
-            <span
-              style={{
-                position: "absolute",
-                left: 0,
-                color: "rgba(255,255,255,0.3)",
-              }}
-            >
-              •
-            </span>
-            {point}
-          </li>
-        ))}
-      </ul>
-    </LiquidMetalCard>
-  );
-}
-
 function TimeCard({ duration, label }: { duration: string; label: string }) {
   return (
     <LiquidMetalCard variant="chrome" style={{ padding: 20 }}>
@@ -96,262 +42,137 @@ function TimeCard({ duration, label }: { duration: string; label: string }) {
   );
 }
 
-// Stage configuration panels
-function ScreeningStageConfig() {
-  const navigate = useNavigate();
-  const { id, stage } = useParams<{ id: string; stage: string }>();
-
-  const handleQuestionClick = (questionId: string): void => {
-    navigate(`/pipeline/${id}/${stage}/${questionId}`);
-  };
-
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>SCREENING_QUESTIONS</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          {questions.map((question, index) => {
-            return (
-              <QuestionCard
-                key={question.id}
-                question={question}
-                index={index}
-                onClick={() => handleQuestionClick(question.id)}
-              />
-            );
-          })}
-        </div>
-
-        <div>
-          <TimeCard duration="30m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AICollabStageConfig() {
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>AI_COLLABORATION_ASSESSMENT</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          <RubricCard
-            title="AI Tool Usage"
-            points={[
-              "Strategic use of AI for well-defined subtasks",
-              "Asking clarifying questions before using AI",
-              "Critical review of AI-generated code",
-              "Debugging AI solutions effectively",
-            ]}
-          />
-          <RubricCard
-            title="Code Quality"
-            points={[
-              "Type safety and error handling",
-              "Clean, maintainable code structure",
-              "Appropriate use of modern patterns",
-              "Testing and validation",
-            ]}
-          />
-        </div>
-
-        <div>
-          <TimeCard duration="60m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CodeReviewStageConfig() {
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>CODE_REVIEW_EXERCISE</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          <RubricCard
-            title="Review Criteria"
-            points={[
-              "Identifying security vulnerabilities",
-              "Performance bottlenecks and optimizations",
-              "Code maintainability and readability",
-              "Test coverage and quality",
-              "Architectural patterns and best practices",
-            ]}
-          />
-          <RubricCard
-            title="Communication"
-            points={[
-              "Clear, constructive feedback",
-              "Priority and severity assessment",
-              "Suggested improvements with examples",
-            ]}
-          />
-        </div>
-
-        <div>
-          <TimeCard duration="45m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PlanningStageConfig() {
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>SYSTEM_DESIGN_&amp;_PLANNING</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          <RubricCard
-            title="Architecture"
-            points={[
-              "Component hierarchy and data flow",
-              "State management strategy",
-              "API design and integration",
-              "Scalability considerations",
-              "Error handling and edge cases",
-            ]}
-          />
-          <RubricCard
-            title="Planning Process"
-            points={[
-              "Breaking down complex problems",
-              "Identifying dependencies",
-              "Technical trade-off analysis",
-              "Implementation timeline estimation",
-            ]}
-          />
-        </div>
-
-        <div>
-          <TimeCard duration="60m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function VoiceStageConfig() {
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>VOICE_INTERVIEW</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          <RubricCard
-            title="Technical Discussion"
-            points={[
-              "Explaining complex technical concepts clearly",
-              "Discussing past projects and decisions",
-              "Problem-solving approach and methodology",
-              "Learning from failures and mistakes",
-            ]}
-          />
-          <RubricCard
-            title="Collaboration & Culture"
-            points={[
-              "Team collaboration experience",
-              "Mentoring and knowledge sharing",
-              "Handling feedback and disagreements",
-              "Alignment with team values",
-            ]}
-          />
-        </div>
-
-        <div>
-          <TimeCard duration="45m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PanelStageConfig() {
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>PANEL_INTERVIEW</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          <RubricCard
-            title="Cross-Functional Assessment"
-            points={[
-              "Product thinking and user empathy",
-              "Cross-team collaboration experience",
-              "Technical leadership potential",
-              "Strategic thinking and prioritization",
-            ]}
-          />
-          <RubricCard
-            title="Growth & Impact"
-            points={[
-              "Career growth trajectory",
-              "Impact on previous teams/projects",
-              "Continuous learning mindset",
-              "Long-term potential and fit",
-            ]}
-          />
-        </div>
-
-        <div>
-          <TimeCard duration="60m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function PipelineDetailPage(): JSX.Element {
-  const [selectedStage] = useState<StageType>("SCREENING");
+  const { stage: stageId } = useParams<{ stage: string }>();
+  const [stageData, setStageData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const renderStageConfig = () => {
-    switch (selectedStage) {
-      case "SCREENING":
-        return <ScreeningStageConfig />;
-      case "AI_COLLAB":
-        return <AICollabStageConfig />;
-      case "CODE_REVIEW":
-        return <CodeReviewStageConfig />;
-      case "PLANNING":
-        return <PlanningStageConfig />;
-      case "VOICE":
-        return <VoiceStageConfig />;
-      case "PANEL":
-        return <PanelStageConfig />;
-      default:
-        return null;
+  const fetchStage = useCallback(async () => {
+    if (!stageId) return;
+    try {
+      setIsLoading(true);
+      const { data } = await client.models.Stage.get({ id: stageId });
+      setStageData(data);
+    } catch (err) {
+      console.error("[PipelineDetailPage] Error fetching stage:", err);
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [stageId]);
 
-  return <div>{renderStageConfig()}</div>;
+  useEffect(() => {
+    fetchStage();
+  }, [fetchStage]);
+
+  if (isLoading) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', fontSize: 10 }}>
+        FETCHING_STAGE_DETAILS...
+      </div>
+    );
+  }
+
+  if (!stageData) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+        STAGE_NOT_FOUND
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <SubTitle>{stageData.type}_PREVIEW</SubTitle>
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+          ID: {stageData.id}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 32 }}>
+        <div style={{ minWidth: 0 }}>
+          <StageRenderer
+            type={stageData.type as StageType}
+            config={stageData.config}
+            onSubmissionChange={() => {}} // Read-only preview for recruiter
+          />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div
+            style={{
+              padding: 32,
+              background: 'rgba(255, 255, 255, 0.03)',
+              backdropFilter: 'blur(40px) saturate(150%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 16,
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Decorative Gradient Glow */}
+            <div style={{
+              position: 'absolute',
+              top: -50,
+              right: -50,
+              width: 150,
+              height: 150,
+              background: 'radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%)',
+              filter: 'blur(30px)',
+              pointerEvents: 'none'
+            }} />
+
+            <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', marginBottom: 24, fontFamily: '"Space Mono", monospace', fontWeight: 700 }}>
+              STAGE_RUBRIC
+            </div>
+            
+            {stageData.type === 'CODE_REVIEW' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Scoring Weights</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.8 }}>
+                    • Bugs Found: 50%<br />
+                    • Severity Accuracy: 25%<br />
+                    • Fix Quality: 25%<br />
+                    • False Positives: -10% penalty
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', marginBottom: 8 }}>Ground Truth</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.8 }}>
+                    This stage contains {stageData.config?.snippets?.length || 0} snippets with predefined bugs.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
+                Rubric configuration coming soon for {stageData.type} stages.
+              </div>
+            )}
+          </div>
+
+          <TimeCard duration="45m" label="Estimated Duration" />
+          
+          <button
+            style={{
+              width: '100%',
+              padding: '16px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 8,
+              color: 'rgba(255,255,255,0.6)',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontWeight: 700,
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'not-allowed',
+            }}
+          >
+            EDIT_STAGE_CONFIG
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

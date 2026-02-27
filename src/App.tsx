@@ -22,7 +22,11 @@ import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import { QuestionDetail } from "./components/QuestionDetail";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import { SubTitle } from "./components/ui/SubTitle";
-import { seedSmokeTest } from "./test/seed-smoke-test";
+
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from "../amplify/data/resource";
+
+const client = generateClient<Schema>();
 
 /**
  * AppLayout - Wrapper component that provides consistent Layout to child routes
@@ -31,15 +35,51 @@ const SubHeader = () => {
   const navigate = useNavigate();
   const { id, stage, questionId } = useParams();
   const location = useLocation();
+  const [headerData, setHeaderData] = useState<{ title: string; count: number }>({
+    title: "LOADING...",
+    count: 0,
+  });
 
   const isPipelineContext =
     location.pathname.startsWith("/pipeline/") &&
     !location.pathname.startsWith("/pipeline/new");
+  const isCandidateContext = location.pathname.startsWith("/candidates/");
 
-  if (!isPipelineContext) return null;
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        let pipelineId = isPipelineContext ? id : null;
 
-  const role = { title: "Senior Full-Stack Engineer" };
-  const totalCandidates = 42;
+        if (isCandidateContext && id) {
+          const { data: candidate } = await client.models.Candidate.get({ id });
+          if (candidate) {
+            pipelineId = candidate.pipelineId;
+          }
+        }
+
+        if (pipelineId) {
+          const [pipeline, candidates] = await Promise.all([
+            client.models.Pipeline.get({ id: pipelineId }),
+            client.models.Candidate.list({ filter: { pipelineId: { eq: pipelineId } } }),
+          ]);
+
+          setHeaderData({
+            title: pipeline.data?.title || "POSITION",
+            count: candidates.data?.length || 0,
+          });
+        }
+      } catch (err) {
+        console.error("[SubHeader] Error fetching header data:", err);
+      }
+    };
+
+    if (isPipelineContext || isCandidateContext) {
+      fetchData();
+    }
+  }, [id, isPipelineContext, isCandidateContext]);
+
+  if (!isPipelineContext && !isCandidateContext) return null;
+
   const currentStage = stage ? { name: stage } : null;
 
   return (
@@ -60,6 +100,10 @@ const SubHeader = () => {
               navigate(`/pipeline/${id}/${stage}`);
             } else if (stage) {
               navigate(`/pipeline/${id}`);
+            } else if (isCandidateContext) {
+              // Navigate back to the pipeline this candidate belongs to if possible
+              // For now just go back to roles list or use window.history.back()
+              navigate(-1);
             } else {
               navigate("/");
             }
@@ -81,6 +125,8 @@ const SubHeader = () => {
             ? `BACK TO ${currentStage.name.toUpperCase()}`
             : stage
             ? "BACK TO OVERVIEW"
+            : isCandidateContext
+            ? "BACK"
             : "BACK TO ROLES"}
         </button>
 
@@ -88,7 +134,7 @@ const SubHeader = () => {
 
         <div>
           <div style={{ fontSize: 9, letterSpacing: "0.2em", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>POSITION</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}>{role.title.toUpperCase()}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}>{headerData.title.toUpperCase()}</div>
         </div>
 
         <div style={{ width: 1, height: 40, background: "rgba(255,255,255,0.08)" }} />
@@ -96,7 +142,7 @@ const SubHeader = () => {
         <div>
           <div style={{ fontSize: 9, letterSpacing: "0.2em", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>ACTIVE CANDIDATES</div>
           <div style={{ fontSize: 24, fontWeight: 800, background: "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            {totalCandidates}
+            {headerData.count}
           </div>
         </div>
       </div>
@@ -181,11 +227,6 @@ function AppLayout(): JSX.Element {
  * App - Main application component with routing configuration
  */
 function App(): JSX.Element {
-  useEffect(() => {
-    // @ts-ignore
-    window.seed = seedSmokeTest;
-  }, []);
-
   return (
     <BrowserRouter>
       <Routes>

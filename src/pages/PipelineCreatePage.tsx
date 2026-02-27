@@ -203,7 +203,7 @@ export default function PipelineCreatePage(): JSX.Element {
       </div>
 
       {/* Form card */}
-      <div>
+      <div data-testid="pipeline-create-form">
         <LiquidMetalCard variant="chrome">
           <div style={{ padding: 40 }}>
             {/* Role Title */}

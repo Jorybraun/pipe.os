@@ -1,11 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
+  Plus,
+  Loader2,
 } from "lucide-react";
-import { RoleCard } from "../components";
-import { mockRoles, searchRoles } from "../mocks";
-import type { Role } from "../types";
+import { RoleCard, LiquidMetalCard } from "../components";
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from "../../amplify/data/resource";
+
+const client = generateClient<Schema>();
+
+type PipelineWithStats = Schema['Pipeline']['type'] & {
+  candidateCount: number;
+  stageCount: number;
+  avgScore: number | null;
+};
 
 /**
  * ListingPage - Main entry point showing all roles/pipelines
@@ -21,30 +31,78 @@ import type { Role } from "../types";
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
+  const [pipelines, setPipelines] = useState<PipelineWithStats[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "ACTIVE" | "DRAFT" | "ARCHIVED">(
     "all"
   );
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    setMounted(true);
+  const fetchPipelines = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { data: pipelineData } = await client.models.Pipeline.list();
+      
+      const enrichedPipelines = await Promise.all(
+        pipelineData.map(async (p) => {
+          const [stages, candidates] = await Promise.all([
+            client.models.Stage.list({ filter: { pipelineId: { eq: p.id } } }),
+            client.models.Candidate.list({ filter: { pipelineId: { eq: p.id } } }),
+          ]);
+
+          // Calculate average score for candidates who have one
+          const scoredCandidates = candidates.data.filter(c => (c as any).score !== undefined && (c as any).score !== null);
+          const avgScore = scoredCandidates.length > 0 
+            ? Math.round(scoredCandidates.reduce((acc, c) => acc + ((c as any).score || 0), 0) / scoredCandidates.length)
+            : null;
+
+          return {
+            ...p,
+            stageCount: stages.data.length,
+            candidateCount: candidates.data.length,
+            avgScore,
+          };
+        })
+      );
+
+      setPipelines(enrichedPipelines);
+    } catch (err) {
+      console.error("[ListingPage] Error fetching pipelines:", err);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    setMounted(true);
+    fetchPipelines();
+  }, [fetchPipelines]);
+
   // Filter and search roles
-  const filteredRoles = mockRoles.filter((role) => {
-    const matchesFilter = filter === "all" || role.status === filter;
+  const filteredPipelines = pipelines.filter((p) => {
+    const matchesFilter = filter === "all" || p.status === filter;
     const matchesSearch =
       searchQuery === "" ||
-      searchRoles(searchQuery).some((r) => r.id === role.id);
+      p.title.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesFilter && matchesSearch;
   });
 
-  // Calculate stats
-
-
-  const handleRoleClick = (role: Role): void => {
-    navigate(`/pipeline/${role.id}`);
+  const handleRoleClick = (id: string): void => {
+    navigate(`/pipeline/${id}`);
   };
+
+  if (isLoading && pipelines.length === 0) {
+    return (
+      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.2)" />
+          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
+            FETCHING_PIPELINES...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -144,25 +202,23 @@ export default function ListingPage(): JSX.Element {
           gap: 16,
         }}
       >
-        {filteredRoles.map((role) => (
+        {filteredPipelines.map((p) => (
           <RoleCard
-            key={role.id}
-            title={role.title}
-            department={role.department}
-            location={role.location}
+            key={p.id}
+            title={p.title}
+            department={p.level || "Seniority"}
+            location="REMOTE"
             status={
-              role.status === "ARCHIVED"
+              p.status === "ARCHIVED"
                 ? "closed"
-                : (role.status.toLowerCase() as "active" | "draft" | "closed")
+                : (p.status?.toLowerCase() as "active" | "draft" | "closed")
             }
-            candidates={role.candidateCount}
-            avgScore={role.avgScore}
-            stagesConfigured={Math.round(
-              (role.progress / 100) * role.stageCount
-            )}
-            totalStages={role.stageCount}
-            createdAt={role.createdAt}
-            onClick={() => handleRoleClick(role)}
+            candidates={p.candidateCount}
+            avgScore={p.avgScore}
+            stagesConfigured={p.stageCount}
+            totalStages={p.stageCount || 1}
+            createdAt={p.createdAt}
+            onClick={() => handleRoleClick(p.id)}
           />
         ))}
 
@@ -172,14 +228,14 @@ export default function ListingPage(): JSX.Element {
             opacity: mounted ? 1 : 0,
             transform: mounted ? "translateY(0)" : "translateY(20px)",
             transition: `all 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${
-              filteredRoles.length * 80
+              filteredPipelines.length * 80
             }ms`,
           }}
         >
-          {/* <LiquidMetalCard
+          <LiquidMetalCard
             variant="default"
             hover
-            onClick={}
+            onClick={() => navigate("/pipeline/new")}
             style={{
               minHeight: 280,
               display: "flex",
@@ -187,6 +243,7 @@ export default function ListingPage(): JSX.Element {
               alignItems: "center",
               justifyContent: "center",
               border: "1px dashed rgba(255,255,255,0.15)",
+              cursor: 'pointer'
             }}
           >
             <div
@@ -216,9 +273,19 @@ export default function ListingPage(): JSX.Element {
             <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>
               Set up a new hiring pipeline
             </div>
-          </LiquidMetalCard> */}
+          </LiquidMetalCard>
         </div>
       </div>
+      
+      <style>{`
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

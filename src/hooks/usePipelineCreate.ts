@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { codeReviewSnippets } from '../content/codeReviewSnippets';
 
 const client = generateClient<Schema>();
 
@@ -120,6 +121,36 @@ export function usePipelineCreate(): UsePipelineCreateReturn {
         }
 
         console.log('[usePipelineCreate] Pipeline created:', data.id);
+
+        // ---------------------------------------------------------------------
+        // PHASE 2 MVP: Auto-create Stage
+        // ---------------------------------------------------------------------
+        console.log('[usePipelineCreate] Auto-creating default CODE_REVIEW stage...');
+        
+        const { errors: stageErrors } = await client.models.Stage.create({
+          pipelineId: data.id,
+          type: 'CODE_REVIEW',
+          order: 0,
+          config: {
+            renderer: 'DIFF_VIEW',
+            snippets: codeReviewSnippets.map(s => ({
+              id: s.id,
+              title: s.title,
+              code: s.code,
+              language: s.language,
+              groundTruth: s.groundTruth,
+            }))
+          },
+        });
+
+        if (stageErrors) {
+          console.error('[usePipelineCreate] Failed to create default stage:', stageErrors);
+          // We don't fail the whole creation because the pipeline exists
+          // but this is a critical warning for MVP
+        } else {
+          console.log('[usePipelineCreate] Default stage created successfully');
+        }
+
         setState({ isSubmitting: false, error: null, createdId: data.id });
         return data.id;
       } catch (err) {

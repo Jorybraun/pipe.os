@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ConversationalForm } from "../components/RoleDiscovery/Conversational/ConversationalForm";
 import { PhaseProgress } from "../components/RoleDiscovery/Conversational/PhaseProgress";

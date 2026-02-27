@@ -1,4 +1,20 @@
 import { defineConfig, devices } from "@playwright/test";
+import * as dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * Load environment variables from .env.local
+ */
+dotenv.config({ path: path.resolve(__dirname, ".env.local") });
+
+/**
+ * Path to store the authenticated storage state
+ */
+export const STORAGE_STATE = path.join(__dirname, "playwright/.auth/user.json");
 
 /**
  * Playwright configuration for E2E tests
@@ -36,25 +52,43 @@ export default defineConfig({
 
   // Configure projects for major browsers
   projects: [
+    // Setup project
+    {
+      name: "auth_setup",
+      testMatch: /auth\.setup\.ts/,
+    },
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Use prepared auth state
+        storageState: STORAGE_STATE,
+      },
+      dependencies: ["auth_setup"],
     },
 
     // {
     //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
+    //   use: {
+    //     ...devices['Desktop Firefox'],
+    //     storageState: STORAGE_STATE,
+    //   },
+    //   dependencies: ['setup'],
     // },
 
     // {
     //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
+    //   use: {
+    //     ...devices['Desktop Safari'],
+    //     storageState: STORAGE_STATE,
+    //   },
+    //   dependencies: ['setup'],
     // },
   ],
 
   // Run your local dev server before starting the tests
   webServer: {
-    command: "VITE_SKIP_AUTH=true npm run dev",
+    command: "npm run dev", // Removed VITE_SKIP_AUTH=true since we're using real auth
     url: "http://localhost:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

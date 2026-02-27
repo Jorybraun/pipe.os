@@ -1,1 +1,4 @@
-credentials/
+.env.local
+playwright/.auth/
+playwright-report/
+test-results/

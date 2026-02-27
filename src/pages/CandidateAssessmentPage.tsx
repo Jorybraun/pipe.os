@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAssessment } from '../hooks/useAssessment';
-import { ReviewCanvas, Annotation } from '../components/ReviewCanvas';
-import { QuizRenderer } from '../components/QuizRenderer';
+import { StageRenderer, StageType } from '../components/Assessment/StageRegistry';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
@@ -38,12 +37,9 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // ---------------------------------------------------------------------------
 
   const handleSubmit = async () => {
-    if (!currentSubmission) {
-      // For MVP, we might allow empty submissions for the code review preview
-      await submitStage({});
-      return;
-    }
-    await submitStage(currentSubmission);
+    // For MVP, we might allow empty submissions for the code review preview
+    // If currentSubmission is null, we send an empty object
+    await submitStage(currentSubmission || {});
     setCurrentSubmission(null);
   };
 
@@ -107,7 +103,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   }
 
   const currentStage = stages[currentStageIndex];
-  if (!currentStage) return null;
+  if (!currentStage) return <></>;
 
   return (
     <div style={{ minHeight: '100vh', background: '#0c0c0e', position: 'relative', padding: '40px 24px' }}>
@@ -139,18 +135,11 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
         {/* Content */}
         <main style={{ marginBottom: 40 }}>
-          {currentStage.type === 'CODE_REVIEW' && (
-            <ReviewCanvas
-              snippet={currentStage.config as any}
-              onAnnotationsChange={(annotations) => setCurrentSubmission({ annotations })}
-            />
-          )}
-          {currentStage.type === 'QUIZ' && (
-            <QuizRenderer
-              questions={(currentStage.config as any).questions}
-              onAnswersChange={(answers) => setCurrentSubmission({ answers })}
-            />
-          )}
+          <StageRenderer
+            type={currentStage.type as StageType}
+            config={currentStage.config}
+            onSubmissionChange={setCurrentSubmission}
+          />
         </main>
 
         {/* Footer Actions */}

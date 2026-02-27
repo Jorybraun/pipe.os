@@ -1,6 +1,5 @@
 import { User, Users, Code, Target, Zap, Heart, ArrowRight, ArrowLeft } from 'lucide-react';
 import { FormFieldSet } from './FormFieldSet';
-import { LiquidMetalCard } from '../../ui/LiquidMetalCard';
 import {
   FieldGroup,
   TextInput,
