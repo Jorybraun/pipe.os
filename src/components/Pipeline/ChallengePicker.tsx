@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { X, Code, Shield, FileText, Search, Filter, Timer, ChevronRight, Zap } from 'lucide-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
-import { type ChallengeType } from '../../lib/pipelinePresets';
 import { ALL_CHALLENGE_TEMPLATES, type ChallengeTemplate } from '../../content/challengeLibrary';
 
 interface ChallengePickerProps {
