@@ -8,6 +8,8 @@ import {
   Save, 
   Eye, 
   AlertCircle,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../components';
 import { Skeleton } from '../components/ui/Skeleton';
@@ -32,6 +34,7 @@ export default function ChallengeEditorPage(): JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSubmitting] = useState(false);
   const [activeTab, setActiveSection] = useState<'DETAILS' | 'CONTENT' | 'SCORING' | 'PREVIEW'>('DETAILS');
+  const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!challengeId) return;
@@ -419,9 +422,24 @@ export default function ChallengeEditorPage(): JSX.Element {
             )}
 
             {activeTab === 'PREVIEW' && (
-              <div>
-                <SubTitle>CANDIDATE_PREVIEW</SubTitle>
-                <div style={{ marginTop: 32, opacity: 0.8 }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
+                  <SubTitle>CANDIDATE_PREVIEW</SubTitle>
+                  <button
+                    onClick={() => setIsPreviewFullscreen(true)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
+                      background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 4, color: 'rgba(255,255,255,0.6)', fontSize: 9,
+                      fontFamily: 'Space Mono', cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                  >
+                    <Maximize2 size={12} />
+                    FULL_SCREEN
+                  </button>
+                </div>
+
+                <div style={{ opacity: 0.8 }}>
                   <TimerProvider>
                     <ChallengeRegistry 
                       challenge={challenge as any}
@@ -430,6 +448,50 @@ export default function ChallengeEditorPage(): JSX.Element {
                     />
                   </TimerProvider>
                 </div>
+
+                {/* Fullscreen Overlay */}
+                {isPreviewFullscreen && (
+                  <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 9999,
+                    background: '#0c0c0e',
+                    padding: 40,
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#60a5fa' }} />
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.2em' }}>
+                          CANDIDATE_PREVIEW_MODE
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setIsPreviewFullscreen(false)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                          background: '#fff', border: 'none', borderRadius: 4,
+                          color: '#000', fontSize: 10, fontWeight: 800,
+                          fontFamily: 'Space Mono', cursor: 'pointer'
+                        }}
+                      >
+                        <Minimize2 size={14} />
+                        EXIT_FULL_SCREEN
+                      </button>
+                    </div>
+                    
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <TimerProvider>
+                        <ChallengeRegistry 
+                          challenge={challenge as any}
+                          onSubmissionChange={() => {}}
+                          onSubmit={() => {}}
+                        />
+                      </TimerProvider>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </LiquidMetalCard>

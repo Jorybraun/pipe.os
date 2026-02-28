@@ -96,7 +96,7 @@ export default function CandidateProfilePage(): JSX.Element {
       const [assData, stagesData] = await Promise.all([
         client.models.Assessment.list({ 
           filter: { candidateId: { eq: id } },
-          selectionSet: ['id', 'challengeId', 'score', 'submission', 'completedAt']
+          selectionSet: ['id', 'challengeId', 'score', 'submission', 'feedback', 'completedAt']
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: cand.pipelineId } },
@@ -527,18 +527,29 @@ export default function CandidateProfilePage(): JSX.Element {
               const assessment = assessments.find(a => a.challengeId === challenge.id);
               const submission = assessment?.submission ? (typeof assessment.submission === 'string' ? JSON.parse(assessment.submission) : assessment.submission) : null;
 
+              const isManual = challenge.type === 'QUIZ_SHORT_ANSWER' || challenge.type === 'CODE_IMPLEMENTATION';
+
               return (
                 <LiquidMetalCard key={challenge.id} variant="dark" style={{ padding: 32 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
                     <div>
-                      <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: 'Space Mono' }}>
-                        {challenge.type}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+                          {challenge.type}
+                        </div>
+                        {isManual && (
+                          <div style={{ fontSize: 8, padding: '2px 6px', background: 'rgba(167, 139, 250, 0.1)', border: '1px solid rgba(167, 139, 250, 0.2)', color: '#a78bfa', borderRadius: 4, fontFamily: 'Space Mono' }}>
+                            MANUAL_REVIEW
+                          </div>
+                        )}
                       </div>
                       <h4 style={{ fontSize: 18, fontWeight: 700, color: '#fff', margin: 0 }}>{challenge.title}</h4>
                     </div>
                     {assessment && (
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 24, fontWeight: 800, color: '#fff' }}>{assessment.score}</div>
+                        <div style={{ fontSize: 24, fontWeight: 800, color: isManual && assessment.score === 0 ? 'rgba(255,255,255,0.1)' : '#fff' }}>
+                          {assessment.score}
+                        </div>
                         <div style={{ fontSize: 8, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginTop: 4 }}>CHALLENGE SCORE</div>
                       </div>
                     )}
@@ -549,42 +560,94 @@ export default function CandidateProfilePage(): JSX.Element {
                       NO_SUBMISSION_YET
                     </div>
                   ) : (
-                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: 24, borderRadius: 4 }}>
-                      {challenge.type === 'QUIZ_MCQ' && submission?.answers && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {Object.entries(submission.answers).map(([qId, ans]: [string, any]) => (
-                            <div key={qId} style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-                              <span style={{ color: 'rgba(255,255,255,0.3)', marginRight: 8 }}>Q_{qId}:</span>
-                              Selected Option {ans}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      {challenge.type === 'CODE_REVIEW' && submission?.annotations && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                          {Object.entries(submission.annotations).map(([snippetId, snipAnnotations]: [string, any]) => (
-                            <div key={snippetId}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>SNIPPET: {snippetId}</div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                {snipAnnotations.map((ann: any, idx: number) => (
-                                  <div key={idx} style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
-                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
-                                      <span style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>LINE {ann.line}</span>
-                                      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>{ann.severity}</span>
-                                    </div>
-                                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{ann.comment}</div>
-                                  </div>
-                                ))}
+                    <div style={{ display: 'grid', gridTemplateColumns: isManual ? '1fr 300px' : '1fr', gap: 32 }}>
+                      <div style={{ background: 'rgba(0,0,0,0.2)', padding: 24, borderRadius: 4 }}>
+                        {challenge.type === 'QUIZ_MCQ' && submission?.answers && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            {Object.entries(submission.answers).map(([qId, ans]: [string, any]) => (
+                              <div key={qId} style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
+                                <span style={{ color: 'rgba(255,255,255,0.3)', marginRight: 8 }}>Q_{qId}:</span>
+                                Selected Option {ans}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
+                        
+                        {challenge.type === 'CODE_REVIEW' && submission?.annotations && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {Object.entries(submission.annotations).map(([snippetId, snipAnnotations]: [string, any]) => (
+                              <div key={snippetId}>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>SNIPPET: {snippetId}</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                  {snipAnnotations.map((ann: any, idx: number) => (
+                                    <div key={idx} style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
+                                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>LINE {ann.line}</span>
+                                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>{ann.severity}</span>
+                                      </div>
+                                      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{ann.comment}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
-                      {challenge.type === 'QUIZ_SHORT_ANSWER' && (
-                        <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                          {submission.text}
+                        {challenge.type === 'QUIZ_SHORT_ANSWER' && (
+                          <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                            {submission.text}
+                          </div>
+                        )}
+
+                        {challenge.type === 'CODE_IMPLEMENTATION' && (
+                          <div style={{ background: '#000', padding: 20, borderRadius: 4, border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <pre style={{ margin: 0, fontSize: 13, color: '#a78bfa', fontFamily: 'Space Mono', lineHeight: 1.5 }}>
+                              {submission.code}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+
+                      {isManual && (
+                        <div style={{ borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: 32 }}>
+                          <SubTitle>RECRUITER_REVIEW</SubTitle>
+                          <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                                <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>SCORE</label>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>{assessment.score}</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                value={assessment.score || 0}
+                                onChange={async (e) => {
+                                  const newScore = parseInt(e.target.value);
+                                  // Optimistic UI update
+                                  setAssessments(prev => prev.map(a => a.id === assessment.id ? { ...a, score: newScore } : a));
+                                  await client.models.Assessment.update({ id: assessment.id, score: newScore });
+                                }}
+                                style={{ width: '100%', cursor: 'pointer' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>FEEDBACK</label>
+                              <textarea 
+                                value={assessment.feedback || ''}
+                                onChange={async (e) => {
+                                  const newVal = e.target.value;
+                                  // Optimistic UI update
+                                  setAssessments(prev => prev.map(a => a.id === assessment.id ? { ...a, feedback: newVal } : a));
+                                  // In real app, would debounce this
+                                  await client.models.Assessment.update({ id: assessment.id, feedback: newVal });
+                                }}
+                                placeholder="Add internal notes..."
+                                style={{ width: '100%', height: 120, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: 12, color: '#fff', fontSize: 12, outline: 'none', resize: 'none' }}
+                              />
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>

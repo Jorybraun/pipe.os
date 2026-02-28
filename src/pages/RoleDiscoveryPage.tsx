@@ -98,6 +98,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           // Create Stage record
           const { data: stage, errors: sErrors } = await client.models.Stage.create({
             pipelineId: pipeline.id,
+            title: pStage.name,
             order: sIdx,
           });
 

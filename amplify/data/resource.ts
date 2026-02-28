@@ -41,6 +41,8 @@ const schema = a.schema({
     .model({
       pipelineId: a.id().required(),
       pipeline: a.belongsTo('Pipeline', 'pipelineId'),
+      title: a.string().required(),
+      description: a.string(),
       order: a.integer(),
       timeLimit: a.integer(), // Minutes
       challenges: a.hasMany('Challenge', 'stageId'),
@@ -134,6 +136,7 @@ const schema = a.schema({
 
       submission: a.json(),    // Candidate's answers/annotations
       score: a.float(),
+      feedback: a.string(),    // Internal recruiter notes
       completedAt: a.datetime(),
     })
     .authorization((allow) => [

@@ -28,7 +28,7 @@ export default function StageDetailPage(): JSX.Element {
       const { data } = await client.models.Stage.get({ 
         id: stageId,
       }, {
-        selectionSet: ['id', 'order', 'challenges.id', 'challenges.title', 'challenges.type', 'challenges.order', 'challenges.instructions']
+        selectionSet: ['id', 'title', 'description', 'order', 'timeLimit', 'challenges.id', 'challenges.title', 'challenges.type', 'challenges.order', 'challenges.instructions']
       } as any);
       
       if (data) {

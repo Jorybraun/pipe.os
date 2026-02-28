@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `gemini-tasks-convention` — GEMINI.md update: TASKS.md convention
+- **Detailed Log**: [docs/changelogs/update-gemini-tasks-convention.md](docs/changelogs/update-gemini-tasks-convention.md)
+- **Status**: 🟢 DONE
+
 ### `b97b8eb` — Fix Code Review Annotation Interactivity
 - **Detailed Log**: [docs/changelogs/fix-annotation-click.md](docs/changelogs/fix-annotation-click.md)
 - **Status**: 🟡 PENDING REVIEW
@@ -26,6 +30,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### `FIX-BUGS-1-2` — MCQ Editor & Live Preview Implementation
 - Added MCQ options editor to `ChallengeEditorPage`.
 - Implemented `PreviewPanel` using Sandpack for live code previews.
+- Added full-screen toggle for candidate preview in `ChallengeEditorPage`.
 - Fixed `DEFAULT` pipeline preset to align with new Challenge schema and include missing code snippets.
 - Refactored `pipelinePresets.ts` to leverage the centralized `challengeLibrary`.
 

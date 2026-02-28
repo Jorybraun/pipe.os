@@ -388,6 +388,7 @@ export default function OverviewPage(): JSX.Element {
     try {
       await client.models.Stage.create({
         pipelineId: id,
+        title: 'New Stage',
         order: stages.length,
       });
       await fetchData();
@@ -477,12 +478,14 @@ export default function OverviewPage(): JSX.Element {
       // 1. Technical Screen
       await client.models.Stage.create({
         pipelineId: id,
+        title: 'Technical Screen',
         order: 0,
       });
 
       // 2. Final Round
       await client.models.Stage.create({
         pipelineId: id,
+        title: 'Final Round',
         order: 1,
       });
 

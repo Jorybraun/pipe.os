@@ -291,11 +291,97 @@
 
 ---
 
-## Post-MVP Backlog (do not touch until Phase 7 is done)
+## Post-MVP Sprint 1 — Polish & Security (after first recruiter cohort ships)
+
+> Do these before onboarding any customer whose candidates might be adversarial.
+> Architecture roadmap: `MASTER_CLAUDE.md → 🗺️ Post-MVP Architecture Roadmap`
+
+### PR Description Support
+> Small scope, high fidelity. Full spec: `FEATURE_REQUESTS.md → PR Description Support`
+> Full runbook: create `docs/ops/HANDOFF-pr-description.md` before starting.
+- [ ] Add `prDescription?: string` to `CODE_REVIEW` challenge config type
+- [ ] Update `ChallengeEditorPage` CODE_REVIEW form — add PR Description textarea that writes to `config.prDescription`
+- [ ] Update `DiffReviewCanvas.tsx` — render `prDescription` as a collapsible panel above the diff (use `<details>` or fixed header; render via `react-markdown`)
+- [ ] Run `npx tsc --noEmit`, smoke test CODE_REVIEW challenge end-to-end
+- [ ] Update `CHANGELOG.md`, commit, post code review entry to `MASTER_CLAUDE.md`
+
+### Smart Stage Time Summary
+> Pure display — no schema changes. Full spec: `FEATURE_REQUESTS.md → Smart Stage Time Summary`
+- [ ] Add time limit badge to `ChallengeCard` — show `config.timeLimit` (in minutes) if set; show `—` if null
+- [ ] Add `computeStageDuration(challenges)` utility — sums non-null time limits
+- [ ] Render "Total: Xm" in `OverviewPage` stage header alongside challenge count
+- [ ] Run `npx tsc --noEmit`, visual smoke test
+- [ ] Update `CHANGELOG.md`, commit, post code review entry to `MASTER_CLAUDE.md`
+
+### Ground Truth Sanitization
+> Security. ADR-007 written and **Proposed** — jory must approve before agent starts.
+> Full spec: `FEATURE_REQUESTS.md → Ground Truth Sanitization` | `docs/decisions/ADR-007-ground-truth-sanitization.md`
+> Full runbook: create `docs/ops/HANDOFF-ground-truth-sanitization.md` before starting.
+- [ ] **[BLOCKED: ADR-007 approval needed]** Schema migration — add `serverConfig: a.json()` to `Challenge` model with IAM-only authorization
+- [ ] Create `amplify/functions/scoringAgent/` — handler, types, scorer, resource (follows `questionAgent` pattern exactly)
+- [ ] Update `ChallengeEditorPage` CODE_REVIEW + QUIZ_MCQ forms — write answer keys to `serverConfig` instead of `config`
+- [ ] Strip answer keys from public `config` before it reaches the candidate browser
+- [ ] Run `npx ampx sandbox`, `npx tsc --noEmit`, full end-to-end smoke test
+- [ ] Update `CHANGELOG.md`, write ADR-007 amendment, commit, post code review entry to `MASTER_CLAUDE.md`
+
+---
+
+## Post-MVP Sprint 2 — Recruiter Workflow (power user UX)
+
+> Start only after Sprint 1 is complete and validated.
+
+### Preset Challenge Bundles
+> No schema changes — static data + UI. Full spec: `FEATURE_REQUESTS.md → Preset Challenge Bundles`
+- [ ] Add `CHALLENGE_BUNDLES` export to `challengeLibrary.ts` — curated bundles (`{ id, name, description, templateIds: string[] }`)
+- [ ] Add "Load Bundle" button to stage card on `OverviewPage` — opens bundle picker modal
+- [ ] On bundle select: resolve templates by ID, call `Challenge.create()` for each; surface any failures
+- [ ] Run `npx tsc --noEmit`, smoke test bundle loading
+- [ ] Update `CHANGELOG.md`, commit, post code review entry
+
+### Drag-to-Order Challenges
+> Full spec: `FEATURE_REQUESTS.md → Drag-to-Order Challenges`
+- [ ] **Pre-check:** confirm `Challenge.order` field exists in `amplify/data/resource.ts` — if not, schema migration required first
+- [ ] Install `@dnd-kit/core` + `@dnd-kit/sortable`
+- [ ] Add drag handles to `ChallengeCard`; implement `useSortable` in stage challenge list
+- [ ] On drop: recompute `order` integers, batch-update via `Challenge.update()` with optimistic UI
+- [ ] Run `npx tsc --noEmit`, drag-reorder smoke test
+- [ ] Update `CHANGELOG.md`, commit, post code review entry
+
+### Multiselect Challenge Actions
+> Full spec: `FEATURE_REQUESTS.md → Multiselect for Challenge Actions`
+- [ ] Add checkbox to `ChallengeCard`; selection state in `OverviewPage` (or `useStageSelection` hook)
+- [ ] Floating action bar appears when 1+ challenges selected: Move to stage, Duplicate, Delete
+- [ ] Bulk delete: parallel `Challenge.delete()` calls with error surfacing
+- [ ] Bulk move: update `stageId` on each selected challenge
+- [ ] Run `npx tsc --noEmit`, smoke test all three actions
+- [ ] Update `CHANGELOG.md`, commit, post code review entry
+
+---
+
+## Post-MVP Sprint 3 — Content Infrastructure (validate static library first)
+
+> Do NOT start until the static 65-template library is proven insufficient with real users.
+> Full plan: `docs/design/content-seeding-strategy.md`
+
+### DynamoDB-backed Challenge Library + Recruiter Library Page
+> Full spec: `FEATURE_REQUESTS.md → Recruiter Challenge Library Page`
+> Full runbook: create `docs/ops/HANDOFF-challenge-library-dynamo.md` before starting.
+- [ ] Schema: add `isTemplate: boolean` to `Challenge` model (or define a new DynamoDB-backed template model — write ADR before deciding)
+- [ ] Write `scripts/seedChallengeLibrary.ts` — creates `Challenge` records from `challengeLibrary.ts` templates
+- [ ] Build `/library` page — browse all templates, filter by type + topic, preview a challenge
+- [ ] Update `ChallengePicker` — show both static templates and DynamoDB custom challenges
+- [ ] Run `npx ampx sandbox`, `npx tsc --noEmit`, full smoke test
+- [ ] Update `CHANGELOG.md`, commit, post code review entry
+
+---
+
+## Post-MVP Long-term — AI Features (requires Sprint 1–3 complete + user validation)
 
 ### AI-Powered Pipeline Creation (pricing tier)
 > Vision: the pipeline creation flow gains a third mode — AI-driven — where the recruiter describes the role and the AI proposes stages, challenge types, and challenge content for review before committing. This becomes the premium differentiator.
 > See `docs/design/pricing-model.md` for the full feature gating strategy.
+> **ADR required before starting** — agent architecture, approval flow, schema for AI-proposed-vs-confirmed challenges.
+- [ ] Write ADR for AI pipeline design agent architecture
 - [ ] **AI-driven pipeline mode** — extend `creationMode` enum to include `AI_DRIVEN`. Sends role context to `questionAgent` Lambda. Right panel shows AI-proposed stage/challenge cards the recruiter can approve/edit/delete before creating.
 - [ ] **AI Discovery Agent** — probes candidates with follow-up questions during assessment. `probeLimit` field on `Pipeline` (0–10). Partially scaffolded in legacy UI already.
 - [ ] **AI Review** — AI scores and provides qualitative analysis on `SHORT_ANSWER` and `CODE_IMPLEMENTATION` submissions. Recruiter sees AI commentary alongside manual score.
@@ -313,7 +399,6 @@
 - [ ] Real-time recruiter dashboard (subscriptions, not polling)
 - [ ] Voice interview stage (WebRTC + transcription)
 - [ ] S3 integration for media assets
-- [ ] Answer key moved server-side (currently `groundTruth` is computed client-side — acceptable for MVP, but expose risk)
 
 ---
 
@@ -348,7 +433,7 @@
 | `src/pages/RoleDiscoveryPage.tsx` | Agentic discovery (post-MVP) | 🔒 Preserved |
 | `src/hooks/useRoleDiscovery.ts` | Agentic hook (post-MVP) | 🔒 Preserved — 2 pre-existing tsc errors acceptable |
 | `CHANGELOG.md` | Required update on every source commit | ✅ Active — enforced by pre-commit hook |
-| `docs/decisions/` | Architecture Decision Records (ADRs) | ✅ Active — 4 decisions recorded |
+| `docs/decisions/` | Architecture Decision Records (ADRs) | ✅ Active — 7 decisions recorded (ADR-001 through ADR-007) |
 | `docs/decisions/README.md` | ADR index | 📋 Read + update when making architectural decisions |
 | `docs/design/challenge-architecture.md` | Full design doc for Phase 7 | 📋 Read before touching Phase 7 |
 | `docs/design/monaco-challenge-architecture.md` | Composable Shell + Panel system design | 📋 Read before building Step 4 components |
