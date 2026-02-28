@@ -36,6 +36,10 @@ const schema = a.schema({
    *
    * Represents a container for challenges in the pipeline.
    * Stages define the high-level flow (e.g. "Technical Round 1").
+   *
+   * mode: ASYNC (default) = candidates complete challenges independently.
+   *       LIVE_VIDEO = recruiter and candidate connect over WebRTC first,
+   *       then challenges play out during the live session.
    */
   Stage: a
     .model({
@@ -45,11 +49,66 @@ const schema = a.schema({
       description: a.string(),
       order: a.integer(),
       timeLimit: a.integer(), // Minutes
+      mode: a.enum(['ASYNC', 'LIVE_VIDEO']), // Default: ASYNC
+      videoConfig: a.json(), // { recordingEnabled: boolean }
       challenges: a.hasMany('Challenge', 'stageId'),
+      videoSessions: a.hasMany('VideoSession', 'stageId'),
     })
     .authorization((allow) => [
-      allow.owner(),                
-      allow.publicApiKey().to(['read']), 
+      allow.owner(),
+      allow.publicApiKey().to(['read']),
+    ]),
+
+  /**
+   * VideoSession Model
+   *
+   * Tracks a live video interview session between a recruiter and candidate.
+   * Created by the recruiter when they are ready to call; destroyed when the
+   * session ends. One session per (stageId + candidateId) at a time.
+   *
+   * status lifecycle:
+   *   WAITING  → recruiter is waiting for candidate to join the room
+   *   CALLING  → recruiter has initiated the call (offer sent)
+   *   ACTIVE   → candidate accepted (answer sent, ICE complete)
+   *   ENDED    → either party ended the session
+   */
+  VideoSession: a
+    .model({
+      stageId: a.id().required(),
+      stage: a.belongsTo('Stage', 'stageId'),
+      candidateId: a.id().required(),
+      recruiterId: a.string().required(), // Cognito sub of the recruiter
+      status: a.enum(['WAITING', 'CALLING', 'ACTIVE', 'ENDED']),
+      signals: a.hasMany('VideoSignal', 'sessionId'),
+    })
+    .authorization((allow) => [
+      allow.owner(),                          // Recruiter (Cognito owner)
+      allow.publicApiKey().to(['read', 'update']), // Candidate via API key
+    ]),
+
+  /**
+   * VideoSignal Model
+   *
+   * Stores individual WebRTC signaling messages (SDP offer/answer + ICE candidates).
+   * AppSync real-time subscriptions allow each peer to receive signals instantly.
+   *
+   * type:
+   *   OFFER        → recruiter's RTCSessionDescription (type=offer)
+   *   ANSWER       → candidate's RTCSessionDescription (type=answer)
+   *   ICE_CANDIDATE → trickle ICE candidate from either peer
+   *   HANGUP       → graceful session termination signal
+   */
+  VideoSignal: a
+    .model({
+      sessionId: a.id().required(),
+      session: a.belongsTo('VideoSession', 'sessionId'),
+      senderRole: a.enum(['RECRUITER', 'CANDIDATE']),
+      type: a.enum(['OFFER', 'ANSWER', 'ICE_CANDIDATE', 'HANGUP']),
+      payload: a.json().required(), // SDP or ICE candidate JSON
+    })
+    .authorization((allow) => [
+      allow.owner(),                               // Recruiter can write
+      allow.publicApiKey().to(['create', 'read']), // Candidate can signal back
     ]),
 
   /**

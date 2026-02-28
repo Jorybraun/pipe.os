@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `stage-mode-ui` — Stage Mode Toggle + ADR Cleanup
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/pages/StageDetailPage.tsx`**: Added `STAGE_MODE` segmented toggle (`ASYNC` / `LIVE_VIDEO`) to the `STAGE_SETTINGS` sidebar. Saves immediately via `Stage.update`. Blue hint text shown when LIVE_VIDEO is active. Added `mode` to fetch selectionSet.
+    - **`docs/decisions/README.md`**: Fixed ADR index — ADR-010 now correctly points to `ADR-010-database-driven-challenge-library.md`; added ADR-011 entry for `ADR-011-video-interview-webrtc.md`.
+    - Deleted stale `ADR-010-video-interview-webrtc.md` (duplicate left behind during rename; content lives in ADR-011).
+    - **`docs/decisions/ADR-008-voice-input-transcription.md`**: Fully rewritten — added audio format decision, S3 resource definition, Lambda IAM role policies, EventBridge CDK escape hatch, AppSync IAM auth mode pattern, error states table, and explicit post-MVP scope.
+    - **`docs/design/voice-transcription-architecture.md`**: New design doc — system context diagram, data model additions, sequence diagrams (happy path + error), RecordingShell state machine, AWS cost estimate.
+    - **`docs/ops/HANDOFF-voice-transcription.md`**: New agent runbook — 9-step implementation guide with complete handler code for `transcriptionTrigger` and `transcriptionCompletion` Lambdas, EventBridge CDK rule setup, S3 lifecycle config.
+
 ### `drag-to-order-challenges` — Drag-to-Order Challenges
 - **Detailed Log**: [docs/changelogs/drag-to-order-challenges.md](docs/changelogs/drag-to-order-challenges.md)
 - **Status**: 🟢 DONE

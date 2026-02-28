@@ -386,11 +386,15 @@ export default function OverviewPage(): JSX.Element {
 
   const handleAddStage = async () => {
     if (!id) return;
+    
+    const title = window.prompt("Enter new stage name:");
+    if (!title || title.trim() === '') return;
+    
     setIsLoading(true);
     try {
       await client.models.Stage.create({
         pipelineId: id,
-        title: 'New Stage',
+        title: title.trim(),
         order: stages.length,
       });
       await fetchData();
@@ -779,34 +783,32 @@ export default function OverviewPage(): JSX.Element {
           );
         })}
 
-        {/* Add Stage Column (DEV Only) */}
-        {import.meta.env.DEV && (
-          <div style={{ flex: '0 0 320px' }}>
-            <button
-              onClick={handleAddStage}
-              style={{
-                width: '100%',
-                height: 180, 
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px dashed rgba(255,255,255,0.1)',
-                borderRadius: 12,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 12,
-                color: 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-              onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-            >
-              <Plus size={20} />
-              <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
-            </button>
-          </div>
-        )}
+        {/* Add Stage Column */}
+        <div style={{ flex: '0 0 320px' }}>
+          <button
+            onClick={handleAddStage}
+            style={{
+              width: '100%',
+              height: 180, 
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px dashed rgba(255,255,255,0.1)',
+              borderRadius: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              color: 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+            onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+          >
+            <Plus size={20} />
+            <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
+          </button>
+        </div>
       </div>
     </div>
   );

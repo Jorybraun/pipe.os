@@ -28,6 +28,9 @@ export interface StageWithChallenges {
   order: number | null;
   timeLimit?: number | null;
   type?: string | null;
+  mode?: 'ASYNC' | 'LIVE_VIDEO' | null;
+  // Amplify JSON fields return a broad union; cast to Record at point of use
+  videoConfig?: string | number | boolean | object | unknown[] | null;
   challenges: {
     id: string;
     type: string | null;
@@ -121,6 +124,8 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           'title',
           'order',
           'timeLimit',
+          'mode',
+          'videoConfig',
           'challenges.id',
           'challenges.type',
           'challenges.title',

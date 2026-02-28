@@ -41,3 +41,5 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-007](ADR-007-ground-truth-sanitization.md) | Server-side ground truth sanitization via scoringAgent Lambda | Proposed | 2026-02-27 |
 | [ADR-008](ADR-008-voice-input-transcription.md) | Voice Input & Transcription Architecture | Proposed | 2026-02-27 |
 | [ADR-009](ADR-009-server-side-scoring.md) | Unified scoringAgent pattern for automated scoring | Accepted | 2026-02-27 |
+| [ADR-010](ADR-010-database-driven-challenge-library.md) | Database-Driven Challenge Library & Template System | Accepted | 2026-02-27 |
+| [ADR-011](ADR-011-video-interview-webrtc.md) | WebRTC + AppSync signaling for live video interviews | Proposed | 2026-02-28 |

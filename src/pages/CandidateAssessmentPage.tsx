@@ -4,6 +4,7 @@ import { useAssessment } from '../hooks/useAssessment';
 import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
+import { VideoShell } from '../components/Shells/VideoShell';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -128,31 +129,48 @@ export default function CandidateAssessmentPage(): JSX.Element {
     currentStageIndex === stages.length - 1 && 
     currentChallengeIndex === currentStage.challenges.length - 1;
 
+  // Determine if this stage uses live video
+  const isLiveVideoStage = currentStage.mode === 'LIVE_VIDEO';
+
+  const challengeWorkspace = (
+    <TimerProvider>
+      <StageShell
+        title={currentChallenge.title}
+        totalChallenges={currentStage.challenges.length}
+        currentChallengeIndex={currentChallengeIndex}
+        onNext={handleSubmit}
+        isLastChallenge={isLastChallenge}
+        canAdvance={
+          currentSubmission !== null &&
+          (currentChallenge.type !== 'CODE_REVIEW' || Object.keys(currentSubmission.annotations || {}).length > 0)
+        }
+        isSubmitting={isLoading}
+      >
+        <ChallengeRegistry
+          challenge={currentChallenge}
+          stageTimeLimit={currentStage.order !== null ? (currentStage as any).timeLimit : null}
+          onSubmissionChange={setCurrentSubmission}
+          onSubmit={handleSubmit}
+        />
+      </StageShell>
+    </TimerProvider>
+  );
+
   return (
     <div style={{ minHeight: '100vh', background: '#0c0c0e', position: 'relative' }}>
       <ChromeMeshGrid />
-      
-      <TimerProvider>
-        <StageShell
-          title={currentChallenge.title}
-          totalChallenges={currentStage.challenges.length}
-          currentChallengeIndex={currentChallengeIndex}
-          onNext={handleSubmit}
-          isLastChallenge={isLastChallenge}
-          canAdvance={
-            currentSubmission !== null && 
-            (currentChallenge.type !== 'CODE_REVIEW' || Object.keys(currentSubmission.annotations || {}).length > 0)
-          }
-          isSubmitting={isLoading}
+
+      {isLiveVideoStage && candidate ? (
+        <VideoShell
+          stageId={currentStage.id}
+          candidateId={candidate.id}
+          role="CANDIDATE"
         >
-          <ChallengeRegistry
-            challenge={currentChallenge}
-            stageTimeLimit={currentStage.order !== null ? (currentStage as any).timeLimit : null}
-            onSubmissionChange={setCurrentSubmission}
-            onSubmit={handleSubmit}
-          />
-        </StageShell>
-      </TimerProvider>
+          {challengeWorkspace}
+        </VideoShell>
+      ) : (
+        challengeWorkspace
+      )}
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
