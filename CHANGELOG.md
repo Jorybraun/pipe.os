@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `fix-turn-credentials-agent-ts` — Fix TypeScript validation error in turnCredentialsAgent
+- **Status**: 🟢 DONE
+- **Changes**:
+    - Fixed TypeScript validation error in `amplify/functions/turnCredentialsAgent/resource.ts` by replacing `process.env.METERED_API_KEY` with `secret('METERED_API_KEY')`.
+    - Verified fix with `npx tsc --noEmit`.
+
 ### `video-turn-relay` — Add Secure Metered.ca TURN Server for NAT Traversal
 - **Status**: 🟢 DONE
 - **Changes**:
