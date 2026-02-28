@@ -12,6 +12,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
     - Fixed TypeScript validation error in `amplify/functions/turnCredentialsAgent/resource.ts` by replacing `process.env.METERED_API_KEY` with `secret('METERED_API_KEY')`.
     - Verified fix with `npx tsc --noEmit`.
 
+### `chore-amplify-upgrade` — Update Node.js version and fix agent vulnerabilities
+- **Status**: 🟢 DONE
+- **Changes**:
+    - Updated `amplify.yml` to Node.js 22 to match Lambda function runtimes.
+    - Resolved critical and high-severity security vulnerabilities in `questionAgent` and `jobDescriptionAgent` via `npm audit fix`.
+
 ### `video-turn-relay` — Add Secure Metered.ca TURN Server for NAT Traversal
 - **Status**: 🟢 DONE
 - **Changes**:
