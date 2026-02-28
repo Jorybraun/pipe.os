@@ -4,10 +4,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
-### `video-turn-debug` — Add better logging for TURN credentials fetching
+### `video-turn-debug` — Fix "Amplify not configured" race condition
 - **Status**: 🟢 DONE
 - **Changes**:
-    - **`src/lib/video/webrtcConfig.ts`**: Improved error logging in `getIceServers` to provide more diagnostic information when the query returns null.
+    - **`src/lib/video/webrtcConfig.ts`**: Moved Amplify client creation inside `getIceServers` to ensure it happens after `Amplify.configure()`. Improved diagnostic logging.
 - **Security**: No security changes.
 - **Breaking**: None.
 

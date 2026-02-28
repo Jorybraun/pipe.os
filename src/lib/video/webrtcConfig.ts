@@ -12,11 +12,6 @@ import type { Schema } from '../../../amplify/data/resource';
 // NOTE: Only called by authenticated recruiters. Candidates receive ICE servers
 // via the OFFER payload — they never call this API directly.
 
-// Explicit userPool authMode: this is a recruiter-only call. If there is no
-// authenticated session the call will fail fast rather than silently returning
-// null with a misleading "no federated JWT" warning.
-const client = generateClient<Schema>({ authMode: 'userPool' });
-
 /** Cached TURN credentials to avoid re-fetching during a session */
 let cachedIceServers: RTCIceServer[] | null = null;
 let cacheTimestamp = 0;
@@ -39,6 +34,9 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
   if (cachedIceServers && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
     return cachedIceServers;
   }
+
+  // Generate client inside the function to ensure Amplify is configured first
+  const client = generateClient<Schema>({ authMode: 'userPool' });
 
   try {
     console.log('[webrtcConfig] Fetching TURN credentials from API...');
