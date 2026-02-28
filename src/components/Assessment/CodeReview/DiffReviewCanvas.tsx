@@ -266,19 +266,20 @@ export function DiffReviewCanvas({
               viewType="unified" 
               diffType="add" 
               widgets={widgets}
+              gutterEvents={{
+                onClick: ({ change }) => {
+                  if (change) handleLineClick((change as any).lineNumber || (change as any).newLineNumber);
+                }
+              }}
+              codeEvents={{
+                onClick: ({ change }) => {
+                  if (change) handleLineClick((change as any).lineNumber || (change as any).newLineNumber);
+                }
+              }}
             >
-                          {hunks => hunks.map(hunk => {
-                            const HunkComponent = Hunk as any;
-                            return (
-                              <HunkComponent 
-                                key={hunk.content} 
-                                hunk={hunk} 
-                                onGutterClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
-                                onLineClick={({ lineNumber }: { lineNumber: number }) => handleLineClick(lineNumber)}
-                              />
-                            );
-                          })}
-              
+              {hunks => hunks.map(hunk => (
+                <Hunk key={hunk.content} hunk={hunk} />
+              ))}
             </Diff>
           ) : (
             <div style={{ padding: 40 }}>

@@ -4,6 +4,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `fix-diff-click-v3` — Fix Diff Editor Annotation Click
+- **Status**: 🟢 DONE
+- **Detailed Log**: [docs/changelogs/fix-diff-click-v3.md](docs/changelogs/fix-diff-click-v3.md)
+- **Changes**:
+    - **`src/components/Assessment/CodeReview/DiffReviewCanvas.tsx`**: Refactored to use `gutterEvents` and `codeEvents` (react-diff-view v3.x API) instead of legacy prop-based event handlers. Fixed line number extraction to handle both `lineNumber` and `newLineNumber`.
+- **Root Cause**: Previous implementation used `onGutterClick` on the `Hunk` component, which is ignored in v3.x in favor of `Diff` level event objects. Destructuring was also incorrect for the new event signature.
+- **Security**: No security changes.
+- **Breaking**: None.
+
 ### `fix-lambda-datasource-arns` — Fix AppSync Lambda data source resolution
 - **Status**: 🟢 DONE
 - **Changes**:
