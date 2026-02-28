@@ -21,7 +21,7 @@
 - The Lambda IS being invoked and IS reading the key from SSM (`/amplify/shared/d2qfb8rd4bumbf/METERED_API_KEY`)
 - Metered.ca is returning **HTTP 401** — the key value itself is invalid/expired
 - You just updated the key name in the Amplify Console — need to confirm the *value* is the correct API key from https://dashboard.metered.ca
-- [ ] **Verify the key works** — run the Lambda invoke to confirm 200: `aws lambda invoke --function-name amplify-d2qfb8rd4bumbf-ma-turnCredentialsAgentlamb-C0NEob81gbCL --payload "{}" -`
+- [x] **Verify the key works** — run the Lambda invoke to confirm 200: `aws lambda invoke --function-name amplify-d2qfb8rd4bumbf-ma-turnCredentialsAgentlamb-C0NEob81gbCL --payload "{}" -` (Verified 2026-02-28)
 - [ ] **Commit + push `gemini-work`** — the code changes above are uncommitted locally
 - [ ] **Merge `gemini-work` → `main`** — triggers Amplify deploy, schema update (removes `allow.guest()`), and deploys updated Lambda
 
