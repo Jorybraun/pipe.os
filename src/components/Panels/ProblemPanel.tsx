@@ -41,7 +41,7 @@ export function ProblemPanel({
           <div style={{ fontSize: 9, letterSpacing: '0.1em', color: '#60a5fa', marginBottom: 12, fontFamily: 'Space Mono', fontWeight: 700 }}>
             PULL_REQUEST_DESCRIPTION
           </div>
-          <div className="prose prose-invert" style={{ maxWidth: 'none', fontSize: 14 }}>
+          <div style={{ maxWidth: 'none', fontSize: 14 }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {prDescription}
             </ReactMarkdown>
@@ -50,7 +50,7 @@ export function ProblemPanel({
       )}
 
       {/* Markdown Content */}
-      <div className="prose prose-invert" style={{ maxWidth: 'none' }}>
+      <div style={{ maxWidth: 'none' }}>
         <ReactMarkdown remarkPlugins={[remarkGfm]}>
           {markdown}
         </ReactMarkdown>

@@ -19,16 +19,17 @@ export function TimerShell({
 }: TimerShellProps): JSX.Element {
   const { setSecondsRemaining, setIsExpired } = useTimer();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const initialTimeLimit = useRef(timeLimit);
 
   useEffect(() => {
     // If untimed, clear any existing timer and state
-    if (timeLimit === null) {
+    if (initialTimeLimit.current === null) {
       setSecondsRemaining(null);
       setIsExpired(false);
       return;
     }
 
-    const initialSeconds = timeLimit * 60;
+    const initialSeconds = initialTimeLimit.current * 60;
     setSecondsRemaining(initialSeconds);
     setIsExpired(false);
 
@@ -48,7 +49,11 @@ export function TimerShell({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [timeLimit, onExpire, setSecondsRemaining, setIsExpired]);
+  }, [onExpire, setSecondsRemaining, setIsExpired]);
+
+  useEffect(() => {
+    initialTimeLimit.current = timeLimit
+  }, [timeLimit])
 
   return <>{children}</>;
 }

@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `challenge-system-stability` — Fix P0/P1 Challenge Architecture Gaps
+- **Detailed Log**: [docs/changelogs/challenge-system-stability.md](docs/changelogs/challenge-system-stability.md)
+- **Status**: 🟢 DONE
+
 ### `gemini-tasks-convention` — GEMINI.md update: TASKS.md convention
 - **Detailed Log**: [docs/changelogs/update-gemini-tasks-convention.md](docs/changelogs/update-gemini-tasks-convention.md)
 - **Status**: 🟢 DONE

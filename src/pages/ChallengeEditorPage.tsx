@@ -59,11 +59,12 @@ export default function ChallengeEditorPage(): JSX.Element {
     if (!challenge) return;
     setIsSubmitting(true);
     try {
+      const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
       await client.models.Challenge.update({
         id: challenge.id,
         title: challenge.title,
         instructions: challenge.instructions,
-        config: challenge.config,
+        config: JSON.stringify(config),
       });
       // In real app, we might also update or create a CodeArtifact here
       navigate(-1);
@@ -391,6 +392,44 @@ export default function ChallengeEditorPage(): JSX.Element {
                           style={{ width: '100%', height: 120, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none', resize: 'none' }}
                         />
                       </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>MAX_LENGTH</label>
+                        <input 
+                          type="number"
+                          value={(() => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return config.maxLength || '';
+                          })()}
+                          onChange={e => {
+                            const val = e.target.value ? parseInt(e.target.value) : null;
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            setChallenge({
+                              ...challenge,
+                              config: JSON.stringify({ ...config, maxLength: val })
+                            });
+                          }}
+                          placeholder="No limit"
+                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>RUBRIC</label>
+                        <textarea 
+                          value={(() => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return config.rubric || '';
+                          })()}
+                          onChange={e => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            setChallenge({
+                              ...challenge,
+                              config: JSON.stringify({ ...config, rubric: e.target.value })
+                            });
+                          }}
+                          placeholder="Enter scoring rubric..."
+                          style={{ width: '100%', height: 120, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none', resize: 'none' }}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -398,9 +437,9 @@ export default function ChallengeEditorPage(): JSX.Element {
                     <div style={{ padding: 40, border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
                       <AlertCircle size={24} color="rgba(255,255,255,0.2)" style={{ marginBottom: 16 }} />
                       <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-                        CODE_IMPLEMENTATION_EDITOR_COMING_SOON
+                        Code implementation challenges are configured with templates.
                       </div>
-                      <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>Templates are pre-configured. Edit instructions in the DETAILS tab.</p>
+                      <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>Custom authoring & editing is coming soon!</p>
                     </div>
                   )}
                 </div>

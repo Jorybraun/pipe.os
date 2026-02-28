@@ -126,10 +126,10 @@ export function ChallengeRegistry({
         // 3. The challenge.config.snippets array (Legacy/other)
         let rawSnippets: any[] = [];
         
-        if (artifact) {
-          rawSnippets = [artifact];
-        } else if (config.code) {
+        if (config.code) {
           rawSnippets = [config];
+        } else if (artifact) {
+          rawSnippets = [artifact];
         } else if (Array.isArray(config.snippets)) {
           rawSnippets = config.snippets;
         }
