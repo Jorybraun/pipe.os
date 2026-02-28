@@ -47,20 +47,31 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
       return STUN_FALLBACK;
     }
 
-    const servers = response.data as RTCIceServer[] | null;
+    // a.json() (AWSJSON scalar) may return a JSON string or a parsed object
+    // depending on the AppSync/Amplify client version. Handle both.
+    let servers: unknown = response.data;
+    if (typeof servers === 'string') {
+      try {
+        servers = JSON.parse(servers);
+      } catch {
+        console.error('[webrtcConfig] Failed to parse TURN response as JSON:', servers);
+        return STUN_FALLBACK;
+      }
+    }
 
-    if (!servers) {
-      console.warn('[webrtcConfig] getTurnCredentials returned null. This usually means:');
-      console.warn('1. The METERED_API_KEY secret is not set in the current environment.');
-      console.warn('2. The user is not correctly authenticated (AppSync returned null).');
+    if (!servers || !Array.isArray(servers)) {
+      console.warn('[webrtcConfig] getTurnCredentials returned unexpected format:', typeof servers, servers);
+      console.warn('This usually means the METERED_API_KEY secret is not set or the user is not authenticated.');
       return STUN_FALLBACK;
     }
-    
+
+    const iceServers = servers as RTCIceServer[];
+
     // Metered returns an array of ICE servers (STUN + TURN with temp credentials)
-    cachedIceServers = servers;
+    cachedIceServers = iceServers;
     cacheTimestamp = Date.now();
-    console.log('[webrtcConfig] Successfully fetched', servers.length, 'TURN/STUN servers');
-    return servers;
+    console.log('[webrtcConfig] Successfully fetched', iceServers.length, 'TURN/STUN servers');
+    return iceServers;
   } catch (err) {
     console.error('[webrtcConfig] Unexpected error fetching TURN credentials:', err);
     return STUN_FALLBACK;
