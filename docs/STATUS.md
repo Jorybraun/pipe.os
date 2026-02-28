@@ -1,13 +1,15 @@
 # Pipe — Project Status & Memory
 
 **Last Updated:** 2026-02-27
-**Status:** Phase 7 Step 4 (Composable Challenge System) — Implementation & Validation.
+**Status:** Phase 7 Step 5 (Recruiter Review) — Complete.
 **Workflow:** Living Documentation active (Archive on Completion).
 
 ---
 
 ## Recent Updates (2026-02-27)
 
+- **Recruiter Review Enhancements:** Implemented Step 5 of Phase 7. `CandidateProfilePage.tsx` now groups assessments by stage and provides per-challenge submission previews (MCQ, Code Review) and manual scoring.
+- **Schema Stabilization:** Standardized the `Stage` model to use `title` throughout the codebase. Resolved critical "title is not a field" and relationship loading errors.
 - **Instruction Refinement:** Updated `GEMINI.md` to mandate a "Living Documentation" workflow. Agents must now archive completed specs and briefs upon task finalization.
 - **Documentation Cleanup:** Archived completed handoffs (`HANDOFF-data-cleanup.md`), design specs (`content-seeding-strategy.md`, `conversational-discovery.md`), and historical reviews (`phase-2-code-review.md`, `phase-7-code-review.md`).
 - **Workspace Hygiene:** `docs/` now only contains active architectural maps and pending feature designs.
@@ -16,13 +18,14 @@
 
 ## Current State
 
-### Done (Phases 0–7 pre-flight + Steps 1–4 partial)
+### Done (Phases 0–7 pre-flight + Steps 1–5 complete)
 
 - **Auth & Profile:** Recruiter auth via Cognito (`<Authenticator>` wrapping recruiter routes); Sign-out button in `ProfileHeader`.
 - **Pipeline Management:** Pipeline creation form (`PipelineCreatePage.tsx`, `usePipelineCreate.ts`) — preset-based (DEFAULT / BLANK).
 - **Candidate Assessment:** Full candidate flow: `useAssessment.ts`, `CandidateAssessmentPage.tsx`, `/assess/:token` route.
 - **Content Library:** `src/content/challengeLibrary.ts` — 65 challenge templates (15 CODE_REVIEW, 31 QUIZ_MCQ, 12 QUIZ_SHORT_ANSWER, 7 CODE_IMPLEMENTATION).
 - **Recruiter Dashboard:** Wired to live data: `ListingPage`, `OverviewPage`, `CandidateProfilePage`; STRONG / YES / MAYBE / NO signal labels on candidate scores.
+- **Recruiter Review (Phase 7 Step 5):** Per-challenge breakdown in `CandidateProfilePage`; manual scoring for `SHORT_ANSWER` and `CODE_IMPLEMENTATION`.
 - **AI Agent Standard:** `questionAgent` Lambda — complete, used as engineering standard.
 - **Architecture Migration:** Phase 7 schema: `Challenge`, `CodeArtifact` models; `Pipeline.creationMode`; `Stage.challenges hasMany`; `Assessment.challengeId` FK.
 - **Maintenance:** Phase 6 critical bugs fixed; Phase 7 pre-flight P0/P1 bugs resolved (Assessment FK conflict, Kanban fixes, type safety).
@@ -37,8 +40,6 @@
    - Panels: `ProblemPanel`, `MonacoPanel`, `PreviewPanel`, `TestPanel`, `OptionsPanel`, `TextareaPanel`.
    - Execution: Sandpack (UI) + Piston API (Logic).
    - **Runbook:** `docs/ops/HANDOFF-monaco-challenge.md`.
-
-2. **Phase 7 Step 5:** Update `CandidateProfilePage` for per-challenge review; add manual scoring.
 
 ---
 
