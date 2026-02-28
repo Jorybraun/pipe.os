@@ -17,6 +17,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **Changes**:
     - Updated `amplify.yml` to Node.js 22 to match Lambda function runtimes.
     - Resolved critical and high-severity security vulnerabilities in `questionAgent` and `jobDescriptionAgent` via `npm audit fix`.
+    - Synced root `package-lock.json` to resolve `npm ci` failures in Amplify console.
 
 ### `video-turn-relay` — Add Secure Metered.ca TURN Server for NAT Traversal
 - **Status**: 🟢 DONE
