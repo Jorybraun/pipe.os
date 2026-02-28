@@ -119,7 +119,7 @@ The primary reasons for choosing Option D:
 
 - Implementing `useVideoSession` hook with full WebRTC peer connection lifecycle
 - Implementing `useVideoSignaling` hook for AppSync subscription-based signaling
-- A `turnCredentialsAgent` Lambda to fetch temporary TURN credentials from Metered.ca
+- A `turnCredentials` Lambda to fetch temporary TURN credentials from Metered.ca
 - New `VideoSession` and `VideoSignal` DynamoDB models
 - A `VideoShell` component that composes outside the existing `TimerShell` + `WorkspaceLayout`
 - `Stage.mode` field (`ASYNC | LIVE_VIDEO`) and `Stage.videoConfig` JSON field
@@ -146,7 +146,7 @@ Full design: `docs/design/video-interview-architecture.md`
 
 Signaling data model: `VideoSession` + `VideoSignal` models in `amplify/data/resource.ts`
 
-TURN credentials Lambda: `amplify/functions/turnCredentialsAgent/handler.ts`
+TURN credentials Lambda: `amplify/functions/turnCredentials/handler.ts`
 
 Required Amplify secret: `METERED_API_KEY` (set via `npx ampx sandbox secret set METERED_API_KEY`)
 

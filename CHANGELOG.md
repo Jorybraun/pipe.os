@@ -4,6 +4,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `video-turn-refactor` — Rename turnCredentialsAgent to turnCredentials
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/functions/turnCredentials/`**: Renamed from `turnCredentialsAgent` to remove confusing "Agent" terminology.
+    - **`amplify/backend.ts`**: Updated export to `turnCredentials`.
+    - **`amplify/data/resource.ts`**: Updated `getTurnCredentials` handler reference to new function name.
+    - **`docs/decisions/ADR-011-video-interview-webrtc.md`**: Updated documentation to match new naming.
+- **Security**: No security changes.
+- **Breaking**: None.
+
 ### `video-turn-debug` — Fix "Amplify not configured" race condition
 - **Status**: 🟢 DONE
 - **Changes**:

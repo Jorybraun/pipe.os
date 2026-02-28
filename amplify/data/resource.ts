@@ -283,7 +283,7 @@ const schema = a.schema({
   getTurnCredentials: a
     .query()
     .returns(a.json())
-    .handler(a.handler.function('turnCredentialsAgent'))
+    .handler(a.handler.function('turnCredentials'))
     .authorization((allow) => [allow.authenticated()]),
 });
 
