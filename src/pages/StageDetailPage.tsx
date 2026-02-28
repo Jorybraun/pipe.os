@@ -48,22 +48,30 @@ export default function StageDetailPage(): JSX.Element {
     fetchData();
   }, [fetchData]);
 
-  const handleChallengeSelect = async (template: any) => {
+  const handleChallengeSelect = async (templates: any[]) => {
     if (!stageId) return;
     setPickerOpen(false);
     setIsLoading(true);
     try {
-      await client.models.Challenge.create({
-        stageId: stageId,
-        type: template.type,
-        title: template.title,
-        instructions: template.instructions,
-        config: JSON.stringify(template.config),
-        order: stage?.challenges?.length || 0,
-      });
+      const currentCount = stage?.challenges?.length || 0;
+      
+      // Create challenges in sequence to preserve order and avoid potential race conditions
+      // although Promise.all would be faster, sequence is safer for 'order' field.
+      for (let i = 0; i < templates.length; i++) {
+        const template = templates[i];
+        await client.models.Challenge.create({
+          stageId: stageId,
+          type: template.type,
+          title: template.title,
+          instructions: template.instructions,
+          config: JSON.stringify(template.config),
+          order: currentCount + i,
+        });
+      }
+      
       await fetchData();
     } catch (err) {
-      console.error("Failed to add challenge:", err);
+      console.error("Failed to add challenges:", err);
     } finally {
       setIsLoading(false);
     }

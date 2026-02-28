@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `multi-select-challenges` — Multi-select for Challenges
+- **Status**: 🟢 DONE
+- **Changes**:
+    - Updated `ChallengePicker` to support multiple selections with visual feedback.
+    - Added batch challenge creation in `StageDetailPage` to allow adding many templates at once.
+
 ### `candidate-review-enhancements` — Step 5: Recruiter Review & Stage Details Fix
 - **Detailed Log**: [docs/changelogs/candidate-review-enhancements.md](docs/changelogs/candidate-review-enhancements.md)
 - **Status**: 🟢 DONE

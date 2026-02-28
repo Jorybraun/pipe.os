@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react';
-import { X, Code, Shield, FileText, Search, Filter, Timer, ChevronRight, Zap } from 'lucide-react';
+import { X, Code, Shield, FileText, Search, Filter, Timer, ChevronRight, Zap, CheckSquare, Plus } from 'lucide-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
 import { ALL_CHALLENGE_TEMPLATES, type ChallengeTemplate } from '../../content/challengeLibrary';
 
 interface ChallengePickerProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (template: ChallengeTemplate) => void;
+  onSelect: (templates: ChallengeTemplate[]) => void;
 }
 
 const TYPES = [
@@ -18,11 +18,12 @@ const TYPES = [
 ];
 
 /**
- * ChallengePicker - Modal for browsing and selecting challenge templates.
+ * ChallengePicker - Modal for browsing and selecting multiple challenge templates.
  */
 export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerProps): JSX.Element | null {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('ALL');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const filteredTemplates = useMemo(() => {
     return ALL_CHALLENGE_TEMPLATES.filter(t => {
@@ -36,6 +37,22 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
       return matchesSearch && matchesType;
     });
   }, [searchQuery, selectedType]);
+
+  const toggleSelection = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const handleConfirm = () => {
+    const selectedTemplates = ALL_CHALLENGE_TEMPLATES.filter(t => selectedIds.has(t.id));
+    onSelect(selectedTemplates);
+    setSelectedIds(new Set()); // Reset for next time
+  };
 
   if (!isOpen) return null;
 
@@ -52,7 +69,7 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
       padding: 24
     }}>
       <LiquidMetalCard variant="chrome" style={{ 
-        maxWidth: 900, 
+        maxWidth: 1000, 
         width: '100%', 
         height: '85vh', 
         display: 'flex', 
@@ -64,11 +81,36 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
         <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: 'Space Mono' }}>CHALLENGE_LIBRARY</div>
-            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#fff', margin: 0 }}>Select a Template</h3>
+            <h3 style={{ fontSize: 20, fontWeight: 800, color: '#fff', margin: 0 }}>Select Templates</h3>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            {selectedIds.size > 0 && (
+              <button 
+                onClick={handleConfirm}
+                style={{
+                  padding: '10px 24px',
+                  background: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  color: '#000',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  fontFamily: 'Space Mono',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  boxShadow: '0 0 20px rgba(255,255,255,0.2)'
+                }}
+              >
+                <Plus size={14} strokeWidth={3} />
+                ADD_SELECTED ({selectedIds.size})
+              </button>
+            )}
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Toolbar */}
@@ -137,15 +179,25 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
         {/* Results Grid */}
         <div style={{ padding: 32, overflowY: 'auto', flex: 1 }}>
           {filteredTemplates.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
               {filteredTemplates.map(t => {
                 const typeInfo = TYPES.find(type => type.id === t.type);
+                const isSelected = selectedIds.has(t.id);
                 return (
                   <LiquidMetalCard 
                     key={t.id} 
-                    variant="dark" 
-                    onClick={() => onSelect(t)}
-                    style={{ padding: 20, cursor: 'pointer', display: 'flex', flexDirection: 'column', height: '100%' }}
+                    variant={isSelected ? "chrome" : "dark"} 
+                    onClick={() => toggleSelection(t.id)}
+                    style={{ 
+                      padding: 20, 
+                      cursor: 'pointer', 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      height: '100%',
+                      border: isSelected ? '1px solid rgba(255,255,255,0.5)' : undefined,
+                      transform: isSelected ? 'scale(1.02)' : 'none',
+                      transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+                    }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                       <div style={{ 
@@ -156,16 +208,16 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
                         display: 'flex', 
                         alignItems: 'center', 
                         justifyContent: 'center',
-                        color: typeInfo?.color || '#fff'
+                        color: isSelected ? '#fff' : (typeInfo?.color || '#fff')
                       }}>
-                        {typeInfo && <typeInfo.icon size={16} />}
+                        {isSelected ? <CheckSquare size={18} /> : (typeInfo && <typeInfo.icon size={16} />)}
                       </div>
                       <div style={{ 
                         fontSize: 8, 
-                        background: 'rgba(255,255,255,0.05)', 
+                        background: isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)', 
                         padding: '4px 8px', 
                         borderRadius: 2, 
-                        color: 'rgba(255,255,255,0.4)',
+                        color: isSelected ? '#fff' : 'rgba(255,255,255,0.4)',
                         fontFamily: 'Space Mono',
                         fontWeight: 700
                       }}>
@@ -175,19 +227,19 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
 
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 6 }}>{t.title}</div>
-                      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', margin: 0, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      <p style={{ fontSize: 11, color: isSelected ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)', margin: 0, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {t.description}
                       </p>
                     </div>
 
                     <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 16 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,0.3)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: isSelected ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)' }}>
                         <Timer size={12} />
                         <span style={{ fontSize: 10, fontFamily: 'Space Mono' }}>{t.estimatedMinutes}M</span>
                       </div>
                       <div style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>
                         {t.tags.slice(0, 2).map(tag => (
-                          <span key={tag} style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 2 }}>
+                          <span key={tag} style={{ fontSize: 8, color: isSelected ? '#fff' : 'rgba(255,255,255,0.25)', border: '1px solid rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 2 }}>
                             {tag}
                           </span>
                         ))}
@@ -208,10 +260,10 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
         {/* Footer info */}
         <div style={{ padding: '16px 32px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.01)' }}>
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>
-            {filteredTemplates.length} TEMPLATES_AVAILABLE
+            {filteredTemplates.length} TEMPLATES_AVAILABLE | {selectedIds.size} SELECTED
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>
-            <span>Click card to clone to stage</span>
+            <span>{selectedIds.size > 0 ? `Click ADD_SELECTED to confirm` : 'Select templates to add to stage'}</span>
             <ChevronRight size={14} />
           </div>
         </div>
