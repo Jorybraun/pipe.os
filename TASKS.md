@@ -267,6 +267,33 @@
 
 ---
 
+## Epic: Challenge Management & Template System
+
+> Transition from hard-coded templates to a database-driven library. Recruiters can create, edit, and share their own challenges.
+> **Architecture:** Unified `Challenge` model (ADR-010).
+
+### Step 1: Schema Transition
+- [ ] **Update `amplify/data/resource.ts`** — Make `stageId` optional. Add `isTemplate: a.boolean()`, `isSystem: a.boolean()`, `tags: a.string().array()`, and `difficulty: a.enum(['beginner', 'intermediate', 'advanced'])`. ~30 min.
+- [ ] **Run `npx ampx sandbox`** — verify schema deployment.
+
+### Step 2: Data Migration (The "Liberation")
+- [ ] **Write `scripts/seedChallengeLibrary.ts`** — Script to read `src/content/challengeLibrary.ts` and create `Challenge` records in DynamoDB (with `isTemplate: true` and `isSystem: true`). ~1 hour.
+- [ ] **Run seeding script** — confirm all 65+ templates are in the database.
+
+### Step 3: Challenge Management Page
+- [ ] **Create `src/pages/ChallengeManagementPage.tsx`** — A centralized hub to browse the library. Includes search by title/tags and filtering by type/difficulty. ~2 hours.
+- [ ] **Integrate Previews** — Use `ChallengeRegistry` to show a "mini-preview" of questions directly in the list or in a side drawer. ~1 hour.
+- [ ] **Add to Side Navigation** — Add "Challenges" link to the main sidebar. ~15 min.
+
+### Step 4: Unified Challenge Editor
+- [ ] **Generalize `ChallengeEditorPage.tsx`** — Update to handle challenges without a `stageId`. Ensure it works for both library templates and pipeline-specific instances. ~1.5 hours.
+- [ ] **Add "Save as Template"** — Allow recruiters to promote a custom pipeline challenge into the global library. ~45 min.
+
+### Step 5: Challenge Picker Integration
+- [ ] **Update `ChallengePicker.tsx`** — Fetch templates from DynamoDB instead of `challengeLibrary.ts`. This makes the picker dynamic and always up-to-date with recruiter-authored content. ~1 hour.
+
+---
+
 ## Engineering Process ✅ (done)
 
 > Decisions log and commit discipline — runs forever, not a phase.

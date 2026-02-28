@@ -111,4 +111,4 @@ We maintain a "clean" active workspace. Documentation should always reflect the 
 3. Run `npx tsc --noEmit` — must pass.
 4. If architectural, write an ADR in `docs/decisions/`.
 5. **Living Docs:** Archive completed documentation related to the change (move to `docs/archive/`).
-6. Request review in `MASTER_CLAUDE.md`.
+6. Create a code review request in `docs/reviews/[commit-id].md`.

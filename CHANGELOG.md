@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `challenge-management-spec` — Challenge Management & Template System Specification
+- **Detailed Log**: [docs/changelogs/challenge-management-spec.md](docs/changelogs/challenge-management-spec.md)
+- **Status**: 🟡 PENDING REVIEW
+
 ### `ground-truth-sanitization` — Server-Side Scoring & Security
 - **Detailed Log**: [docs/changelogs/ground-truth-sanitization.md](docs/changelogs/ground-truth-sanitization.md)
 - **Status**: 🟢 DONE
