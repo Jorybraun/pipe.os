@@ -279,6 +279,12 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function('scoringAgent'))
     .authorization((allow) => [allow.publicApiKey()]),
+
+  getTurnCredentials: a
+    .query()
+    .returns(a.json())
+    .handler(a.handler.function('turnCredentialsAgent'))
+    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

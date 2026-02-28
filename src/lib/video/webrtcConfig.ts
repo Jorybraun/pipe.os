@@ -1,10 +1,14 @@
+import { generateClient } from 'aws-amplify/data';
+
 // ============================================================================
 // WebRTC Configuration
 // ============================================================================
 //
 // Uses Metered.ca for TURN relay (free tier: 50GB/month).
-// Set VITE_METERED_API_KEY in your .env file.
+// Set METERED_API_KEY in your .env file.
 // Falls back to STUN-only if credentials unavailable.
+
+const client = generateClient();
 
 /** Cached TURN credentials to avoid re-fetching during a session */
 let cachedIceServers: RTCIceServer[] | null = null;
@@ -29,23 +33,20 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
     return cachedIceServers;
   }
 
-  const apiKey = import.meta.env.VITE_METERED_API_KEY as string | undefined;
-  if (!apiKey) {
-    console.warn('[webrtcConfig] VITE_METERED_API_KEY not set — using STUN-only (will fail behind NAT/VPN)');
-    return STUN_FALLBACK;
-  }
-
   try {
-    const response = await fetch(
-      `https://pipe-os.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
-    );
+    const response = await client.graphql({
+      query: `query GetTurnCredentials {
+        getTurnCredentials
+      }`,
+    }) as any;
 
-    if (!response.ok) {
-      console.error('[webrtcConfig] Metered API returned', response.status);
+    const servers = response.data?.getTurnCredentials as RTCIceServer[] | null;
+
+    if (!servers) {
+      console.error('[webrtcConfig] getTurnCredentials query returned null');
       return STUN_FALLBACK;
     }
-
-    const servers: RTCIceServer[] = await response.json();
+    
     // Metered returns an array of ICE servers (STUN + TURN with temp credentials)
     cachedIceServers = servers;
     cacheTimestamp = Date.now();

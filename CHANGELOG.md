@@ -6,12 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
-### `video-turn-relay` — Add Metered.ca TURN Server for NAT Traversal
+### `video-turn-relay` — Add Secure Metered.ca TURN Server for NAT Traversal
 - **Status**: 🟢 DONE
 - **Changes**:
-    - **`src/lib/video/webrtcConfig.ts`**: Replaced STUN-only config with Metered.ca TURN relay integration. Now fetches temporary TURN credentials from `https://pipe-os.metered.live/api/v1/turn/credentials` using `VITE_METERED_API_KEY` env var. Credentials are cached for 1 hour (they last ~24h). Falls back to STUN-only if API key missing or fetch fails.
-    - **Rationale**: STUN alone fails when peers are behind symmetric NAT or restrictive firewalls (~20% of connections). TURN provides media relay fallback, enabling connections across incompatible network topologies. Tested: Safari-to-Edge cross-machine call failed with STUN-only (stuck at "connecting"), expected to succeed with TURN relay.
-    - **Deployment**: Requires `VITE_METERED_API_KEY` in `.env` (local) and Amplify Console environment variables (production). Free tier: 50GB/month.
+    - **`amplify/functions/turnCredentialsAgent/`**: New Lambda function that fetches temporary TURN credentials from Metered.ca using a backend-only `METERED_API_KEY`.
+    - **`amplify/data/resource.ts`**: Added `getTurnCredentials` query. Authorized for both `authenticated` (recruiters) and `publicApiKey` (candidates).
+    - **`src/lib/video/webrtcConfig.ts`**: Refactored to fetch credentials via the AppSync query instead of calling Metered directly. This prevents leaking the API Secret Key to the frontend.
+    - **Rationale**: Original implementation exposed the Metered Secret Key in client-side code, which is a security risk. The new architecture moves the sensitive API call to a secure Lambda environment.
+    - **Deployment**: Requires `METERED_API_KEY` in Amplify Console environment variables for the Lambda function.
 - **Breaking**: None — gracefully falls back to STUN-only if credentials unavailable.
 
 ### `lambda-runtime-upgrade` — Upgrade Lambda Functions to Node.js 22
