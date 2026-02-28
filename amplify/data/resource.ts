@@ -1,4 +1,8 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
+import { questionAgent } from '../functions/questionAgent/resource';
+import { jobDescriptionAgent } from '../functions/jobDescriptionAgent/resource';
+import { scoringAgent } from '../functions/scoringAgent/resource';
+import { turnCredentials } from '../functions/turnCredentials/resource';
 
 const schema = a.schema({
   /**
@@ -259,7 +263,7 @@ const schema = a.schema({
       responses: a.json(), // Array of { questionId, response }
     })
     .returns(a.json())
-    .handler(a.handler.function('questionAgent'))
+    .handler(a.handler.function(questionAgent))
     .authorization((allow) => [allow.authenticated()]),
 
   generateJobDescription: a
@@ -268,7 +272,7 @@ const schema = a.schema({
       roleContext: a.json().required(),
     })
     .returns(a.json())
-    .handler(a.handler.function('jobDescriptionAgent'))
+    .handler(a.handler.function(jobDescriptionAgent))
     .authorization((allow) => [allow.authenticated()]),
 
   scoreAssessment: a
@@ -277,13 +281,13 @@ const schema = a.schema({
       assessmentId: a.id().required(),
     })
     .returns(a.json())
-    .handler(a.handler.function('scoringAgent'))
+    .handler(a.handler.function(scoringAgent))
     .authorization((allow) => [allow.publicApiKey()]),
 
   getTurnCredentials: a
     .query()
     .returns(a.json())
-    .handler(a.handler.function('turnCredentials'))
+    .handler(a.handler.function(turnCredentials))
     .authorization((allow) => [allow.authenticated()]),
 });
 

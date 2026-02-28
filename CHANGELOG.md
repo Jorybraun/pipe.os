@@ -4,6 +4,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `fix-lambda-datasource-arns` — Fix AppSync Lambda data source resolution
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/data/resource.ts`**: Changed all 4 Lambda handler references from string-based `a.handler.function('name')` to direct construct imports `a.handler.function(ref)`. String-based references were never resolved by CDK synthesis, causing AppSync data sources to point to non-existent bare function names (`function:turnCredentials`) instead of real deployed Lambda ARNs.
+- **Root Cause**: `a.handler.function('stringName')` is for inline `a.function()` definitions. Separately defined `defineFunction()` constructs must be passed by reference.
+- **Security**: No security changes.
+- **Breaking**: None — fixes broken data sources.
+
 ### `video-turn-refactor` — Rename turnCredentialsAgent to turnCredentials
 - **Status**: 🟢 DONE
 - **Changes**:
