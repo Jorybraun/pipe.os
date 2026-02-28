@@ -4,7 +4,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
-## [Unreleased]
+### `video-turn-debug` — Add better logging for TURN credentials fetching
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/lib/video/webrtcConfig.ts`**: Improved error logging in `getIceServers` to provide more diagnostic information when the query returns null.
+- **Security**: No security changes.
+- **Breaking**: None.
 
 ### `fix-turn-relay-via-offer` — Relay TURN credentials through OFFER signal, remove guest API access
 - **Status**: 🟢 DONE
@@ -15,6 +20,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
     - **`amplify/data/resource.ts`**: Removed `allow.guest()` from `getTurnCredentials` — only authenticated recruiters can call it.
 - **Security**: Eliminates unauthenticated abuse vector. Credentials can only be fetched by authenticated users (recruiters). Rate limited naturally to one fetch per call session.
 - **Breaking**: None — candidates now get TURN servers via OFFER payload (previously tried to fetch directly and failed anyway).
+
+### `fix-webrtc-error-surfacing` — Surface GraphQL errors from getTurnCredentials instead of silently returning null
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/lib/video/webrtcConfig.ts`**: Added `response.errors?.length` guard before the null check so AppSync/Lambda errors are logged explicitly instead of being swallowed. Improved null-path error message to hint that `METERED_API_KEY` secret may be missing.
+- **Why**: When the Lambda threw (e.g. invalid API key), AppSync nulled the field and populated `errors[]`. The client was checking `data === null` but never `errors`, causing silent fallback to STUN-only with no actionable log output.
 
 ### `fix-turn-credentials-agent-ts` — Fix TypeScript validation error in turnCredentialsAgent
 - **Status**: 🟢 DONE

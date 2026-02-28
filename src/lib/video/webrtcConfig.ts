@@ -41,22 +41,30 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
   }
 
   try {
+    console.log('[webrtcConfig] Fetching TURN credentials from API...');
     const response = await client.queries.getTurnCredentials();
+
+    if (response.errors) {
+      console.error('[webrtcConfig] getTurnCredentials GraphQL errors:', JSON.stringify(response.errors, null, 2));
+      return STUN_FALLBACK;
+    }
 
     const servers = response.data as RTCIceServer[] | null;
 
     if (!servers) {
-      console.error('[webrtcConfig] getTurnCredentials query returned null');
+      console.warn('[webrtcConfig] getTurnCredentials returned null. This usually means:');
+      console.warn('1. The METERED_API_KEY secret is not set in the current environment.');
+      console.warn('2. The user is not correctly authenticated (AppSync returned null).');
       return STUN_FALLBACK;
     }
     
     // Metered returns an array of ICE servers (STUN + TURN with temp credentials)
     cachedIceServers = servers;
     cacheTimestamp = Date.now();
-    console.log('[webrtcConfig] Fetched TURN credentials:', servers.length, 'servers');
+    console.log('[webrtcConfig] Successfully fetched', servers.length, 'TURN/STUN servers');
     return servers;
   } catch (err) {
-    console.error('[webrtcConfig] Failed to fetch TURN credentials:', err);
+    console.error('[webrtcConfig] Unexpected error fetching TURN credentials:', err);
     return STUN_FALLBACK;
   }
 }
