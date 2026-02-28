@@ -1,5 +1,4 @@
 import { defineFunction } from "@aws-amplify/backend";
-import { auth } from "@aws-amplify/backend";
 
 export const turnCredentialsAgent = defineFunction({
   name: "turnCredentialsAgent",

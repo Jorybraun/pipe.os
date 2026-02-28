@@ -9,7 +9,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### `video-turn-relay` — Add Secure Metered.ca TURN Server for NAT Traversal
 - **Status**: 🟢 DONE
 - **Changes**:
-    - **`amplify/functions/turnCredentialsAgent/`**: New Lambda function that fetches temporary TURN credentials from Metered.ca using a backend-only `METERED_API_KEY`.
+    - **`amplify/functions/turnCredentialsAgent/`**: New Lambda function that fetches temporary TURN credentials from Metered.ca using a backend-only `METERED_API_KEY`. Fixed handler to return raw data for AppSync integration.
     - **`amplify/data/resource.ts`**: Added `getTurnCredentials` query. Authorized for both `authenticated` (recruiters) and `publicApiKey` (candidates).
     - **`src/lib/video/webrtcConfig.ts`**: Refactored to fetch credentials via the AppSync query instead of calling Metered directly. This prevents leaking the API Secret Key to the frontend.
     - **Rationale**: Original implementation exposed the Metered Secret Key in client-side code, which is a security risk. The new architecture moves the sensitive API call to a secure Lambda environment.
