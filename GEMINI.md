@@ -94,6 +94,15 @@ Every AI Lambda must follow the `questionAgent` pattern: separate files for hand
 
 ---
 
+## 📚 **Living Documentation**
+
+We maintain a "clean" active workspace. Documentation should always reflect the current state of the system.
+- **Archive on Completion:** Once a feature or task is committed, move all related specs, briefs, and temporary research files from `docs/specs/` or `docs/design/` to `docs/archive/`.
+- **Status Alignment:** Update `docs/STATUS.md` and `TASKS.md` immediately upon completion.
+- **No Stale Context:** Active `docs/` should only contain current architectural maps, active project guides, and decisions.
+
+---
+
 ## 📑 **Engineering Process (Commits)**
 
 **Every commit:**
@@ -101,4 +110,5 @@ Every AI Lambda must follow the `questionAgent` pattern: separate files for hand
 2. Create a detailed log in `docs/changelogs/[commit-id].md`.
 3. Run `npx tsc --noEmit` — must pass.
 4. If architectural, write an ADR in `docs/decisions/`.
-5. Request review in `MASTER_CLAUDE.md`.
+5. **Living Docs:** Archive completed documentation related to the change (move to `docs/archive/`).
+6. Request review in `MASTER_CLAUDE.md`.

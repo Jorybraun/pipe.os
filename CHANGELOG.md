@@ -6,6 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `ground-truth-sanitization` — Server-Side Scoring & Security
+- **Detailed Log**: [docs/changelogs/ground-truth-sanitization.md](docs/changelogs/ground-truth-sanitization.md)
+- **Status**: 🟢 DONE
+
+### `pr-description-support` — PR Context for Code Reviews
+- **Detailed Log**: [docs/changelogs/pr-description-support.md](docs/changelogs/pr-description-support.md)
+- **Status**: 🟢 DONE
+
 ### `candidate-profile-rollup` — Stage-Aware Score Rollup & Manual Review UI
 - **Detailed Log**: [docs/changelogs/candidate-profile-rollup.md](docs/changelogs/candidate-profile-rollup.md)
 - **Status**: 🟢 DONE

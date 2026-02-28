@@ -2,6 +2,15 @@
 
 **Last Updated:** 2026-02-27
 **Status:** Phase 7 Step 4 (Composable Challenge System) — Implementation & Validation.
+**Workflow:** Living Documentation active (Archive on Completion).
+
+---
+
+## Recent Updates (2026-02-27)
+
+- **Instruction Refinement:** Updated `GEMINI.md` to mandate a "Living Documentation" workflow. Agents must now archive completed specs and briefs upon task finalization.
+- **Documentation Cleanup:** Archived completed handoffs (`HANDOFF-data-cleanup.md`), design specs (`content-seeding-strategy.md`, `conversational-discovery.md`), and historical reviews (`phase-2-code-review.md`, `phase-7-code-review.md`).
+- **Workspace Hygiene:** `docs/` now only contains active architectural maps and pending feature designs.
 
 ---
 

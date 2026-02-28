@@ -60,12 +60,19 @@ export default function ChallengeEditorPage(): JSX.Element {
     setIsSubmitting(true);
     try {
       const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-      await client.models.Challenge.update({
+      let updateParams: any = {
         id: challenge.id,
         title: challenge.title,
         instructions: challenge.instructions,
-        config: JSON.stringify(config),
-      });
+      };
+
+      if (challenge.type === 'CODE_REVIEW' || challenge.type === 'QUIZ_MCQ') {
+        updateParams = { ...updateParams, serverConfig: JSON.stringify(config) };
+      } else {
+        updateParams = { ...updateParams, config: JSON.stringify(config) };
+      }
+
+      await client.models.Challenge.update(updateParams);
       // In real app, we might also update or create a CodeArtifact here
       navigate(-1);
     } catch (err) {
@@ -173,15 +180,15 @@ export default function ChallengeEditorPage(): JSX.Element {
                     <input 
                       type="number"
                       value={(() => {
-                        const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                        return config.timeLimit || '';
+                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                        return curConfig.timeLimit || '';
                       })()}
                       onChange={e => {
                         const val = e.target.value ? parseInt(e.target.value) : null;
-                        const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
                         setChallenge({
                           ...challenge,
-                          config: JSON.stringify({ ...config, timeLimit: val })
+                          config: JSON.stringify({ ...curConfig, timeLimit: val })
                         });
                       }}
                       placeholder="Inherit from stage"
@@ -207,6 +214,24 @@ export default function ChallengeEditorPage(): JSX.Element {
                   {challenge.type === 'CODE_REVIEW' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                       <div>
+                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>PULL_REQUEST_DESCRIPTION (MARKDOWN)</label>
+                        <textarea 
+                          value={(() => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return config.prDescription || '';
+                          })()}
+                          onChange={e => {
+                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            setChallenge({
+                              ...challenge,
+                              config: JSON.stringify({ ...config, prDescription: e.target.value })
+                            });
+                          }}
+                          placeholder="## Summary\nDescribe what this code change does..."
+                          style={{ width: '100%', height: 150, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 13, outline: 'none', resize: 'none', lineHeight: 1.6 }}
+                        />
+                      </div>
+                      <div>
                         <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>BUGGY_CODE_SNIPPET</label>
                         <textarea 
                           value={(() => {
@@ -215,9 +240,11 @@ export default function ChallengeEditorPage(): JSX.Element {
                           })()}
                           onChange={e => {
                             const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            const srvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
                             setChallenge({
                               ...challenge,
-                              config: JSON.stringify({ ...config, code: e.target.value })
+                              config: JSON.stringify({ ...config, code: e.target.value }),
+                              serverConfig: JSON.stringify({ ...srvConfig, code: e.target.value })
                             });
                           }}
                           style={{ width: '100%', height: 400, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#60a5fa', fontSize: 13, outline: 'none', resize: 'none', lineHeight: 1.6, fontFamily: 'Space Mono' }}
@@ -256,8 +283,9 @@ export default function ChallengeEditorPage(): JSX.Element {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                           {(() => {
                             const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            const srvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
                             const options = config.options || [];
-                            const correctId = config.correctOptionId;
+                            const correctId = srvConfig.correctOptionId;
 
                             // Auto-initialize if empty
                             if (options.length === 0) {
@@ -282,9 +310,10 @@ export default function ChallengeEditorPage(): JSX.Element {
                                   <div key={opt.id || idx} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                     <button 
                                       onClick={() => {
+                                        const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
                                         setChallenge({
                                           ...challenge,
-                                          config: JSON.stringify({ ...config, correctOptionId: opt.id })
+                                          serverConfig: JSON.stringify({ ...curSrvConfig, correctOptionId: opt.id })
                                         });
                                       }}
                                       title="Mark as correct answer"
@@ -310,9 +339,12 @@ export default function ChallengeEditorPage(): JSX.Element {
                                       onChange={e => {
                                         const newOptions = [...options];
                                         newOptions[idx] = { ...opt, text: e.target.value };
+                                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                                        const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
                                         setChallenge({
                                           ...challenge,
-                                          config: JSON.stringify({ ...config, options: newOptions })
+                                          config: JSON.stringify({ ...curConfig, options: newOptions }),
+                                          serverConfig: JSON.stringify({ ...curSrvConfig, options: newOptions })
                                         });
                                       }}
                                       placeholder={`Option ${opt.id.toUpperCase()} text...`}
@@ -322,9 +354,10 @@ export default function ChallengeEditorPage(): JSX.Element {
                                     <button 
                                       onClick={() => {
                                         const newOptions = options.filter((_: any, i: number) => i !== idx);
+                                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
                                         setChallenge({
                                           ...challenge,
-                                          config: JSON.stringify({ ...config, options: newOptions })
+                                          config: JSON.stringify({ ...curConfig, options: newOptions })
                                         });
                                       }}
                                       style={{ background: 'none', border: 'none', color: 'rgba(255,80,80,0.3)', cursor: 'pointer', padding: 8 }}
@@ -337,9 +370,12 @@ export default function ChallengeEditorPage(): JSX.Element {
                                   onClick={() => {
                                     const nextId = String.fromCharCode(97 + options.length);
                                     const newOptions = [...options, { id: nextId, text: '' }];
+                                    const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                                    const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
                                     setChallenge({
                                       ...challenge,
-                                      config: JSON.stringify({ ...config, options: newOptions })
+                                      config: JSON.stringify({ ...curConfig, options: newOptions }),
+                                      serverConfig: JSON.stringify({ ...curSrvConfig, options: newOptions })
                                     });
                                   }}
                                   style={{ marginTop: 8, padding: '10px 20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono', cursor: 'pointer', alignSelf: 'flex-start' }}
@@ -356,14 +392,14 @@ export default function ChallengeEditorPage(): JSX.Element {
                         <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>EXPLANATION (SHOWN AFTER SUBMISSION)</label>
                         <textarea 
                           value={(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return config.explanation || '';
+                            const srvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
+                            return srvConfig.explanation || '';
                           })()}
                           onChange={e => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
                             setChallenge({
                               ...challenge,
-                              config: JSON.stringify({ ...config, explanation: e.target.value })
+                              serverConfig: JSON.stringify({ ...curSrvConfig, explanation: e.target.value })
                             });
                           }}
                           placeholder="Provide context for why the correct answer is right..."
@@ -397,15 +433,15 @@ export default function ChallengeEditorPage(): JSX.Element {
                         <input 
                           type="number"
                           value={(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return config.maxLength || '';
+                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return curConfig.maxLength || '';
                           })()}
                           onChange={e => {
                             const val = e.target.value ? parseInt(e.target.value) : null;
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
                             setChallenge({
                               ...challenge,
-                              config: JSON.stringify({ ...config, maxLength: val })
+                              config: JSON.stringify({ ...curConfig, maxLength: val })
                             });
                           }}
                           placeholder="No limit"
@@ -416,14 +452,14 @@ export default function ChallengeEditorPage(): JSX.Element {
                         <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>RUBRIC</label>
                         <textarea 
                           value={(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return config.rubric || '';
+                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            return curConfig.rubric || '';
                           })()}
                           onChange={e => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
                             setChallenge({
                               ...challenge,
-                              config: JSON.stringify({ ...config, rubric: e.target.value })
+                              config: JSON.stringify({ ...curConfig, rubric: e.target.value })
                             });
                           }}
                           placeholder="Enter scoring rubric..."

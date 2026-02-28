@@ -175,7 +175,7 @@
 - [x] **Remove auto-seed from `usePipelineCreate.ts`**. ✅
 - [x] **Empty state on stage card when no challenges exist**. ✅
 
-### Step 4: Candidate renderer — Composable Challenge System 🎯 In progress
+### Step 4: Candidate renderer — Composable Challenge System ✅ (done)
 
 > **Architecture:** Shells (behavioral wrappers) + Panels (content) assembled dynamically by `resolveLayout()` + `resolveShells()`.
 > **MVP scope:** Build only the panels needed for the 65 existing templates. `PreviewPanel` (Sandpack) and `TestPanel` (Piston) are deferred — no templates have test cases yet.
@@ -186,7 +186,7 @@
 - [x] **Update `useAssessment.ts`** — handles challenge-level loading and submission. ✅ [`a3e1539`]
 - [x] **Update `CandidateAssessmentPage.tsx`** — uses `StageShell` and `ChallengeRenderer`. ✅ [`a3e1539`]
 
-#### Step 4A — Foundation
+#### Step 4A — Foundation ✅ (done)
 
 - [x] **Install dependencies** — `npm i @monaco-editor/react react-markdown remark-gfm`. ~5 min. *(Skip sandpack — not needed for MVP)* [`a3e1539`]
 
@@ -196,11 +196,11 @@
 
 - [x] **Create `src/lib/challenge/resolveShells.ts`** — maps `challenge.config` → `{ timer: { enabled, timeLimit } }`. ~20 min. [`a3e1539`]
 
-#### Step 4B — Shell Components
+#### Step 4B — Shell Components ✅ (done)
 
 - [x] **Create `src/components/Shells/TimerShell.tsx`** — countdown wrapper. Props: `timeLimit: number | null`, `onExpire?: () => void`. No-op when `timeLimit` is null. ~45 min. [`a3e1539`]
 
-#### Step 4C — Panel Components (MVP set only)
+#### Step 4C — Panel Components (MVP set only) ✅ (done)
 
 - [x] **Create `src/components/Assessment/WorkspaceLayout.tsx`** — 3-column CSS Grid (28% | 47% | 25%). Props: `leftPanel`, `centerPanel`, `rightPanel` (each `ReactNode | null`). ~30 min. [`a3e1539`]
 
@@ -212,33 +212,33 @@
 
 - [x] **Create `src/components/Panels/TextareaPanel.tsx`** — short answer textarea. Props: `value`, `onChange`, `placeholder?`. ~20 min. [`a3e1539`]
 
-#### Step 4D — Wire It Together
+#### Step 4D — Wire It Together ✅ (done)
 
 - [x] **Update `ChallengeRegistry.tsx`** — replace current if/switch with composable assembly: `resolveLayout()` + `resolveShells()` → `WorkspaceLayout` wrapped in shells. `CODE_REVIEW` still uses `DiffReviewCanvas` as its center panel — keep that path intact. ~1.5 hours. [`a3e1539`]
 
-#### Step 4E — Verify
+#### Step 4E — Verify ✅ (done)
 
-- [ ] **Run `npx tsc --noEmit`** — zero new errors. Two pre-existing errors in `useRoleDiscovery.ts` are acceptable.
+- [x] **Run `npx tsc --noEmit`** — zero new errors. Two pre-existing errors in `useRoleDiscovery.ts` are acceptable. ✅
 
-- [ ] **Smoke test all four types** — one challenge of each type, confirm render + submit works end-to-end.
+- [x] **Smoke test all four types** — one challenge of each type, confirm render + submit works end-to-end. ✅
 
-- [ ] **Update `CHANGELOG.md`** — entries for all new components and resolvers.
+- [x] **Update `CHANGELOG.md`** — entries for all new components and resolvers. ✅
 
 ---
 
-### Step 4.5: Challenge creation & editing (MVP scope) 🎯
+### Step 4.5: Challenge creation & editing (MVP scope) ✅ (done)
 
 > The recruiter side. Without this, there's no way to populate pipeline challenges with real content.
 > **Two parts:** (1) wire ChallengePicker to the 65-template library so templates are selectable, (2) make ChallengeEditorPage's CONTENT tab actually editable per type.
 > **Key constraint:** CODE_IMPLEMENTATION is template-only at MVP. Recruiters cannot write test cases. That's post-MVP.
 
-#### Part A — ChallengePicker: wire to library
+#### Part A — ChallengePicker: wire to library ✅ (done)
 
 - [x] **Wire `ChallengePicker.tsx` to `challengeLibrary.ts`** — replace the hardcoded 4-card grid + dead preset list with live search + filter over `ALL_CHALLENGE_TEMPLATES`. Filter by `type` (tabs) and `topic` (dropdown). Show title, difficulty badge, estimated time. On select: call `onSelect(template)` passing the full template object. ~1.5 hours. [`dc8651a`]
 
 - [x] **Update `onSelect` handler in `OverviewPage.tsx`** — currently receives `(type: ChallengeType)`. Update to receive the full template. On pick: call `Challenge.create({ type, title, instructions, config: template.config })` so the created challenge has full content from the start, not an empty shell. ~30 min. [`dc8651a`]
 
-#### Part B — ChallengeEditorPage: CONTENT tab
+#### Part B — ChallengeEditorPage: CONTENT tab ✅ (done)
 
 > The CONTENT tab currently shows `CONTENT_EDITOR_FOR_{type}_COMING_SOON`. Replace with simple per-type forms that write into `challenge.config`.
 > No `resolveEditorLayout` abstraction needed for MVP — inline switch is fine given only 3 real forms.
@@ -249,11 +249,11 @@
 
 - [x] **QUIZ_SHORT_ANSWER content form** — question textarea + rubric textarea + optional max-length number input. Save writes `config.question`, `config.rubric`, `config.maxLength`. ~30 min. [`dc8651a`]
 
-- [ ] **CODE_IMPLEMENTATION notice** — replace COMING_SOON with a read-only notice: "This challenge was loaded from a template. Edit the instructions above. Custom test authoring coming soon." ~10 min.
+- [x] **CODE_IMPLEMENTATION notice** — replace COMING_SOON with a read-only notice: "This challenge was loaded from a template. Edit the instructions above. Custom test authoring coming soon." ~10 min. ✅
 
-- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+- [x] **Run `npx tsc --noEmit`** — zero new errors. ✅
 
-- [ ] **Update `CHANGELOG.md`**.
+- [x] **Update `CHANGELOG.md`**. ✅
 
 ---
 
@@ -386,6 +386,16 @@
 - [ ] **AI Discovery Agent** — probes candidates with follow-up questions during assessment. `probeLimit` field on `Pipeline` (0–10). Partially scaffolded in legacy UI already.
 - [ ] **AI Review** — AI scores and provides qualitative analysis on `SHORT_ANSWER` and `CODE_IMPLEMENTATION` submissions. Recruiter sees AI commentary alongside manual score.
 - [ ] Schema: add `aiDiscoveryEnabled`, `aiReviewEnabled` boolean fields to `Pipeline` model when AI features ship.
+
+### Voice Input & Transcription Epic
+> Vision: Allow candidates to answer Short Answer challenges verbally. The system will record, store (S3), and transcribe (Lambda/AI) the audio so recruiters can read the text and playback the tone.
+> Full spec: `docs/briefs/EPIC-voice-input-transcription.md`
+- [ ] Write ADR-008 (Audio Recording Architecture) and ADR-009 (Transcription Service Selection)
+- [ ] Phase 1: Build `RecordingShell` and integrate into `QUIZ_SHORT_ANSWER`
+- [ ] Phase 1: Configure Amplify Storage (S3) for audio uploads
+- [ ] Phase 1: Create transcription Lambda agent
+- [ ] Phase 2: Integrate playback and transcription text into `CandidateProfilePage`
+- [ ] Schema: update `Assessment` model to support `audioUrl` and `transcription` fields.
 
 ### Other post-MVP
 - [ ] Agentic role discovery — wire `useRoleDiscovery` to `generateQuestions` Lambda

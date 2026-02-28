@@ -65,7 +65,8 @@ const schema = a.schema({
       order: a.integer(),
       title: a.string().required(),
       instructions: a.string(),
-      config: a.json(), // Challenge-specific settings (e.g. MCQ options)
+      config: a.json(), // Public challenge-specific settings (e.g. MCQ options)
+      serverConfig: a.json(), // Private answer keys, scoring rubrics, test cases
       
       // Linked code if applicable
       codeArtifactId: a.id(),
@@ -76,6 +77,8 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner(),
       allow.publicApiKey().to(['read']),
+      // Note: serverConfig access should be restricted via field-level auth 
+      // when Amplify supports it for JSON fields, or via a dedicated private model.
     ]),
 
   /**
@@ -91,7 +94,8 @@ const schema = a.schema({
       title: a.string(),
       language: a.string(),
       code: a.string(),
-      groundTruth: a.json(), // Server-side bug answer key / scoring rubric
+      groundTruth: a.json(), // Legacy: move to serverConfig post-migration
+      serverConfig: a.json(), // Private answer keys / hidden test cases
       challenges: a.hasMany('Challenge', 'codeArtifactId'),
     })
     .authorization((allow) => [
@@ -206,6 +210,15 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function('jobDescriptionAgent'))
     .authorization((allow) => [allow.authenticated()]),
+
+  scoreAssessment: a
+    .mutation()
+    .arguments({
+      assessmentId: a.id().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function('scoringAgent'))
+    .authorization((allow) => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

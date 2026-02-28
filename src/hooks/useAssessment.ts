@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import { scoreCodeReview } from '../lib/scoring/codeReview';
-import { scoreQuiz } from '../lib/scoring/quiz';
+import { sanitizeChallengeConfig } from '../lib/utils';
 
 const client = generateClient<Schema>({ authMode: 'apiKey' });
 
@@ -118,14 +117,14 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       const { data: stages } = await client.models.Stage.list({
         filter: { pipelineId: { eq: candidate.pipelineId } },
         selectionSet: [
-          'id', 
-          'order', 
+          'id',
+          'order',
           'timeLimit',
-          'challenges.id', 
-          'challenges.type', 
-          'challenges.title', 
-          'challenges.instructions', 
-          'challenges.config', 
+          'challenges.id',
+          'challenges.type',
+          'challenges.title',
+          'challenges.instructions',
+          'challenges.config',
           'challenges.order',
           'challenges.codeArtifact.id',
           'challenges.codeArtifact.code',
@@ -136,13 +135,23 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       });
 
       const sortedStages = [...stages].sort((a, b) => (a.order || 0) - (b.order || 0));
-      
-      // Sort challenges within each stage
-      sortedStages.forEach(s => {
-        if (s.challenges) {
-          (s as any).challenges = [...s.challenges].sort((a, b) => (a.order || 0) - (b.order || 0));
-        }
-      });
+
+      // Sort challenges within each stage and sanitize configs
+      const sanitizedStages: StageWithChallenges[] = sortedStages.map(stage => ({
+        ...stage,
+        challenges: (stage.challenges || [])
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map(challenge => {
+            const parsedConfig = typeof challenge.config === 'string' 
+              ? JSON.parse(challenge.config) 
+              : challenge.config;
+            
+            return {
+              ...challenge,
+              config: sanitizeChallengeConfig(parsedConfig, challenge.type || '')
+            };
+          })
+      }));
 
       // 4. Update status to IN_PROGRESS if it was INVITED
       if (candidate.status === 'INVITED') {
@@ -159,7 +168,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({
         ...prev,
         candidate,
-        stages: sortedStages,
+        stages: sanitizedStages,
         isLoading: false,
         error: null,
       }));
@@ -182,43 +191,32 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       const currentStage = stages[currentStageIndex];
       const challenges = currentStage.challenges || [];
       const currentChallenge = challenges[currentChallengeIndex];
-      
+
       if (!currentChallenge) return;
 
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
-        // Parse config for scoring
-        const config = typeof currentChallenge.config === 'string' 
-          ? JSON.parse(currentChallenge.config) 
-          : currentChallenge.config;
-
-        let computedScore = 0;
-        
-        // Scoring logic based on challenge type
-        if (currentChallenge.type === 'CODE_REVIEW') {
-          // Use artifact ground truth if available, else fall back to inline config
-          const artifact = currentChallenge.codeArtifact;
-          const groundTruth = artifact?.groundTruth 
-            ? (typeof artifact.groundTruth === 'string' ? JSON.parse(artifact.groundTruth) : artifact.groundTruth)
-            : (config.groundTruth || []);
-            
-          const result = scoreCodeReview(submission as any, [{ id: 'current', groundTruth }]);
-          computedScore = result.total;
-        } else if (currentChallenge.type === 'QUIZ_MCQ') {
-          const questions = config.q ? [config] : (config.questions || []);
-          const result = scoreQuiz(submission as any, questions);
-          computedScore = result.total;
-        }
-
         // Create Assessment record
-        await client.models.Assessment.create({
+        const { data: assessment } = await client.models.Assessment.create({
           candidateId: candidate.id,
           challengeId: currentChallenge.id,
           submission: JSON.stringify(submission),
-          score: computedScore,
+          score: 0,
           completedAt: new Date().toISOString(),
         });
+
+        if (assessment) {
+          // Trigger scoring agent Lambda function
+          try {
+            await client.mutations.scoreAssessment({
+              assessmentId: assessment.id
+            });
+            console.log(`[useAssessment] Triggered scoringAgent for assessment ${assessment.id}`);
+          } catch (lambdaErr) {
+            console.error(`[useAssessment] Failed to trigger scoringAgent for assessment ${assessment.id}:`, lambdaErr);
+          }
+        }
 
         // Determine next step
         const isLastChallengeInStage = currentChallengeIndex === challenges.length - 1;

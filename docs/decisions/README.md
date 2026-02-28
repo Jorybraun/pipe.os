@@ -39,3 +39,5 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-005](ADR-005-composable-challenge-system.md) | Composable Shell + Panel challenge architecture | Accepted | 2026-02-27 |
 | [ADR-006](ADR-006-submission-type-system.md) | Discriminated union for challenge submission types | Accepted | 2026-02-27 |
 | [ADR-007](ADR-007-ground-truth-sanitization.md) | Server-side ground truth sanitization via scoringAgent Lambda | Proposed | 2026-02-27 |
+| [ADR-008](ADR-008-voice-input-transcription.md) | Voice Input & Transcription Architecture | Proposed | 2026-02-27 |
+| [ADR-009](ADR-009-server-side-scoring.md) | Unified scoringAgent pattern for automated scoring | Accepted | 2026-02-27 |

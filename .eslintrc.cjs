@@ -8,7 +8,7 @@ module.exports = {
   ],
   ignorePatterns: ['dist', '.eslintrc.cjs'],
   parser: '@typescript-eslint/parser',
-  plugins: ['react-refresh'],
+  plugins: ['react-refresh', 'local-rules'],
   rules: {
     'react-refresh/only-export-components': [
       'warn',
@@ -17,10 +17,22 @@ module.exports = {
     '@typescript-eslint/no-unused-vars': [
       'error',
       {
-        'argsIgnorePattern': '^_',
-        'varsIgnorePattern': '^_',
-        'caughtErrorsIgnorePattern': '^_'
+        'argsIgnorePattern': '^_*',
+        'varsIgnorePattern': '^_*',
+        'caughtErrorsIgnorePattern': '^_*'
       }
     ],
+    'local-rules/recording-shell-rule': 'error',
   },
+  overrides: [
+    {
+      files: ['*.js'],
+      parserOptions: {
+        sourceType: 'script',
+      },
+      settings: {
+        'local-rules/rules-dir': '.gemini/rules',
+      },
+    },
+  ],
 }
