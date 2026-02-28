@@ -2,37 +2,59 @@
 // WebRTC Configuration
 // ============================================================================
 //
-// MVP: STUN-only using Google's free public STUN servers.
-// When NAT traversal fails (~20% of connections), add TURN credentials here.
-//
-// To add TURN later (e.g. Metered.ca):
-//   1. Get credentials from your TURN provider
-//   2. Add { urls: 'turn:...', username: ..., credential: ... } entries below
-//   3. No other code changes needed — all callers use getIceServers()
+// Uses Metered.ca for TURN relay (free tier: 50GB/month).
+// Set VITE_METERED_API_KEY in your .env file.
+// Falls back to STUN-only if credentials unavailable.
+
+/** Cached TURN credentials to avoid re-fetching during a session */
+let cachedIceServers: RTCIceServer[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 3600_000; // 1 hour — Metered credentials last ~24h
+
+/** STUN-only fallback when TURN is unavailable */
+const STUN_FALLBACK: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
 
 /**
- * Returns the ICE server configuration for RTCPeerConnection.
+ * Fetches temporary TURN credentials from Metered.ca REST API.
+ * Returns combined STUN + TURN servers on success, STUN-only on failure.
  *
- * Currently STUN-only. Structured as an async function so TURN credentials
- * (which may require a server fetch) can be appended in the future without
- * changing any call sites.
+ * Credentials are cached for 1 hour to avoid excessive API calls.
  */
 export async function getIceServers(): Promise<RTCIceServer[]> {
-  return [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ];
+  // Return cached if still fresh
+  if (cachedIceServers && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedIceServers;
+  }
 
-  // To add TURN later, uncomment and fill in:
-  // const turnCredentials = await fetchTurnCredentials();
-  // return [
-  //   { urls: 'stun:stun.l.google.com:19302' },
-  //   {
-  //     urls: 'turn:your-turn-server.example.com:3478',
-  //     username: turnCredentials.username,
-  //     credential: turnCredentials.credential,
-  //   },
-  // ];
+  const apiKey = import.meta.env.VITE_METERED_API_KEY as string | undefined;
+  if (!apiKey) {
+    console.warn('[webrtcConfig] VITE_METERED_API_KEY not set — using STUN-only (will fail behind NAT/VPN)');
+    return STUN_FALLBACK;
+  }
+
+  try {
+    const response = await fetch(
+      `https://pipe-os.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`
+    );
+
+    if (!response.ok) {
+      console.error('[webrtcConfig] Metered API returned', response.status);
+      return STUN_FALLBACK;
+    }
+
+    const servers: RTCIceServer[] = await response.json();
+    // Metered returns an array of ICE servers (STUN + TURN with temp credentials)
+    cachedIceServers = servers;
+    cacheTimestamp = Date.now();
+    console.log('[webrtcConfig] Fetched TURN credentials:', servers.length, 'servers');
+    return servers;
+  } catch (err) {
+    console.error('[webrtcConfig] Failed to fetch TURN credentials:', err);
+    return STUN_FALLBACK;
+  }
 }
 
 /**

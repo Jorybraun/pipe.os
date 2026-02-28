@@ -16,7 +16,7 @@ You are working on **Pipe**, an AI-native developer interview platform. Solo-fou
 
 ---
 
-## Current state (2026-02-27)
+## Current state (2026-02-28)
 
 ### Done (Phases 0–7 pre-flight + Steps 1–4 partial)
 
@@ -28,6 +28,8 @@ You are working on **Pipe**, an AI-native developer interview platform. Solo-fou
 - Quiz content: `quizQuestions.ts` (10 MCQ), `QuizRenderer.tsx`, `scoreQuiz()`
 - Recruiter dashboard wired to live data: `ListingPage`, `OverviewPage`, `CandidateProfilePage`
 - STRONG / YES / MAYBE / NO signal labels on candidate scores
+- **Video interview connection fixes:** Auth asymmetry resolved (`allow.authenticated()` on VideoSignal), deferred accept pattern, connecting state UI, drag positioning fixed
+- **TURN relay integration:** Metered.ca TURN server for NAT traversal (requires `VITE_METERED_API_KEY` env var)
 - `questionAgent` Lambda — complete, used as engineering standard
 - `RoleDiscoveryPage` and `useRoleDiscovery` — preserved for post-MVP agentic discovery
 - Phase 6 critical bugs fixed (dev buttons gated, avg score fixed, N+2 query fixed, type safety fixed)
