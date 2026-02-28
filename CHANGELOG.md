@@ -6,6 +6,35 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `drag-to-order-challenges` — Drag-to-Order Challenges
+- **Detailed Log**: [docs/changelogs/drag-to-order-challenges.md](docs/changelogs/drag-to-order-challenges.md)
+- **Status**: 🟢 DONE
+- **Changes**:
+    - Installed `@dnd-kit/core`, `@dnd-kit/sortable`, and `@dnd-kit/utilities`.
+    - Integrated `useSortable` into `ChallengeCard.tsx` to provide drag handle and styling.
+    - Updated `StageDetailPage.tsx` to use `DndContext` and `SortableContext`.
+    - Implemented `onDragEnd` with optimistic UI updates via `arrayMove`.
+    - Batch-update challenge order in the backend via Amplify `Challenge.update`.
+
+### `video-interview-shell` — Phase 8: Live Video Interview System
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **Schema**: Added `Stage.mode` (`ASYNC | LIVE_VIDEO`), `Stage.videoConfig` (JSON), `VideoSession` model (session lifecycle: WAITING → CALLING → ACTIVE → ENDED), `VideoSignal` model (WebRTC signaling messages: OFFER, ANSWER, ICE_CANDIDATE, HANGUP). Both new models support owner auth for recruiters and publicApiKey for candidates.
+    - **`src/lib/video/types.ts`**: Shared types for video interview (VideoRole, VideoSessionStatus, VideoSignalType, SdpPayload, IceCandidatePayload, VideoConnectionState, VideoStageConfig).
+    - **`src/lib/video/webrtcConfig.ts`**: STUN-only ICE config (Google public STUN servers). Structured as async `getIceServers()` so TURN credentials can be appended later without changing callers.
+    - **`src/lib/video/mediaPermissions.ts`**: Camera/mic permission helpers with typed error reasons.
+    - **`src/hooks/useVideoSignaling.ts`**: AppSync-based signaling hook. Manages VideoSession record lifecycle and VideoSignal subscription for real-time WebRTC message delivery.
+    - **`src/hooks/useVideoSession.ts`**: WebRTC peer connection hook. Handles offer/answer exchange, ICE candidate trickle, media stream management, and device toggle.
+    - **`src/components/Video/VideoDeviceCheck.tsx`**: Pre-session device check UI with camera preview and permission error handling.
+    - **`src/components/Video/VideoWaitingRoom.tsx`**: Waiting room shown before a call. Recruiter sees "Call" button (enabled when candidate present); candidate sees standby indicator.
+    - **`src/components/Video/VideoIncomingCall.tsx`**: Full-screen incoming call overlay (phone-call UX) with Accept/Decline buttons.
+    - **`src/components/Video/VideoFloatingPiP.tsx`**: Draggable floating picture-in-picture panel — remote video + local self-view + controls. Overlays challenge workspace during active session.
+    - **`src/components/Video/VideoControls.tsx`**: Reusable camera/mic/hang-up control bar.
+    - **`src/components/Shells/VideoShell.tsx`**: Stage-level shell that orchestrates the full video interview lifecycle. Routes signals from AppSync to the WebRTC hook. Applied conditionally in `CandidateAssessmentPage` when `stage.mode === 'LIVE_VIDEO'`.
+    - **`src/hooks/useAssessment.ts`**: Added `mode` and `videoConfig` to `StageWithChallenges` type and Stage selectionSet query.
+    - **`src/pages/CandidateAssessmentPage.tsx`**: Wraps challenge workspace in `VideoShell` when `currentStage.mode === 'LIVE_VIDEO'`.
+    - **Design docs**: `docs/design/video-interview-architecture.md` and `docs/decisions/ADR-010-video-interview-webrtc.md` created in prior session.
+
 ### `multi-select-challenges` — Multi-select for Challenges
 - **Status**: 🟢 DONE
 - **Changes**:

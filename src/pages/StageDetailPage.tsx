@@ -7,6 +7,21 @@ import { ChallengeCard } from '../components/Pipeline/ChallengeCard';
 import { ChallengePicker } from '../components/Pipeline/ChallengePicker';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 
 const client = generateClient<Schema>();
 
@@ -20,6 +35,17 @@ export default function StageDetailPage(): JSX.Element {
   const [stage, setStage] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5, // 5px movement before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const fetchData = useCallback(async () => {
     if (!stageId) return;
@@ -87,6 +113,38 @@ export default function StageDetailPage(): JSX.Element {
     }
   };
 
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (over && active.id !== over.id && stage) {
+      const oldIndex = stage.challenges.findIndex((c: any) => c.id === active.id);
+      const newIndex = stage.challenges.findIndex((c: any) => c.id === over.id);
+      
+      if (oldIndex !== -1 && newIndex !== -1) {
+        // Optimistic UI update
+        const newChallenges = arrayMove(stage.challenges, oldIndex, newIndex).map((c: any, i: number) => ({
+          ...c,
+          order: i,
+        }));
+        
+        setStage({ ...stage, challenges: newChallenges });
+
+        // Batch save to backend
+        try {
+          await Promise.all(
+            newChallenges.map((c: any) => 
+              client.models.Challenge.update({ id: c.id, order: c.order })
+            )
+          );
+        } catch (err) {
+          console.error('Failed to update challenge order:', err);
+          // Revert on failure
+          fetchData();
+        }
+      }
+    }
+  };
+
   if (isLoading && !stage) {
     return (
       <div style={{ padding: 40 }}>
@@ -121,11 +179,18 @@ export default function StageDetailPage(): JSX.Element {
             </div>
             <input 
               value={stage.title || ''}
-              onChange={async (e) => {
+              onChange={(e) => {
                 const newVal = e.target.value;
                 setStage({ ...stage, title: newVal });
-                // In real app, would debounce this
-                await client.models.Stage.update({ id: stage.id, title: newVal });
+              }}
+              onBlur={async () => {
+                if (stage.title) {
+                  try {
+                    await client.models.Stage.update({ id: stage.id, title: stage.title });
+                  } catch (err) {
+                    console.error("Failed to update stage title:", err);
+                  }
+                }
               }}
               style={{ 
                 background: 'transparent',
@@ -166,17 +231,28 @@ export default function StageDetailPage(): JSX.Element {
           <SubTitle>CHALLENGES ({challenges.length})</SubTitle>
           
           {challenges.length > 0 ? (
-            <div style={{ marginTop: 20 }}>
-              {challenges.map((c, i) => (
-                <ChallengeCard 
-                  key={c.id} 
-                  challenge={c} 
-                  index={i} 
-                  onEdit={() => navigate(`/pipeline/${pipelineId}/challenges/${c.id}`)}
-                  onDelete={handleChallengeDelete}
-                />
-              ))}
-            </div>
+            <DndContext 
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext 
+                items={challenges.map(c => c.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div style={{ marginTop: 20 }}>
+                  {challenges.map((c, i) => (
+                    <ChallengeCard 
+                      key={c.id} 
+                      challenge={c} 
+                      index={i} 
+                      onEdit={() => navigate(`/pipeline/${pipelineId}/challenges/${c.id}`)}
+                      onDelete={handleChallengeDelete}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           ) : (
             <div style={{ 
               marginTop: 20, padding: '60px 24px', textAlign: 'center', 

@@ -365,12 +365,12 @@
 
 ### Drag-to-Order Challenges
 > Full spec: `FEATURE_REQUESTS.md → Drag-to-Order Challenges`
-- [ ] **Pre-check:** confirm `Challenge.order` field exists in `amplify/data/resource.ts` — if not, schema migration required first
-- [ ] Install `@dnd-kit/core` + `@dnd-kit/sortable`
-- [ ] Add drag handles to `ChallengeCard`; implement `useSortable` in stage challenge list
-- [ ] On drop: recompute `order` integers, batch-update via `Challenge.update()` with optimistic UI
-- [ ] Run `npx tsc --noEmit`, drag-reorder smoke test
-- [ ] Update `CHANGELOG.md`, commit, post code review entry
+- [x] **Pre-check:** confirm `Challenge.order` field exists in `amplify/data/resource.ts` — if not, schema migration required first
+- [x] Install `@dnd-kit/core` + `@dnd-kit/sortable`
+- [x] Add drag handles to `ChallengeCard`; implement `useSortable` in stage challenge list
+- [x] On drop: recompute `order` integers, batch-update via `Challenge.update()` with optimistic UI
+- [x] Run `npx tsc --noEmit`, drag-reorder smoke test
+- [x] Update `CHANGELOG.md`, commit, post code review entry
 
 ### Multiselect Challenge Actions
 > Full spec: `FEATURE_REQUESTS.md → Multiselect for Challenge Actions`
