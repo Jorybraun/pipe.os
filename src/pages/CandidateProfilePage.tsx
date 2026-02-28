@@ -174,8 +174,25 @@ export default function CandidateProfilePage(): JSX.Element {
     );
   }
 
-  const avgScore = assessments.length > 0
-    ? Math.round(assessments.reduce((sum, a) => sum + (a.score || 0), 0) / assessments.length)
+  // Calculate scores
+  const stageStats = stages.map(stage => {
+    const challengeIds = (stage.challenges || []).map((c: any) => c.id);
+    const stageAssessments = assessments.filter(a => challengeIds.includes(a.challengeId));
+    
+    const score = stageAssessments.length > 0
+      ? Math.round(stageAssessments.reduce((sum, a) => sum + (a.score || 0), 0) / stageAssessments.length)
+      : null;
+      
+    return {
+      id: stage.id,
+      score,
+      isComplete: stageAssessments.length > 0 && stageAssessments.length === challengeIds.length
+    };
+  });
+
+  const completedStages = stageStats.filter(s => s.score !== null);
+  const avgScore = completedStages.length > 0
+    ? Math.round(completedStages.reduce((sum, s) => sum + (s.score || 0), 0) / completedStages.length)
     : 0;
 
   const signal = avgScore >= 85 ? "STRONG" : avgScore >= 70 ? "YES" : avgScore >= 50 ? "MAYBE" : "NO";
@@ -219,16 +236,7 @@ export default function CandidateProfilePage(): JSX.Element {
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {stages.map((stage) => {
           const Icon = FileText;
-          
-          // Calculate stage score as average of challenge assessments
-          const challengeIds = (stage.challenges || []).map((c: any) => c.id);
-          const stageAssessments = assessments.filter(a => challengeIds.includes(a.challengeId));
-          const isComplete = stageAssessments.length > 0 && stageAssessments.length === challengeIds.length;
-          
-          const stageScore = stageAssessments.length > 0
-            ? Math.round(stageAssessments.reduce((sum, a) => sum + (a.score || 0), 0) / stageAssessments.length)
-            : null;
-
+          const stats = stageStats.find(s => s.id === stage.id);
           const isActive = selectedStageId === stage.id;
 
           return (
@@ -241,7 +249,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 style={{
                   padding: 24,
                   cursor: 'pointer',
-                  opacity: !isComplete && !isActive ? 0.6 : 1,
+                  opacity: !stats?.isComplete && !isActive ? 0.6 : 1,
                   border: isActive ? '1px solid rgba(255,255,255,0.4)' : undefined
                 }}
               >
@@ -257,7 +265,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     size={16}
                     color={isActive ? "#fff" : "rgba(255,255,255,0.4)"}
                   />
-                  {isComplete && (
+                  {stats?.isComplete && (
                     <CheckCircle size={12} color="rgba(150,255,150,0.8)" />
                   )}
                 </div>
@@ -273,7 +281,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   {'STAGE'}
                 </div>
 
-                {stageScore !== null ? (
+                {stats?.score !== null && stats?.score !== undefined ? (
                   <div
                     style={{
                       fontSize: 28,
@@ -284,7 +292,7 @@ export default function CandidateProfilePage(): JSX.Element {
                       WebkitTextFillColor: "transparent",
                     }}
                   >
-                    {stageScore}
+                    {stats.score}
                   </div>
                 ) : (
                   <div

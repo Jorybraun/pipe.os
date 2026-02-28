@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `candidate-profile-rollup` — Stage-Aware Score Rollup & Manual Review UI
+- **Detailed Log**: [docs/changelogs/candidate-profile-rollup.md](docs/changelogs/candidate-profile-rollup.md)
+- **Status**: 🟢 DONE
+
 ### `challenge-system-stability` — Fix P0/P1 Challenge Architecture Gaps
 - **Detailed Log**: [docs/changelogs/challenge-system-stability.md](docs/changelogs/challenge-system-stability.md)
 - **Status**: 🟢 DONE
