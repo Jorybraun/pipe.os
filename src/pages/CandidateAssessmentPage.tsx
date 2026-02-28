@@ -157,7 +157,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   );
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0c0c0e', position: 'relative' }}>
+    <div style={{ minHeight: '100vh', background: '#0c0c0e' }}>
       <ChromeMeshGrid />
 
       {isLiveVideoStage && candidate ? (

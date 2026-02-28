@@ -6,6 +6,47 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `video-auth-fix` — Fix Auth Asymmetry + Deferred Accept + Connecting UI
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/data/resource.ts`**: Added `allow.authenticated().to(['read'])` to `VideoSignal` model. Without this, the recruiter (userPool auth) could only read their own signals via `allow.owner()`, meaning the candidate's ANSWER and ICE_CANDIDATE signals (created via apiKey auth with no Cognito owner) were invisible to the recruiter's subscription. This was the root cause of the stuck-in-connecting state.
+    - **`src/components/Shells/VideoShell.tsx`**: Three critical fixes:
+      1. **Deferred accept** — OFFER signal is stored in `pendingOfferRef` instead of auto-accepting. Candidate must click ACCEPT to trigger `handleAccept` (which calls `acceptCall` + `markActive`). Previous dispatch handler was calling both immediately on signal arrival, collapsing the incoming-call widget before the user could interact.
+      2. **ACCEPT button wired correctly** — Added `onAccept` prop to VideoWidget. The ACCEPT button now calls `handleAccept` instead of `handleCall` (which was `startCall()` — a no-op for candidates).
+      3. **Connecting phase UI** — Added `isConnecting` derived state (`sessionStatus === 'ACTIVE' && !isConnected && !isEnded`). Both sides now see a green pulsing `CONNECTING...` pill during ICE negotiation. Pre-call widget is suppressed during this phase to avoid rendering null.
+    - **`src/components/Shells/VideoShell.tsx`** (dispatch handler): Removed `signaling.markActive()` from the ANSWER handler — only the candidate calls `markActive()` after accepting. Recruiter's status update comes naturally from the candidate's `markActive()` mutation via AppSync subscription.
+
+### `video-accept-flow` — Fix Incoming Call Accept/Decline + Connecting State UI
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/components/Shells/VideoShell.tsx`**: Three bugs fixed:
+      1. **Auto-accept removed** — OFFER signal no longer immediately calls `session.acceptCall()` and `signaling.markActive()`. Offer stored in `pendingOfferRef` + `hasPendingOffer` state flag. The incoming widget persists until ACCEPT or DECLINE.
+      2. **Accept button now works** — Added `handleAccept` callback that reads `pendingOfferRef.current`, ensures `initMedia()` has completed (in case camera permission wasn't resolved when the offer arrived), then calls `session.acceptCall(offer)` + `signaling.markActive()`.
+      3. **Connecting state UI** — Added `isConnecting` derived state. Both sides now see a green pulsing `CONNECTING...` pill during ICE negotiation instead of blank space.
+
+### `webrtc-ice-queue` — Fix WebRTC Stuck-in-Connecting via ICE Candidate Buffering
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/hooks/useVideoSession.ts`**: Fixed two ICE timing race conditions:
+      1. **Candidates arriving before setRemoteDescription** — `addIceCandidate` now buffers candidates in `pendingCandidatesRef` when `remoteDescSetRef` is false. Both `acceptCall` and `handleAnswerReceived` set the gate to true after `setRemoteDescription` resolves, then call `drainPendingCandidates()`.
+      2. **Candidates arriving before Accept is clicked** — Candidates that arrive over AppSync between the OFFER landing and the user clicking Accept are correctly pre-buffered (gate is false). Fixed `initPeerConnection` to only clear `pendingCandidatesRef` when replacing an *existing* PC (re-call), not on the first call — previously the unconditional clear was discarding all pre-Accept candidates, which are typically the most important host/STUN candidates.
+
+### `video-signaling-fix` — Fix Payload Serialization + Candidate Session Discovery
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/hooks/useVideoSignaling.ts`**: Two bugs fixed:
+      1. **Payload serialization** — `sendSignal` now passes `JSON.stringify(payload)` to AppSync. `a.json()` fields reject objects with `null` properties (e.g. `sdpMLineIndex: null` on some ICE candidates), causing the repeated `Variable 'payload' has an invalid value` errors. Receive side already handles both string and object forms.
+      2. **Candidate session discovery** — Replaced one-time `list()` init with a persistent `observeQuery` (stageId + candidateId filter). Candidate now picks up sessions the recruiter creates after the page loads — transitioning from `LIVE_SESSION_READY` pill to `INCOMING_VIDEO_CALL` widget in real-time. Merges the separate session-status subscription into the same query.
+      3. **Stale closure hardening** — `updateStatus` and `sendSignal` now read from `sessionIdRef.current` directly rather than closing over `session` state.
+
+### `video-shell-fix` — VideoShell Non-Blocking Rewrite + Recruiter Entry Point
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/components/Shells/VideoShell.tsx`**: Complete rewrite. VideoShell now follows the same composable pattern as TimerShell — always renders `{children}`, never replaces page content. All video UI is a `position:fixed, top:20, right:20` compact floating widget that overlays unobstructively. Phase state machine: device-init pill → waiting widget (recruiter shows self-preview + START_CALL button) → calling/incoming widgets → active call (VideoFloatingPiP). Removed full-screen device-check and waiting-room takeover screens.
+    - **`src/pages/CandidateProfilePage.tsx`**: Added recruiter video entry point. Added `'mode'` to Stage selectionSet. Detects first `LIVE_VIDEO` stage on the candidate's pipeline. Wraps the profile page with `VideoShell role="RECRUITER"` when found — recruiter sees the floating call widget while reviewing the candidate profile. `id` URL param (= `candidateId`) is correctly passed to VideoShell.
+    - **`src/pages/CandidateAssessmentPage.tsx`**: Removed redundant `position: relative` wrapper div (VideoShell now manages its own stacking context).
+    - **`src/hooks/useVideoSignaling.ts`**: Fixed signal deduplication bug. `observeQuery` replays the full signal list on every new item; added `processedSignalIds` Set ref that guards against re-dispatching already-handled OFFER, ICE_CANDIDATE, and HANGUP signals. Reset the set when `session.id` changes to correctly handle new calls.
+
 ### `stage-mode-ui` — Stage Mode Toggle + ADR Cleanup
 - **Status**: 🟢 DONE
 - **Changes**:

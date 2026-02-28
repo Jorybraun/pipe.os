@@ -108,6 +108,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),                               // Recruiter can write
+      allow.authenticated().to(['read']),           // Recruiter can read candidate signals
       allow.publicApiKey().to(['create', 'read']), // Candidate can signal back
     ]),
 

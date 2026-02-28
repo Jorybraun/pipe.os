@@ -13,6 +13,7 @@ import {
   SubTitle,
 } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
+import { VideoShell } from "../components/Shells/VideoShell";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import { calculateSignal } from "../lib/utils";
@@ -99,9 +100,9 @@ export default function CandidateProfilePage(): JSX.Element {
           filter: { candidateId: { eq: id } },
           selectionSet: ['id', 'challengeId', 'score', 'submission', 'feedback', 'completedAt']
         }),
-        client.models.Stage.list({ 
+        client.models.Stage.list({
           filter: { pipelineId: { eq: cand.pipelineId } },
-          selectionSet: ['id', 'title', 'order', 'challenges.*']
+          selectionSet: ['id', 'title', 'order', 'mode', 'challenges.*']
         }),
       ]);
 
@@ -221,7 +222,11 @@ export default function CandidateProfilePage(): JSX.Element {
     .toUpperCase()
     .slice(0, 2);
 
-  return (
+  // Recruiter video: find the first LIVE_VIDEO stage for this pipeline.
+  // id (URL param) IS the candidateId for this route.
+  const liveVideoStage = stages.find((s: any) => s.mode === 'LIVE_VIDEO');
+
+  const profileContent = (
     <>
       {/* <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         {stages.map((s) => (
@@ -699,4 +704,19 @@ export default function CandidateProfilePage(): JSX.Element {
       )}
     </>
   );
+
+  // Wrap with VideoShell (recruiter role) when the pipeline has a LIVE_VIDEO stage
+  if (liveVideoStage && id) {
+    return (
+      <VideoShell
+        stageId={liveVideoStage.id}
+        candidateId={id}
+        role="RECRUITER"
+      >
+        {profileContent}
+      </VideoShell>
+    );
+  }
+
+  return profileContent;
 }

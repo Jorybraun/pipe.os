@@ -38,10 +38,19 @@ export function VideoFloatingPiP({
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
 
-  // Drag state
-  const [position, setPosition] = useState({ x: 24, y: 24 });
+  // Drag state — start top-right (adjusted in useEffect for actual viewport)
+  const [position, setPosition] = useState({ x: 0, y: 24 });
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const initialized = useRef(false);
+
+  // Set initial position to top-right on mount
+  useEffect(() => {
+    if (!initialized.current) {
+      initialized.current = true;
+      setPosition({ x: window.innerWidth - 280 - 24, y: 24 });
+    }
+  }, []);
 
   // Wire streams to video elements
   useEffect(() => {
@@ -92,7 +101,7 @@ export function VideoFloatingPiP({
       style={{
         position: 'fixed',
         top: position.y,
-        right: position.x,
+        left: position.x,
         width: 280,
         background: '#0c0c0e',
         border: '1px solid rgba(255,255,255,0.12)',

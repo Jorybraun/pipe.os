@@ -46,6 +46,9 @@ interface UseVideoSessionReturn {
   /**
    * Process an ICE_CANDIDATE signal from the remote peer.
    * Called automatically by VideoShell when ICE signals arrive.
+   *
+   * Internally buffers candidates received before setRemoteDescription
+   * has completed — they are drained immediately after remote desc is set.
    */
   addIceCandidate: (candidate: IceCandidatePayload) => Promise<void>;
   /** Toggle camera on/off */
@@ -66,6 +69,14 @@ interface UseVideoSessionReturn {
  *
  * Signaling transport (AppSync) is injected via sendSignal so this hook
  * stays purely focused on WebRTC mechanics.
+ *
+ * ICE candidate buffering:
+ *   Remote ICE candidates often arrive via AppSync before
+ *   setRemoteDescription has completed on the receiving side. Adding them
+ *   before the remote description is set causes silent failures and leaves
+ *   the connection stuck in "connecting". We buffer all incoming candidates
+ *   in pendingCandidatesRef and drain the queue immediately after
+ *   setRemoteDescription resolves.
  */
 export function useVideoSession({
   role,
@@ -82,6 +93,13 @@ export function useVideoSession({
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
+  // ---- ICE candidate buffering -----------------------------------------------
+  //
+  // Remote ICE candidates often arrive via AppSync before setRemoteDescription
+  // has completed. Buffer them here and drain after remote desc is set.
+  const pendingCandidatesRef = useRef<IceCandidatePayload[]>([]);
+  const remoteDescSetRef = useRef<boolean>(false);
+
   // ---- Cleanup on unmount -------------------------------------------------
 
   useEffect(() => {
@@ -91,13 +109,38 @@ export function useVideoSession({
     };
   }, []);
 
+  // ---- Helper: drain buffered ICE candidates after remote desc is set ------
+
+  const drainPendingCandidates = useCallback(async (): Promise<void> => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    const pending = pendingCandidatesRef.current.splice(0);
+    if (pending.length > 0) {
+      console.log(`[useVideoSession] Draining ${pending.length} buffered ICE candidate(s)`);
+    }
+    for (const candidate of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error('[useVideoSession] drainPendingCandidates error:', err);
+      }
+    }
+  }, []);
+
   // ---- Helper: wire up a fresh RTCPeerConnection --------------------------
 
   const initPeerConnection = useCallback(async (): Promise<RTCPeerConnection> => {
-    // Close any existing connection
     if (pcRef.current) {
+      // Replacing an existing connection (re-call). Close it and discard any
+      // stale buffered candidates — they belonged to the old session.
       pcRef.current.close();
+      pendingCandidatesRef.current = [];
     }
+    // Reset the remote-desc gate. Do NOT clear pendingCandidatesRef here for
+    // the first-call case: ICE candidates from the recruiter often arrive over
+    // AppSync BEFORE the candidate clicks Accept and initPeerConnection() runs.
+    // Those candidates are already buffered; clearing the array would lose them.
+    remoteDescSetRef.current = false;
 
     const pc = await createPeerConnection();
     pcRef.current = pc;
@@ -182,8 +225,16 @@ export function useVideoSession({
       setConnectionState('connecting');
 
       try {
+        // initPeerConnection resets remoteDescSetRef and pendingCandidatesRef
         const pc = await initPeerConnection();
+
+        // Set remote description — ICE candidates received during this await
+        // will be buffered by addIceCandidate and drained below.
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        remoteDescSetRef.current = true;
+
+        // Drain any ICE candidates that arrived before remote desc was ready
+        await drainPendingCandidates();
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -196,11 +247,20 @@ export function useVideoSession({
         setConnectionState('error');
       }
     },
-    [role, initPeerConnection, sendSignal]
+    [role, initPeerConnection, sendSignal, drainPendingCandidates]
   );
 
   const addIceCandidate = useCallback(
     async (candidate: IceCandidatePayload): Promise<void> => {
+      // Buffer the candidate if remote description hasn't been set yet.
+      // This prevents the "cannot add ICE candidate before setRemoteDescription"
+      // error that leaves the connection stuck in "connecting".
+      if (!remoteDescSetRef.current) {
+        console.log('[useVideoSession] Buffering ICE candidate (remote desc not yet set)');
+        pendingCandidatesRef.current.push(candidate);
+        return;
+      }
+
       const pc = pcRef.current;
       if (!pc) return;
       try {
@@ -218,13 +278,19 @@ export function useVideoSession({
       if (!pc) return;
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        remoteDescSetRef.current = true;
+
+        // Drain any ICE candidates from the candidate that arrived before
+        // we processed the answer
+        await drainPendingCandidates();
+
         setConnectionState('connecting');
       } catch (err) {
         console.error('[useVideoSession] handleAnswerReceived error:', err);
         setConnectionState('error');
       }
     },
-    []
+    [drainPendingCandidates]
   );
 
   const toggleCamera = useCallback(() => {
@@ -257,9 +323,6 @@ export function useVideoSession({
   }, [sendSignal, onEnded]);
 
   // Expose answer handler so VideoShell can call it when ANSWER signal arrives
-  // We use a module-internal trick: attach to the return object as a hidden method
-  // that VideoShell can reach. Alternatively VideoShell calls acceptCall for OFFER
-  // and this for ANSWER. We expose both.
   return {
     connectionState,
     localStream,

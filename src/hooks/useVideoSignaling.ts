@@ -77,69 +77,73 @@ export function useVideoSignaling({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // Track the session ID for subscriptions set up asynchronously
+  // Track the session ID for use inside subscriptions
   const sessionIdRef = useRef<string | null>(null);
 
-  // ---- Find or subscribe to the existing session -------------------------
+  // Deduplication: observeQuery replays the full list on every update,
+  // so we track which signal IDs we've already dispatched to avoid
+  // re-processing OFFER and ICE_CANDIDATE signals on subsequent updates.
+  const processedSignalIds = useRef<Set<string>>(new Set());
+
+  // ---- Continuously watch for the session ---------------------------------
+  //
+  // Use observeQuery instead of a one-time list() so the CANDIDATE picks up
+  // sessions created by the RECRUITER *after* the candidate has loaded the page.
+  // This also handles real-time status changes (WAITING → CALLING → ACTIVE).
 
   useEffect(() => {
     let isMounted = true;
 
-    async function init(): Promise<void> {
-      try {
-        // Find an existing non-ended session for this stage + candidate
-        const { data: sessions } = await client.models.VideoSession.list({
-          filter: {
-            stageId: { eq: stageId },
-            candidateId: { eq: candidateId },
-          },
-        });
-
-        const active = (sessions ?? []).find((s) => s.status !== 'ENDED');
-        if (isMounted && active) {
-          setSession(active);
-          sessionIdRef.current = active.id;
-        }
-      } catch (err) {
-        if (isMounted) {
-          setError(
-            err instanceof Error ? err : new Error('Failed to fetch video session')
-          );
-        }
-      } finally {
-        if (isMounted) setIsLoading(false);
-      }
-    }
-
-    void init();
-    return () => { isMounted = false; };
-  }, [stageId, candidateId, client]);
-
-  // ---- Subscribe to session status updates --------------------------------
-
-  useEffect(() => {
-    if (!session) return;
-
-    // Re-read session when it's updated by the other party
     const sub = client.models.VideoSession.observeQuery({
-      filter: { id: { eq: session.id } },
+      filter: {
+        stageId: { eq: stageId },
+        candidateId: { eq: candidateId },
+      },
     }).subscribe({
       next: ({ items }) => {
-        const updated = items[0];
-        if (updated) setSession(updated);
+        if (!isMounted) return;
+        setIsLoading(false);
+
+        // Pick the most recently created non-ended session
+        const active = [...items]
+          .filter((s) => s.status !== 'ENDED')
+          .sort((a, b) =>
+            (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+          )[0] ?? null;
+
+        if (active) {
+          setSession(active);
+          sessionIdRef.current = active.id;
+        } else if (!active && items.every((s) => s.status === 'ENDED')) {
+          // All sessions ended — clear local state
+          setSession(null);
+          sessionIdRef.current = null;
+        }
       },
       error: (err: unknown) => {
-        console.error('[useVideoSignaling] Session subscription error:', err);
+        if (isMounted) {
+          console.error('[useVideoSignaling] Session watch error:', err);
+          setError(
+            err instanceof Error ? err : new Error('Failed to watch video session')
+          );
+          setIsLoading(false);
+        }
       },
     });
 
-    return () => sub.unsubscribe();
-  }, [session?.id, client]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      isMounted = false;
+      sub.unsubscribe();
+    };
+  }, [stageId, candidateId, client]);
 
   // ---- Subscribe to incoming signals from the remote peer -----------------
 
   useEffect(() => {
     if (!session) return;
+
+    // Reset deduplication set when session changes (new call)
+    processedSignalIds.current = new Set();
 
     const remoteRole: VideoRole = role === 'RECRUITER' ? 'CANDIDATE' : 'RECRUITER';
 
@@ -150,11 +154,13 @@ export function useVideoSignaling({
       },
     }).subscribe({
       next: ({ items }) => {
-        // Process signals sequentially based on createdAt ordering.
-        // AppSync delivers the full list each time, so we key by id to
-        // avoid re-processing already-handled signals.
+        // observeQuery replays the full list on every new item. Guard
+        // against re-processing signals we've already dispatched (e.g.
+        // the SDP OFFER or earlier ICE candidates).
         items.forEach((sig) => {
           if (!sig.payload) return;
+          if (processedSignalIds.current.has(sig.id)) return;
+          processedSignalIds.current.add(sig.id);
           const payload =
             typeof sig.payload === 'string'
               ? (JSON.parse(sig.payload) as VideoSignalPayload)
@@ -186,6 +192,7 @@ export function useVideoSignaling({
           status: 'WAITING',
         });
       if (errors) throw new Error(errors[0].message);
+      // Optimistic local update (observeQuery will confirm shortly)
       if (newSession) {
         setSession(newSession);
         sessionIdRef.current = newSession.id;
@@ -201,10 +208,11 @@ export function useVideoSignaling({
 
   const updateStatus = useCallback(
     async (status: VideoSessionStatus): Promise<void> => {
-      if (!session) return;
+      const id = sessionIdRef.current;
+      if (!id) return;
       try {
         const { errors } = await client.models.VideoSession.update({
-          id: session.id,
+          id,
           status,
         });
         if (errors) throw new Error(errors[0].message);
@@ -212,7 +220,7 @@ export function useVideoSignaling({
         console.error(`[useVideoSignaling] updateStatus(${status}) error:`, err);
       }
     },
-    [session, client]
+    [client]
   );
 
   const markCalling = useCallback(() => updateStatus('CALLING'), [updateStatus]);
@@ -221,23 +229,27 @@ export function useVideoSignaling({
 
   const sendSignal = useCallback(
     async (type: VideoSignalType, payload: VideoSignalPayload): Promise<void> => {
-      if (!session) {
+      const id = sessionIdRef.current;
+      if (!id) {
         console.error('[useVideoSignaling] sendSignal: no active session');
         return;
       }
       try {
+        // Serialize payload to a JSON string. AppSync's a.json() field rejects
+        // objects with null-valued properties (e.g. sdpMLineIndex: null on some
+        // ICE candidates). A string value sidesteps schema validation entirely.
         const { errors } = await client.models.VideoSignal.create({
-          sessionId: session.id,
+          sessionId: id,
           senderRole: role,
           type,
-          payload,
+          payload: JSON.stringify(payload),
         });
         if (errors) throw new Error(errors[0].message);
       } catch (err) {
         console.error('[useVideoSignaling] sendSignal error:', err);
       }
     },
-    [session, role, client]
+    [role, client]
   );
 
   return {
