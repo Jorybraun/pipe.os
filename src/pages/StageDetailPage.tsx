@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Settings } from 'lucide-react';
+import { ArrowLeft, Plus, Settings, Video } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../components';
 import { Skeleton } from '../components/ui/Skeleton';
 import { ChallengeCard } from '../components/Pipeline/ChallengeCard';
@@ -35,6 +35,9 @@ export default function StageDetailPage(): JSX.Element {
   const [stage, setStage] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // False until we confirm Stage.mode exists in the deployed sandbox schema.
+  // Run `npx ampx sandbox` to deploy Phase 8 schema, then this becomes true automatically.
+  const [modeFieldReady, setModeFieldReady] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -47,28 +50,48 @@ export default function StageDetailPage(): JSX.Element {
     })
   );
 
+  // Probe whether Stage.mode exists in the deployed sandbox schema.
+  // The Amplify client validates field names against amplify_outputs.json at call-time.
+  // If this throws, the Phase 8 schema hasn't been deployed yet (`npx ampx sandbox`).
+  const checkModeField = useCallback(async (stageId: string) => {
+    try {
+      await client.models.Stage.list({
+        filter: { id: { eq: stageId } },
+        selectionSet: ['id', 'mode'],
+      });
+      setModeFieldReady(true);
+    } catch {
+      setModeFieldReady(false);
+    }
+  }, []);
+
   const fetchData = useCallback(async () => {
     if (!stageId) return;
     try {
       setIsLoading(true);
-      const { data: stages } = await client.models.Stage.list({ 
-        filter: { id: { eq: stageId } },
-        selectionSet: [
-          'id', 'title', 'order', 'timeLimit', 
-          'challenges.*'
-        ]
-      });
-      
+      // Include 'mode' only once the schema probe confirms it exists in the deployed sandbox.
+      const { data: stages } = modeFieldReady
+        ? await client.models.Stage.list({
+            filter: { id: { eq: stageId } },
+            selectionSet: ['id', 'title', 'order', 'timeLimit', 'mode', 'challenges.*'],
+          })
+        : await client.models.Stage.list({
+            filter: { id: { eq: stageId } },
+            selectionSet: ['id', 'title', 'order', 'timeLimit', 'challenges.*'],
+          });
+
       const data = stages[0];
-      if (data) {
-        setStage(data);
-      }
+      if (data) setStage(data);
     } catch (err) {
       console.error('[StageDetail] Error fetching stage:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [stageId]);
+  }, [stageId, modeFieldReady]);
+
+  useEffect(() => {
+    if (stageId) void checkModeField(stageId);
+  }, [stageId, checkModeField]);
 
   useEffect(() => {
     fetchData();
@@ -312,6 +335,65 @@ export default function StageDetailPage(): JSX.Element {
                 <p style={{ marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.2)', lineHeight: 1.4 }}>
                   Applied to all challenges in this stage unless overridden.
                 </p>
+              </div>
+
+              {/* STAGE_MODE — ASYNC (default) or LIVE_VIDEO */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>
+                  <Video size={12} />
+                  STAGE_MODE
+                </label>
+                {!modeFieldReady ? (
+                  <div style={{ padding: '10px 12px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: 4 }}>
+                    <p style={{ margin: 0, fontSize: 9, color: 'rgba(251,191,36,0.7)', lineHeight: 1.6, fontFamily: 'Space Mono' }}>
+                      ⚠ SCHEMA_NOT_DEPLOYED<br />
+                      <span style={{ opacity: 0.6 }}>Run <code>npx ampx sandbox</code> to enable live video stages.</span>
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 0, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
+                      {(['ASYNC', 'LIVE_VIDEO'] as const).map((m) => {
+                        const isActive = (stage.mode ?? 'ASYNC') === m;
+                        return (
+                          <button
+                            key={m}
+                            onClick={async () => {
+                              if (isActive) return;
+                              setStage({ ...stage, mode: m });
+                              try {
+                                await client.models.Stage.update({ id: stage.id, mode: m });
+                              } catch (err) {
+                                console.error('[StageDetail] Failed to update mode:', err);
+                                setStage({ ...stage, mode: stage.mode });
+                              }
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: '8px 0',
+                              background: isActive ? 'rgba(255,255,255,0.12)' : 'transparent',
+                              border: 'none',
+                              color: isActive ? '#fff' : 'rgba(255,255,255,0.3)',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              letterSpacing: '0.12em',
+                              fontFamily: 'Space Mono',
+                              cursor: isActive ? 'default' : 'pointer',
+                              transition: 'background 0.15s, color 0.15s',
+                            }}
+                          >
+                            {m === 'LIVE_VIDEO' ? '⦿ LIVE_VIDEO' : 'ASYNC'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(stage.mode ?? 'ASYNC') === 'LIVE_VIDEO' && (
+                      <p style={{ marginTop: 8, fontSize: 10, color: 'rgba(96,165,250,0.7)', lineHeight: 1.4 }}>
+                        Candidate will join a live WebRTC video call before accessing challenges.
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
 
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 20 }}>
