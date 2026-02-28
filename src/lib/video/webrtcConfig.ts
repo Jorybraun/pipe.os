@@ -1,14 +1,21 @@
 import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../../amplify/data/resource';
 
 // ============================================================================
 // WebRTC Configuration
 // ============================================================================
 //
 // Uses Metered.ca for TURN relay (free tier: 50GB/month).
-// Set METERED_API_KEY in your .env file.
+// METERED_API_KEY is stored in the Lambda environment (never exposed to client).
 // Falls back to STUN-only if credentials unavailable.
+//
+// NOTE: Only called by authenticated recruiters. Candidates receive ICE servers
+// via the OFFER payload — they never call this API directly.
 
-const client = generateClient();
+// Explicit userPool authMode: this is a recruiter-only call. If there is no
+// authenticated session the call will fail fast rather than silently returning
+// null with a misleading "no federated JWT" warning.
+const client = generateClient<Schema>({ authMode: 'userPool' });
 
 /** Cached TURN credentials to avoid re-fetching during a session */
 let cachedIceServers: RTCIceServer[] | null = null;
@@ -34,13 +41,9 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
   }
 
   try {
-    const response = await client.graphql({
-      query: `query GetTurnCredentials {
-        getTurnCredentials
-      }`,
-    }) as any;
+    const response = await client.queries.getTurnCredentials();
 
-    const servers = response.data?.getTurnCredentials as RTCIceServer[] | null;
+    const servers = response.data as RTCIceServer[] | null;
 
     if (!servers) {
       console.error('[webrtcConfig] getTurnCredentials query returned null');
@@ -59,9 +62,13 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
 }
 
 /**
- * Builds a fully configured RTCPeerConnection with the correct ICE servers.
+ * Builds a fully configured RTCPeerConnection.
+ *
+ * @param iceServers - Optional override. Candidates pass ICE servers received
+ *   in the OFFER payload so they never need to call getTurnCredentials directly.
+ *   If omitted (recruiter path), credentials are fetched from the Lambda.
  */
-export async function createPeerConnection(): Promise<RTCPeerConnection> {
-  const iceServers = await getIceServers();
-  return new RTCPeerConnection({ iceServers });
+export async function createPeerConnection(iceServers?: RTCIceServer[]): Promise<RTCPeerConnection> {
+  const servers = iceServers ?? await getIceServers();
+  return new RTCPeerConnection({ iceServers: servers });
 }

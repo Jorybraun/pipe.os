@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `fix-turn-relay-via-offer` — Relay TURN credentials through OFFER signal, remove guest API access
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/lib/video/types.ts`**: Added `iceServers?: RTCIceServer[]` to `SdpPayload` — credentials travel with the OFFER.
+    - **`src/lib/video/webrtcConfig.ts`**: `createPeerConnection(iceServers?)` now accepts an optional override so candidates use relayed credentials instead of fetching directly.
+    - **`src/hooks/useVideoSession.ts`**: `startCall()` fetches TURN credentials (recruiter is authenticated) and embeds them in the OFFER payload. `acceptCall()` uses `offer.iceServers` on `initPeerConnection`, never calling the Lambda. `initPeerConnection` now accepts optional `iceServers?`.
+    - **`amplify/data/resource.ts`**: Removed `allow.guest()` from `getTurnCredentials` — only authenticated recruiters can call it.
+- **Security**: Eliminates unauthenticated abuse vector. Credentials can only be fetched by authenticated users (recruiters). Rate limited naturally to one fetch per call session.
+- **Breaking**: None — candidates now get TURN servers via OFFER payload (previously tried to fetch directly and failed anyway).
+
 ### `fix-turn-credentials-agent-ts` — Fix TypeScript validation error in turnCredentialsAgent
 - **Status**: 🟢 DONE
 - **Changes**:

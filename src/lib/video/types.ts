@@ -19,10 +19,16 @@ export type VideoSignalType = 'OFFER' | 'ANSWER' | 'ICE_CANDIDATE' | 'HANGUP';
 
 /**
  * Payload stored in VideoSignal.payload for OFFER and ANSWER types.
+ *
+ * iceServers is included in OFFER only: the recruiter (authenticated) fetches
+ * TURN credentials and embeds them here so the candidate never needs to call
+ * the getTurnCredentials API directly. This prevents unauthenticated abuse.
  */
 export interface SdpPayload {
   type: RTCSdpType;
   sdp: string;
+  /** TURN/STUN servers fetched by the recruiter, relayed to the candidate via OFFER */
+  iceServers?: RTCIceServer[];
 }
 
 /**

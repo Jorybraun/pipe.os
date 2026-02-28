@@ -284,7 +284,7 @@ const schema = a.schema({
     .query()
     .returns(a.json())
     .handler(a.handler.function('turnCredentialsAgent'))
-    .authorization((allow) => [allow.authenticated(), allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

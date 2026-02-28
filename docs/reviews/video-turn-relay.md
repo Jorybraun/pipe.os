@@ -1,48 +1,34 @@
-# Code Review Request: video-turn-relay
+# Code Review — fix-turn-relay-via-offer
 
-**Commit ID:** video-turn-relay
 **Date:** 2026-02-28
-**Author:** Gemini CLI Agent / Devin Subagent
-**Changelog:** [docs/changelogs/video-turn-relay.md](../changelogs/video-turn-relay.md)
+**Author:** Gemini CLI
+**Reviewer:** [Pending]
 
-## Summary
-Secured the WebRTC TURN integration by moving sensitive API calls to a backend-only Lambda function.
+## Description
+This PR fixes the video call failure for candidates by relaying TURN credentials through the OFFER signaling payload. This eliminates the need for unauthenticated candidates to call the `getTurnCredentials` Lambda directly, which was causing authentication failures and exposing a potential abuse vector.
 
-## Key Changes for Review
+## Changeset
 
-### 1. Secure Credential Retrieval
-**File:** `amplify/functions/turnCredentialsAgent/handler.ts`
+### 🔒 Security & Schema
+- **`amplify/data/resource.ts`**: Removed `allow.publicApiKey()` from `getTurnCredentials`. Now only recruiters (authenticated via Cognito User Pool) can fetch relay credentials.
 
-**Change:** New Lambda handler that fetches credentials from Metered.ca using `process.env.METERED_API_KEY`.
+### 📡 Signaling & Types
+- **`src/lib/video/types.ts`**: Added `iceServers` to `SdpPayload` to carry credentials in the OFFER.
+- **`src/hooks/useVideoSession.ts`**:
+    - `startCall()`: Fetches credentials and embeds them in the OFFER.
+    - `acceptCall()`: Extracts credentials from the OFFER and uses them for the peer connection.
+    - `initPeerConnection()`: Supports optional credential override.
 
-**Rationale:** Original implementation exposed the secret key in the frontend. This refactor ensures the key stays in the secure backend environment.
+### 🛠️ Client Configuration
+- **`src/lib/video/webrtcConfig.ts`**: 
+    - Forced `userPool` auth for `getTurnCredentials` to avoid misleading "no federated JWT" console warnings.
+    - Switched to typed query `client.queries.getTurnCredentials()`.
 
-### 2. AppSync Integration
-**File:** `amplify/data/resource.ts`
+## Validation Plan
+1. [x] **Type Check**: `npx tsc --noEmit` passes.
+2. [ ] **Sandbox Deploy**: Run `npx ampx sandbox` to verify schema changes deploy without error.
+3. [ ] **Manual E2E**: Start a call as a recruiter, verify candidate receives `iceServers` in the OFFER signal and successfully joins the call.
 
-**Change:** Added `getTurnCredentials` query with `authenticated` and `publicApiKey` authorization.
-
-**Rationale:** Both recruiters and candidates need TURN credentials to establish a peer-to-peer connection.
-
-### 3. Frontend Refactor
-**File:** `src/lib/video/webrtcConfig.ts`
-
-**Change:** Refactored `getIceServers()` to use the new AppSync query.
-
-**Rationale:** Aligns with the new secure architecture.
-
-## Security Review
-- ✅ **No Secret Leaks:** The `METERED_API_KEY` is only used in the Lambda environment.
-- ✅ **Authorization:** `getTurnCredentials` is properly authorized for both user types.
-
-## Testing Plan
-**Before Deployment:**
-- [ ] Run `npx ampx sandbox` to verify backend definition validity.
-
-**Manual Testing:**
-1. **TURN Credentials:**
-   - Trigger the `getTurnCredentials` query in the sandbox.
-   - Verify it returns valid ICE servers from Metered.ca.
-
-## Requested Reviewer: Hans
-Please verify the security model and the AppSync authorization.
+## Security Audit
+- **Exposure**: TURN credentials (username/password) are relayed via AppSync. Since AppSync signals are already encrypted and scoped to the session (recruiter/candidate only), this is acceptable.
+- **Abuse**: The `getTurnCredentials` Lambda is now restricted to authenticated recruiters only.

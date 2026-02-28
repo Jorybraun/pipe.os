@@ -1,8 +1,29 @@
 # Pipe — MVP Task List
 
-**Updated:** 2026-02-27 (Step 4 scoped to MVP; Step 4.5 creation/editing added; PreviewPanel/TestPanel/Piston moved to post-MVP)
+**Updated:** 2026-02-28
 **Goal:** Recruiter creates a pipeline → invites a candidate → candidate completes a set of challenges → recruiter sees score.
 **Rule:** Do tasks in order. One at a time. Don't start the next phase until the current one is done.
+
+---
+
+## 🔥 IN PROGRESS — Video TURN Relay Fix
+
+**Goal:** Video calls between recruiter and candidate fail because TURN credentials are not being fetched correctly. STUN-only is insufficient when both peers are behind NAT (mobile networks, corporate firewalls).
+
+**Root causes found & fixed (code done, not yet deployed to main):**
+
+- [x] **Security: removed `allow.guest()` from `getTurnCredentials`** — candidates were being asked to call the Lambda directly, which opened unauthenticated abuse. Fixed: recruiter fetches credentials (authenticated), embeds them in the OFFER payload, candidate uses them from there. (`amplify/data/resource.ts`)
+- [x] **Architecture: TURN credentials now travel via OFFER signal** — `SdpPayload` has new optional `iceServers?: RTCIceServer[]`. `startCall()` fetches + embeds. `acceptCall()` extracts + uses. Candidate never calls `getTurnCredentials` directly. (`types.ts`, `useVideoSession.ts`)
+- [x] **Client hygiene: `webrtcConfig.ts`** — changed from untyped `generateClient()` + raw graphql string to `generateClient<Schema>({ authMode: 'userPool' })` + `client.queries.getTurnCredentials()`. Eliminates the "no federated JWT" console warning.
+
+**Remaining blocker — METERED_API_KEY value is wrong in SSM:**
+
+- The Lambda IS being invoked and IS reading the key from SSM (`/amplify/shared/d2qfb8rd4bumbf/METERED_API_KEY`)
+- Metered.ca is returning **HTTP 401** — the key value itself is invalid/expired
+- You just updated the key name in the Amplify Console — need to confirm the *value* is the correct API key from https://dashboard.metered.ca
+- [ ] **Verify the key works** — run the Lambda invoke to confirm 200: `aws lambda invoke --function-name amplify-d2qfb8rd4bumbf-ma-turnCredentialsAgentlamb-C0NEob81gbCL --payload "{}" -`
+- [ ] **Commit + push `gemini-work`** — the code changes above are uncommitted locally
+- [ ] **Merge `gemini-work` → `main`** — triggers Amplify deploy, schema update (removes `allow.guest()`), and deploys updated Lambda
 
 ---
 

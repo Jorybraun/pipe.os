@@ -129,7 +129,7 @@ export function useVideoSession({
 
   // ---- Helper: wire up a fresh RTCPeerConnection --------------------------
 
-  const initPeerConnection = useCallback(async (): Promise<RTCPeerConnection> => {
+  const initPeerConnection = useCallback(async (iceServers?: RTCIceServer[]): Promise<RTCPeerConnection> => {
     if (pcRef.current) {
       // Replacing an existing connection (re-call). Close it and discard any
       // stale buffered candidates — they belonged to the old session.
@@ -142,7 +142,7 @@ export function useVideoSession({
     // Those candidates are already buffered; clearing the array would lose them.
     remoteDescSetRef.current = false;
 
-    const pc = await createPeerConnection();
+    const pc = await createPeerConnection(iceServers);
     pcRef.current = pc;
 
     // Forward ICE candidates to the remote peer via AppSync
@@ -206,13 +206,19 @@ export function useVideoSession({
     setConnectionState('calling');
 
     try {
-      const pc = await initPeerConnection();
+      // Fetch TURN credentials here (recruiter is authenticated).
+      // They are embedded in the OFFER payload so the candidate never needs
+      // to call getTurnCredentials — preventing unauthenticated API abuse.
+      const { getIceServers } = await import('../lib/video/webrtcConfig');
+      const iceServers = await getIceServers();
+
+      const pc = await initPeerConnection(iceServers);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
       if (!offer.sdp) throw new Error('Offer SDP is empty');
 
-      await sendSignal('OFFER', { type: offer.type, sdp: offer.sdp });
+      await sendSignal('OFFER', { type: offer.type, sdp: offer.sdp, iceServers });
     } catch (err) {
       console.error('[useVideoSession] startCall error:', err);
       setConnectionState('error');
@@ -225,8 +231,9 @@ export function useVideoSession({
       setConnectionState('connecting');
 
       try {
-        // initPeerConnection resets remoteDescSetRef and pendingCandidatesRef
-        const pc = await initPeerConnection();
+        // Use ICE servers relayed from the recruiter via the OFFER payload.
+        // Falls back to STUN-only if not present (older clients).
+        const pc = await initPeerConnection(offer.iceServers);
 
         // Set remote description — ICE candidates received during this await
         // will be buffered by addIceCandidate and drained below.
