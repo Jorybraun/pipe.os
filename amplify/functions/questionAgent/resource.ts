@@ -47,5 +47,5 @@ export const questionAgent = defineFunction({
   },
 
   // Runtime
-  runtime: 20,  // Node.js 20
+  runtime: 22,  // Node.js 22
 });

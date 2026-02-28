@@ -15,6 +15,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **Breaking**: None — gracefully falls back to STUN-only if credentials unavailable.
 
 ### `lambda-runtime-upgrade` — Upgrade Lambda Functions to Node.js 22
+- **Detailed Log**: [docs/changelogs/lambda-runtime-upgrade.md](docs/changelogs/lambda-runtime-upgrade.md)
 - **Status**: 🟢 DONE
 - **Changes**:
     - **`amplify/functions/questionAgent/resource.ts`**: `runtime: 20` → `runtime: 22`
