@@ -118,6 +118,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         filter: { pipelineId: { eq: candidate.pipelineId } },
         selectionSet: [
           'id',
+          'title',
           'order',
           'timeLimit',
           'challenges.id',
@@ -134,12 +135,15 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         ]
       });
 
-      const sortedStages = [...stages].sort((a, b) => (a.order || 0) - (b.order || 0));
+      const sortedStages = [...stages]
+        .filter(s => s !== null)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
 
       // Sort challenges within each stage and sanitize configs
       const sanitizedStages: StageWithChallenges[] = sortedStages.map(stage => ({
         ...stage,
         challenges: (stage.challenges || [])
+          .filter(c => c !== null)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
           .map(challenge => {
             const parsedConfig = typeof challenge.config === 'string' 

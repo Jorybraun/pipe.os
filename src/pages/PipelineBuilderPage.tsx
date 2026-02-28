@@ -44,7 +44,7 @@ type StageType =
 
 interface StageConfig {
   id: StageType;
-  name: string;
+  title: string;
   icon: typeof Phone;
   configured: boolean;
   order: number;
@@ -54,42 +54,42 @@ interface StageConfig {
 const initialStages: StageConfig[] = [
   {
     id: "SCREENING",
-    name: "Screening",
+    title: "Screening",
     icon: Phone,
     configured: true,
     order: 1,
   },
   {
     id: "AI_COLLAB",
-    name: "AI Collaboration",
+    title: "AI Collaboration",
     icon: Zap,
     configured: false,
     order: 2,
   },
   {
     id: "CODE_REVIEW",
-    name: "Code Review",
+    title: "Code Review",
     icon: Code,
     configured: false,
     order: 3,
   },
   {
     id: "PLANNING",
-    name: "Planning",
+    title: "Planning",
     icon: FileText,
     configured: false,
     order: 4,
   },
   {
     id: "VOICE",
-    name: "Voice Interview",
+    title: "Voice Interview",
     icon: Mic,
     configured: false,
     order: 5,
   },
   {
     id: "PANEL",
-    name: "Panel Interview",
+    title: "Panel Interview",
     icon: Users,
     configured: false,
     order: 6,
@@ -141,7 +141,7 @@ function StageCard({
           marginBottom: 8,
         }}
       >
-        {stage.name.toUpperCase()}
+        {stage.title.toUpperCase()}
       </div>
 
       <div

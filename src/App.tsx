@@ -79,7 +79,7 @@ const SubHeader = () => {
 
   if (!isPipelineContext && !isCandidateContext) return null;
 
-  const currentStage = stage ? { name: stage } : null;
+  const currentStage = stage ? { title: stage } : null;
 
   return (
     <div
@@ -121,7 +121,7 @@ const SubHeader = () => {
         >
           <ArrowLeft size={12} />{" "}
           {questionId && currentStage
-            ? `BACK TO ${currentStage.name.toUpperCase()}`
+            ? `BACK TO ${currentStage.title.toUpperCase()}`
             : stage
             ? "BACK TO OVERVIEW"
             : isCandidateContext

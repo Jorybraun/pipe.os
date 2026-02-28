@@ -13,3 +13,13 @@ export function sanitizeChallengeConfig(config: any, challengeType: string): any
 
   return config;
 }
+
+export type CandidateSignal = 'STRONG' | 'YES' | 'MAYBE' | 'NO';
+
+export function calculateSignal(score: number | null): CandidateSignal {
+  if (score === null) return 'MAYBE';
+  if (score >= 85) return 'STRONG';
+  if (score >= 70) return 'YES';
+  if (score >= 50) return 'MAYBE';
+  return 'NO';
+}

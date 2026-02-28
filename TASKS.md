@@ -257,13 +257,11 @@
 
 ---
 
-### Step 5: Recruiter review per challenge
+### Step 5: Recruiter review per challenge ✅ (done)
 
-- [ ] **Update `CandidateProfilePage.tsx`** — group assessments by stage, show per-challenge results with score + submission preview. ~2 hours.
-
-- [ ] **Add manual scoring interface** — 0–100 slider + comment for SHORT_ANSWER and CODE_IMPLEMENTATION. Saves to `Assessment.score`. ~1.5 hours.
-
-- [ ] **Roll up scores** — challenge → stage → overall. Update STRONG/YES/MAYBE/NO signal. ~30 min.
+- [x] **Update `CandidateProfilePage.tsx`** — group assessments by stage, show per-challenge results with score + submission preview. ✅
+- [x] **Add manual scoring interface** — 0–100 slider + comment for SHORT_ANSWER and CODE_IMPLEMENTATION. Saves to `Assessment.score`. ✅
+- [x] **Roll up scores** — challenge → stage → overall. Update STRONG/YES/MAYBE/NO signal. ✅
 
 ---
 

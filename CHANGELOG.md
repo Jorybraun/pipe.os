@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ## [Unreleased]
 
+### `candidate-review-enhancements` — Step 5: Recruiter Review & Stage Details Fix
+- **Detailed Log**: [docs/changelogs/candidate-review-enhancements.md](docs/changelogs/candidate-review-enhancements.md)
+- **Status**: 🟢 DONE
+- **Changes**:
+    - Fixed `title is not a field of model Stage` error in `StageDetailPage.tsx` by removing unused fields from query.
+    - Implemented Step 5: Recruiter review per challenge in `CandidateProfilePage.tsx`.
+    - Added MCQ and Code Review submission previews to `CandidateProfilePage.tsx`.
+    - Added `calculateSignal` utility in `src/lib/utils.ts`.
+    - Updated `OverviewPage.tsx` to calculate candidate average scores from assessments.
+
 ### `challenge-management-spec` — Challenge Management & Template System Specification
 - **Detailed Log**: [docs/changelogs/challenge-management-spec.md](docs/changelogs/challenge-management-spec.md)
 - **Status**: 🟡 PENDING REVIEW

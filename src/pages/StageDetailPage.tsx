@@ -25,12 +25,15 @@ export default function StageDetailPage(): JSX.Element {
     if (!stageId) return;
     try {
       setIsLoading(true);
-      const { data } = await client.models.Stage.get({ 
-        id: stageId,
-      }, {
-        selectionSet: ['id', 'title', 'description', 'order', 'timeLimit', 'challenges.id', 'challenges.title', 'challenges.type', 'challenges.order', 'challenges.instructions']
-      } as any);
+      const { data: stages } = await client.models.Stage.list({ 
+        filter: { id: { eq: stageId } },
+        selectionSet: [
+          'id', 'title', 'order', 'timeLimit', 
+          'challenges.*'
+        ]
+      });
       
+      const data = stages[0];
       if (data) {
         setStage(data);
       }
@@ -89,7 +92,9 @@ export default function StageDetailPage(): JSX.Element {
 
   if (!stage) return <div style={{ padding: 40, color: '#fff' }}>Stage not found.</div>;
 
-  const challenges = [...(stage.challenges || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const challenges = [...(stage.challenges || [])]
+    .filter(c => c !== null)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
 
   return (
     <div style={{ paddingBottom: 100 }}>
@@ -106,7 +111,29 @@ export default function StageDetailPage(): JSX.Element {
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: 'Space Mono' }}>
               PIPELINE_STAGE / {stage.id.substring(0, 8)}
             </div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: 0 }}>Stage Details</h1>
+            <input 
+              value={stage.title || ''}
+              onChange={async (e) => {
+                const newVal = e.target.value;
+                setStage({ ...stage, title: newVal });
+                // In real app, would debounce this
+                await client.models.Stage.update({ id: stage.id, title: newVal });
+              }}
+              style={{ 
+                background: 'transparent',
+                border: 'none',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                fontSize: 24, 
+                fontWeight: 800, 
+                color: '#fff', 
+                margin: 0,
+                padding: '4px 0',
+                outline: 'none',
+                width: '100%',
+                minWidth: 300
+              }}
+              placeholder="Stage Title"
+            />
           </div>
         </div>
 

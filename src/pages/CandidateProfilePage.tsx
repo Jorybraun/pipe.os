@@ -15,6 +15,7 @@ import {
 import { Skeleton } from "../components/ui/Skeleton";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
+import { calculateSignal } from "../lib/utils";
 
 const client = generateClient<Schema>();
 
@@ -100,12 +101,14 @@ export default function CandidateProfilePage(): JSX.Element {
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: cand.pipelineId } },
-          selectionSet: ['id', 'order', 'challenges.id', 'challenges.title', 'challenges.type', 'challenges.order']
+          selectionSet: ['id', 'title', 'order', 'challenges.*']
         }),
       ]);
 
       setAssessments(assData.data as any);
-      const sortedStages = stagesData.data.sort((a, b) => (a.order || 0) - (b.order || 0));
+      const sortedStages = stagesData.data
+        .filter(s => s !== null)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
       setStages(sortedStages);
       
       if (sortedStages.length > 0) {
@@ -195,7 +198,7 @@ export default function CandidateProfilePage(): JSX.Element {
     ? Math.round(completedStages.reduce((sum, s) => sum + (s.score || 0), 0) / completedStages.length)
     : 0;
 
-  const signal = avgScore >= 85 ? "STRONG" : avgScore >= 70 ? "YES" : avgScore >= 50 ? "MAYBE" : "NO";
+  const signal = calculateSignal(avgScore);
 
   const aiProfile = {
     verdict: signal === "STRONG" ? "STRONG\nYES" : signal === "YES" ? "YES" : signal === "MAYBE" ? "MAYBE" : "NO_GO",
@@ -278,7 +281,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     marginBottom: 8,
                   }}
                 >
-                  {'STAGE'}
+                  {(stage.title || 'STAGE').toUpperCase()}
                 </div>
 
                 {stats?.score !== null && stats?.score !== undefined ? (
@@ -570,35 +573,63 @@ export default function CandidateProfilePage(): JSX.Element {
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: isManual ? '1fr 300px' : '1fr', gap: 32 }}>
                       <div style={{ background: 'rgba(0,0,0,0.2)', padding: 24, borderRadius: 4 }}>
-                        {challenge.type === 'QUIZ_MCQ' && submission?.answers && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {Object.entries(submission.answers).map(([qId, ans]: [string, any]) => (
-                              <div key={qId} style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.3)', marginRight: 8 }}>Q_{qId}:</span>
-                                Selected Option {ans}
-                              </div>
-                            ))}
+                        {challenge.type === 'QUIZ_MCQ' && submission && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div style={{ fontSize: 14, color: '#fff', fontWeight: 500, lineHeight: 1.5 }}>
+                              {challenge.config?.q || 'Question text missing'}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {(challenge.config?.options || []).map((opt: any) => {
+                                const isSelected = submission.selectedOptionId === opt.id || submission.answers?.[challenge.id] === opt.id;
+                                const isCorrect = challenge.config?.correctOptionId === opt.id || challenge.config?.correct === opt.id;
+                                
+                                return (
+                                  <div 
+                                    key={opt.id} 
+                                    style={{ 
+                                      padding: '12px 16px', 
+                                      background: isSelected ? 'rgba(255,255,255,0.05)' : 'transparent',
+                                      border: `1px solid ${isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)'}`,
+                                      borderRadius: 4,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between'
+                                    }}
+                                  >
+                                    <div style={{ fontSize: 13, color: isSelected ? '#fff' : 'rgba(255,255,255,0.5)' }}>
+                                      {opt.text || opt.label}
+                                    </div>
+                                    {isSelected && (
+                                      <div style={{ fontSize: 9, fontWeight: 700, color: isCorrect ? '#10b981' : '#f87171', fontFamily: 'Space Mono' }}>
+                                        {isCorrect ? 'CORRECT' : 'INCORRECT'}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                         
                         {challenge.type === 'CODE_REVIEW' && submission?.annotations && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            {Object.entries(submission.annotations).map(([snippetId, snipAnnotations]: [string, any]) => (
-                              <div key={snippetId}>
-                                <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', marginBottom: 12 }}>SNIPPET: {snippetId}</div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                  {snipAnnotations.map((ann: any, idx: number) => (
-                                    <div key={idx} style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
-                                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
-                                        <span style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>LINE {ann.line}</span>
-                                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>{ann.severity}</span>
-                                      </div>
-                                      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{ann.comment}</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>CANDIDATE_ANNOTATIONS</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {Object.entries(submission.annotations).flatMap(([snippetId, snipAnnotations]: [string, any]) => 
+                                snipAnnotations.map((ann: any, idx: number) => (
+                                  <div key={`${snippetId}-${idx}`} style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderLeft: `2px solid ${ann.severity === 'critical' ? '#ef4444' : ann.severity === 'major' ? '#f59e0b' : 'rgba(255,255,255,0.1)'}` }}>
+                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 4 }}>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>LINE {ann.line}</span>
+                                      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>{ann.severity}</span>
                                     </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
+                                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>{ann.comment}</div>
+                                  </div>
+                                ))
+                              )}
+                              {Object.keys(submission.annotations).length === 0 && (
+                                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontStyle: 'italic' }}>No annotations provided.</div>
+                              )}
+                            </div>
                           </div>
                         )}
 

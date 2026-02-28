@@ -72,10 +72,12 @@ const OverviewSkeleton = () => (
 
 // Stage header card
 function StageHeaderCard({
+  stage,
   candidates,
   isActive,
   onClick,
 }: {
+  stage: any;
   candidates: any[];
   isActive: boolean;
   onClick: () => void;
@@ -122,7 +124,7 @@ function StageHeaderCard({
           marginBottom: 12,
         }}
       >
-        {'STAGE'}
+        {(stage.title || 'STAGE').toUpperCase()}
       </div>
 
       {avgScore !== null ? (
@@ -408,17 +410,27 @@ export default function OverviewPage(): JSX.Element {
         client.models.Pipeline.get({ id }),
         client.models.Candidate.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'name', 'email', 'status', 'inviteToken', 'assessments.id', 'assessments.challengeId']
+          selectionSet: ['id', 'name', 'email', 'status', 'inviteToken', 'assessments.id', 'assessments.challengeId', 'assessments.score']
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'order', 'challenges.id']
+          selectionSet: ['id', 'title', 'order', 'challenges.*']
         }),
       ]);
 
       setPipeline(pipelineData.data);
-      setCandidates(candidatesData.data);
-      setStages((stagesData.data as any[]).sort((a, b) => (a.order || 0) - (b.order || 0)));
+      
+      // Calculate scores for each candidate
+      const enrichedCandidates = candidatesData.data.map(c => {
+        const scores = (c.assessments || []).map((a: any) => a.score).filter((s: any) => typeof s === 'number');
+        const score = scores.length > 0 ? Math.round(scores.reduce((sum: number, s: number) => sum + s, 0) / scores.length) : null;
+        return { ...c, score };
+      });
+
+      setCandidates(enrichedCandidates);
+      setStages((stagesData.data as any[])
+        .filter(s => s !== null)
+        .sort((a, b) => (a.order || 0) - (b.order || 0)));
     } catch (err) {
       console.error("Error fetching pipeline data:", err);
       setError(err instanceof Error ? err : new Error("Failed to load pipeline data"));
@@ -728,6 +740,7 @@ export default function OverviewPage(): JSX.Element {
             <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* Header */}
               <StageHeaderCard
+                stage={s}
                 candidates={stageCandidates}
                 isActive={false}
                 onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}

@@ -39,6 +39,7 @@ async function main() {
       if (pipelineId) {
         const { data: stage } = await client.models.Stage.create({
           pipelineId,
+          title: 'E2E Test Stage',
           order: 0,
         });
         if (stage) {

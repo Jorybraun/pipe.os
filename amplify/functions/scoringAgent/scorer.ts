@@ -56,3 +56,18 @@ export function scoreQuizMCQ(
   
   return selectedId === correctId ? 100 : 0;
 }
+
+/**
+ * Unified scorer function
+ */
+export function scorer(type: string, submission: any, serverConfig: any): number {
+    switch (type) {
+        case 'CODE_REVIEW':
+            return scoreCodeReview(submission, serverConfig as CodeReviewConfig);
+        case 'QUIZ_MCQ':
+            return scoreQuizMCQ(submission, serverConfig as QuizMCQConfig);
+        default:
+            console.warn(`No scoring logic implemented for type: ${type}`);
+            return 0;
+    }
+}
