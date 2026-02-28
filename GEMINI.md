@@ -97,9 +97,14 @@ Every AI Lambda must follow the `questionAgent` pattern: separate files for hand
 ## 📚 **Living Documentation**
 
 We maintain a "clean" active workspace. Documentation should always reflect the current state of the system.
-- **Archive on Completion:** Once a feature or task is committed, move all related specs, briefs, and temporary research files from `docs/specs/` or `docs/design/` to `docs/archive/`.
-- **Status Alignment:** Update `docs/STATUS.md` and `TASKS.md` immediately upon completion.
-- **No Stale Context:** Active `docs/` should only contain current architectural maps, active project guides, and decisions.
+
+**Archive on Completion:**
+- ✅ **Archive these:** Task-specific handoffs (`HANDOFF-*.md`), temporary briefs, completed research notes, one-off specs
+- ❌ **Keep as reference:** Architectural design docs (`*-architecture.md`), ADRs (`docs/decisions/`), engineering standards, active feature specs
+
+**Status Alignment:** Update `docs/STATUS.md` and `TASKS.md` immediately upon completion.
+
+**No Stale Context:** Active `docs/` should only contain current architectural maps, active project guides, and decisions.
 
 ---
 
@@ -110,5 +115,5 @@ We maintain a "clean" active workspace. Documentation should always reflect the 
 2. Create a detailed log in `docs/changelogs/[commit-id].md`.
 3. Run `npx tsc --noEmit` — must pass.
 4. If architectural, write an ADR in `docs/decisions/`.
-5. **Living Docs:** Archive completed documentation related to the change (move to `docs/archive/`).
+5. **Living Docs:** Archive temporary task docs (handoffs, briefs) to `docs/archive/`. Keep architectural design docs as permanent reference.
 6. Create a code review request in `docs/reviews/[commit-id].md`.

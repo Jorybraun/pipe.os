@@ -8,11 +8,12 @@
 
 ## Recent Updates (2026-02-27)
 
+- **Video Interview Connection Fix (CRITICAL):** Resolved P0 WebRTC connection bug ([commit 10f042c](../changelogs/10f042c.md)). Fixed auth asymmetry preventing signal delivery, implemented deferred accept pattern, added connecting state UI, and fixed drag positioning. **Requires schema redeploy:** `npx ampx sandbox`.
 - **Recruiter Review Enhancements:** Implemented Step 5 of Phase 7. `CandidateProfilePage.tsx` now groups assessments by stage and provides per-challenge submission previews (MCQ, Code Review) and manual scoring.
 - **Schema Stabilization:** Standardized the `Stage` model to use `title` throughout the codebase. Resolved critical "title is not a field" and relationship loading errors.
 - **Instruction Refinement:** Updated `GEMINI.md` to mandate a "Living Documentation" workflow. Agents must now archive completed specs and briefs upon task finalization.
-- **Documentation Cleanup:** Archived completed handoffs (`HANDOFF-data-cleanup.md`), design specs (`content-seeding-strategy.md`, `conversational-discovery.md`), and historical reviews (`phase-2-code-review.md`, `phase-7-code-review.md`).
-- **Workspace Hygiene:** `docs/` now only contains active architectural maps and pending feature designs.
+- **Documentation Cleanup:** Archived completed handoffs (`HANDOFF-data-cleanup.md`) and historical reviews (`phase-2-code-review.md`, `phase-7-code-review.md`).
+- **Workspace Hygiene:** Design docs in `docs/design/` serve as ongoing architectural reference, including `video-interview-architecture.md` and `monaco-challenge-architecture.md`.
 
 ---
 
