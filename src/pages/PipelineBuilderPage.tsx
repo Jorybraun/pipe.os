@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Phone,
   Zap,
@@ -10,8 +9,6 @@ import {
   CheckCircle,
   MessageSquare,
   Send,
-  Eye,
-  Save,
 } from "lucide-react";
 import {
   Layout,
@@ -452,7 +449,6 @@ function PanelStageConfig() {
 }
 
 export default function PipelineBuilderPage(): JSX.Element {
-  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("pipeline");
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [selectedStage, setSelectedStage] = useState<StageType>("SCREENING");
@@ -485,47 +481,6 @@ export default function PipelineBuilderPage(): JSX.Element {
       header={
         <ProfileHeader
           title="PIPELINE_BUILDER"
-          subtitle="PIPE_OS // V.2.0.4"
-          actions={
-            <div style={{ display: "flex", gap: 12 }}>
-              <button
-                onClick={() => console.log("Preview pipeline")}
-                style={{
-                  padding: "12px 24px",
-                  background: "transparent",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  color: "rgba(255,255,255,0.8)",
-                  fontSize: 10,
-                  letterSpacing: "0.15em",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <Eye size={14} /> PREVIEW
-              </button>
-              <button
-                onClick={() => navigate("/")}
-                style={{
-                  padding: "12px 24px",
-                  background:
-                    "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  color: "#fff",
-                  fontSize: 10,
-                  letterSpacing: "0.15em",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <Save size={14} /> SAVE PIPELINE
-              </button>
-            </div>
-          }
         />
       }
       sidebar={

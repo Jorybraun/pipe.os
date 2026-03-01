@@ -1,5 +1,5 @@
 export { Layout } from "./Layout";
-export { ProfileHeader, SubTitle } from "./Header";
+export { ProfileHeader } from "./Header";
 export { SidebarNav } from "./SidebarNav";
 export { LiquidMetalCard } from "./LiquidMetalCard";
 export { MetalScoreRing } from "./MetalScoreRing";
@@ -8,6 +8,7 @@ export { ChromeMeshGrid } from "./ChromeMeshGrid";
 export { CandidateCard } from "./CandidateCard";
 export { RoleCard } from "./RoleCard";
 export { StatsCard } from "./StatsCard";
+export { SubTitle } from "./ui/SubTitle";
 
 // Re-export types
 export type { StageStatus } from "./StageCard";

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Video,
   Clock,
@@ -10,8 +9,6 @@ import {
   Trash2,
   Edit3,
   GripVertical,
-  Eye,
-  Save,
   Play,
 } from 'lucide-react';
 import {
@@ -246,8 +243,8 @@ function QuestionCard({
 }
 
 export default function ScreeningStageBuilderPage(): JSX.Element {
-  const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState('pipeline');
+  const [activeSection, setActiveSection] = useState('roles');
+
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [questions, setQuestions] = useState<Question[]>(initialQuestions);
@@ -288,46 +285,6 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
       header={
         <ProfileHeader
           title="SCREENING_QUESTIONS"
-          subtitle="PIPE_OS // V.2.0.4 // STAGE 1"
-          actions={
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                onClick={() => console.log('Preview stage')}
-                style={{
-                  padding: '12px 24px',
-                  background: 'transparent',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: 'rgba(255,255,255,0.8)',
-                  fontSize: 10,
-                  letterSpacing: '0.15em',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <Eye size={14} /> PREVIEW
-              </button>
-              <button
-                onClick={() => navigate('/pipelines/new')}
-                style={{
-                  padding: '12px 24px',
-                  background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  fontSize: 10,
-                  letterSpacing: '0.15em',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-                <Save size={14} /> SAVE STAGE
-              </button>
-            </div>
-          }
         />
       }
       sidebar={

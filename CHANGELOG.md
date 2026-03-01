@@ -4,6 +4,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `ui-header-refactor` — Global Header & Logo Update
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`src/components/ui/Logo.tsx`**: New SVG logo component (brutalist pipe design).
+    - **`src/App.tsx`**: Refactored `SubHeader` to include global logo, navigation breadcrumbs, and active candidate counter; moved `ProfileHeader` logic to `SubHeader`.
+    - **`src/components/Header.tsx`**: Simplified `ProfileHeader` to use the new `Logo` component.
+    - **`src/pages/PipelineBuilderPage.tsx`** & **`src/pages/ScreeningStageBuilderPage.tsx`**: Removed local action buttons in favor of global header actions.
+- **Breaking**: None.
+
 ### `marketing-landing-page` — Initial Marketing Site
 - **Status**: 🟢 DONE
 - **Changes**:
