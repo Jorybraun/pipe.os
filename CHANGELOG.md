@@ -4,6 +4,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `assessment-env-scheduling-ioc-specs` — Advanced Environments & Scheduling IoC Specs
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`docs/specs/interview-environments.md`**: New — Technical brief and cost analysis for AWS Fargate + Dev Containers for full-project interviews.
+    - **`docs/specs/scheduling-ioc-architecture.md`**: New — Architectural specification for Scheduling Inversion of Control (IoC) and automated sync with third-party providers.
+- **Breaking**: None.
+
 ### `scheduling-ioc-prep` — Scheduling IoC Schema Fixes + Handoff
 - **Status**: 🟢 DONE
 - **Changes**:

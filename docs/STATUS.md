@@ -23,6 +23,8 @@
 
 ### Done (Phases 0–7 pre-flight + Steps 1–5 + Scheduling MVP)
 
+- **Advanced Assessment Environments (NEW):** Technical brief and cost analysis for AWS Fargate + Dev Containers ([docs/specs/interview-environments.md](docs/specs/interview-environments.md)).
+- **Scheduling Revamp (NEW):** Architectural specification for Scheduling Inversion of Control (IoC) and automated sync ([docs/specs/scheduling-ioc-architecture.md](docs/specs/scheduling-ioc-architecture.md)).
 - **Interview Scheduling (NEW):** Recruiter dashboard (`/schedule`), candidate booking widget, and profile integration.
 - **Auth & Profile:** Recruiter auth via Cognito; Sign-out button.
 - **Pipeline Management:** Preset-based pipeline creation (DEFAULT / BLANK).
@@ -34,7 +36,11 @@
 
 ### Current Priority (TASKS.md)
 
-1. **Phase 7 Step 4 — Composable Challenge System:**
+1. **Scheduling Revamp (IoC):**
+   - Implement `SchedulingPlugin` interface and provider registry.
+   - Transition Cal.com and Calendly to the new plugin architecture.
+   - Implement Webhook Router for automated status sync.
+2. **Phase 7 Step 4 — Composable Challenge System:**
    - Architecture: Shell + Panel system.
    - Shells: `TimerShell`, `RecordingShell`.
    - Panels: `ProblemPanel`, `MonacoPanel`, `PreviewPanel`, `TestPanel`, `OptionsPanel`, `TextareaPanel`.
