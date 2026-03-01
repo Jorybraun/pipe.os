@@ -4,6 +4,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `marketing-landing-page` — Initial Marketing Site
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`marketing/index.html`**: Added initial brutalist-glassmorphic landing page with copy targeting AI evaluation in coding interviews.
+- **Breaking**: None.
+
 ### `interview-scheduling-phase1` — Interview Scheduling MVP
 - **Status**: 🟢 DONE
 - **Changes**:
