@@ -27,6 +27,7 @@ const schema = a.schema({
       stages: a.hasMany('Stage', 'pipelineId'),
       candidates: a.hasMany('Candidate', 'pipelineId'),
       codeArtifacts: a.hasMany('CodeArtifact', 'pipelineId'),
+      scheduledInterviews: a.hasMany('ScheduledInterview', 'pipelineId'),
 
       // Scheduling URL for LIVE_VIDEO stages (e.g. Calendly or Cal.com link)
       schedulingUrl: a.url(),
@@ -60,6 +61,7 @@ const schema = a.schema({
       videoConfig: a.json(), // { recordingEnabled: boolean }
       challenges: a.hasMany('Challenge', 'stageId'),
       videoSessions: a.hasMany('VideoSession', 'stageId'),
+      scheduledInterviews: a.hasMany('ScheduledInterview', 'stageId'),
     })
     .authorization((allow) => [
       allow.owner(),
@@ -186,6 +188,7 @@ const schema = a.schema({
 
       // Relations
       assessments: a.hasMany('Assessment', 'candidateId'),
+      scheduledInterviews: a.hasMany('ScheduledInterview', 'candidateId'),
     })
     .authorization((allow) => [
       allow.owner(),                        
@@ -233,8 +236,11 @@ const schema = a.schema({
   ScheduledInterview: a
     .model({
       candidateId:        a.id().required(),
+      candidate:          a.belongsTo('Candidate', 'candidateId'),
       pipelineId:         a.id().required(),
+      pipeline:           a.belongsTo('Pipeline', 'pipelineId'),
       stageId:            a.id().required(),
+      stage:              a.belongsTo('Stage', 'stageId'),
       status:             a.enum(['INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']),
       scheduledAt:        a.datetime(),
       meetingUrl:         a.url(),
@@ -245,7 +251,7 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-      allow.publicApiKey().to(['read']),
+      allow.publicApiKey().to(['read', 'update']),
     ]),
 
   /**

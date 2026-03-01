@@ -58,6 +58,80 @@
 
 ---
 
+## Epic: Scheduling IoC — Automated Provider Sync
+
+> Upgrades the manual-status scheduling system to OAuth + webhook automated sync.
+> Recruiters connect their Calendly/Cal.com account once; interview status auto-updates via webhooks.
+>
+> **Spec:** `docs/specs/scheduling-ioc-technical-spec.md`
+> **ADR:** `docs/decisions/ADR-014-scheduling-ioc-plugin-registry.md`
+> **Handoff:** `docs/ops/HANDOFF-scheduling-ioc.md`
+> **Vision:** `docs/specs/scheduling-ioc-architecture.md`
+> **Prereq:** Interview Scheduling epic (MVP) — all 5 phases
+
+### Phase A — Schema + Lambda Scaffolding (1 day)
+- [ ] **Add `SchedulingConnection` model** to `amplify/data/resource.ts` — OAuth token storage per provider. ~30 min.
+- [ ] **Add `syncSource`, `lastSyncedAt` fields** to `ScheduledInterview` model. ~15 min.
+- [ ] **Add `schedulingEventTypeId` field** to `Pipeline` model. ~10 min.
+- [ ] **Scaffold `schedulingWebhook` Lambda** — `amplify/functions/schedulingWebhook/` (resource.ts, handler.ts, types.ts, providers/). ~45 min.
+- [ ] **Scaffold `schedulingOAuth` Lambda** — `amplify/functions/schedulingOAuth/` (resource.ts, handler.ts, types.ts). ~45 min.
+- [ ] **Wire both Lambdas in `amplify/backend.ts`** and add AppSync mutations. ~30 min.
+- [ ] **Run `npx ampx sandbox`** — confirm schema deploys cleanly.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase B — OAuth Flow (1.5 days)
+- [ ] **Implement `schedulingOAuth` handler** — `exchange` (code → tokens), `refresh`, `fetchEventTypes` actions. ~4 hr.
+- [ ] **Write `src/lib/scheduling/pluginRegistry.ts`** — `SchedulingPlugin` interface + registry. ~1 hr.
+- [ ] **Extend `CalendlyProvider` + `CalComProvider`** — add `onBookingComplete` callback + `getAuthUrl()`. ~1.5 hr.
+- [ ] **Write `src/hooks/useSchedulingConnection.ts`** — connection CRUD hook. ~1 hr.
+- [ ] **Write `ConnectionSetup.tsx`** — OAuth wizard UI. ~2 hr.
+- [ ] **Write `ConnectionStatusBadge.tsx`** — connected/disconnected indicator. ~30 min.
+- [ ] **Integrate into `SchedulingPage.tsx`** header. ~30 min.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase C — Webhook Receiver (1 day)
+- [ ] **Implement Calendly webhook normalizer** — `providers/calendly.ts`. ~1.5 hr.
+- [ ] **Implement Cal.com webhook normalizer** — `providers/calcom.ts`. ~1 hr.
+- [ ] **Implement webhook router handler** — identify → verify → normalize → update. ~2 hr.
+- [ ] **Register webhook during OAuth flow** (in `schedulingOAuth` Lambda). ~1 hr.
+- [ ] **Add auto-sync indicators** to `InterviewCard.tsx` + `SchedulingDashboard.tsx`. ~1 hr.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase D — Event Type Picker + Pipeline Integration (0.5 day)
+- [ ] **Write `EventTypePicker.tsx`** — dropdown of recruiter's event types. ~1.5 hr.
+- [ ] **Integrate into `OverviewPage.tsx`** pipeline settings (visible when connection exists). ~1 hr.
+- [ ] **Add "Invite to Interview" button to `OverviewPage.tsx`** — creates `ScheduledInterview` record. ~1 hr.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase E — Verify + Ship (0.5 day)
+- [ ] **Unit tests** — `pluginRegistry.ts`, webhook normalizers, `canTransition()` with webhook transitions.
+- [ ] **Smoke test end-to-end** — connect Calendly → pick event type → invite → candidate books → webhook auto-updates.
+- [ ] **Update `CHANGELOG.md`** and commit.
+
+---
+
+## Epic: Video Conference Revamp (placeholder)
+
+> The current WebRTC video implementation (`VideoShell`, `VideoSession`, `VideoSignal`) works as
+> peer-to-peer plumbing but the recruiter UX for joining a video call needs redesigning.
+> The component works — the journey does not.
+>
+> **Current state:** `VideoSession` is ephemeral WebRTC signaling. `ScheduledInterview` is the
+> durable interview lifecycle record. These are disconnected — `ScheduledInterview` should be the
+> single trigger for "Join" and `VideoSession` should be created on-demand when both parties are ready.
+>
+> **Scope:** Recruiter journey redesign, candidate `/assess/:token` video rendering, shared "room"
+> concept tied to `ScheduledInterview`. Data model changes TBD — write ADR before starting.
+>
+> **Status:** Not started. Do NOT modify `VideoSession`/`VideoSignal` models until this epic is designed.
+
+- [ ] **Write ADR** for video conference room architecture (how `ScheduledInterview` drives video join)
+- [ ] **Design recruiter join flow** — from `/schedule` dashboard or candidate profile, not embedded in page
+- [ ] **Design candidate join flow** — when candidate arrives at `/assess/:token` and interview is SCHEDULED, render video
+- [ ] **Implementation** — TBD after design
+
+---
+
 ## Epic: Challenge Management & Template System
 
 > Transition from hard-coded templates to a database-driven library. Recruiters can create, edit, and share their own challenges.

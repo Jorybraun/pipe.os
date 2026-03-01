@@ -4,6 +4,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `scheduling-ioc-prep` — Scheduling IoC Schema Fixes + Handoff
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/data/resource.ts`**: Added 3 `belongsTo` relationships on `ScheduledInterview` (→ Candidate, Pipeline, Stage); added 3 matching `hasMany` on `Stage`, `Candidate`, `Pipeline`; upgraded `publicApiKey` auth to include `update` for candidate booking.
+    - **`docs/specs/scheduling-ioc-technical-spec.md`**: New — comprehensive 5-phase implementation spec for OAuth + webhook automated scheduling sync.
+    - **`docs/decisions/ADR-014-scheduling-ioc-plugin-registry.md`**: New — architecture decision for IoC plugin registry pattern.
+    - **`docs/ops/HANDOFF-scheduling-ioc.md`**: New — step-by-step agent runbook for implementing the Scheduling IoC system.
+    - **`docs/decisions/README.md`**: Added ADR-014 to index.
+    - **`TASKS.md`**: Added "Scheduling IoC — Automated Provider Sync" epic (Phases A–E) and "Video Conference Revamp" placeholder epic.
+- **Breaking**: None — all schema changes are additive.
+
 ### `ui-header-refactor` — Global Header & Logo Update
 - **Status**: 🟢 DONE
 - **Changes**:
