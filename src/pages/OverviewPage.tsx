@@ -9,6 +9,7 @@ import {
   Copy,
   Plus,
   X,
+  Calendar,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -384,6 +385,9 @@ export default function OverviewPage(): JSX.Element {
   const [newCandidate, setNewCandidate] = useState({ name: '', email: '' });
   const { create: createCandidate, isSubmitting: isAdding } = useCandidateCreate();
 
+  // Upcoming scheduled interviews for this pipeline (status=SCHEDULED)
+  const [upcomingInterviews, setUpcomingInterviews] = useState<any[]>([]);
+
   const handleAddStage = async () => {
     if (!id) return;
     
@@ -423,7 +427,17 @@ export default function OverviewPage(): JSX.Element {
       ]);
 
       setPipeline(pipelineData.data);
-      
+
+      // Load upcoming scheduled interviews — guarded since model may not be deployed yet
+      try {
+        const { data: siData } = await client.models.ScheduledInterview.list({
+          filter: { pipelineId: { eq: id } },
+        });
+        setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED'));
+      } catch {
+        // ScheduledInterview not yet deployed in sandbox — ignore
+      }
+
       // Calculate scores for each candidate
       const enrichedCandidates = candidatesData.data.map(c => {
         const scores = (c.assessments || []).map((a: any) => a.score).filter((s: any) => typeof s === 'number');
@@ -736,6 +750,52 @@ export default function OverviewPage(): JSX.Element {
         </div>
       )}
 
+      {/* Upcoming Scheduled Interviews */}
+      {upcomingInterviews.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ marginBottom: 12, fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+            UPCOMING_INTERVIEWS
+          </div>
+          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8 }}>
+            {[...upcomingInterviews]
+              .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime())
+              .map((si: any) => {
+                const cand = candidates.find(c => c.id === si.candidateId);
+                const stage = stages.find(s => s.id === si.stageId);
+                return (
+                  <LiquidMetalCard key={si.id} style={{ flex: '0 0 260px', padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <Calendar size={14} color="#60a5fa" />
+                      <span style={{ fontSize: 9, color: '#60a5fa', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>SCHEDULED</span>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+                      {cand?.name || '—'}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: si.scheduledAt ? 8 : 0, fontFamily: '"Space Mono", monospace' }}>
+                      {stage?.title || '—'}
+                    </div>
+                    {si.scheduledAt && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontFamily: '"Space Mono", monospace' }}>
+                        {new Date(si.scheduledAt).toLocaleString()}
+                      </div>
+                    )}
+                    {si.meetingUrl && (
+                      <a
+                        href={si.meetingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ display: 'inline-block', marginTop: 12, fontSize: 9, letterSpacing: '0.1em', color: '#60a5fa', fontFamily: '"Space Mono", monospace', textDecoration: 'none' }}
+                      >
+                        JOIN_MEETING →
+                      </a>
+                    )}
+                  </LiquidMetalCard>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       {/* Stage Headers and Kanban Grid */}
       <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 24, alignItems: 'flex-start' }}>
         {stages.map((s, i) => {
@@ -749,7 +809,7 @@ export default function OverviewPage(): JSX.Element {
                 isActive={false}
                 onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}
               />
-              
+
               {/* Candidate Cards */}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {stageCandidates.map((candidate: any, idx: number) => (

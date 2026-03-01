@@ -6,6 +6,7 @@ import {
   Clock,
   TrendingUp,
   Sparkles,
+  Calendar,
 } from "lucide-react";
 
 interface SidebarNavProps {
@@ -13,6 +14,8 @@ interface SidebarNavProps {
   onSectionChange?: (section: string) => void;
   isAgentOpen?: boolean;
   onAgentToggle?: () => void;
+  /** Called when the user clicks the Schedule nav item */
+  onScheduleClick?: () => void;
 }
 
 const navItems = [
@@ -29,6 +32,7 @@ export function SidebarNav({
   onSectionChange,
   isAgentOpen = false,
   onAgentToggle,
+  onScheduleClick,
 }: SidebarNavProps) {
   return (
     <nav
@@ -193,6 +197,46 @@ export function SidebarNav({
           margin: "8px 0",
         }}
       />
+
+      {/* Schedule nav item */}
+      {onScheduleClick && (
+        <button
+          onClick={onScheduleClick}
+          title="Schedule"
+          style={{
+            width: 48,
+            height: 48,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: activeSection === "schedule"
+              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
+              : "transparent",
+            border: "none",
+            borderRadius: "12px",
+            color: activeSection === "schedule" ? "#fff" : "rgba(255,255,255,0.4)",
+            cursor: "pointer",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            position: "relative",
+          }}
+          onMouseEnter={(e) => {
+            if (activeSection !== "schedule") {
+              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+              e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+              e.currentTarget.style.transform = "translateX(4px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeSection !== "schedule") {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+              e.currentTarget.style.transform = "translateX(0)";
+            }
+          }}
+        >
+          <Calendar size={20} />
+        </button>
+      )}
 
       {/* Quick indicator */}
       <div

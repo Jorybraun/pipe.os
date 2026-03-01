@@ -28,6 +28,9 @@ const schema = a.schema({
       candidates: a.hasMany('Candidate', 'pipelineId'),
       codeArtifacts: a.hasMany('CodeArtifact', 'pipelineId'),
 
+      // Scheduling URL for LIVE_VIDEO stages (e.g. Calendly or Cal.com link)
+      schedulingUrl: a.url(),
+
       // Link to discovery context (post-MVP: agentic discovery)
       roleContextId: a.id(),
     })
@@ -210,6 +213,39 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner(),                        
       allow.publicApiKey().to(['create', 'read']), 
+    ]),
+
+  /**
+   * ScheduledInterview Model
+   *
+   * Tracks a scheduled (or to-be-scheduled) live video interview between a
+   * recruiter and candidate for a LIVE_VIDEO stage. Created by the recruiter
+   * when they invite a candidate; status evolves as the candidate books and
+   * the session completes.
+   *
+   * status lifecycle:
+   *   INVITED   → recruiter created the record, candidate not yet booked
+   *   SCHEDULED → candidate booked via scheduling provider
+   *   COMPLETED → session took place
+   *   CANCELLED → either party cancelled
+   *   NO_SHOW   → candidate did not attend
+   */
+  ScheduledInterview: a
+    .model({
+      candidateId:        a.id().required(),
+      pipelineId:         a.id().required(),
+      stageId:            a.id().required(),
+      status:             a.enum(['INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']),
+      scheduledAt:        a.datetime(),
+      meetingUrl:         a.url(),
+      schedulingProvider: a.enum(['CALENDLY', 'CAL_COM', 'MANUAL']),
+      schedulingUrl:      a.url().required(),
+      externalEventId:    a.string(),
+      recruiterNotes:     a.string(),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      allow.publicApiKey().to(['read']),
     ]),
 
   /**

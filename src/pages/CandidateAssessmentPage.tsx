@@ -5,6 +5,7 @@ import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
 import { VideoShell } from '../components/Shells/VideoShell';
+import { SchedulingStep } from '../components/Assessment/SchedulingStep';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -156,11 +157,31 @@ export default function CandidateAssessmentPage(): JSX.Element {
     </TimerProvider>
   );
 
+  // For LIVE_VIDEO stages: show scheduling widget if no challenges exist yet,
+  // otherwise wrap the challenge workspace in VideoShell.
+  // TODO: The longer-term flow is: INVITED → candidate books (SchedulingStep) →
+  // recruiter marks SCHEDULED → recruiter joins VideoShell → candidate joins
+  // VideoShell. For now we show SchedulingStep when there are no challenges to
+  // avoid a blank screen; once recruiter starts the call the candidate refreshes
+  // and VideoShell takes over.
+  const hasNoChallenges = !currentStage.challenges || currentStage.challenges.length === 0;
+
   return (
     <div style={{ minHeight: '100vh', background: '#0c0c0e' }}>
       <ChromeMeshGrid />
 
-      {isLiveVideoStage && candidate ? (
+      {isLiveVideoStage && hasNoChallenges && candidate ? (
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 680, zIndex: 1 }}>
+            <SchedulingStep
+              candidateId={candidate.id}
+              stageId={currentStage.id}
+              candidateName={candidate.name ?? 'Candidate'}
+              candidateEmail={candidate.email ?? undefined}
+            />
+          </div>
+        </div>
+      ) : isLiveVideoStage && candidate ? (
         <VideoShell
           stageId={currentStage.id}
           candidateId={candidate.id}

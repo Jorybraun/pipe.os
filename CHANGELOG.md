@@ -4,6 +4,36 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `interview-scheduling-phase1` — Interview Scheduling MVP
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/data/resource.ts`**: Added `Pipeline.schedulingUrl` field; added `ScheduledInterview` model with status enum (`INVITED/SCHEDULED/COMPLETED/CANCELLED/NO_SHOW`), `publicApiKey` read access for candidates.
+    - **`src/lib/scheduling/types.ts`**: `InterviewStatus` and `SchedulingProvider` types; re-exports `ScheduledInterview`.
+    - **`src/lib/scheduling/statusTransitions.ts`**: `VALID_TRANSITIONS` map, `canTransition()`, `getAllowedTransitions()`.
+    - **`src/components/Scheduling/provider/`**: `SchedulingProviderDef` interface + `resolveSchedulingProvider()`; `CalendlyProvider` (lazy script inject), `CalComProvider` (iframe), `ManualProvider` (anchor fallback); `ALL_PROVIDERS` registry.
+    - **`src/hooks/useScheduledInterviews.ts`**: Recruiter hook — `observeQuery()` real-time subscription + `updateStatus()` mutation.
+    - **`src/hooks/useScheduledInterview.ts`**: Candidate hook — API key auth, list by `candidateId + stageId`.
+    - **`src/components/Assessment/SchedulingStep.tsx`**: Candidate-facing booking widget; resolves provider from interview record.
+    - **`src/components/Scheduling/InterviewStatusBadge.tsx`**: Color-coded status chip.
+    - **`src/components/Scheduling/InterviewCard.tsx`**: Single interview row with Join Call + Edit buttons.
+    - **`src/components/Scheduling/StatusOverrideModal.tsx`**: Recruiter manual status override with transition validation.
+    - **`src/components/Scheduling/SchedulingFilters.tsx`**: Pipeline / status / date window filters + `applySchedulingFilters()` + `sortInterviews()`.
+    - **`src/components/Scheduling/SchedulingDashboard.tsx`**: Full recruiter dashboard with enrichment lookup tables and empty state.
+    - **`src/pages/SchedulingPage.tsx`**: `/schedule` route wrapper.
+    - **`src/App.tsx`**: Added `/schedule` route; wired `onScheduleClick` on `SidebarNav`.
+    - **`src/components/SidebarNav.tsx`**: Added Calendar icon nav item + `onScheduleClick` prop.
+    - **`src/pages/OverviewPage.tsx`**: Removed pipeline-level scheduling URL block (moved to profile). Added `UPCOMING_INTERVIEWS` horizontal strip above Kanban showing `SCHEDULED` interviews sorted by date.
+    - **`src/pages/CandidateProfilePage.tsx`**: Added `LIVE_INTERVIEW` card between stage tabs and hero grid — URL input + `SEND_INVITE` button when no record exists; status badge + scheduled date + meeting link when record exists.
+    - **`src/pages/CandidateAssessmentPage.tsx`**: LIVE_VIDEO stage with no challenges now renders `<SchedulingStep>` instead of blank screen.
+- **TODOs left for production**:
+    - Webhook integration (Calendly/Cal.com → auto-update status SCHEDULED)
+    - Server-side status transition enforcement (Lambda resolver)
+    - CSP headers for Calendly script/frame
+    - Per-ID fetches in SchedulingDashboard enrichment (avoid full table scans)
+    - Unique constraint on `(candidateId, stageId)` in ScheduledInterview
+    - Provider auto-detection in `handleInviteToLiveVideo`
+- **Breaking**: None.
+
 ### `fix-diff-click-v3` — Fix Diff Editor Annotation Click
 - **Status**: 🟢 DONE
 - **Detailed Log**: [docs/changelogs/fix-diff-click-v3.md](docs/changelogs/fix-diff-click-v3.md)

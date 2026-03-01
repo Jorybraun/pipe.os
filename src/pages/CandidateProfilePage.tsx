@@ -6,7 +6,10 @@ import {
   Briefcase,
   CheckCircle,
   FileText,
+  Calendar,
 } from "lucide-react";
+import { resolveSchedulingProvider, ALL_PROVIDERS } from '../components/Scheduling/provider';
+import { InterviewStatusBadge } from '../components/Scheduling/InterviewStatusBadge';
 import {
   LiquidMetalCard,
   MetalScoreRing,
@@ -85,6 +88,9 @@ export default function CandidateProfilePage(): JSX.Element {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const [scheduledInterview, setScheduledInterview] = useState<any>(null);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [inviteSaving, setInviteSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -111,9 +117,24 @@ export default function CandidateProfilePage(): JSX.Element {
         .filter(s => s !== null)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       setStages(sortedStages);
-      
+
       if (sortedStages.length > 0) {
         setSelectedStageId(sortedStages[0].id);
+      }
+
+      // Load ScheduledInterview for the LIVE_VIDEO stage — guarded since model may not be deployed yet
+      const liveStage = sortedStages.find((s: any) => s.mode === 'LIVE_VIDEO');
+      if (liveStage) {
+        try {
+          const { data: siList } = await client.models.ScheduledInterview.list({
+            filter: { candidateId: { eq: id } },
+          });
+          const si = siList.find((s: any) => s.stageId === liveStage.id) ?? null;
+          setScheduledInterview(si);
+          if (si?.schedulingUrl) setInviteUrl(si.schedulingUrl);
+        } catch {
+          // ScheduledInterview not yet deployed in sandbox — ignore
+        }
       }
     } catch (err) {
       console.error("[CandidateProfilePage] Error fetching data:", err);
@@ -126,6 +147,30 @@ export default function CandidateProfilePage(): JSX.Element {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const handleSendInvite = async () => {
+    if (!id || !candidate || !inviteUrl) return;
+    const liveStage = stages.find((s: any) => s.mode === 'LIVE_VIDEO');
+    if (!liveStage) return;
+    setInviteSaving(true);
+    try {
+      const provider = resolveSchedulingProvider(inviteUrl, ALL_PROVIDERS);
+      const { data, errors } = await client.models.ScheduledInterview.create({
+        candidateId: id,
+        pipelineId: candidate.pipelineId,
+        stageId: liveStage.id,
+        status: 'INVITED',
+        schedulingUrl: inviteUrl,
+        schedulingProvider: provider.type,
+      });
+      if (errors) throw new Error(errors[0].message);
+      setScheduledInterview(data);
+    } catch (err) {
+      console.error('[CandidateProfilePage] Failed to send invite:', err);
+    } finally {
+      setInviteSaving(false);
+    }
+  };
 
   if (isLoading) {
     return <ProfileSkeleton />;
@@ -318,6 +363,94 @@ export default function CandidateProfilePage(): JSX.Element {
           );
         })}
       </div>
+      {/* Live Interview section — only visible when pipeline has a LIVE_VIDEO stage */}
+      {liveVideoStage && (
+        <div style={{ marginBottom: 24 }}>
+          <LiquidMetalCard variant="dark" style={{ padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: scheduledInterview ? 16 : 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Calendar size={16} color="rgba(255,255,255,0.4)" />
+                <span style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+                  LIVE_INTERVIEW
+                </span>
+              </div>
+              {scheduledInterview && (
+                <InterviewStatusBadge status={scheduledInterview.status} />
+              )}
+            </div>
+
+            {scheduledInterview ? (
+              <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+                {scheduledInterview.scheduledAt && (
+                  <div>
+                    <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.3)', marginBottom: 4, fontFamily: '"Space Mono", monospace' }}>SCHEDULED_AT</div>
+                    <div style={{ fontSize: 14, color: '#fff', fontFamily: '"Space Mono", monospace' }}>
+                      {new Date(scheduledInterview.scheduledAt).toLocaleString()}
+                    </div>
+                  </div>
+                )}
+                {scheduledInterview.meetingUrl && (
+                  <a
+                    href={scheduledInterview.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 11, color: '#60a5fa', fontFamily: '"Space Mono", monospace', textDecoration: 'none' }}
+                  >
+                    JOIN_MEETING →
+                  </a>
+                )}
+                <div style={{ flex: 1 }} />
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace', wordBreak: 'break-all' }}>
+                  {scheduledInterview.schedulingUrl}
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
+                    SCHEDULING_URL (Calendly / Cal.com)
+                  </div>
+                  <input
+                    type="url"
+                    value={inviteUrl}
+                    onChange={(e) => setInviteUrl(e.target.value)}
+                    placeholder="https://calendly.com/you/30min"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: 12,
+                      fontFamily: '"Space Mono", monospace',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={handleSendInvite}
+                  disabled={inviteSaving || !inviteUrl}
+                  style={{
+                    padding: '10px 20px',
+                    background: inviteUrl ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${inviteUrl ? 'rgba(96,165,250,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                    color: inviteUrl ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+                    fontSize: 10,
+                    letterSpacing: '0.1em',
+                    fontFamily: '"Space Mono", monospace',
+                    cursor: inviteUrl && !inviteSaving ? 'pointer' : 'default',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {inviteSaving ? 'SENDING...' : 'SEND_INVITE'}
+                </button>
+              </div>
+            )}
+          </LiquidMetalCard>
+        </div>
+      )}
+
       {/* Hero Grid: Avatar + AI Verdict + Score Stack */}
       <section
         style={{

@@ -19,6 +19,7 @@ import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage"; // Legacy — preserved for post-MVP agentic discovery
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
+import SchedulingPage from "./pages/SchedulingPage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import { SubTitle } from "./components/ui/SubTitle";
 
@@ -213,7 +214,14 @@ function AppLayout(): JSX.Element {
         />
       }
       sidebar={
-        <SidebarNav activeSection={activeSection} onSectionChange={setActiveSection} />
+        <SidebarNav
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+          onScheduleClick={() => {
+            setActiveSection("schedule");
+            navigate("/schedule");
+          }}
+        />
       }
     >
       <SubHeader />
@@ -247,6 +255,7 @@ function App(): JSX.Element {
                   <Route path="/pipeline/new/discovery" element={<RoleDiscoveryPage />} />
                   <Route path="/candidates/:id" element={<CandidateProfilePage />} />
                   <Route path="/screenings/:id/preview" element={<CandidateScreeningPage />} />
+                  <Route path="/schedule" element={<SchedulingPage />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

@@ -1,42 +1,41 @@
 # Pipe — Project Status & Memory
 
-**Last Updated:** 2026-02-27
-**Status:** Phase 7 Step 5 (Recruiter Review) — Complete.
+**Last Updated:** 2026-02-28
+**Status:** Interview Scheduling MVP (Phase 1) — Complete.
 **Workflow:** Living Documentation active (Archive on Completion).
 
 ---
 
-## Recent Updates (2026-02-27)
+## Recent Updates (2026-02-28)
 
-- **Video Interview Connection Fix (CRITICAL):** Resolved P0 WebRTC connection bug ([commit 10f042c](../changelogs/10f042c.md)). Fixed auth asymmetry preventing signal delivery, implemented deferred accept pattern, added connecting state UI, and fixed drag positioning. **Requires schema redeploy:** `npx ampx sandbox`.
-- **Recruiter Review Enhancements:** Implemented Step 5 of Phase 7. `CandidateProfilePage.tsx` now groups assessments by stage and provides per-challenge submission previews (MCQ, Code Review) and manual scoring.
-- **Schema Stabilization:** Standardized the `Stage` model to use `title` throughout the codebase. Resolved critical "title is not a field" and relationship loading errors.
-- **Instruction Refinement:** Updated `GEMINI.md` to mandate a "Living Documentation" workflow. Agents must now archive completed specs and briefs upon task finalization.
-- **Documentation Cleanup:** Archived completed handoffs (`HANDOFF-data-cleanup.md`) and historical reviews (`phase-2-code-review.md`, `phase-7-code-review.md`).
-- **Workspace Hygiene:** Design docs in `docs/design/` serve as ongoing architectural reference, including `video-interview-architecture.md` and `monaco-challenge-architecture.md`.
+- **Interview Scheduling MVP (Phase 1):** Integrated scheduling coordination in-product ([commit TBD](../changelogs/interview-scheduling-phase1.md)).
+    - **Architecture:** `ScheduledInterview` model for tracking status (`INVITED/SCHEDULED/COMPLETED/CANCELLED/NO_SHOW`).
+    - **Recruiter Dashboard:** New `/schedule` dashboard with real-time updates and status filters.
+    - **Candidate Flow:** integrated `SchedulingStep` for `LIVE_VIDEO` stages.
+    - **Profile Integration:** Invite and track interviews directly from `CandidateProfilePage`.
+    - **ADR-013:** Defined `resolveSchedulingProvider` architecture for multi-provider support (Calendly, Cal.com, Manual).
+- **Video Interview Connection Fix (CRITICAL):** Resolved P0 WebRTC connection bug ([commit 10f042c](../changelogs/10f042c.md)).
+- **Recruiter Review Enhancements:** Implemented Step 5 of Phase 7. `CandidateProfilePage.tsx` now groups assessments by stage and provides per-challenge submission previews.
 
 ---
 
 ## Current State
 
-### Done (Phases 0–7 pre-flight + Steps 1–5 complete)
+### Done (Phases 0–7 pre-flight + Steps 1–5 + Scheduling MVP)
 
-- **Auth & Profile:** Recruiter auth via Cognito (`<Authenticator>` wrapping recruiter routes); Sign-out button in `ProfileHeader`.
-- **Pipeline Management:** Pipeline creation form (`PipelineCreatePage.tsx`, `usePipelineCreate.ts`) — preset-based (DEFAULT / BLANK).
-- **Candidate Assessment:** Full candidate flow: `useAssessment.ts`, `CandidateAssessmentPage.tsx`, `/assess/:token` route.
-- **Content Library:** `src/content/challengeLibrary.ts` — 65 challenge templates (15 CODE_REVIEW, 31 QUIZ_MCQ, 12 QUIZ_SHORT_ANSWER, 7 CODE_IMPLEMENTATION).
-- **Recruiter Dashboard:** Wired to live data: `ListingPage`, `OverviewPage`, `CandidateProfilePage`; STRONG / YES / MAYBE / NO signal labels on candidate scores.
-- **Recruiter Review (Phase 7 Step 5):** Per-challenge breakdown in `CandidateProfilePage`; manual scoring for `SHORT_ANSWER` and `CODE_IMPLEMENTATION`.
-- **AI Agent Standard:** `questionAgent` Lambda — complete, used as engineering standard.
-- **Architecture Migration:** Phase 7 schema: `Challenge`, `CodeArtifact` models; `Pipeline.creationMode`; `Stage.challenges hasMany`; `Assessment.challengeId` FK.
-- **Maintenance:** Phase 6 critical bugs fixed; Phase 7 pre-flight P0/P1 bugs resolved (Assessment FK conflict, Kanban fixes, type safety).
-- **Data Cleanup:** `scripts/purgeTestData.ts` executed; legacy `Stage.type`, `Stage.config`, and `ChallengeTemplate` model removed.
-- **Deployment:** Deployed to production via `npx ampx pipeline-deploy`.
+- **Interview Scheduling (NEW):** Recruiter dashboard (`/schedule`), candidate booking widget, and profile integration.
+- **Auth & Profile:** Recruiter auth via Cognito; Sign-out button.
+- **Pipeline Management:** Preset-based pipeline creation (DEFAULT / BLANK).
+- **Candidate Assessment:** Full candidate flow with `ChallengeRegistry` and `StageShell`.
+- **Content Library:** 65 challenge templates across multiple types.
+- **Recruiter Dashboard:** Kanban view, profile detail, and horizontal interview strip in `OverviewPage`.
+- **AI Agent Standard:** `questionAgent` Lambda used as engineering standard.
+- **Data Maintenance:** Standardized `Stage` model; removed legacy fields; executed `purgeTestData.ts`.
 
 ### Current Priority (TASKS.md)
 
 1. **Phase 7 Step 4 — Composable Challenge System:**
-   - Architecture change: Shell + Panel system (not monolithic components).
+   - Architecture: Shell + Panel system.
    - Shells: `TimerShell`, `RecordingShell`.
    - Panels: `ProblemPanel`, `MonacoPanel`, `PreviewPanel`, `TestPanel`, `OptionsPanel`, `TextareaPanel`.
    - Execution: Sandpack (UI) + Piston API (Logic).

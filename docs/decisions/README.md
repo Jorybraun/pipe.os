@@ -44,3 +44,4 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-010](ADR-010-database-driven-challenge-library.md) | Database-Driven Challenge Library & Template System | Accepted | 2026-02-27 |
 | [ADR-011](ADR-011-video-interview-webrtc.md) | WebRTC + AppSync signaling for live video interviews | Proposed | 2026-02-28 |
 | [ADR-012](ADR-012-challenge-studio-editor-architecture.md) | Challenge Studio editor architecture (`resolveEditorLayout`) | Accepted | 2026-02-28 |
+| [ADR-013](ADR-013-interview-scheduling-architecture.md) | Interview Scheduling provider architecture (`resolveSchedulingProvider`) | Accepted | 2026-02-28 |
