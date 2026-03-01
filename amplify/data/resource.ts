@@ -3,6 +3,8 @@ import { questionAgent } from '../functions/questionAgent/resource';
 import { jobDescriptionAgent } from '../functions/jobDescriptionAgent/resource';
 import { scoringAgent } from '../functions/scoringAgent/resource';
 import { turnCredentials } from '../functions/turnCredentials/resource';
+import { schedulingWebhook } from '../functions/schedulingWebhook/resource';
+import { schedulingOAuth } from '../functions/schedulingOAuth/resource';
 
 const schema = a.schema({
   /**
@@ -31,6 +33,9 @@ const schema = a.schema({
 
       // Scheduling URL for LIVE_VIDEO stages (e.g. Calendly or Cal.com link)
       schedulingUrl: a.url(),
+
+      // Provider-specific event type ID for this pipeline (IoC Phase A)
+      schedulingEventTypeId: a.string(),
 
       // Link to discovery context (post-MVP: agentic discovery)
       roleContextId: a.id(),
@@ -245,13 +250,45 @@ const schema = a.schema({
       scheduledAt:        a.datetime(),
       meetingUrl:         a.url(),
       schedulingProvider: a.enum(['CALENDLY', 'CAL_COM', 'MANUAL']),
-      schedulingUrl:      a.url().required(),
+      schedulingUrl:      a.url(),
       externalEventId:    a.string(),
       recruiterNotes:     a.string(),
+
+      // IoC Phase A: Automated sync tracking
+      syncSource:         a.enum(['MANUAL', 'WEBHOOK']),
+      lastSyncedAt:       a.datetime(),
     })
     .authorization((allow) => [
       allow.owner(),
       allow.publicApiKey().to(['read', 'update']),
+    ]),
+
+  /**
+   * SchedulingConnection Model
+   *
+   * Stores a recruiter's OAuth connection to a scheduling provider.
+   * Tokens are encrypted at rest via DynamoDB SSE.
+   * Tokens never leave the server — all token operations happen in Lambda.
+   */
+  SchedulingConnection: a
+    .model({
+      recruiterId:    a.string().required(),
+      providerId:     a.enum(['CALENDLY', 'CAL_COM']),
+      accessToken:    a.string().required(),
+      refreshToken:   a.string(),
+      tokenExpiry:    a.datetime(),
+      accountEmail:   a.string(),
+      accountName:    a.string(),
+      webhookSecret:  a.string(),
+      webhookId:      a.string(),
+      status:         a.enum(['ACTIVE', 'EXPIRED', 'REVOKED']),
+      connectedAt:    a.datetime().required(),
+      lastSyncAt:     a.datetime(),
+    })
+    .authorization((allow) => [
+      allow.owner(),
+      // Lambda access granted via DynamoDB table grants in backend.ts
+      // (allow.resource() is not available on model-level authorization)
     ]),
 
   /**
@@ -330,6 +367,38 @@ const schema = a.schema({
     .query()
     .returns(a.json())
     .handler(a.handler.function(turnCredentials))
+    .authorization((allow) => [allow.authenticated()]),
+
+  /**
+   * Scheduling Webhook Mutation
+   *
+   * Public-facing webhook receiver for Calendly/Cal.com callbacks.
+   * Accepts provider identifier and raw JSON payload.
+   */
+  processSchedulingWebhook: a
+    .mutation()
+    .arguments({
+      provider: a.string().required(),
+      payload: a.json().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(schedulingWebhook))
+    .authorization((allow) => [allow.publicApiKey()]),
+
+  /**
+   * Scheduling OAuth Mutation
+   *
+   * Handles OAuth code exchange, token refresh, event type fetching,
+   * and disconnection for scheduling providers.
+   */
+  exchangeSchedulingOAuth: a
+    .mutation()
+    .arguments({
+      action: a.string().required(),
+      params: a.json().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(schedulingOAuth))
     .authorization((allow) => [allow.authenticated()]),
 });
 

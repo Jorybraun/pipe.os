@@ -105,6 +105,7 @@
 
 ### Phase E — Verify + Ship (0.5 day)
 - [ ] **Unit tests** — `pluginRegistry.ts`, webhook normalizers, `canTransition()` with webhook transitions.
+- [ ] **Smoke test registry pattern** — run `tsx scripts/smoke-test-registry.ts` to verify provider auto-detection and registration.
 - [ ] **Smoke test end-to-end** — connect Calendly → pick event type → invite → candidate books → webhook auto-updates.
 - [ ] **Update `CHANGELOG.md`** and commit.
 

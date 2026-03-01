@@ -4,6 +4,18 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `scheduling-ioc-scaffolding` — Scheduling IoC Backend & Frontend WIP
+- **Status**: 🟡 WORK_IN_PROGRESS
+- **Changes**:
+    *   **`amplify/data/resource.ts`**: Added `SchedulingConnection` model and updated `ScheduledInterview` with sync tracking fields.
+    *   **`amplify/backend.ts`**: Added manual DynamoDB table grants for scheduling Lambdas.
+    *   **`amplify/functions/`**: Scaffolded `schedulingOAuth` and `schedulingWebhook` Lambdas.
+    *   **`src/lib/scheduling/pluginRegistry.ts`**: Implemented IoC registry for interchangeable providers.
+    *   **`src/hooks/useSchedulingConnection.ts`**: Added hook for managing provider connections.
+    *   **`src/components/Scheduling/ConnectionSetup.tsx`**: Added OAuth connection UI.
+    *   **`src/pages/CandidateProfilePage.tsx`**: Temporarily removed `VideoShell` integration.
+- **Breaking**: None.
+
 ### `assessment-env-scheduling-ioc-specs` — Advanced Environments & Scheduling IoC Specs
 - **Status**: 🟢 DONE
 - **Changes**:

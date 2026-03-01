@@ -128,7 +128,18 @@ export function SchedulingStep({
   }
 
   // status === 'INVITED' or 'NO_SHOW' — show the booking widget
-  const provider = resolveSchedulingProvider(interview.schedulingUrl, ALL_PROVIDERS);
+  const url = interview.schedulingUrl ?? '';
+  if (!url) {
+    return (
+      <LiquidMetalCard variant="mercury" style={{ padding: 40, textAlign: 'center' }}>
+        <Calendar size={40} color="rgba(255,255,255,0.3)" style={{ marginBottom: 16 }} />
+        <p style={{ color: 'rgba(255,255,255,0.5)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+          Your recruiter has invited you to an interview. A scheduling link will be available soon.
+        </p>
+      </LiquidMetalCard>
+    );
+  }
+  const provider = resolveSchedulingProvider(url, ALL_PROVIDERS);
   const { Widget } = provider;
 
   return (
@@ -141,7 +152,7 @@ export function SchedulingStep({
       </div>
 
       <Widget
-        schedulingUrl={interview.schedulingUrl}
+        schedulingUrl={url}
         candidateName={candidateName}
         candidateEmail={candidateEmail}
       />
