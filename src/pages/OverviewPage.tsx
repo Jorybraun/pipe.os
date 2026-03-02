@@ -456,7 +456,7 @@ export default function OverviewPage(): JSX.Element {
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'title', 'order', 'challenges.*']
+          selectionSet: ['id', 'title', 'order', 'mode', 'challenges.*']
         }),
       ]);
 
@@ -551,14 +551,32 @@ export default function OverviewPage(): JSX.Element {
   /** Create a ScheduledInterview record for a candidate (Invite to Interview) */
   const handleInviteToInterview = async (candidateId: string, stageId: string) => {
     if (!id) return;
+
+    // Only allow invites for LIVE_VIDEO stages
+    const stage = stages.find((s: any) => s.id === stageId);
+    if (!stage || stage.mode !== 'LIVE_VIDEO') {
+      console.warn('[OverviewPage] Invite to Interview is only valid for LIVE_VIDEO stages');
+      return;
+    }
+
     setInvitingCandidateId(candidateId);
     try {
+      // Prevent duplicate invites: check for an existing record first
+      const { data: existing } = await client.models.ScheduledInterview.list({
+        filter: { candidateId: { eq: candidateId }, stageId: { eq: stageId } },
+      });
+      if (existing && existing.length > 0) {
+        console.warn('[OverviewPage] Interview invite already exists for this candidate + stage');
+        return;
+      }
+
       await client.models.ScheduledInterview.create({
         pipelineId: id,
         candidateId,
         stageId,
         status: 'INVITED',
         schedulingProvider: 'MANUAL',
+        schedulingUrl: pipeline?.schedulingUrl,
       });
       // Re-fetch upcoming interviews
       const { data: siData } = await client.models.ScheduledInterview.list({

@@ -32,6 +32,14 @@ export interface ProviderEventType {
   url: string;
 }
 
+/** Raw event type shape returned by the schedulingOAuth Lambda's fetchEventTypes action */
+interface RawProviderEventType {
+  id: string;
+  name: string;
+  durationMinutes?: number;
+  url: string;
+}
+
 interface UseSchedulingConnectionResult {
   /** Current connection, or null if not connected */
   connection: SchedulingConnectionInfo | null;
@@ -197,7 +205,14 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
         throw new Error(result?.error ?? 'Failed to fetch event types');
       }
 
-      return (result.eventTypes ?? []) as ProviderEventType[];
+      // Lambda returns data: RawProviderEventType[] with durationMinutes — normalize to duration
+      const raw = (result.data ?? []) as RawProviderEventType[];
+      return raw.map((et) => ({
+        id: et.id,
+        name: et.name,
+        duration: et.durationMinutes ?? 0,
+        url: et.url,
+      }));
     } catch (err) {
       const wrapped = err instanceof Error ? err : new Error('Fetch event types failed');
       console.error('[useSchedulingConnection] fetchEventTypes failed:', wrapped);

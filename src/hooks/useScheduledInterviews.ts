@@ -35,6 +35,12 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
   const [error, setError]           = useState<Error | null>(null);
 
   useEffect(() => {
+    if (!client.models.ScheduledInterview) {
+      console.warn('[useScheduledInterviews] ScheduledInterview model not deployed yet — run `npx ampx sandbox`');
+      setIsLoading(false);
+      return;
+    }
+
     const subscription = client.models.ScheduledInterview.observeQuery().subscribe({
       next: ({ items, isSynced }) => {
         setInterviews([...items]);
