@@ -9,6 +9,7 @@
 
 ## 🛑 CRITICAL SECURITY & STABILITY
 
+- [ ] **[P0] UX/Product Audit: Scheduling Flow** — The end-to-end journey (OAuth → Pipeline Config → Candidate Booking → Recruiter Dashboard) is currently "discombobulated." Audit state transitions, UI feedback, and navigation to ensure a cohesive, sensible experience. ~4 hours.
 - [ ] **[P0] PKCE Implementation Security Audit** — Review the client-side generation and `sessionStorage` persistence of the OAuth `code_verifier`. Verify against OAuth 2.1 best practices for SPAs to ensure no interception or side-channel leakage is possible. ~2 hours.
 - [ ] **[P1] AppSync Auth Mode Sync Audit** — Validate the "manual sync" pattern used in `useSchedulingConnection.ts` for other IAM-to-UserPool transitions across the codebase. ~1 hour.
 
