@@ -4,6 +4,28 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `dev-container-fargate-phase1` — AWS Fargate + code-server Sandbox Prototype
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/functions/devContainerLaunch/`**: New Lambda — calls `ECS.RunTask` to spin up a Fargate task running code-server. Returns `{ sessionId, taskArn, status: 'PROVISIONING' }`.
+    - **`amplify/functions/devContainerDestroy/`**: New Lambda — calls `ECS.StopTask` to terminate the container. Returns `{ success, taskStatus }`.
+    - **`amplify/functions/devContainerStatus/`**: New Lambda — calls `ECS.DescribeTasks` and maps ECS status to internal lifecycle (`PROVISIONING → BOOTING → READY → STOPPING → STOPPED`). Resolves the code-server URL via ALB domain + sessionId path.
+    - **`amplify/data/resource.ts`**: Added `launchDevContainer` mutation, `destroyDevContainer` mutation, and `getContainerStatus` query — all authenticated-only.
+    - **`amplify/backend.ts`**: Registered all three new Lambda functions.
+    - **`src/hooks/useDevContainerSession.ts`**: New hook — manages the container session state machine (`IDLE → LAUNCHING → BOOTING → READY → DESTROYING → IDLE`). Polls status every 5 s while BOOTING.
+    - **`src/pages/DevContainerSandboxPage.tsx`**: New page at `/sandbox/dev-container` — Launch/Destroy buttons, indeterminate progress bar during boot, iframe for code-server once READY, architecture notes.
+    - **`src/App.tsx`**: Added `/sandbox/dev-container` route (protected, inside AppLayout).
+    - **`docs/decisions/ADR-015-dev-container-fargate-architecture.md`**: Architecture decision record — Fargate vs WebContainers, cost analysis, infrastructure requirements.
+    - **`docs/decisions/README.md`**: Added ADR-015 to index.
+- **Infrastructure required (not auto-provisioned)**:
+    - ECS Cluster + Task Definition (`pipe-code-server` image)
+    - Application Load Balancer with path-based routing (`/session/:id/`)
+    - VPC Subnets + Security Group (inbound 8080 from ALB)
+    - Amplify Console env vars: `ECS_CLUSTER_ARN`, `ECS_TASK_DEFINITION`, `ECS_SUBNET_IDS`, `ECS_SECURITY_GROUP_ID`, `CODE_SERVER_ALB_DOMAIN`
+- **Breaking**: None — additive changes only.
+
+---
+
 ### `scheduling-ioc-prep` — Scheduling IoC Schema Fixes + Handoff
 - **Status**: 🟢 DONE
 - **Changes**:

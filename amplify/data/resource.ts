@@ -3,6 +3,9 @@ import { questionAgent } from '../functions/questionAgent/resource';
 import { jobDescriptionAgent } from '../functions/jobDescriptionAgent/resource';
 import { scoringAgent } from '../functions/scoringAgent/resource';
 import { turnCredentials } from '../functions/turnCredentials/resource';
+import { devContainerLaunch } from '../functions/devContainerLaunch/resource';
+import { devContainerDestroy } from '../functions/devContainerDestroy/resource';
+import { devContainerStatus } from '../functions/devContainerStatus/resource';
 
 const schema = a.schema({
   /**
@@ -330,6 +333,39 @@ const schema = a.schema({
     .query()
     .returns(a.json())
     .handler(a.handler.function(turnCredentials))
+    .authorization((allow) => [allow.authenticated()]),
+
+  /**
+   * Dev Container Mutations / Queries
+   *
+   * Phase 1 — Isolated prototype for AWS Fargate + code-server lifecycle.
+   * Route: /sandbox/dev-container
+   */
+  launchDevContainer: a
+    .mutation()
+    .arguments({
+      sessionId: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(devContainerLaunch))
+    .authorization((allow) => [allow.authenticated()]),
+
+  destroyDevContainer: a
+    .mutation()
+    .arguments({
+      taskArn: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(devContainerDestroy))
+    .authorization((allow) => [allow.authenticated()]),
+
+  getContainerStatus: a
+    .query()
+    .arguments({
+      taskArn: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(devContainerStatus))
     .authorization((allow) => [allow.authenticated()]),
 });
 
