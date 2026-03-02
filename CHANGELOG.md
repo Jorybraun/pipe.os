@@ -10,6 +10,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 - **Status**: 🟢 DONE
 - **Changes**:
+<<<<<<< HEAD
   - **`amplify/functions/devContainerLaunch/`**: New Lambda — calls `ECS.RunTask` to spin up a Fargate task running code-server. Returns `{ sessionId, taskArn, status: 'PROVISIONING' }`.
   - **`amplify/functions/devContainerStatus/`**: New Lambda — describes an ECS task and maps its status to the internal lifecycle. Used as a fallback when the AppSync subscription times out.
   - **`amplify/functions/devContainerDestroy/`**: New Lambda — calls `ECS.StopTask` to terminate the container.
@@ -80,6 +81,25 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
   - **`src/App.tsx`**: Added `/challenges` route and `onChallengesClick` prop to SidebarNav; removed unused `ProfileHeader` import.
   - **`src/components/SidebarNav.tsx`**: Added Challenges nav item with Code icon and purple accent, `onChallengesClick` callback.
   - **`src/pages/StageDetailPage.tsx`**: Removed `onEdit` navigation from ChallengeCard (editing moved to Challenge Library).
+=======
+    - **`src/components/ChallengeLibrary/ChallengeListItem.tsx`**: New — sidebar list item with type badge, difficulty, language, time estimate.
+    - **`src/components/ChallengeLibrary/ChallengeListSidebar.tsx`**: New — left panel with search, type filter tabs, scrollable challenge list.
+    - **`src/components/ChallengeLibrary/ChallengeWorkspaceHeader.tsx`**: New — metadata bar with type badge, tabs per challenge type.
+    - **`src/components/ChallengeLibrary/ChallengeWorkspace.tsx`**: New — right panel wrapper composing header + scrollable content area.
+    - **`src/components/ChallengeLibrary/EmptyWorkspace.tsx`**: New — empty state when no challenge is selected.
+    - **`src/components/ChallengeLibrary/InstructionsTab.tsx`**: New — markdown editor with toolbar, edit/split/preview modes, upload button.
+    - **`src/components/ChallengeLibrary/FileTabBar.tsx`**: New — multi-file tab bar with language-colored dots, entry point markers.
+    - **`src/components/ChallengeLibrary/CodeTab.tsx`**: New — multi-file code editor with FileTabBar + fallback textarea.
+    - **`src/components/ChallengeLibrary/TestCaseRow.tsx`**: New — single test case editor row with description, input, expected output.
+    - **`src/components/ChallengeLibrary/TestsTab.tsx`**: New — test case authoring panel with add/run/results.
+    - **`src/components/ChallengeLibrary/PreviewTab.tsx`**: New — dual-mode preview (browser iframe via srcdoc + console via Piston API).
+    - **`src/components/ChallengeLibrary/index.ts`**: New — barrel export for all ChallengeLibrary components.
+    - **`src/pages/ChallengeLibraryPage.tsx`**: New — master-detail page composing sidebar + workspace with mock data.
+    - **`src/App.tsx`**: Added `/challenges` route and `onChallengesClick` prop to SidebarNav; removed unused `ProfileHeader` import.
+    - **`src/components/SidebarNav.tsx`**: Added Challenges nav item with Code icon and purple accent, `onChallengesClick` callback.
+    - **`src/pages/StageDetailPage.tsx`**: Removed `onEdit` navigation from ChallengeCard (editing moved to Challenge Library).
+    - **`TASKS.md`**: Added "Challenge Library — Functional Wiring" epic with 8 phases.
+>>>>>>> 99294d6 (docs: add Challenge Library functional wiring epic to TASKS.md)
 - **Breaking**: None — all components are stateless visual shells with mock data.
   > > > > > > > 5de67fe (feat: challenge library page — stateless visual components)
 
