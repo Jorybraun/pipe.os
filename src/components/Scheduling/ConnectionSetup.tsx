@@ -60,11 +60,20 @@ export function ConnectionSetup(): JSX.Element {
 
     if (!code || !stateRaw) return;
 
-    // Parse state (contains providerId)
+    // Parse state (contains providerId + CSRF nonce)
     let providerId: string;
     try {
       const parsed = JSON.parse(atob(stateRaw));
       providerId = parsed.providerId;
+
+      // Validate CSRF nonce
+      const storedNonce = sessionStorage.getItem('pipe_oauth_state_nonce');
+      sessionStorage.removeItem('pipe_oauth_state_nonce');
+      if (!storedNonce || storedNonce !== parsed.nonce) {
+        console.error('[ConnectionSetup] OAuth state nonce mismatch — possible CSRF');
+        setFlow({ step: 'error', message: 'OAuth state mismatch — please try again' });
+        return;
+      }
     } catch {
       console.error('[ConnectionSetup] Failed to parse OAuth state');
       setFlow({ step: 'error', message: 'Invalid OAuth callback state' });
@@ -99,7 +108,10 @@ export function ConnectionSetup(): JSX.Element {
       return;
     }
 
-    const state = btoa(JSON.stringify({ providerId: plugin.type }));
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const state = btoa(JSON.stringify({ providerId: plugin.type, nonce }));
+    sessionStorage.setItem('pipe_oauth_state_nonce', nonce);
 
     // Generate PKCE pair (required by Calendly)
     const verifierArray = crypto.getRandomValues(new Uint8Array(32));

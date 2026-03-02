@@ -29,12 +29,11 @@ export function EventTypePicker({
   currentEventTypeId,
   onSelect,
 }: EventTypePickerProps): JSX.Element {
-  const { connection, isLoading: connLoading } = useSchedulingConnection();
+  const { connection, isLoading: connLoading, fetchEventTypes } = useSchedulingConnection();
 
   const [eventTypes, setEventTypes] = useState<ProviderEventType[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { fetchEventTypes } = useSchedulingConnection();
 
   const loadEventTypes = useCallback(async (conn: SchedulingConnectionInfo) => {
     setLoading(true);

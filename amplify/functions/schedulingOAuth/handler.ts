@@ -161,10 +161,7 @@ async function handleExchange(
   console.log('[schedulingOAuth] Exchange: requesting tokens', {
     providerId,
     redirectUri,
-    clientId: config.clientId,
     clientIdLength: config.clientId.length,
-    clientSecretLength: config.clientSecret.length,
-    clientSecretLast4: config.clientSecret.slice(-4),
     hasCodeVerifier: !!params.codeVerifier,
     codeVerifierLength: params.codeVerifier?.length ?? 0,
     tokenUrl: config.tokenUrl,

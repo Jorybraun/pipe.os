@@ -77,31 +77,28 @@ export function SchedulingDashboard(): JSX.Element {
     const enrich = async () => {
       setEnriching(true);
       try {
-        const [pipResults, candResults, stageResults] = await Promise.all([
-          // TODO: Amplify .list() with 'filter: id in [...]' is not supported — we
-          // fetch all owned pipelines/candidates and then filter in memory.
-          // Replace with individual .get() calls per unique id to avoid loading
-          // every record when the recruiter has many.
-          client.models.Pipeline.list(),
-          client.models.Candidate.list(),
-          client.models.Stage.list(),
+        // Fetch only the records referenced by current interviews (avoids full table scans)
+        const [pipGetResults, candGetResults, stageGetResults] = await Promise.all([
+          Promise.all(pipelineIds.map((pid) => client.models.Pipeline.get({ id: pid }))),
+          Promise.all(candidateIds.map((cid) => client.models.Candidate.get({ id: cid }))),
+          Promise.all(stageIds.map((sid) => client.models.Stage.get({ id: sid }))),
         ]);
 
         if (cancelled) return;
 
         const pm: Record<string, PipelineRef> = {};
-        (pipResults.data ?? []).forEach((p) => {
-          pm[p.id] = { id: p.id, title: p.title };
+        pipGetResults.forEach(({ data: p }) => {
+          if (p) pm[p.id] = { id: p.id, title: p.title };
         });
 
         const cm: Record<string, CandidateRef> = {};
-        (candResults.data ?? []).forEach((c) => {
-          cm[c.id] = { id: c.id, name: c.name ?? null, email: c.email ?? null };
+        candGetResults.forEach(({ data: c }) => {
+          if (c) cm[c.id] = { id: c.id, name: c.name ?? null, email: c.email ?? null };
         });
 
         const sm: Record<string, StageRef> = {};
-        (stageResults.data ?? []).forEach((s) => {
-          sm[s.id] = { id: s.id, title: s.title };
+        stageGetResults.forEach(({ data: s }) => {
+          if (s) sm[s.id] = { id: s.id, title: s.title };
         });
 
         setPipelinesMap(pm);

@@ -286,9 +286,24 @@ export async function handler(event: WebhookEvent): Promise<WebhookResponse> {
 
     // Step 3: Verify HMAC signature
     const payloadStr = typeof rawPayload === 'string' ? rawPayload : JSON.stringify(rawPayload);
-    const signature = ''; // TODO: Extract actual signature from headers when AppSync passes them
+    // NOTE: AppSync mutations do not forward raw HTTP headers, so the signature is
+    // unavailable at this layer. Signature extraction will require migrating to a
+    // Lambda URL or API Gateway endpoint that surfaces the raw request headers.
+    // Until then, do NOT configure a webhookSecret on the connection — leave it null
+    // to use the open (no-secret) path below. If a secret IS configured, requests will
+    // be rejected until real header extraction is wired up.
+    const signature = ''; // TODO: Extract from raw HTTP headers (requires Lambda URL / APIGW)
 
-    if (connection.webhookSecret && signature) {
+    if (connection.webhookSecret) {
+      // Fail closed: a secret is configured, so a valid signature is required.
+      if (!signature) {
+        console.error('[schedulingWebhook] Webhook secret configured but no signature header present', {
+          provider: activeNormalizer.providerId,
+          connectionId: connection.id,
+        });
+        return { success: false, message: 'Missing webhook signature' };
+      }
+
       const isValid = activeNormalizer.verifySignature(
         payloadStr,
         signature,
@@ -303,12 +318,9 @@ export async function handler(event: WebhookEvent): Promise<WebhookResponse> {
         return { success: false, message: 'Invalid webhook signature' };
       }
     } else {
-      // If no webhook secret or signature, log and continue.
-      // This is expected during development — providers may not send
-      // signatures when using AppSync as the webhook endpoint.
-      console.log('[schedulingWebhook] Skipping HMAC verification (no secret or signature)', {
-        hasSecret: !!connection.webhookSecret,
-        hasSignature: !!signature,
+      // No webhook secret configured — log and continue (development / initial setup).
+      console.log('[schedulingWebhook] Skipping HMAC verification (no secret configured)', {
+        provider: activeNormalizer.providerId,
       });
     }
 
