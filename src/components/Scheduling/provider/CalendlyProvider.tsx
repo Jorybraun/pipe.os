@@ -117,7 +117,7 @@ export const CalendlyPlugin: SchedulingPlugin = {
   Widget:  CalendlyPluginWidget,
   matches: (url) => url.includes('calendly.com'),
 
-  getAuthUrl(redirectUri: string, state: string): string {
+  getAuthUrl(redirectUri: string, state: string, codeChallenge?: string): string {
     const clientId = CALENDLY_CLIENT_ID ?? '';
     const params = new URLSearchParams({
       client_id: clientId,
@@ -125,6 +125,10 @@ export const CalendlyPlugin: SchedulingPlugin = {
       response_type: 'code',
       state,
     });
+    if (codeChallenge) {
+      params.set('code_challenge', codeChallenge);
+      params.set('code_challenge_method', 'S256');
+    }
     return `https://auth.calendly.com/oauth/authorize?${params.toString()}`;
   },
 };

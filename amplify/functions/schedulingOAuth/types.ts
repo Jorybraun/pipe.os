@@ -22,6 +22,8 @@ export interface OAuthParams {
   connectionId?: string;
   /** OAuth state parameter for CSRF protection (for 'exchange' action) */
   state?: string;
+  /** PKCE code verifier (for 'exchange' action — required by Calendly) */
+  codeVerifier?: string;
 }
 
 export interface OAuthResponse {

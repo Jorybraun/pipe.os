@@ -22,6 +22,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const schedulingWebhook = defineFunction({
   name: 'schedulingWebhook',
   entry: './handler.ts',
+  resourceGroupName: 'data',
 
   timeoutSeconds: 15,
   memoryMB: 256,

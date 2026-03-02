@@ -44,6 +44,7 @@ interface UseSchedulingConnectionResult {
     providerId: ProviderId,
     code: string,
     redirectUri: string,
+    codeVerifier?: string,
   ) => Promise<void>;
   /** Fetch event types for the current connection */
   fetchEventTypes: (connectionId: string) => Promise<ProviderEventType[]>;
@@ -126,13 +127,14 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
     providerId: ProviderId,
     code: string,
     redirectUri: string,
+    codeVerifier?: string,
   ): Promise<void> => {
     setError(null);
 
     try {
       const { data, errors } = await client.mutations.exchangeSchedulingOAuth({
         action: 'exchange',
-        params: JSON.stringify({ providerId, code, redirectUri }),
+        params: JSON.stringify({ providerId, code, redirectUri, codeVerifier }),
       });
 
       if (errors) {
@@ -140,14 +142,28 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
         throw new Error(errors[0].message);
       }
 
-      // Parse the Lambda response to get the connection ID
+      // Parse the Lambda response to get the connection data
       const result = typeof data === 'string' ? JSON.parse(data) : data;
+      console.log('[useSchedulingConnection] exchangeOAuth result:', result);
       if (!result?.success) {
-        throw new Error(result?.error ?? 'OAuth exchange failed');
+        throw new Error(result?.message ?? result?.error ?? 'OAuth exchange failed');
       }
 
-      // The observeQuery subscription will pick up the new connection
-      // automatically — no need to manually update state here
+      // Set connection state directly from Lambda response.
+      // observeQuery subscriptions don't fire for records created server-side
+      // via IAM auth — the userPool subscription never receives the event.
+      const d = result.data as Record<string, unknown> | undefined;
+      if (d?.connectionId) {
+        setConnection({
+          id:           d.connectionId as string,
+          providerId:   (d.providerId as ProviderId) ?? providerId,
+          status:       (d.status as ConnectionStatus) ?? 'ACTIVE',
+          accountEmail: (d.accountEmail as string) ?? null,
+          accountName:  (d.accountName as string) ?? null,
+          connectedAt:  new Date().toISOString(),
+          lastSyncAt:   null,
+        });
+      }
     } catch (err) {
       const wrapped = err instanceof Error ? err : new Error('Exchange failed');
       console.error('[useSchedulingConnection] exchangeOAuth failed:', wrapped);
@@ -213,7 +229,8 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
         throw new Error(result?.error ?? 'Disconnect failed');
       }
 
-      // The observeQuery subscription will reflect the REVOKED status
+      // Clear connection state directly — same IAM auth issue as exchange
+      setConnection(null);
     } catch (err) {
       const wrapped = err instanceof Error ? err : new Error('Disconnect failed');
       console.error('[useSchedulingConnection] disconnect failed:', wrapped);

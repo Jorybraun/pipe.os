@@ -57,16 +57,16 @@ function getProviderConfig(providerId: string): ProviderOAuthConfig | null {
         userInfoUrl: 'https://api.calendly.com/users/me',
         eventTypesUrl: 'https://api.calendly.com/event_types',
         webhookUrl: 'https://api.calendly.com/webhook_subscriptions',
-        clientId: process.env['CALENDLY_CLIENT_ID'] ?? '',
-        clientSecret: process.env['CALENDLY_CLIENT_SECRET'] ?? '',
+        clientId: (process.env['CALENDLY_CLIENT_ID'] ?? '').trim(),
+        clientSecret: (process.env['CALENDLY_CLIENT_SECRET'] ?? '').trim(),
       };
     case 'CAL_COM':
       return {
         tokenUrl: 'https://app.cal.com/api/auth/oauth/token',
         eventTypesUrl: 'https://api.cal.com/v1/event-types',
         webhookUrl: 'https://api.cal.com/v1/webhooks',
-        clientId: process.env['CALCOM_CLIENT_ID'] ?? '',
-        clientSecret: process.env['CALCOM_CLIENT_SECRET'] ?? '',
+        clientId: (process.env['CALCOM_CLIENT_ID'] ?? '').trim(),
+        clientSecret: (process.env['CALCOM_CLIENT_SECRET'] ?? '').trim(),
       };
     default:
       return null;
@@ -161,19 +161,37 @@ async function handleExchange(
   console.log('[schedulingOAuth] Exchange: requesting tokens', {
     providerId,
     redirectUri,
+    clientId: config.clientId,
+    clientIdLength: config.clientId.length,
+    clientSecretLength: config.clientSecret.length,
+    clientSecretLast4: config.clientSecret.slice(-4),
+    hasCodeVerifier: !!params.codeVerifier,
+    codeVerifierLength: params.codeVerifier?.length ?? 0,
+    tokenUrl: config.tokenUrl,
   });
 
   // 1. Exchange code for tokens
+  // Both Calendly (OAuth 2.1 + PKCE) and Cal.com accept client credentials
+  // in the POST body. Calendly explicitly requires code_verifier for PKCE.
+  const tokenParams: Record<string, string> = {
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: redirectUri,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+  };
+  if (params.codeVerifier) {
+    tokenParams['code_verifier'] = params.codeVerifier;
+  }
+
+  const tokenHeaders: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+
   const tokenResponse = await fetch(config.tokenUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-    }),
+    headers: tokenHeaders,
+    body: new URLSearchParams(tokenParams),
   });
 
   if (!tokenResponse.ok) {
@@ -184,7 +202,7 @@ async function handleExchange(
     });
     return {
       success: false,
-      message: `Token exchange failed: ${tokenResponse.status}`,
+      message: `Token exchange failed: ${tokenResponse.status} — ${errorBody.slice(0, 300)}`,
     };
   }
 

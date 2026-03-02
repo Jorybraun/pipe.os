@@ -75,9 +75,13 @@ export function ConnectionSetup(): JSX.Element {
     const cleanUrl = `${window.location.origin}${window.location.pathname}`;
     window.history.replaceState({}, '', cleanUrl);
 
+    // Retrieve PKCE verifier stored before the redirect
+    const codeVerifier = sessionStorage.getItem('pipe_oauth_code_verifier') ?? undefined;
+    sessionStorage.removeItem('pipe_oauth_code_verifier');
+
     // Exchange the code
     setFlow({ step: 'exchanging', provider: providerId });
-    exchangeOAuth(providerId as 'CALENDLY' | 'CAL_COM', code, redirectUri)
+    exchangeOAuth(providerId as 'CALENDLY' | 'CAL_COM', code, redirectUri, codeVerifier)
       .then(() => setFlow({ step: 'connected' }))
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Exchange failed';
@@ -96,10 +100,20 @@ export function ConnectionSetup(): JSX.Element {
     }
 
     const state = btoa(JSON.stringify({ providerId: plugin.type }));
-    const authUrl = plugin.getAuthUrl(redirectUri, state);
 
-    setFlow({ step: 'waiting', provider: plugin.type });
-    window.location.href = authUrl;
+    // Generate PKCE pair (required by Calendly)
+    const verifierArray = crypto.getRandomValues(new Uint8Array(32));
+    const verifier = Array.from(verifierArray).map(b => b.toString(16).padStart(2, '0')).join('');
+    sessionStorage.setItem('pipe_oauth_code_verifier', verifier);
+
+    // Compute S256 challenge asynchronously then redirect
+    void window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)).then(digest => {
+      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      const authUrl = plugin.getAuthUrl!(redirectUri, state, challenge);
+      setFlow({ step: 'waiting', provider: plugin.type });
+      window.location.href = authUrl;
+    });
   }, [redirectUri]);
 
   const handleDisconnect = useCallback(async (conn: SchedulingConnectionInfo): Promise<void> => {

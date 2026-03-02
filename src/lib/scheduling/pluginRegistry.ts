@@ -60,7 +60,7 @@ export interface SchedulingPlugin {
    * @param state - CSRF protection state parameter
    * @returns Full OAuth authorization URL
    */
-  getAuthUrl: (redirectUri: string, state: string) => string;
+  getAuthUrl: (redirectUri: string, state: string, codeChallenge?: string) => string;
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────
