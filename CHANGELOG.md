@@ -4,6 +4,18 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `scheduling-ioc-notification-service` — Full Sync & Notification Logic
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/functions/schedulingWebhook`**: Migrated to Lambda Function URL to access raw HTTP headers; implemented HMAC signature verification for Calendly (`x-calendly-signature`) and Cal.com (`x-cal-signature-v2`).
+    - **`amplify/functions/notificationService`**: Implemented deterministic communication engine; sends SES emails with real candidate assessment links (`/assess/${inviteToken}`) triggered by DynamoDB status changes to `INVITED`.
+    - **`amplify/backend.ts`**: Configured DynamoDB Streams, SES permissions, and Amplify Secrets (`SES_SENDER_EMAIL`, `APP_URL`) for the notification engine.
+    - **`amplify/data/resource.ts`**: Moved `schedulingEventTypeId` from `Pipeline` to `Stage` to support granular meeting configuration per hiring round.
+    - **`src/pages/StageDetailPage.tsx`**: Added stage-level **Event Type Picker** and **Email Template Editor** for custom invitation/success/failure logic.
+    - **`src/pages/OverviewPage.tsx`**: Implemented "Invite to Interview" button on Kanban cards; consolidated interview status, scheduled time, and join links directly into candidate cards.
+    - **`e2e/`**: Updated test locators from `PIPE_OS` to `CREATE NEW PIPE` to fix environment-specific UI failures.
+- **Breaking**: `schedulingEventTypeId` has moved from `Pipeline` to `Stage`. Pipelines with existing event types must be re-configured at the stage level.
+
 ### `pr-review-security-fixes` — PR Review: Security & Bug Fixes
 - **Status**: 🟢 DONE
 - **Changes**:

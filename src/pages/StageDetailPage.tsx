@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Settings, Video } from 'lucide-react';
+import { ArrowLeft, Plus, Settings, Video, Mail, ChevronRight, Save } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../components';
 import { Skeleton } from '../components/ui/Skeleton';
 import { ChallengeCard } from '../components/Pipeline/ChallengeCard';
 import { ChallengePicker } from '../components/Pipeline/ChallengePicker';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
+import { EventTypePicker } from '../components/Scheduling/EventTypePicker';
 import {
   DndContext,
   closestCenter,
@@ -25,6 +26,12 @@ import {
 
 const client = generateClient<Schema>();
 
+interface NotificationTemplate {
+  trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE';
+  subject: string;
+  body: string;
+}
+
 /**
  * StageDetailPage - Manage challenges within a specific stage.
  */
@@ -35,14 +42,16 @@ export default function StageDetailPage(): JSX.Element {
   const [stage, setStage] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // False until we confirm Stage.mode exists in the deployed sandbox schema.
-  // Run `npx ampx sandbox` to deploy Phase 8 schema, then this becomes true automatically.
   const [modeFieldReady, setModeFieldReady] = useState(false);
+
+  // Email Template State
+  const [editingTemplate, setEditingTemplate] = useState<NotificationTemplate | null>(null);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5, // 5px movement before drag starts
+        distance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -50,9 +59,6 @@ export default function StageDetailPage(): JSX.Element {
     })
   );
 
-  // Probe whether Stage.mode exists in the deployed sandbox schema.
-  // The Amplify client validates field names against amplify_outputs.json at call-time.
-  // If this throws, the Phase 8 schema hasn't been deployed yet (`npx ampx sandbox`).
   const checkModeField = useCallback(async (stageId: string) => {
     try {
       await client.models.Stage.list({
@@ -69,19 +75,24 @@ export default function StageDetailPage(): JSX.Element {
     if (!stageId) return;
     try {
       setIsLoading(true);
-      // Include 'mode' only once the schema probe confirms it exists in the deployed sandbox.
       const { data: stages } = modeFieldReady
         ? await client.models.Stage.list({
             filter: { id: { eq: stageId } },
-            selectionSet: ['id', 'title', 'order', 'timeLimit', 'mode', 'challenges.*'],
+            selectionSet: ['id', 'title', 'order', 'timeLimit', 'mode', 'challenges.*', 'schedulingEventTypeId', 'notificationTemplates'],
           })
         : await client.models.Stage.list({
             filter: { id: { eq: stageId } },
-            selectionSet: ['id', 'title', 'order', 'timeLimit', 'challenges.*'],
+            selectionSet: ['id', 'title', 'order', 'timeLimit', 'challenges.*', 'notificationTemplates'],
           });
 
       const data = stages[0];
-      if (data) setStage(data);
+      if (data) {
+        // Parse templates if they are stored as JSON string
+        const templates = typeof data.notificationTemplates === 'string' 
+          ? JSON.parse(data.notificationTemplates) 
+          : data.notificationTemplates || [];
+        setStage({ ...data, notificationTemplates: templates });
+      }
     } catch (err) {
       console.error('[StageDetail] Error fetching stage:', err);
     } finally {
@@ -103,9 +114,6 @@ export default function StageDetailPage(): JSX.Element {
     setIsLoading(true);
     try {
       const currentCount = stage?.challenges?.length || 0;
-      
-      // Create challenges in sequence to preserve order and avoid potential race conditions
-      // although Promise.all would be faster, sequence is safer for 'order' field.
       for (let i = 0; i < templates.length; i++) {
         const template = templates[i];
         await client.models.Challenge.create({
@@ -117,7 +125,6 @@ export default function StageDetailPage(): JSX.Element {
           order: currentCount + i,
         });
       }
-      
       await fetchData();
     } catch (err) {
       console.error("Failed to add challenges:", err);
@@ -136,23 +143,59 @@ export default function StageDetailPage(): JSX.Element {
     }
   };
 
+  const handleEventTypeSelect = async (eventTypeId: string) => {
+    if (!stageId) return;
+    try {
+      await client.models.Stage.update({
+        id: stageId,
+        schedulingEventTypeId: eventTypeId,
+      });
+      setStage((prev: any) => prev ? { ...prev, schedulingEventTypeId: eventTypeId } : prev);
+    } catch (err) {
+      console.error('[StageDetail] Failed to save event type:', err);
+    }
+  };
+
+  /** Update or Add an email template */
+  const handleSaveTemplate = async () => {
+    if (!stageId || !editingTemplate) return;
+    setIsSavingTemplate(true);
+    try {
+      const currentTemplates = (stage.notificationTemplates || []) as NotificationTemplate[];
+      const exists = currentTemplates.find(t => t.trigger === editingTemplate.trigger);
+      
+      let newTemplates;
+      if (exists) {
+        newTemplates = currentTemplates.map(t => t.trigger === editingTemplate.trigger ? editingTemplate : t);
+      } else {
+        newTemplates = [...currentTemplates, editingTemplate];
+      }
+
+      await client.models.Stage.update({
+        id: stageId,
+        notificationTemplates: JSON.stringify(newTemplates),
+      });
+      
+      setStage({ ...stage, notificationTemplates: newTemplates });
+      setEditingTemplate(null);
+    } catch (err) {
+      console.error('[StageDetail] Failed to save template:', err);
+    } finally {
+      setIsSavingTemplate(false);
+    }
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    
     if (over && active.id !== over.id && stage) {
       const oldIndex = stage.challenges.findIndex((c: any) => c.id === active.id);
       const newIndex = stage.challenges.findIndex((c: any) => c.id === over.id);
-      
       if (oldIndex !== -1 && newIndex !== -1) {
-        // Optimistic UI update
         const newChallenges = arrayMove(stage.challenges, oldIndex, newIndex).map((c: any, i: number) => ({
           ...c,
           order: i,
         }));
-        
         setStage({ ...stage, challenges: newChallenges });
-
-        // Batch save to backend
         try {
           await Promise.all(
             newChallenges.map((c: any) => 
@@ -161,7 +204,6 @@ export default function StageDetailPage(): JSX.Element {
           );
         } catch (err) {
           console.error('Failed to update challenge order:', err);
-          // Revert on failure
           fetchData();
         }
       }
@@ -184,6 +226,8 @@ export default function StageDetailPage(): JSX.Element {
   const challenges = [...(stage.challenges || [])]
     .filter(c => c !== null)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  const triggers: NotificationTemplate['trigger'][] = ['INVITATION', 'SUCCESS', 'FAILURE'];
 
   return (
     <div style={{ paddingBottom: 100 }}>
@@ -299,6 +343,90 @@ export default function StageDetailPage(): JSX.Element {
         </div>
 
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Email Templates Section */}
+          <LiquidMetalCard variant="chrome" style={{ padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <Mail size={14} color="rgba(255,255,255,0.4)" />
+              <div style={{ fontSize: 10, letterSpacing: '0.1em', fontWeight: 700, color: '#fff', fontFamily: 'Space Mono' }}>EMAIL_TEMPLATES</div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {triggers.map(trigger => {
+                const isEditing = editingTemplate?.trigger === trigger;
+                const hasTemplate = (stage.notificationTemplates || []).some((t: any) => t.trigger === trigger);
+                
+                return (
+                  <div key={trigger} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12 }}>
+                    <button
+                      onClick={() => {
+                        const existing = (stage.notificationTemplates || []).find((t: any) => t.trigger === trigger);
+                        setEditingTemplate(existing || { trigger, subject: '', body: '' });
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'transparent',
+                        border: 'none',
+                        color: isEditing ? '#fff' : 'rgba(255,255,255,0.5)',
+                        fontSize: 9,
+                        fontWeight: 700,
+                        fontFamily: 'Space Mono',
+                        cursor: 'pointer',
+                        padding: '8px 0',
+                      }}
+                    >
+                      <span>{trigger} {hasTemplate && <span style={{ color: '#4ade80', marginLeft: 4 }}>●</span>}</span>
+                      <ChevronRight size={12} style={{ transform: isEditing ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }} />
+                    </button>
+
+                    {isEditing && (
+                      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div>
+                          <label style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', display: 'block', marginBottom: 4 }}>SUBJECT</label>
+                          <input
+                            value={editingTemplate.subject}
+                            onChange={e => setEditingTemplate({ ...editingTemplate, subject: e.target.value })}
+                            style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '6px 8px', fontSize: 11, fontFamily: 'Space Mono' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', display: 'block', marginBottom: 4 }}>BODY (HTML)</label>
+                          <textarea
+                            value={editingTemplate.body}
+                            onChange={e => setEditingTemplate({ ...editingTemplate, body: e.target.value })}
+                            style={{ width: '100%', minHeight: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '6px 8px', fontSize: 11, fontFamily: 'Space Mono', resize: 'vertical' }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={handleSaveTemplate}
+                            disabled={isSavingTemplate}
+                            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', background: '#fff', color: '#000', border: 'none', borderRadius: 4, fontSize: 9, fontWeight: 800, fontFamily: 'Space Mono', cursor: 'pointer' }}
+                          >
+                            <Save size={12} />
+                            {isSavingTemplate ? 'SAVING...' : 'SAVE_TEMPLATE'}
+                          </button>
+                          <button
+                            onClick={() => setEditingTemplate(null)}
+                            style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', fontSize: 9, fontFamily: 'Space Mono', cursor: 'pointer' }}
+                          >
+                            CANCEL
+                          </button>
+                        </div>
+                        <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', lineHeight: 1.4 }}>
+                          Available tags: <br/>
+                          <code>{"{{name}}"}</code>, <code>{"{{pipelineName}}"}</code>, <code>{"{{bookingUrl}}"}</code>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </LiquidMetalCard>
+
           <LiquidMetalCard variant="chrome" style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
               <Settings size={14} color="rgba(255,255,255,0.4)" />
@@ -332,9 +460,6 @@ export default function StageDetailPage(): JSX.Element {
                     }}
                   />
                 </div>
-                <p style={{ marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.2)', lineHeight: 1.4 }}>
-                  Applied to all challenges in this stage unless overridden.
-                </p>
               </div>
 
               {/* STAGE_MODE — ASYNC (default) or LIVE_VIDEO */}
@@ -388,16 +513,15 @@ export default function StageDetailPage(): JSX.Element {
                       })}
                     </div>
                     {(stage.mode ?? 'ASYNC') === 'LIVE_VIDEO' && (
-                      <p style={{ marginTop: 8, fontSize: 10, color: 'rgba(96,165,250,0.7)', lineHeight: 1.4 }}>
-                        Candidate will join a live WebRTC video call before accessing challenges.
-                      </p>
+                      <div style={{ marginTop: 20, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 20 }}>
+                        <EventTypePicker
+                          currentEventTypeId={stage.schedulingEventTypeId ?? null}
+                          onSelect={handleEventTypeSelect}
+                        />
+                      </div>
                     )}
                   </>
                 )}
-              </div>
-
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 20 }}>
-                This stage acts as a container. Add technical challenges or questions that the candidate will complete in sequence.
               </div>
             </div>
           </LiquidMetalCard>

@@ -17,7 +17,7 @@ test.describe('Role Management Flow', () => {
     // 1. START AT HOME
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await expect(page.locator('text=PIPE_OS')).toBeVisible();
+    await expect(page.locator('text=CREATE NEW PIPE').first()).toBeVisible();
 
     // 2. NAVIGATE TO DISCOVERY
     await page.goto('/pipeline/new');

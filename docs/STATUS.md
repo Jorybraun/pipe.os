@@ -87,3 +87,44 @@ A real person (not a developer) can:
 4. Send it to 3 people
 5. Each person completes challenges (code review, code implementation, or quiz) — no sign-in required
 6. Recruiter logs in and sees 3 candidates ranked by score with a per-challenge breakdown
+# Implementation Tasks for Adaptive Notification Engine
+
+## Phase 1: Schema Updates
+
+*   [ ] Update Amplify Data schema to include `notificationTemplates` field in the `Stage` model (see design document).
+*   [ ] Deploy Amplify Data schema changes.
+
+## Phase 2: notificationAgent Lambda Function
+
+*   [ ] Create `notificationAgent` Lambda function in TypeScript.
+*   [ ] Implement DynamoDB Stream event processing logic.
+*   [ ] Implement template rendering engine with variable substitution.
+*   [ ] Integrate with AWS SES to send emails.
+*   [ ] Implement error handling and logging.
+*   [ ] Configure Lambda function IAM role with necessary permissions (DynamoDB, SES, Secrets Manager).
+*   [ ] Deploy Lambda function.
+
+## Phase 3: SES Setup
+
+*   [ ] Configure AWS SES with DKIM and SPF records.
+*   [ ] Verify email addresses for sending.
+*   [ ] Set up bounce and complaint handling.
+*   [ ] Request SES production access.
+
+## Phase 4: UI Configuration
+
+*   [ ] Update the UI to allow recruiters to customize email templates per-stage.
+*   [ ] Implement validation for email templates.
+*   [ ] Allow recruiters to configure scheduling provider settings (Calendly/Cal.com).
+
+## Phase 5: Scheduling Provider Integration (Calendly/Cal.com)
+
+*   [ ] Implement integration with Calendly API.
+*   [ ] Implement integration with Cal.com API.
+*   [ ] Store API keys in AWS Secrets Manager.
+
+## Phase 6: Testing and Monitoring
+
+*   [ ] Thoroughly test the notification engine with various scenarios.
+*   [ ] Set up CloudWatch Alarms to monitor Lambda function errors and SES bounce/complaint rates.
+*   [ ] Implement logging and tracing for debugging.

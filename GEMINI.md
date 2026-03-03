@@ -90,7 +90,9 @@ bash scripts/install-hooks.sh   # Install pre-commit hooks
 
 ## 🤖 **Agent Lambda Standard**
 
-Every AI Lambda must follow the `questionAgent` pattern: separate files for handler, types, prompts, validation, and costTracker. See `docs/specs/engineering-standards.md`.
+The **"Agent"** suffix is strictly reserved for AI-powered Lambda functions (e.g., `questionAgent`). Every AI Lambda must follow the `questionAgent` pattern: separate files for handler, types, prompts, validation, and costTracker. See `docs/specs/engineering-standards.md`.
+
+Non-AI background tasks or deterministic logic should use the **"Service"** suffix (e.g., `notificationService`) and do not require the AI-specific file structure.
 
 ---
 

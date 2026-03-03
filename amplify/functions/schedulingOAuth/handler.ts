@@ -668,10 +668,9 @@ async function registerWebhook(
   // For now, use the WEBHOOK_CALLBACK_URL env var if set, otherwise skip.
   const callbackUrl = process.env['WEBHOOK_CALLBACK_URL'];
   if (!callbackUrl) {
-    console.warn(
-      '[schedulingOAuth] WEBHOOK_CALLBACK_URL not set — skipping webhook registration',
-    );
-    return null;
+    const errorMsg = '[schedulingOAuth] WEBHOOK_CALLBACK_URL not set. Webhook registration is REQUIRED for this provider.';
+    console.error(errorMsg);
+    throw new Error(errorMsg);
   }
 
   if (providerId === 'CALENDLY') {
