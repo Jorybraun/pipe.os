@@ -32,6 +32,8 @@ const CONNECTION_TABLE =
   process.env["SCHEDULINGCONNECTION_TABLE_NAME"] ?? "SchedulingConnection";
 const INTERVIEW_TABLE =
   process.env["SCHEDULEDINTERVIEW_TABLE_NAME"] ?? "ScheduledInterview";
+const CANDIDATE_TABLE =
+  process.env["CANDIDATE_TABLE_NAME"] ?? "Candidate";
 
 // ---------------------------------------------------------------------------
 // Normalizer registry
@@ -99,6 +101,9 @@ interface InterviewRecord {
 async function findConnectionByProvider(
   providerId: string,
 ): Promise<ConnectionRecord | null> {
+  // NOTE: Do NOT use Limit with FilterExpression — Limit restricts items
+  // *scanned*, not items *returned*. With multiple connections the scan may
+  // read one REVOKED row, apply the filter, return 0 results, and stop.
   const result = await ddb.send(
     new ScanCommand({
       TableName: CONNECTION_TABLE,
@@ -111,7 +116,6 @@ async function findConnectionByProvider(
         ":pid": providerId,
         ":st": "ACTIVE",
       },
-      Limit: 1,
     }),
   );
 
@@ -128,11 +132,13 @@ async function findConnectionByProvider(
 }
 
 /**
- * Find a ScheduledInterview by externalEventId.
+ * Find a ScheduledInterview by externalEventId, or by candidate email
+ * (for the first booking when externalEventId hasn't been stored yet).
  */
 async function findScheduledInterview(
   normalized: NormalizedSchedulingEvent,
 ): Promise<InterviewRecord | null> {
+  // 1. Try matching by externalEventId (for subsequent updates / cancellations)
   if (normalized.externalEventId) {
     const result = await ddb.send(
       new ScanCommand({
@@ -153,6 +159,71 @@ async function findScheduledInterview(
         candidateId: item["candidateId"] as string,
         pipelineId: item["pipelineId"] as string,
       };
+    }
+  }
+
+  // 2. Fallback: match by candidate email → find their INVITED ScheduledInterview
+  if (normalized.candidateEmail) {
+    console.log("[schedulingWebhook] No match by externalEventId, trying candidateEmail", {
+      candidateEmail: normalized.candidateEmail,
+    });
+
+    // Find candidate(s) with this email
+    const candidateResult = await ddb.send(
+      new ScanCommand({
+        TableName: CANDIDATE_TABLE,
+        FilterExpression: "#email = :email",
+        ExpressionAttributeNames: { "#email": "email" },
+        ExpressionAttributeValues: { ":email": normalized.candidateEmail },
+      }),
+    );
+
+    const candidates = candidateResult.Items ?? [];
+    console.log("[schedulingWebhook] Candidate email lookup", {
+      candidateEmail: normalized.candidateEmail,
+      candidateCount: candidates.length,
+      candidateIds: candidates.map((c) => c["id"]).slice(0, 10),
+    });
+    if (candidates.length === 0) {
+      console.log("[schedulingWebhook] No candidate found with email", {
+        candidateEmail: normalized.candidateEmail,
+      });
+      return null;
+    }
+
+    // For each candidate, find an INVITED ScheduledInterview
+    for (const candidate of candidates) {
+      const candidateId = candidate["id"] as string;
+      const interviewResult = await ddb.send(
+        new ScanCommand({
+          TableName: INTERVIEW_TABLE,
+          FilterExpression: "#cid = :cid AND #status = :status",
+          ExpressionAttributeNames: {
+            "#cid": "candidateId",
+            "#status": "status",
+          },
+          ExpressionAttributeValues: {
+            ":cid": candidateId,
+            ":status": "INVITED",
+          },
+        }),
+      );
+
+      const item = interviewResult.Items?.[0];
+      if (item) {
+        console.log("[schedulingWebhook] Matched interview by email", {
+          candidateEmail: normalized.candidateEmail,
+          candidateId,
+          interviewId: item["id"],
+        });
+        return {
+          id: item["id"] as string,
+          status: item["status"] as string,
+          externalEventId: item["externalEventId"] as string | undefined,
+          candidateId: item["candidateId"] as string,
+          pipelineId: item["pipelineId"] as string,
+        };
+      }
     }
   }
 
@@ -283,7 +354,7 @@ export async function handler(
     // Each provider has its own signature header name
     const signatureHeader =
       normalizer.providerId === "CALENDLY"
-        ? "x-calendly-signature"
+        ? "calendly-webhook-signature"
         : "x-cal-signature-v2";
     const signature = event.headers[signatureHeader];
 

@@ -451,7 +451,7 @@ export default function OverviewPage(): JSX.Element {
   const [schemaReady, setSchemaReady] = useState(false);
 
   // Scheduling Connection for provider resolution
-  const { connection } = useSchedulingConnection();
+  const { connection, fetchEventTypes } = useSchedulingConnection();
 
   // Add Candidate Form State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -624,13 +624,27 @@ export default function OverviewPage(): JSX.Element {
         return;
       }
 
+      // Resolve scheduling URL from the recruiter's connected provider
+      let schedulingUrl: string | undefined;
+      if (connection?.id && connection.status === 'ACTIVE') {
+        try {
+          const eventTypes = await fetchEventTypes(connection.id);
+          if (eventTypes.length > 0) {
+            schedulingUrl = eventTypes[0].url;
+            console.log('[OverviewPage] Resolved scheduling URL from provider:', schedulingUrl);
+          }
+        } catch (err) {
+          console.warn('[OverviewPage] Could not fetch event types, falling back to no scheduling URL:', err);
+        }
+      }
+
       await client.models.ScheduledInterview.create({
         pipelineId: id,
         candidateId,
         stageId,
         status: 'INVITED',
         schedulingProvider: connection?.providerId || 'MANUAL',
-        schedulingUrl: pipeline?.schedulingUrl,
+        schedulingUrl: schedulingUrl ?? null,
       });
       // Re-fetch upcoming interviews
       const { data: siData } = await client.models.ScheduledInterview.list({

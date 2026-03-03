@@ -34,6 +34,11 @@ export interface CalendlyWebhookPayload {
   event: string;
   payload: {
     uri?: string;
+    /** Calendly puts invitee email directly on payload for invitee.created / invitee.canceled */
+    email?: string;
+    /** Calendly puts invitee name directly on payload for invitee.created / invitee.canceled */
+    name?: string;
+    /** Legacy / alternate shape */
     invitee?: { email: string; name?: string };
     scheduled_event?: {
       uri?: string;

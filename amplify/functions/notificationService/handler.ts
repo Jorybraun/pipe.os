@@ -1,16 +1,19 @@
 import { DynamoDBStreamEvent, Handler } from 'aws-lambda';
 import { DynamoDBClient, GetItemCommand, UpdateItemCommand, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 
 const dbClient = new DynamoDBClient({});
 const sesClient = new SESClient({});
+const cognitoClient = new CognitoIdentityProviderClient({});
 
 const CANDIDATE_TABLE = process.env.CANDIDATE_TABLE_NAME;
 const STAGE_TABLE = process.env.STAGE_TABLE_NAME;
 const PIPELINE_TABLE = process.env.PIPELINE_TABLE_NAME;
 const SCHEDULED_INTERVIEW_TABLE = process.env.SCHEDULEDINTERVIEW_TABLE_NAME;
 const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'invites@pipe-os.com';
+const USER_POOL_ID = process.env.USER_POOL_ID;
 
 interface NotificationTemplate {
   trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE' | 'INVITED' | 'SCHEDULED';
@@ -73,6 +76,18 @@ async function processStreamRecord(record: any) {
     if (interview.status === 'INVITED' && (!oldInterview || oldInterview.status !== 'INVITED')) {
       console.log(`[notificationService] Triggering INVITATION for candidate ${interview.candidateId}`);
       await sendNotification(interview.candidateId, interview.stageId, 'INVITATION', interview.id);
+    }
+
+    // Trigger: Status changed to SCHEDULED (candidate booked via webhook)
+    if (interview.status === 'SCHEDULED' && oldInterview?.status !== 'SCHEDULED') {
+      console.log(`[notificationService] Interview SCHEDULED — notifying recruiter for candidate ${interview.candidateId}`);
+      await notifyRecruiterOfStatusChange(interview, 'SCHEDULED');
+    }
+
+    // Trigger: Status changed to CANCELLED (candidate cancelled via webhook)
+    if (interview.status === 'CANCELLED' && oldInterview?.status !== 'CANCELLED') {
+      console.log(`[notificationService] Interview CANCELLED — notifying recruiter for candidate ${interview.candidateId}`);
+      await notifyRecruiterOfStatusChange(interview, 'CANCELLED');
     }
     return;
   }
@@ -202,6 +217,114 @@ async function sendCandidateInvite(candidate: Record<string, any>, stage: Record
   }
 }
 
+// ---------------------------------------------------------------------------
+// Recruiter notification: webhook-driven status changes (SCHEDULED / CANCELLED)
+// ---------------------------------------------------------------------------
+
+/**
+ * Notify the pipeline owner (recruiter) when a candidate books or cancels
+ * an interview via the scheduling provider webhook.
+ *
+ * Resolves the recruiter's email by looking up the Pipeline owner (Cognito sub)
+ * and calling Cognito AdminGetUser.
+ */
+async function notifyRecruiterOfStatusChange(
+  interview: Record<string, unknown>,
+  newStatus: 'SCHEDULED' | 'CANCELLED',
+): Promise<void> {
+  const candidateId = interview.candidateId as string;
+  const pipelineId = interview.pipelineId as string;
+
+  // Fetch candidate and pipeline
+  const candidate = await fetchItem(CANDIDATE_TABLE!, { id: { S: candidateId } });
+  const pipeline = await fetchItem(PIPELINE_TABLE!, { id: { S: pipelineId } });
+
+  if (!candidate || !pipeline) {
+    console.error(`[notificationService] Missing data for recruiter notification: candidate=${!!candidate}, pipeline=${!!pipeline}`);
+    return;
+  }
+
+  // The Pipeline 'owner' field uses Amplify's format: "sub::sub"
+  // We need just the bare sub UUID for Cognito AdminGetUser
+  const rawOwner = pipeline.owner as string | undefined;
+  const ownerSub = rawOwner?.split('::')[0];
+  if (!ownerSub || !USER_POOL_ID) {
+    console.warn(`[notificationService] Cannot resolve recruiter email: rawOwner=${rawOwner}, ownerSub=${ownerSub}, USER_POOL_ID=${USER_POOL_ID}`);
+    return;
+  }
+
+  // Look up recruiter email from Cognito
+  let recruiterEmail: string | undefined;
+  try {
+    console.log(`[notificationService] Looking up recruiter via Cognito: sub=${ownerSub}`);
+    const cognitoResp = await cognitoClient.send(new AdminGetUserCommand({
+      UserPoolId: USER_POOL_ID,
+      Username: ownerSub,
+    }));
+    recruiterEmail = cognitoResp.UserAttributes?.find(a => a.Name === 'email')?.Value;
+  } catch (err) {
+    console.error(`[notificationService] Cognito AdminGetUser failed for ${ownerSub}:`, err);
+    return;
+  }
+
+  if (!recruiterEmail) {
+    console.warn(`[notificationService] No email found for recruiter ${ownerSub}`);
+    return;
+  }
+
+  const candidateName = (candidate.name as string) || 'A candidate';
+  const pipelineName = (pipeline.title as string) || 'your pipeline';
+  const scheduledAt = interview.scheduledAt as string | undefined;
+
+  let subject: string;
+  let body: string;
+
+  if (newStatus === 'SCHEDULED') {
+    const dateStr = scheduledAt ? new Date(scheduledAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : 'TBD';
+    subject = `Interview Booked: ${candidateName} for ${pipelineName}`;
+    body = [
+      `Hi,`,
+      ``,
+      `${candidateName} has booked their interview for the <strong>${pipelineName}</strong> role.`,
+      ``,
+      `<strong>When:</strong> ${dateStr}`,
+      interview.meetingUrl ? `<strong>Meeting link:</strong> <a href="${interview.meetingUrl}">${interview.meetingUrl}</a>` : '',
+      ``,
+      `You can view the candidate in your dashboard.`,
+      ``,
+      `— Pipe OS`,
+    ].filter(Boolean).join('<br>');
+  } else {
+    subject = `Interview Cancelled: ${candidateName} for ${pipelineName}`;
+    body = [
+      `Hi,`,
+      ``,
+      `${candidateName} has <strong>cancelled</strong> their interview for the <strong>${pipelineName}</strong> role.`,
+      ``,
+      `You may want to follow up or re-invite the candidate from your dashboard.`,
+      ``,
+      `— Pipe OS`,
+    ].join('<br>');
+  }
+
+  console.log(`[notificationService] Sending recruiter ${newStatus} notification to ${recruiterEmail}`);
+
+  try {
+    await sesClient.send(new SendEmailCommand({
+      Source: SENDER_EMAIL,
+      Destination: { ToAddresses: [recruiterEmail] },
+      Message: {
+        Subject: { Data: subject },
+        Body: { Html: { Data: body } },
+      },
+    }));
+    console.log(`[notificationService] Recruiter notification sent to ${recruiterEmail}`);
+  } catch (sesErr) {
+    console.error('[notificationService] SES Error sending recruiter notification:', sesErr);
+    // Don't throw — recruiter notification is best-effort, don't block the stream
+  }
+}
+
 /**
  * Default template for candidate invitations, differentiated by stage mode.
  */
@@ -244,7 +367,7 @@ async function sendNotification(candidateId: string, stageId: string, type: stri
     candidateName: candidate.name || 'Candidate',
     stageName: stage.title || 'Interview',
     pipelineName: pipeline?.title || 'the role',
-    bookingUrl: await resolveBookingUrl(candidate, stage, pipeline),
+    bookingUrl: await resolveBookingUrl(candidate, stage, pipeline, interviewId),
     recruiterName: pipeline?.recruiterName || 'The Team',
     companyName: 'Pipe OS',
   };
@@ -301,17 +424,29 @@ function substituteVariables(text: string, vars: Record<string, string>) {
   });
 }
 
-async function resolveBookingUrl(candidate: any, stage: any, pipeline: any): Promise<string> {
+async function resolveBookingUrl(candidate: any, stage: any, pipeline: any, interviewId?: string): Promise<string> {
   const appUrl = process.env.APP_URL || 'https://app.pipe-os.com';
-  
+  const isLiveVideo = stage?.mode === 'LIVE_VIDEO';
+
+  // LIVE_VIDEO stages: check the ScheduledInterview for the provider booking URL
+  if (isLiveVideo && interviewId) {
+    const interview = await fetchItem(SCHEDULED_INTERVIEW_TABLE!, { id: { S: interviewId } });
+    if (interview?.schedulingUrl) {
+      return `${interview.schedulingUrl}?name=${encodeURIComponent(candidate.name || '')}&email=${encodeURIComponent(candidate.email || '')}`;
+    }
+  }
+
+  // Fallback: pipeline-level schedulingUrl (legacy)
+  if (isLiveVideo && pipeline?.schedulingUrl) {
+    return `${pipeline.schedulingUrl}?name=${encodeURIComponent(candidate.name || '')}&email=${encodeURIComponent(candidate.email || '')}`;
+  }
+
+  // ASYNC stages: use assessment link
   if (candidate.inviteToken) {
     return `${appUrl}/assess/${candidate.inviteToken}`;
   }
 
-  if (pipeline?.schedulingUrl) {
-    return `${pipeline.schedulingUrl}?name=${encodeURIComponent(candidate.name || '')}&email=${encodeURIComponent(candidate.email || '')}`;
-  }
-  return 'https://calendly.com/pipe-demo';
+  return `${appUrl}`;
 }
 
 function getDefaultTemplate(type: string): NotificationTemplate {

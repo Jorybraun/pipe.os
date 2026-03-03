@@ -24,6 +24,7 @@ import {
   UpdateCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import crypto from 'crypto';
 
 // ─── DynamoDB setup ──────────────────────────────────────────────────────────
@@ -116,6 +117,9 @@ export async function handler(event: OAuthRequest): Promise<OAuthResponse> {
 
       case 'disconnect':
         return await handleDisconnect(params);
+
+      case 'registerWebhook':
+        return await handleRegisterWebhook(params, recruiterId);
 
       default:
         console.warn('[schedulingOAuth] Unknown action', { action });
@@ -270,6 +274,7 @@ async function handleExchange(
   let webhookId: string | null = null;
   try {
     webhookId = await registerWebhook(
+      connectionId,
       providerId,
       tokens.access_token,
       webhookSecret,
@@ -520,6 +525,103 @@ async function handleDisconnect(params: OAuthParams): Promise<OAuthResponse> {
   };
 }
 
+// ─── B5: RegisterWebhook — register webhook on existing connection ───────────
+
+/**
+ * Register (or re-register) a webhook subscription for an existing connection.
+ * Use this when the initial registration failed (e.g. missing Function URL)
+ * or to update the callback URL after infrastructure changes.
+ */
+async function handleRegisterWebhook(params: OAuthParams, recruiterId: string): Promise<OAuthResponse> {
+  const { connectionId } = params;
+
+  if (!connectionId) {
+    return { success: false, message: 'Missing connectionId' };
+  }
+
+  const { Item: connection } = await ddb.send(
+    new GetCommand({
+      TableName: CONNECTION_TABLE,
+      Key: { id: connectionId },
+    }),
+  );
+
+  if (!connection) {
+    return { success: false, message: 'Connection not found' };
+  }
+
+  // Access check
+  if (connection['recruiterId'] !== recruiterId) {
+    return { success: false, message: 'Access denied' };
+  }
+
+  if (connection['status'] !== 'ACTIVE') {
+    return { success: false, message: `Connection is ${connection['status'] as string}, not ACTIVE` };
+  }
+
+  const providerId = connection['providerId'] as string;
+  const accessToken = connection['accessToken'] as string;
+  const webhookSecret = connection['webhookSecret'] as string;
+  const existingWebhookId = connection['webhookId'] as string | null;
+  const accountEmail = connection['accountEmail'] as string;
+
+  const config = getProviderConfig(providerId);
+  if (!config) {
+    return { success: false, message: `Unknown provider: ${providerId}` };
+  }
+
+  // Delete existing webhook if present (best-effort)
+  if (existingWebhookId) {
+    try {
+      await deleteWebhook(providerId, accessToken, existingWebhookId);
+      console.log('[schedulingOAuth] Deleted stale webhook', { existingWebhookId });
+    } catch (err) {
+      console.warn('[schedulingOAuth] Stale webhook deletion failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Register new webhook
+  const webhookId = await registerWebhook(
+    connectionId,
+    providerId,
+    accessToken,
+    webhookSecret,
+    config,
+    accountEmail,
+  );
+
+  if (!webhookId) {
+    return { success: false, message: 'Webhook registration failed — check Lambda logs' };
+  }
+
+  // Save webhookId to connection
+  await ddb.send(
+    new UpdateCommand({
+      TableName: CONNECTION_TABLE,
+      Key: { id: connectionId },
+      UpdateExpression: 'SET webhookId = :wid, updatedAt = :now',
+      ExpressionAttributeValues: {
+        ':wid': webhookId,
+        ':now': new Date().toISOString(),
+      },
+    }),
+  );
+
+  console.log('[schedulingOAuth] Webhook registered', {
+    connectionId,
+    providerId,
+    webhookId,
+  });
+
+  return {
+    success: true,
+    message: 'Webhook registered successfully',
+    data: { webhookId },
+  };
+}
+
 // ─── Helper: Get connection with auto-refresh ────────────────────────────────
 
 async function getConnectionAndRefreshIfNeeded(
@@ -658,20 +760,35 @@ async function fetchCalComEventTypes(
 // ─── Helper: Register webhook with provider ──────────────────────────────────
 
 async function registerWebhook(
+  connectionId: string,
   providerId: string,
   accessToken: string,
   webhookSecret: string,
   config: ProviderOAuthConfig,
   _accountEmail: string,
 ): Promise<string | null> {
-  // The webhook callback URL would be the Lambda Function URL or API Gateway endpoint.
-  // For now, use the WEBHOOK_CALLBACK_URL env var if set, otherwise skip.
-  const callbackUrl = process.env['WEBHOOK_CALLBACK_URL'];
-  if (!callbackUrl) {
-    const errorMsg = '[schedulingOAuth] WEBHOOK_CALLBACK_URL not set. Webhook registration is REQUIRED for this provider.';
+  // The webhook callback URL is stored in SSM Parameter Store to avoid
+  // a CloudFormation circular dependency (both Lambdas are in the same stack).
+  // Read it at runtime via SSM GetParameter.
+  const ssmParamName = process.env['WEBHOOK_URL_SSM_PARAM'];
+  if (!ssmParamName) {
+    const errorMsg = '[schedulingOAuth] WEBHOOK_URL_SSM_PARAM not set. Cannot register webhook.';
     console.error(errorMsg);
     throw new Error(errorMsg);
   }
+
+  const ssmClient = new SSMClient({});
+  const ssmResp = await ssmClient.send(new GetParameterCommand({ Name: ssmParamName }));
+  const callbackUrlBase = ssmResp.Parameter?.Value;
+  if (!callbackUrlBase) {
+    const errorMsg = `[schedulingOAuth] SSM parameter ${ssmParamName} has no value. Deploy may be incomplete.`;
+    console.error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  // Append connectionId as a query parameter so the webhook handler
+  // can find the connection directly without a ScanCommand.
+  const callbackUrl = `${callbackUrlBase}?connectionId=${encodeURIComponent(connectionId)}`;
 
   if (providerId === 'CALENDLY') {
     // First get the user URI (organization URI for org-level webhooks)

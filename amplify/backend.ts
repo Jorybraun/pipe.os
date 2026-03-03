@@ -1,7 +1,8 @@
 import { defineBackend } from '@aws-amplify/backend';
-import { Function as LambdaFunction, StartingPosition } from 'aws-cdk-lib/aws-lambda';
+import { Function as LambdaFunction, FunctionUrlAuthType, StartingPosition } from 'aws-cdk-lib/aws-lambda';
 import { DynamoEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { questionAgent } from './functions/questionAgent/resource';
@@ -36,6 +37,7 @@ schedulingConnectionTable.grantReadWriteData(backend.schedulingWebhook.resources
 schedulingConnectionTable.grantReadWriteData(backend.schedulingOAuth.resources.lambda);
 scheduledInterviewTable.grantReadWriteData(backend.schedulingWebhook.resources.lambda);
 scheduledInterviewTable.grantReadWriteData(backend.schedulingOAuth.resources.lambda);
+candidateTable.grantReadData(backend.schedulingWebhook.resources.lambda);
 
 // Grant notificationService access to all relevant tables
 candidateTable.grantReadData(backend.notificationService.resources.lambda);
@@ -80,12 +82,44 @@ const tableEnv = {
   Object.entries(tableEnv).forEach(([k, v]) => l.addEnvironment(k, v));
 });
 
-// Actual Function URL property (Amplify Gen 2)
-// The .url property is on the resources object in Amplify Gen 2
-const webhookUrl = (backend.schedulingWebhook.resources as any).url;
-if (webhookUrl) {
-  oauthLambda.addEnvironment('WEBHOOK_CALLBACK_URL', webhookUrl);
-  webhookLambda.addEnvironment('WEBHOOK_CALLBACK_URL', webhookUrl);
-}
+// 4. WEBHOOK FUNCTION URL
+// Create a public Function URL on the webhook Lambda so Calendly/Cal.com can POST to it.
+// Auth is handled by HMAC signature verification inside the handler, not IAM.
+const webhookFunctionUrl = webhookLambda.addFunctionUrl({
+  authType: FunctionUrlAuthType.NONE, // Public — HMAC-verified in handler
+});
+
+// Store the Function URL in SSM Parameter Store to BREAK circular dependency.
+// Passing webhookFunctionUrl.url directly as an env var to oauthLambda creates a CFN
+// circular dependency because both Lambdas are in resourceGroupName: 'data' (same nested stack).
+// The chain: OAuth Lambda → Function URL → Webhook Lambda → FunctionDirectiveStack → OAuth Lambda.
+// By storing in SSM and reading at runtime, we avoid any CFN Ref/GetAtt between the resources.
+const WEBHOOK_URL_SSM_PARAM = '/pipe/scheduling/webhook-callback-url';
+new StringParameter(webhookFunctionUrl, 'WebhookCallbackUrlParam', {
+  parameterName: WEBHOOK_URL_SSM_PARAM,
+  stringValue: webhookFunctionUrl.url,
+  description: 'Lambda Function URL for the scheduling webhook (Calendly/Cal.com)',
+});
+
+// Pass the SSM parameter name as a plain string — no CFN token, no dependency
+oauthLambda.addEnvironment('WEBHOOK_URL_SSM_PARAM', WEBHOOK_URL_SSM_PARAM);
+
+// Grant OAuth Lambda SSM read permission with hardcoded ARN (no CFN reference to break cycle)
+oauthLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['ssm:GetParameter'],
+  resources: [`arn:aws:ssm:*:*:parameter${WEBHOOK_URL_SSM_PARAM}`],
+}));
+
+// 5. COGNITO PERMISSIONS (for recruiter notifications)
+// The notificationService needs to look up recruiter emails from Cognito
+// when the webhook updates an interview status (SCHEDULED / CANCELLED).
+const { cfnUserPool } = backend.auth.resources.cfnResources;
+notificationLambda.addEnvironment('USER_POOL_ID', cfnUserPool.ref);
+notificationLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['cognito-idp:AdminGetUser'],
+  resources: [`arn:aws:cognito-idp:*:*:userpool/${cfnUserPool.ref}`],
+}));
 
 // NOTE: SES_SENDER_EMAIL and APP_URL are now handled via secrets in the function's resource definition.

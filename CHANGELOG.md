@@ -4,6 +4,21 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### [Unreleased]
+
+#### Fixed
+- **Webhook interview scan Limit:1**: Removed `Limit: 1` from ScheduledInterview scan in email fallback matching. DynamoDB `Limit` restricts items *scanned* not items *returned* after filtering — with 15+ interviews, the scan would read 1 random item, fail the filter, and return nothing even though matching INVITED interviews existed.
+- **Webhook Function URL**: Created actual Lambda Function URL for `schedulingWebhook` via CDK (`FunctionUrlAuthType.NONE`). Previously, `backend.ts` tried to read a non-existent `.url` property, so `WEBHOOK_CALLBACK_URL` was never set and webhook registration silently failed during OAuth exchange.
+- **Webhook interview matching**: `findScheduledInterview` now falls back to matching by candidate email when `externalEventId` is not yet stored (first booking). Looks up Candidate by email → finds their INVITED ScheduledInterview.
+- **Calendly signature header**: Fixed header name from `x-calendly-signature` to `calendly-webhook-signature` (Calendly sends `Calendly-Webhook-Signature`, lowercased by Lambda Function URL).
+- **Calendly HMAC verification**: Updated to parse `t=<timestamp>,v1=<signature>` format and compute HMAC over `<timestamp>.<body>` per Calendly API spec.
+- **DynamoDB permissions**: Granted `schedulingWebhook` Lambda read access to Candidate table for email-based interview matching.
+
+#### Added
+- **`registerWebhook` action**: New action on `schedulingOAuth` Lambda to register/re-register webhook subscriptions on existing connections. Exposed via `useSchedulingConnection().registerWebhook(connectionId)`.
+
+---
+
 ### `scheduling-ioc-notification-service` — Full Sync & Notification Logic
 - **Status**: 🟢 DONE
 - **Changes**:

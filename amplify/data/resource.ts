@@ -199,6 +199,9 @@ const schema = a.schema({
       assessments: a.hasMany('Assessment', 'candidateId'),
       scheduledInterviews: a.hasMany('ScheduledInterview', 'candidateId'),
     })
+    .secondaryIndexes((index) => [
+      index('email').name('candidatesByEmail'),
+    ])
     .authorization((allow) => [
       allow.owner(),                        
       allow.publicApiKey().to(['read', 'update']), 
@@ -266,6 +269,10 @@ const schema = a.schema({
       inviteLinkSentAt:   a.datetime(),
       emailSentAt:        a.datetime(),
     })
+    .secondaryIndexes((index) => [
+      index('externalEventId').name('interviewsByExternalEventId'),
+      index('candidateId').sortKeys(['status']).name('interviewsByCandidateIdAndStatus'),
+    ])
     .authorization((allow) => [
       allow.owner(),
       allow.publicApiKey().to(['read']),
