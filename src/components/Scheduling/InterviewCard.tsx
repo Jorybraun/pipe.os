@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Video, ExternalLink } from 'lucide-react';
+import { Video, ExternalLink, RefreshCw } from 'lucide-react';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
@@ -82,9 +82,34 @@ export function InterviewCard({
           {formattedDate}
         </div>
 
-        {/* Status badge */}
-        <div>
+        {/* Status badge + sync indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <InterviewStatusBadge status={interview.status ?? 'INVITED'} />
+          {interview.syncSource === 'WEBHOOK' && (
+            <span
+              title={
+                interview.lastSyncedAt
+                  ? `Auto-synced ${new Date(interview.lastSyncedAt).toLocaleString()}`
+                  : 'Auto-synced via webhook'
+              }
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 6px',
+                fontSize: 9,
+                letterSpacing: '0.08em',
+                fontFamily: '"Space Mono", monospace',
+                color: '#4ade80',
+                background: 'rgba(74,222,128,0.08)',
+                border: '1px solid rgba(74,222,128,0.15)',
+                borderRadius: 4,
+              }}
+            >
+              <RefreshCw size={9} />
+              SYNCED
+            </span>
+          )}
         </div>
 
         {/* Join Call button */}

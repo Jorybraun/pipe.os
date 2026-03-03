@@ -16,7 +16,6 @@ import {
   SubTitle,
 } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
-import { VideoShell } from "../components/Shells/VideoShell";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import { calculateSignal } from "../lib/utils";
@@ -837,19 +836,6 @@ export default function CandidateProfilePage(): JSX.Element {
       )}
     </>
   );
-
-  // Wrap with VideoShell (recruiter role) when the pipeline has a LIVE_VIDEO stage
-  if (liveVideoStage && id) {
-    return (
-      <VideoShell
-        stageId={liveVideoStage.id}
-        candidateId={id}
-        role="RECRUITER"
-      >
-        {profileContent}
-      </VideoShell>
-    );
-  }
 
   return profileContent;
 }

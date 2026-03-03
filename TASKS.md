@@ -1,9 +1,17 @@
 # Pipe — MVP Task List
 
-**Updated:** 2026-02-28
+**Updated:** 2026-03-02
 **Goal:** Recruiter creates a pipeline → invites a candidate → candidate completes a set of challenges → recruiter sees score.
 **Rule:** Do tasks in order. One at a time. Don't start the next phase until the current one is done.
 **Archive:** Completed tasks → `TASKS-ARCHIVE.md`
+
+---
+
+## 🛑 CRITICAL SECURITY & STABILITY
+
+- [ ] **[P0] UX/Product Audit: Scheduling Flow** — The end-to-end journey (OAuth → Pipeline Config → Candidate Booking → Recruiter Dashboard) is currently "discombobulated." Audit state transitions, UI feedback, and navigation to ensure a cohesive, sensible experience. ~4 hours.
+- [ ] **[P0] PKCE Implementation Security Audit** — Review the client-side generation and `sessionStorage` persistence of the OAuth `code_verifier`. Verify against OAuth 2.1 best practices for SPAs to ensure no interception or side-channel leakage is possible. ~2 hours.
+- [ ] **[P1] AppSync Auth Mode Sync Audit** — Validate the "manual sync" pattern used in `useSchedulingConnection.ts` for other IAM-to-UserPool transitions across the codebase. ~1 hour.
 
 ---
 
@@ -105,6 +113,7 @@
 
 ### Phase E — Verify + Ship (0.5 day)
 - [ ] **Unit tests** — `pluginRegistry.ts`, webhook normalizers, `canTransition()` with webhook transitions.
+- [ ] **Smoke test registry pattern** — run `tsx scripts/smoke-test-registry.ts` to verify provider auto-detection and registration.
 - [ ] **Smoke test end-to-end** — connect Calendly → pick event type → invite → candidate books → webhook auto-updates.
 - [ ] **Update `CHANGELOG.md`** and commit.
 

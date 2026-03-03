@@ -10,7 +10,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
-import { Layout, ProfileHeader, SidebarNav } from "./components";
+import { Layout, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
 import OverviewPage from "./pages/OverviewPage";
 import StageDetailPage from "./pages/StageDetailPage";

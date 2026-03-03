@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar } from 'lucide-react';
+import { Calendar, RefreshCw } from 'lucide-react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
+import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import { InterviewCard } from './InterviewCard';
 import {
   SchedulingFilters,
@@ -12,6 +13,7 @@ import {
   type SchedulingFilterState,
 } from './SchedulingFilters';
 import { Skeleton } from '../ui/Skeleton';
+import { ConnectionSetup } from './ConnectionSetup';
 
 const client = generateClient<Schema>();
 
@@ -53,6 +55,7 @@ interface StageRef {
  */
 export function SchedulingDashboard(): JSX.Element {
   const { interviews, isLoading, error, updateStatus } = useScheduledInterviews();
+  const { connection } = useSchedulingConnection();
 
   const [filters, setFilters] = useState<SchedulingFilterState>(DEFAULT_FILTER);
 
@@ -74,31 +77,28 @@ export function SchedulingDashboard(): JSX.Element {
     const enrich = async () => {
       setEnriching(true);
       try {
-        const [pipResults, candResults, stageResults] = await Promise.all([
-          // TODO: Amplify .list() with 'filter: id in [...]' is not supported — we
-          // fetch all owned pipelines/candidates and then filter in memory.
-          // Replace with individual .get() calls per unique id to avoid loading
-          // every record when the recruiter has many.
-          client.models.Pipeline.list(),
-          client.models.Candidate.list(),
-          client.models.Stage.list(),
+        // Fetch only the records referenced by current interviews (avoids full table scans)
+        const [pipGetResults, candGetResults, stageGetResults] = await Promise.all([
+          Promise.all(pipelineIds.map((pid) => client.models.Pipeline.get({ id: pid }))),
+          Promise.all(candidateIds.map((cid) => client.models.Candidate.get({ id: cid }))),
+          Promise.all(stageIds.map((sid) => client.models.Stage.get({ id: sid }))),
         ]);
 
         if (cancelled) return;
 
         const pm: Record<string, PipelineRef> = {};
-        (pipResults.data ?? []).forEach((p) => {
-          pm[p.id] = { id: p.id, title: p.title };
+        pipGetResults.forEach(({ data: p }) => {
+          if (p) pm[p.id] = { id: p.id, title: p.title };
         });
 
         const cm: Record<string, CandidateRef> = {};
-        (candResults.data ?? []).forEach((c) => {
-          cm[c.id] = { id: c.id, name: c.name ?? null, email: c.email ?? null };
+        candGetResults.forEach(({ data: c }) => {
+          if (c) cm[c.id] = { id: c.id, name: c.name ?? null, email: c.email ?? null };
         });
 
         const sm: Record<string, StageRef> = {};
-        (stageResults.data ?? []).forEach((s) => {
-          sm[s.id] = { id: s.id, title: s.title };
+        stageGetResults.forEach(({ data: s }) => {
+          if (s) sm[s.id] = { id: s.id, title: s.title };
         });
 
         setPipelinesMap(pm);
@@ -163,10 +163,35 @@ export function SchedulingDashboard(): JSX.Element {
             Schedule
           </h1>
         </div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', marginTop: 8 }}>
-          {interviews.length} total
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+            {interviews.length} total
+          </span>
+          {connection?.lastSyncAt && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 10,
+                color: 'rgba(74,222,128,0.7)',
+                fontFamily: '"Space Mono", monospace',
+                letterSpacing: '0.05em',
+              }}
+              title={`Last webhook sync: ${new Date(connection.lastSyncAt).toLocaleString()}`}
+            >
+              <RefreshCw size={10} />
+              Last sync {new Date(connection.lastSyncAt).toLocaleString(undefined, {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}
+            </span>
+          )}
         </div>
       </div>
+
+      {/* OAuth connection setup */}
+      <ConnectionSetup />
 
       {/* Filters */}
       <div style={{ marginBottom: 24 }}>

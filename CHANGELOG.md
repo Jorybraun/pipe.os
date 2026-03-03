@@ -4,6 +4,38 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `pr-review-security-fixes` — PR Review: Security & Bug Fixes
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/functions/schedulingOAuth/handler.ts`**: Removed `clientSecretLength` and `clientSecretLast4` from logs to prevent partial secret disclosure.
+    - **`amplify/data/resource.ts`**: Restricted `ScheduledInterview` publicApiKey auth to `read` only (removed `update`); candidates can no longer tamper with interview status.
+    - **`amplify/functions/schedulingWebhook/handler.ts`**: Webhook signature verification now fails closed — if a `webhookSecret` is configured but no signature header is present, the request is rejected.
+    - **`src/components/Scheduling/ConnectionSetup.tsx`**: Added CSRF nonce to OAuth `state` parameter; stored in `sessionStorage` before redirect and validated on callback to prevent CSRF attacks.
+    - **`src/components/Scheduling/SchedulingDashboard.tsx`**: Replaced full-table `.list()` calls with per-id `.get()` calls for enrichment, preventing unnecessary read amplification.
+    - **`src/components/Scheduling/EventTypePicker.tsx`**: Fixed duplicate `useSchedulingConnection()` hook calls — merged into a single destructured call.
+    - **`src/hooks/useSchedulingConnection.ts`**: Fixed `fetchEventTypes` to parse `result.data` (not `result.eventTypes`); added `durationMinutes → duration` mapping to align Lambda response with `ProviderEventType` interface.
+    - **`src/hooks/useScheduledInterviews.ts`**: Added model deployment guard (`client.models.ScheduledInterview` check) to avoid crashing in partially deployed sandboxes.
+    - **`src/pages/OverviewPage.tsx`**: `handleInviteToInterview` now (1) gates on `LIVE_VIDEO` stages only, (2) prevents duplicate invites by checking for existing records, (3) populates `schedulingUrl` from the pipeline record.
+- **Breaking**: `ScheduledInterview` no longer allows unauthenticated `update` — any candidate-facing code that relied on direct mutations must be updated.
+
+### `scheduling-ioc-oauth-implementation` — Scheduling OAuth with PKCE & Manual Sync
+- **Status**: 🟢 DONE
+- **Changes**:
+    *   **`amplify/functions/schedulingOAuth`**: Implemented OAuth 2.1 exchange with PKCE (required by Calendly); added secret trimming and improved error surfacing.
+    *   **`src/components/Scheduling/ConnectionSetup.tsx`**: Added PKCE (S256) challenge generation and session-storage persistence for the OAuth flow.
+    *   **`src/hooks/useSchedulingConnection.ts`**: Implemented manual connection state synchronization to bypass IAM-to-UserPool subscription limitations.
+    *   **`src/lib/scheduling/pluginRegistry.ts`**: Updated plugin interface to support optional PKCE challenges.
+    *   **`amplify/backend.ts`**: (Previously added) DynamoDB grants for scheduling Lambdas.
+    *   **`amplify/data/resource.ts`**: (Previously added) `SchedulingConnection` model.
+- **Breaking**: None.
+
+### `assessment-env-scheduling-ioc-specs` — Advanced Environments & Scheduling IoC Specs
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`docs/specs/interview-environments.md`**: New — Technical brief and cost analysis for AWS Fargate + Dev Containers for full-project interviews.
+    - **`docs/specs/scheduling-ioc-architecture.md`**: New — Architectural specification for Scheduling Inversion of Control (IoC) and automated sync with third-party providers.
+- **Breaking**: None.
+
 ### `scheduling-ioc-prep` — Scheduling IoC Schema Fixes + Handoff
 - **Status**: 🟢 DONE
 - **Changes**:

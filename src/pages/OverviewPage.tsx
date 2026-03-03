@@ -10,6 +10,7 @@ import {
   Plus,
   X,
   Calendar,
+  Video,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -17,6 +18,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import { useCandidateCreate } from "../hooks/useCandidateCreate";
 import { FieldGroup, TextInput } from "../components/ui/form";
+import { EventTypePicker } from "../components/Scheduling/EventTypePicker";
 
 const client = generateClient<Schema>();
 
@@ -184,11 +186,15 @@ function CandidateKanbanCard({
   onClick,
   index,
   stageIndex,
+  onInvite,
+  isInviting,
 }: {
   candidate: any;
   onClick: () => void;
   index: number;
   stageIndex: number;
+  onInvite?: () => void;
+  isInviting?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -317,28 +323,53 @@ function CandidateKanbanCard({
               alignItems: "center",
               justifyContent: "center",
               background: "rgba(255,255,255,0.02)",
+              gap: 6,
             }}
           >
             {candidate.status === 'INVITED' || candidate.status === 'IN_PROGRESS' ? (
-              <button
-                onClick={handleCopyLink}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: copied ? '#10b981' : 'rgba(255,255,255,0.4)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 4,
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                {copied ? <CheckCircle size={18} /> : <Copy size={18} />}
-                <span style={{ fontSize: 7, letterSpacing: '0.1em' }}>
-                  {copied ? 'COPIED!' : 'COPY LINK'}
-                </span>
-              </button>
+              <>
+                <button
+                  onClick={handleCopyLink}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: copied ? '#10b981' : 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4,
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  {copied ? <CheckCircle size={18} /> : <Copy size={18} />}
+                  <span style={{ fontSize: 7, letterSpacing: '0.1em' }}>
+                    {copied ? 'COPIED!' : 'COPY LINK'}
+                  </span>
+                </button>
+                {onInvite && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onInvite(); }}
+                    disabled={isInviting}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: isInviting ? 'rgba(255,255,255,0.2)' : '#a78bfa',
+                      cursor: isInviting ? 'default' : 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4,
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <Video size={16} />
+                    <span style={{ fontSize: 7, letterSpacing: '0.1em' }}>
+                      {isInviting ? 'INVITING' : 'INTERVIEW'}
+                    </span>
+                  </button>
+                )}
+              </>
             ) : (
               <>
                 <div
@@ -388,6 +419,9 @@ export default function OverviewPage(): JSX.Element {
   // Upcoming scheduled interviews for this pipeline (status=SCHEDULED)
   const [upcomingInterviews, setUpcomingInterviews] = useState<any[]>([]);
 
+  // Invite-to-interview state
+  const [invitingCandidateId, setInvitingCandidateId] = useState<string | null>(null);
+
   const handleAddStage = async () => {
     if (!id) return;
     
@@ -422,7 +456,7 @@ export default function OverviewPage(): JSX.Element {
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'title', 'order', 'challenges.*']
+          selectionSet: ['id', 'title', 'order', 'mode', 'challenges.*']
         }),
       ]);
 
@@ -433,7 +467,7 @@ export default function OverviewPage(): JSX.Element {
         const { data: siData } = await client.models.ScheduledInterview.list({
           filter: { pipelineId: { eq: id } },
         });
-        setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED'));
+        setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED' || si.status === 'INVITED'));
       } catch {
         // ScheduledInterview not yet deployed in sandbox — ignore
       }
@@ -497,6 +531,62 @@ export default function OverviewPage(): JSX.Element {
       console.error("Failed to clear stages:", err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /** Save the selected event type ID to the pipeline */
+  const handleEventTypeSelect = async (eventTypeId: string) => {
+    if (!id) return;
+    try {
+      await client.models.Pipeline.update({
+        id,
+        schedulingEventTypeId: eventTypeId,
+      });
+      setPipeline((prev: any) => prev ? { ...prev, schedulingEventTypeId: eventTypeId } : prev);
+    } catch (err) {
+      console.error('[OverviewPage] Failed to save event type:', err);
+    }
+  };
+
+  /** Create a ScheduledInterview record for a candidate (Invite to Interview) */
+  const handleInviteToInterview = async (candidateId: string, stageId: string) => {
+    if (!id) return;
+
+    // Only allow invites for LIVE_VIDEO stages
+    const stage = stages.find((s: any) => s.id === stageId);
+    if (!stage || stage.mode !== 'LIVE_VIDEO') {
+      console.warn('[OverviewPage] Invite to Interview is only valid for LIVE_VIDEO stages');
+      return;
+    }
+
+    setInvitingCandidateId(candidateId);
+    try {
+      // Prevent duplicate invites: check for an existing record first
+      const { data: existing } = await client.models.ScheduledInterview.list({
+        filter: { candidateId: { eq: candidateId }, stageId: { eq: stageId } },
+      });
+      if (existing && existing.length > 0) {
+        console.warn('[OverviewPage] Interview invite already exists for this candidate + stage');
+        return;
+      }
+
+      await client.models.ScheduledInterview.create({
+        pipelineId: id,
+        candidateId,
+        stageId,
+        status: 'INVITED',
+        schedulingProvider: 'MANUAL',
+        schedulingUrl: pipeline?.schedulingUrl,
+      });
+      // Re-fetch upcoming interviews
+      const { data: siData } = await client.models.ScheduledInterview.list({
+        filter: { pipelineId: { eq: id } },
+      });
+      setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED' || si.status === 'INVITED'));
+    } catch (err) {
+      console.error('[OverviewPage] Failed to create interview invitation:', err);
+    } finally {
+      setInvitingCandidateId(null);
     }
   };
 
@@ -618,6 +708,11 @@ export default function OverviewPage(): JSX.Element {
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>PIPELINE_OVERVIEW</div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: 0 }}>{pipeline.title}</h1>
+          {/* Event Type Picker — link a scheduling provider event type to this pipeline */}
+          <EventTypePicker
+            currentEventTypeId={pipeline.schedulingEventTypeId ?? null}
+            onSelect={handleEventTypeSelect}
+          />
         </div>
 
         {!showAddForm && (
@@ -765,8 +860,10 @@ export default function OverviewPage(): JSX.Element {
                 return (
                   <LiquidMetalCard key={si.id} style={{ flex: '0 0 260px', padding: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                      <Calendar size={14} color="#60a5fa" />
-                      <span style={{ fontSize: 9, color: '#60a5fa', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>SCHEDULED</span>
+                      <Calendar size={14} color={si.status === 'INVITED' ? '#fbbf24' : '#60a5fa'} />
+                      <span style={{ fontSize: 9, color: si.status === 'INVITED' ? '#fbbf24' : '#60a5fa', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+                        {si.status}
+                      </span>
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
                       {cand?.name || '—'}
@@ -819,6 +916,8 @@ export default function OverviewPage(): JSX.Element {
                     index={idx}
                     stageIndex={i}
                     onClick={() => navigate(`/candidates/${candidate.id}`)}
+                    onInvite={() => handleInviteToInterview(candidate.id, s.id)}
+                    isInviting={invitingCandidateId === candidate.id}
                   />
                 ))}
 
