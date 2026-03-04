@@ -4,24 +4,6 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
-### `replace-polling-with-appsync` — Replace Container Status Polling with AppSync Subscriptions
-- **Status**: 🟢 DONE
-- **Changes**:
-    - **`amplify/functions/devContainerLaunch/`**: New Lambda — calls `ECS.RunTask` to spin up a Fargate task running code-server. Returns `{ sessionId, taskArn, status: 'PROVISIONING' }`.
-    - **`amplify/functions/devContainerStatus/`**: New Lambda — describes an ECS task and maps its status to the internal lifecycle. Used as a fallback when the AppSync subscription times out.
-    - **`amplify/functions/devContainerDestroy/`**: New Lambda — calls `ECS.StopTask` to terminate the container.
-    - **`amplify/functions/ecsStatusBridge/`**: New Lambda — triggered by EventBridge on ECS Task State Change events. Maps ECS statuses to app statuses and calls the AppSync `publishContainerStatus` mutation using IAM-signed requests (AWS Signature V4, no external dependencies).
-    - **`amplify/data/resource.ts`**: Added `ContainerStatusUpdate` custom type; `launchDevContainer`, `destroyDevContainer`, `getContainerStatus` operations; `publishContainerStatus` mutation (NONE data source, restricted to `ecsStatusBridge` via `allow.resource()`); `onContainerStatusChanged` subscription (`a.subscription().for(publishContainerStatus)`).
-    - **`amplify/data/resolvers/publishContainerStatus.js`**: AppSync NONE-source resolver that passes mutation arguments to subscription subscribers without persisting data.
-    - **`amplify/backend.ts`**: Added all new Lambda functions; added EventBridge rule (`EcsTaskStateChangeRule`) filtering to `pipe:purpose=dev-container` tasks; injects `APPSYNC_ENDPOINT` env var into `ecsStatusBridge`.
-    - **`src/graphql/subscriptions.ts`**: New file — typed GraphQL subscription query for `onContainerStatusChanged`.
-    - **`src/hooks/useDevContainerSession.ts`**: New hook — state machine (`IDLE → LAUNCHING → BOOTING → READY → DESTROYING → IDLE`). Replaces 5-second interval polling with an AppSync subscription during `BOOTING`. Includes a 120-second safety timeout that falls back to a single `getContainerStatus` query.
-    - **`src/pages/DevContainerSandboxPage.tsx`**: New page at `/sandbox/dev-container` (protected). Launch button, indeterminate progress bar during boot, code-server iframe once `READY`, Destroy button.
-    - **`src/App.tsx`**: Added `/sandbox/dev-container` route.
-- **Performance**: Eliminates ~12 unnecessary Lambda invocations per container launch; reduces status-update latency from ≤5 s to <2 s.
-
----
-
 ### `pr-review-security-fixes` — PR Review: Security & Bug Fixes
 - **Status**: 🟢 DONE
 - **Changes**:

@@ -20,7 +20,6 @@ import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import SchedulingPage from "./pages/SchedulingPage";
-import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 
@@ -332,10 +331,6 @@ function App(): JSX.Element {
                     element={<CandidateScreeningPage />}
                   />
                   <Route path="/schedule" element={<SchedulingPage />} />
-                  <Route
-                    path="/sandbox/dev-container"
-                    element={<DevContainerSandboxPage />}
-                  />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

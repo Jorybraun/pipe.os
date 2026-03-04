@@ -5,9 +5,6 @@ import { scoringAgent } from '../functions/scoringAgent/resource';
 import { turnCredentials } from '../functions/turnCredentials/resource';
 import { schedulingWebhook } from '../functions/schedulingWebhook/resource';
 import { schedulingOAuth } from '../functions/schedulingOAuth/resource';
-import { devContainerLaunch } from '../functions/devContainerLaunch/resource';
-import { devContainerDestroy } from '../functions/devContainerDestroy/resource';
-import { devContainerStatus } from '../functions/devContainerStatus/resource';
 
 const schema = a.schema({
   /**
@@ -402,94 +399,6 @@ const schema = a.schema({
     })
     .returns(a.json())
     .handler(a.handler.function(schedulingOAuth))
-    .authorization((allow) => [allow.authenticated()]),
-
-  /**
-   * Dev Container Mutations / Queries
-   *
-   * Phase 1 — AWS Fargate + code-server dev container lifecycle.
-   * Route: /sandbox/dev-container
-   *
-   * Real-time status updates are pushed via the onContainerStatusChanged
-   * subscription (ECS → EventBridge → ecsStatusBridge Lambda → AppSync).
-   */
-  launchDevContainer: a
-    .mutation()
-    .arguments({
-      sessionId: a.string().required(),
-    })
-    .returns(a.json())
-    .handler(a.handler.function(devContainerLaunch))
-    .authorization((allow) => [allow.authenticated()]),
-
-  destroyDevContainer: a
-    .mutation()
-    .arguments({
-      taskArn: a.string().required(),
-    })
-    .returns(a.json())
-    .handler(a.handler.function(devContainerDestroy))
-    .authorization((allow) => [allow.authenticated()]),
-
-  getContainerStatus: a
-    .query()
-    .arguments({
-      taskArn: a.string().required(),
-    })
-    .returns(a.json())
-    .handler(a.handler.function(devContainerStatus))
-    .authorization((allow) => [allow.authenticated()]),
-
-  /**
-   * ContainerStatusUpdate — Custom type pushed by the ecsStatusBridge Lambda.
-   *
-   * PROVISIONING | BOOTING | READY | STOPPING | ERROR
-   */
-  ContainerStatusUpdate: a.customType({
-    taskArn: a.string().required(),
-    sessionId: a.string().required(),
-    status: a.string().required(),
-    url: a.string(),
-    updatedAt: a.datetime(),
-  }),
-
-  /**
-   * publishContainerStatus — Mutation called exclusively by the ecsStatusBridge Lambda.
-   *
-   * Uses a NONE data source (local resolver) so the payload is passed directly
-   * to subscribers without being persisted in DynamoDB. Authorized via API key
-   * so the ecsStatusBridge Lambda can call it without requiring Cognito auth.
-   * The APPSYNC_API_KEY environment variable is injected into the Lambda at
-   * deploy time (see amplify/backend.ts).
-   */
-  publishContainerStatus: a
-    .mutation()
-    .arguments({
-      taskArn: a.string().required(),
-      sessionId: a.string().required(),
-      status: a.string().required(),
-      url: a.string(),
-    })
-    .returns(a.ref('ContainerStatusUpdate'))
-    .handler(
-      a.handler.custom({
-        entry: './resolvers/publishContainerStatus.js',
-      })
-    )
-    .authorization((allow) => [allow.publicApiKey()]),
-
-  /**
-   * onContainerStatusChanged — Real-time subscription for container status updates.
-   *
-   * Fires whenever publishContainerStatus is called for the given sessionId.
-   * The frontend hooks into this instead of polling getContainerStatus every 5 s.
-   */
-  onContainerStatusChanged: a
-    .subscription()
-    .for(a.ref('publishContainerStatus'))
-    .arguments({
-      sessionId: a.string().required(),
-    })
     .authorization((allow) => [allow.authenticated()]),
 });
 
