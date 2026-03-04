@@ -269,6 +269,7 @@ export default function StageDetailPage(): JSX.Element {
                       key={c.id} 
                       challenge={c} 
                       index={i} 
+                      onEdit={() => navigate(`/pipeline/${pipelineId}/challenges/${c.id}`)}
                       onDelete={handleChallengeDelete}
                     />
                   ))}

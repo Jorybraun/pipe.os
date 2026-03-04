@@ -1,15 +1,19 @@
 import {
+  Building,
   MapPin,
   Calendar,
   ChevronRight,
+  MoreHorizontal,
+  Activity,
 } from "lucide-react";
+import { LiquidMetalCard } from "./LiquidMetalCard";
 
-export type RoleStatus = "ACTIVE" | "DRAFT" | "ARCHIVED";
+export type RoleStatus = "active" | "draft" | "closed";
 
 interface RoleCardProps {
   title: string;
-  department?: string;
-  location?: string;
+  department: string;
+  location: string;
   status: RoleStatus;
   candidates: number;
   avgScore?: number | null;
@@ -21,143 +25,317 @@ interface RoleCardProps {
   className?: string;
 }
 
-const STATUS_COLORS = {
-  ACTIVE: { text: '#34d399', bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)' },
-  DRAFT: { text: '#fbbf24', bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.3)' },
-  ARCHIVED: { text: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)' }
-};
-
-/**
- * RoleCard - Structural twin of ChallengeCard and CandidateCard.
- * All metrics (Candidates, Stages, Score) and Status are moved to the left.
- */
 export function RoleCard({
   title,
   department,
-  location = "REMOTE",
+  location,
   status,
   candidates,
   avgScore,
   stagesConfigured,
+  totalStages,
   createdAt,
   onClick,
   style = {},
   className = "",
 }: RoleCardProps) {
-  const statusStyle = STATUS_COLORS[status] || STATUS_COLORS.DRAFT;
+  const getStatusStyle = (status: RoleStatus) => {
+    switch (status) {
+      case "active":
+        return {
+          color: "rgba(150,255,150,0.8)",
+          bg: "rgba(150,255,150,0.1)",
+          label: "ACTIVE",
+        };
+      case "draft":
+        return {
+          color: "rgba(255,200,100,0.8)",
+          bg: "rgba(255,200,100,0.1)",
+          label: "DRAFT",
+        };
+      case "closed":
+        return {
+          color: "rgba(255,255,255,0.4)",
+          bg: "rgba(255,255,255,0.05)",
+          label: "CLOSED",
+        };
+    }
+  };
+
+  const statusStyle = getStatusStyle(status);
+  const isComplete = stagesConfigured === totalStages;
+  const progressPercent = (stagesConfigured / totalStages) * 100;
 
   const formattedDate = new Date(createdAt)
     .toLocaleDateString("en-US", { month: "short", day: "numeric" })
     .toUpperCase();
 
   return (
-    <div
+    <LiquidMetalCard
+      data-testid="pipeline-card"
+      variant={status === "active" ? "chrome" : "default"}
+      hover
       onClick={onClick}
-      className={className}
       style={{
-        display: 'flex',
-        alignItems: 'stretch',
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.06)',
-        borderRadius: 8,
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'all 0.2s ease',
-        marginBottom: 8,
-        overflow: 'hidden',
+        cursor: onClick ? "pointer" : "default",
         ...style,
       }}
-      onMouseEnter={e => {
-        if (onClick) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
-      }}
-      onMouseLeave={e => {
-        if (onClick) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-      }}
+      className={className}
     >
-      {/* Left Block — Primary Number: Candidates (Matches 48px width standard) */}
-      <div style={{
-        width: 48,
-        background: 'rgba(255,255,255,0.01)',
-        borderRight: '1px solid rgba(255,255,255,0.04)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: '#fff' }}>{candidates}</div>
-        <div style={{ fontSize: 6, fontWeight: 800, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>CANDS</div>
-      </div>
+        {/* Header */}
+        <div
+          style={{
+            padding: "24px 24px 20px",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              marginBottom: 16,
+            }}
+          >
+            {/* Status badge */}
+            <div
+              style={{
+                fontSize: 8,
+                letterSpacing: "0.2em",
+                padding: "4px 10px",
+                background: statusStyle.bg,
+                color: statusStyle.color,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              {status === "active" && (
+                <Activity
+                  size={8}
+                  style={{ animation: "pulse 1.5s ease-in-out infinite" }}
+                />
+              )}
+              {statusStyle.label}
+            </div>
 
-      {/* Content Body */}
-      <div style={{ flex: 1, padding: '16px 24px', display: 'flex', alignItems: 'center', gap: 24 }}>
-        {/* Left Metrics Cluster */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
-          {/* Status Badge */}
-          <div style={{
-            fontSize: 8,
-            fontWeight: 800,
-            letterSpacing: '0.12em',
-            padding: '4px 10px',
-            background: statusStyle.bg,
-            border: `1px solid ${statusStyle.border}`,
-            color: statusStyle.text,
-            borderRadius: 4,
-            fontFamily: '"Space Mono", monospace',
-            width: 70,
-            textAlign: 'center'
-          }}>
-            {status}
+            {/* More options */}
+            <button
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "rgba(255,255,255,0.3)",
+                cursor: "pointer",
+                padding: 4,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                // Handle menu open
+              }}
+            >
+              <MoreHorizontal size={16} />
+            </button>
           </div>
 
-          {/* Secondary Stats */}
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.6)' }}>{stagesConfigured}</div>
-              <div style={{ fontSize: 6, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace', fontWeight: 800 }}>STAGES</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: avgScore ? '#fff' : 'rgba(255,255,255,0.2)' }}>{avgScore || '—'}</div>
-              <div style={{ fontSize: 6, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace', fontWeight: 800 }}>SCORE</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Title & Metadata */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {/* Title */}
+          <h3
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              margin: "0 0 12px",
+              background:
+                "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.8) 100%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
             {title}
-          </div>
-          <div style={{ 
-            fontSize: 10, 
-            color: 'rgba(255,255,255,0.3)', 
-            letterSpacing: '0.05em', 
-            fontFamily: '"Space Mono", monospace', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 8 
-          }}>
-            <span>{department?.toUpperCase() || 'GENERAL'}</span>
-            <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'currentColor', opacity: 0.3 }} />
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <MapPin size={10} /> {location}
-            </span>
-            <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'currentColor', opacity: 0.3 }} />
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Calendar size={10} opacity={0.5} /> {formattedDate}
-            </span>
+          </h3>
+
+          {/* Meta info */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Building size={10} color="rgba(255,255,255,0.25)" />
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.1em",
+                  color: "rgba(255,255,255,0.5)",
+                }}
+              >
+                {department}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <MapPin size={10} color="rgba(255,255,255,0.25)" />
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.1em",
+                  color: "rgba(255,255,255,0.5)",
+                }}
+              >
+                {location}
+              </span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Action/Chevron */}
-      <div style={{ 
-        padding: '0 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <ChevronRight size={16} color="rgba(255,255,255,0.15)" />
-      </div>
-    </div>
+        {/* Stats */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          {/* Candidates */}
+          <div
+            style={{
+              padding: 20,
+              borderRight: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 8,
+                letterSpacing: "0.2em",
+                color: "rgba(255,255,255,0.3)",
+                marginBottom: 8,
+              }}
+            >
+              CANDIDATES
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                letterSpacing: "-0.02em",
+                background:
+                  "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              {candidates}
+            </div>
+          </div>
+
+          {/* Avg Score */}
+          <div
+            style={{
+              padding: 20,
+              borderRight: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 8,
+                letterSpacing: "0.2em",
+                color: "rgba(255,255,255,0.3)",
+                marginBottom: 8,
+              }}
+            >
+              AVG SCORE
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                letterSpacing: "-0.02em",
+                background: avgScore
+                  ? "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)"
+                  : "linear-gradient(180deg, rgba(255,255,255,0.3) 0%, rgba(200,210,230,0.15) 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              {avgScore ?? "—"}
+            </div>
+          </div>
+
+          {/* Stages */}
+          <div style={{ padding: 20 }}>
+            <div
+              style={{
+                fontSize: 8,
+                letterSpacing: "0.2em",
+                color: "rgba(255,255,255,0.3)",
+                marginBottom: 8,
+              }}
+            >
+              STAGES
+            </div>
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 800,
+                letterSpacing: "-0.02em",
+                background: isComplete
+                  ? "linear-gradient(180deg, rgba(150,255,150,0.9) 0%, rgba(150,255,150,0.6) 100%)"
+                  : "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+              }}
+            >
+              {stagesConfigured}/{totalStages}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "16px 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Calendar size={10} color="rgba(255,255,255,0.25)" />
+            <span
+              style={{
+                fontSize: 9,
+                letterSpacing: "0.1em",
+                color: "rgba(255,255,255,0.4)",
+              }}
+            >
+              CREATED {formattedDate}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              color: "rgba(255,255,255,0.5)",
+            }}
+          >
+            <span style={{ fontSize: 9, letterSpacing: "0.1em" }}>
+              VIEW PIPELINE
+            </span>
+            <ChevronRight size={12} />
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div style={{ height: 2, background: "rgba(255,255,255,0.06)" }}>
+          <div
+            style={{
+              width: `${progressPercent}%`,
+              height: "100%",
+              background: isComplete
+                ? "linear-gradient(90deg, rgba(150,255,150,0.4), rgba(150,255,150,0.8))"
+                : "linear-gradient(90deg, rgba(255,255,255,0.3), rgba(255,255,255,0.7))",
+              boxShadow: isComplete
+                ? "0 0 10px rgba(150,255,150,0.3)"
+                : "0 0 10px rgba(255,255,255,0.2)",
+            }}
+          />
+        </div>
+      </LiquidMetalCard>
   );
 }

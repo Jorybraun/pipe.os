@@ -7,7 +7,6 @@ import {
   TrendingUp,
   Sparkles,
   Calendar,
-  Code,
 } from "lucide-react";
 
 interface SidebarNavProps {
@@ -17,8 +16,6 @@ interface SidebarNavProps {
   onAgentToggle?: () => void;
   /** Called when the user clicks the Schedule nav item */
   onScheduleClick?: () => void;
-  /** Called when the user clicks the Challenges nav item */
-  onChallengesClick?: () => void;
 }
 
 const navItems = [
@@ -36,7 +33,6 @@ export function SidebarNav({
   isAgentOpen = false,
   onAgentToggle,
   onScheduleClick,
-  onChallengesClick,
 }: SidebarNavProps) {
   return (
     <nav
@@ -201,60 +197,6 @@ export function SidebarNav({
           margin: "8px 0",
         }}
       />
-
-      {/* Challenges nav item */}
-      {onChallengesClick && (
-        <button
-          onClick={onChallengesClick}
-          title="Challenges"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "challenges"
-              ? "linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(96, 165, 250, 0.15))"
-              : "transparent",
-            border: activeSection === "challenges" ? "1px solid rgba(167, 139, 250, 0.3)" : "none",
-            borderRadius: "12px",
-            color: activeSection === "challenges" ? "#a78bfa" : "rgba(255,255,255,0.4)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "challenges") {
-              e.currentTarget.style.background = "rgba(167, 139, 250, 0.1)";
-              e.currentTarget.style.color = "rgba(167, 139, 250, 0.8)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "challenges") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Code size={20} />
-          {activeSection === "challenges" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(167, 139, 250, 0.8), rgba(96, 165, 250, 0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(167, 139, 250, 0.6)",
-              }}
-            />
-          )}
-        </button>
-      )}
 
       {/* Schedule nav item */}
       {onScheduleClick && (
