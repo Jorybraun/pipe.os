@@ -15,4 +15,5 @@ export const devContainerDestroy = defineFunction({
   runtime: 22,
   memoryMB: 256,
   timeoutSeconds: 30,
+  resourceGroupName: 'data',
 });

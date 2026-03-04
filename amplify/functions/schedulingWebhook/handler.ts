@@ -14,6 +14,7 @@ import {
   ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
 import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyResultV2,
@@ -27,13 +28,39 @@ import { calcomNormalizer } from "./providers/calcom";
 // ---------------------------------------------------------------------------
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const ssmClient = new SSMClient({});
 
-const CONNECTION_TABLE =
-  process.env["SCHEDULINGCONNECTION_TABLE_NAME"] ?? "SchedulingConnection";
-const INTERVIEW_TABLE =
-  process.env["SCHEDULEDINTERVIEW_TABLE_NAME"] ?? "ScheduledInterview";
-const CANDIDATE_TABLE =
-  process.env["CANDIDATE_TABLE_NAME"] ?? "Candidate";
+let CONNECTION_TABLE = process.env["SCHEDULINGCONNECTION_TABLE_NAME"];
+let INTERVIEW_TABLE = process.env["SCHEDULEDINTERVIEW_TABLE_NAME"];
+let CANDIDATE_TABLE = process.env["CANDIDATE_TABLE_NAME"];
+
+async function ensureTableNames() {
+  if (CONNECTION_TABLE && INTERVIEW_TABLE && CANDIDATE_TABLE) {
+    return;
+  }
+
+  console.log("[schedulingWebhook] Resolving table names from SSM...");
+  const getParam = async (name: string | undefined) => {
+    if (!name) return undefined;
+    try {
+      const res = await ssmClient.send(new GetParameterCommand({ Name: name }));
+      return res.Parameter?.Value;
+    } catch (err) {
+      console.error(`[schedulingWebhook] Error fetching SSM parameter ${name}:`, err);
+      return undefined;
+    }
+  };
+
+  CONNECTION_TABLE = CONNECTION_TABLE || await getParam(process.env["SCHEDULINGCONNECTION_TABLE_SSM"]);
+  INTERVIEW_TABLE = INTERVIEW_TABLE || await getParam(process.env["SCHEDULEDINTERVIEW_TABLE_SSM"]);
+  CANDIDATE_TABLE = CANDIDATE_TABLE || await getParam(process.env["CANDIDATE_TABLE_SSM"]);
+
+  console.log("[schedulingWebhook] Resolved tables:", {
+    connection: !!CONNECTION_TABLE,
+    interview: !!INTERVIEW_TABLE,
+    candidate: !!CANDIDATE_TABLE,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Normalizer registry
@@ -312,6 +339,9 @@ export async function handler(
     method: event.requestContext.http.method,
     headers: event.headers,
   });
+
+  // Ensure table names are resolved (breaks circular dependency)
+  await ensureTableNames();
 
   // Rollback switch
   if (process.env["WEBHOOK_ENABLED"] === "false") {

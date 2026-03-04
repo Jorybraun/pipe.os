@@ -243,7 +243,7 @@ function QuestionCard({
 }
 
 export default function ScreeningStageBuilderPage(): JSX.Element {
-  const [activeSection, setActiveSection] = useState('roles');
+  const [activeSection] = useState('roles');
 
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -290,9 +290,11 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
       sidebar={
         <SidebarNav
           activeSection={activeSection}
-          onSectionChange={setActiveSection}
           isAgentOpen={isAgentOpen}
           onAgentToggle={() => setIsAgentOpen(!isAgentOpen)}
+          onRolesClick={() => {
+            window.location.href = "/";
+          }}
         />
       }
       isAgentOpen={isAgentOpen}

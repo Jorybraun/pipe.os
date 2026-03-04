@@ -38,6 +38,9 @@ const schema = a.schema({
       // Scheduling URL for LIVE_VIDEO stages (e.g. Calendly or Cal.com link)
       schedulingUrl: a.url(),
 
+      // Provider-specific event type ID for this pipeline
+      schedulingEventTypeId: a.string(),
+
       // Link to discovery context (post-MVP: agentic discovery)
       roleContextId: a.id(),
     })

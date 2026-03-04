@@ -18,6 +18,7 @@ import { devContainerDestroy } from './functions/devContainerDestroy/resource';
 import { devContainerStatus } from './functions/devContainerStatus/resource';
 import { ecsStatusBridge } from './functions/ecsStatusBridge/resource';
 import { notificationService } from './functions/notificationService/resource';
+import { notificationStreamService } from './functions/notificationStreamService/resource';
 
 export const backend = defineBackend({
   auth,
@@ -33,6 +34,7 @@ export const backend = defineBackend({
   devContainerStatus,
   ecsStatusBridge,
   notificationService,
+  notificationStreamService,
 });
 
 // 1. DYNAMODB ACCESS & STREAM WIRING
@@ -42,61 +44,124 @@ const candidateTable = backend.data.resources.tables['Candidate'];
 const stageTable = backend.data.resources.tables['Stage'];
 const pipelineTable = backend.data.resources.tables['Pipeline'];
 
-// Grant scheduling Lambdas direct DynamoDB access
-schedulingConnectionTable.grantReadWriteData(backend.schedulingWebhook.resources.lambda);
-schedulingConnectionTable.grantReadWriteData(backend.schedulingOAuth.resources.lambda);
-scheduledInterviewTable.grantReadWriteData(backend.schedulingWebhook.resources.lambda);
-scheduledInterviewTable.grantReadWriteData(backend.schedulingOAuth.resources.lambda);
-candidateTable.grantReadData(backend.schedulingWebhook.resources.lambda);
+// ─── BREAK CIRCULAR DEPENDENCY: SSM FOR TABLE NAMES ──────────────────────────
+// Handlers (schedulingWebhook, schedulingOAuth, notificationService) cannot 
+// reference backend.data.resources directly without creating a CFN cycle.
+// We store table names in SSM and read them at runtime.
 
-// Grant notificationService access to all relevant tables
-candidateTable.grantReadData(backend.notificationService.resources.lambda);
-scheduledInterviewTable.grantReadWriteData(backend.notificationService.resources.lambda);
-stageTable.grantReadData(backend.notificationService.resources.lambda);
-pipelineTable.grantReadData(backend.notificationService.resources.lambda);
-schedulingConnectionTable.grantReadData(backend.notificationService.resources.lambda);
+// Use a literal prefix to avoid naming collisions and circular dependencies.
+const ssmEnv = process.env.USER || 'default';
+const ssmPrefix = `/pipe/${ssmEnv}`;
 
-// Attach notificationService to DynamoDB Streams
-backend.notificationService.resources.lambda.addEventSource(new DynamoEventSource(candidateTable, {
-  startingPosition: StartingPosition.LATEST,
-  retryAttempts: 3,
-}));
+const TABLE_NAME_PARAMS = {
+  'SCHEDULINGCONNECTION': `${ssmPrefix}/tables/scheduling-connection`,
+  'SCHEDULEDINTERVIEW': `${ssmPrefix}/tables/scheduled-interview`,
+  'CANDIDATE': `${ssmPrefix}/tables/candidate`,
+  'STAGE': `${ssmPrefix}/tables/stage`,
+  'PIPELINE': `${ssmPrefix}/tables/pipeline`,
+};
 
-backend.notificationService.resources.lambda.addEventSource(new DynamoEventSource(scheduledInterviewTable, {
-  startingPosition: StartingPosition.LATEST,
-  retryAttempts: 3,
-}));
+new StringParameter(schedulingConnectionTable, 'SchedulingConnectionNameParam', {
+  parameterName: TABLE_NAME_PARAMS.SCHEDULINGCONNECTION,
+  stringValue: schedulingConnectionTable.tableName,
+});
+new StringParameter(scheduledInterviewTable, 'ScheduledInterviewNameParam', {
+  parameterName: TABLE_NAME_PARAMS.SCHEDULEDINTERVIEW,
+  stringValue: scheduledInterviewTable.tableName,
+});
+new StringParameter(candidateTable, 'CandidateNameParam', {
+  parameterName: TABLE_NAME_PARAMS.CANDIDATE,
+  stringValue: candidateTable.tableName,
+});
+new StringParameter(stageTable, 'StageNameParam', {
+  parameterName: TABLE_NAME_PARAMS.STAGE,
+  stringValue: stageTable.tableName,
+});
+new StringParameter(pipelineTable, 'PipelineNameParam', {
+  parameterName: TABLE_NAME_PARAMS.PIPELINE,
+  stringValue: pipelineTable.tableName,
+});
 
-// 2. SES PERMISSIONS
-backend.notificationService.resources.lambda.addToRolePolicy(new PolicyStatement({
-  effect: Effect.ALLOW,
-  actions: ['ses:SendEmail', 'ses:SendRawEmail'],
-  resources: ['*'], // Scope down to specific verified identities in production
-}));
-
-// 3. ENVIRONMENT VARIABLES & INTEGRATIONS
+// ─── PERMISSIONS & ENV FOR HANDLERS (Manual to avoid CFN Ref) ────────────────
 const webhookLambda = backend.schedulingWebhook.resources.lambda as unknown as LambdaFunction;
 const oauthLambda = backend.schedulingOAuth.resources.lambda as unknown as LambdaFunction;
 const notificationLambda = backend.notificationService.resources.lambda as unknown as LambdaFunction;
-const ecsStatusBridgeLambda = backend.ecsStatusBridge.resources.lambda as unknown as LambdaFunction;
-
-// Pass table names to scheduling/notification Lambdas
-const tableEnv = {
-  'SCHEDULINGCONNECTION_TABLE_NAME': schedulingConnectionTable.tableName,
-  'SCHEDULEDINTERVIEW_TABLE_NAME': scheduledInterviewTable.tableName,
-  'CANDIDATE_TABLE_NAME': candidateTable.tableName,
-  'STAGE_TABLE_NAME': stageTable.tableName,
-  'PIPELINE_TABLE_NAME': pipelineTable.tableName,
-};
 
 [webhookLambda, oauthLambda, notificationLambda].forEach(l => {
-  Object.entries(tableEnv).forEach(([k, v]) => l.addEnvironment(k, v));
+  // Pass SSM parameter names as plain strings (no dependency)
+  l.addEnvironment('SCHEDULINGCONNECTION_TABLE_SSM', TABLE_NAME_PARAMS.SCHEDULINGCONNECTION);
+  l.addEnvironment('SCHEDULEDINTERVIEW_TABLE_SSM', TABLE_NAME_PARAMS.SCHEDULEDINTERVIEW);
+  l.addEnvironment('CANDIDATE_TABLE_SSM', TABLE_NAME_PARAMS.CANDIDATE);
+  l.addEnvironment('STAGE_TABLE_SSM', TABLE_NAME_PARAMS.STAGE);
+  l.addEnvironment('PIPELINE_TABLE_SSM', TABLE_NAME_PARAMS.PIPELINE);
+
+  // Grant permission to read SSM parameters
+  l.addToRolePolicy(new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['ssm:GetParameter'],
+    resources: [`arn:aws:ssm:*:*:parameter${ssmPrefix}/*`],
+  }));
+
+  // Grant DynamoDB access via wildcard to break Data -> Function -> Data cycle
+  l.addToRolePolicy(new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: [
+      'dynamodb:GetItem', 
+      'dynamodb:PutItem', 
+      'dynamodb:UpdateItem', 
+      'dynamodb:DeleteItem', 
+      'dynamodb:Query', 
+      'dynamodb:Scan'
+    ],
+    resources: ['arn:aws:dynamodb:*:*:table/*'], 
+  }));
 });
 
-// ─── ecsStatusBridge: EventBridge → AppSync ──────────────────────────────────
-// Inject AppSync config directly — these are CDK tokens resolved at deploy time.
-// The Lambda uses API key auth (x-api-key) since DevContainerSession is now
-// authorized via allow.publicApiKey().to(['create','update']).
+// ─── STREAM WIRING (notificationStreamService: NOT a handler, so Ref is OK) ───
+const notificationStreamLambda = backend.notificationStreamService.resources.lambda as unknown as LambdaFunction;
+
+// Stream service needs access to all tables it reads during background processing
+[candidateTable, scheduledInterviewTable, stageTable, pipelineTable, schedulingConnectionTable].forEach(t => {
+  t.grantReadData(notificationStreamLambda);
+});
+
+notificationStreamLambda.addEventSource(new DynamoEventSource(candidateTable, {
+  startingPosition: StartingPosition.LATEST,
+  retryAttempts: 3,
+}));
+
+notificationStreamLambda.addEventSource(new DynamoEventSource(scheduledInterviewTable, {
+  startingPosition: StartingPosition.LATEST,
+  retryAttempts: 3,
+}));
+
+// Direct environment variables are fine here as it's not a handler (no circular dep)
+notificationStreamLambda.addEnvironment('CANDIDATE_TABLE_NAME', candidateTable.tableName);
+notificationStreamLambda.addEnvironment('STAGE_TABLE_NAME', stageTable.tableName);
+notificationStreamLambda.addEnvironment('PIPELINE_TABLE_NAME', pipelineTable.tableName);
+notificationStreamLambda.addEnvironment('SCHEDULEDINTERVIEW_TABLE_NAME', scheduledInterviewTable.tableName);
+notificationStreamLambda.addEnvironment('SCHEDULINGCONNECTION_TABLE_NAME', schedulingConnectionTable.tableName);
+
+// 2. SES & COGNITO PERMISSIONS (Shared by both notification services)
+const { cfnUserPool } = backend.auth.resources.cfnResources;
+
+[notificationLambda, notificationStreamLambda].forEach(l => {
+  l.addToRolePolicy(new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+    resources: ['*'],
+  }));
+
+  l.addEnvironment('USER_POOL_ID', cfnUserPool.ref);
+  l.addToRolePolicy(new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['cognito-idp:AdminGetUser'],
+    resources: [`arn:aws:cognito-idp:*:*:userpool/${cfnUserPool.ref}`],
+  }));
+});
+
+// 3. ECS STATUS BRIDGE INTEGRATIONS
+const ecsStatusBridgeLambda = backend.ecsStatusBridge.resources.lambda as unknown as LambdaFunction;
 const graphqlEndpoint = backend.data.resources.cfnResources.cfnGraphqlApi.attrGraphQlUrl;
 const apiKey = backend.data.resources.cfnResources.cfnApiKey?.attrApiKey;
 
@@ -104,12 +169,8 @@ ecsStatusBridgeLambda.addEnvironment('APPSYNC_ENDPOINT', graphqlEndpoint);
 if (apiKey) {
   ecsStatusBridgeLambda.addEnvironment('APPSYNC_API_KEY', apiKey);
 }
-
-// Pass the ALB domain used for code-server URLs
 ecsStatusBridgeLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'env.pipe.dev');
 
-// EventBridge rule: catch ECS Task State Changes for all tasks.
-// The Lambda handler filters for relevant tasks via tags.
 const ecsStatusBridgeRule = new Rule(
   backend.ecsStatusBridge.resources.lambda.stack,
   'EcsTaskStateChangeRule',
@@ -121,48 +182,23 @@ const ecsStatusBridgeRule = new Rule(
     description: 'Routes ECS Task State Change events to ecsStatusBridge',
   }
 );
-
 ecsStatusBridgeRule.addTarget(new LambdaTarget(backend.ecsStatusBridge.resources.lambda));
 
 // 4. WEBHOOK FUNCTION URL & SSM
-// Create a public Function URL on the webhook Lambda so Calendly/Cal.com can POST to it.
-// Auth is handled by HMAC signature verification inside the handler, not IAM.
 const webhookFunctionUrl = webhookLambda.addFunctionUrl({
-  authType: FunctionUrlAuthType.NONE, // Public — HMAC-verified in handler
+  authType: FunctionUrlAuthType.NONE,
 });
 
-// Store the Function URL in SSM Parameter Store to BREAK circular dependency.
-// Passing webhookFunctionUrl.url directly as an env var to oauthLambda creates a CFN
-// circular dependency because both Lambdas are in resourceGroupName: 'data' (same nested stack).
-// The chain: OAuth Lambda → Function URL → Webhook Lambda → FunctionDirectiveStack → OAuth Lambda.
-// By storing in SSM and reading at runtime, we avoid any CFN Ref/GetAtt between the resources.
-const WEBHOOK_URL_SSM_PARAM = '/pipe/scheduling/webhook-callback-url';
+const WEBHOOK_URL_SSM_PARAM = `${ssmPrefix}/scheduling/webhook-callback-url`;
 new StringParameter(webhookFunctionUrl, 'WebhookCallbackUrlParam', {
   parameterName: WEBHOOK_URL_SSM_PARAM,
   stringValue: webhookFunctionUrl.url,
   description: 'Lambda Function URL for the scheduling webhook (Calendly/Cal.com)',
 });
 
-// Pass the SSM parameter name as a plain string — no CFN token, no dependency
 oauthLambda.addEnvironment('WEBHOOK_URL_SSM_PARAM', WEBHOOK_URL_SSM_PARAM);
-
-// Grant OAuth Lambda SSM read permission with hardcoded ARN (no CFN reference to break cycle)
 oauthLambda.addToRolePolicy(new PolicyStatement({
   effect: Effect.ALLOW,
   actions: ['ssm:GetParameter'],
   resources: [`arn:aws:ssm:*:*:parameter${WEBHOOK_URL_SSM_PARAM}`],
 }));
-
-// 5. COGNITO PERMISSIONS (for recruiter notifications)
-// The notificationService needs to look up recruiter emails from Cognito
-// when the webhook updates an interview status (SCHEDULED / CANCELLED).
-const { cfnUserPool } = backend.auth.resources.cfnResources;
-notificationLambda.addEnvironment('USER_POOL_ID', cfnUserPool.ref);
-notificationLambda.addToRolePolicy(new PolicyStatement({
-  effect: Effect.ALLOW,
-  actions: ['cognito-idp:AdminGetUser'],
-  resources: [`arn:aws:cognito-idp:*:*:userpool/${cfnUserPool.ref}`],
-}));
-
-// NOTE: SES_SENDER_EMAIL and APP_URL are now handled via secrets in the function's resource definition.
-

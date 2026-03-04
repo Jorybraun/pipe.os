@@ -22,7 +22,6 @@ import {
   PutCommand,
   GetCommand,
   UpdateCommand,
-  QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import crypto from 'crypto';
@@ -30,14 +29,33 @@ import crypto from 'crypto';
 // ─── DynamoDB setup ──────────────────────────────────────────────────────────
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const ssmClient = new SSMClient({});
 
-// Table names are injected by Amplify via environment variables.
-// Convention: AMPLIFY_DATA_<ModelName>_TABLE
-// Fallback to hardcoded names for local development.
-const CONNECTION_TABLE =
-  process.env['SCHEDULINGCONNECTION_TABLE_NAME'] ??
-  process.env['AMPLIFY_DATA_SCHEDULINGCONNECTION_TABLE'] ??
-  'SchedulingConnection';
+let CONNECTION_TABLE = process.env['SCHEDULINGCONNECTION_TABLE_NAME'];
+
+async function ensureTableNames() {
+  if (CONNECTION_TABLE) {
+    return;
+  }
+
+  console.log('[schedulingOAuth] Resolving table names from SSM...');
+  const getParam = async (name: string | undefined) => {
+    if (!name) return undefined;
+    try {
+      const res = await ssmClient.send(new GetParameterCommand({ Name: name }));
+      return res.Parameter?.Value;
+    } catch (err) {
+      console.error(`[schedulingOAuth] Error fetching SSM parameter ${name}:`, err);
+      return undefined;
+    }
+  };
+
+  CONNECTION_TABLE = CONNECTION_TABLE || await getParam(process.env['SCHEDULINGCONNECTION_TABLE_SSM']);
+
+  console.log('[schedulingOAuth] Resolved tables:', {
+    connection: !!CONNECTION_TABLE,
+  });
+}
 
 // ─── Provider config ─────────────────────────────────────────────────────────
 
@@ -84,6 +102,9 @@ function getProviderConfig(providerId: string): ProviderOAuthConfig | null {
  */
 export async function handler(event: OAuthRequest): Promise<OAuthResponse> {
   const startTime = Date.now();
+
+  // Ensure table names are resolved (breaks circular dependency)
+  await ensureTableNames();
 
   // AppSync passes arguments as JSON — parse if stringified
   const rawAction = event.arguments?.action;
@@ -172,8 +193,6 @@ async function handleExchange(
   });
 
   // 1. Exchange code for tokens
-  // Both Calendly (OAuth 2.1 + PKCE) and Cal.com accept client credentials
-  // in the POST body. Calendly explicitly requires code_verifier for PKCE.
   const tokenParams: Record<string, string> = {
     grant_type: 'authorization_code',
     code,
@@ -242,7 +261,7 @@ async function handleExchange(
 
   await ddb.send(
     new PutCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Item: {
         id: connectionId,
         recruiterId,
@@ -285,7 +304,7 @@ async function handleExchange(
     if (webhookId) {
       await ddb.send(
         new UpdateCommand({
-          TableName: CONNECTION_TABLE,
+          TableName: CONNECTION_TABLE!,
           Key: { id: connectionId },
           UpdateExpression: 'SET webhookId = :wid, updatedAt = :now',
           ExpressionAttributeValues: {
@@ -327,7 +346,7 @@ async function handleRefresh(params: OAuthParams): Promise<OAuthResponse> {
   // 1. Fetch connection
   const { Item: connection } = await ddb.send(
     new GetCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Key: { id: connectionId },
     }),
   );
@@ -370,7 +389,7 @@ async function handleRefresh(params: OAuthParams): Promise<OAuthResponse> {
     // Mark connection as expired
     await ddb.send(
       new UpdateCommand({
-        TableName: CONNECTION_TABLE,
+        TableName: CONNECTION_TABLE!,
         Key: { id: connectionId },
         UpdateExpression: 'SET #s = :status, updatedAt = :now',
         ExpressionAttributeNames: { '#s': 'status' },
@@ -394,7 +413,7 @@ async function handleRefresh(params: OAuthParams): Promise<OAuthResponse> {
   // 3. Update connection with new tokens
   await ddb.send(
     new UpdateCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Key: { id: connectionId },
       UpdateExpression:
         'SET accessToken = :at, refreshToken = :rt, tokenExpiry = :exp, #s = :status, updatedAt = :now',
@@ -476,7 +495,7 @@ async function handleDisconnect(params: OAuthParams): Promise<OAuthResponse> {
   // 1. Fetch connection
   const { Item: connection } = await ddb.send(
     new GetCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Key: { id: connectionId },
     }),
   );
@@ -503,7 +522,7 @@ async function handleDisconnect(params: OAuthParams): Promise<OAuthResponse> {
   // 3. Update connection status to REVOKED
   await ddb.send(
     new UpdateCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Key: { id: connectionId },
       UpdateExpression: 'SET #s = :status, updatedAt = :now',
       ExpressionAttributeNames: { '#s': 'status' },
@@ -527,11 +546,6 @@ async function handleDisconnect(params: OAuthParams): Promise<OAuthResponse> {
 
 // ─── B5: RegisterWebhook — register webhook on existing connection ───────────
 
-/**
- * Register (or re-register) a webhook subscription for an existing connection.
- * Use this when the initial registration failed (e.g. missing Function URL)
- * or to update the callback URL after infrastructure changes.
- */
 async function handleRegisterWebhook(params: OAuthParams, recruiterId: string): Promise<OAuthResponse> {
   const { connectionId } = params;
 
@@ -541,7 +555,7 @@ async function handleRegisterWebhook(params: OAuthParams, recruiterId: string): 
 
   const { Item: connection } = await ddb.send(
     new GetCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Key: { id: connectionId },
     }),
   );
@@ -599,7 +613,7 @@ async function handleRegisterWebhook(params: OAuthParams, recruiterId: string): 
   // Save webhookId to connection
   await ddb.send(
     new UpdateCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Key: { id: connectionId },
       UpdateExpression: 'SET webhookId = :wid, updatedAt = :now',
       ExpressionAttributeValues: {
@@ -629,7 +643,7 @@ async function getConnectionAndRefreshIfNeeded(
 ): Promise<Record<string, unknown> | null> {
   const { Item: connection } = await ddb.send(
     new GetCommand({
-      TableName: CONNECTION_TABLE,
+      TableName: CONNECTION_TABLE!,
       Key: { id: connectionId },
     }),
   );
@@ -658,7 +672,7 @@ async function getConnectionAndRefreshIfNeeded(
       // Re-fetch updated connection
       const { Item: refreshed } = await ddb.send(
         new GetCommand({
-          TableName: CONNECTION_TABLE,
+          TableName: CONNECTION_TABLE!,
           Key: { id: connectionId },
         }),
       );
@@ -675,7 +689,6 @@ async function fetchCalendlyEventTypes(
   accessToken: string,
   config: ProviderOAuthConfig,
 ): Promise<ProviderEventType[]> {
-  // First get the user URI
   const userResp = await fetch(config.userInfoUrl!, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -693,7 +706,6 @@ async function fetchCalendlyEventTypes(
   const userUri = userData.resource?.uri;
   if (!userUri) return [];
 
-  // Then fetch event types for this user
   const resp = await fetch(
     `${config.eventTypesUrl}?user=${encodeURIComponent(userUri)}&active=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -767,9 +779,6 @@ async function registerWebhook(
   config: ProviderOAuthConfig,
   _accountEmail: string,
 ): Promise<string | null> {
-  // The webhook callback URL is stored in SSM Parameter Store to avoid
-  // a CloudFormation circular dependency (both Lambdas are in the same stack).
-  // Read it at runtime via SSM GetParameter.
   const ssmParamName = process.env['WEBHOOK_URL_SSM_PARAM'];
   if (!ssmParamName) {
     const errorMsg = '[schedulingOAuth] WEBHOOK_URL_SSM_PARAM not set. Cannot register webhook.';
@@ -777,7 +786,6 @@ async function registerWebhook(
     throw new Error(errorMsg);
   }
 
-  const ssmClient = new SSMClient({});
   const ssmResp = await ssmClient.send(new GetParameterCommand({ Name: ssmParamName }));
   const callbackUrlBase = ssmResp.Parameter?.Value;
   if (!callbackUrlBase) {
@@ -786,12 +794,9 @@ async function registerWebhook(
     throw new Error(errorMsg);
   }
 
-  // Append connectionId as a query parameter so the webhook handler
-  // can find the connection directly without a ScanCommand.
   const callbackUrl = `${callbackUrlBase}?connectionId=${encodeURIComponent(connectionId)}`;
 
   if (providerId === 'CALENDLY') {
-    // First get the user URI (organization URI for org-level webhooks)
     const userResp = await fetch(config.userInfoUrl!, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -879,7 +884,6 @@ async function deleteWebhook(
   webhookId: string,
 ): Promise<void> {
   if (providerId === 'CALENDLY') {
-    // Calendly webhook URI is the full URL
     await fetch(webhookId, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${accessToken}` },

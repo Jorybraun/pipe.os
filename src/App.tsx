@@ -280,10 +280,17 @@ function AppLayout(): JSX.Element {
       sidebar={
         <SidebarNav
           activeSection={activeSection}
-          onSectionChange={setActiveSection}
+          onRolesClick={() => {
+            setActiveSection("roles");
+            navigate("/");
+          }}
           onScheduleClick={() => {
             setActiveSection("schedule");
             navigate("/schedule");
+          }}
+          onSandboxClick={() => {
+            setActiveSection("sandbox");
+            navigate("/sandbox/dev-container");
           }}
         />
       }

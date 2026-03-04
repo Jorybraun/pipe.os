@@ -1,5 +1,11 @@
 {
-  "name": "ecsStatusBridge",
+  "name": "ecs-status-bridge",
   "version": "1.0.0",
-  "dependencies": {}
+  "type": "module",
+  "main": "handler.ts",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "@types/node": "^20.0.0"
+  }
 }

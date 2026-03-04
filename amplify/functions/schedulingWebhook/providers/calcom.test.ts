@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { calcomNormalizer } from './calcom';
 import crypto from 'crypto';
 
-describe.skip('Cal.com Normalizer (TODO: Integration pending)', () => {
+describe('Cal.com Normalizer (TODO: Integration pending)', () => {
   const secret = 'test-secret';
   const payload = JSON.stringify({ triggerEvent: 'BOOKING_CREATED', payload: { id: 123 } });
 

@@ -2,53 +2,18 @@ import { DynamoDBStreamEvent, Handler } from 'aws-lambda';
 import { DynamoDBClient, GetItemCommand, UpdateItemCommand, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 
 const dbClient = new DynamoDBClient({});
 const sesClient = new SESClient({});
 const cognitoClient = new CognitoIdentityProviderClient({});
-const ssmClient = new SSMClient({});
 
-let CANDIDATE_TABLE = process.env.CANDIDATE_TABLE_NAME;
-let STAGE_TABLE = process.env.STAGE_TABLE_NAME;
-let PIPELINE_TABLE = process.env.PIPELINE_TABLE_NAME;
-let SCHEDULED_INTERVIEW_TABLE = process.env.SCHEDULEDINTERVIEW_TABLE_NAME;
-let SCHEDULING_CONNECTION_TABLE = process.env.SCHEDULINGCONNECTION_TABLE_NAME;
-
+const CANDIDATE_TABLE = process.env.CANDIDATE_TABLE_NAME;
+const STAGE_TABLE = process.env.STAGE_TABLE_NAME;
+const PIPELINE_TABLE = process.env.PIPELINE_TABLE_NAME;
+const SCHEDULED_INTERVIEW_TABLE = process.env.SCHEDULEDINTERVIEW_TABLE_NAME;
 const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'invites@pipe-os.com';
 const USER_POOL_ID = process.env.USER_POOL_ID;
-
-async function ensureTableNames() {
-  if (CANDIDATE_TABLE && STAGE_TABLE && PIPELINE_TABLE && SCHEDULED_INTERVIEW_TABLE) {
-    return;
-  }
-
-  console.log('[notificationService] Resolving table names from SSM...');
-  const getParam = async (name: string | undefined) => {
-    if (!name) return undefined;
-    try {
-      const res = await ssmClient.send(new GetParameterCommand({ Name: name }));
-      return res.Parameter?.Value;
-    } catch (err) {
-      console.error(`[notificationService] Error fetching SSM parameter ${name}:`, err);
-      return undefined;
-    }
-  };
-
-  CANDIDATE_TABLE = CANDIDATE_TABLE || await getParam(process.env.CANDIDATE_TABLE_SSM);
-  STAGE_TABLE = STAGE_TABLE || await getParam(process.env.STAGE_TABLE_SSM);
-  PIPELINE_TABLE = PIPELINE_TABLE || await getParam(process.env.PIPELINE_TABLE_SSM);
-  SCHEDULED_INTERVIEW_TABLE = SCHEDULED_INTERVIEW_TABLE || await getParam(process.env.SCHEDULEDINTERVIEW_TABLE_SSM);
-  SCHEDULING_CONNECTION_TABLE = SCHEDULING_CONNECTION_TABLE || await getParam(process.env.SCHEDULINGCONNECTION_TABLE_SSM);
-
-  console.log('[notificationService] Resolved tables:', {
-    candidate: !!CANDIDATE_TABLE,
-    stage: !!STAGE_TABLE,
-    pipeline: !!PIPELINE_TABLE,
-    interview: !!SCHEDULED_INTERVIEW_TABLE,
-  });
-}
 
 interface NotificationTemplate {
   trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE' | 'INVITED' | 'SCHEDULED';
@@ -57,13 +22,10 @@ interface NotificationTemplate {
 }
 
 /**
- * notificationService - Deterministic Communication Engine
+ * notificationStreamService - DynamoDB Stream Triggered Communication Engine
  */
 export const handler: Handler = async (event: any) => {
-  console.log('[notificationService] Received event:', JSON.stringify(event, null, 2));
-
-  // Ensure table names are resolved (breaks circular dependency)
-  await ensureTableNames();
+  console.log('[notificationStreamService] Received event:', JSON.stringify(event, null, 2));
 
   // 1. Handle DynamoDB Stream Events
   if (event.Records) {
@@ -72,19 +34,19 @@ export const handler: Handler = async (event: any) => {
       try {
         await processStreamRecord(record);
       } catch (err) {
-        console.error('[notificationService] Error processing record:', err);
+        console.error('[notificationStreamService] Error processing record:', err);
       }
     }
   }
 
-  // 2. Handle AppSync Mutation (sendNotification)
+  // 2. Handle AppSync Mutation (sendNotification) - Fallback/Manual
   if (event.arguments) {
     const { candidateId, stageId, templateType } = event.arguments;
-    console.log(`[notificationService] Manual trigger for ${candidateId} in stage ${stageId} (${templateType})`);
+    console.log(`[notificationStreamService] Manual trigger for ${candidateId} in stage ${stageId} (${templateType})`);
     try {
       await sendNotification(candidateId, stageId, templateType);
     } catch (err) {
-      console.error('[notificationService] Error sending manual notification:', err);
+      console.error('[notificationStreamService] Error sending manual notification:', err);
     }
   }
 
@@ -108,23 +70,23 @@ async function processStreamRecord(record: any) {
     const interview = newImage as any;
     const oldInterview = oldImage as any;
 
-    console.log(`[notificationService] Checking ScheduledInterview: status=${interview.status}, id=${interview.id}`);
+    console.log(`[notificationStreamService] Checking ScheduledInterview: status=${interview.status}, id=${interview.id}`);
 
     // Trigger: Status changed to INVITED
     if (interview.status === 'INVITED' && (!oldInterview || oldInterview.status !== 'INVITED')) {
-      console.log(`[notificationService] Triggering INVITATION for candidate ${interview.candidateId}`);
+      console.log(`[notificationStreamService] Triggering INVITATION for candidate ${interview.candidateId}`);
       await sendNotification(interview.candidateId, interview.stageId, 'INVITATION', interview.id);
     }
 
     // Trigger: Status changed to SCHEDULED (candidate booked via webhook)
     if (interview.status === 'SCHEDULED' && oldInterview?.status !== 'SCHEDULED') {
-      console.log(`[notificationService] Interview SCHEDULED — notifying recruiter for candidate ${interview.candidateId}`);
+      console.log(`[notificationStreamService] Interview SCHEDULED — notifying recruiter for candidate ${interview.candidateId}`);
       await notifyRecruiterOfStatusChange(interview, 'SCHEDULED');
     }
 
     // Trigger: Status changed to CANCELLED (candidate cancelled via webhook)
     if (interview.status === 'CANCELLED' && oldInterview?.status !== 'CANCELLED') {
-      console.log(`[notificationService] Interview CANCELLED — notifying recruiter for candidate ${interview.candidateId}`);
+      console.log(`[notificationStreamService] Interview CANCELLED — notifying recruiter for candidate ${interview.candidateId}`);
       await notifyRecruiterOfStatusChange(interview, 'CANCELLED');
     }
     return;
@@ -138,35 +100,35 @@ async function processStreamRecord(record: any) {
 
     // Only fire on INSERT (new candidate) with status INVITED
     if (record.eventName !== 'INSERT') {
-      console.log(`[notificationService] Candidate event is ${record.eventName}, not INSERT. Skipping.`);
+      console.log(`[notificationStreamService] Candidate event is ${record.eventName}, not INSERT. Skipping.`);
       return;
     }
 
     if (candidate.status !== 'INVITED') {
-      console.log(`[notificationService] Candidate status is ${candidate.status}, not INVITED. Skipping.`);
+      console.log(`[notificationStreamService] Candidate status is ${candidate.status}, not INVITED. Skipping.`);
       return;
     }
 
     if (!candidate.email) {
-      console.warn(`[notificationService] Candidate ${candidate.id} has no email. Skipping.`);
+      console.warn(`[notificationStreamService] Candidate ${candidate.id} has no email. Skipping.`);
       return;
     }
 
-    console.log(`[notificationService] New candidate created: id=${candidate.id}, pipelineId=${candidate.pipelineId}`);
+    console.log(`[notificationStreamService] New candidate created: id=${candidate.id}, pipelineId=${candidate.pipelineId}`);
 
     // Find the first stage (order=0) in this pipeline to use in the email
     const firstStage = await findFirstStage(candidate.pipelineId);
     if (!firstStage) {
-      console.warn(`[notificationService] No stages found for pipeline ${candidate.pipelineId}. Sending email with pipeline-level context.`);
+      console.warn(`[notificationStreamService] No stages found for pipeline ${candidate.pipelineId}. Sending email with pipeline-level context.`);
     }
 
     const stageId = firstStage?.id ?? 'unknown';
-    console.log(`[notificationService] Triggering INVITATION for new candidate ${candidate.id} (stage=${stageId})`);
+    console.log(`[notificationStreamService] Triggering INVITATION for new candidate ${candidate.id} (stage=${stageId})`);
     await sendCandidateInvite(candidate, firstStage);
     return;
   }
 
-  console.log(`[notificationService] Unhandled stream source: ${record.eventSourceARN}`);
+  console.log(`[notificationStreamService] Unhandled stream source: ${record.eventSourceARN}`);
 }
 
 // ---------------------------------------------------------------------------
