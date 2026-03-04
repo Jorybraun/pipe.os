@@ -79,7 +79,7 @@ export function RoleCard({
   return (
     <div style={{ marginBottom: 12, ...style }} className={className}>
       <LiquidMetalCard
-        variant="dark"
+        variant="default"
         onClick={onClick}
         style={{
           padding: 0,

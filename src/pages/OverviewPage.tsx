@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   CheckCircle,
@@ -14,6 +14,7 @@ import {
   Mail,
   Target,
   ChevronRight,
+  GripVertical,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -22,6 +23,26 @@ import type { Schema } from "../../amplify/data/resource";
 import { useCandidateCreate } from "../hooks/useCandidateCreate";
 import { FieldGroup, TextInput } from "../components/ui/form";
 import { useSchedulingConnection } from "../hooks/useSchedulingConnection";
+import {
+  DndContext,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+} from "@dnd-kit/core";
+import {
+  
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const client = generateClient<Schema>();
 
@@ -168,14 +189,39 @@ function CandidateKanbanCard({
   onInvite,
   isInviting,
   interview,
+  isOverlay = false,
 }: {
   candidate: any;
   onClick: () => void;
   onInvite?: () => void;
   isInviting?: boolean;
   interview?: any;
+  isOverlay?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: candidate.id,
+    data: {
+      type: 'Candidate',
+      candidate,
+    },
+  });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+    marginBottom: 8,
+    cursor: isDragging ? 'grabbing' : 'pointer',
+  };
 
   const handleCopyLink = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -212,16 +258,17 @@ function CandidateKanbanCard({
   const statusColor = getStatusColor();
 
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div ref={setNodeRef} style={style} {...attributes}>
       <LiquidMetalCard
-        variant="dark"
+        variant="mercury"
         onClick={onClick}
         style={{
           padding: 0,
           borderRadius: 8,
-          cursor: "pointer",
           position: 'relative',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          boxShadow: isOverlay ? '0 20px 40px rgba(0,0,0,0.4)' : undefined,
+          border: isOverlay ? '1px solid rgba(255,255,255,0.3)' : undefined,
         }}
       >
         <div style={{ display: "flex", alignItems: "stretch" }}>
@@ -244,6 +291,15 @@ function CandidateKanbanCard({
                 marginBottom: 6,
               }}
             >
+              {/* Drag Handle */}
+              <div 
+                {...listeners} 
+                style={{ cursor: 'grab', padding: '4px 0' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <GripVertical size={12} color="rgba(255,255,255,0.15)" />
+              </div>
+
               {/* Initials Circle */}
               <div style={{
                 width: 24,
@@ -448,6 +504,7 @@ export default function OverviewPage(): JSX.Element {
   const [stages, setStages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [activeCandidate, setActiveCandidate] = useState<any>(null);
 
   // False until we confirm Phase 14 schema fields exist in the deployed sandbox.
   const [schemaReady, setSchemaReady] = useState(false);
@@ -465,6 +522,17 @@ export default function OverviewPage(): JSX.Element {
 
   // Invite-to-interview state
   const [invitingCandidateId, setInvitingCandidateId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const handleAddStage = async () => {
     if (!id) return;
@@ -703,27 +771,55 @@ export default function OverviewPage(): JSX.Element {
   }, {} as Record<string, string>);
 
   // Group candidates by their current stage
-  const candidatesByStage = stages.reduce((acc, s, idx) => {
-    acc[s.id] = candidates.filter(c => {
-      // Get count of unique stages this candidate has submitted assessments for
-      const completedStageIds = new Set(
-        (c.assessments || [])
-          .map((a: any) => challengeToStageMap[a.challengeId])
-          .filter(Boolean)
-      );
-      const completedCount = completedStageIds.size;
+  const candidatesByStage = useMemo(() => {
+    return stages.reduce((acc, s, idx) => {
+      acc[s.id] = candidates.filter(c => {
+        // Get count of unique stages this candidate has submitted assessments for
+        const completedStageIds = new Set(
+          (c.assessments || [])
+            .map((a: any) => challengeToStageMap[a.challengeId])
+            .filter(Boolean)
+        );
+        const completedCount = completedStageIds.size;
 
-      // If they finished everything, they are in the last stage
-      if (c.status === 'COMPLETED' && idx === stages.length - 1) return true;
-      if (c.status === 'COMPLETED') return false;
+        // If they finished everything, they are in the last stage
+        if (c.status === 'COMPLETED' && idx === stages.length - 1) return true;
+        if (c.status === 'COMPLETED') return false;
 
-      // Otherwise, they are in the stage corresponding to their progress
-      // e.g. 0 stages completed -> in stage 0
-      // 1 stage completed -> in stage 1
-      return idx === completedCount;
-    });
-    return acc;
-  }, {} as Record<string, any[]>);
+        // Otherwise, they are in the stage corresponding to their progress
+        // e.g. 0 stages completed -> in stage 0
+        // 1 stage completed -> in stage 1
+        return idx === completedCount;
+      });
+      return acc;
+    }, {} as Record<string, any[]>);
+  }, [stages, candidates, challengeToStageMap]);
+
+  const handleDragStart = (event: any) => {
+    const { active } = event;
+    const candidate = candidates.find(c => c.id === active.id);
+    setActiveCandidate(candidate);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveCandidate(null);
+
+    if (!over) return;
+
+    const candidateId = active.id as string;
+    const overId = over.id as string;
+
+    // Logic: If over a stage column, we don't actually change 'stage' since that's
+    // derived from submissions. Dragging to a column means we're moving them
+    // artificially (e.g. marking as complete or resetting).
+    // For MVP, we'll allow dragging to 'Completed' (future) or potentially 
+    // reordering within a stage if we had that.
+    
+    // For now, let's just log it. Real movement between stages requires 
+    // creating/deleting assessment records or changing Candidate.status.
+    console.log('[Overview] Candidate dropped:', { candidateId, overId });
+  };
 
   if (isLoading && !pipeline) {
     return <OverviewSkeleton />;
@@ -769,224 +865,251 @@ export default function OverviewPage(): JSX.Element {
   }
 
   return (
-    <div>
-      {/* Page Header with Add Candidate button */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 32 }}>
-        <div>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>PIPELINE_OVERVIEW</div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: 0 }}>{pipeline?.title}</h1>
-        </div>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div>
+        {/* Page Header with Add Candidate button */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 32 }}>
+          <div>
+            <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>PIPELINE_OVERVIEW</div>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: 0 }}>{pipeline?.title}</h1>
+          </div>
 
-        {!showAddForm && (
-          <div style={{ display: 'flex', gap: 12 }}>
-            {import.meta.env.DEV && (
-              <>
-                <button
-                  onClick={handleClearStages}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "10px 20px",
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "rgba(255,255,255,0.4)",
-                    fontSize: 10,
-                    letterSpacing: "0.1em",
-                    fontFamily: "Space Mono",
-                    cursor: "pointer",
-                  }}
-                >
-                  <X size={14} />
-                  CLEAR_STAGES
-                </button>
-                {stages.length === 0 && (
+          {!showAddForm && (
+            <div style={{ display: 'flex', gap: 12 }}>
+              {import.meta.env.DEV && (
+                <>
                   <button
-                    onClick={handleSeedStage}
+                    onClick={handleClearStages}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
                       padding: "10px 20px",
-                      background: "rgba(255,100,100,0.1)",
-                      border: "1px solid rgba(255,100,100,0.2)",
-                      color: "#ffaaaa",
+                      background: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      color: "rgba(255,255,255,0.4)",
                       fontSize: 10,
                       letterSpacing: "0.1em",
                       fontFamily: "Space Mono",
                       cursor: "pointer",
                     }}
                   >
-                    <Code size={14} />
-                    SEED_MVP_STAGES
+                    <X size={14} />
+                    CLEAR_STAGES
                   </button>
-                )}
-              </>
-            )}
-            <button
-              onClick={() => setShowAddForm(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '10px 20px',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: '#fff',
-                fontSize: 10,
-                letterSpacing: '0.1em',
-                fontFamily: 'Space Mono',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-            >
-              <Plus size={14} />
-              ADD_CANDIDATE
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Add Candidate Form (Inline Modal-ish) */}
-      {showAddForm && (
-        <div style={{ marginBottom: 32 }}>
-          <LiquidMetalCard variant="chrome">
-            <div style={{ padding: 32, display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <FieldGroup label="CANDIDATE_NAME">
-                  <TextInput
-                    value={newCandidate.name}
-                    onChange={v => setNewCandidate(prev => ({ ...prev, name: v }))}
-                    placeholder="Enter name..."
-                  />
-                </FieldGroup>
-              </div>
-              <div style={{ flex: 1 }}>
-                <FieldGroup label="EMAIL_ADDRESS">
-                  <TextInput
-                    value={newCandidate.email}
-                    onChange={v => setNewCandidate(prev => ({ ...prev, email: v }))}
-                    placeholder="Enter email..."
-                  />
-                </FieldGroup>
-              </div>
-              <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                <button
-                  onClick={() => setShowAddForm(false)}
-                  style={{
-                    padding: '10px',
-                    background: 'transparent',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'rgba(255,255,255,0.4)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <X size={16} />
-                </button>
-                <button
-                  onClick={handleAddCandidate}
-                  disabled={isAdding || !newCandidate.name || !newCandidate.email}
-                  style={{
-                    padding: '10px 24px',
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    color: '#fff',
-                    fontSize: 10,
-                    letterSpacing: '0.1em',
-                    fontFamily: 'Space Mono',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {isAdding ? 'ADDING...' : 'ADD_CANDIDATE'}
-                </button>
-              </div>
+                  {stages.length === 0 && (
+                    <button
+                      onClick={handleSeedStage}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "10px 20px",
+                        background: "rgba(255,100,100,0.1)",
+                        border: "1px solid rgba(255,100,100,0.2)",
+                        color: "#ffaaaa",
+                        fontSize: 10,
+                        letterSpacing: "0.1em",
+                        fontFamily: "Space Mono",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Code size={14} />
+                      SEED_MVP_STAGES
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                onClick={() => setShowAddForm(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  fontFamily: 'Space Mono',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+              >
+                <Plus size={14} />
+                ADD_CANDIDATE
+              </button>
             </div>
-          </LiquidMetalCard>
+          )}
         </div>
-      )}
 
-      {/* Stage Headers and Kanban Grid */}
-      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 24, alignItems: 'flex-start' }}>
-        {stages.map((s) => {
-          const stageCandidates = candidatesByStage[s.id] || [];
-          return (
-            <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Header */}
-              <StageHeaderCard
-                stage={s}
-                candidates={stageCandidates}
-                isActive={false}
-                onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}
-              />
-
-              {/* Candidate Cards */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {stageCandidates.map((candidate: any) => {
-                  // Find the interview record for this candidate in THIS stage
-                  const interview = upcomingInterviews.find(si => si.candidateId === candidate.id && si.stageId === s.id);
-                  
-                  return (
-                    <CandidateKanbanCard
-                      key={candidate.id}
-                      candidate={candidate}
-                      interview={interview}
-                      onClick={() => navigate(`/candidates/${candidate.id}`)}
-                      onInvite={s.mode === 'LIVE_VIDEO' ? () => handleInviteToInterview(candidate.id, s.id) : undefined}
-                      isInviting={invitingCandidateId === candidate.id}
+        {/* Add Candidate Form (Inline Modal-ish) */}
+        {showAddForm && (
+          <div style={{ marginBottom: 32 }}>
+            <LiquidMetalCard variant="chrome">
+              <div style={{ padding: 32, display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <FieldGroup label="CANDIDATE_NAME">
+                    <TextInput
+                      value={newCandidate.name}
+                      onChange={v => setNewCandidate(prev => ({ ...prev, name: v }))}
+                      placeholder="Enter name..."
                     />
-                  );
-                })}
-
-                {stageCandidates.length === 0 && (
-                  <div
+                  </FieldGroup>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <FieldGroup label="EMAIL_ADDRESS">
+                    <TextInput
+                      value={newCandidate.email}
+                      onChange={v => setNewCandidate(prev => ({ ...prev, email: v }))}
+                      placeholder="Enter email..."
+                    />
+                  </FieldGroup>
+                </div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+                  <button
+                    onClick={() => setShowAddForm(false)}
                     style={{
-                      height: 120,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      border: "1px dashed rgba(255,255,255,0.08)",
-                      borderRadius: 12
+                      padding: '10px',
+                      background: 'transparent',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: 'rgba(255,255,255,0.4)',
+                      cursor: 'pointer',
                     }}
                   >
-                    <span style={{ fontSize: 8, letterSpacing: "0.2em", color: "rgba(255,255,255,0.2)" }}>
-                      NO CANDIDATES
-                    </span>
-                  </div>
-                )}
+                    <X size={16} />
+                  </button>
+                  <button
+                    onClick={handleAddCandidate}
+                    disabled={isAdding || !newCandidate.name || !newCandidate.email}
+                    style={{
+                      padding: '10px 24px',
+                      background: 'rgba(255,255,255,0.1)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      color: '#fff',
+                      fontSize: 10,
+                      letterSpacing: '0.1em',
+                      fontFamily: 'Space Mono',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isAdding ? 'ADDING...' : 'ADD_CANDIDATE'}
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            </LiquidMetalCard>
+          </div>
+        )}
 
-        {/* Add Stage Column */}
-        <div style={{ flex: '0 0 320px' }}>
-          <button
-            onClick={handleAddStage}
-            style={{
-              width: '100%',
-              height: 180, 
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px dashed rgba(255,255,255,0.1)',
-              borderRadius: 12,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 12,
-              color: 'rgba(255,255,255,0.4)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-            onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-          >
-            <Plus size={20} />
-            <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
-          </button>
+        {/* Stage Headers and Kanban Grid */}
+        <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 24, alignItems: 'flex-start' }}>
+          {stages.map((s) => {
+            const stageCandidates = candidatesByStage[s.id] || [];
+            return (
+              <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Header */}
+                <StageHeaderCard
+                  stage={s}
+                  candidates={stageCandidates}
+                  isActive={false}
+                  onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}
+                />
+
+                {/* Candidate Cards */}
+                <SortableContext items={stageCandidates.map((c: any) => c.id)} strategy={verticalListSortingStrategy}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 100 }}>
+                    {stageCandidates.map((candidate: any) => {
+                      // Find the interview record for this candidate in THIS stage
+                      const interview = upcomingInterviews.find(si => si.candidateId === candidate.id && si.stageId === s.id);
+                      
+                      return (
+                        <CandidateKanbanCard
+                          key={candidate.id}
+                          candidate={candidate}
+                          interview={interview}
+                          onClick={() => navigate(`/candidates/${candidate.id}`)}
+                          onInvite={s.mode === 'LIVE_VIDEO' ? () => handleInviteToInterview(candidate.id, s.id) : undefined}
+                          isInviting={invitingCandidateId === candidate.id}
+                        />
+                      );
+                    })}
+
+                    {stageCandidates.length === 0 && (
+                      <div
+                        style={{
+                          height: 120,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          border: "1px dashed rgba(255,255,255,0.08)",
+                          borderRadius: 12
+                        }}
+                      >
+                        <span style={{ fontSize: 8, letterSpacing: "0.2em", color: "rgba(255,255,255,0.2)" }}>
+                          NO CANDIDATES
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </SortableContext>
+              </div>
+            );
+          })}
+
+          {/* Add Stage Column */}
+          <div style={{ flex: '0 0 320px' }}>
+            <button
+              onClick={handleAddStage}
+              style={{
+                width: '100%',
+                height: 180, 
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px dashed rgba(255,255,255,0.1)',
+                borderRadius: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+              onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+            >
+              <Plus size={20} />
+              <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      <DragOverlay dropAnimation={{
+        sideEffects: defaultDropAnimationSideEffects({
+          styles: {
+            active: {
+              opacity: '0.5',
+            },
+          },
+        }),
+      }}>
+        {activeCandidate ? (
+          <CandidateKanbanCard
+            candidate={activeCandidate}
+            onClick={() => {}}
+            isOverlay
+          />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }
