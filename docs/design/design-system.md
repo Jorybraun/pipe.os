@@ -2,7 +2,7 @@
 
 **Brutalist Glassmorphic Chrome Aesthetic**
 
-Version 1.1.0 • March 2026
+Version 1.0.0 • December 2025
 
 ---
 
@@ -150,22 +150,6 @@ background: linear-gradient(
   rgba(30, 30, 40, 0.7) 100%
 );
 border: 1px solid rgba(255, 255, 255, 0.1);
-```
-
-### Data Row (Glassy)
-
-A clean, non-card alternative for settings, lists, and authoring tools. Used when "heavy" cards would clutter the layout.
-
-```css
-display: grid;
-grid-template-columns: 200px 1fr;
-align-items: center;
-gap: 32px;
-padding: 24px 32px;
-background: rgba(255, 255, 255, 0.02);
-border: 1px solid rgba(255, 255, 255, 0.05);
-border-radius: 8px;
-transition: border-color 0.2s, background 0.2s;
 ```
 
 ### Hover Effects
@@ -443,7 +427,6 @@ All text maintains minimum WCAG AA contrast ratios:
 - Primary text: #fff on #0c0c0e (18.5:1)
 - Secondary text: rgba(255,255,255,0.6) (11.1:1)
 - Tertiary text: rgba(255,255,255,0.4) (7.4:1)
-```
 
 ---
 
@@ -587,17 +570,11 @@ interface MetalScoreRingProps {
 
 ## Component Inventory & Status
 
-Tracked as of 2026-03-03. Every component that is "built" but lacks a Story or tests is a gap that will cause drift.
+Tracked as of 2026-02-26. Every component that is "built" but lacks a Story or tests is a gap that will cause drift.
 
 | Component | Built | Storybook | Tests | Priority |
 |---|---|---|---|---|
 | LiquidMetalCard | ✅ | ❌ | ❌ | 🔴 High — most reused |
-| DesignRow | ✅ | ❌ | ❌ | 🔴 High — core to Studio/Scheduling |
-| ChallengeRegistry | ✅ | ❌ | ❌ | 🔴 High — assessment engine |
-| MCQEditor | ✅ | ❌ | ❌ | 🟡 Medium |
-| CodeEditor | ✅ | ❌ | ❌ | 🟡 Medium |
-| EventTypePicker | ✅ | ❌ | ❌ | 🟡 Medium |
-| ConnectionStatusBadge | ✅ | ❌ | ❌ | 🟢 Low |
 | Toggle | ✅ | ✅ | ✅ | ✅ Done |
 | TabNav | ✅ | ✅ | ✅ | ✅ Done |
 | ButtonGroup | ✅ | ❌ | ❌ | 🟡 Medium |
@@ -609,8 +586,8 @@ Tracked as of 2026-03-03. Every component that is "built" but lacks a Story or t
 | TextareaInput | ✅ | ❌ | ❌ | 🟡 Medium |
 | TagsInput | ✅ | ❌ | ❌ | 🟡 Medium |
 | RadioGroup | ✅ | ❌ | ❌ | 🟡 Medium |
-| StatusBadge | ✅ | ❌ | ❌ | ✅ Done |
-| ProgressBar | ✅ | ❌ | ❌ | ✅ Done |
+| StatusBadge | ⚠️ inline | ❌ | ❌ | 🔴 High — extract to component |
+| ProgressBar | ⚠️ inline | ❌ | ❌ | 🔴 High — extract to component |
 | RoleCard | ✅ | ❌ | ❌ | 🔴 High — listing page |
 | StageCard | ✅ | ❌ | ❌ | 🟡 Medium |
 | CandidateCard | ✅ | ❌ | ❌ | 🔴 High — overview page |
@@ -664,36 +641,9 @@ All interactive cards use this pattern. Implement using a pseudo-element overlay
 
 ---
 
-### State Pattern — Design vs Preview
+### Navigation — Page Chrome & Breadcrumb
 
-Used in authoring tools (Challenge Studio). Allows creators to toggle between a structural "Design Mode" and a functional "Preview Mode" (live candidate view).
-
-1. **Design Mode**: Uses `DesignRow` components for field entry. Low visual density.
-2. **Preview Mode**: Renders the actual `ChallengeRegistry` component within a glassy container to simulate the candidate experience.
-
----
-
-### Inversion of Control (IoC) Design
-
-Pipe uses an IoC pattern for its most complex systems (Challenges, Scheduling). This decouples the core application from specific provider/type logic.
-
-#### 1. The Registry Pattern
-Core components (e.g., `ChallengeRegistry`, `SchedulingRegistry`) do not contain provider-specific code. They call a `resolve*` function that returns a declarative definition or component.
-
-#### 2. Shell + Panel Composition
-Challenges are composed of:
-- **Shells**: Outside-in behavioral wrappers (Timer, Recording, Auto-save).
-- **Panels**: Inside-out content displays (Problem, Monaco, Test Results).
-The design system ensures panels can be swapped into any layout (2-column, 3-column) without breaking styles.
-
-#### 3. Plugin Handshake (Scheduling)
-Integrations (Calendly, Cal.com) follow a standardized OAuth + Webhook flow. The UI provides a consistent "Connection Wizard" pattern regardless of the underlying API.
-
----
-
-## Navigation — Page Chrome & Breadcrumb
-
-Every page in Pipe shares the same global chrome but uses different amounts of contextual navigation. There are **three page types**:
+Every page in Pipe shares the same global chrome but uses different amounts of contextual navigation. There are **two page types**:
 
 ---
 
@@ -775,32 +725,6 @@ Used for: `/pipeline/:id`, `/pipeline/:id/:stage`, `/pipeline/:id/:stage/:questi
 
 ---
 
-#### Type C — Studio Page (authoring context)
-
-Used for: `/studio/:id`, `/schedule/setup`
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  ProfileHeader  │  PIPE_OS  V.2.0.4  │  [+] CREATE  [↪] SIGN OUT  │
-├────┬────────────────────────────────────────────────────┤
-│    │                                                     │
-│ [←]│   CHALLENGE_DESIGN / [TYPE]       ← context label   │
-│    │   Challenge Title                 ← page title      │
-│    │                                                     │
-│    │   [ DESIGN | PREVIEW ]   [ SAVE ] ← mode toggle     │
-│    │                                                     │
-│    │   [Glassy Rows...]                                  │
-│    │                                                     │
-└────┴────────────────────────────────────────────────────┘
-```
-
-- **Minimal Back Button**: A small, boxed `ArrowLeft` button next to the title.
-- **Context Labels**: Small, monospace, wide-letter-spacing labels (e.g., `SYSTEM_TEMPLATE`, `CHALLENGE_DESIGN`).
-- **Mode Toggles**: Segmented control for switching view states.
-- **Primary Actions**: Stuck to the top-right of the header area.
-
----
-
 #### Navigation Hierarchy
 
 ```
@@ -810,7 +734,6 @@ Used for: `/studio/:id`, `/schedule/setup`
     /pipeline/:id/:stage       ← Context (SubHeader: ← BACK TO OVERVIEW)
       /pipeline/:id/:stage/:q  ← Context (SubHeader: ← BACK TO [STAGE])
   /candidates/:id              ← Context (SubHeader: ← BACK TO OVERVIEW)
-  /studio/:id                  ← Studio (Type C, minimal header)
 ```
 
 ---
@@ -951,4 +874,4 @@ Promote the inline pattern to a proper component: `src/components/ui/ProgressBar
 ---
 
 _Design System maintained by Pipe Engineering Team_
-_Last major update: 2026-03-03_
+_Last major update: 2026-02-26_
