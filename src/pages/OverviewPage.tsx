@@ -5,7 +5,6 @@ import {
   Activity,
   Code,
   FileText,
-  Building,
   Copy,
   Plus,
   X,
@@ -14,7 +13,7 @@ import {
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
-import { generateClient } from 'aws-amplify/data';
+import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../../amplify/data/resource";
 import { useCandidateCreate } from "../hooks/useCandidateCreate";
 import { FieldGroup, TextInput } from "../components/ui/form";
@@ -23,9 +22,15 @@ import { EventTypePicker } from "../components/Scheduling/EventTypePicker";
 const client = generateClient<Schema>();
 
 const OverviewSkeleton = () => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+  <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
     {/* Header Skeleton */}
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
+      }}
+    >
       <div>
         <Skeleton width={100} height={8} style={{ marginBottom: 12 }} />
         <Skeleton width={200} height={32} />
@@ -34,9 +39,12 @@ const OverviewSkeleton = () => (
     </div>
 
     {/* Stage Headers Skeleton */}
-    <div style={{ display: 'flex', gap: 12 }}>
-      {[1, 2, 3].map(i => (
-        <LiquidMetalCard key={i} style={{ flex: 1, minWidth: 280, height: 180, padding: 24 }}>
+    <div style={{ display: "flex", gap: 12 }}>
+      {[1, 2, 3].map((i) => (
+        <LiquidMetalCard
+          key={i}
+          style={{ flex: 1, minWidth: 280, height: 180, padding: 24 }}
+        >
           <Skeleton width={20} height={20} style={{ marginBottom: 24 }} />
           <Skeleton width={80} height={8} style={{ marginBottom: 16 }} />
           <Skeleton width={60} height={42} />
@@ -47,15 +55,40 @@ const OverviewSkeleton = () => (
 
     {/* Kanban Grid Skeleton */}
     <div style={{ display: "flex", gap: 12 }}>
-      {[1, 2, 3].map(col => (
-        <div key={col} style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 8 }}>
-          {[1, 2].map(row => (
+      {[1, 2, 3].map((col) => (
+        <div
+          key={col}
+          style={{
+            flex: 1,
+            minWidth: 280,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          {[1, 2].map((row) => (
             <LiquidMetalCard key={row} style={{ height: 100, padding: 0 }}>
-              <div style={{ display: 'flex', height: '100%' }}>
-                <div style={{ width: 80, borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ display: "flex", height: "100%" }}>
+                <div
+                  style={{
+                    width: 80,
+                    borderRight: "1px solid rgba(255,255,255,0.06)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
                   <Skeleton width={40} height={40} />
                 </div>
-                <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    padding: 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                  }}
+                >
                   <Skeleton width="60%" height={12} />
                   <Skeleton width="40%" height={8} />
                   <Skeleton width="30%" height={8} />
@@ -86,12 +119,16 @@ function StageHeaderCard({
   onClick: () => void;
 }) {
   const Icon = FileText;
-  const scoredCandidates = candidates.filter(c => c.score !== undefined && c.score !== null);
-  const avgScore = scoredCandidates.length > 0
-    ? Math.round(
-        scoredCandidates.reduce((sum, c) => sum + (c.score || 0), 0) / scoredCandidates.length
-      )
-    : null;
+  const scoredCandidates = candidates.filter(
+    (c) => c.score !== undefined && c.score !== null,
+  );
+  const avgScore =
+    scoredCandidates.length > 0
+      ? Math.round(
+          scoredCandidates.reduce((sum, c) => sum + (c.score || 0), 0) /
+            scoredCandidates.length,
+        )
+      : null;
 
   return (
     <LiquidMetalCard
@@ -127,7 +164,7 @@ function StageHeaderCard({
           marginBottom: 12,
         }}
       >
-        {(stage.title || 'STAGE').toUpperCase()}
+        {(stage.title || "STAGE").toUpperCase()}
       </div>
 
       {avgScore !== null ? (
@@ -202,34 +239,56 @@ function CandidateKanbanCard({
   useEffect(() => {
     const timer = setTimeout(
       () => setMounted(true),
-      stageIndex * 100 + index * 80
+      stageIndex * 100 + index * 80,
     );
     return () => clearTimeout(timer);
   }, [stageIndex, index]);
 
-  const handleCopyLink = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    const inviteUrl = `${window.location.origin}/assess/${candidate.inviteToken}`;
-    navigator.clipboard.writeText(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [candidate.inviteToken]);
+  const handleCopyLink = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const inviteUrl = `${window.location.origin}/assess/${candidate.inviteToken}`;
+      navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    },
+    [candidate.inviteToken],
+  );
 
   const initials = (candidate.name || "")
-    .split(' ')
+    .split(" ")
     .map((n: string) => n[0])
-    .join('')
+    .join("")
     .toUpperCase()
     .slice(0, 2);
 
+  const isInvited =
+    candidate.status === "INVITED" || candidate.status === "IN_PROGRESS";
+
   return (
     <div
+      onClick={onClick}
       style={{
         opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0)" : "translateY(15px)",
-        transition: "all 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+        transform: mounted ? "translateY(0)" : "translateY(8px)",
+        transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+        display: "flex",
+        alignItems: "stretch",
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 8,
+        cursor: "pointer",
+        overflow: "hidden",
+        minHeight: 80,
       }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)")
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)")
+      }
     >
+      {/*</div>
       <LiquidMetalCard
         variant="dark"
         hover
@@ -395,8 +454,128 @@ function CandidateKanbanCard({
               </>
             )}
           </div>
+*/}
+      {/* Left Block — Avatar/Initials */}
+      <div
+        style={{
+          width: 48,
+          background: "rgba(255,255,255,0.01)",
+          borderRight: "1px solid rgba(255,255,255,0.04)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: "rgba(255,255,255,0.25)",
+            fontFamily: '"Space Mono", monospace',
+          }}
+        >
+          {initials}
         </div>
-      </LiquidMetalCard>
+      </div>
+
+      {/* Content Body */}
+      <div
+        style={{
+          flex: 1,
+          padding: "16px 20px",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#fff",
+            marginBottom: 4,
+          }}
+        >
+          {candidate.name}
+        </div>
+        <div
+          style={{
+            fontSize: 10,
+            color: "rgba(255,255,255,0.3)",
+            fontFamily: '"Space Mono", monospace',
+            letterSpacing: "0.02em",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span style={{ textTransform: "lowercase" }}>{candidate.email}</span>
+          <span
+            style={{
+              width: 3,
+              height: 3,
+              borderRadius: "50%",
+              background: "currentColor",
+              opacity: 0.3,
+            }}
+          />
+          <span>{candidate.status}</span>
+        </div>
+      </div>
+
+      {/* Action Column */}
+      <div
+        style={{
+          padding: "0 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderLeft: "1px solid rgba(255,255,255,0.04)",
+          width: 80,
+        }}
+      >
+        {isInvited ? (
+          <button
+            onClick={handleCopyLink}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: copied ? "#10b981" : "rgba(255,255,255,0.2)",
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 4,
+              transition: "all 0.2s ease",
+            }}
+            title="Copy Invite Link"
+          >
+            {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
+            <span
+              style={{ fontSize: 6, letterSpacing: "0.1em", fontWeight: 800 }}
+            >
+              {copied ? "DONE" : "INVITE"}
+            </span>
+          </button>
+        ) : (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>
+              {candidate.score || 0}
+            </div>
+            <div
+              style={{
+                fontSize: 7,
+                color: "rgba(255,255,255,0.2)",
+                fontFamily: '"Space Mono", monospace',
+                fontWeight: 800,
+              }}
+            >
+              SCORE
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -413,21 +592,24 @@ export default function OverviewPage(): JSX.Element {
 
   // Add Candidate Form State
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newCandidate, setNewCandidate] = useState({ name: '', email: '' });
-  const { create: createCandidate, isSubmitting: isAdding } = useCandidateCreate();
+  const [newCandidate, setNewCandidate] = useState({ name: "", email: "" });
+  const { create: createCandidate, isSubmitting: isAdding } =
+    useCandidateCreate();
 
   // Upcoming scheduled interviews for this pipeline (status=SCHEDULED)
   const [upcomingInterviews, setUpcomingInterviews] = useState<any[]>([]);
 
   // Invite-to-interview state
-  const [invitingCandidateId, setInvitingCandidateId] = useState<string | null>(null);
+  const [invitingCandidateId, setInvitingCandidateId] = useState<string | null>(
+    null,
+  );
 
   const handleAddStage = async () => {
     if (!id) return;
-    
+
     const title = window.prompt("Enter new stage name:");
-    if (!title || title.trim() === '') return;
-    
+    if (!title || title.trim() === "") return;
+
     setIsLoading(true);
     try {
       await client.models.Stage.create({
@@ -450,13 +632,22 @@ export default function OverviewPage(): JSX.Element {
       setError(null);
       const [pipelineData, candidatesData, stagesData] = await Promise.all([
         client.models.Pipeline.get({ id }),
-        client.models.Candidate.list({ 
+        client.models.Candidate.list({
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'name', 'email', 'status', 'inviteToken', 'assessments.id', 'assessments.challengeId', 'assessments.score']
+          selectionSet: [
+            "id",
+            "name",
+            "email",
+            "status",
+            "inviteToken",
+            "assessments.id",
+            "assessments.challengeId",
+            "assessments.score",
+          ],
         }),
-        client.models.Stage.list({ 
+        client.models.Stage.list({
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'title', 'order', 'mode', 'challenges.*']
+          selectionSet: ["id", "title", "order", "mode", "challenges.*"],
         }),
       ]);
 
@@ -467,25 +658,41 @@ export default function OverviewPage(): JSX.Element {
         const { data: siData } = await client.models.ScheduledInterview.list({
           filter: { pipelineId: { eq: id } },
         });
-        setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED' || si.status === 'INVITED'));
+        setUpcomingInterviews(
+          (siData ?? []).filter(
+            (si: any) => si.status === "SCHEDULED" || si.status === "INVITED",
+          ),
+        );
       } catch {
         // ScheduledInterview not yet deployed in sandbox — ignore
       }
 
       // Calculate scores for each candidate
-      const enrichedCandidates = candidatesData.data.map(c => {
-        const scores = (c.assessments || []).map((a: any) => a.score).filter((s: any) => typeof s === 'number');
-        const score = scores.length > 0 ? Math.round(scores.reduce((sum: number, s: number) => sum + s, 0) / scores.length) : null;
+      const enrichedCandidates = candidatesData.data.map((c) => {
+        const scores = (c.assessments || [])
+          .map((a: any) => a.score)
+          .filter((s: any) => typeof s === "number");
+        const score =
+          scores.length > 0
+            ? Math.round(
+                scores.reduce((sum: number, s: number) => sum + s, 0) /
+                  scores.length,
+              )
+            : null;
         return { ...c, score };
       });
 
       setCandidates(enrichedCandidates);
-      setStages((stagesData.data as any[])
-        .filter(s => s !== null)
-        .sort((a, b) => (a.order || 0) - (b.order || 0)));
+      setStages(
+        (stagesData.data as any[])
+          .filter((s) => s !== null)
+          .sort((a, b) => (a.order || 0) - (b.order || 0)),
+      );
     } catch (err) {
       console.error("Error fetching pipeline data:", err);
-      setError(err instanceof Error ? err : new Error("Failed to load pipeline data"));
+      setError(
+        err instanceof Error ? err : new Error("Failed to load pipeline data"),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -504,7 +711,7 @@ export default function OverviewPage(): JSX.Element {
       email: newCandidate.email,
     });
     if (result) {
-      setNewCandidate({ name: '', email: '' });
+      setNewCandidate({ name: "", email: "" });
       setShowAddForm(false);
       fetchData(); // Refresh list
     }
@@ -512,20 +719,27 @@ export default function OverviewPage(): JSX.Element {
 
   const handleClearStages = async () => {
     if (!id) return;
-    if (!window.confirm("Are you sure you want to delete ALL stages for this pipeline?")) return;
-    
+    if (
+      !window.confirm(
+        "Are you sure you want to delete ALL stages for this pipeline?",
+      )
+    )
+      return;
+
     setIsLoading(true);
     try {
       // Fetch all stages first
       const { data: stagesToDelete } = await client.models.Stage.list({
-        filter: { pipelineId: { eq: id } }
+        filter: { pipelineId: { eq: id } },
       });
       // Delete them
-      await Promise.all(stagesToDelete.map(s => client.models.Stage.delete({ id: s.id })));
-      
+      await Promise.all(
+        stagesToDelete.map((s) => client.models.Stage.delete({ id: s.id })),
+      );
+
       // Wait for consistency. Amplify Data backend is eventually consistent.
       // This arbitrary delay allows DynamoDB streams to sync before we re-fetch.
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
       await fetchData();
     } catch (err) {
       console.error("Failed to clear stages:", err);
@@ -542,20 +756,27 @@ export default function OverviewPage(): JSX.Element {
         id,
         schedulingEventTypeId: eventTypeId,
       });
-      setPipeline((prev: any) => prev ? { ...prev, schedulingEventTypeId: eventTypeId } : prev);
+      setPipeline((prev: any) =>
+        prev ? { ...prev, schedulingEventTypeId: eventTypeId } : prev,
+      );
     } catch (err) {
-      console.error('[OverviewPage] Failed to save event type:', err);
+      console.error("[OverviewPage] Failed to save event type:", err);
     }
   };
 
   /** Create a ScheduledInterview record for a candidate (Invite to Interview) */
-  const handleInviteToInterview = async (candidateId: string, stageId: string) => {
+  const handleInviteToInterview = async (
+    candidateId: string,
+    stageId: string,
+  ) => {
     if (!id) return;
 
     // Only allow invites for LIVE_VIDEO stages
     const stage = stages.find((s: any) => s.id === stageId);
-    if (!stage || stage.mode !== 'LIVE_VIDEO') {
-      console.warn('[OverviewPage] Invite to Interview is only valid for LIVE_VIDEO stages');
+    if (!stage || stage.mode !== "LIVE_VIDEO") {
+      console.warn(
+        "[OverviewPage] Invite to Interview is only valid for LIVE_VIDEO stages",
+      );
       return;
     }
 
@@ -566,7 +787,9 @@ export default function OverviewPage(): JSX.Element {
         filter: { candidateId: { eq: candidateId }, stageId: { eq: stageId } },
       });
       if (existing && existing.length > 0) {
-        console.warn('[OverviewPage] Interview invite already exists for this candidate + stage');
+        console.warn(
+          "[OverviewPage] Interview invite already exists for this candidate + stage",
+        );
         return;
       }
 
@@ -574,17 +797,24 @@ export default function OverviewPage(): JSX.Element {
         pipelineId: id,
         candidateId,
         stageId,
-        status: 'INVITED',
-        schedulingProvider: 'MANUAL',
+        status: "INVITED",
+        schedulingProvider: "MANUAL",
         schedulingUrl: pipeline?.schedulingUrl,
       });
       // Re-fetch upcoming interviews
       const { data: siData } = await client.models.ScheduledInterview.list({
         filter: { pipelineId: { eq: id } },
       });
-      setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED' || si.status === 'INVITED'));
+      setUpcomingInterviews(
+        (siData ?? []).filter(
+          (si: any) => si.status === "SCHEDULED" || si.status === "INVITED",
+        ),
+      );
     } catch (err) {
-      console.error('[OverviewPage] Failed to create interview invitation:', err);
+      console.error(
+        "[OverviewPage] Failed to create interview invitation:",
+        err,
+      );
     } finally {
       setInvitingCandidateId(null);
     }
@@ -594,26 +824,26 @@ export default function OverviewPage(): JSX.Element {
     if (!id) return;
     setIsLoading(true);
     try {
-      console.log('[Overview] Seeding MVP stages...');
+      console.log("[Overview] Seeding MVP stages...");
       // 1. Technical Screen
       await client.models.Stage.create({
         pipelineId: id,
-        title: 'Technical Screen',
+        title: "Technical Screen",
         order: 0,
       });
 
       // 2. Final Round
       await client.models.Stage.create({
         pipelineId: id,
-        title: 'Final Round',
+        title: "Final Round",
         order: 1,
       });
 
-      console.log('[Overview] Stages seeded. Refreshing...');
+      console.log("[Overview] Stages seeded. Refreshing...");
       // Wait for consistency. Amplify Data backend is eventually consistent.
       // 800ms is usually sufficient for standard sandbox deployments, but may
       // need backoff/retry in heavy load scenarios.
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 800));
       await fetchData();
     } catch (err) {
       console.error("Failed to seed stages:", err);
@@ -623,35 +853,41 @@ export default function OverviewPage(): JSX.Element {
   };
 
   // Map challenge IDs to stage IDs for grouping
-  const challengeToStageMap = stages.reduce((acc, stage) => {
-    (stage.challenges || []).forEach((c: any) => {
-      acc[c.id] = stage.id;
-    });
-    return acc;
-  }, {} as Record<string, string>);
+  const challengeToStageMap = stages.reduce(
+    (acc, stage) => {
+      (stage.challenges || []).forEach((c: any) => {
+        acc[c.id] = stage.id;
+      });
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
 
   // Group candidates by their current stage
-  const candidatesByStage = stages.reduce((acc, s, idx) => {
-    acc[s.id] = candidates.filter(c => {
-      // Get count of unique stages this candidate has submitted assessments for
-      const completedStageIds = new Set(
-        (c.assessments || [])
-          .map((a: any) => challengeToStageMap[a.challengeId])
-          .filter(Boolean)
-      );
-      const completedCount = completedStageIds.size;
+  const candidatesByStage = stages.reduce(
+    (acc, s, idx) => {
+      acc[s.id] = candidates.filter((c) => {
+        // Get count of unique stages this candidate has submitted assessments for
+        const completedStageIds = new Set(
+          (c.assessments || [])
+            .map((a: any) => challengeToStageMap[a.challengeId])
+            .filter(Boolean),
+        );
+        const completedCount = completedStageIds.size;
 
-      // If they finished everything, they are in the last stage
-      if (c.status === 'COMPLETED' && idx === stages.length - 1) return true;
-      if (c.status === 'COMPLETED') return false;
+        // If they finished everything, they are in the last stage
+        if (c.status === "COMPLETED" && idx === stages.length - 1) return true;
+        if (c.status === "COMPLETED") return false;
 
-      // Otherwise, they are in the stage corresponding to their progress
-      // e.g. 0 stages completed -> in stage 0
-      // 1 stage completed -> in stage 1
-      return idx === completedCount;
-    });
-    return acc;
-  }, {} as Record<string, any[]>);
+        // Otherwise, they are in the stage corresponding to their progress
+        // e.g. 0 stages completed -> in stage 0
+        // 1 stage completed -> in stage 1
+        return idx === completedCount;
+      });
+      return acc;
+    },
+    {} as Record<string, any[]>,
+  );
 
   if (isLoading) {
     return <OverviewSkeleton />;
@@ -659,25 +895,50 @@ export default function OverviewPage(): JSX.Element {
 
   if (error) {
     return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <LiquidMetalCard variant="mercury" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
-          <div style={{ color: '#f87171', marginBottom: 16, fontSize: 12, fontWeight: 700, fontFamily: '"Space Mono", monospace' }}>
+      <div
+        style={{
+          minHeight: "60vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <LiquidMetalCard
+          variant="mercury"
+          style={{ maxWidth: 400, padding: 40, textAlign: "center" }}
+        >
+          <div
+            style={{
+              color: "#f87171",
+              marginBottom: 16,
+              fontSize: 12,
+              fontWeight: 700,
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
             ERROR_LOADING_PIPELINE
           </div>
-          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+          <p
+            style={{
+              color: "rgba(255,255,255,0.5)",
+              fontSize: 13,
+              marginBottom: 24,
+              lineHeight: 1.6,
+            }}
+          >
             {error.message}
           </p>
           <button
             onClick={() => fetchData()}
             style={{
-              padding: '12px 24px',
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: '#fff',
+              padding: "12px 24px",
+              background: "rgba(255,255,255,0.1)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              color: "#fff",
               fontSize: 10,
-              letterSpacing: '0.1em',
+              letterSpacing: "0.1em",
               fontFamily: '"Space Mono", monospace',
-              cursor: 'pointer'
+              cursor: "pointer",
             }}
           >
             RETRY_CONNECTION
@@ -690,8 +951,19 @@ export default function OverviewPage(): JSX.Element {
   if (!pipeline) {
     return (
       <div style={{ padding: 60, textAlign: "center" }}>
-        <h2 style={{ color: '#fff', marginBottom: 20 }}>Pipeline Not Found</h2>
-        <button onClick={() => navigate("/")} style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', padding: '10px 20px', cursor: 'pointer' }}>Back to Roles</button>
+        <h2 style={{ color: "#fff", marginBottom: 20 }}>Pipeline Not Found</h2>
+        <button
+          onClick={() => navigate("/")}
+          style={{
+            color: "#fff",
+            background: "rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            padding: "10px 20px",
+            cursor: "pointer",
+          }}
+        >
+          Back to Roles
+        </button>
       </div>
     );
   }
@@ -704,10 +976,30 @@ export default function OverviewPage(): JSX.Element {
       }}
     >
       {/* Page Header with Add Candidate button */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 32 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          marginBottom: 32,
+        }}
+      >
         <div>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>PIPELINE_OVERVIEW</div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: 0 }}>{pipeline.title}</h1>
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.2em",
+              color: "rgba(255,255,255,0.3)",
+              marginBottom: 8,
+            }}
+          >
+            PIPELINE_OVERVIEW
+          </div>
+          <h1
+            style={{ fontSize: 24, fontWeight: 700, color: "#fff", margin: 0 }}
+          >
+            {pipeline.title}
+          </h1>
           {/* Event Type Picker — link a scheduling provider event type to this pipeline */}
           <EventTypePicker
             currentEventTypeId={pipeline.schedulingEventTypeId ?? null}
@@ -716,7 +1008,7 @@ export default function OverviewPage(): JSX.Element {
         </div>
 
         {!showAddForm && (
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: "flex", gap: 12 }}>
             {import.meta.env.DEV && (
               <>
                 <button
@@ -764,21 +1056,25 @@ export default function OverviewPage(): JSX.Element {
             <button
               onClick={() => setShowAddForm(true)}
               style={{
-                display: 'flex',
-                alignItems: 'center',
+                display: "flex",
+                alignItems: "center",
                 gap: 8,
-                padding: '10px 20px',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: '#fff',
+                padding: "10px 20px",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                color: "#fff",
                 fontSize: 10,
-                letterSpacing: '0.1em',
-                fontFamily: 'Space Mono',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                letterSpacing: "0.1em",
+                fontFamily: "Space Mono",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
               }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.1)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "rgba(255,255,255,0.05)")
+              }
             >
               <Plus size={14} />
               ADD_CANDIDATE
@@ -791,12 +1087,21 @@ export default function OverviewPage(): JSX.Element {
       {showAddForm && (
         <div style={{ marginBottom: 32 }}>
           <LiquidMetalCard variant="chrome">
-            <div style={{ padding: 32, display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+            <div
+              style={{
+                padding: 32,
+                display: "flex",
+                gap: 24,
+                alignItems: "flex-start",
+              }}
+            >
               <div style={{ flex: 1 }}>
                 <FieldGroup label="CANDIDATE_NAME">
                   <TextInput
                     value={newCandidate.name}
-                    onChange={v => setNewCandidate(prev => ({ ...prev, name: v }))}
+                    onChange={(v) =>
+                      setNewCandidate((prev) => ({ ...prev, name: v }))
+                    }
                     placeholder="Enter name..."
                   />
                 </FieldGroup>
@@ -805,39 +1110,43 @@ export default function OverviewPage(): JSX.Element {
                 <FieldGroup label="EMAIL_ADDRESS">
                   <TextInput
                     value={newCandidate.email}
-                    onChange={v => setNewCandidate(prev => ({ ...prev, email: v }))}
+                    onChange={(v) =>
+                      setNewCandidate((prev) => ({ ...prev, email: v }))
+                    }
                     placeholder="Enter email..."
                   />
                 </FieldGroup>
               </div>
-              <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+              <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
                 <button
                   onClick={() => setShowAddForm(false)}
                   style={{
-                    padding: '10px',
-                    background: 'transparent',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'rgba(255,255,255,0.4)',
-                    cursor: 'pointer',
+                    padding: "10px",
+                    background: "transparent",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(255,255,255,0.4)",
+                    cursor: "pointer",
                   }}
                 >
                   <X size={16} />
                 </button>
                 <button
                   onClick={handleAddCandidate}
-                  disabled={isAdding || !newCandidate.name || !newCandidate.email}
+                  disabled={
+                    isAdding || !newCandidate.name || !newCandidate.email
+                  }
                   style={{
-                    padding: '10px 24px',
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    color: '#fff',
+                    padding: "10px 24px",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    color: "#fff",
                     fontSize: 10,
-                    letterSpacing: '0.1em',
-                    fontFamily: 'Space Mono',
-                    cursor: 'pointer',
+                    letterSpacing: "0.1em",
+                    fontFamily: "Space Mono",
+                    cursor: "pointer",
                   }}
                 >
-                  {isAdding ? 'ADDING...' : 'ADD_CANDIDATE'}
+                  {isAdding ? "ADDING..." : "ADD_CANDIDATE"}
                 </button>
               </div>
             </div>
@@ -848,31 +1157,91 @@ export default function OverviewPage(): JSX.Element {
       {/* Upcoming Scheduled Interviews */}
       {upcomingInterviews.length > 0 && (
         <div style={{ marginBottom: 32 }}>
-          <div style={{ marginBottom: 12, fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+          <div
+            style={{
+              marginBottom: 12,
+              fontSize: 9,
+              letterSpacing: "0.2em",
+              color: "rgba(255,255,255,0.3)",
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
             UPCOMING_INTERVIEWS
           </div>
-          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              overflowX: "auto",
+              paddingBottom: 8,
+            }}
+          >
             {[...upcomingInterviews]
-              .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime())
+              .sort(
+                (a, b) =>
+                  new Date(a.scheduledAt || 0).getTime() -
+                  new Date(b.scheduledAt || 0).getTime(),
+              )
               .map((si: any) => {
-                const cand = candidates.find(c => c.id === si.candidateId);
-                const stage = stages.find(s => s.id === si.stageId);
+                const cand = candidates.find((c) => c.id === si.candidateId);
+                const stage = stages.find((s) => s.id === si.stageId);
                 return (
-                  <LiquidMetalCard key={si.id} style={{ flex: '0 0 260px', padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                      <Calendar size={14} color={si.status === 'INVITED' ? '#fbbf24' : '#60a5fa'} />
-                      <span style={{ fontSize: 9, color: si.status === 'INVITED' ? '#fbbf24' : '#60a5fa', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+                  <LiquidMetalCard
+                    key={si.id}
+                    style={{ flex: "0 0 260px", padding: 20 }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 12,
+                      }}
+                    >
+                      <Calendar
+                        size={14}
+                        color={si.status === "INVITED" ? "#fbbf24" : "#60a5fa"}
+                      />
+                      <span
+                        style={{
+                          fontSize: 9,
+                          color:
+                            si.status === "INVITED" ? "#fbbf24" : "#60a5fa",
+                          fontFamily: '"Space Mono", monospace',
+                          letterSpacing: "0.1em",
+                        }}
+                      >
                         {si.status}
                       </span>
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
-                      {cand?.name || '—'}
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#fff",
+                        marginBottom: 4,
+                      }}
+                    >
+                      {cand?.name || "—"}
                     </div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: si.scheduledAt ? 8 : 0, fontFamily: '"Space Mono", monospace' }}>
-                      {stage?.title || '—'}
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "rgba(255,255,255,0.4)",
+                        marginBottom: si.scheduledAt ? 8 : 0,
+                        fontFamily: '"Space Mono", monospace',
+                      }}
+                    >
+                      {stage?.title || "—"}
                     </div>
                     {si.scheduledAt && (
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontFamily: '"Space Mono", monospace' }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "rgba(255,255,255,0.6)",
+                          fontFamily: '"Space Mono", monospace',
+                        }}
+                      >
                         {new Date(si.scheduledAt).toLocaleString()}
                       </div>
                     )}
@@ -881,7 +1250,15 @@ export default function OverviewPage(): JSX.Element {
                         href={si.meetingUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{ display: 'inline-block', marginTop: 12, fontSize: 9, letterSpacing: '0.1em', color: '#60a5fa', fontFamily: '"Space Mono", monospace', textDecoration: 'none' }}
+                        style={{
+                          display: "inline-block",
+                          marginTop: 12,
+                          fontSize: 9,
+                          letterSpacing: "0.1em",
+                          color: "#60a5fa",
+                          fontFamily: '"Space Mono", monospace',
+                          textDecoration: "none",
+                        }}
                       >
                         JOIN_MEETING →
                       </a>
@@ -894,11 +1271,27 @@ export default function OverviewPage(): JSX.Element {
       )}
 
       {/* Stage Headers and Kanban Grid */}
-      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 24, alignItems: 'flex-start' }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          overflowX: "auto",
+          paddingBottom: 24,
+          alignItems: "flex-start",
+        }}
+      >
         {stages.map((s, i) => {
           const stageCandidates = candidatesByStage[s.id] || [];
           return (
-            <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div
+              key={s.id}
+              style={{
+                flex: "0 0 320px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
               {/* Header */}
               <StageHeaderCard
                 stage={s}
@@ -929,10 +1322,16 @@ export default function OverviewPage(): JSX.Element {
                       alignItems: "center",
                       justifyContent: "center",
                       border: "1px dashed rgba(255,255,255,0.08)",
-                      borderRadius: 12
+                      borderRadius: 12,
                     }}
                   >
-                    <span style={{ fontSize: 8, letterSpacing: "0.2em", color: "rgba(255,255,255,0.2)" }}>
+                    <span
+                      style={{
+                        fontSize: 8,
+                        letterSpacing: "0.2em",
+                        color: "rgba(255,255,255,0.2)",
+                      }}
+                    >
                       NO CANDIDATES
                     </span>
                   </div>
@@ -943,29 +1342,42 @@ export default function OverviewPage(): JSX.Element {
         })}
 
         {/* Add Stage Column */}
-        <div style={{ flex: '0 0 320px' }}>
+        <div style={{ flex: "0 0 320px" }}>
           <button
             onClick={handleAddStage}
             style={{
-              width: '100%',
-              height: 180, 
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px dashed rgba(255,255,255,0.1)',
+              width: "100%",
+              height: 180,
+              background: "rgba(255,255,255,0.03)",
+              border: "1px dashed rgba(255,255,255,0.1)",
               borderRadius: 12,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
               gap: 12,
-              color: 'rgba(255,255,255,0.4)',
-              cursor: 'pointer',
-              transition: 'all 0.2s'
+              color: "rgba(255,255,255,0.4)",
+              cursor: "pointer",
+              transition: "all 0.2s",
             }}
-            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-            onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+            onMouseOver={(e) =>
+              (e.currentTarget.style.background = "rgba(255,255,255,0.06)")
+            }
+            onMouseOut={(e) =>
+              (e.currentTarget.style.background = "rgba(255,255,255,0.03)")
+            }
           >
             <Plus size={20} />
-            <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
+            <span
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.2em",
+                fontWeight: 700,
+                fontFamily: "Space Mono",
+              }}
+            >
+              ADD_STAGE
+            </span>
           </button>
         </div>
       </div>

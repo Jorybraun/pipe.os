@@ -16,11 +16,13 @@ import OverviewPage from "./pages/OverviewPage";
 import StageDetailPage from "./pages/StageDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
+import ChallengeStudioPage from "./pages/ChallengeStudioPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import SchedulingPage from "./pages/SchedulingPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
+import ChallengeLibraryPage from "./pages/ChallengeLibraryPage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 
@@ -141,10 +143,10 @@ const SubHeader = () => {
               {questionId && currentStage
                 ? `BACK TO ${currentStage.title.toUpperCase()}`
                 : stage
-                ? "BACK TO OVERVIEW"
-                : isCandidateContext
-                ? "BACK"
-                : "BACK TO ROLES"}
+                  ? "BACK TO OVERVIEW"
+                  : isCandidateContext
+                    ? "BACK"
+                    : "BACK TO ROLES"}
             </button>
 
             <div
@@ -283,6 +285,10 @@ function AppLayout(): JSX.Element {
             setActiveSection("schedule");
             navigate("/schedule");
           }}
+          onChallengesClick={() => {
+            setActiveSection("challenges");
+            navigate("/challenges");
+          }}
         />
       }
     >
@@ -328,13 +334,23 @@ function App(): JSX.Element {
                     element={<CandidateProfilePage />}
                   />
                   <Route
+                    path="/studio/:challengeId"
+                    element={<ChallengeStudioPage />}
+                  />
+                  <Route
                     path="/screenings/:id/preview"
                     element={<CandidateScreeningPage />}
                   />
                   <Route path="/schedule" element={<SchedulingPage />} />
+
                   <Route
                     path="/sandbox/dev-container"
                     element={<DevContainerSandboxPage />}
+                  />
+
+                  <Route
+                    path="/challenges"
+                    element={<ChallengeLibraryPage />}
                   />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />

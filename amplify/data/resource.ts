@@ -136,7 +136,7 @@ const schema = a.schema({
    */
   Challenge: a
     .model({
-      stageId: a.id().required(),
+      stageId: a.id(),
       stage: a.belongsTo('Stage', 'stageId'),
       type: a.enum(['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER']),
       order: a.integer(),
@@ -145,6 +145,10 @@ const schema = a.schema({
       config: a.json(), // Public challenge-specific settings (e.g. MCQ options)
       serverConfig: a.json(), // Private answer keys, scoring rubrics, test cases
       
+      // Global library support
+      isSystem: a.boolean(), // true = immutable template
+      baseChallengeId: a.id(), // links custom challenge back to its template
+
       // Linked code if applicable
       codeArtifactId: a.id(),
       codeArtifact: a.belongsTo('CodeArtifact', 'codeArtifactId'),

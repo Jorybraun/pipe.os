@@ -141,6 +141,79 @@
 
 ---
 
+## Epic: Challenge Library — Functional Wiring
+
+> The stateless visual components are committed on `challenge-design` branch. This epic wires state,
+> data fetching, code execution, and real interactivity into the Challenge Library page (`/challenges`).
+>
+> **Branch:** `challenge-library-wiring` (branched from `challenge-design`)
+> **Visual shell commit:** `5de67fe` on `challenge-design`
+> **Components:** `src/components/ChallengeLibrary/` (12 components + barrel export)
+> **Page:** `src/pages/ChallengeLibraryPage.tsx`
+> **Design refs:** `docs/design/monaco-challenge-architecture.md`, `docs/design/challenge-architecture.md`
+
+### Phase 1 — State Management & Navigation (0.5 day)
+- [ ] **Add `useState` to `ChallengeLibraryPage`** — `selectedId`, `searchQuery`, `activeFilter`, `activeTab`. Replace hardcoded mock values with state. ~30 min.
+- [ ] **Wire sidebar interactions** — selecting a challenge updates `selectedId`, search filters the list, filter tabs narrow by type, tab changes update `activeTab`. ~30 min.
+- [ ] **Add `EmptyWorkspace` toggle** — when `selectedId` is null, show `EmptyWorkspace`; when set, show `ChallengeWorkspace`. ~15 min.
+- [ ] **Wire Create New button** — opens a modal or inline form to create a new blank challenge (type picker → creates in DynamoDB → selects it). ~45 min.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase 2 — Amplify Data Integration (1 day)
+- [ ] **Write `src/hooks/useChallengeLibrary.ts`** — fetches all template challenges (`isTemplate: true` or all challenges with no `stageId`) via `observeQuery`. Returns `{ challenges, isLoading, error, create, update, remove }`. ~1.5 hr.
+- [ ] **Write `src/hooks/useChallengeEditor.ts`** — manages the selected challenge's editable state: loads full challenge data (instructions markdown, code files, test cases, config), provides `save()` that persists to DynamoDB. Debounced auto-save optional. ~2 hr.
+- [ ] **Replace mock data in `ChallengeLibraryPage`** — use `useChallengeLibrary` for the sidebar list and `useChallengeEditor` for the workspace content. ~1 hr.
+- [ ] **Schema check** — verify `Challenge` model has all needed fields (`instructions: a.string()`, `config: a.json()` for files/tests/options, `serverConfig: a.json()` for answer keys). Add fields if missing. ~30 min.
+- [ ] **Run `npx ampx sandbox`** + `npx tsc --noEmit` — zero errors.
+
+### Phase 3 — Instructions Tab Functionality (0.5 day)
+- [ ] **Wire markdown editing** — `InstructionsTab.onMarkdownChange` saves to challenge `instructions` field via `useChallengeEditor.save()`. ~30 min.
+- [ ] **Wire mode toggle** — edit/split/preview modes via local state. ~15 min.
+- [ ] **Add markdown rendering** — integrate `react-markdown` + `remark-gfm` in preview/split modes. Render actual HTML from markdown input. ~45 min.
+- [ ] **Wire file upload** — `.md` file upload parses file content and sets it as the markdown. Use `FileReader` API, no S3 needed. ~30 min.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase 4 — Code Tab + Monaco Integration (1 day)
+- [ ] **Swap fallback textarea for Monaco** — use `@monaco-editor/react` in `CodeTab` via the `editorSlot` prop. Configure: `vs-dark` theme, `Space Mono` font, language detection from file extension. ~1 hr.
+- [ ] **Wire multi-file state** — file CRUD (add, rename, delete, switch active) stored in challenge `config.files` array. Each file: `{ id, name, language, content, isEntryPoint }`. ~1.5 hr.
+- [ ] **Wire content editing** — Monaco `onChange` updates active file content → debounced save to DynamoDB. ~30 min.
+- [ ] **Add file settings popover** — rename file, set as entry point, change language, delete file. Triggered from `FileTabBar` settings button. ~45 min.
+- [ ] **Language detection** — auto-detect from file extension (`.ts` → TypeScript, `.jsx` → JavaScript React, `.py` → Python, etc.). ~15 min.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase 5 — Test Cases Tab Functionality (0.5 day)
+- [ ] **Wire test CRUD** — add/delete/update test cases stored in challenge `config.testCases` array. Each: `{ id, description, input, expectedOutput, isHidden }`. ~45 min.
+- [ ] **Wire hidden toggle** — `isHidden` test cases are author-only, not shown to candidates. ~15 min.
+- [ ] **Wire "Run Tests" (algorithm challenges)** — collect entry point code + test cases → call Piston API → compare output vs expectedOutput → display pass/fail per test. ~2 hr.
+- [ ] **Write `src/lib/execution/pistonExecutor.ts`** — `executeCode(language, code, stdin)` → `{ stdout, stderr, exitCode }`. Call `https://emkc.org/api/v2/piston/execute`. ~1 hr.
+- [ ] **Display test results inline** — green checkmark for pass, red X + error diff for fail, spinner while running. ~30 min.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase 6 — Preview Tab + Code Execution (1 day)
+- [ ] **Wire browser preview (frontend challenges)** — build `<iframe srcdoc>` from challenge files. HTML template imports React/ReactDOM from `esm.sh` CDN, injects candidate code as `<script type="module">`. ~2 hr.
+- [ ] **Write `src/lib/execution/srcdocBuilder.ts`** — `buildSrcdoc(files, entryPoint)` → HTML string. Handles JSX via esm.sh's `?jsx-runtime` parameter. ~1.5 hr.
+- [ ] **Wire console preview (algorithm challenges)** — send code to Piston API, display stdout/stderr in console output area. ~1 hr.
+- [ ] **Auto-detect preview mode** — `CODE_IMPLEMENTATION` with `BUILD_COMPONENT` subtype → browser mode; `WRITE_FUNCTION` / `REFACTOR_FUNCTION` → console mode. ~30 min.
+- [ ] **Wire refresh button** — re-builds srcdoc or re-executes code. ~15 min.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase 7 — Challenge CRUD + Challenge Picker Sync (0.5 day)
+- [ ] **Wire "Create New Challenge"** — type picker modal → creates `Challenge` record in DynamoDB with `isTemplate: true` → auto-selects in sidebar. ~1 hr.
+- [ ] **Wire "Duplicate Challenge"** — copies all fields (instructions, config, files, tests) to a new record. ~30 min.
+- [ ] **Wire "Delete Challenge"** — confirmation modal → hard delete from DynamoDB. ~30 min.
+- [ ] **Sync with `ChallengePicker.tsx`** — if Challenge Library writes to the same DynamoDB table as pipeline challenges, `ChallengePicker` should also read from DynamoDB (in addition to static templates). Or keep separate — decide and document. ~1 hr.
+- [ ] **Run `npx tsc --noEmit`** — zero new errors.
+
+### Phase 8 — Polish & Verify (0.5 day)
+- [ ] **Keyboard shortcuts** — Cmd+S to save, Cmd+Enter to run tests/preview. ~30 min.
+- [ ] **Loading states** — skeleton loading in sidebar while challenges fetch, spinner in workspace while saving. ~30 min.
+- [ ] **Error handling** — toast/inline errors for save failures, execution failures, network issues. ~30 min.
+- [ ] **Responsive adjustments** — ensure sidebar collapses gracefully on narrow viewports. ~30 min.
+- [ ] **Smoke test end-to-end** — create challenge → write instructions → add code files → write tests → run tests → preview → verify persisted in DynamoDB → appears in ChallengePicker.
+- [ ] **Update `CHANGELOG.md`** and commit.
+
+---
+
 ## Epic: Challenge Management & Template System
 
 > Transition from hard-coded templates to a database-driven library. Recruiters can create, edit, and share their own challenges.
@@ -303,7 +376,9 @@
 | `src/pages/OverviewPage.tsx` | Pipeline detail + Kanban | ✅ Kanban fixed; dev buttons gated |
 | `src/pages/CandidateProfilePage.tsx` | Individual candidate + score | ✅ Per-challenge review + manual scoring |
 | `src/pages/ChallengeEditorPage.tsx` | Editor for challenge content | ✅ Phase 7 |
-| `src/pages/StageDetailPage.tsx` | Stage detail view | ✅ Phase 7 |
+| `src/pages/ChallengeLibraryPage.tsx` | Master-detail challenge library | ✅ Visual shell (mock data, no state) |
+| `src/components/ChallengeLibrary/` | 12 stateless UI components | ✅ Visual shell — needs wiring |
+| `src/pages/StageDetailPage.tsx` | Stage detail view | ✅ Phase 7; onEdit removed |
 | `src/components/Pipeline/ChallengeCard.tsx` | Challenge card in builder UI | ✅ Phase 7 |
 | `src/components/Pipeline/ChallengePicker.tsx` | Modal to pick challenge from library | ✅ Wired to challengeLibrary.ts |
 | `src/content/challengeLibrary.ts` | 65 challenge templates for picker | ✅ Feeds ChallengePicker |
