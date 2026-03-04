@@ -5,14 +5,15 @@ import {
   Activity,
   Code,
   FileText,
-  Building,
   Copy,
   Plus,
   X,
-  Calendar,
   Video,
   ExternalLink,
   Clock,
+  Mail,
+  Target,
+  ChevronRight,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -200,114 +201,157 @@ function CandidateKanbanCard({
     });
   };
 
+  const getStatusColor = () => {
+    if (interview?.status === 'SCHEDULED') return '#60a5fa';
+    if (interview?.status === 'INVITED') return '#fbbf24';
+    if (candidate.status === 'COMPLETED') return '#34d399';
+    if (candidate.status === 'IN_PROGRESS') return '#8b5cf6';
+    return 'rgba(255,255,255,0.2)';
+  };
+
+  const statusColor = getStatusColor();
+
   return (
-    <div>
+    <div style={{ marginBottom: 8 }}>
       <LiquidMetalCard
         variant="dark"
-        hover
         onClick={onClick}
-        style={{ marginBottom: 8, cursor: "pointer", position: 'relative' }}
+        style={{
+          padding: 0,
+          borderRadius: 8,
+          cursor: "pointer",
+          position: 'relative',
+          overflow: 'hidden'
+        }}
       >
-        <div style={{ display: "flex" }}>
+        <div style={{ display: "flex", alignItems: "stretch" }}>
+          {/* Status Indicator Bar */}
           <div
             style={{
-              width: 80,
-              padding: "20px 0",
-              borderRight: "1px solid rgba(255,255,255,0.06)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              width: 4,
+              background: statusColor,
+              opacity: 0.8,
             }}
-          >
-            <span
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-                letterSpacing: "-0.02em",
-                background:
-                  "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.6) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
-              {initials}
-            </span>
-          </div>
+          />
 
-          <div style={{ flex: 1, padding: "16px 20px" }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#fff",
-                letterSpacing: "0.02em",
-                marginBottom: 4,
-              }}
-            >
-              {(candidate.name || "").toUpperCase()}
-            </div>
+          {/* Main Content */}
+          <div style={{ flex: 1, padding: "12px 16px" }}>
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                marginBottom: 4,
+                gap: 10,
+                marginBottom: 6,
               }}
             >
-              <Building size={10} color="rgba(255,255,255,0.25)" />
-              <span
+              {/* Initials Circle */}
+              <div style={{
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 10,
+                fontWeight: 800,
+                color: '#fff',
+                letterSpacing: '-0.02em'
+              }}>
+                {initials}
+              </div>
+
+              <h3
                 style={{
-                  fontSize: 9,
-                  letterSpacing: "0.05em",
-                  color: "rgba(255,255,255,0.4)",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: "#fff",
+                  margin: 0,
+                  letterSpacing: "0.01em",
                 }}
               >
-                {(candidate.email || "").toLowerCase()}
-              </span>
+                {(candidate.name || "").toUpperCase()}
+              </h3>
+
+              <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <Mail size={10} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 8,
+                      color: "rgba(255,255,255,0.3)",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {(candidate.email || "").toLowerCase()}
+                  </span>
+                </div>
+              </div>
             </div>
-            
-            {/* INTERVIEW STATUS & TIME BADGE */}
-            {interview ? (
+
+            {/* Quick Stats & Status Row */}
+            <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Activity size={12} color={statusColor} />
+                <div
+                  style={{
+                    fontSize: 8,
+                    fontWeight: 800,
+                    color: statusColor,
+                    letterSpacing: "0.1em",
+                    fontFamily: "Space Mono",
+                  }}
+                >
+                  {(interview?.status || candidate.status || "IDLE").toUpperCase()}
+                </div>
+              </div>
+
+              {interview?.scheduledAt && interview.status === 'SCHEDULED' && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Clock size={12} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 9,
+                      color: "rgba(255,255,255,0.5)",
+                      fontFamily: "Space Mono",
+                      fontWeight: 700
+                    }}
+                  >
+                    {formatTime(interview.scheduledAt)}
+                  </span>
+                </div>
+              )}
+
               <div
                 style={{
-                  marginTop: 8,
-                  padding: '8px 12px',
-                  background: interview.status === 'INVITED' ? 'rgba(251,191,36,0.08)' : 'rgba(96,165,250,0.08)',
-                  border: `1px solid ${interview.status === 'INVITED' ? 'rgba(251,191,36,0.2)' : 'rgba(96,165,250,0.2)'}`,
-                  borderRadius: 4,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6
+                  marginLeft: "auto",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Calendar size={10} color={interview.status === 'INVITED' ? '#fbbf24' : '#60a5fa'} />
-                    <span style={{ fontSize: 8, fontWeight: 800, color: interview.status === 'INVITED' ? '#fbbf24' : '#60a5fa', letterSpacing: '0.12em', fontFamily: 'Space Mono' }}>
-                      {interview.status}
-                    </span>
-                  </div>
-                  {interview.status === 'SCHEDULED' && <Video size={10} color="#60a5fa" />}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Target size={12} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "#fff",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {String(candidate.score || 0).padStart(2, "0")}
+                  </span>
                 </div>
+                <ChevronRight size={14} color="rgba(255,255,255,0.15)" />
+              </div>
+            </div>
 
-                {interview.status === 'SCHEDULED' && interview.scheduledAt ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Clock size={10} color="rgba(255,255,255,0.6)" />
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#fff', fontFamily: 'Space Mono' }}>
-                      {formatTime(interview.scheduledAt)}
-                    </div>
-                  </div>
-                ) : interview.status === 'INVITED' && (interview.emailSentAt || interview.createdAt) ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Clock size={10} color="rgba(255,255,255,0.3)" />
-                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-                      SENT: {formatTime(interview.emailSentAt || interview.createdAt)}
-                    </div>
-                  </div>
-                ) : null}
-
-                {interview.meetingUrl && (
-                  <a
+            {/* Inline Meeting Link if active */}
+            {interview?.meetingUrl && interview.status === 'SCHEDULED' && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+                 <a
                     href={interview.meetingUrl}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -319,120 +363,78 @@ function CandidateKanbanCard({
                       display: 'flex', 
                       alignItems: 'center', 
                       gap: 4,
-                      marginTop: 2,
                       fontWeight: 700,
                       letterSpacing: '0.05em'
                     }}
                   >
                     JOIN_MEETING <ExternalLink size={8} />
                   </a>
-                )}
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <Activity size={10} color="rgba(255,255,255,0.25)" />
-                <span
-                  style={{
-                    fontSize: 9,
-                    letterSpacing: "0.05em",
-                    color: "rgba(255,255,255,0.4)",
-                  }}
-                >
-                  {(candidate.status || "").toUpperCase()}
-                </span>
               </div>
             )}
           </div>
 
-          <div
-            style={{
-              width: 90,
-              padding: 16,
-              borderLeft: "1px solid rgba(255,255,255,0.06)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(255,255,255,0.02)",
-              gap: 6,
-            }}
-          >
-            {!interview && (candidate.status === 'INVITED' || candidate.status === 'IN_PROGRESS') ? (
-              <>
+          {/* Action Area */}
+          {!interview && (candidate.status === 'INVITED' || candidate.status === 'IN_PROGRESS') && (
+            <div
+              style={{
+                width: 44,
+                borderLeft: "1px solid rgba(255,255,255,0.05)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                background: 'rgba(255,255,255,0.01)',
+                gap: 10
+              }}
+            >
+              <button
+                onClick={handleCopyLink}
+                title="Copy assessment link"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: copied ? '#10b981' : 'rgba(255,255,255,0.3)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+              </button>
+              {onInvite && (
                 <button
-                  onClick={handleCopyLink}
+                  onClick={(e) => { e.stopPropagation(); onInvite(); }}
+                  disabled={isInviting}
+                  title="Invite to Live Interview"
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    color: copied ? '#10b981' : 'rgba(255,255,255,0.4)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 4,
+                    color: isInviting ? 'rgba(255,255,255,0.1)' : 'rgba(139, 92, 246, 0.6)',
+                    cursor: isInviting ? 'default' : 'pointer',
+                    padding: 4,
                     transition: 'all 0.2s ease',
                   }}
                 >
-                  {copied ? <CheckCircle size={18} /> : <Copy size={18} />}
-                  <span style={{ fontSize: 7, letterSpacing: '0.1em' }}>
-                    {copied ? 'COPIED!' : 'COPY LINK'}
-                  </span>
+                  <Video size={14} />
                 </button>
-                {onInvite && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onInvite(); }}
-                    disabled={isInviting}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: isInviting ? 'rgba(255,255,255,0.2)' : '#a78bfa',
-                      cursor: isInviting ? 'default' : 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: 4,
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    <Video size={16} />
-                    <span style={{ fontSize: 7, letterSpacing: '0.1em' }}>
-                      {isInviting ? 'INVITING' : 'INTERVIEW'}
-                    </span>
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 800,
-                    letterSpacing: "-0.02em",
-                    color: "#fff",
-                  }}
-                >
-                  {candidate.score || 0}
-                </div>
-                <span
-                  style={{
-                    fontSize: 7,
-                    letterSpacing: "0.15em",
-                    marginTop: 4,
-                    color: "rgba(255,255,255,0.4)",
-                  }}
-                >
-                  SCORE
-                </span>
-              </>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* Mini progress bar at the very bottom (if in progress) */}
+        {candidate.status === 'IN_PROGRESS' && (
+          <div style={{ height: 1, background: "rgba(255,255,255,0.03)" }}>
+            <div
+              style={{
+                width: `45%`, // Dummy progress for now
+                height: "100%",
+                background: '#8b5cf6',
+                opacity: 0.5
+              }}
+            />
+          </div>
+        )}
       </LiquidMetalCard>
     </div>
   );
