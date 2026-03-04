@@ -6,20 +6,24 @@
 
 ---
 
-## Recent Updates (2026-02-28)
+## Recent Updates (2026-03-04)
 
-- **Interview Scheduling MVP (Phase 1):** Integrated scheduling coordination in-product ([commit TBD](../changelogs/interview-scheduling-phase1.md)).
-    - **Architecture:** `ScheduledInterview` model for tracking status (`INVITED/SCHEDULED/COMPLETED/CANCELLED/NO_SHOW`).
-    - **Recruiter Dashboard:** New `/schedule` dashboard with real-time updates and status filters.
-    - **Candidate Flow:** integrated `SchedulingStep` for `LIVE_VIDEO` stages.
-    - **Profile Integration:** Invite and track interviews directly from `CandidateProfilePage`.
-    - **ADR-013:** Defined `resolveSchedulingProvider` architecture for multi-provider support (Calendly, Cal.com, Manual).
-- **Video Interview Connection Fix (CRITICAL):** Resolved P0 WebRTC connection bug ([commit 10f042c](../changelogs/10f042c.md)).
-- **Recruiter Review Enhancements:** Implemented Step 5 of Phase 7. `CandidateProfilePage.tsx` now groups assessments by stage and provides per-challenge submission previews.
-
----
+- **Roles & RoleCard UI Redesign:** Overhauled the main Roles listing and RoleCard components with a modern, horizontal brutalist aesthetic.
+    - **ListingPage:** Two-column layout with a filter sidebar and header stats, blending Pipeline Builder and Meetings page styles.
+    - **RoleCard:** Horizontal layout featuring status indicator bars, quick stats (candidates, avg score, stages), and improved typography.
+- **AppSync Real-time Status:** Replaced container status polling with real-time push notifications via AppSync subscriptions for Dev Containers.
 
 ## Current State
+
+### In-Progress (Phase 7 Step 4 — Composable Challenge System)
+
+- **Code Review Overhaul (v0.1 → v1.0):** The initial v0.1 Code Review stage is being completely overhauled to align with the new atomic Challenge architecture. 
+- **Composable Challenge Renderer:**
+   - Architecture: Shell + Panel system.
+   - Shells: `TimerShell`, `RecordingShell`.
+   - Panels: `ProblemPanel`, `MonacoPanel`, `PreviewPanel`, `TestPanel`, `OptionsPanel`, `TextareaPanel`.
+   - Execution: Sandpack (UI) + Piston API (Logic).
+   - **Runbook:** `docs/ops/HANDOFF-monaco-challenge.md`.
 
 ### Done (Phases 0–7 pre-flight + Steps 1–5 + Scheduling MVP)
 

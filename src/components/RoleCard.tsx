@@ -5,8 +5,11 @@ import {
   ChevronRight,
   MoreHorizontal,
   Activity,
+  Users,
+  Target,
+  Trophy,
 } from "lucide-react";
-import { LiquidMetalCard } from "./LiquidMetalCard";
+import { LiquidMetalCard } from "./ui/LiquidMetalCard";
 
 export type RoleStatus = "active" | "draft" | "closed";
 
@@ -43,20 +46,23 @@ export function RoleCard({
     switch (status) {
       case "active":
         return {
-          color: "rgba(150,255,150,0.8)",
-          bg: "rgba(150,255,150,0.1)",
+          color: "#34d399",
+          bg: "rgba(16, 185, 129, 0.1)",
+          border: "rgba(16, 185, 129, 0.2)",
           label: "ACTIVE",
         };
       case "draft":
         return {
-          color: "rgba(255,200,100,0.8)",
-          bg: "rgba(255,200,100,0.1)",
+          color: "#fbbf24",
+          bg: "rgba(245, 158, 11, 0.1)",
+          border: "rgba(245, 158, 11, 0.2)",
           label: "DRAFT",
         };
       case "closed":
         return {
           color: "rgba(255,255,255,0.4)",
           bg: "rgba(255,255,255,0.05)",
+          border: "rgba(255,255,255,0.1)",
           label: "CLOSED",
         };
     }
@@ -71,271 +77,240 @@ export function RoleCard({
     .toUpperCase();
 
   return (
-    <LiquidMetalCard
-      data-testid="pipeline-card"
-      variant={status === "active" ? "chrome" : "default"}
-      hover
-      onClick={onClick}
-      style={{
-        cursor: onClick ? "pointer" : "default",
-        ...style,
-      }}
-      className={className}
-    >
-        {/* Header */}
-        <div
-          style={{
-            padding: "24px 24px 20px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
+    <div style={{ marginBottom: 12, ...style }} className={className}>
+      <LiquidMetalCard
+        variant="dark"
+        onClick={onClick}
+        style={{
+          padding: 0,
+          borderRadius: 8,
+          cursor: onClick ? "pointer" : "default",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "stretch" }}>
+          {/* Status Indicator Bar */}
           <div
             style={{
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "space-between",
-              marginBottom: 16,
+              width: 4,
+              background: statusStyle.color,
+              opacity: status === "active" ? 0.8 : 0.3,
             }}
-          >
-            {/* Status badge */}
+          />
+
+          {/* Main Content */}
+          <div style={{ flex: 1, padding: "16px 20px" }}>
             <div
               style={{
-                fontSize: 8,
-                letterSpacing: "0.2em",
-                padding: "4px 10px",
-                background: statusStyle.bg,
-                color: statusStyle.color,
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 12,
+                marginBottom: 8,
               }}
             >
-              {status === "active" && (
-                <Activity
-                  size={8}
-                  style={{ animation: "pulse 1.5s ease-in-out infinite" }}
-                />
-              )}
-              {statusStyle.label}
+              <div
+                style={{
+                  fontSize: 8,
+                  fontWeight: 800,
+                  letterSpacing: "0.15em",
+                  padding: "4px 8px",
+                  background: statusStyle.bg,
+                  border: `1px solid ${statusStyle.border}`,
+                  color: statusStyle.color,
+                  borderRadius: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {status === "active" && (
+                  <Activity
+                    size={10}
+                    style={{ animation: "pulse 1.5s ease-in-out infinite" }}
+                  />
+                )}
+                {statusStyle.label}
+              </div>
+              <h3
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#fff",
+                  margin: 0,
+                  letterSpacing: "0.01em",
+                }}
+              >
+                {title}
+              </h3>
+
+              <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Building size={12} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "rgba(255,255,255,0.4)",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {department.toUpperCase()}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <MapPin size={12} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "rgba(255,255,255,0.4)",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {location.toUpperCase()}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* More options */}
+            {/* Quick Stats Row */}
+            <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Users size={14} color="rgba(255,255,255,0.2)" />
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#fff",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {String(candidates).padStart(2, "0")}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 7,
+                      color: "rgba(255,255,255,0.3)",
+                      letterSpacing: "0.1em",
+                    }}
+                  >
+                    CANDIDATES
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Trophy size={14} color="rgba(255,255,255,0.2)" />
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: avgScore ? "#fff" : "rgba(255,255,255,0.2)",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {avgScore ? String(avgScore).padStart(2, "0") : "—"}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 7,
+                      color: "rgba(255,255,255,0.3)",
+                      letterSpacing: "0.1em",
+                    }}
+                  >
+                    AVG SCORE
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Target size={14} color="rgba(255,255,255,0.2)" />
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: isComplete ? "#34d399" : "#fff",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {stagesConfigured}/{totalStages}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 7,
+                      color: "rgba(255,255,255,0.3)",
+                      letterSpacing: "0.1em",
+                    }}
+                  >
+                    STAGES
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginLeft: "auto",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Calendar size={12} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 9,
+                      color: "rgba(255,255,255,0.3)",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {formattedDate}
+                  </span>
+                </div>
+                <ChevronRight size={16} color="rgba(255,255,255,0.2)" />
+              </div>
+            </div>
+          </div>
+
+          {/* Action Area */}
+          <div
+            style={{
+              width: 48,
+              borderLeft: "1px solid rgba(255,255,255,0.05)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
             <button
               style={{
                 background: "transparent",
                 border: "none",
-                color: "rgba(255,255,255,0.3)",
+                color: "rgba(255,255,255,0.2)",
                 cursor: "pointer",
-                padding: 4,
+                padding: 8,
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                // Handle menu open
               }}
             >
               <MoreHorizontal size={16} />
             </button>
           </div>
-
-          {/* Title */}
-          <h3
-            style={{
-              fontSize: 18,
-              fontWeight: 800,
-              letterSpacing: "-0.02em",
-              margin: "0 0 12px",
-              background:
-                "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.8) 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
-            {title}
-          </h3>
-
-          {/* Meta info */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Building size={10} color="rgba(255,255,255,0.25)" />
-              <span
-                style={{
-                  fontSize: 9,
-                  letterSpacing: "0.1em",
-                  color: "rgba(255,255,255,0.5)",
-                }}
-              >
-                {department}
-              </span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <MapPin size={10} color="rgba(255,255,255,0.25)" />
-              <span
-                style={{
-                  fontSize: 9,
-                  letterSpacing: "0.1em",
-                  color: "rgba(255,255,255,0.5)",
-                }}
-              >
-                {location}
-              </span>
-            </div>
-          </div>
         </div>
 
-        {/* Stats */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
-          }}
-        >
-          {/* Candidates */}
-          <div
-            style={{
-              padding: 20,
-              borderRight: "1px solid rgba(255,255,255,0.06)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 8,
-                letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
-                marginBottom: 8,
-              }}
-            >
-              CANDIDATES
-            </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 800,
-                letterSpacing: "-0.02em",
-                background:
-                  "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
-              {candidates}
-            </div>
-          </div>
-
-          {/* Avg Score */}
-          <div
-            style={{
-              padding: 20,
-              borderRight: "1px solid rgba(255,255,255,0.06)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 8,
-                letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
-                marginBottom: 8,
-              }}
-            >
-              AVG SCORE
-            </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 800,
-                letterSpacing: "-0.02em",
-                background: avgScore
-                  ? "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)"
-                  : "linear-gradient(180deg, rgba(255,255,255,0.3) 0%, rgba(200,210,230,0.15) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
-              {avgScore ?? "—"}
-            </div>
-          </div>
-
-          {/* Stages */}
-          <div style={{ padding: 20 }}>
-            <div
-              style={{
-                fontSize: 8,
-                letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
-                marginBottom: 8,
-              }}
-            >
-              STAGES
-            </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 800,
-                letterSpacing: "-0.02em",
-                background: isComplete
-                  ? "linear-gradient(180deg, rgba(150,255,150,0.9) 0%, rgba(150,255,150,0.6) 100%)"
-                  : "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
-              {stagesConfigured}/{totalStages}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div
-          style={{
-            padding: "16px 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Calendar size={10} color="rgba(255,255,255,0.25)" />
-            <span
-              style={{
-                fontSize: 9,
-                letterSpacing: "0.1em",
-                color: "rgba(255,255,255,0.4)",
-              }}
-            >
-              CREATED {formattedDate}
-            </span>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              color: "rgba(255,255,255,0.5)",
-            }}
-          >
-            <span style={{ fontSize: 9, letterSpacing: "0.1em" }}>
-              VIEW PIPELINE
-            </span>
-            <ChevronRight size={12} />
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div style={{ height: 2, background: "rgba(255,255,255,0.06)" }}>
+        {/* Mini progress bar at the very bottom */}
+        <div style={{ height: 1, background: "rgba(255,255,255,0.03)" }}>
           <div
             style={{
               width: `${progressPercent}%`,
               height: "100%",
-              background: isComplete
-                ? "linear-gradient(90deg, rgba(150,255,150,0.4), rgba(150,255,150,0.8))"
-                : "linear-gradient(90deg, rgba(255,255,255,0.3), rgba(255,255,255,0.7))",
-              boxShadow: isComplete
-                ? "0 0 10px rgba(150,255,150,0.3)"
-                : "0 0 10px rgba(255,255,255,0.2)",
+              background: isComplete ? "#34d399" : "rgba(255,255,255,0.2)",
+              transition: "width 0.6s ease-out",
             }}
           />
         </div>
       </LiquidMetalCard>
+    </div>
   );
 }
