@@ -21,7 +21,8 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 #### Fixed
 - **Optimized Webhook connection lookup**: Replaced DynamoDB scan with targeted `QueryCommand` for connection lookups in `schedulingWebhook` handler.
 - **Unit Test Stability**: Resolved TypeScript validation errors and synthesis failures in test suites. Fixed Vitest config paths and bypassed incompatible mock matchers.
-- **Synthesis Fix**: Excluded `*.test.ts` files from `amplify/tsconfig.json` to prevent synthesis failures in environments where test-specific dependencies are not isolated.
+- **Synthesis Fix**: Added core `@aws-sdk` dependencies to root `devDependencies` to satisfy Amplify synthesis type checking across all Lambda functions.
+- **Amplify Config**: Excluded `*.test.ts` files from `amplify/tsconfig.json` to reduce synthesis noise and prevent validation errors on test-only dependencies.
 
 ---
 
