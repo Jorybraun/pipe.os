@@ -2,15 +2,16 @@
  * Dev Container Launch Lambda Handler
  *
  * Calls ECS.RunTask to spin up a Fargate container running code-server.
- * Returns the task ARN immediately — the client polls getContainerStatus
- * until the container transitions to READY.
+ * Creates a DevContainerSession record in AppSync so the client can
+ * subscribe via observeQuery instead of polling getContainerStatus.
  *
  * Required environment variables:
- *   ECS_CLUSTER_ARN        — ARN of the ECS cluster
- *   ECS_TASK_DEFINITION    — Task definition family:revision (e.g. pipe-code-server:3)
- *   ECS_SUBNET_IDS         — Comma-separated list of subnet IDs for the task
- *   ECS_SECURITY_GROUP_ID  — Security group ID that allows inbound on port 8080
- *   CODE_SERVER_ALB_DOMAIN — Domain of the ALB that routes to containers (e.g. env.pipe.dev)
+ *   ECS_CLUSTER_ARN               — ARN of the ECS cluster
+ *   ECS_TASK_DEFINITION           — Task definition family:revision (e.g. pipe-code-server:3)
+ *   ECS_SUBNET_IDS                — Comma-separated list of subnet IDs for the task
+ *   ECS_SECURITY_GROUP_ID         — Security group ID that allows inbound on port 8080
+ *   CODE_SERVER_ALB_DOMAIN        — Domain of the ALB that routes to containers (e.g. env.pipe.dev)
+ *   AMPLIFY_DATA_GRAPHQL_ENDPOINT — AppSync GraphQL endpoint (injected by amplify/backend.ts)
  */
 
 import {
@@ -23,6 +24,7 @@ import type {
   DevContainerLaunchResponse,
   DevContainerLaunchError,
 } from './types';
+import { callAppSync } from '../devContainerEventHandler/appsyncClient';
 
 const region = process.env.AWS_REGION ?? 'us-east-1';
 const ecs = new ECSClient({ region });
@@ -100,6 +102,40 @@ export async function handler(
     }
 
     console.log('[devContainerLaunch] Task launched:', task.taskArn);
+
+    // Create the DevContainerSession record so the client can subscribe
+    // via observeQuery instead of polling getContainerStatus.
+    // We use sessionId as the record id for stable client-side lookups.
+    const endpoint = process.env.AMPLIFY_DATA_GRAPHQL_ENDPOINT;
+    if (endpoint) {
+      const createMutation = /* GraphQL */ `
+        mutation CreateDevContainerSession($input: CreateDevContainerSessionInput!) {
+          createDevContainerSession(input: $input) {
+            id
+            sessionId
+            status
+          }
+        }
+      `;
+      try {
+        await callAppSync(endpoint, createMutation, {
+          input: {
+            id: sessionId,
+            sessionId,
+            taskArn: task.taskArn,
+            status: 'PROVISIONING',
+          },
+        });
+        console.log('[devContainerLaunch] DevContainerSession record created:', sessionId);
+      } catch (err) {
+        // Non-fatal: the session record creation failure means the client
+        // subscription won't receive the initial PROVISIONING state, but
+        // subsequent EventBridge-triggered updates will still be delivered.
+        console.error('[devContainerLaunch] Failed to create DevContainerSession:', err);
+      }
+    } else {
+      console.warn('[devContainerLaunch] AMPLIFY_DATA_GRAPHQL_ENDPOINT not set; skipping session record creation');
+    }
 
     return {
       sessionId,

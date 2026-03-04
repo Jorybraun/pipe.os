@@ -4,6 +4,18 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `replace-polling-with-appsync` — Real-Time Container Status via AppSync Subscriptions
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/data/resource.ts`**: Added `DevContainerSession` model — tracks container lifecycle (`PROVISIONING → BOOTING → READY → STOPPING → STOPPED → ERROR`), `taskArn`, `containerUrl`, `errorMessage`. Authenticated-only access.
+    - **`amplify/functions/devContainerEventHandler/`**: New Lambda — triggered by ECS Task State Change events from EventBridge. Translates ECS status to `DevContainerSession` lifecycle and upserts the AppSync record via IAM-signed HTTP request. Includes `appsyncClient.ts` utility (pure Node.js `crypto` + `fetch`, no external signing library).
+    - **`amplify/functions/devContainerLaunch/handler.ts`**: After a successful ECS `RunTask`, creates the `DevContainerSession` record in AppSync (using `sessionId` as the record `id`) so clients can begin subscribing immediately.
+    - **`amplify/backend.ts`**: Registered `devContainerEventHandler`; added CDK EventBridge rule (`aws.ecs` / `ECS Task State Change`); granted both `devContainerLaunch` and `devContainerEventHandler` Lambdas `appsync:GraphQL` IAM permission; injected `AMPLIFY_DATA_GRAPHQL_ENDPOINT` env var into both.
+    - **`src/hooks/useDevContainerSession.ts`**: Removed `setInterval` polling (`POLL_INTERVAL_MS`, `pollRef`, `startPolling`). Added `sessionId` state + `observeQuery` subscription on `DevContainerSession`. Hook now reacts to AppSync real-time events instead of issuing repeated queries.
+- **Breaking**: None — `getContainerStatus` query and `devContainerStatus` Lambda are preserved for backward compatibility.
+
+---
+
 ### `dev-container-fargate-phase1` — AWS Fargate + code-server Sandbox Prototype
 - **Status**: 🟢 DONE
 - **Changes**:
