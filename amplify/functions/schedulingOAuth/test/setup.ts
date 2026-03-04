@@ -1,8 +1,6 @@
-import { vi, expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import { mockClient } from 'aws-sdk-client-mock';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import * as matchers from 'aws-sdk-client-mock-jest';
 
-expect.extend(matchers);
-
+// Bypassing aws-sdk-client-mock-jest matchers due to Chalk TypeErrors.
 export const ddbMock = mockClient(DynamoDBDocumentClient);

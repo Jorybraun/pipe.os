@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { handler } from './handler';
-import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand, UpdateCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { mockClient } from 'aws-sdk-client-mock';
 import crypto from 'crypto';
+import type { APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
@@ -23,13 +24,12 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(400);
-      expect(JSON.parse(result.body).message).toContain('Unknown provider');
+      expect(JSON.parse(result.body || '{}').message).toContain('Unknown provider');
     });
 
     it('Calendly headers → resolves calendlyNormalizer', async () => {
-      // Mock connection lookup to fail later, we just want to see it reach that point
       ddbMock.on(ScanCommand, { TableName: 'SchedulingConnection' }).resolves({ Items: [] });
       
       const event = {
@@ -38,8 +38,7 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
-      // It should pass resolution and fail at connection lookup (404)
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(404);
     });
 
@@ -52,7 +51,7 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(404);
     });
   });
@@ -81,13 +80,12 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body).message).toBe('No matching interview found');
+      expect(JSON.parse(result.body || '{}').message).toBe('No matching interview found');
     });
 
     it('Only REVOKED connections exist', async () => {
-      // Mock returning no ACTIVE connections (even if some exist with other status)
       ddbMock.on(ScanCommand, { TableName: 'SchedulingConnection' }).resolves({
         Items: []
       });
@@ -99,9 +97,9 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(404);
-      expect(JSON.parse(result.body).message).toBe('No active connection found');
+      expect(JSON.parse(result.body || '{}').message).toBe('No active connection found');
     });
 
     it('No connections at all', async () => {
@@ -114,9 +112,9 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(404);
-      expect(JSON.parse(result.body).message).toBe('No active connection found');
+      expect(JSON.parse(result.body || '{}').message).toBe('No active connection found');
     });
 
     it("Multiple ACTIVE connections (shouldn't happen) - Returns first", async () => {
@@ -146,7 +144,7 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(200);
     });
   });
@@ -172,9 +170,9 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body).message).toBe('Interview updated');
+      expect(JSON.parse(result.body || '{}').message).toBe('Interview updated');
     });
 
     it('No externalEventId match → email fallback finds INVITED interview', async () => {
@@ -206,9 +204,9 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body).message).toBe('Interview updated');
+      expect(JSON.parse(result.body || '{}').message).toBe('Interview updated');
     });
   });
 
@@ -216,7 +214,7 @@ describe('Scheduling Webhook Handler', () => {
     it('WEBHOOK_ENABLED=false → 503', async () => {
       process.env.WEBHOOK_ENABLED = 'false';
       const event = { requestContext: { http: { method: 'POST' } } };
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(503);
     });
 
@@ -249,9 +247,9 @@ describe('Scheduling Webhook Handler', () => {
         requestContext: { http: { method: 'POST' } }
       };
 
-      const result = await handler(event as any);
+      const result = await handler(event as any) as APIGatewayProxyStructuredResultV2;
       expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body).message).toBe('Interview updated');
+      expect(JSON.parse(result.body || '{}').message).toBe('Interview updated');
       
       const calls = ddbMock.calls();
       const updates = calls.filter(c => c.args[0] instanceof UpdateCommand);

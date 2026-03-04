@@ -1,3 +1,4 @@
-import { matchers } from 'aws-sdk-client-mock-jest';
+import { expect } from 'vitest';
 
-expect.extend(matchers);
+// Bypassing aws-sdk-client-mock-jest matchers as they are causing Chalk TypeErrors in this environment.
+// Using manual verification via commandCalls() instead.

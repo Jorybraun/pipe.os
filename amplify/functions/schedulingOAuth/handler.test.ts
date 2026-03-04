@@ -102,9 +102,10 @@ test('5.1.7 Identity extracted from `event.identity.sub`', async () => {
     (global.fetch as any).mockResolvedValueOnce({ ok: true, json: async () => ({ resource: { email: 'test@example.com', name: 'Test User' } }) });
 
     await handler(event);
-    const putCommandInput = ddbMock.commandCalls(PutCommand)[0].args[0].input as any;
+    const calls = ddbMock.commandCalls(PutCommand);
+    const putCommandInput = calls[0]?.args[0]?.input as any;
 
-    expect(putCommandInput.Item.recruiterId).toBe('custom-user-id');
+    expect(putCommandInput?.Item?.recruiterId).toBe('custom-user-id');
 });
 
 test('5.1.8 Missing identity', async () => {
@@ -119,9 +120,10 @@ test('5.1.8 Missing identity', async () => {
     (global.fetch as any).mockResolvedValueOnce({ ok: true, json: async () => ({ resource: { email: 'test@example.com', name: 'Test User' } }) });
 
     await handler(event);
-    const putCommandInput = ddbMock.commandCalls(PutCommand)[0].args[0].input as any;
+    const calls = ddbMock.commandCalls(PutCommand);
+    const putCommandInput = calls[0]?.args[0]?.input as any;
 
-    expect(putCommandInput.Item.recruiterId).toBe('unknown');
+    expect(putCommandInput?.Item?.recruiterId).toBe('unknown');
 });
 
 // ─── 5.2 handleExchange(params, recruiterId) ────────────────────────────────
@@ -145,10 +147,11 @@ test('5.2.1 Happy path: code → tokens → connection created → webhook regis
 
     expect(result.success).toBe(true);
 
-    const putCall = ddbMock.commandCalls(PutCommand)[0];
-    expect(putCall.args[0].input.TableName).toBe(CONNECTION_TABLE);
-    expect(putCall.args[0].input.Item.accessToken).toBe('mock_access_token');
-    expect(putCall.args[0].input.Item.refreshToken).toBe('mock_refresh_token');
+    const calls = ddbMock.commandCalls(PutCommand);
+    const putCall = calls[0];
+    expect(putCall?.args[0]?.input?.TableName).toBe(CONNECTION_TABLE);
+    expect(putCall?.args[0]?.input?.Item?.accessToken).toBe('mock_access_token');
+    expect(putCall?.args[0]?.input?.Item?.refreshToken).toBe('mock_refresh_token');
 });
 
 test('5.2.5 Token exchange HTTP error (400)', async () => {
