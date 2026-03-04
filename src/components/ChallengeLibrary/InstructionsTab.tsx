@@ -8,6 +8,7 @@ interface InstructionsTabProps {
   markdown: string;
   renderedHtml?: string;
   mode: 'edit' | 'preview' | 'split';
+  readOnly?: boolean;
   onModeChange: (mode: 'edit' | 'preview' | 'split') => void;
   onMarkdownChange: (value: string) => void;
   onUploadClick: () => void;
@@ -44,6 +45,7 @@ export function InstructionsTab({
   markdown,
   renderedHtml,
   mode,
+  readOnly = false,
   onModeChange,
   onMarkdownChange,
   onUploadClick,
@@ -197,6 +199,7 @@ export function InstructionsTab({
             <textarea
               value={markdown}
               onChange={(e) => onMarkdownChange(e.target.value)}
+              readOnly={readOnly}
               placeholder={'# Challenge Title\n\nWrite your instructions in Markdown...\n\n## Description\n\nDescribe the problem the candidate needs to solve.\n\n## Requirements\n\n- Requirement 1\n- Requirement 2\n\n## Examples\n\n```javascript\n// Example code here\n```'}
               style={{
                 flex: 1,
@@ -204,7 +207,7 @@ export function InstructionsTab({
                 padding: '20px 24px',
                 background: 'transparent',
                 border: 'none',
-                color: 'rgba(255,255,255,0.7)',
+                color: readOnly ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.7)',
                 fontSize: 13,
                 fontFamily: 'Space Mono, monospace',
                 lineHeight: 1.7,

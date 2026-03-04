@@ -16,6 +16,7 @@ import OverviewPage from "./pages/OverviewPage";
 import StageDetailPage from "./pages/StageDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
+import ChallengeStudioPage from "./pages/ChallengeStudioPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
@@ -331,6 +332,10 @@ function App(): JSX.Element {
                   <Route
                     path="/candidates/:id"
                     element={<CandidateProfilePage />}
+                  />
+                  <Route
+                    path="/studio/:challengeId"
+                    element={<ChallengeStudioPage />}
                   />
                   <Route
                     path="/screenings/:id/preview"

@@ -1,4 +1,5 @@
 import { Code, FileText, Shield, Clock, BarChart2, Tag, Pencil, Play, Eye } from 'lucide-react';
+import { TabNav } from '../ui/TabNav';
 
 // ============================================================================
 // Types
@@ -81,12 +82,19 @@ export function ChallengeWorkspaceHeader({
 }: ChallengeWorkspaceHeaderProps): JSX.Element {
   const typeInfo = TYPE_CONFIG[type];
   const TypeIcon = typeInfo.icon;
-  const tabs = TABS_BY_TYPE[type] || TABS_BY_TYPE.CODE_IMPLEMENTATION;
+  const rawTabs = TABS_BY_TYPE[type] || TABS_BY_TYPE.CODE_IMPLEMENTATION;
+
+  // Convert raw tabs to TabNav format
+  const mappedTabs = rawTabs.map(t => ({
+    id: t.id,
+    label: t.label,
+    icon: <t.icon size={11} />,
+  }));
 
   return (
     <div style={{
-      borderBottom: '1px solid rgba(255,255,255,0.04)',
-      background: 'rgba(12, 12, 14, 0.4)',
+      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      background: 'rgba(255, 255, 255, 0.02)',
       flexShrink: 0,
     }}>
       {/* Top row: metadata */}
@@ -94,27 +102,27 @@ export function ChallengeWorkspaceHeader({
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        padding: '20px 24px 16px',
+        padding: '24px 32px 16px',
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Type badge + language */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
-              padding: '3px 10px',
-              background: `${typeInfo.color}12`,
-              border: `1px solid ${typeInfo.color}30`,
-              borderRadius: 3,
+              gap: 6,
+              padding: '4px 12px',
+              background: `${typeInfo.color}15`,
+              border: `1px solid ${typeInfo.color}40`,
+              borderRadius: 4,
             }}>
-              <TypeIcon size={10} color={typeInfo.color} />
+              <TypeIcon size={12} color={typeInfo.color} />
               <span style={{
-                fontSize: 8,
+                fontSize: 9,
                 fontWeight: 800,
                 letterSpacing: '0.12em',
                 color: typeInfo.color,
-                fontFamily: 'Space Mono, monospace',
+                fontFamily: '"Space Mono", monospace',
               }}>
                 {typeInfo.label}
               </span>
@@ -122,11 +130,11 @@ export function ChallengeWorkspaceHeader({
 
             {language && (
               <span style={{
-                fontSize: 8,
+                fontSize: 9,
                 fontWeight: 700,
                 letterSpacing: '0.1em',
-                color: 'rgba(255,255,255,0.25)',
-                fontFamily: 'Space Mono, monospace',
+                color: 'rgba(255,255,255,0.4)',
+                fontFamily: '"Space Mono", monospace',
                 textTransform: 'uppercase',
               }}>
                 {language}
@@ -135,11 +143,11 @@ export function ChallengeWorkspaceHeader({
 
             {difficulty && (
               <span style={{
-                fontSize: 8,
+                fontSize: 9,
                 fontWeight: 800,
                 letterSpacing: '0.1em',
                 color: DIFFICULTY_COLORS[difficulty] ?? '#fff',
-                fontFamily: 'Space Mono, monospace',
+                fontFamily: '"Space Mono", monospace',
               }}>
                 ● {difficulty}
               </span>
@@ -150,11 +158,11 @@ export function ChallengeWorkspaceHeader({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 4,
-                fontSize: 9,
-                color: 'rgba(255,255,255,0.25)',
-                fontFamily: 'Space Mono, monospace',
+                fontSize: 10,
+                color: 'rgba(255,255,255,0.4)',
+                fontFamily: '"Space Mono", monospace',
               }}>
-                <Clock size={9} />
+                <Clock size={10} />
                 {timeEstimate}m
               </span>
             )}
@@ -162,7 +170,7 @@ export function ChallengeWorkspaceHeader({
 
           {/* Title */}
           <h2 style={{
-            fontSize: 18,
+            fontSize: 22,
             fontWeight: 800,
             color: '#fff',
             margin: 0,
@@ -174,7 +182,7 @@ export function ChallengeWorkspaceHeader({
 
           {/* Tags */}
           {tags && tags.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
               {tags.map((tag) => (
                 <span
                   key={tag}
@@ -182,16 +190,16 @@ export function ChallengeWorkspaceHeader({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 4,
-                    fontSize: 8,
-                    padding: '3px 8px',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: 3,
-                    color: 'rgba(255,255,255,0.3)',
-                    fontFamily: 'Space Mono, monospace',
+                    fontSize: 9,
+                    padding: '4px 10px',
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 4,
+                    color: 'rgba(255,255,255,0.4)',
+                    fontFamily: '"Space Mono", monospace',
                   }}
                 >
-                  <Tag size={8} />
+                  <Tag size={10} />
                   {tag}
                 </span>
               ))}
@@ -206,64 +214,36 @@ export function ChallengeWorkspaceHeader({
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '8px 16px',
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 4,
-            color: 'rgba(255,255,255,0.6)',
-            fontSize: 9,
+            padding: '10px 20px',
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: 6,
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.1em',
-            fontFamily: 'Space Mono, monospace',
+            fontFamily: '"Space Mono", monospace',
             cursor: 'pointer',
             transition: 'all 0.2s',
             flexShrink: 0,
           }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
         >
-          <Eye size={12} />
+          <Eye size={14} />
           PREVIEW
         </button>
       </div>
 
       {/* Tab bar */}
-      <div style={{
-        display: 'flex',
-        gap: 0,
-        paddingLeft: 24,
-      }}>
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          const TabIcon = tab.icon;
-
-          return (
-            <button
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '10px 20px',
-                background: isActive ? 'rgba(255,255,255,0.04)' : 'transparent',
-                border: 'none',
-                borderBottom: isActive
-                  ? `2px solid ${typeInfo.color}`
-                  : '2px solid transparent',
-                color: isActive ? '#fff' : 'rgba(255,255,255,0.3)',
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                fontFamily: 'Space Mono, monospace',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-            >
-              <TabIcon size={11} />
-              {tab.label}
-            </button>
-          );
-        })}
+      <div style={{ paddingLeft: 32, paddingBottom: 0, marginTop: 16 }}>
+        <TabNav 
+          tabs={mappedTabs}
+          activeTab={activeTab}
+          onTabChange={onTabChange}
+        />
       </div>
     </div>
   );
 }
+

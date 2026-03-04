@@ -5,9 +5,29 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ---
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 ### `replace-polling-with-appsync` — Replace Container Status Polling with AppSync Subscriptions
 
+=======
+### `challenge-studio-library` — Challenge Studio & Library Functional Wiring + Airy UI Redesign
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/data/resource.ts`**: Updated `Challenge` model to support global library templates (`isSystem`, `baseChallengeId`) and made `stageId` optional for template challenges.
+    - **`docs/design/design-system.md`**: Updated to **Version 1.1.0**. Added **Data Row (Glassy)** pattern, formalized **IoC Design Patterns** (Registry, Shell+Panel, Plugin Handshake), and added **Type C — Studio Page** navigation spec.
+    - **`src/pages/ChallengeStudioPage.tsx`**: New — airy authoring environment with real-time Design/Preview mode toggling and declarative field editing.
+    - **`src/lib/challenge/resolveEditorLayout.ts`**: New — declarative registry mapping challenge types to required editor panels (instructions, code, scoring, etc.).
+    - **`src/pages/ChallengeLibraryPage.tsx`**: Implemented functional wiring: search, type filtering, library vs. custom tabs, and NEW_CHALLENGE creation via modal.
+    - **`src/components/ChallengeLibrary/CreateChallengeModal.tsx`**: New — modal for rapid challenge template instantiation.
+    - **`src/pages/ListingPage.tsx`** & **`src/pages/OverviewPage.tsx`**: Complete UI refresh using the high-density "airy" glassy row pattern; removed heavy stats cards in favor of clean metadata rows.
+    - **`src/components/CandidateCard.tsx`**, **`src/components/RoleCard.tsx`**, **`src/components/Pipeline/ChallengeCard.tsx`**: Refactored to match the high-density glassy design language.
+    - **`src/App.tsx`**: Wired new `/studio/:id` route and updated global layout context.
+- **Breaking**: None — schema changes are purely additive; UI changes preserve all existing functionality.
+
+---
+
+### `challenge-design` — Challenge Library Page — Stateless Visual Components
+>>>>>>> 0e6cda3 (feat: challenge studio & library functional wiring + airy UI redesign)
 - **Status**: 🟢 DONE
 - **Changes**:
 <<<<<<< HEAD

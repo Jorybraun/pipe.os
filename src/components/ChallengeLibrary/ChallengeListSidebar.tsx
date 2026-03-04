@@ -1,5 +1,6 @@
 import { Search, Filter, Plus, Code, Shield, FileText, Zap } from 'lucide-react';
 import { ChallengeListItem, type ChallengeListItemData } from './ChallengeListItem';
+import { ButtonGroup } from '../ui/ButtonGroup';
 
 // ============================================================================
 // Types
@@ -12,6 +13,8 @@ interface ChallengeListSidebarProps {
   selectedId: string | null;
   searchQuery: string;
   activeFilter: FilterType;
+  sidebarTab: 'LIBRARY' | 'MY_CHALLENGES';
+  onSidebarTabChange: (tab: 'LIBRARY' | 'MY_CHALLENGES') => void;
   onSelect: (id: string) => void;
   onSearchChange: (query: string) => void;
   onFilterChange: (filter: FilterType) => void;
@@ -30,6 +33,11 @@ const FILTER_TABS: Array<{ id: FilterType; label: string; icon: typeof Zap; colo
   { id: 'QUIZ_SHORT_ANSWER', label: 'TEXT', icon: FileText, color: '#fbbf24' },
 ];
 
+const SIDEBAR_TABS = [
+  { value: 'LIBRARY', label: 'LIBRARY' },
+  { value: 'MY_CHALLENGES', label: 'MY CUSTOM' },
+];
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -43,6 +51,8 @@ export function ChallengeListSidebar({
   selectedId,
   searchQuery,
   activeFilter,
+  sidebarTab,
+  onSidebarTabChange,
   onSelect,
   onSearchChange,
   onFilterChange,
@@ -55,8 +65,8 @@ export function ChallengeListSidebar({
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      background: 'rgba(12, 12, 14, 0.6)',
-      borderRight: '1px solid rgba(255,255,255,0.04)',
+      background: 'rgba(255,255,255,0.02)',
+      borderRight: '1px solid rgba(255,255,255,0.06)',
     }}>
       {/* Header */}
       <div style={{
@@ -97,8 +107,8 @@ export function ChallengeListSidebar({
               justifyContent: 'center',
               width: 32,
               height: 32,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: 6,
               color: 'rgba(255,255,255,0.5)',
               cursor: 'pointer',
@@ -108,6 +118,15 @@ export function ChallengeListSidebar({
           >
             <Plus size={14} />
           </button>
+        </div>
+
+        {/* Library vs My Challenges Toggles */}
+        <div style={{ marginBottom: 20 }}>
+          <ButtonGroup
+            options={SIDEBAR_TABS}
+            selected={sidebarTab}
+            onChange={(val) => onSidebarTabChange(val as 'LIBRARY' | 'MY_CHALLENGES')}
+          />
         </div>
 
         {/* Search */}
@@ -127,7 +146,7 @@ export function ChallengeListSidebar({
             style={{
               width: '100%',
               padding: '10px 12px 10px 36px',
-              background: 'rgba(0,0,0,0.3)',
+              background: 'rgba(255,255,255,0.03)',
               border: '1px solid rgba(255,255,255,0.06)',
               borderRadius: 6,
               color: '#fff',
@@ -159,10 +178,10 @@ export function ChallengeListSidebar({
                   alignItems: 'center',
                   gap: 4,
                   padding: '6px 10px',
-                  background: isActive ? `${tab.color}12` : 'transparent',
-                  border: isActive ? `1px solid ${tab.color}30` : '1px solid transparent',
+                  background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  border: isActive ? '1px solid rgba(255,255,255,0.1)' : '1px solid transparent',
                   borderRadius: 4,
-                  color: isActive ? tab.color : 'rgba(255,255,255,0.3)',
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.3)',
                   fontSize: 7,
                   fontWeight: 800,
                   letterSpacing: '0.1em',
@@ -172,7 +191,7 @@ export function ChallengeListSidebar({
                   transition: 'all 0.2s',
                 }}
               >
-                <TabIcon size={9} />
+                <TabIcon size={9} color={isActive ? tab.color : 'currentColor'} />
                 {tab.label}
               </button>
             );
@@ -221,17 +240,17 @@ export function ChallengeListSidebar({
             padding: '60px 20px',
             textAlign: 'center',
           }}>
-            <Filter size={24} color="rgba(255,255,255,0.08)" style={{ marginBottom: 16 }} />
+            <Filter size={24} color="rgba(255,255,255,0.12)" style={{ marginBottom: 16 }} />
             <div style={{
               fontSize: 11,
-              color: 'rgba(255,255,255,0.2)',
+              color: 'rgba(255,255,255,0.3)',
               fontFamily: 'Space Mono, monospace',
             }}>
               No challenges match
             </div>
             <div style={{
               fontSize: 9,
-              color: 'rgba(255,255,255,0.1)',
+              color: 'rgba(255,255,255,0.2)',
               marginTop: 8,
               fontFamily: 'Space Mono, monospace',
             }}>
