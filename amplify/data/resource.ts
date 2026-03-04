@@ -8,6 +8,7 @@ import { schedulingOAuth } from '../functions/schedulingOAuth/resource';
 import { devContainerLaunch } from '../functions/devContainerLaunch/resource';
 import { devContainerDestroy } from '../functions/devContainerDestroy/resource';
 import { devContainerStatus } from '../functions/devContainerStatus/resource';
+import { notificationService } from '../functions/notificationService/resource';
 
 const schema = a.schema({
   /**
@@ -37,9 +38,6 @@ const schema = a.schema({
       // Scheduling URL for LIVE_VIDEO stages (e.g. Calendly or Cal.com link)
       schedulingUrl: a.url(),
 
-      // Provider-specific event type ID for this pipeline (IoC Phase A)
-      schedulingEventTypeId: a.string(),
-
       // Link to discovery context (post-MVP: agentic discovery)
       roleContextId: a.id(),
     })
@@ -63,6 +61,12 @@ const schema = a.schema({
       challenges: a.hasMany('Challenge', 'stageId'),
       videoSessions: a.hasMany('VideoSession', 'stageId'),
       scheduledInterviews: a.hasMany('ScheduledInterview', 'stageId'),
+
+      // Provider-specific event type ID for this stage
+      schedulingEventTypeId: a.string(),
+
+      // Adaptive Notifications: Customizable templates per-stage
+      notificationTemplates: a.json(), // Array of { trigger: string, subject: string, body: string }
     })
     .authorization((allow) => [
       allow.owner(),
@@ -163,6 +167,9 @@ const schema = a.schema({
       assessments: a.hasMany('Assessment', 'candidateId'),
       scheduledInterviews: a.hasMany('ScheduledInterview', 'candidateId'),
     })
+    .secondaryIndexes((index) => [
+      index('email').name('candidatesByEmail'),
+    ])
     .authorization((allow) => [
       allow.owner(),                        
       allow.publicApiKey().to(['read', 'update']), 
@@ -211,7 +218,15 @@ const schema = a.schema({
       // IoC Phase A: Automated sync tracking
       syncSource:         a.enum(['MANUAL', 'WEBHOOK']),
       lastSyncedAt:       a.datetime(),
+
+      // Audit & UX tracking: When was the link copied or email sent?
+      inviteLinkSentAt:   a.datetime(),
+      emailSentAt:        a.datetime(),
     })
+    .secondaryIndexes((index) => [
+      index('externalEventId').name('interviewsByExternalEventId'),
+      index('candidateId').sortKeys(['status']).name('interviewsByCandidateIdAndStatus'),
+    ])
     .authorization((allow) => [
       allow.owner(),
       allow.publicApiKey().to(['read']),
@@ -371,6 +386,22 @@ const schema = a.schema({
     })
     .returns(a.json())
     .handler(a.handler.function(devContainerStatus))
+    .authorization((allow) => [allow.authenticated()]),
+
+  /**
+   * Adaptive Notification Mutation
+   *
+   * Manually trigger an invitation or notification email.
+   */
+  sendNotification: a
+    .mutation()
+    .arguments({
+      candidateId: a.id().required(),
+      stageId: a.id().required(),
+      templateType: a.enum(['INVITATION', 'SUCCESS', 'FAILURE']),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(notificationService))
     .authorization((allow) => [allow.authenticated()]),
 });
 

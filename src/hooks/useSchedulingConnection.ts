@@ -58,6 +58,8 @@ interface UseSchedulingConnectionResult {
   fetchEventTypes: (connectionId: string) => Promise<ProviderEventType[]>;
   /** Disconnect the current connection */
   disconnect: (connectionId: string) => Promise<void>;
+  /** Register or re-register the Calendly webhook for an existing connection */
+  registerWebhook: (connectionId: string) => Promise<void>;
 }
 
 // Recruiter hook — uses Cognito user pool auth (default)
@@ -254,6 +256,38 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
     }
   }, []);
 
+  /**
+   * Register or re-register the webhook subscription with the provider.
+   * Use after deploying a new Function URL or to fix a missed initial registration.
+   */
+  const registerWebhook = useCallback(async (connectionId: string): Promise<void> => {
+    setError(null);
+
+    try {
+      const { data, errors } = await client.mutations.exchangeSchedulingOAuth({
+        action: 'registerWebhook',
+        params: JSON.stringify({ connectionId }),
+      });
+
+      if (errors) {
+        console.error('[useSchedulingConnection] registerWebhook errors:', errors);
+        throw new Error(errors[0].message);
+      }
+
+      const result = typeof data === 'string' ? JSON.parse(data) : data;
+      if (!result?.success) {
+        throw new Error(result?.message ?? 'Webhook registration failed');
+      }
+
+      console.log('[useSchedulingConnection] Webhook registered successfully', result.data);
+    } catch (err) {
+      const wrapped = err instanceof Error ? err : new Error('Webhook registration failed');
+      console.error('[useSchedulingConnection] registerWebhook failed:', wrapped);
+      setError(wrapped);
+      throw wrapped;
+    }
+  }, []);
+
   return {
     connection,
     isLoading,
@@ -261,5 +295,6 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
     exchangeOAuth,
     fetchEventTypes,
     disconnect,
+    registerWebhook,
   };
 }

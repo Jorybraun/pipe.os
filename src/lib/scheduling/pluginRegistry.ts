@@ -61,6 +61,9 @@ export interface SchedulingPlugin {
    * @returns Full OAuth authorization URL
    */
   getAuthUrl: (redirectUri: string, state: string, codeChallenge?: string) => string;
+
+   /** Fetch event types from the provider API (requires access token) */
+  fetchEventTypes?: (accessToken: string) => Promise<ProviderEventType[]>;
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────

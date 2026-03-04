@@ -2,7 +2,7 @@
  * Request/response types for the schedulingOAuth Lambda.
  */
 
-export type OAuthAction = 'exchange' | 'refresh' | 'fetchEventTypes' | 'disconnect';
+export type OAuthAction = 'exchange' | 'refresh' | 'fetchEventTypes' | 'disconnect' | 'registerWebhook';
 
 export interface OAuthRequest {
   arguments: {

@@ -11,6 +11,8 @@ import {
   X,
   Calendar,
   Video,
+  ExternalLink,
+  Clock,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -18,12 +20,12 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
 import { useCandidateCreate } from "../hooks/useCandidateCreate";
 import { FieldGroup, TextInput } from "../components/ui/form";
-import { EventTypePicker } from "../components/Scheduling/EventTypePicker";
+import { useSchedulingConnection } from "../hooks/useSchedulingConnection";
 
 const client = generateClient<Schema>();
 
 const OverviewSkeleton = () => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 32, padding: 40 }}>
     {/* Header Skeleton */}
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
       <div>
@@ -42,28 +44,6 @@ const OverviewSkeleton = () => (
           <Skeleton width={60} height={42} />
           <Skeleton width="100%" height={2} style={{ marginTop: 20 }} />
         </LiquidMetalCard>
-      ))}
-    </div>
-
-    {/* Kanban Grid Skeleton */}
-    <div style={{ display: "flex", gap: 12 }}>
-      {[1, 2, 3].map(col => (
-        <div key={col} style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 8 }}>
-          {[1, 2].map(row => (
-            <LiquidMetalCard key={row} style={{ height: 100, padding: 0 }}>
-              <div style={{ display: 'flex', height: '100%' }}>
-                <div style={{ width: 80, borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Skeleton width={40} height={40} />
-                </div>
-                <div style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <Skeleton width="60%" height={12} />
-                  <Skeleton width="40%" height={8} />
-                  <Skeleton width="30%" height={8} />
-                </div>
-              </div>
-            </LiquidMetalCard>
-          ))}
-        </div>
       ))}
     </div>
   </div>
@@ -184,28 +164,17 @@ function StageHeaderCard({
 function CandidateKanbanCard({
   candidate,
   onClick,
-  index,
-  stageIndex,
   onInvite,
   isInviting,
+  interview,
 }: {
   candidate: any;
   onClick: () => void;
-  index: number;
-  stageIndex: number;
   onInvite?: () => void;
   isInviting?: boolean;
+  interview?: any;
 }) {
-  const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(
-      () => setMounted(true),
-      stageIndex * 100 + index * 80
-    );
-    return () => clearTimeout(timer);
-  }, [stageIndex, index]);
 
   const handleCopyLink = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -222,19 +191,22 @@ function CandidateKanbanCard({
     .toUpperCase()
     .slice(0, 2);
 
+  const formatTime = (isoString: string) => {
+    return new Date(isoString).toLocaleString([], { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
   return (
-    <div
-      style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0)" : "translateY(15px)",
-        transition: "all 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
-      }}
-    >
+    <div>
       <LiquidMetalCard
         variant="dark"
         hover
         onClick={onClick}
-        style={{ marginBottom: 8, cursor: "pointer" }}
+        style={{ marginBottom: 8, cursor: "pointer", position: 'relative' }}
       >
         <div style={{ display: "flex" }}>
           <div
@@ -293,24 +265,89 @@ function CandidateKanbanCard({
                 {(candidate.email || "").toLowerCase()}
               </span>
             </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              <Activity size={10} color="rgba(255,255,255,0.25)" />
-              <span
+            
+            {/* INTERVIEW STATUS & TIME BADGE */}
+            {interview ? (
+              <div
                 style={{
-                  fontSize: 9,
-                  letterSpacing: "0.05em",
-                  color: "rgba(255,255,255,0.4)",
+                  marginTop: 8,
+                  padding: '8px 12px',
+                  background: interview.status === 'INVITED' ? 'rgba(251,191,36,0.08)' : 'rgba(96,165,250,0.08)',
+                  border: `1px solid ${interview.status === 'INVITED' ? 'rgba(251,191,36,0.2)' : 'rgba(96,165,250,0.2)'}`,
+                  borderRadius: 4,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6
                 }}
               >
-                {(candidate.status || "").toUpperCase()}
-              </span>
-            </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Calendar size={10} color={interview.status === 'INVITED' ? '#fbbf24' : '#60a5fa'} />
+                    <span style={{ fontSize: 8, fontWeight: 800, color: interview.status === 'INVITED' ? '#fbbf24' : '#60a5fa', letterSpacing: '0.12em', fontFamily: 'Space Mono' }}>
+                      {interview.status}
+                    </span>
+                  </div>
+                  {interview.status === 'SCHEDULED' && <Video size={10} color="#60a5fa" />}
+                </div>
+
+                {interview.status === 'SCHEDULED' && interview.scheduledAt ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Clock size={10} color="rgba(255,255,255,0.6)" />
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#fff', fontFamily: 'Space Mono' }}>
+                      {formatTime(interview.scheduledAt)}
+                    </div>
+                  </div>
+                ) : interview.status === 'INVITED' && (interview.emailSentAt || interview.createdAt) ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Clock size={10} color="rgba(255,255,255,0.3)" />
+                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
+                      SENT: {formatTime(interview.emailSentAt || interview.createdAt)}
+                    </div>
+                  </div>
+                ) : null}
+
+                {interview.meetingUrl && (
+                  <a
+                    href={interview.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ 
+                      fontSize: 8, 
+                      color: '#60a5fa', 
+                      textDecoration: 'none', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 4,
+                      marginTop: 2,
+                      fontWeight: 700,
+                      letterSpacing: '0.05em'
+                    }}
+                  >
+                    JOIN_MEETING <ExternalLink size={8} />
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Activity size={10} color="rgba(255,255,255,0.25)" />
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.05em",
+                    color: "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  {(candidate.status || "").toUpperCase()}
+                </span>
+              </div>
+            )}
           </div>
 
           <div
@@ -326,7 +363,7 @@ function CandidateKanbanCard({
               gap: 6,
             }}
           >
-            {candidate.status === 'INVITED' || candidate.status === 'IN_PROGRESS' ? (
+            {!interview && (candidate.status === 'INVITED' || candidate.status === 'IN_PROGRESS') ? (
               <>
                 <button
                   onClick={handleCopyLink}
@@ -404,12 +441,17 @@ function CandidateKanbanCard({
 export default function OverviewPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [mounted, setMounted] = useState(false);
   const [pipeline, setPipeline] = useState<any>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [stages, setStages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  // False until we confirm Phase 14 schema fields exist in the deployed sandbox.
+  const [schemaReady, setSchemaReady] = useState(false);
+
+  // Scheduling Connection for provider resolution
+  const { connection, fetchEventTypes } = useSchedulingConnection();
 
   // Add Candidate Form State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -448,6 +490,28 @@ export default function OverviewPage(): JSX.Element {
     try {
       setIsLoading(true);
       setError(null);
+
+      // Probe schema for new fields inline (avoids cascading state updates)
+      let hasNewFields = schemaReady;
+      if (!hasNewFields) {
+        try {
+          await client.models.Stage.list({
+            limit: 1,
+            selectionSet: ['id', 'schedulingEventTypeId'],
+          });
+          hasNewFields = true;
+          setSchemaReady(true);
+        } catch {
+          hasNewFields = false;
+        }
+      }
+
+      // Dynamically build selection set based on schema readiness
+      const stageFields = ['id', 'title', 'order', 'challenges.*'];
+      if (hasNewFields) {
+        stageFields.push('mode', 'schedulingEventTypeId');
+      }
+
       const [pipelineData, candidatesData, stagesData] = await Promise.all([
         client.models.Pipeline.get({ id }),
         client.models.Candidate.list({ 
@@ -456,43 +520,47 @@ export default function OverviewPage(): JSX.Element {
         }),
         client.models.Stage.list({ 
           filter: { pipelineId: { eq: id } },
-          selectionSet: ['id', 'title', 'order', 'mode', 'challenges.*']
+          selectionSet: stageFields as any
         }),
       ]);
 
-      setPipeline(pipelineData.data);
+      setPipeline(pipelineData?.data || null);
 
-      // Load upcoming scheduled interviews — guarded since model may not be deployed yet
+      // Enrichment logic with extra guards
+      const rawCandidates = candidatesData?.data || [];
+      const enrichedCandidates = rawCandidates.map(c => {
+        if (!c) return null;
+        const assessments = (c as any).assessments || [];
+        const scores = assessments.map((a: any) => a.score).filter((s: any) => typeof s === 'number');
+        const score = scores.length > 0 ? Math.round(scores.reduce((sum: number, s: number) => sum + s, 0) / scores.length) : null;
+        return { ...c, score };
+      }).filter(Boolean);
+
+      setCandidates(enrichedCandidates);
+      
+      const rawStages = (stagesData?.data as any[]) || [];
+      setStages(rawStages
+        .filter(s => s !== null)
+        .sort((a, b) => (a.order || 0) - (b.order || 0)));
+
+      // Load upcoming scheduled interviews — guarded
       try {
         const { data: siData } = await client.models.ScheduledInterview.list({
           filter: { pipelineId: { eq: id } },
         });
-        setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED' || si.status === 'INVITED'));
-      } catch {
-        // ScheduledInterview not yet deployed in sandbox — ignore
+        setUpcomingInterviews((siData ?? []).filter((si: any) => si && (si.status === 'SCHEDULED' || si.status === 'INVITED')));
+      } catch (siErr) {
+        console.warn('[OverviewPage] ScheduledInterview model failed:', siErr);
       }
-
-      // Calculate scores for each candidate
-      const enrichedCandidates = candidatesData.data.map(c => {
-        const scores = (c.assessments || []).map((a: any) => a.score).filter((s: any) => typeof s === 'number');
-        const score = scores.length > 0 ? Math.round(scores.reduce((sum: number, s: number) => sum + s, 0) / scores.length) : null;
-        return { ...c, score };
-      });
-
-      setCandidates(enrichedCandidates);
-      setStages((stagesData.data as any[])
-        .filter(s => s !== null)
-        .sort((a, b) => (a.order || 0) - (b.order || 0)));
     } catch (err) {
       console.error("Error fetching pipeline data:", err);
       setError(err instanceof Error ? err : new Error("Failed to load pipeline data"));
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [id, schemaReady]);
 
   useEffect(() => {
-    setMounted(true);
     fetchData();
   }, [fetchData]);
 
@@ -534,20 +602,6 @@ export default function OverviewPage(): JSX.Element {
     }
   };
 
-  /** Save the selected event type ID to the pipeline */
-  const handleEventTypeSelect = async (eventTypeId: string) => {
-    if (!id) return;
-    try {
-      await client.models.Pipeline.update({
-        id,
-        schedulingEventTypeId: eventTypeId,
-      });
-      setPipeline((prev: any) => prev ? { ...prev, schedulingEventTypeId: eventTypeId } : prev);
-    } catch (err) {
-      console.error('[OverviewPage] Failed to save event type:', err);
-    }
-  };
-
   /** Create a ScheduledInterview record for a candidate (Invite to Interview) */
   const handleInviteToInterview = async (candidateId: string, stageId: string) => {
     if (!id) return;
@@ -570,19 +624,33 @@ export default function OverviewPage(): JSX.Element {
         return;
       }
 
+      // Resolve scheduling URL from the recruiter's connected provider
+      let schedulingUrl: string | undefined;
+      if (connection?.id && connection.status === 'ACTIVE') {
+        try {
+          const eventTypes = await fetchEventTypes(connection.id);
+          if (eventTypes.length > 0) {
+            schedulingUrl = eventTypes[0].url;
+            console.log('[OverviewPage] Resolved scheduling URL from provider:', schedulingUrl);
+          }
+        } catch (err) {
+          console.warn('[OverviewPage] Could not fetch event types, falling back to no scheduling URL:', err);
+        }
+      }
+
       await client.models.ScheduledInterview.create({
         pipelineId: id,
         candidateId,
         stageId,
         status: 'INVITED',
-        schedulingProvider: 'MANUAL',
-        schedulingUrl: pipeline?.schedulingUrl,
+        schedulingProvider: connection?.providerId || 'MANUAL',
+        schedulingUrl: schedulingUrl ?? null,
       });
       // Re-fetch upcoming interviews
       const { data: siData } = await client.models.ScheduledInterview.list({
         filter: { pipelineId: { eq: id } },
       });
-      setUpcomingInterviews((siData ?? []).filter((si: any) => si.status === 'SCHEDULED' || si.status === 'INVITED'));
+      setUpcomingInterviews((siData ?? []).filter((si: any) => si && (si.status === 'SCHEDULED' || si.status === 'INVITED')));
     } catch (err) {
       console.error('[OverviewPage] Failed to create interview invitation:', err);
     } finally {
@@ -595,18 +663,20 @@ export default function OverviewPage(): JSX.Element {
     setIsLoading(true);
     try {
       console.log('[Overview] Seeding MVP stages...');
-      // 1. Technical Screen
+      // 1. Technical Screen (Default: ASYNC)
       await client.models.Stage.create({
         pipelineId: id,
         title: 'Technical Screen',
         order: 0,
+        mode: 'ASYNC',
       });
 
-      // 2. Final Round
+      // 2. Final Round (LIVE_VIDEO for scheduling tests)
       await client.models.Stage.create({
         pipelineId: id,
         title: 'Final Round',
         order: 1,
+        mode: 'LIVE_VIDEO',
       });
 
       console.log('[Overview] Stages seeded. Refreshing...');
@@ -653,7 +723,7 @@ export default function OverviewPage(): JSX.Element {
     return acc;
   }, {} as Record<string, any[]>);
 
-  if (isLoading) {
+  if (isLoading && !pipeline) {
     return <OverviewSkeleton />;
   }
 
@@ -687,7 +757,7 @@ export default function OverviewPage(): JSX.Element {
     );
   }
 
-  if (!pipeline) {
+  if (!pipeline && !isLoading) {
     return (
       <div style={{ padding: 60, textAlign: "center" }}>
         <h2 style={{ color: '#fff', marginBottom: 20 }}>Pipeline Not Found</h2>
@@ -697,22 +767,12 @@ export default function OverviewPage(): JSX.Element {
   }
 
   return (
-    <div
-      style={{
-        opacity: mounted ? 1 : 0,
-        transition: "opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
-      }}
-    >
+    <div>
       {/* Page Header with Add Candidate button */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>PIPELINE_OVERVIEW</div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: 0 }}>{pipeline.title}</h1>
-          {/* Event Type Picker — link a scheduling provider event type to this pipeline */}
-          <EventTypePicker
-            currentEventTypeId={pipeline.schedulingEventTypeId ?? null}
-            onSelect={handleEventTypeSelect}
-          />
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: 0 }}>{pipeline?.title}</h1>
         </div>
 
         {!showAddForm && (
@@ -845,57 +905,9 @@ export default function OverviewPage(): JSX.Element {
         </div>
       )}
 
-      {/* Upcoming Scheduled Interviews */}
-      {upcomingInterviews.length > 0 && (
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ marginBottom: 12, fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
-            UPCOMING_INTERVIEWS
-          </div>
-          <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8 }}>
-            {[...upcomingInterviews]
-              .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime())
-              .map((si: any) => {
-                const cand = candidates.find(c => c.id === si.candidateId);
-                const stage = stages.find(s => s.id === si.stageId);
-                return (
-                  <LiquidMetalCard key={si.id} style={{ flex: '0 0 260px', padding: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                      <Calendar size={14} color={si.status === 'INVITED' ? '#fbbf24' : '#60a5fa'} />
-                      <span style={{ fontSize: 9, color: si.status === 'INVITED' ? '#fbbf24' : '#60a5fa', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
-                        {si.status}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
-                      {cand?.name || '—'}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: si.scheduledAt ? 8 : 0, fontFamily: '"Space Mono", monospace' }}>
-                      {stage?.title || '—'}
-                    </div>
-                    {si.scheduledAt && (
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontFamily: '"Space Mono", monospace' }}>
-                        {new Date(si.scheduledAt).toLocaleString()}
-                      </div>
-                    )}
-                    {si.meetingUrl && (
-                      <a
-                        href={si.meetingUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ display: 'inline-block', marginTop: 12, fontSize: 9, letterSpacing: '0.1em', color: '#60a5fa', fontFamily: '"Space Mono", monospace', textDecoration: 'none' }}
-                      >
-                        JOIN_MEETING →
-                      </a>
-                    )}
-                  </LiquidMetalCard>
-                );
-              })}
-          </div>
-        </div>
-      )}
-
       {/* Stage Headers and Kanban Grid */}
       <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 24, alignItems: 'flex-start' }}>
-        {stages.map((s, i) => {
+        {stages.map((s) => {
           const stageCandidates = candidatesByStage[s.id] || [];
           return (
             <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -909,17 +921,21 @@ export default function OverviewPage(): JSX.Element {
 
               {/* Candidate Cards */}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {stageCandidates.map((candidate: any, idx: number) => (
-                  <CandidateKanbanCard
-                    key={candidate.id}
-                    candidate={candidate}
-                    index={idx}
-                    stageIndex={i}
-                    onClick={() => navigate(`/candidates/${candidate.id}`)}
-                    onInvite={() => handleInviteToInterview(candidate.id, s.id)}
-                    isInviting={invitingCandidateId === candidate.id}
-                  />
-                ))}
+                {stageCandidates.map((candidate: any) => {
+                  // Find the interview record for this candidate in THIS stage
+                  const interview = upcomingInterviews.find(si => si.candidateId === candidate.id && si.stageId === s.id);
+                  
+                  return (
+                    <CandidateKanbanCard
+                      key={candidate.id}
+                      candidate={candidate}
+                      interview={interview}
+                      onClick={() => navigate(`/candidates/${candidate.id}`)}
+                      onInvite={s.mode === 'LIVE_VIDEO' ? () => handleInviteToInterview(candidate.id, s.id) : undefined}
+                      isInviting={invitingCandidateId === candidate.id}
+                    />
+                  );
+                })}
 
                 {stageCandidates.length === 0 && (
                   <div

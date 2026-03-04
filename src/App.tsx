@@ -55,28 +55,29 @@ const SubHeader = () => {
   };
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
       try {
         let pipelineId = isPipelineContext ? id : null;
 
         if (isCandidateContext && id) {
           const { data: candidate } = await client.models.Candidate.get({ id });
+          if (cancelled) return;
           if (candidate) {
             pipelineId = candidate.pipelineId;
           }
         }
 
         if (pipelineId) {
-          const [pipeline, candidates] = await Promise.all([
-            client.models.Pipeline.get({ id: pipelineId }),
-            client.models.Candidate.list({
-              filter: { pipelineId: { eq: pipelineId } },
-            }),
-          ]);
+          // Only fetch title — OverviewPage already fetches full pipeline + candidates
+          const { data: pipeline } = await client.models.Pipeline.get({
+            id: pipelineId,
+          });
+          if (cancelled) return;
 
           setHeaderData({
-            title: pipeline.data?.title || "POSITION",
-            count: candidates.data?.length || 0,
+            title: pipeline?.title || "POSITION",
+            count: 0, // Candidate count shown in OverviewPage, not header
           });
         } else {
           setHeaderData({
@@ -90,6 +91,7 @@ const SubHeader = () => {
     };
 
     fetchData();
+    return () => { cancelled = true; };
   }, [id, isPipelineContext, isCandidateContext]);
 
   const currentStage = stage ? { title: stage } : null;
