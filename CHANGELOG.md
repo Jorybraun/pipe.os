@@ -7,9 +7,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### `fix-container-appsync-auth` — Fix DevContainerSession AppSync Authorization
 - **Status**: 🟢 DONE
 - **Changes**:
-    - **`amplify/data/resource.ts`**: Replaced `allow.resource(ecsStatusBridge)` on `DevContainerSession` with `allow.publicApiKey().to(['create', 'update'])`. `allow.resource()` is excluded from `BaseAllowModifier` (model auth context) — it only applies to custom mutations. The ecsStatusBridge handler authenticates via API key (`x-api-key` header from SSM), so the model needed a `publicApiKey` rule to authorize those writes. Without this, every status sync from the bridge was unauthorized at runtime. Also removed the now-unused `ecsStatusBridge` import from `data/resource.ts`.
-    - **`src/hooks/useDevContainerSession.ts`**: Replaced dead `useState<string | null>` for `sessionId` with `useRef`. The session ID doesn't drive renders and was never read from state — only `setSessionId` was called. Converted to `sessionIdRef` to fix the `TS6133` unused-variable error and align with the ref pattern already used for `taskArnRef`.
-- **Root cause**: Two bugs introduced simultaneously — a TS compile error (`allow.resource` not on `BaseAllowModifier`) and its runtime companion (no `publicApiKey` rule meant the Lambda was always unauthorized).
+    - **`amplify/data/resource.ts`**: Replaced `allow.resource(ecsStatusBridge)` on `DevContainerSession` with `allow.publicApiKey().to(['create', 'update'])`. `allow.resource()` is excluded from `BaseAllowModifier` (model auth context) — it only applies to custom mutations. The ecsStatusBridge handler authenticates via API key (`x-api-key` header), so the model needed a `publicApiKey` rule to authorize those writes. Also removed the now-unused `ecsStatusBridge` import.
+    - **`amplify/functions/ecsStatusBridge/handler.ts`**: Removed SSM indirection (was fetching endpoint + key via `GetParameterCommand`). Both values are CDK tokens available at deploy time — inject directly as env vars. Fixed `callAppSync` to use `Record<string, unknown>` and a typed return (`AppSyncResult`) instead of `any`. Reverts to `process.env.APPSYNC_ENDPOINT` / `process.env.APPSYNC_API_KEY`.
+    - **`amplify/backend.ts`**: Restored `APPSYNC_ENDPOINT` and `APPSYNC_API_KEY` injection for `ecsStatusBridge` (removed in error during the SSM refactor). These are CDK tokens resolved at synth time.
+    - **`amplify/functions/ecsStatusBridge/package.json`**: Removed unnecessary `@aws-sdk/client-ssm`, SigV4, and credential-provider deps. Lambda uses `fetch` + API key — zero extra dependencies.
+    - **`amplify/data/resolvers/publishContainerStatus.js`**: Deleted — the NONE data-source `publishContainerStatus` mutation was replaced by direct `DevContainerSession` model mutations. Resolver no longer needed.
+    - **`src/hooks/useDevContainerSession.ts`**: Replaced dead `useState<string | null>` for `sessionId` with `useRef`. Session ID doesn't drive renders. Fixes `TS6133` unused-variable error.
+- **Root cause**: Three interacting bugs introduced in a single refactor — TS compile error blocking `ampx sandbox/pipeline-deploy`, a runtime auth failure from missing `publicApiKey` rule, and a config failure from missing env vars in the Lambda.
 
 ---
 

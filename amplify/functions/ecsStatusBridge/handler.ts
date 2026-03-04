@@ -1,31 +1,22 @@
 /**
  * ECS Status Bridge Lambda Handler
  *
- * Receives ECS Task State Change events from EventBridge and publishes
- * real-time status updates to frontend clients via the AppSync
- * `publishContainerStatus` mutation (which triggers the
- * `onContainerStatusChanged` subscription).
+ * Receives ECS Task State Change events from EventBridge and upserts the
+ * DevContainerSession model in AppSync using API Key authorization.
  *
  * Architecture:
  *   ECS Task State Change → EventBridge → this Lambda → AppSync mutation
- *   → AppSync subscription → Frontend (instant update)
+ *   → DevContainerSession model update → Frontend subscription (instant)
  *
- * Required environment variables:
- *   APPSYNC_ENDPOINT       — AppSync GraphQL endpoint URL
- *   APPSYNC_API_KEY        — AppSync API key (injected by backend.ts at deploy time)
+ * Required environment variables (injected by backend.ts at deploy time):
+ *   APPSYNC_ENDPOINT       — AppSync GraphQL endpoint URL (CDK token)
+ *   APPSYNC_API_KEY        — AppSync API key (CDK token)
  *   CODE_SERVER_ALB_DOMAIN — ALB domain for constructing the container URL
  */
 
 import type { EcsTaskStateChangeEvent, ContainerStatus } from './types';
 
-// ─── AppSync helper ──────────────────────────────────────────────────────────
-
-type PublishStatusVariables = {
-  taskArn: string;
-  sessionId: string;
-  status: string;
-  url?: string;
-};
+type AppSyncResult = { errors?: Array<{ message: string; errorType?: string }> };
 
 /**
  * Calls a GraphQL mutation on the AppSync endpoint using API key authentication.
@@ -34,8 +25,8 @@ async function callAppSync(
   endpoint: string,
   apiKey: string,
   query: string,
-  variables: PublishStatusVariables
-): Promise<void> {
+  variables: Record<string, unknown>,
+): Promise<AppSyncResult> {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -50,13 +41,8 @@ async function callAppSync(
     throw new Error(`AppSync request failed (${response.status}): ${text}`);
   }
 
-  const result = (await response.json()) as { errors?: Array<{ message: string }> };
-  if (result.errors && result.errors.length > 0) {
-    throw new Error(`AppSync mutation error: ${result.errors[0].message}`);
-  }
+  return response.json() as Promise<AppSyncResult>;
 }
-
-// ─── ECS status mapping ──────────────────────────────────────────────────────
 
 /**
  * Maps ECS task lastStatus to the application ContainerStatus.
@@ -80,31 +66,23 @@ function mapEcsStatus(ecsStatus: string, desiredStatus: string): ContainerStatus
   }
 }
 
-// ─── GraphQL mutation ────────────────────────────────────────────────────────
-
-const PUBLISH_STATUS_MUTATION = /* GraphQL */ `
-  mutation PublishContainerStatus(
-    $taskArn: String!
-    $sessionId: String!
-    $status: String!
-    $url: String
-  ) {
-    publishContainerStatus(
-      taskArn: $taskArn
-      sessionId: $sessionId
-      status: $status
-      url: $url
-    ) {
+const CREATE_SESSION_MUTATION = /* GraphQL */ `
+  mutation CreateDevContainerSession($input: CreateDevContainerSessionInput!) {
+    createDevContainerSession(input: $input) {
       taskArn
-      sessionId
       status
-      url
-      updatedAt
     }
   }
 `;
 
-// ─── Handler ────────────────────────────────────────────────────────────────
+const UPDATE_SESSION_MUTATION = /* GraphQL */ `
+  mutation UpdateDevContainerSession($input: UpdateDevContainerSessionInput!) {
+    updateDevContainerSession(input: $input) {
+      taskArn
+      status
+    }
+  }
+`;
 
 export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
   const { detail } = event;
@@ -150,21 +128,25 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
     }
   }
 
-  const variables: PublishStatusVariables = {
+  const input: Record<string, unknown> = {
     taskArn,
     sessionId,
     status: appStatus,
+    ...(url !== undefined ? { url } : {}),
   };
-  if (url !== undefined) {
-    variables.url = url;
-  }
 
   try {
-    await callAppSync(endpoint, apiKey, PUBLISH_STATUS_MUTATION, variables);
-    console.log('[ecsStatusBridge] Published status:', appStatus, 'for session:', sessionId);
+    const result = await callAppSync(endpoint, apiKey, UPDATE_SESSION_MUTATION, { input });
+
+    if (result.errors?.some((e) => e.message.includes('not found') || e.errorType?.includes('NotFound'))) {
+      console.log('[ecsStatusBridge] Session not found, creating:', taskArn);
+      await callAppSync(endpoint, apiKey, CREATE_SESSION_MUTATION, { input });
+    } else if (result.errors) {
+      throw new Error(result.errors[0].message);
+    }
+
+    console.log('[ecsStatusBridge] Synchronized status:', appStatus);
   } catch (err) {
-    console.error('[ecsStatusBridge] Failed to publish status to AppSync:', err);
-    // Do not rethrow — EventBridge will retry on Lambda errors, so we log and exit cleanly
+    console.error('[ecsStatusBridge] Failed to sync status to AppSync:', err);
   }
 }
-
