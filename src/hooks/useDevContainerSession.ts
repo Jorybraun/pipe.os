@@ -5,12 +5,7 @@
  *   IDLE → LAUNCHING → BOOTING → READY → DESTROYING → IDLE
  *
  * Status updates during BOOTING are received via an AppSync subscription
- * (onContainerStatusChanged) pushed by the ecsStatusBridge Lambda.
- * A 120-second safety timeout falls back to a single getContainerStatus
- * query if no subscription event arrives.
- *
- * Usage:
- *   const { state, containerUrl, launch, destroy } = useDevContainerSession();
+ * on the DevContainerSession model, which is updated by the ecsStatusBridge Lambda.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -108,37 +103,37 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
   const [state, setState] = useState<ContainerSessionState>('IDLE');
   const [containerUrl, setContainerUrl] = useState<string | null>(null);
   const [taskArn, setTaskArn] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Keep mutable refs for use inside async callbacks / subscription handlers
   const taskArnRef = useRef<string | null>(null);
+  // sessionId doesn't drive renders — track it as a ref
   const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     taskArnRef.current = taskArn;
   }, [taskArn]);
 
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
   // ─── Subscription with fallback ────────────────────────────────────────────
 
   useEffect(() => {
-    if (state !== 'BOOTING' || !sessionId) return;
+    if (state !== 'BOOTING' || !taskArn) return;
 
     let unsubscribed = false;
 
-    // Subscribe to real-time status pushes from ecsStatusBridge via AppSync
-    const sub = client.subscriptions
-      .onContainerStatusChanged({ sessionId })
+    // Subscribe to model updates for this specific task
+    const sub = client.models.DevContainerSession
+      .onUpdate({
+        filter: {
+          taskArn: { eq: taskArn }
+        }
+      })
       .subscribe({
         next: (update) => {
           if (unsubscribed) return;
           if (!update) return;
 
-          console.log('[useDevContainerSession] Subscription update:', update.status);
+          console.log('[useDevContainerSession] Model update:', update.status);
 
           if (update.status === 'READY' && update.url) {
             setState('READY');
@@ -146,7 +141,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
           } else if (update.status === 'ERROR') {
             setState('ERROR');
             setError('Container failed to start');
-          } else if (update.status === 'STOPPING' || update.status === 'STOPPED') {
+          } else if (update.status === 'STOPPING') {
             setState('IDLE');
             setTaskArn(null);
             setContainerUrl(null);
@@ -160,40 +155,24 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
         },
       });
 
-    // Safety timeout: if no subscription event arrives within 120 s,
-    // perform a single getContainerStatus query as a fallback.
+    // Safety timeout fallback
     const timeout = setTimeout(async () => {
       if (unsubscribed) return;
       const arn = taskArnRef.current;
       if (!arn) return;
 
-      console.warn(
-        '[useDevContainerSession] Subscription timed out, falling back to single status check'
-      );
-
       try {
-        const { data: result, errors } = await client.queries.getContainerStatus({
+        const { data: result } = await client.queries.getContainerStatus({
           taskArn: arn,
         });
-
-        if (errors) {
-          console.error('[useDevContainerSession] Fallback status check error:', errors);
-          return;
-        }
-
         if (!result) return;
-
         const payload = parseStatusPayload(result);
-
         if (payload.status === 'READY') {
           setState('READY');
           setContainerUrl(payload.containerUrl ?? null);
-        } else if (payload.success === false) {
-          setState('ERROR');
-          setError(payload.error ?? 'Container status unknown after timeout');
         }
       } catch (err) {
-        console.error('[useDevContainerSession] Fallback status check threw:', err);
+        console.error('[useDevContainerSession] Fallback check failed:', err);
       }
     }, SUBSCRIPTION_TIMEOUT_MS);
 
@@ -202,7 +181,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
       sub.unsubscribe();
       clearTimeout(timeout);
     };
-  }, [state, sessionId]);
+  }, [state, taskArn]);
 
   // ─── launch ────────────────────────────────────────────────────────────────
 
@@ -212,7 +191,6 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     setContainerUrl(null);
 
     const newSessionId = uuid();
-    setSessionId(newSessionId);
     sessionIdRef.current = newSessionId;
 
     try {
@@ -220,10 +198,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
         sessionId: newSessionId,
       });
 
-      if (errors) {
-        throw new Error(errors[0].message);
-      }
-
+      if (errors) throw new Error(errors[0].message);
       const payload = parseLaunchPayload(result);
 
       if (payload.success === false || !payload.taskArn) {
@@ -255,25 +230,19 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
         taskArn: arn,
       });
 
-      if (errors) {
-        throw new Error(errors[0].message);
-      }
-
+      if (errors) throw new Error(errors[0].message);
       const payload = parseDestroyPayload(result);
 
-      if (payload.success === false) {
-        throw new Error(payload.error ?? 'Destroy failed');
-      }
+      if (payload.success === false) throw new Error(payload.error ?? 'Destroy failed');
 
       console.log('[useDevContainerSession] Container destroyed');
     } catch (err) {
       console.error('[useDevContainerSession] destroy error:', err);
-      // Non-fatal: treat as destroyed and reset to IDLE
     } finally {
       setState('IDLE');
       setTaskArn(null);
       setContainerUrl(null);
-      setSessionId(null);
+      sessionIdRef.current = null;
     }
   }, []);
 
@@ -283,7 +252,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     setState('IDLE');
     setTaskArn(null);
     setContainerUrl(null);
-    setSessionId(null);
+    sessionIdRef.current = null;
     setError(null);
   }, []);
 
@@ -297,4 +266,3 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     reset,
   };
 }
-

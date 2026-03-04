@@ -4,6 +4,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ---
 
+### `fix-container-appsync-auth` — Fix DevContainerSession AppSync Authorization
+- **Status**: 🟢 DONE
+- **Changes**:
+    - **`amplify/data/resource.ts`**: Replaced `allow.resource(ecsStatusBridge)` on `DevContainerSession` with `allow.publicApiKey().to(['create', 'update'])`. `allow.resource()` is excluded from `BaseAllowModifier` (model auth context) — it only applies to custom mutations. The ecsStatusBridge handler authenticates via API key (`x-api-key` header from SSM), so the model needed a `publicApiKey` rule to authorize those writes. Without this, every status sync from the bridge was unauthorized at runtime. Also removed the now-unused `ecsStatusBridge` import from `data/resource.ts`.
+    - **`src/hooks/useDevContainerSession.ts`**: Replaced dead `useState<string | null>` for `sessionId` with `useRef`. The session ID doesn't drive renders and was never read from state — only `setSessionId` was called. Converted to `sessionIdRef` to fix the `TS6133` unused-variable error and align with the ref pattern already used for `taskArnRef`.
+- **Root cause**: Two bugs introduced simultaneously — a TS compile error (`allow.resource` not on `BaseAllowModifier`) and its runtime companion (no `publicApiKey` rule meant the Lambda was always unauthorized).
+
+---
+
 ### `replace-polling-with-appsync` — Replace Container Status Polling with AppSync Subscriptions
 - **Status**: 🟢 DONE
 - **Changes**:
