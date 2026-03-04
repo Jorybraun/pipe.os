@@ -49,3 +49,7 @@ playwright/.auth/*.json
 
 # Vite
 vite.config.ts.timestamp-*
+vite.config.js
+vite.config.d.ts
+tsconfig.node.tsbuildinfo
+tsconfig.app.tsbuildinfo
