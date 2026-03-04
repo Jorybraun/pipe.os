@@ -4,6 +4,11 @@
  * Manages the full lifecycle of a Fargate dev container session:
  *   IDLE → LAUNCHING → BOOTING → READY → DESTROYING → IDLE
  *
+ * Status updates are delivered in real time via an AppSync subscription
+ * (observeQuery on DevContainerSession) — no polling required.
+ * The ECS EventBridge rule triggers devContainerEventHandler, which updates
+ * the DevContainerSession record and AppSync pushes the change to the client.
+ *
  * Usage:
  *   const { state, containerUrl, launch, destroy } = useDevContainerSession();
  */
@@ -14,9 +19,6 @@ import { v4 as uuid } from 'uuid';
 import type { Schema } from '../../amplify/data/resource';
 
 const client = generateClient<Schema>();
-
-/** How often to poll ECS while the container is booting (ms) */
-const POLL_INTERVAL_MS = 5_000;
 
 export type ContainerSessionState =
   | 'IDLE'
@@ -43,98 +45,93 @@ export interface UseDevContainerSessionReturn {
   reset: () => void;
 }
 
+/** Maps the DevContainerSession.status enum value to our UI state machine. */
+function mapSessionStatus(
+  status: string | null | undefined
+): ContainerSessionState {
+  switch (status) {
+    case 'PROVISIONING':
+      return 'BOOTING';
+    case 'BOOTING':
+      return 'BOOTING';
+    case 'READY':
+      return 'READY';
+    case 'STOPPING':
+      return 'DESTROYING';
+    case 'STOPPED':
+      return 'IDLE';
+    case 'ERROR':
+      return 'ERROR';
+    default:
+      return 'BOOTING';
+  }
+}
+
 export function useDevContainerSession(): UseDevContainerSessionReturn {
   const [state, setState] = useState<ContainerSessionState>('IDLE');
   const [containerUrl, setContainerUrl] = useState<string | null>(null);
   const [taskArn, setTaskArn] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Holds the interval reference so we can clear it on unmount / destroy
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // sessionId is set after a successful launch and drives the subscription
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const taskArnRef = useRef<string | null>(null);
 
-  // Keep the ref in sync so the poll callback can read the latest value
+  // Keep ref in sync so destroy callback reads the latest value
   useEffect(() => {
     taskArnRef.current = taskArn;
   }, [taskArn]);
 
-  // Clear the poll interval on unmount
+  // AppSync subscription: watch the DevContainerSession record for this session.
+  // Replaces the setInterval polling pattern.
   useEffect(() => {
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-      }
-    };
-  }, []);
+    if (!sessionId) return;
 
-  /**
-   * Polls ECS task status until the container is READY (or an error occurs).
-   */
-  const startPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-    }
+    const subscription = client.models.DevContainerSession.observeQuery({
+      filter: { sessionId: { eq: sessionId } },
+    }).subscribe({
+      next: ({ items }) => {
+        const session = items[0];
+        if (!session) return;
 
-    pollRef.current = setInterval(async () => {
-      const arn = taskArnRef.current;
-      if (!arn) return;
+        const nextState = mapSessionStatus(session.status);
+        setState(nextState);
 
-      try {
-        const { data: result, errors } = await client.queries.getContainerStatus({
-          taskArn: arn,
-        });
-
-        if (errors) {
-          console.error('[useDevContainerSession] getContainerStatus error:', errors);
-          return;
+        if (session.containerUrl) {
+          setContainerUrl(session.containerUrl);
         }
-
-        if (!result) return;
-
-        // The Lambda returns JSON; Amplify deserializes it as `unknown`
-        const payload = result as {
-          status?: string;
-          containerUrl?: string;
-          success?: boolean;
-          error?: string;
-        };
-
-        if (payload.success === false) {
-          console.error('[useDevContainerSession] Status error:', payload.error);
-          if (pollRef.current) clearInterval(pollRef.current);
-          setState('ERROR');
-          setError(payload.error ?? 'Failed to check container status');
-          return;
+        if (session.taskArn && !taskArnRef.current) {
+          setTaskArn(session.taskArn);
         }
-
-        console.log('[useDevContainerSession] Container status:', payload.status);
-
-        if (payload.status === 'READY') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setState('READY');
-          setContainerUrl(payload.containerUrl ?? null);
-        } else if (payload.status === 'STOPPED' || payload.status === 'STOPPING') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setState('IDLE');
-          setTaskArn(null);
-          setContainerUrl(null);
+        if (session.status === 'ERROR' && session.errorMessage) {
+          setError(session.errorMessage);
         }
-      } catch (err) {
-        console.error('[useDevContainerSession] Poll error:', err);
-      }
-    }, POLL_INTERVAL_MS);
-  }, []);
+        // Clear sessionId to stop the subscription once we reach a terminal state.
+        // The useEffect cleanup runs on sessionId change and unsubscribes.
+        if (nextState === 'IDLE' || nextState === 'ERROR') {
+          setSessionId(null);
+        }
+      },
+      error: (err: unknown) => {
+        console.error('[useDevContainerSession] Subscription error:', err);
+      },
+    });
+
+    return () => subscription.unsubscribe();
+  }, [sessionId]);
 
   const launch = useCallback(async () => {
     setState('LAUNCHING');
     setError(null);
     setContainerUrl(null);
+    setTaskArn(null);
+    setSessionId(null);
 
-    const sessionId = uuid();
+    const newSessionId = uuid();
 
     try {
       const { data: result, errors } = await client.mutations.launchDevContainer({
-        sessionId,
+        sessionId: newSessionId,
       });
 
       if (errors) {
@@ -156,23 +153,22 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
 
       setTaskArn(payload.taskArn);
       setState('BOOTING');
-      startPolling();
+
+      // Subscribe to real-time status updates via AppSync observeQuery
+      setSessionId(newSessionId);
     } catch (err) {
       console.error('[useDevContainerSession] launch error:', err);
       setState('ERROR');
       setError(err instanceof Error ? err.message : 'Failed to launch container');
     }
-  }, [startPolling]);
+  }, []);
 
   const destroy = useCallback(async () => {
     const arn = taskArnRef.current;
     if (!arn) return;
 
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-    }
-
     setState('DESTROYING');
+    setSessionId(null); // stop the subscription
 
     try {
       const { data: result, errors } = await client.mutations.destroyDevContainer({
@@ -201,9 +197,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
   }, []);
 
   const reset = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-    }
+    setSessionId(null);
     setState('IDLE');
     setTaskArn(null);
     setContainerUrl(null);

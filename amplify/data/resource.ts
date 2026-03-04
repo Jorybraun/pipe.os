@@ -336,6 +336,33 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()]),
 
   /**
+   * DevContainerSession Model
+   *
+   * Tracks the real-time lifecycle of a Fargate dev container session.
+   * Created by devContainerLaunch; updated by the devContainerEventHandler
+   * Lambda via ECS EventBridge task state changes.
+   *
+   * Clients subscribe via observeQuery instead of polling getContainerStatus.
+   *
+   * status lifecycle:
+   *   PROVISIONING → ECS is allocating resources
+   *   BOOTING      → Container image pulling / runtime starting
+   *   READY        → code-server is up; containerUrl is populated
+   *   STOPPING     → Container is shutting down
+   *   STOPPED      → Task is fully stopped
+   *   ERROR        → Terminal failure; errorMessage is populated
+   */
+  DevContainerSession: a
+    .model({
+      sessionId: a.string().required(),
+      taskArn: a.string(),
+      status: a.enum(['PROVISIONING', 'BOOTING', 'READY', 'STOPPING', 'STOPPED', 'ERROR']),
+      containerUrl: a.string(),
+      errorMessage: a.string(),
+    })
+    .authorization((allow) => [allow.authenticated()]),
+
+  /**
    * Dev Container Mutations / Queries
    *
    * Phase 1 — Isolated prototype for AWS Fargate + code-server lifecycle.
