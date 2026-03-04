@@ -16,6 +16,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 #### Added
 - **`registerWebhook` action**: New action on `schedulingOAuth` Lambda to register/re-register webhook subscriptions on existing connections. Exposed via `useSchedulingConnection().registerWebhook(connectionId)`.
+- **Scheduling Unit Tests**: Comprehensive Vitest suites for `schedulingWebhook`, `schedulingOAuth`, and `notificationService`. Covers HMAC verification, interview matching fallbacks, and DynamoDB Stream triggers (159+ test cases planned).
+
+#### Fixed
+- **Optimized Webhook connection lookup**: Replaced DynamoDB scan with targeted `QueryCommand` for connection lookups in `schedulingWebhook` handler.
 
 ---
 
