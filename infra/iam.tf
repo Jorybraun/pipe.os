@@ -1,3 +1,11 @@
+# Import block: role was created before Terraform managed this infra.
+# On first `terraform apply` this imports the existing role into state automatically.
+# Idempotent — safe to leave in permanently.
+import {
+  to = aws_iam_role.ecs_task_execution
+  id = "pipe-ecs-task-execution"
+}
+
 data "aws_iam_policy_document" "ecs_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
