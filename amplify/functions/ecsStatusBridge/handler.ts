@@ -138,7 +138,16 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
   try {
     const result = await callAppSync(endpoint, apiKey, UPDATE_SESSION_MUTATION, { input });
 
-    if (result.errors?.some((e) => e.message.includes('not found') || e.errorType?.includes('NotFound'))) {
+    // DynamoDB returns "conditional request failed" (not "not found") when the
+    // item doesn't exist yet and Amplify's optimistic locking condition fails.
+    const isNotFound = result.errors?.some(
+      (e) =>
+        e.message.includes('not found') ||
+        e.errorType?.includes('NotFound') ||
+        e.message.includes('conditional request failed'),
+    );
+
+    if (isNotFound) {
       console.log('[ecsStatusBridge] Session not found, creating:', taskArn);
       await callAppSync(endpoint, apiKey, CREATE_SESSION_MUTATION, { input });
     } else if (result.errors) {

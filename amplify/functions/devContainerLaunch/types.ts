@@ -5,9 +5,23 @@
  * (VS Code in the browser) for a candidate interview session.
  */
 
-export interface DevContainerLaunchRequest {
+export interface DevContainerLaunchArguments {
   /** Unique identifier for this interview session */
   sessionId: string;
+}
+
+/**
+ * Amplify Gen 2 direct Lambda resolvers receive the full AppSync event.
+ * Mutation arguments are nested under `event.arguments`, not at the top level.
+ */
+export interface DevContainerLaunchRequest {
+  arguments: DevContainerLaunchArguments;
+  typeName: string;
+  fieldName: string;
+  identity: Record<string, unknown>;
+  source: unknown;
+  request: Record<string, unknown>;
+  prev: { result: Record<string, unknown> };
 }
 
 export interface DevContainerLaunchResponse {

@@ -202,3 +202,50 @@ oauthLambda.addToRolePolicy(new PolicyStatement({
   actions: ['ssm:GetParameter'],
   resources: [`arn:aws:ssm:*:*:parameter${WEBHOOK_URL_SSM_PARAM}`],
 }));
+
+// 5. DEV CONTAINER PERMISSIONS
+const devContainerLaunchLambda = backend.devContainerLaunch.resources.lambda as unknown as LambdaFunction;
+const devContainerDestroyLambda = backend.devContainerDestroy.resources.lambda as unknown as LambdaFunction;
+const devContainerStatusLambda = backend.devContainerStatus.resources.lambda as unknown as LambdaFunction;
+
+devContainerLaunchLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  // ecs:TagResource is required when passing a `tags:` array to RunTaskCommand
+  actions: ['ecs:RunTask', 'ecs:TagResource'],
+  resources: ['*'],
+}));
+
+devContainerLaunchLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['iam:PassRole'],
+  resources: ['*'],
+}));
+
+devContainerDestroyLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['ecs:StopTask'],
+  resources: ['*'],
+}));
+
+devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['ecs:DescribeTasks'],
+  resources: ['*'],
+}));
+
+// ─── DEV CONTAINER ENV VARS ─────────────────────────────────────────────────
+// ECS infrastructure provisioned 2026-03-06 in us-west-2 (account 642351122747).
+// Not secrets — hardcoded like CODE_SERVER_ALB_DOMAIN above.
+const ECS_CLUSTER_ARN = 'arn:aws:ecs:us-west-2:642351122747:cluster/pipe-dev-containers';
+const ECS_TASK_DEFINITION = 'pipe-code-server:1';
+const ECS_SUBNET_IDS = 'subnet-0685c349f437eab74,subnet-090c636f2ef014bca,subnet-0b8e9859485265163,subnet-0566aca6bb5e928be';
+const ECS_SECURITY_GROUP_ID = 'sg-03ec946d1d7a814cf';
+
+devContainerLaunchLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
+devContainerLaunchLambda.addEnvironment('ECS_TASK_DEFINITION', ECS_TASK_DEFINITION);
+devContainerLaunchLambda.addEnvironment('ECS_SUBNET_IDS', ECS_SUBNET_IDS);
+devContainerLaunchLambda.addEnvironment('ECS_SECURITY_GROUP_ID', ECS_SECURITY_GROUP_ID);
+devContainerLaunchLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'env.pipe.dev');
+
+devContainerStatusLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
+devContainerStatusLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'env.pipe.dev');

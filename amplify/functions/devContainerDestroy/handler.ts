@@ -25,7 +25,9 @@ const ecs = new ECSClient({ region });
 export async function handler(
   event: DevContainerDestroyRequest
 ): Promise<DevContainerDestroyResponse | DevContainerDestroyError> {
-  const { taskArn } = event;
+  // Amplify Gen 2 direct Lambda resolvers pass the full AppSync event.
+  // Mutation arguments are nested under event.arguments, not at the top level.
+  const { taskArn } = event.arguments;
 
   console.log('[devContainerDestroy] Stopping task:', taskArn);
 

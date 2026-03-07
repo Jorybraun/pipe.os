@@ -5,9 +5,23 @@
  * when the interview session ends or the candidate destroys their environment.
  */
 
-export interface DevContainerDestroyRequest {
+export interface DevContainerDestroyArguments {
   /** ECS task ARN returned by devContainerLaunch */
   taskArn: string;
+}
+
+/**
+ * Amplify Gen 2 direct Lambda resolvers receive the full AppSync event.
+ * Mutation arguments are nested under `event.arguments`, not at the top level.
+ */
+export interface DevContainerDestroyRequest {
+  arguments: DevContainerDestroyArguments;
+  typeName: string;
+  fieldName: string;
+  identity: Record<string, unknown>;
+  source: unknown;
+  request: Record<string, unknown>;
+  prev: { result: Record<string, unknown> };
 }
 
 export interface DevContainerDestroyResponse {

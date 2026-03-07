@@ -30,7 +30,9 @@ const ecs = new ECSClient({ region });
 export async function handler(
   event: DevContainerLaunchRequest
 ): Promise<DevContainerLaunchResponse | DevContainerLaunchError> {
-  const { sessionId } = event;
+  // Amplify Gen 2 direct Lambda resolvers pass the full AppSync event.
+  // Mutation arguments are nested under event.arguments, not at the top level.
+  const { sessionId } = event.arguments;
 
   console.log('[devContainerLaunch] Launching container for session:', sessionId);
 

@@ -52,7 +52,9 @@ function mapEcsStatus(ecsStatus: string): ContainerLifecycleStatus {
 export async function handler(
   event: DevContainerStatusRequest
 ): Promise<DevContainerStatusResponse | DevContainerStatusError> {
-  const { taskArn } = event;
+  // Amplify Gen 2 direct Lambda resolvers pass the full AppSync event.
+  // Query arguments are nested under event.arguments, not at the top level.
+  const { taskArn } = event.arguments;
 
   console.log('[devContainerStatus] Checking status for task:', taskArn);
 

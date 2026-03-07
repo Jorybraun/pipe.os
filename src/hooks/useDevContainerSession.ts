@@ -40,39 +40,57 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Unwraps AWSJSON scalars — Amplify Gen 2 returns .returns(a.json()) values as JSON strings */
+function coerceJson(value: unknown): unknown {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return value;
+}
+
 function parseStatusPayload(result: unknown): StatusPayload {
-  if (!isRecord(result)) return {};
+  const parsed = coerceJson(result);
+  if (!isRecord(parsed)) return {};
   return {
-    status: typeof result['status'] === 'string' ? result['status'] : undefined,
-    containerUrl: typeof result['containerUrl'] === 'string' ? result['containerUrl'] : undefined,
-    success: typeof result['success'] === 'boolean' ? result['success'] : undefined,
-    error: typeof result['error'] === 'string' ? result['error'] : undefined,
+    status: typeof parsed['status'] === 'string' ? parsed['status'] : undefined,
+    containerUrl: typeof parsed['containerUrl'] === 'string' ? parsed['containerUrl'] : undefined,
+    success: typeof parsed['success'] === 'boolean' ? parsed['success'] : undefined,
+    error: typeof parsed['error'] === 'string' ? parsed['error'] : undefined,
   };
 }
 
 function parseLaunchPayload(result: unknown): LaunchPayload {
-  if (!isRecord(result)) return {};
+  const parsed = coerceJson(result);
+  if (!isRecord(parsed)) return {};
   return {
-    taskArn: typeof result['taskArn'] === 'string' ? result['taskArn'] : undefined,
-    status: typeof result['status'] === 'string' ? result['status'] : undefined,
-    success: typeof result['success'] === 'boolean' ? result['success'] : undefined,
-    error: typeof result['error'] === 'string' ? result['error'] : undefined,
+    taskArn: typeof parsed['taskArn'] === 'string' ? parsed['taskArn'] : undefined,
+    status: typeof parsed['status'] === 'string' ? parsed['status'] : undefined,
+    success: typeof parsed['success'] === 'boolean' ? parsed['success'] : undefined,
+    error: typeof parsed['error'] === 'string' ? parsed['error'] : undefined,
   };
 }
 
 function parseDestroyPayload(result: unknown): DestroyPayload {
-  if (!isRecord(result)) return {};
+  const parsed = coerceJson(result);
+  if (!isRecord(parsed)) return {};
   return {
-    success: typeof result['success'] === 'boolean' ? result['success'] : undefined,
-    error: typeof result['error'] === 'string' ? result['error'] : undefined,
+    success: typeof parsed['success'] === 'boolean' ? parsed['success'] : undefined,
+    error: typeof parsed['error'] === 'string' ? parsed['error'] : undefined,
   };
 }
 
 /**
- * How long (ms) to wait for a subscription event before falling back to a
- * single getContainerStatus query.
+ * How often (ms) to poll ECS status as a fallback while waiting for
+ * the AppSync subscription to deliver a READY event. The subscription is
+ * set up first (fast path), but we poll every few seconds to catch cases
+ * where the container reached READY before the subscription was active
+ * (e.g. after a page refresh) since AppSync does not replay past events.
  */
-const SUBSCRIPTION_TIMEOUT_MS = 120_000;
+const POLL_INTERVAL_MS = 5_000;
 
 export type ContainerSessionState =
   | 'IDLE'
@@ -114,14 +132,46 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     taskArnRef.current = taskArn;
   }, [taskArn]);
 
-  // ─── Subscription with fallback ────────────────────────────────────────────
+  // ─── Subscription with polling fallback ───────────────────────────────────
 
   useEffect(() => {
     if (state !== 'BOOTING' || !taskArn) return;
 
     let unsubscribed = false;
 
-    // Subscribe to model updates for this specific task
+    /**
+     * Polls the container status via Lambda (ECS DescribeTasks). Called
+     * immediately on mount (in case READY was written before we subscribed)
+     * and then every POLL_INTERVAL_MS until the container is no longer BOOTING.
+     */
+    const checkStatus = async () => {
+      if (unsubscribed) return;
+      const arn = taskArnRef.current;
+      if (!arn) return;
+
+      try {
+        const { data: result } = await client.queries.getContainerStatus({
+          taskArn: arn,
+        });
+        if (unsubscribed || !result) return;
+        const payload = parseStatusPayload(result);
+
+        console.log('[useDevContainerSession] Poll result:', payload.status);
+
+        if (payload.status === 'READY') {
+          setState('READY');
+          setContainerUrl(payload.containerUrl ?? null);
+        } else if (payload.status === 'STOPPED' || payload.status === 'ERROR') {
+          setState('ERROR');
+          setError('Container stopped unexpectedly');
+        }
+      } catch (err) {
+        console.error('[useDevContainerSession] Poll failed:', err);
+      }
+    };
+
+    // Subscribe to model updates for this specific task (fast path —
+    // avoids polling delay when AppSync subscription delivers the event).
     const sub = client.models.DevContainerSession
       .onUpdate({
         filter: {
@@ -133,7 +183,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
           if (unsubscribed) return;
           if (!update) return;
 
-          console.log('[useDevContainerSession] Model update:', update.status);
+          console.log('[useDevContainerSession] Subscription update:', update.status);
 
           if (update.status === 'READY' && update.url) {
             setState('READY');
@@ -149,37 +199,24 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
         },
         error: (err: unknown) => {
           console.error(
-            '[useDevContainerSession] Subscription error, will rely on safety timeout:',
+            '[useDevContainerSession] Subscription error, falling back to polling:',
             err
           );
         },
       });
 
-    // Safety timeout fallback
-    const timeout = setTimeout(async () => {
-      if (unsubscribed) return;
-      const arn = taskArnRef.current;
-      if (!arn) return;
+    // Immediate check — catches the case where the container already reached
+    // READY before this subscription was established (e.g. page refresh).
+    void checkStatus();
 
-      try {
-        const { data: result } = await client.queries.getContainerStatus({
-          taskArn: arn,
-        });
-        if (!result) return;
-        const payload = parseStatusPayload(result);
-        if (payload.status === 'READY') {
-          setState('READY');
-          setContainerUrl(payload.containerUrl ?? null);
-        }
-      } catch (err) {
-        console.error('[useDevContainerSession] Fallback check failed:', err);
-      }
-    }, SUBSCRIPTION_TIMEOUT_MS);
+    // Periodic polling — reliable fallback in case the subscription misses
+    // an event (multi-auth AppSync delivery, missed events, reconnect, etc.)
+    const poll = setInterval(() => { void checkStatus(); }, POLL_INTERVAL_MS);
 
     return () => {
       unsubscribed = true;
       sub.unsubscribe();
-      clearTimeout(timeout);
+      clearInterval(poll);
     };
   }, [state, taskArn]);
 

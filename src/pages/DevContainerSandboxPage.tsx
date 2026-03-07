@@ -360,12 +360,12 @@ export default function DevContainerSandboxPage(): JSX.Element {
         >
           <div>• Launch → ECS.RunTask (Fargate, 1 vCPU / 2 GB RAM)</div>
           <div>• Status → ECS Task State Change → EventBridge → ecsStatusBridge Lambda → AppSync subscription (real-time, &lt;2 s)</div>
-          <div>• Fallback → single getContainerStatus query after 120 s timeout</div>
+          <div>• Fallback → ECS poll every 5 s (catches missed events after page refresh or AppSync multi-auth delivery gap)</div>
           <div>• Ready → ALB routes /session/:id → container port 8080</div>
           <div>• Destroy → ECS.StopTask + automatic 60-min session timeout</div>
           <div>• Cost → ~$0.05 per 60-min interview session</div>
           <div style={{ marginTop: 8, color: 'rgba(167,139,250,0.5)' }}>
-            ADR-015 — docs/decisions/ADR-015-dev-container-fargate-architecture.md
+            ADR-016 — docs/decisions/ADR-016-dev-container-architecture.md
           </div>
         </div>
       </div>

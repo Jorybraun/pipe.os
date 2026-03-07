@@ -5,9 +5,23 @@
  * code-server URL once the container is ready.
  */
 
-export interface DevContainerStatusRequest {
+export interface DevContainerStatusArguments {
   /** ECS task ARN returned by devContainerLaunch */
   taskArn: string;
+}
+
+/**
+ * Amplify Gen 2 direct Lambda resolvers receive the full AppSync event.
+ * Query arguments are nested under `event.arguments`, not at the top level.
+ */
+export interface DevContainerStatusRequest {
+  arguments: DevContainerStatusArguments;
+  typeName: string;
+  fieldName: string;
+  identity: Record<string, unknown>;
+  source: unknown;
+  request: Record<string, unknown>;
+  prev: { result: Record<string, unknown> };
 }
 
 /**
