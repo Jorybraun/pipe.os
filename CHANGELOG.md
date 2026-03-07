@@ -25,6 +25,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **BOOTING stuck after page refresh**: Replaced the 120-second one-shot fallback in `useDevContainerSession` with a 5-second polling interval starting immediately on subscribe. AppSync subscriptions don't replay past events — if the container reached READY before the subscription was established (e.g. page refresh), the event was permanently missed. Polling catches up within 5 seconds.
 - **ADR-016**: Documented dev container ECS Fargate + AppSync architecture decision; updated with confirmed-working validation notes, corrected rollback plan (5s polling not 120s timeout), and three bugs resolved during prototype phase.
 - **ADR reference fix**: `DevContainerSandboxPage.tsx` architecture note corrected from `ADR-015` → `ADR-016`.
+- **`infra/` CDK stack**: Added `infra/lib/PipeSharedStack.ts` — shared ECS infrastructure as code (cluster, task definition, IAM role, security group, CloudWatch log group, SSM parameter exports). `infra/state/2026-03-06-initial.json` is the migration ledger. Deploy with `cd infra && npx cdk deploy PipeSharedDev`. Replaces manual AWS CLI provisioning.
 
 ---
 
