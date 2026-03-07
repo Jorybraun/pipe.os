@@ -18,7 +18,7 @@ resource "aws_ecs_task_definition" "code_server" {
 
   container_definitions = jsonencode([{
     name      = "code-server"
-    image     = "codercom/code-server:latest"
+    image     = "codercom/code-server:4.22.1"
     essential = true
 
     portMappings = [{

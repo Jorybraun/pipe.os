@@ -289,7 +289,7 @@ devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
 // ECS infrastructure provisioned via Terraform in us-west-2 (account 642351122747).
 // Updated 2026-03-06 with latest terraform output values.
 const ECS_CLUSTER_ARN = 'arn:aws:ecs:us-west-2:642351122747:cluster/pipe-dev-containers';
-const ECS_TASK_DEFINITION = 'pipe-code-server:2';
+const ECS_TASK_DEFINITION = 'pipe-code-server'; // no revision — ECS uses latest active
 const ECS_SUBNET_IDS = 'subnet-0685c349f437eab74,subnet-090c636f2ef014bca,subnet-0b8e9859485265163,subnet-0566aca6bb5e928be';
 const ECS_SECURITY_GROUP_ID = 'sg-050602fd4d8e2cd4e';
 

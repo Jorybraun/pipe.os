@@ -36,6 +36,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`DevContainerSession` schema fields**: Added `albTargetGroupArn` and `albListenerRuleArn` string fields to the Amplify schema for ALB cleanup tracking.
 - **`infra/networking.tf` SG hardening**: code-server security group ingress for port 8080 now accepts traffic from ALB SG only (not `0.0.0.0/0`).
 - **Linear HAS-47**: Created backlog issue "Set up HTTPS + Route 53 for ALB (env.pipe.dev)" with full Terraform code stubs for ACM cert, Route 53 records, HTTPS listener, and HTTP→HTTPS redirect.
+- **Pin code-server image to `4.22.1`**: `codercom/code-server:latest` didn't support the `--base-path` flag (added in 4.7.0), causing every container to crash on startup with `Unknown option --base-path`. `infra/ecs.tf` now pins to `codercom/code-server:4.22.1` — a stable release with `--base-path` support. Terraform created task definition revision `:3`. Updated `ECS_TASK_DEFINITION` in `backend.ts` to reference the family name without revision (`pipe-code-server`) so future Terraform image bumps don't require a backend.ts edit.
 
 ---
 
