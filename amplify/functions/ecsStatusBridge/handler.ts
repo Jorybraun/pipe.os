@@ -13,11 +13,11 @@
  *     → ALB API           (per-session target group + listener rule lifecycle)
  *
  * Required environment variables (injected by backend.ts):
- *   APPSYNC_ENDPOINT        — AppSync GraphQL endpoint URL
- *   APPSYNC_API_KEY         — AppSync API key
- *   CODE_SERVER_ALB_DOMAIN  — ALB DNS name (e.g. pipe-dev-containers-xxxx.elb.amazonaws.com)
- *   ALB_LISTENER_ARN        — HTTP listener ARN (for per-session rule creation/deletion)
- *   VPC_ID                  — VPC ID used when creating IP-based target groups
+ *   APPSYNC_ENDPOINT          — AppSync GraphQL endpoint URL
+ *   APPSYNC_API_KEY           — AppSync API key
+ *   ALB_DOMAIN_SSM_PARAM      — SSM param name for the ALB DNS name (read at cold start)
+ *   ALB_LISTENER_ARN_SSM_PARAM — SSM param name for the HTTP listener ARN (read at cold start)
+ *   VPC_ID                    — VPC ID used when creating IP-based target groups
  */
 
 import {
@@ -29,10 +29,43 @@ import {
   DeleteTargetGroupCommand,
   DescribeRulesCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import type { EcsTaskStateChangeEvent, ContainerStatus } from './types';
 
 const region = process.env.AWS_REGION ?? 'us-east-1';
 const elb = new ElasticLoadBalancingV2Client({ region });
+const ssm = new SSMClient({ region });
+
+// Module-level cache — populated once per cold start, reused on warm invocations.
+// After `terraform apply` updates SSM, the next cold start picks up the new values.
+let _albConfig: { domain: string; listenerArn: string } | undefined;
+
+async function getAlbConfig(): Promise<{ domain: string; listenerArn: string }> {
+  if (_albConfig) return _albConfig;
+
+  const domainParam = process.env.ALB_DOMAIN_SSM_PARAM;
+  const listenerArnParam = process.env.ALB_LISTENER_ARN_SSM_PARAM;
+
+  if (!domainParam || !listenerArnParam) {
+    throw new Error('ALB_DOMAIN_SSM_PARAM or ALB_LISTENER_ARN_SSM_PARAM env var not set');
+  }
+
+  const [domainResult, listenerResult] = await Promise.all([
+    ssm.send(new GetParameterCommand({ Name: domainParam })),
+    ssm.send(new GetParameterCommand({ Name: listenerArnParam })),
+  ]);
+
+  const domain = domainResult.Parameter?.Value;
+  const listenerArn = listenerResult.Parameter?.Value;
+
+  if (!domain || !listenerArn) {
+    throw new Error(`SSM params not populated yet: domain=${domain}, listenerArn=${listenerArn}`);
+  }
+
+  _albConfig = { domain, listenerArn };
+  console.log('[ecsStatusBridge] ALB config loaded from SSM:', { domain, listenerArn });
+  return _albConfig;
+}
 
 interface AppSyncError {
   message: string;
@@ -273,17 +306,14 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
   // the session is reachable at http://{alb-domain}/session/{id}/
   let albTargetGroupArn: string | undefined;
   let albListenerRuleArn: string | undefined;
+  let albDomain: string | undefined;
 
   if (appStatus === 'READY') {
-    const listenerArn = process.env.ALB_LISTENER_ARN;
     const vpcId = process.env.VPC_ID;
-    const albDomain = process.env.CODE_SERVER_ALB_DOMAIN;
     const containerIp = extractPrivateIp(containers);
 
-    if (!listenerArn || !vpcId || !albDomain) {
-      console.warn(
-        '[ecsStatusBridge] ALB_LISTENER_ARN, VPC_ID, or CODE_SERVER_ALB_DOMAIN not set — skipping ALB registration',
-      );
+    if (!vpcId) {
+      console.warn('[ecsStatusBridge] VPC_ID not set — skipping ALB registration');
     } else if (!containerIp) {
       console.warn(
         '[ecsStatusBridge] No container private IP in event — skipping ALB registration for session:',
@@ -291,7 +321,9 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
       );
     } else {
       try {
-        const albResult = await registerSessionWithAlb(sessionId, containerIp, vpcId, listenerArn);
+        const albConfig = await getAlbConfig();
+        albDomain = albConfig.domain;
+        const albResult = await registerSessionWithAlb(sessionId, containerIp, vpcId, albConfig.listenerArn);
         albTargetGroupArn = albResult.targetGroupArn;
         albListenerRuleArn = albResult.ruleArn;
       } catch (err) {
@@ -301,8 +333,14 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
     }
   }
 
-  // Build URL — HTTP until Route 53 + ACM HTTPS are configured (see Linear: HTTPS task)
-  const albDomain = process.env.CODE_SERVER_ALB_DOMAIN;
+  // Build URL — HTTP until Route 53 + ACM HTTPS are configured (see Linear: HAS-47)
+  if (!albDomain && appStatus === 'READY') {
+    try {
+      albDomain = (await getAlbConfig()).domain;
+    } catch {
+      // non-fatal — URL will be undefined
+    }
+  }
   const url =
     appStatus === 'READY' && albDomain
       ? `http://${albDomain}/session/${sessionId}/`

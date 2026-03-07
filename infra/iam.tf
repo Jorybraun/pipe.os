@@ -12,6 +12,10 @@ resource "aws_iam_role" "ecs_task_execution" {
   name               = "pipe-ecs-task-execution"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume_role.json
 
+  lifecycle {
+    ignore_changes = [name]
+  }
+
   tags = {
     Project     = "pipe"
     Environment = var.environment

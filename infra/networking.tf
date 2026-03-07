@@ -15,7 +15,7 @@ resource "aws_security_group" "code_server" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description     = "code-server HTTP — ALB only"
+    description     = "code-server port ALB only"
     from_port       = 8080
     to_port         = 8080
     protocol        = "tcp"

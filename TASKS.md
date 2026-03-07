@@ -9,6 +9,8 @@
 
 ## 🛑 CRITICAL SECURITY & STABILITY
 
+- [ ] **[P1] Dev Container Network Egress Hardening** — Restrict `pipe-{env}-code-server` SG egress from `0.0.0.0/0 all-ports` to `80/443 internet-only`. Explicitly deny RFC1918 lateral movement so container users cannot reach other VPC-resident resources. Update `infra/networking.tf`. Run `terraform apply`. See ADR-017. ~1 hour.
+
 - [ ] **[P0] UX/Product Audit: Scheduling Flow** — The end-to-end journey (OAuth → Pipeline Config → Candidate Booking → Recruiter Dashboard) is currently "discombobulated." Audit state transitions, UI feedback, and navigation to ensure a cohesive, sensible experience. ~4 hours.
 - [ ] **[P0] PKCE Implementation Security Audit** — Review the client-side generation and `sessionStorage` persistence of the OAuth `code_verifier`. Verify against OAuth 2.1 best practices for SPAs to ensure no interception or side-channel leakage is possible. ~2 hours.
 - [ ] **[P1] AppSync Auth Mode Sync Audit** — Validate the "manual sync" pattern used in `useSchedulingConnection.ts` for other IAM-to-UserPool transitions across the codebase. ~1 hour.

@@ -48,3 +48,4 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-014](ADR-014-scheduling-ioc-plugin-registry.md) | Scheduling IoC: Plugin Registry + Webhook Automation | Proposed | 2026-03-01 |
 | [ADR-015](ADR-015-adaptive-notification-engine.md) | Adaptive Notification Engine | Proposed | 2026-03-01 |
 | [ADR-016](ADR-016-dev-container-architecture.md) | Dev Container Architecture — ECS Fargate + AppSync Real-Time Status | Accepted | 2026-03-06 |
+| [ADR-017](ADR-017-dev-container-egress-hardening.md) | Dev Container Network Egress Hardening | Proposed | 2026-03-07 |

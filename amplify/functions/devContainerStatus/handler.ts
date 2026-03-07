@@ -16,6 +16,7 @@ import {
   ECSClient,
   DescribeTasksCommand,
 } from '@aws-sdk/client-ecs';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import type {
   DevContainerStatusRequest,
   DevContainerStatusResponse,
@@ -25,6 +26,26 @@ import type {
 
 const region = process.env.AWS_REGION ?? 'us-east-1';
 const ecs = new ECSClient({ region });
+const ssm = new SSMClient({ region });
+
+// Module-level cache — populated once per cold start.
+let _albDomain: string | undefined;
+
+async function getAlbDomain(): Promise<string | undefined> {
+  if (_albDomain !== undefined) return _albDomain;
+
+  const param = process.env.ALB_DOMAIN_SSM_PARAM;
+  if (!param) return undefined;
+
+  try {
+    const result = await ssm.send(new GetParameterCommand({ Name: param }));
+    _albDomain = result.Parameter?.Value ?? '';
+    return _albDomain || undefined;
+  } catch (err) {
+    console.warn('[devContainerStatus] Could not read ALB domain from SSM:', err);
+    return undefined;
+  }
+}
 
 /**
  * Maps the raw ECS task lastStatus to our internal lifecycle status.
@@ -59,7 +80,7 @@ export async function handler(
   console.log('[devContainerStatus] Checking status for task:', taskArn);
 
   const clusterArn = process.env.ECS_CLUSTER_ARN;
-  const albDomain = process.env.CODE_SERVER_ALB_DOMAIN;
+  const albDomain = await getAlbDomain();
 
   if (!clusterArn) {
     return {

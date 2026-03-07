@@ -53,6 +53,11 @@ const pipelineTable = backend.data.resources.tables['Pipeline'];
 const ssmEnv = process.env.USER || 'default';
 const ssmPrefix = `/pipe/${ssmEnv}`;
 
+// Terraform-managed shared infrastructure always uses environment="dev" (see infra/terraform.tfvars).
+// This is intentionally separate from ssmPrefix (which is per Amplify sandbox/branch).
+// Lambdas that read Terraform outputs must use this prefix, not ssmPrefix.
+const INFRA_SSM_PREFIX = '/pipe/dev';
+
 const TABLE_NAME_PARAMS = {
   'SCHEDULINGCONNECTION': `${ssmPrefix}/tables/scheduling-connection`,
   'SCHEDULEDINTERVIEW': `${ssmPrefix}/tables/scheduled-interview`,
@@ -169,13 +174,25 @@ ecsStatusBridgeLambda.addEnvironment('APPSYNC_ENDPOINT', graphqlEndpoint);
 if (apiKey) {
   ecsStatusBridgeLambda.addEnvironment('APPSYNC_API_KEY', apiKey);
 }
-// ALB domain — update after `terraform apply` outputs alb_dns_name
-// (e.g. pipe-dev-containers-xxxx.us-west-2.elb.amazonaws.com)
-ecsStatusBridgeLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'REPLACE_AFTER_TERRAFORM_APPLY');
-// ALB listener ARN — update after `terraform apply` outputs alb_listener_arn
-ecsStatusBridgeLambda.addEnvironment('ALB_LISTENER_ARN', 'REPLACE_AFTER_TERRAFORM_APPLY');
+// ALB config — read from SSM at cold start so terraform apply auto-propagates values.
+// Terraform writes to /pipe/dev/shared/alb/... (env=dev in terraform.tfvars).
+// Must use INFRA_SSM_PREFIX, not ssmPrefix — these are shared infra, not per-sandbox.
+const ALB_DOMAIN_SSM = `${INFRA_SSM_PREFIX}/shared/alb/domain`;
+const ALB_LISTENER_ARN_SSM = `${INFRA_SSM_PREFIX}/shared/alb/listener-arn`;
+ecsStatusBridgeLambda.addEnvironment('ALB_DOMAIN_SSM_PARAM', ALB_DOMAIN_SSM);
+ecsStatusBridgeLambda.addEnvironment('ALB_LISTENER_ARN_SSM_PARAM', ALB_LISTENER_ARN_SSM);
 // Default VPC in us-west-2 (used when creating IP-based ALB target groups)
 ecsStatusBridgeLambda.addEnvironment('VPC_ID', 'vpc-0104c027aa8358758');
+
+ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['ssm:GetParameter'],
+  // Needs access to both: sandbox params (ssmPrefix) and shared infra params (INFRA_SSM_PREFIX)
+  resources: [
+    `arn:aws:ssm:*:*:parameter${ssmPrefix}/*`,
+    `arn:aws:ssm:*:*:parameter${INFRA_SSM_PREFIX}/*`,
+  ],
+}));
 
 // ELB permissions: create/delete per-session target groups and listener rules
 ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
@@ -189,6 +206,20 @@ ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
     'elasticloadbalancing:DeleteRule',
     'elasticloadbalancing:DescribeRules',
   ],
+  resources: ['*'],
+}));
+
+// DynamoDB permissions: write DevContainerSession records
+ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+  resources: ['arn:aws:dynamodb:*:*:table/*'],
+}));
+
+// ECS permissions: describe tasks to get IP addresses
+ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['ecs:DescribeTasks'],
   resources: ['*'],
 }));
 
@@ -255,18 +286,27 @@ devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
 }));
 
 // ─── DEV CONTAINER ENV VARS ─────────────────────────────────────────────────
-// ECS infrastructure provisioned 2026-03-06 in us-west-2 (account 642351122747).
-// Not secrets — hardcoded like CODE_SERVER_ALB_DOMAIN above.
+// ECS infrastructure provisioned via Terraform in us-west-2 (account 642351122747).
+// Updated 2026-03-06 with latest terraform output values.
 const ECS_CLUSTER_ARN = 'arn:aws:ecs:us-west-2:642351122747:cluster/pipe-dev-containers';
-const ECS_TASK_DEFINITION = 'pipe-code-server:1';
+const ECS_TASK_DEFINITION = 'pipe-code-server:2';
 const ECS_SUBNET_IDS = 'subnet-0685c349f437eab74,subnet-090c636f2ef014bca,subnet-0b8e9859485265163,subnet-0566aca6bb5e928be';
-const ECS_SECURITY_GROUP_ID = 'sg-03ec946d1d7a814cf';
+const ECS_SECURITY_GROUP_ID = 'sg-050602fd4d8e2cd4e';
 
 devContainerLaunchLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
 devContainerLaunchLambda.addEnvironment('ECS_TASK_DEFINITION', ECS_TASK_DEFINITION);
 devContainerLaunchLambda.addEnvironment('ECS_SUBNET_IDS', ECS_SUBNET_IDS);
 devContainerLaunchLambda.addEnvironment('ECS_SECURITY_GROUP_ID', ECS_SECURITY_GROUP_ID);
-devContainerLaunchLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'env.pipe.dev');
 
 devContainerStatusLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
-devContainerStatusLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'env.pipe.dev');
+// ALB domain read from SSM at cold start — same param as ecsStatusBridge
+devContainerStatusLambda.addEnvironment('ALB_DOMAIN_SSM_PARAM', ALB_DOMAIN_SSM);
+devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['ssm:GetParameter'],
+  // Needs access to both: sandbox params (ssmPrefix) and shared infra params (INFRA_SSM_PREFIX)
+  resources: [
+    `arn:aws:ssm:*:*:parameter${ssmPrefix}/*`,
+    `arn:aws:ssm:*:*:parameter${INFRA_SSM_PREFIX}/*`,
+  ],
+}));
