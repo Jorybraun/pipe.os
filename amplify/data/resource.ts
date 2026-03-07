@@ -354,6 +354,10 @@ const schema = a.schema({
       sessionId: a.string().required(),
       status: a.enum(['PROVISIONING', 'BOOTING', 'READY', 'STOPPING', 'ERROR']),
       url: a.string(),
+      // ALB resources created per-session by ecsStatusBridge on RUNNING;
+      // stored here so they can be cleaned up on STOPPED.
+      albTargetGroupArn: a.string(),
+      albListenerRuleArn: a.string(),
     })
     .identifier(['taskArn'])
     .authorization((allow) => [

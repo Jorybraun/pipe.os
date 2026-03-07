@@ -71,6 +71,14 @@ export async function handler(
       containerOverrides: [
         {
           name: 'code-server',
+          // Override the container command so code-server serves at the ALB sub-path.
+          // Without --base-path, code-server loads assets from / and breaks when
+          // accessed via /session/{id}/* through the ALB path-based routing rule.
+          command: [
+            '--bind-addr', '0.0.0.0:8080',
+            '--auth', 'password',
+            '--base-path', `/session/${sessionId}`,
+          ],
           environment: [
             { name: 'SESSION_ID', value: sessionId },
             { name: 'PASSWORD', value: sessionId },

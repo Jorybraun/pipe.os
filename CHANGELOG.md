@@ -26,6 +26,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **ADR-016**: Documented dev container ECS Fargate + AppSync architecture decision; updated with confirmed-working validation notes, corrected rollback plan (5s polling not 120s timeout), and three bugs resolved during prototype phase.
 - **ADR reference fix**: `DevContainerSandboxPage.tsx` architecture note corrected from `ADR-015` → `ADR-016`.
 - **`infra/` Terraform stack**: Replaced CDK with Terraform for shared ECS infrastructure as code. `infra/*.tf` defines cluster, task definition, IAM role, security group, CloudWatch log group, and SSM parameter exports. `terraform.tfvars` holds dev environment values. Use `cd infra && terraform init && terraform import ... && terraform apply`. `state/2026-03-06-initial.json` is archived as a historical record. No secrets in any `.tf` files.
+- **ALB for dev-container routing**: Added `infra/alb.tf` — ALB security group (port 80 from internet), Application Load Balancer (`pipe-dev-containers`), and HTTP listener with 404 default action. Per-session path routing (`/session/{id}/*` → container IP:8080) is managed dynamically by `ecsStatusBridge`. `infra/ssm.tf` updated to export `alb_domain` (ALB DNS name) and `alb_listener_arn`. `infra/outputs.tf` exposes both values. **Run `terraform apply` in `infra/` then update `REPLACE_AFTER_TERRAFORM_APPLY` placeholders in `amplify/backend.ts`.**
+- **ALB lifecycle in `ecsStatusBridge`**: On ECS RUNNING, the bridge now creates an IP-based ALB target group + path listener rule and stores their ARNs in `DevContainerSession.albTargetGroupArn/albListenerRuleArn`. On STOPPED, it queries DynamoDB for those ARNs and deletes them. No extra EC2/ECS API calls — the container private IP is read directly from the ECS Task State Change event payload.
+- **code-server `--base-path` override**: `devContainerLaunch` now passes `--bind-addr 0.0.0.0:8080 --auth password --base-path /session/{id}` via ECS `containerOverrides.command` so code-server serves assets at the correct ALB sub-path.
+- **`DevContainerSession` schema fields**: Added `albTargetGroupArn` and `albListenerRuleArn` string fields to the Amplify schema for ALB cleanup tracking.
+- **`infra/networking.tf` SG hardening**: code-server security group ingress for port 8080 now accepts traffic from ALB SG only (not `0.0.0.0/0`).
+- **Linear HAS-47**: Created backlog issue "Set up HTTPS + Route 53 for ALB (env.pipe.dev)" with full Terraform code stubs for ACM cert, Route 53 records, HTTPS listener, and HTTP→HTTPS redirect.
 
 ---
 

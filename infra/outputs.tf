@@ -27,3 +27,13 @@ output "task_execution_role_arn" {
   description = "ECS task execution IAM role ARN"
   value       = aws_iam_role.ecs_task_execution.arn
 }
+
+output "alb_dns_name" {
+  description = "ALB auto-generated DNS name (use this until Route 53 / env.pipe.dev is set up)"
+  value       = aws_lb.dev_containers.dns_name
+}
+
+output "alb_listener_arn" {
+  description = "HTTP listener ARN (used by ecsStatusBridge to create per-session rules)"
+  value       = aws_lb_listener.http.arn
+}

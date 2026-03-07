@@ -28,7 +28,15 @@ resource "aws_ssm_parameter" "security_group_id" {
 resource "aws_ssm_parameter" "alb_domain" {
   name  = "/pipe/${var.environment}/shared/alb/domain"
   type  = "String"
-  value = var.alb_domain
+  value = aws_lb.dev_containers.dns_name
+
+  tags = { ManagedBy = "terraform" }
+}
+
+resource "aws_ssm_parameter" "alb_listener_arn" {
+  name  = "/pipe/${var.environment}/shared/alb/listener-arn"
+  type  = "String"
+  value = aws_lb_listener.http.arn
 
   tags = { ManagedBy = "terraform" }
 }

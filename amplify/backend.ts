@@ -169,7 +169,28 @@ ecsStatusBridgeLambda.addEnvironment('APPSYNC_ENDPOINT', graphqlEndpoint);
 if (apiKey) {
   ecsStatusBridgeLambda.addEnvironment('APPSYNC_API_KEY', apiKey);
 }
-ecsStatusBridgeLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'env.pipe.dev');
+// ALB domain — update after `terraform apply` outputs alb_dns_name
+// (e.g. pipe-dev-containers-xxxx.us-west-2.elb.amazonaws.com)
+ecsStatusBridgeLambda.addEnvironment('CODE_SERVER_ALB_DOMAIN', 'REPLACE_AFTER_TERRAFORM_APPLY');
+// ALB listener ARN — update after `terraform apply` outputs alb_listener_arn
+ecsStatusBridgeLambda.addEnvironment('ALB_LISTENER_ARN', 'REPLACE_AFTER_TERRAFORM_APPLY');
+// Default VPC in us-west-2 (used when creating IP-based ALB target groups)
+ecsStatusBridgeLambda.addEnvironment('VPC_ID', 'vpc-0104c027aa8358758');
+
+// ELB permissions: create/delete per-session target groups and listener rules
+ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: [
+    'elasticloadbalancing:CreateTargetGroup',
+    'elasticloadbalancing:DeleteTargetGroup',
+    'elasticloadbalancing:RegisterTargets',
+    'elasticloadbalancing:DeregisterTargets',
+    'elasticloadbalancing:CreateRule',
+    'elasticloadbalancing:DeleteRule',
+    'elasticloadbalancing:DescribeRules',
+  ],
+  resources: ['*'],
+}));
 
 const ecsStatusBridgeRule = new Rule(
   backend.ecsStatusBridge.resources.lambda.stack,

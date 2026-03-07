@@ -15,11 +15,11 @@ resource "aws_security_group" "code_server" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "code-server HTTP — TODO: lock to ALB SG before prod"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "code-server HTTP — ALB only"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
   }
 
   egress {

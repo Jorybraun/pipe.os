@@ -1,32 +1,58 @@
 /**
  * ECS Status Bridge Lambda Handler
  *
- * Receives ECS Task State Change events from EventBridge and upserts the
- * DevContainerSession model in AppSync using API Key authorization.
+ * Receives ECS Task State Change events from EventBridge and:
+ *   1. Upserts DevContainerSession in AppSync (status sync → frontend subscriptions)
+ *   2. On READY (ECS RUNNING): creates an ALB target group + listener rule so the
+ *      session is reachable at http://{alb-domain}/session/{id}/
+ *   3. On terminal STOPPED: cleans up the ALB target group + listener rule
  *
  * Architecture:
- *   ECS Task State Change → EventBridge → this Lambda → AppSync mutation
- *   → DevContainerSession model update → Frontend subscription (instant)
+ *   ECS Task State Change → EventBridge → this Lambda
+ *     → AppSync mutation  (DevContainerSession status update → frontend subscription)
+ *     → ALB API           (per-session target group + listener rule lifecycle)
  *
- * Required environment variables (injected by backend.ts at deploy time):
- *   APPSYNC_ENDPOINT       — AppSync GraphQL endpoint URL (CDK token)
- *   APPSYNC_API_KEY        — AppSync API key (CDK token)
- *   CODE_SERVER_ALB_DOMAIN — ALB domain for constructing the container URL
+ * Required environment variables (injected by backend.ts):
+ *   APPSYNC_ENDPOINT        — AppSync GraphQL endpoint URL
+ *   APPSYNC_API_KEY         — AppSync API key
+ *   CODE_SERVER_ALB_DOMAIN  — ALB DNS name (e.g. pipe-dev-containers-xxxx.elb.amazonaws.com)
+ *   ALB_LISTENER_ARN        — HTTP listener ARN (for per-session rule creation/deletion)
+ *   VPC_ID                  — VPC ID used when creating IP-based target groups
  */
 
+import {
+  ElasticLoadBalancingV2Client,
+  CreateTargetGroupCommand,
+  RegisterTargetsCommand,
+  CreateRuleCommand,
+  DeleteRuleCommand,
+  DeleteTargetGroupCommand,
+  DescribeRulesCommand,
+} from '@aws-sdk/client-elastic-load-balancing-v2';
 import type { EcsTaskStateChangeEvent, ContainerStatus } from './types';
 
-type AppSyncResult = { errors?: Array<{ message: string; errorType?: string }> };
+const region = process.env.AWS_REGION ?? 'us-east-1';
+const elb = new ElasticLoadBalancingV2Client({ region });
+
+interface AppSyncError {
+  message: string;
+  errorType?: string;
+}
+
+interface AppSyncResponse {
+  data?: Record<string, unknown> | null;
+  errors?: AppSyncError[];
+}
 
 /**
- * Calls a GraphQL mutation on the AppSync endpoint using API key authentication.
+ * Calls a GraphQL operation on the AppSync endpoint using API key authentication.
  */
 async function callAppSync(
   endpoint: string,
   apiKey: string,
   query: string,
   variables: Record<string, unknown>,
-): Promise<AppSyncResult> {
+): Promise<AppSyncResponse> {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -41,7 +67,7 @@ async function callAppSync(
     throw new Error(`AppSync request failed (${response.status}): ${text}`);
   }
 
-  return response.json() as Promise<AppSyncResult>;
+  return response.json() as Promise<AppSyncResponse>;
 }
 
 /**
@@ -66,6 +92,120 @@ function mapEcsStatus(ecsStatus: string, desiredStatus: string): ContainerStatus
   }
 }
 
+/**
+ * Extracts the private IPv4 address of the first container in the ECS task.
+ *
+ * The address is available directly in the ECS Task State Change event payload
+ * under containers[].networkInterfaces[].privateIpv4Address — no extra API call needed.
+ */
+function extractPrivateIp(
+  containers: EcsTaskStateChangeEvent['detail']['containers'],
+): string | undefined {
+  for (const container of containers ?? []) {
+    const ip = container.networkInterfaces?.[0]?.privateIpv4Address;
+    if (ip) return ip;
+  }
+  return undefined;
+}
+
+interface AlbResources {
+  targetGroupArn: string;
+  ruleArn: string;
+}
+
+/**
+ * Registers an active dev-container session with the ALB:
+ *   1. Creates an IP-based target group pointing at the container's port 8080
+ *   2. Creates a path-pattern listener rule: /session/{id}/* → target group
+ *
+ * Returns the ARNs of the created resources so they can be stored for later cleanup.
+ */
+async function registerSessionWithAlb(
+  sessionId: string,
+  containerIp: string,
+  vpcId: string,
+  listenerArn: string,
+): Promise<AlbResources> {
+  // ALB target group name: 1-32 chars, [a-zA-Z0-9-] only
+  const safeSuffix = sessionId.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 24);
+  const tgName = `pipe-s-${safeSuffix}`.slice(0, 32);
+
+  const tg = await elb.send(new CreateTargetGroupCommand({
+    Name: tgName,
+    Protocol: 'HTTP',
+    Port: 8080,
+    VpcId: vpcId,
+    TargetType: 'ip',
+    HealthCheckPath: `/session/${sessionId}/`,
+    HealthCheckIntervalSeconds: 30,
+    HealthyThresholdCount: 2,
+    UnhealthyThresholdCount: 3,
+    // Accept all 2xx/3xx/4xx responses — code-server redirects (302) unauthenticated requests
+    Matcher: { HttpCode: '200-404' },
+  }));
+
+  const targetGroupArn = tg.TargetGroups?.[0]?.TargetGroupArn;
+  if (!targetGroupArn) {
+    throw new Error(`Failed to create target group for session ${sessionId}`);
+  }
+
+  // Register the container's private IP as the sole target
+  await elb.send(new RegisterTargetsCommand({
+    TargetGroupArn: targetGroupArn,
+    Targets: [{ Id: containerIp, Port: 8080 }],
+  }));
+
+  // Find the next available listener rule priority (2–49999; 1 reserved for HTTP→HTTPS redirect)
+  const { Rules } = await elb.send(new DescribeRulesCommand({ ListenerArn: listenerArn }));
+  const usedPriorities = new Set(
+    (Rules ?? [])
+      .map((r) => parseInt(r.Priority ?? '', 10))
+      .filter((p) => !isNaN(p)),
+  );
+  let priority = 2;
+  while (usedPriorities.has(priority) && priority < 50000) priority++;
+
+  const ruleResult = await elb.send(new CreateRuleCommand({
+    ListenerArn: listenerArn,
+    Priority: priority,
+    Conditions: [
+      { Field: 'path-pattern', Values: [`/session/${sessionId}/*`] },
+    ],
+    Actions: [
+      { Type: 'forward', TargetGroupArn: targetGroupArn },
+    ],
+  }));
+
+  const ruleArn = ruleResult.Rules?.[0]?.RuleArn;
+  if (!ruleArn) {
+    // Roll back the target group to avoid orphaned resources
+    await elb.send(new DeleteTargetGroupCommand({ TargetGroupArn: targetGroupArn })).catch(() => {});
+    throw new Error(`Failed to create listener rule for session ${sessionId}`);
+  }
+
+  console.log('[ecsStatusBridge] ALB resources created:', {
+    sessionId,
+    targetGroupArn,
+    ruleArn,
+    priority,
+  });
+
+  return { targetGroupArn, ruleArn };
+}
+
+/**
+ * Cleans up ALB resources for a stopped session.
+ * The listener rule must be deleted before the target group.
+ */
+async function deregisterSessionFromAlb(
+  targetGroupArn: string,
+  ruleArn: string,
+): Promise<void> {
+  await elb.send(new DeleteRuleCommand({ RuleArn: ruleArn }));
+  await elb.send(new DeleteTargetGroupCommand({ TargetGroupArn: targetGroupArn }));
+  console.log('[ecsStatusBridge] ALB resources deleted:', { targetGroupArn, ruleArn });
+}
+
 const CREATE_SESSION_MUTATION = /* GraphQL */ `
   mutation CreateDevContainerSession($input: CreateDevContainerSessionInput!) {
     createDevContainerSession(input: $input) {
@@ -80,13 +220,26 @@ const UPDATE_SESSION_MUTATION = /* GraphQL */ `
     updateDevContainerSession(input: $input) {
       taskArn
       status
+      albTargetGroupArn
+      albListenerRuleArn
+    }
+  }
+`;
+
+// Used on STOPPED to retrieve stored ALB ARNs for cleanup
+const GET_SESSION_QUERY = /* GraphQL */ `
+  query GetDevContainerSession($taskArn: String!) {
+    getDevContainerSession(taskArn: $taskArn) {
+      taskArn
+      albTargetGroupArn
+      albListenerRuleArn
     }
   }
 `;
 
 export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
   const { detail } = event;
-  const { taskArn, lastStatus, desiredStatus, tags, overrides } = detail;
+  const { taskArn, lastStatus, desiredStatus, tags, overrides, containers } = detail;
 
   console.log('[ecsStatusBridge] ECS Task State Change:', {
     taskArn,
@@ -94,7 +247,7 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
     desiredStatus,
   });
 
-  // Extract sessionId from task tags (primary) or container env var (fallback)
+  // Extract sessionId from task tags (primary) or container env var override (fallback)
   const sessionId =
     tags?.find((t) => t.key === 'pipe:session')?.value ??
     overrides?.containerOverrides
@@ -102,15 +255,11 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
       ?.environment?.find((e) => e.name === 'SESSION_ID')?.value;
 
   if (!sessionId) {
-    console.warn(
-      '[ecsStatusBridge] No pipe:session tag found on task, skipping:',
-      taskArn
-    );
+    console.warn('[ecsStatusBridge] No pipe:session tag on task, skipping:', taskArn);
     return;
   }
 
   const appStatus = mapEcsStatus(lastStatus, desiredStatus);
-
   const endpoint = process.env.APPSYNC_ENDPOINT;
   const apiKey = process.env.APPSYNC_API_KEY;
 
@@ -119,27 +268,61 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
     return;
   }
 
-  // Build the container URL when the task reaches RUNNING
-  let url: string | undefined;
+  // ── ALB REGISTRATION (READY) ─────────────────────────────────────────────
+  // When the ECS task reaches RUNNING, register the container with the ALB so
+  // the session is reachable at http://{alb-domain}/session/{id}/
+  let albTargetGroupArn: string | undefined;
+  let albListenerRuleArn: string | undefined;
+
   if (appStatus === 'READY') {
+    const listenerArn = process.env.ALB_LISTENER_ARN;
+    const vpcId = process.env.VPC_ID;
     const albDomain = process.env.CODE_SERVER_ALB_DOMAIN;
-    if (albDomain) {
-      url = `https://${albDomain}/session/${sessionId}/`;
+    const containerIp = extractPrivateIp(containers);
+
+    if (!listenerArn || !vpcId || !albDomain) {
+      console.warn(
+        '[ecsStatusBridge] ALB_LISTENER_ARN, VPC_ID, or CODE_SERVER_ALB_DOMAIN not set — skipping ALB registration',
+      );
+    } else if (!containerIp) {
+      console.warn(
+        '[ecsStatusBridge] No container private IP in event — skipping ALB registration for session:',
+        sessionId,
+      );
+    } else {
+      try {
+        const albResult = await registerSessionWithAlb(sessionId, containerIp, vpcId, listenerArn);
+        albTargetGroupArn = albResult.targetGroupArn;
+        albListenerRuleArn = albResult.ruleArn;
+      } catch (err) {
+        // Non-fatal: status sync continues even if ALB registration fails
+        console.error('[ecsStatusBridge] ALB registration failed (non-fatal):', err);
+      }
     }
   }
 
+  // Build URL — HTTP until Route 53 + ACM HTTPS are configured (see Linear: HTTPS task)
+  const albDomain = process.env.CODE_SERVER_ALB_DOMAIN;
+  const url =
+    appStatus === 'READY' && albDomain
+      ? `http://${albDomain}/session/${sessionId}/`
+      : undefined;
+
+  // ── APPSYNC STATUS SYNC ────────────────────────────────────────────────────
   const input: Record<string, unknown> = {
     taskArn,
     sessionId,
     status: appStatus,
-    ...(url !== undefined ? { url } : {}),
   };
+  if (url !== undefined) input['url'] = url;
+  if (albTargetGroupArn !== undefined) input['albTargetGroupArn'] = albTargetGroupArn;
+  if (albListenerRuleArn !== undefined) input['albListenerRuleArn'] = albListenerRuleArn;
 
   try {
     const result = await callAppSync(endpoint, apiKey, UPDATE_SESSION_MUTATION, { input });
 
-    // DynamoDB returns "conditional request failed" (not "not found") when the
-    // item doesn't exist yet and Amplify's optimistic locking condition fails.
+    // DynamoDB returns "conditional request failed" when the item doesn't exist
+    // yet (Amplify optimistic locking). In that case, create it instead.
     const isNotFound = result.errors?.some(
       (e) =>
         e.message.includes('not found') ||
@@ -157,5 +340,33 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
     console.log('[ecsStatusBridge] Synchronized status:', appStatus);
   } catch (err) {
     console.error('[ecsStatusBridge] Failed to sync status to AppSync:', err);
+  }
+
+  // ── ALB DEREGISTRATION (STOPPED) ─────────────────────────────────────────
+  // When the ECS task stops, delete the ALB target group and listener rule that
+  // were created when the task reached RUNNING. Retrieve their ARNs from DynamoDB.
+  if (lastStatus === 'STOPPED') {
+    try {
+      const queryResult = await callAppSync(endpoint, apiKey, GET_SESSION_QUERY, { taskArn });
+
+      // Narrow the AppSync response to the expected session shape
+      const sessionRecord = queryResult.data?.['getDevContainerSession'] as {
+        albTargetGroupArn?: string;
+        albListenerRuleArn?: string;
+      } | null | undefined;
+
+      if (sessionRecord?.albTargetGroupArn && sessionRecord.albListenerRuleArn) {
+        await deregisterSessionFromAlb(
+          sessionRecord.albTargetGroupArn,
+          sessionRecord.albListenerRuleArn,
+        );
+      } else {
+        console.log('[ecsStatusBridge] No ALB resources to clean up for session:', sessionId);
+      }
+    } catch (err) {
+      // Non-fatal: the container is already stopped; orphaned ALB resources can
+      // be cleaned up manually if needed
+      console.error('[ecsStatusBridge] ALB deregistration failed (non-fatal):', err);
+    }
   }
 }
