@@ -159,9 +159,12 @@ async function registerSessionWithAlb(
   vpcId: string,
   listenerArn: string,
 ): Promise<AlbResources> {
-  // ALB target group name: 1-32 chars, [a-zA-Z0-9-] only
-  const safeSuffix = sessionId.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 24);
-  const tgName = `pipe-s-${safeSuffix}`.slice(0, 32);
+  // ALB target group name: 1-32 chars, [a-zA-Z0-9-] only, cannot start/end with hyphen.
+  // Strip hyphens from the UUID before slicing — slicing a hyphenated UUID at a fixed
+  // offset can land on a hyphen, which AWS rejects. Hex chars alone are unique enough.
+  // 'pipe-s-' (7) + 25 hex chars = 32 chars max, guaranteed no trailing hyphen.
+  const safeSuffix = sessionId.replace(/-/g, '').slice(0, 25);
+  const tgName = `pipe-s-${safeSuffix}`;
 
   const tg = await elb.send(new CreateTargetGroupCommand({
     Name: tgName,
