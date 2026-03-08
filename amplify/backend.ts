@@ -296,8 +296,6 @@ devContainerDestroyLambda.addToRolePolicy(new PolicyStatement({
   resources: ['*'],
 }));
 
-devContainerDestroyLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
-
 devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
   effect: Effect.ALLOW,
   actions: ['ecs:DescribeTasks'],
@@ -316,6 +314,8 @@ devContainerLaunchLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
 devContainerLaunchLambda.addEnvironment('ECS_TASK_DEFINITION', ECS_TASK_DEFINITION);
 devContainerLaunchLambda.addEnvironment('ECS_SUBNET_IDS', ECS_SUBNET_IDS);
 devContainerLaunchLambda.addEnvironment('ECS_SECURITY_GROUP_ID', ECS_SECURITY_GROUP_ID);
+
+devContainerDestroyLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
 
 devContainerStatusLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
 devContainerStatusLambda.addEnvironment('ALB_DOMAIN_SSM_PARAM', ALB_DOMAIN_SSM);
