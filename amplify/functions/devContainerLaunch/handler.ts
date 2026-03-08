@@ -16,6 +16,7 @@
 import {
   ECSClient,
   RunTaskCommand,
+  TagResourceCommand,
   type RunTaskCommandInput,
 } from '@aws-sdk/client-ecs';
 import type {
@@ -71,21 +72,14 @@ export async function handler(
       containerOverrides: [
         {
           name: 'code-server',
-          // Override the container command so code-server serves at the ALB sub-path.
-          // Without --base-path, code-server loads assets from / and breaks when
-          // accessed via /session/{id}/* through the ALB path-based routing rule.
-          command: [
-            '--bind-addr', '0.0.0.0:8080',
-            '--auth', 'password',
-            '--base-path', `/session/${sessionId}`,
-          ],
           environment: [
             { name: 'SESSION_ID', value: sessionId },
-            { name: 'PASSWORD', value: sessionId },
           ],
         },
       ],
     },
+    enableECSManagedTags: true,
+    propagateTags: 'TASK_DEFINITION',
     tags: [
       { key: 'pipe:session', value: sessionId },
       { key: 'pipe:purpose', value: 'dev-container' },
@@ -108,6 +102,20 @@ export async function handler(
     }
 
     console.log('[devContainerLaunch] Task launched:', task.taskArn);
+
+    // Tag the task (RunTask tags parameter doesn't work reliably, must use TagResource)
+    try {
+      await ecs.send(new TagResourceCommand({
+        resourceArn: task.taskArn,
+        tags: [
+          { key: 'pipe:session', value: sessionId },
+          { key: 'pipe:purpose', value: 'dev-container' },
+        ],
+      }));
+      console.log('[devContainerLaunch] Task tagged successfully');
+    } catch (err) {
+      console.error('[devContainerLaunch] Failed to tag task:', err);
+    }
 
     return {
       sessionId,
