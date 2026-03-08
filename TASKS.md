@@ -9,6 +9,8 @@
 
 ## 🛑 CRITICAL SECURITY & STABILITY
 
+- [ ] **[P1] Dev Container Logging Stability** — CloudWatch logs fetching is currently unreliable or failing in the sandbox environment despite recent IAM fixes. Investigate `getContainerLogs` Lambda execution and ensure it correctly targets the specific task log stream. See `docs/changelogs/direct-container-access-and-logs-fix.md` for context on the current implementation.
+
 - [ ] **[P1] Dev Container Network Egress Hardening** — Restrict `pipe-{env}-code-server` SG egress from `0.0.0.0/0 all-ports` to `80/443 internet-only`. Explicitly deny RFC1918 lateral movement so container users cannot reach other VPC-resident resources. Update `infra/networking.tf`. Run `terraform apply`. See ADR-017. ~1 hour.
 
 - [ ] **[P0] UX/Product Audit: Scheduling Flow** — The end-to-end journey (OAuth → Pipeline Config → Candidate Booking → Recruiter Dashboard) is currently "discombobulated." Audit state transitions, UI feedback, and navigation to ensure a cohesive, sensible experience. ~4 hours.

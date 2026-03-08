@@ -103,16 +103,23 @@ export default function DevContainerSandboxPage(): JSX.Element {
 
   // Fetch logs when we have a taskArn
   React.useEffect(() => {
-    if (!taskArn || !autoRefreshLogs) return;
+    console.log('[DevContainerSandboxPage] Log fetch effect triggered:', { taskArn, autoRefreshLogs });
+    if (!taskArn || !autoRefreshLogs) {
+      console.log('[DevContainerSandboxPage] Skipping log fetch - missing taskArn or autoRefresh disabled');
+      return;
+    }
 
     const fetchLogs = async () => {
+      console.log('[DevContainerSandboxPage] Fetching logs for taskArn:', taskArn);
       try {
         const { data, errors } = await client.queries.getContainerLogs({ taskArn, limit: 50 });
+        console.log('[DevContainerSandboxPage] getContainerLogs response:', { data, errors });
         if (errors) throw new Error(errors[0].message);
         const result = JSON.parse(data as string);
+        console.log('[DevContainerSandboxPage] Parsed result:', result);
         if (result.logs) setLogs(result.logs);
       } catch (err) {
-        console.error('Failed to fetch logs:', err);
+        console.error('[DevContainerSandboxPage] Failed to fetch logs:', err);
       }
     };
 

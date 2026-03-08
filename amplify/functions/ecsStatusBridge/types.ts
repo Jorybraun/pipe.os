@@ -20,6 +20,12 @@ export interface EcsTaskStateChangeEvent {
     desiredStatus: string;
     /** Tags attached to the ECS task */
     tags?: Array<{ key: string; value: string }>;
+    /** ENI attachments — contains network interface IDs for looking up public IPs */
+    attachments?: Array<{
+      type: string;
+      status: string;
+      details?: Array<{ name: string; value: string }>;
+    }>;
     /** Free-form field set at RunTask time; we store sessionId here as fallback */
     startedBy?: string;
     containers?: Array<{

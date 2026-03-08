@@ -9,6 +9,7 @@ import { devContainerLaunch } from '../functions/devContainerLaunch/resource';
 import { devContainerDestroy } from '../functions/devContainerDestroy/resource';
 import { devContainerStatus } from '../functions/devContainerStatus/resource';
 import { notificationService } from '../functions/notificationService/resource';
+import { getContainerLogs } from '../functions/getContainerLogs/resource';
 
 const schema = a.schema({
   /**
@@ -393,6 +394,16 @@ const schema = a.schema({
     })
     .returns(a.json())
     .handler(a.handler.function(devContainerStatus))
+    .authorization((allow) => [allow.authenticated()]),
+
+  getContainerLogs: a
+    .query()
+    .arguments({
+      taskArn: a.string().required(),
+      limit: a.integer(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(getContainerLogs))
     .authorization((allow) => [allow.authenticated()]),
 
   /**

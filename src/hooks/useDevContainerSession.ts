@@ -156,7 +156,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
         if (unsubscribed || !result) return;
         const payload = parseStatusPayload(result);
 
-        console.log('[useDevContainerSession] Poll result:', payload.status);
+        console.log('[useDevContainerSession] Poll result:', payload.status, 'URL:', payload.containerUrl);
 
         if (payload.status === 'READY') {
           setState('READY');
@@ -183,7 +183,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
           if (unsubscribed) return;
           if (!update) return;
 
-          console.log('[useDevContainerSession] Subscription update:', update.status);
+          console.log('[useDevContainerSession] Subscription update:', update.status, 'URL:', update.url);
 
           if (update.status === 'READY' && update.url) {
             setState('READY');

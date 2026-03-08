@@ -118,14 +118,18 @@ export async function handler(
     // Query DynamoDB for the URL instead of constructing it
     let containerUrl: string | undefined;
     if (lifecycleStatus === 'READY') {
-      const tableName = process.env.DEVCONTAINERSESSION_TABLE_NAME;
-      if (tableName) {
+      const tableNameParam = process.env.DEVCONTAINERSESSION_TABLE_SSM;
+      if (tableNameParam) {
         try {
-          const result = await ddb.send(new GetCommand({
-            TableName: tableName,
-            Key: { taskArn },
-          }));
-          containerUrl = result.Item?.url;
+          const paramResult = await ssm.send(new GetParameterCommand({ Name: tableNameParam }));
+          const tableName = paramResult.Parameter?.Value;
+          if (tableName) {
+            const result = await ddb.send(new GetCommand({
+              TableName: tableName,
+              Key: { taskArn },
+            }));
+            containerUrl = result.Item?.url;
+          }
         } catch (err) {
           console.warn('[devContainerStatus] Failed to query DynamoDB for URL:', err);
         }

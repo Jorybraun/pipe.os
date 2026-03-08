@@ -241,6 +241,13 @@ ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
   resources: ['*'],
 }));
 
+// EC2 permissions: look up ENI public IP for direct container access
+ecsStatusBridgeLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['ec2:DescribeNetworkInterfaces'],
+  resources: ['*'],
+}));
+
 const ecsStatusBridgeRule = new Rule(
   backend.ecsStatusBridge.resources.lambda.stack,
   'EcsTaskStateChangeRule',
@@ -334,11 +341,19 @@ devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
   resources: ['arn:aws:dynamodb:*:*:table/*'],
 }));
 
-// 6. CONTAINER LOGS PERMISSIONS (updated)
+// 6. CONTAINER LOGS PERMISSIONS
+// GetLogEvents requires the log-group ARN (no trailing :*) AND a log-stream ARN.
+// FilterLogEvents (kept for legacy) also needs the log-group ARN without trailing :*.
+// Include both patterns so IAM matches correctly regardless of ARN suffix convention.
 const getContainerLogsLambda = backend.getContainerLogs.resources.lambda as unknown as LambdaFunction;
 
 getContainerLogsLambda.addToRolePolicy(new PolicyStatement({
   effect: Effect.ALLOW,
-  actions: ['logs:FilterLogEvents', 'logs:DescribeLogStreams'],
-  resources: ['arn:aws:logs:*:*:log-group:/pipe/dev-containers/code-server:*'],
+  actions: ['logs:GetLogEvents', 'logs:FilterLogEvents', 'logs:DescribeLogStreams'],
+  resources: [
+    // Log group ARN (required for FilterLogEvents; also needed by GetLogEvents)
+    'arn:aws:logs:*:*:log-group:/pipe/dev-containers/code-server',
+    // Log stream ARN wildcard (required for GetLogEvents on any stream in this group)
+    'arn:aws:logs:*:*:log-group:/pipe/dev-containers/code-server:log-stream:*',
+  ],
 }));

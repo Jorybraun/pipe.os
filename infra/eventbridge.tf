@@ -22,7 +22,7 @@ resource "aws_cloudwatch_event_rule" "ecs_task_state_change" {
 resource "aws_lambda_permission" "allow_eventbridge" {
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
-  function_name = "data-ecsStatusBridge-lambda"  # Amplify-managed function
+  function_name = "amplify-amplifyvitereactt-ecsStatusBridgelambda174-QBQFfRVrXgqH"
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.ecs_task_state_change.arn
 }
@@ -31,7 +31,7 @@ resource "aws_lambda_permission" "allow_eventbridge" {
 resource "aws_cloudwatch_event_target" "ecs_status_bridge" {
   rule      = aws_cloudwatch_event_rule.ecs_task_state_change.name
   target_id = "EcsStatusBridgeLambda"
-  arn       = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:data-ecsStatusBridge-lambda"
+  arn       = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:amplify-amplifyvitereactt-ecsStatusBridgelambda174-QBQFfRVrXgqH"
 }
 
 data "aws_caller_identity" "current" {}

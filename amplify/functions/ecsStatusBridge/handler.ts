@@ -29,11 +29,18 @@ import {
   DeleteTargetGroupCommand,
   DescribeRulesCommand,
 } from '@aws-sdk/client-elastic-load-balancing-v2';
+import {
+  EC2Client,
+  DescribeNetworkInterfacesCommand,
+} from '@aws-sdk/client-ec2';
+import { ECSClient, DescribeTasksCommand } from '@aws-sdk/client-ecs';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import type { EcsTaskStateChangeEvent, ContainerStatus } from './types';
 
 const region = process.env.AWS_REGION ?? 'us-east-1';
 const elb = new ElasticLoadBalancingV2Client({ region });
+const ec2 = new EC2Client({ region });
+const ecs = new ECSClient({ region });
 const ssm = new SSMClient({ region });
 
 // Module-level cache — populated once per cold start, reused on warm invocations.
@@ -141,6 +148,68 @@ function extractPrivateIp(
   return undefined;
 }
 
+/**
+ * Looks up the public IPv4 address of an ECS Fargate task.
+ *
+ * EventBridge ECS Task State Change RUNNING events do NOT include ENI
+ * attachment details in `detail.attachments`. We attempt to extract the
+ * ENI ID from the event first (for cases where it is present), then fall
+ * back to calling DescribeTasks to get the full attachment list — which
+ * always includes the ENI ID once the task is RUNNING.
+ */
+async function getPublicIp(
+  taskArn: string,
+  attachments: EcsTaskStateChangeEvent['detail']['attachments'],
+): Promise<string | undefined> {
+  // Attempt 1: extract ENI ID from the EventBridge event attachments
+  const eniAttachment = (attachments ?? []).find(
+    (a) => a.type === 'ElasticNetworkInterface',
+  );
+  let eniId = eniAttachment?.details?.find(
+    (d) => d.name === 'networkInterfaceId',
+  )?.value;
+
+  // Attempt 2: EventBridge RUNNING events typically omit attachment details.
+  // Call DescribeTasks to get the full task record which includes ENI info.
+  if (!eniId) {
+    try {
+      // Task ARN format: arn:aws:ecs:{region}:{account}:task/{cluster}/{taskId}
+      const clusterName = taskArn.split('/')[1];
+      const tasksResult = await ecs.send(new DescribeTasksCommand({
+        cluster: clusterName,
+        tasks: [taskArn],
+      }));
+      const task = tasksResult.tasks?.[0];
+      const eniAtt = (task?.attachments ?? []).find(
+        (a) => a.type === 'ElasticNetworkInterface',
+      );
+      eniId = eniAtt?.details?.find(
+        (d) => d.name === 'networkInterfaceId',
+      )?.value;
+      console.log('[ecsStatusBridge] ENI ID from DescribeTasks fallback:', eniId);
+    } catch (err) {
+      console.error('[ecsStatusBridge] DescribeTasks fallback failed:', err);
+    }
+  }
+
+  if (!eniId) {
+    console.warn('[ecsStatusBridge] No ENI ID found in attachments or DescribeTasks');
+    return undefined;
+  }
+
+  try {
+    const result = await ec2.send(new DescribeNetworkInterfacesCommand({
+      NetworkInterfaceIds: [eniId],
+    }));
+    const publicIp = result.NetworkInterfaces?.[0]?.Association?.PublicIp;
+    console.log('[ecsStatusBridge] ENI', eniId, '→ public IP:', publicIp);
+    return publicIp;
+  } catch (err) {
+    console.error('[ecsStatusBridge] Failed to look up public IP for ENI', eniId, ':', err);
+    return undefined;
+  }
+}
+
 interface AlbResources {
   targetGroupArn: string;
   ruleArn: string;
@@ -172,11 +241,10 @@ async function registerSessionWithAlb(
     Port: 8080,
     VpcId: vpcId,
     TargetType: 'ip',
-    HealthCheckPath: `/session/${sessionId}/`,
+    HealthCheckPath: '/',
     HealthCheckIntervalSeconds: 30,
     HealthyThresholdCount: 2,
     UnhealthyThresholdCount: 3,
-    // Accept all 2xx/3xx/4xx responses — code-server redirects (302) unauthenticated requests
     Matcher: { HttpCode: '200-404' },
   }));
 
@@ -304,50 +372,24 @@ export async function handler(event: EcsTaskStateChangeEvent): Promise<void> {
     return;
   }
 
-  // ── ALB REGISTRATION (READY) ─────────────────────────────────────────────
-  // When the ECS task reaches RUNNING, register the container with the ALB so
-  // the session is reachable at http://{alb-domain}/session/{id}/
+  // ── PUBLIC IP URL (READY) ────────────────────────────────────────────────
+  // When the ECS task reaches RUNNING, look up the container's public IP via
+  // the ENI attachment and build a direct URL. code-server doesn't support
+  // --base-path, so ALB sub-path routing won't work without an nginx sidecar.
+  // For the prototype, we bypass the ALB and hit the container directly.
+  let url: string | undefined;
   let albTargetGroupArn: string | undefined;
   let albListenerRuleArn: string | undefined;
-  let albDomain: string | undefined;
 
   if (appStatus === 'READY') {
-    const vpcId = process.env.VPC_ID;
-    const containerIp = extractPrivateIp(containers);
-
-    if (!vpcId) {
-      console.warn('[ecsStatusBridge] VPC_ID not set — skipping ALB registration');
-    } else if (!containerIp) {
-      console.warn(
-        '[ecsStatusBridge] No container private IP in event — skipping ALB registration for session:',
-        sessionId,
-      );
+    const publicIp = await getPublicIp(taskArn, detail.attachments);
+    if (publicIp) {
+      url = `http://${publicIp}:8080/`;
+      console.log('[ecsStatusBridge] Container URL (public IP):', url);
     } else {
-      try {
-        const albConfig = await getAlbConfig();
-        albDomain = albConfig.domain;
-        const albResult = await registerSessionWithAlb(sessionId, containerIp, vpcId, albConfig.listenerArn);
-        albTargetGroupArn = albResult.targetGroupArn;
-        albListenerRuleArn = albResult.ruleArn;
-      } catch (err) {
-        // Non-fatal: status sync continues even if ALB registration fails
-        console.error('[ecsStatusBridge] ALB registration failed (non-fatal):', err);
-      }
+      console.warn('[ecsStatusBridge] Could not determine public IP for session:', sessionId);
     }
   }
-
-  // Build URL — HTTP until Route 53 + ACM HTTPS are configured (see Linear: HAS-47)
-  if (!albDomain && appStatus === 'READY') {
-    try {
-      albDomain = (await getAlbConfig()).domain;
-    } catch {
-      // non-fatal — URL will be undefined
-    }
-  }
-  const url =
-    appStatus === 'READY' && albDomain
-      ? `http://${albDomain}/session/${sessionId}/`
-      : undefined;
 
   // ── APPSYNC STATUS SYNC ────────────────────────────────────────────────────
   const input: Record<string, unknown> = {
