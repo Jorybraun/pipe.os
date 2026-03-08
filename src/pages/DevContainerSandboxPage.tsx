@@ -15,6 +15,11 @@
 
 import { useDevContainerSession } from '../hooks/useDevContainerSession';
 import type { ContainerSessionState } from '../hooks/useDevContainerSession';
+import React from 'react';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../amplify/data/resource';
+
+const client = generateClient<Schema>();
 
 // ─── Status label + color mapping ────────────────────────────────────────────
 
@@ -93,6 +98,28 @@ function BootProgressBar(): JSX.Element {
 export default function DevContainerSandboxPage(): JSX.Element {
   const { state, containerUrl, taskArn, error, launch, destroy, reset } =
     useDevContainerSession();
+  const [logs, setLogs] = React.useState<string[]>([]);
+  const [autoRefreshLogs, setAutoRefreshLogs] = React.useState(true);
+
+  // Fetch logs when we have a taskArn
+  React.useEffect(() => {
+    if (!taskArn || !autoRefreshLogs) return;
+
+    const fetchLogs = async () => {
+      try {
+        const { data, errors } = await client.queries.getContainerLogs({ taskArn, limit: 50 });
+        if (errors) throw new Error(errors[0].message);
+        const result = JSON.parse(data as string);
+        if (result.logs) setLogs(result.logs);
+      } catch (err) {
+        console.error('Failed to fetch logs:', err);
+      }
+    };
+
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 5000);
+    return () => clearInterval(interval);
+  }, [taskArn, autoRefreshLogs]);
 
   const isActive = state === 'LAUNCHING' || state === 'BOOTING';
   const statusColor = STATUS_COLORS[state];
@@ -327,8 +354,68 @@ export default function DevContainerSandboxPage(): JSX.Element {
               display: 'block',
               background: '#1e1e2e',
             }}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
           />
+        </div>
+      )}
+
+      {/* ── Container logs ──────────────────────────────────────────── */}
+      {taskArn && (
+        <div
+          style={{
+            marginTop: 32,
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 2,
+            overflow: 'hidden',
+            maxWidth: '100%',
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              padding: '12px 16px',
+              fontSize: 9,
+              letterSpacing: '0.2em',
+              color: 'rgba(255,255,255,0.4)',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span>CONTAINER LOGS (CloudWatch)</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={autoRefreshLogs}
+                onChange={(e) => setAutoRefreshLogs(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 9 }}>AUTO-REFRESH</span>
+            </label>
+          </div>
+          <div
+            style={{
+              background: '#0a0a0c',
+              padding: '16px',
+              fontFamily: '"Courier New", monospace',
+              fontSize: 11,
+              color: '#00ff00',
+              maxHeight: 300,
+              overflowY: 'auto',
+              lineHeight: 1.6,
+            }}
+          >
+            {logs.length === 0 ? (
+              <div style={{ color: 'rgba(255,255,255,0.3)' }}>
+                {autoRefreshLogs ? 'Waiting for logs...' : 'Enable auto-refresh to see container logs...'}
+              </div>
+            ) : (
+              logs.map((log, i) => (
+                <div key={i}>{log}</div>
+              ))
+            )}
+          </div>
         </div>
       )}
 

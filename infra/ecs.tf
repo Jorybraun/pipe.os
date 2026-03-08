@@ -21,6 +21,17 @@ resource "aws_ecs_task_definition" "code_server" {
     image     = "codercom/code-server:4.22.1"
     essential = true
 
+    environment = [
+      {
+        name  = "CS_DISABLE_GETTING_STARTED_OVERRIDE"
+        value = "true"
+      },
+      {
+        name  = "PASSWORD"
+        value = ""
+      }
+    ]
+
     portMappings = [{
       containerPort = 8080
       protocol      = "tcp"

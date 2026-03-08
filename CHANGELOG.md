@@ -7,11 +7,20 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### [Unreleased]
 
 #### Added
+- **Chrome iframe compatibility**: Added `allow-downloads` and `allow-top-navigation-by-user-activation` to iframe sandbox attributes in `DevContainerSandboxPage` for Chrome compatibility.
+
+#### Changed
+- **Disable code-server password**: Set `PASSWORD` environment variable to empty string in ECS task definition (`infra/ecs.tf`) to disable code-server authentication for dev containers.
 - **EventBridge ECS integration**: Created `infra/eventbridge.tf` to define EventBridge rule that triggers `ecsStatusBridge` Lambda on ECS Task State Change events, enabling automatic ALB registration. [Details](/docs/changelogs/2025-01-05-ecs-task-tagging-eventbridge-fix.md)
 - **Container logs Lambda**: Added `getContainerLogs` Lambda function to fetch CloudWatch logs for dev container debugging.
 - **ADR-018**: Documented dev container access control strategy using signed JWT tokens, WAF rules, Lambda@Edge validation, and disabled code-server auth.
 
+#### Changed
+- **Dev container: direct public IP access (replaces ALB sub-path routing)**: code-server 4.22.1 has no `--base-path` CLI flag — containers crashed on startup with `Unknown option --base-path`. ALB can't rewrite paths either. Switched to direct public IP access: `ecsStatusBridge` now looks up the ENI public IP via `ec2:DescribeNetworkInterfaces` and constructs `http://{publicIp}:8080/` as the container URL. Added `ec2:DescribeNetworkInterfaces` IAM permission in `backend.ts`. Added `attachments` to ECS event type. Security group opened on port 8080 from 0.0.0.0/0 for prototype (will be replaced by nginx sidecar for production ALB path-rewriting).
+
 #### Fixed
+- **getContainerLogs: switch to GetLogEventsCommand for reliable log fetching**: `FilterLogEventsCommand` was returning 0 events silently because the IAM resource pattern `log-group:...:*` is interpreted as a log-stream ARN, not a log-group ARN — and `FilterLogEvents` requires a log-group ARN. Switched to `GetLogEventsCommand` (exact stream name `code-server/code-server/{taskId}`, `startFromHead: true`). Updated `backend.ts` IAM policy to add `logs:GetLogEvents` with the correct log-group ARN (no trailing `:*`) and a log-stream wildcard ARN (`log-stream:*`).
+- **ecsStatusBridge: DescribeTasks fallback for public IP lookup**: EventBridge ECS Task State Change RUNNING events do not include ENI attachment details in `detail.attachments`, so `getPublicIp()` always returned `undefined` — leaving `url` unset in AppSync and causing the iframe, link, and logs panel to never render. Fixed by adding a fallback that calls `ecs:DescribeTasks` (already permitted in IAM) to retrieve the full task record, which does include ENI attachment details. Cluster name is extracted from the task ARN to avoid needing a new env var.
 - **Fix code-server 404 + password + destroy**: Three bugs preventing usable dev container sessions: (1) Launch Lambda had no `command` override, so code-server served at `/` instead of `/session/{id}/` — added `--bind-addr 0.0.0.0:8080 --auth none --base-path /session/{sessionId}` to `containerOverrides.command`. (2) `devContainerDestroy` Lambda was missing `ECS_CLUSTER_ARN` env var — added `addEnvironment` in `backend.ts`. (3) Password prompt — `--auth none` disables it.
 - **ECS task tagging**: Added `enableECSManagedTags: true` and `propagateTags: 'TASK_DEFINITION'` to `devContainerLaunch` Lambda to ensure `pipe:session` tags are applied to ECS tasks — required for `ecsStatusBridge` to process tasks and register them with ALB. [Details](/docs/changelogs/2025-01-05-ecs-task-tagging-eventbridge-fix.md)
 - **Roles & RoleCard UI Redesign**: Overhauled the main Roles listing and RoleCard components with a modern, horizontal brutalist aesthetic.
