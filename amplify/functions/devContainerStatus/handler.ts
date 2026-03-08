@@ -17,6 +17,8 @@ import {
   DescribeTasksCommand,
 } from '@aws-sdk/client-ecs';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import type {
   DevContainerStatusRequest,
   DevContainerStatusResponse,
@@ -27,6 +29,7 @@ import type {
 const region = process.env.AWS_REGION ?? 'us-east-1';
 const ecs = new ECSClient({ region });
 const ssm = new SSMClient({ region });
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region }));
 
 // Module-level cache — populated once per cold start.
 let _albDomain: string | undefined;
@@ -112,17 +115,20 @@ export async function handler(
     const ecsStatus = task.lastStatus ?? 'UNKNOWN';
     const lifecycleStatus = mapEcsStatus(ecsStatus);
 
+    // Query DynamoDB for the URL instead of constructing it
     let containerUrl: string | undefined;
-    if (lifecycleStatus === 'READY' && albDomain) {
-      const codeServerOverride = task.overrides?.containerOverrides?.find(
-        (o) => o.name === 'code-server'
-      );
-      const sessionId = codeServerOverride?.environment?.find(
-        (e) => e.name === 'SESSION_ID'
-      )?.value;
-
-      if (sessionId) {
-        containerUrl = `https://${albDomain}/session/${sessionId}/`;
+    if (lifecycleStatus === 'READY') {
+      const tableName = process.env.DEVCONTAINERSESSION_TABLE_NAME;
+      if (tableName) {
+        try {
+          const result = await ddb.send(new GetCommand({
+            TableName: tableName,
+            Key: { taskArn },
+          }));
+          containerUrl = result.Item?.url;
+        } catch (err) {
+          console.warn('[devContainerStatus] Failed to query DynamoDB for URL:', err);
+        }
       }
     }
 

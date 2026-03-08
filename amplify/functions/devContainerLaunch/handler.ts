@@ -79,7 +79,6 @@ export async function handler(
       ],
     },
     enableECSManagedTags: true,
-    propagateTags: 'TASK_DEFINITION',
     tags: [
       { key: 'pipe:session', value: sessionId },
       { key: 'pipe:purpose', value: 'dev-container' },

@@ -20,6 +20,8 @@ import { ecsStatusBridge } from './functions/ecsStatusBridge/resource';
 import { notificationService } from './functions/notificationService/resource';
 import { notificationStreamService } from './functions/notificationStreamService/resource';
 
+import { getContainerLogs } from './functions/getContainerLogs/resource';
+
 export const backend = defineBackend({
   auth,
   data,
@@ -35,6 +37,7 @@ export const backend = defineBackend({
   ecsStatusBridge,
   notificationService,
   notificationStreamService,
+  getContainerLogs,
 });
 
 // 1. DYNAMODB ACCESS & STREAM WIRING
@@ -262,7 +265,6 @@ const devContainerStatusLambda = backend.devContainerStatus.resources.lambda as 
 
 devContainerLaunchLambda.addToRolePolicy(new PolicyStatement({
   effect: Effect.ALLOW,
-  // ecs:TagResource is required when passing a `tags:` array to RunTaskCommand
   actions: ['ecs:RunTask', 'ecs:TagResource'],
   resources: ['*'],
 }));
@@ -301,6 +303,7 @@ devContainerLaunchLambda.addEnvironment('ECS_SECURITY_GROUP_ID', ECS_SECURITY_GR
 devContainerStatusLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
 // ALB domain read from SSM at cold start — same param as ecsStatusBridge
 devContainerStatusLambda.addEnvironment('ALB_DOMAIN_SSM_PARAM', ALB_DOMAIN_SSM);
+devContainerStatusLambda.addEnvironment('DEVCONTAINERSESSION_TABLE_NAME', backend.data.resources.tables['DevContainerSession'].tableName);
 devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
   effect: Effect.ALLOW,
   actions: ['ssm:GetParameter'],
@@ -309,4 +312,18 @@ devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
     `arn:aws:ssm:*:*:parameter${ssmPrefix}/*`,
     `arn:aws:ssm:*:*:parameter${INFRA_SSM_PREFIX}/*`,
   ],
+}));
+devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['dynamodb:GetItem'],
+  resources: ['arn:aws:dynamodb:*:*:table/*'],
+}));
+
+// 6. CONTAINER LOGS PERMISSIONS (updated)
+const getContainerLogsLambda = backend.getContainerLogs.resources.lambda as unknown as LambdaFunction;
+
+getContainerLogsLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['logs:FilterLogEvents', 'logs:DescribeLogStreams'],
+  resources: ['arn:aws:logs:*:*:log-group:/pipe/dev-containers/code-server:*'],
 }));
