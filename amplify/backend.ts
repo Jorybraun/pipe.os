@@ -67,6 +67,7 @@ const TABLE_NAME_PARAMS = {
   'CANDIDATE': `${ssmPrefix}/tables/candidate`,
   'STAGE': `${ssmPrefix}/tables/stage`,
   'PIPELINE': `${ssmPrefix}/tables/pipeline`,
+  'DEVCONTAINERSESSION': `${ssmPrefix}/tables/dev-container-session`,
 };
 
 new StringParameter(schedulingConnectionTable, 'SchedulingConnectionNameParam', {
@@ -88,6 +89,12 @@ new StringParameter(stageTable, 'StageNameParam', {
 new StringParameter(pipelineTable, 'PipelineNameParam', {
   parameterName: TABLE_NAME_PARAMS.PIPELINE,
   stringValue: pipelineTable.tableName,
+});
+
+const devContainerSessionTable = backend.data.resources.tables['DevContainerSession'];
+new StringParameter(devContainerSessionTable, 'DevContainerSessionNameParam', {
+  parameterName: TABLE_NAME_PARAMS.DEVCONTAINERSESSION,
+  stringValue: devContainerSessionTable.tableName,
 });
 
 // ─── PERMISSIONS & ENV FOR HANDLERS (Manual to avoid CFN Ref) ────────────────
@@ -129,9 +136,17 @@ const notificationLambda = backend.notificationService.resources.lambda as unkno
 const notificationStreamLambda = backend.notificationStreamService.resources.lambda as unknown as LambdaFunction;
 
 // Stream service needs access to all tables it reads during background processing
-[candidateTable, scheduledInterviewTable, stageTable, pipelineTable, schedulingConnectionTable].forEach(t => {
-  t.grantReadData(notificationStreamLambda);
-});
+notificationStreamLambda.addToRolePolicy(new PolicyStatement({
+  effect: Effect.ALLOW,
+  actions: ['dynamodb:GetItem', 'dynamodb:Query', 'dynamodb:Scan'],
+  resources: [
+    candidateTable.tableArn,
+    scheduledInterviewTable.tableArn,
+    stageTable.tableArn,
+    pipelineTable.tableArn,
+    schedulingConnectionTable.tableArn,
+  ],
+}));
 
 notificationStreamLambda.addEventSource(new DynamoEventSource(candidateTable, {
   startingPosition: StartingPosition.LATEST,
@@ -281,6 +296,8 @@ devContainerDestroyLambda.addToRolePolicy(new PolicyStatement({
   resources: ['*'],
 }));
 
+devContainerDestroyLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
+
 devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
   effect: Effect.ALLOW,
   actions: ['ecs:DescribeTasks'],
@@ -301,13 +318,11 @@ devContainerLaunchLambda.addEnvironment('ECS_SUBNET_IDS', ECS_SUBNET_IDS);
 devContainerLaunchLambda.addEnvironment('ECS_SECURITY_GROUP_ID', ECS_SECURITY_GROUP_ID);
 
 devContainerStatusLambda.addEnvironment('ECS_CLUSTER_ARN', ECS_CLUSTER_ARN);
-// ALB domain read from SSM at cold start — same param as ecsStatusBridge
 devContainerStatusLambda.addEnvironment('ALB_DOMAIN_SSM_PARAM', ALB_DOMAIN_SSM);
-devContainerStatusLambda.addEnvironment('DEVCONTAINERSESSION_TABLE_NAME', backend.data.resources.tables['DevContainerSession'].tableName);
+devContainerStatusLambda.addEnvironment('DEVCONTAINERSESSION_TABLE_SSM', TABLE_NAME_PARAMS.DEVCONTAINERSESSION);
 devContainerStatusLambda.addToRolePolicy(new PolicyStatement({
   effect: Effect.ALLOW,
   actions: ['ssm:GetParameter'],
-  // Needs access to both: sandbox params (ssmPrefix) and shared infra params (INFRA_SSM_PREFIX)
   resources: [
     `arn:aws:ssm:*:*:parameter${ssmPrefix}/*`,
     `arn:aws:ssm:*:*:parameter${INFRA_SSM_PREFIX}/*`,

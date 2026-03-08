@@ -7,12 +7,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### [Unreleased]
 
 #### Added
-- **EventBridge ECS integration**: Created `infra/eventbridge.tf` to define EventBridge rule that triggers `ecsStatusBridge` Lambda on ECS Task State Change events, enabling automatic ALB registration.
+- **EventBridge ECS integration**: Created `infra/eventbridge.tf` to define EventBridge rule that triggers `ecsStatusBridge` Lambda on ECS Task State Change events, enabling automatic ALB registration. [Details](/docs/changelogs/2025-01-05-ecs-task-tagging-eventbridge-fix.md)
 - **Container logs Lambda**: Added `getContainerLogs` Lambda function to fetch CloudWatch logs for dev container debugging.
 - **ADR-018**: Documented dev container access control strategy using signed JWT tokens, WAF rules, Lambda@Edge validation, and disabled code-server auth.
 
 #### Fixed
-- **ECS task tagging**: Added `enableECSManagedTags: true` and `propagateTags: 'TASK_DEFINITION'` to `devContainerLaunch` Lambda to ensure `pipe:session` tags are applied to ECS tasks — required for `ecsStatusBridge` to process tasks and register them with ALB.
+- **ECS task tagging**: Added `enableECSManagedTags: true` and `propagateTags: 'TASK_DEFINITION'` to `devContainerLaunch` Lambda to ensure `pipe:session` tags are applied to ECS tasks — required for `ecsStatusBridge` to process tasks and register them with ALB. [Details](/docs/changelogs/2025-01-05-ecs-task-tagging-eventbridge-fix.md)
 - **Roles & RoleCard UI Redesign**: Overhauled the main Roles listing and RoleCard components with a modern, horizontal brutalist aesthetic.
 - **Candidate Card Redesign**: Updated CandidateKanbanCard and CandidateCard to match the horizontal brutalist aesthetic of the RoleCard. 
 - **Glassmorphic UI & Drag-and-Drop**: Updated candidate cards to use the "mercury" glass variant and implemented draggable functionality between stages in the Overview Kanban view. 
@@ -43,6 +43,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`infra/networking.tf` SG hardening**: code-server security group ingress for port 8080 now accepts traffic from ALB SG only (not `0.0.0.0/0`).
 - **Linear HAS-47**: Created backlog issue "Set up HTTPS + Route 53 for ALB (env.pipe.dev)" with full Terraform code stubs for ACM cert, Route 53 records, HTTPS listener, and HTTP→HTTPS redirect.
 - **Pin code-server image to `4.22.1`**: `codercom/code-server:latest` didn't support the `--base-path` flag (added in 4.7.0), causing every container to crash on startup with `Unknown option --base-path`. `infra/ecs.tf` now pins to `codercom/code-server:4.22.1` — a stable release with `--base-path` support. Terraform created task definition revision `:3`. Updated `ECS_TASK_DEFINITION` in `backend.ts` to reference the family name without revision (`pipe-code-server`) so future Terraform image bumps don't require a backend.ts edit.
+- **Fix code-server 404 + password + destroy**: Three bugs preventing usable dev container sessions: (1) Launch Lambda had no `command` override, so code-server served at `/` instead of `/session/{id}/` — added `--bind-addr 0.0.0.0:8080 --auth none --base-path /session/{sessionId}` to `containerOverrides.command`. (2) `devContainerDestroy` Lambda was missing `ECS_CLUSTER_ARN` env var — added `addEnvironment` in `backend.ts`. (3) Password prompt — `--auth none` disables it.
 
 ---
 

@@ -72,6 +72,11 @@ export async function handler(
       containerOverrides: [
         {
           name: 'code-server',
+          command: [
+            '--bind-addr', '0.0.0.0:8080',
+            '--auth', 'none',
+            '--base-path', `/session/${sessionId}`,
+          ],
           environment: [
             { name: 'SESSION_ID', value: sessionId },
           ],
