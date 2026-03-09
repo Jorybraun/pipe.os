@@ -1,38 +1,29 @@
 import {
-  User,
-  Target,
-  FileText,
-  MessageSquare,
-  Clock,
-  TrendingUp,
   Sparkles,
   Calendar,
+  Box,
+  LayoutDashboard,
 } from "lucide-react";
 
 interface SidebarNavProps {
   activeSection?: string;
-  onSectionChange?: (section: string) => void;
   isAgentOpen?: boolean;
   onAgentToggle?: () => void;
   /** Called when the user clicks the Schedule nav item */
   onScheduleClick?: () => void;
+  /** Called when the user clicks the Sandbox nav item */
+  onSandboxClick?: () => void;
+  /** Called when the user clicks the Roles nav item */
+  onRolesClick?: () => void;
 }
 
-const navItems = [
-  { id: "overview", label: "Overview", icon: User },
-  { id: "assessments", label: "Assessments", icon: Target },
-  { id: "signals", label: "Signals", icon: TrendingUp },
-  { id: "timeline", label: "Timeline", icon: Clock },
-  { id: "feedback", label: "Feedback", icon: MessageSquare },
-  { id: "documents", label: "Documents", icon: FileText },
-];
-
 export function SidebarNav({
-  activeSection = "overview",
-  onSectionChange,
+  activeSection = "roles",
   isAgentOpen = false,
   onAgentToggle,
   onScheduleClick,
+  onSandboxClick,
+  onRolesClick,
 }: SidebarNavProps) {
   return (
     <nav
@@ -125,78 +116,61 @@ export function SidebarNav({
         }}
       />
 
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        const isActive = activeSection === item.id;
-
-        return (
-          <button
-            key={item.id}
-            onClick={() => onSectionChange?.(item.id)}
-            title={item.label}
-            style={{
-              width: 48,
-              height: 48,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: isActive
-                ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-                : "transparent",
-              border: "none",
-              borderRadius: "12px",
-              color: isActive ? "#fff" : "rgba(255,255,255,0.4)",
-              cursor: "pointer",
-              transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-              position: "relative",
-              backdropFilter: isActive ? "blur(20px)" : "none",
-              boxShadow: isActive
-                ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-                : "none",
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-                e.currentTarget.style.color = "rgba(255,255,255,0.7)";
-                e.currentTarget.style.transform = "translateX(4px)";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.color = "rgba(255,255,255,0.4)";
-                e.currentTarget.style.transform = "translateX(0)";
-              }
-            }}
-          >
-            <Icon size={20} />
-            {isActive && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: -12,
-                  width: 3,
-                  height: 24,
-                  background:
-                    "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                  borderRadius: "0 2px 2px 0",
-                  boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-                }}
-              />
-            )}
-          </button>
-        );
-      })}
-
-      {/* Divider */}
-      <div
+      {/* Roles nav item */}
+      <button
+        onClick={onRolesClick}
+        title="Roles"
         style={{
-          height: 1,
-          background:
-            "linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)",
-          margin: "8px 0",
+          width: 48,
+          height: 48,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: activeSection === "roles"
+            ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
+            : "transparent",
+          border: "none",
+          borderRadius: "12px",
+          color: activeSection === "roles" ? "#fff" : "rgba(255,255,255,0.4)",
+          cursor: "pointer",
+          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          position: "relative",
+          backdropFilter: activeSection === "roles" ? "blur(20px)" : "none",
+          boxShadow: activeSection === "roles"
+            ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
+            : "none",
         }}
-      />
+        onMouseEnter={(e) => {
+          if (activeSection !== "roles") {
+            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+            e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+            e.currentTarget.style.transform = "translateX(4px)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (activeSection !== "roles") {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+            e.currentTarget.style.transform = "translateX(0)";
+          }
+        }}
+      >
+        <LayoutDashboard size={20} />
+        {activeSection === "roles" && (
+          <div
+            style={{
+              position: "absolute",
+              left: -12,
+              width: 3,
+              height: 24,
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
+              borderRadius: "0 2px 2px 0",
+              boxShadow: "0 0 12px rgba(255,255,255,0.4)",
+            }}
+          />
+        )}
+      </button>
 
       {/* Schedule nav item */}
       {onScheduleClick && (
@@ -218,6 +192,10 @@ export function SidebarNav({
             cursor: "pointer",
             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             position: "relative",
+            backdropFilter: activeSection === "schedule" ? "blur(20px)" : "none",
+            boxShadow: activeSection === "schedule"
+              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
+              : "none",
           }}
           onMouseEnter={(e) => {
             if (activeSection !== "schedule") {
@@ -235,6 +213,78 @@ export function SidebarNav({
           }}
         >
           <Calendar size={20} />
+          {activeSection === "schedule" && (
+            <div
+              style={{
+                position: "absolute",
+                left: -12,
+                width: 3,
+                height: 24,
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
+                borderRadius: "0 2px 2px 0",
+                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
+              }}
+            />
+          )}
+        </button>
+      )}
+
+      {/* Sandbox nav item */}
+      {onSandboxClick && (
+        <button
+          onClick={onSandboxClick}
+          title="Dev Container Sandbox"
+          style={{
+            width: 48,
+            height: 48,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: activeSection === "sandbox"
+              ? "linear-gradient(135deg, rgba(167,139,250,0.2), rgba(139,92,246,0.15))"
+              : "transparent",
+            border: activeSection === "sandbox" ? "1px solid rgba(167,139,250,0.4)" : "none",
+            borderRadius: "12px",
+            color: activeSection === "sandbox" ? "#a78bfa" : "rgba(255,255,255,0.4)",
+            cursor: "pointer",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            position: "relative",
+            backdropFilter: activeSection === "sandbox" ? "blur(20px)" : "none",
+            boxShadow: activeSection === "sandbox"
+              ? "0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)"
+              : "none",
+          }}
+          onMouseEnter={(e) => {
+            if (activeSection !== "sandbox") {
+              e.currentTarget.style.background = "rgba(167,139,250,0.1)";
+              e.currentTarget.style.color = "rgba(167,139,250,0.8)";
+              e.currentTarget.style.transform = "translateX(4px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeSection !== "sandbox") {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+              e.currentTarget.style.transform = "translateX(0)";
+            }
+          }}
+        >
+          <Box size={20} />
+          {activeSection === "sandbox" && (
+            <div
+              style={{
+                position: "absolute",
+                left: -12,
+                width: 3,
+                height: 24,
+                background:
+                  "linear-gradient(180deg, rgba(139, 92, 246, 0.8), rgba(167, 139, 250, 0.6))",
+                borderRadius: "0 2px 2px 0",
+                boxShadow: "0 0 12px rgba(139, 92, 246, 0.6)",
+              }}
+            />
+          )}
         </button>
       )}
 

@@ -2,18 +2,53 @@ import { DynamoDBStreamEvent, Handler } from 'aws-lambda';
 import { DynamoDBClient, GetItemCommand, UpdateItemCommand, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 
 const dbClient = new DynamoDBClient({});
 const sesClient = new SESClient({});
 const cognitoClient = new CognitoIdentityProviderClient({});
+const ssmClient = new SSMClient({});
 
-const CANDIDATE_TABLE = process.env.CANDIDATE_TABLE_NAME;
-const STAGE_TABLE = process.env.STAGE_TABLE_NAME;
-const PIPELINE_TABLE = process.env.PIPELINE_TABLE_NAME;
-const SCHEDULED_INTERVIEW_TABLE = process.env.SCHEDULEDINTERVIEW_TABLE_NAME;
+let CANDIDATE_TABLE = process.env.CANDIDATE_TABLE_NAME;
+let STAGE_TABLE = process.env.STAGE_TABLE_NAME;
+let PIPELINE_TABLE = process.env.PIPELINE_TABLE_NAME;
+let SCHEDULED_INTERVIEW_TABLE = process.env.SCHEDULEDINTERVIEW_TABLE_NAME;
+let SCHEDULING_CONNECTION_TABLE = process.env.SCHEDULINGCONNECTION_TABLE_NAME;
+
 const SENDER_EMAIL = process.env.SES_SENDER_EMAIL || 'invites@pipe-os.com';
 const USER_POOL_ID = process.env.USER_POOL_ID;
+
+async function ensureTableNames() {
+  if (CANDIDATE_TABLE && STAGE_TABLE && PIPELINE_TABLE && SCHEDULED_INTERVIEW_TABLE) {
+    return;
+  }
+
+  console.log('[notificationService] Resolving table names from SSM...');
+  const getParam = async (name: string | undefined) => {
+    if (!name) return undefined;
+    try {
+      const res = await ssmClient.send(new GetParameterCommand({ Name: name }));
+      return res.Parameter?.Value;
+    } catch (err) {
+      console.error(`[notificationService] Error fetching SSM parameter ${name}:`, err);
+      return undefined;
+    }
+  };
+
+  CANDIDATE_TABLE = CANDIDATE_TABLE || await getParam(process.env.CANDIDATE_TABLE_SSM);
+  STAGE_TABLE = STAGE_TABLE || await getParam(process.env.STAGE_TABLE_SSM);
+  PIPELINE_TABLE = PIPELINE_TABLE || await getParam(process.env.PIPELINE_TABLE_SSM);
+  SCHEDULED_INTERVIEW_TABLE = SCHEDULED_INTERVIEW_TABLE || await getParam(process.env.SCHEDULEDINTERVIEW_TABLE_SSM);
+  SCHEDULING_CONNECTION_TABLE = SCHEDULING_CONNECTION_TABLE || await getParam(process.env.SCHEDULINGCONNECTION_TABLE_SSM);
+
+  console.log('[notificationService] Resolved tables:', {
+    candidate: !!CANDIDATE_TABLE,
+    stage: !!STAGE_TABLE,
+    pipeline: !!PIPELINE_TABLE,
+    interview: !!SCHEDULED_INTERVIEW_TABLE,
+  });
+}
 
 interface NotificationTemplate {
   trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE' | 'INVITED' | 'SCHEDULED';
@@ -26,6 +61,9 @@ interface NotificationTemplate {
  */
 export const handler: Handler = async (event: any) => {
   console.log('[notificationService] Received event:', JSON.stringify(event, null, 2));
+
+  // Ensure table names are resolved (breaks circular dependency)
+  await ensureTableNames();
 
   // 1. Handle DynamoDB Stream Events
   if (event.Records) {
