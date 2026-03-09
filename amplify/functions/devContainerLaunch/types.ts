@@ -33,6 +33,8 @@ export interface DevContainerLaunchResponse {
   status: 'PROVISIONING';
   /** ISO timestamp of when the task was launched */
   launchedAt: string;
+  /** Per-session code-server password — store securely, never log */
+  accessToken: string;
 }
 
 export interface DevContainerLaunchError {

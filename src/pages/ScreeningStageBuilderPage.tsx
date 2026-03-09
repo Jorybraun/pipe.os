@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Video,
   Clock,
@@ -243,6 +244,7 @@ function QuestionCard({
 }
 
 export default function ScreeningStageBuilderPage(): JSX.Element {
+  const navigate = useNavigate();
   const [activeSection] = useState('roles');
 
   const [isAgentOpen, setIsAgentOpen] = useState(false);
@@ -293,7 +295,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
           isAgentOpen={isAgentOpen}
           onAgentToggle={() => setIsAgentOpen(!isAgentOpen)}
           onRolesClick={() => {
-            window.location.href = "/";
+            navigate("/");
           }}
         />
       }

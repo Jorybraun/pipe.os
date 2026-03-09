@@ -27,6 +27,7 @@ interface StatusPayload {
 interface LaunchPayload {
   taskArn?: string;
   status?: string;
+  accessToken?: string;
   success?: boolean;
   error?: string;
 }
@@ -69,6 +70,7 @@ function parseLaunchPayload(result: unknown): LaunchPayload {
   return {
     taskArn: typeof parsed['taskArn'] === 'string' ? parsed['taskArn'] : undefined,
     status: typeof parsed['status'] === 'string' ? parsed['status'] : undefined,
+    accessToken: typeof parsed['accessToken'] === 'string' ? parsed['accessToken'] : undefined,
     success: typeof parsed['success'] === 'boolean' ? parsed['success'] : undefined,
     error: typeof parsed['error'] === 'string' ? parsed['error'] : undefined,
   };
@@ -105,6 +107,13 @@ export interface UseDevContainerSessionReturn {
   state: ContainerSessionState;
   /** code-server URL — only populated when state = 'READY' */
   containerUrl: string | null;
+  /**
+   * Per-session code-server password — available from BOOTING onward.
+   * Held in React component memory only; never written to localStorage,
+   * sessionStorage, or logs. Cleared on destroy() and reset().
+   * Do NOT include this value in error messages or console.log calls.
+   */
+  accessToken: string | null;
   /** ECS task ARN — available from BOOTING onward */
   taskArn: string | null;
   /** Human-readable error message when state = 'ERROR' */
@@ -120,6 +129,7 @@ export interface UseDevContainerSessionReturn {
 export function useDevContainerSession(): UseDevContainerSessionReturn {
   const [state, setState] = useState<ContainerSessionState>('IDLE');
   const [containerUrl, setContainerUrl] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [taskArn, setTaskArn] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -226,6 +236,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     setState('LAUNCHING');
     setError(null);
     setContainerUrl(null);
+    setAccessToken(null);
 
     const newSessionId = uuid();
     sessionIdRef.current = newSessionId;
@@ -246,6 +257,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
 
       setTaskArn(payload.taskArn);
       taskArnRef.current = payload.taskArn;
+      if (payload.accessToken) setAccessToken(payload.accessToken);
       setState('BOOTING');
     } catch (err) {
       console.error('[useDevContainerSession] launch error:', err);
@@ -279,6 +291,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
       setState('IDLE');
       setTaskArn(null);
       setContainerUrl(null);
+      setAccessToken(null);
       sessionIdRef.current = null;
     }
   }, []);
@@ -289,6 +302,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     setState('IDLE');
     setTaskArn(null);
     setContainerUrl(null);
+    setAccessToken(null);
     sessionIdRef.current = null;
     setError(null);
   }, []);
@@ -296,6 +310,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
   return {
     state,
     containerUrl,
+    accessToken,
     taskArn,
     error,
     launch,

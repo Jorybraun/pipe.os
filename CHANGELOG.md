@@ -6,11 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
-#### Added
-- **Chrome iframe compatibility**: Added `allow-downloads` and `allow-top-navigation-by-user-activation` to iframe sandbox attributes in `DevContainerSandboxPage` for Chrome compatibility.
+#### Security
+- **Per-session code-server password**: Replaced `--auth none` (no authentication) with a `crypto.randomBytes(24)` per-session token injected as `PASSWORD` env var at ECS task launch. Each container now requires a unique credential. Token is returned from `launchDevContainer` mutation and surfaced via `useDevContainerSession.accessToken`.
+- **Removed open 0.0.0.0/0 ingress on port 8080**: Security group `code_server` no longer allows direct internet access to containers on port 8080; only the ALB security group can reach containers. Egress tightened to HTTP (80) and HTTPS (443) only — no unrestricted outbound.
+- **Removed empty `PASSWORD=""` from ECS task definition**: The base task definition no longer forces auth off. Passwords are now only set per-session by the Lambda at launch time.
 
 #### Changed
-- **Disable code-server password**: Set `PASSWORD` environment variable to empty string in ECS task definition (`infra/ecs.tf`) to disable code-server authentication for dev containers.
+- **`ScreeningStageBuilderPage`**: Replaced `window.location.href = "/"` full-page reload with `useNavigate("/")` from React Router for client-side navigation.
+- **`useDevContainerSession`**: Exposes `accessToken` (the per-session code-server password) from BOOTING onward.
+
 - **EventBridge ECS integration**: Created `infra/eventbridge.tf` to define EventBridge rule that triggers `ecsStatusBridge` Lambda on ECS Task State Change events, enabling automatic ALB registration. [Details](/docs/changelogs/2025-01-05-ecs-task-tagging-eventbridge-fix.md)
 - **Container logs Lambda**: Added `getContainerLogs` Lambda function to fetch CloudWatch logs for dev container debugging.
 - **ADR-018**: Documented dev container access control strategy using signed JWT tokens, WAF rules, Lambda@Edge validation, and disabled code-server auth.
