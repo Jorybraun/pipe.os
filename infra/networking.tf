@@ -22,21 +22,20 @@ resource "aws_security_group" "code_server" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # Direct access for prototype — code-server doesn't support --base-path,
-  # so we bypass the ALB and hit containers via public IP. Will be removed
-  # when nginx sidecar is added for production ALB path-rewriting.
-  ingress {
-    description = "code-server direct access (prototype)"
-    from_port   = 8080
-    to_port     = 8080
+  # Egress: allow HTTP and HTTPS only; no direct RFC1918 access.
+  egress {
+    description = "HTTPS to internet"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTP to internet"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 

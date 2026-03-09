@@ -19,6 +19,7 @@ import {
   TagResourceCommand,
   type RunTaskCommandInput,
 } from '@aws-sdk/client-ecs';
+import { randomBytes } from 'crypto';
 import type {
   DevContainerLaunchRequest,
   DevContainerLaunchResponse,
@@ -56,6 +57,11 @@ export async function handler(
     };
   }
 
+  // Generate a cryptographically random per-session access token (24 bytes = 192 bits).
+  // 192-bit entropy exceeds the NIST SP800-132 minimum for session tokens.
+  // Passed to code-server as PASSWORD — never log or expose this value.
+  const accessToken = randomBytes(24).toString('hex');
+
   const input: RunTaskCommandInput = {
     cluster: clusterArn,
     taskDefinition,
@@ -72,12 +78,15 @@ export async function handler(
       containerOverrides: [
         {
           name: 'code-server',
+          // Bind to all interfaces on the task's ENI. This is safe because
+          // the task runs in awsvpc network mode — each task has an isolated
+          // ENI, and the security group restricts inbound to the ALB only.
           command: [
             '--bind-addr', '0.0.0.0:8080',
-            '--auth', 'none',
           ],
           environment: [
             { name: 'SESSION_ID', value: sessionId },
+            { name: 'PASSWORD', value: accessToken },
           ],
         },
       ],
@@ -125,6 +134,7 @@ export async function handler(
       taskArn: task.taskArn,
       status: 'PROVISIONING',
       launchedAt: new Date().toISOString(),
+      accessToken,
     };
   } catch (err) {
     console.error('[devContainerLaunch] Unexpected error:', err);

@@ -25,10 +25,6 @@ resource "aws_ecs_task_definition" "code_server" {
       {
         name  = "CS_DISABLE_GETTING_STARTED_OVERRIDE"
         value = "true"
-      },
-      {
-        name  = "PASSWORD"
-        value = ""
       }
     ]
 
