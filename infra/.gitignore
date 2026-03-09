@@ -1,0 +1,7 @@
+# Terraform working directory and state
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+
+# .terraform.lock.hcl is committed (pins provider versions like package-lock.json)

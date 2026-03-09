@@ -211,7 +211,7 @@ Brief description of the feature
 | Pipeline Builder        |  ✅ Complete   |   Pending   |   Pending   | 🟡 Reqs Done   |
 | AI Screening Stage      | 📝 Placeholder |   Pending   |   Pending   | ⚪ Placeholder |
 | AI Collaboration Stage  | 📝 Placeholder |   Pending   |   Pending   | ⚪ Placeholder |
-| Code Review Stage       |  ✅ Complete   | ✅ Complete | ✅ Complete | 🟢 Complete    |
+| Code Review Stage       |  🟡 In-Progress | ✅ Complete | ✅ Complete | 🟢 Complete    |
 | Feature Planning Stage  | 📝 Placeholder |   Pending   |   Pending   | ⚪ Placeholder |
 | Voice Interview Stage   |  ✅ Complete   |   Pending   |   Pending   | 🟡 Reqs Done   |
 | Human Panel Stage       | 📝 Placeholder |   Pending   |   Pending   | ⚪ Placeholder |

@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
   Plus,
+  Filter,
+  Check,
+  Activity,
+  Briefcase,
+  Users,
 } from "lucide-react";
-import { RoleCard, LiquidMetalCard } from "../components";
+import { RoleCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from "../../amplify/data/resource";
@@ -18,61 +23,22 @@ type PipelineWithStats = Schema['Pipeline']['type'] & {
 };
 
 const ListingSkeleton = () => (
-  <div style={{
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
-    gap: 16,
-  }}>
-    {[1, 2, 3, 4, 5, 6].map((i) => (
-      <LiquidMetalCard key={i} style={{ minHeight: 280, padding: 0 }}>
-        <div style={{ padding: '24px 24px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <Skeleton width={60} height={16} style={{ marginBottom: 16 }} />
-          <Skeleton width="80%" height={24} style={{ marginBottom: 12 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Skeleton width="40%" height={10} />
-            <Skeleton width="30%" height={10} />
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ padding: 20, borderRight: '1px solid rgba(255,255,255,0.06)' }}>
-            <Skeleton width={40} height={8} style={{ marginBottom: 8 }} />
-            <Skeleton width={30} height={28} />
-          </div>
-          <div style={{ padding: 20, borderRight: '1px solid rgba(255,255,255,0.06)' }}>
-            <Skeleton width={40} height={8} style={{ marginBottom: 8 }} />
-            <Skeleton width={30} height={28} />
-          </div>
-          <div style={{ padding: 20 }}>
-            <Skeleton width={40} height={8} style={{ marginBottom: 8 }} />
-            <Skeleton width={30} height={28} />
-          </div>
-        </div>
-        <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between' }}>
-          <Skeleton width={80} height={10} />
-          <Skeleton width={60} height={10} />
-        </div>
-      </LiquidMetalCard>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    {[1, 2, 3, 4, 5].map((i) => (
+      <Skeleton key={i} height={80} style={{ borderRadius: 8 }} />
     ))}
   </div>
 );
 
 /**
- * ListingPage - Main entry point showing all roles/pipelines
- *
- * Features:
- * - Stats cards showing overview metrics
- * - Search and filter functionality
- * - Grid of role cards
- * - Navigation to pipeline builder and detail views
- *
- * Note: Layout is provided by AppLayout wrapper in App.tsx
+ * ListingPage - Roles overview with a mixture of Pipeline Builder layout 
+ * and Meetings Page list style.
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
   const [pipelines, setPipelines] = useState<PipelineWithStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
   const [filter, setFilter] = useState<"all" | "ACTIVE" | "DRAFT" | "ARCHIVED">(
     "all"
   );
@@ -81,8 +47,6 @@ export default function ListingPage(): JSX.Element {
   const fetchPipelines = useCallback(async () => {
     try {
       setIsLoading(true);
-      setError(null);
-      // Use selectionSet to batch load related stages and candidates in one trip
       const { data: pipelineData } = await client.models.Pipeline.list({
         selectionSet: [
           'id',
@@ -100,7 +64,6 @@ export default function ListingPage(): JSX.Element {
       });
       
       const enrichedPipelines = pipelineData.map((p) => {
-        // Calculate average score across all candidates in all assessments for this pipeline
         let totalScore = 0;
         let scoreCount = 0;
 
@@ -126,7 +89,6 @@ export default function ListingPage(): JSX.Element {
       setPipelines(enrichedPipelines as unknown as PipelineWithStats[]);
     } catch (err) {
       console.error("[ListingPage] Error fetching pipelines:", err);
-      setError(err instanceof Error ? err : new Error("Failed to load pipelines"));
     } finally {
       setIsLoading(false);
     }
@@ -137,7 +99,6 @@ export default function ListingPage(): JSX.Element {
     fetchPipelines();
   }, [fetchPipelines]);
 
-  // Filter and search roles
   const filteredPipelines = pipelines.filter((p) => {
     const matchesFilter = filter === "all" || p.status === filter;
     const matchesSearch =
@@ -146,215 +107,244 @@ export default function ListingPage(): JSX.Element {
     return matchesFilter && matchesSearch;
   });
 
+  const stats = useMemo(() => {
+    return {
+      active: pipelines.filter(p => p.status === 'ACTIVE').length,
+      draft: pipelines.filter(p => p.status === 'DRAFT').length,
+      totalCandidates: pipelines.reduce((acc, p) => acc + p.candidateCount, 0)
+    };
+  }, [pipelines]);
+
   const handleRoleClick = (id: string): void => {
     navigate(`/pipeline/${id}`);
   };
-
-  if (isLoading && pipelines.length === 0) {
-    return <ListingSkeleton />;
-  }
-
-  if (error) {
-    return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <LiquidMetalCard variant="mercury" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
-          <div style={{ color: '#f87171', marginBottom: 16, fontSize: 12, fontWeight: 700, fontFamily: '"Space Mono", monospace' }}>
-            ERROR_LOADING_PIPELINES
-          </div>
-          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
-            {error.message}
-          </p>
-          <button
-            onClick={() => fetchPipelines()}
-            style={{
-              padding: '12px 24px',
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: '#fff',
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              fontFamily: '"Space Mono", monospace',
-              cursor: 'pointer'
-            }}
-          >
-            RETRY_CONNECTION
-          </button>
-        </LiquidMetalCard>
-      </div>
-    );
-  }
 
   return (
     <div
       style={{
         opacity: mounted ? 1 : 0,
         transition: "opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+        maxWidth: 1400,
+        margin: "0 auto",
       }}
     >
-      {/* Filter Bar */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-          opacity: mounted ? 1 : 0,
-          transition: "opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
-            style={{ width: 6, height: 6, background: "rgba(255,255,255,0.4)" }}
-          />
-          <span
-            style={{
-              fontSize: 9,
-              letterSpacing: "0.3em",
-              color: "rgba(255,255,255,0.4)",
-              textTransform: "uppercase",
-            }}
-          >
-            ALL_ROLES
-          </span>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Search */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 16px",
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <Search size={12} color="rgba(255,255,255,0.3)" />
-            <input
-              type="text"
-              placeholder="Search roles..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{
-                background: "transparent",
-                border: "none",
-                outline: "none",
-                color: "#fff",
-                fontSize: 10,
-                letterSpacing: "0.1em",
-                fontFamily: '"Space Mono", monospace',
-                width: 120,
-              }}
-            />
+      {/* Page Header (Meetings Page style) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
+        <div>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+            RECRUITMENT_PIPELINES
           </div>
-
-          {/* Filter buttons */}
-          <div style={{ display: "flex", gap: 2 }}>
-            {(["all", "ACTIVE", "DRAFT", "ARCHIVED"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                style={{
-                  padding: "8px 14px",
-                  background:
-                    filter === f ? "rgba(255,255,255,0.1)" : "transparent",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  color: filter === f ? "#fff" : "rgba(255,255,255,0.4)",
-                  fontSize: 8,
-                  letterSpacing: "0.15em",
-                  cursor: "pointer",
-                  textTransform: "uppercase",
-                }}
-              >
-                {f}
-              </button>
-            ))}
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', margin: 0 }}>
+            Active Roles
+          </h1>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+            {pipelines.length} roles total
+          </span>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#34d399', fontFamily: '"Space Mono", monospace' }}>
+                <Activity size={12} />
+                {stats.active} ACTIVE
+             </div>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+                <Users size={12} />
+                {stats.totalCandidates} CANDIDATES
+             </div>
           </div>
         </div>
       </div>
 
-      {/* Roles Grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
-          gap: 16,
-        }}
-      >
-        {filteredPipelines.map((p) => (
-          <RoleCard
-            key={p.id}
-            title={p.title}
-            department={p.level || "Seniority"}
-            location="REMOTE"
-            status={
-              p.status === "ARCHIVED"
-                ? "closed"
-                : (p.status?.toLowerCase() as "active" | "draft" | "closed")
-            }
-            candidates={p.candidateCount}
-            avgScore={p.avgScore}
-            stagesConfigured={p.stageCount}
-            totalStages={p.stageCount || 1}
-            createdAt={p.createdAt}
-            onClick={() => handleRoleClick(p.id)}
-          />
-        ))}
+      <div style={{ display: "flex", gap: 24, position: 'relative' }}>
+        {/* Main List Area (Pipeline Builder layout) */}
+        <section style={{ flex: 1 }}>
+          {/* List Search & Controls */}
+          <div style={{ 
+            display: 'flex', 
+            gap: 12, 
+            marginBottom: 20,
+            padding: '12px 16px',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: 8
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+              <Search size={14} color="rgba(255,255,255,0.2)" />
+              <input
+                type="text"
+                placeholder="SEARCH_BY_TITLE..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#fff',
+                  fontSize: 11,
+                  letterSpacing: '0.05em',
+                  fontFamily: '"Space Mono", monospace',
+                  width: '100%',
+                }}
+              />
+            </div>
+            <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)' }} />
+            <button 
+              onClick={() => navigate("/pipeline/new")}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'rgba(139, 92, 246, 0.1)',
+                border: '1px solid rgba(139, 92, 246, 0.2)',
+                color: '#a78bfa',
+                padding: '4px 12px',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: '"Space Mono", monospace'
+              }}
+            >
+              <Plus size={14} />
+              NEW_ROLE
+            </button>
+          </div>
 
-        {/* Create New Role Card */}
-        <div
-          style={{
-            opacity: mounted ? 1 : 0,
-            transform: mounted ? "translateY(0)" : "translateY(20px)",
-            transition: `all 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${
-              filteredPipelines.length * 80
-            }ms`,
-          }}
-        >
-          <LiquidMetalCard
-            variant="default"
-            hover
-            onClick={() => navigate("/pipeline/new")}
-            style={{
-              minHeight: 280,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "1px dashed rgba(255,255,255,0.15)",
-              cursor: 'pointer'
-            }}
-          >
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 20,
-              }}
-            >
-              <Plus size={24} color="rgba(255,255,255,0.4)" />
+          {/* Roles List */}
+          {isLoading ? (
+            <ListingSkeleton />
+          ) : filteredPipelines.length === 0 ? (
+            <div style={{ 
+              padding: 64, 
+              textAlign: 'center', 
+              border: '1px dashed rgba(255,255,255,0.08)',
+              borderRadius: 12,
+              background: 'rgba(255,255,255,0.01)'
+            }}>
+              <Briefcase size={40} color="rgba(255,255,255,0.12)" style={{ marginBottom: 16 }} />
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+                NO_ROLES_FOUND
+              </p>
             </div>
-            <div
-              style={{
-                fontSize: 12,
-                letterSpacing: "0.15em",
-                color: "rgba(255,255,255,0.5)",
-                marginBottom: 8,
-              }}
-            >
-              CREATE NEW ROLE
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {filteredPipelines.map((p) => (
+                <RoleCard
+                  key={p.id}
+                  title={p.title}
+                  department={p.level || "Engineering"}
+                  location="Remote"
+                  status={
+                    p.status === "ARCHIVED"
+                      ? "closed"
+                      : (p.status?.toLowerCase() as "active" | "draft" | "closed")
+                  }
+                  candidates={p.candidateCount}
+                  avgScore={p.avgScore}
+                  stagesConfigured={p.stageCount}
+                  totalStages={p.stageCount || 1}
+                  createdAt={p.createdAt}
+                  onClick={() => handleRoleClick(p.id)}
+                />
+              ))}
             </div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>
-              Set up a new hiring pipeline
-            </div>
-          </LiquidMetalCard>
-        </div>
+          )}
+        </section>
+
+        {/* Sidebar Configuration (Discovery Page style) */}
+        <aside style={{ width: 340 }}>
+           <div 
+             style={{ 
+               padding: 24,
+               height: 'fit-content',
+               background: 'rgba(255, 255, 255, 0.03)',
+               backdropFilter: 'blur(40px) saturate(150%)',
+               border: '1px solid rgba(255, 255, 255, 0.1)',
+               borderRadius: 16,
+               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+               display: 'flex',
+               flexDirection: 'column',
+               gap: 24
+             }}
+           >
+             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Filter size={14} color="#8b5cf6" />
+                <h3 style={{ 
+                  fontSize: 10, 
+                  letterSpacing: '0.2em', 
+                  color: '#fff', 
+                  textTransform: 'uppercase',
+                  fontFamily: '"Space Mono", monospace',
+                  fontWeight: 700
+                }}>
+                  FILTER_CONTROLS
+                </h3>
+             </div>
+
+             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(["all", "ACTIVE", "DRAFT", "ARCHIVED"] as const).map((f) => (
+                  <div 
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    style={{
+                      padding: '12px 16px',
+                      background: filter === f ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${filter === f ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255,255,255,0.05)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      borderRadius: 4
+                    }}
+                  >
+                    <span style={{ 
+                      fontSize: 10, 
+                      color: filter === f ? '#fff' : 'rgba(255,255,255,0.4)',
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      fontFamily: '"Space Mono", monospace'
+                    }}>
+                      {f === 'all' ? 'ALL_STATUS' : f}
+                    </span>
+                    {filter === f && <Check size={12} color="#a78bfa" />}
+                  </div>
+                ))}
+             </div>
+
+             <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+
+             {/* Sidebar Info/Stats */}
+             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                  PIPELINE_INSIGHTS
+                </span>
+                <div style={{ 
+                  padding: 16, 
+                  background: 'rgba(139, 92, 246, 0.03)', 
+                  border: '1px solid rgba(139, 92, 246, 0.1)',
+                  borderRadius: 8,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Total Active Roles</span>
+                    <span style={{ fontSize: 10, color: '#fff', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.active}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Draft Pipelines</span>
+                    <span style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.draft}</span>
+                  </div>
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Conversion Rate</span>
+                    <span style={{ fontSize: 10, color: '#34d399', fontWeight: 700, fontFamily: 'Space Mono' }}>24.2%</span>
+                  </div>
+                </div>
+             </div>
+           </div>
+        </aside>
       </div>
       
       <style>{`

@@ -5,7 +5,11 @@ import { scoringAgent } from '../functions/scoringAgent/resource';
 import { turnCredentials } from '../functions/turnCredentials/resource';
 import { schedulingWebhook } from '../functions/schedulingWebhook/resource';
 import { schedulingOAuth } from '../functions/schedulingOAuth/resource';
+import { devContainerLaunch } from '../functions/devContainerLaunch/resource';
+import { devContainerDestroy } from '../functions/devContainerDestroy/resource';
+import { devContainerStatus } from '../functions/devContainerStatus/resource';
 import { notificationService } from '../functions/notificationService/resource';
+import { getContainerLogs } from '../functions/getContainerLogs/resource';
 
 const schema = a.schema({
   /**
@@ -35,6 +39,9 @@ const schema = a.schema({
       // Scheduling URL for LIVE_VIDEO stages (e.g. Calendly or Cal.com link)
       schedulingUrl: a.url(),
 
+      // Provider-specific event type ID for this pipeline
+      schedulingEventTypeId: a.string(),
+
       // Link to discovery context (post-MVP: agentic discovery)
       roleContextId: a.id(),
     })
@@ -44,13 +51,6 @@ const schema = a.schema({
 
   /**
    * Stage Model
-   *
-   * Represents a container for challenges in the pipeline.
-   * Stages define the high-level flow (e.g. "Technical Round 1").
-   *
-   * mode: ASYNC (default) = candidates complete challenges independently.
-   *       LIVE_VIDEO = recruiter and candidate connect over WebRTC first,
-   *       then challenges play out during the live session.
    */
   Stage: a
     .model({
@@ -79,16 +79,6 @@ const schema = a.schema({
 
   /**
    * VideoSession Model
-   *
-   * Tracks a live video interview session between a recruiter and candidate.
-   * Created by the recruiter when they are ready to call; destroyed when the
-   * session ends. One session per (stageId + candidateId) at a time.
-   *
-   * status lifecycle:
-   *   WAITING  → recruiter is waiting for candidate to join the room
-   *   CALLING  → recruiter has initiated the call (offer sent)
-   *   ACTIVE   → candidate accepted (answer sent, ICE complete)
-   *   ENDED    → either party ended the session
    */
   VideoSession: a
     .model({
@@ -106,15 +96,6 @@ const schema = a.schema({
 
   /**
    * VideoSignal Model
-   *
-   * Stores individual WebRTC signaling messages (SDP offer/answer + ICE candidates).
-   * AppSync real-time subscriptions allow each peer to receive signals instantly.
-   *
-   * type:
-   *   OFFER        → recruiter's RTCSessionDescription (type=offer)
-   *   ANSWER       → candidate's RTCSessionDescription (type=answer)
-   *   ICE_CANDIDATE → trickle ICE candidate from either peer
-   *   HANGUP       → graceful session termination signal
    */
   VideoSignal: a
     .model({
@@ -132,8 +113,6 @@ const schema = a.schema({
 
   /**
    * Challenge Model
-   * 
-   * Atomic unit of assessment. 
    */
   Challenge: a
     .model({
@@ -155,15 +134,10 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner(),
       allow.publicApiKey().to(['read']),
-      // Note: serverConfig access should be restricted via field-level auth 
-      // when Amplify supports it for JSON fields, or via a dedicated private model.
     ]),
 
   /**
    * CodeArtifact Model
-   * 
-   * Stores code snippets and ground truth for code-based challenges.
-   * Separated from Challenge to allow multiple challenges to reference the same artifact.
    */
   CodeArtifact: a
     .model({
@@ -183,8 +157,6 @@ const schema = a.schema({
 
   /**
    * Candidate Model
-   *
-   * Represents a candidate invited to a pipeline.
    */
   Candidate: a
     .model({
@@ -209,8 +181,6 @@ const schema = a.schema({
 
   /**
    * Assessment Model
-   *
-   * Stores a candidate's submission for a specific challenge.
    */
   Assessment: a
     .model({
@@ -232,18 +202,6 @@ const schema = a.schema({
 
   /**
    * ScheduledInterview Model
-   *
-   * Tracks a scheduled (or to-be-scheduled) live video interview between a
-   * recruiter and candidate for a LIVE_VIDEO stage. Created by the recruiter
-   * when they invite a candidate; status evolves as the candidate books and
-   * the session completes.
-   *
-   * status lifecycle:
-   *   INVITED   → recruiter created the record, candidate not yet booked
-   *   SCHEDULED → candidate booked via scheduling provider
-   *   COMPLETED → session took place
-   *   CANCELLED → either party cancelled
-   *   NO_SHOW   → candidate did not attend
    */
   ScheduledInterview: a
     .model({
@@ -280,10 +238,6 @@ const schema = a.schema({
 
   /**
    * SchedulingConnection Model
-   *
-   * Stores a recruiter's OAuth connection to a scheduling provider.
-   * Tokens are encrypted at rest via DynamoDB SSE.
-   * Tokens never leave the server — all token operations happen in Lambda.
    */
   SchedulingConnection: a
     .model({
@@ -302,21 +256,14 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-      // Lambda access granted via DynamoDB table grants in backend.ts
-      // (allow.resource() is not available on model-level authorization)
     ]),
 
   /**
    * RoleContext Model
-   *
-   * Stores role discovery session state and outputs.
    */
   RoleContext: a
     .model({
-      // Owner (from Cognito auth)
       owner: a.string(),
-
-      // Baseline (Part 1 - structured fields)
       title: a.string(),
       level: a.enum(['junior', 'mid', 'senior', 'staff', 'principal', 'lead', 'manager']),
       department: a.string(),
@@ -324,21 +271,11 @@ const schema = a.schema({
       teamSize: a.string(),
       reportsTo: a.string(),
       stack: a.string().array(),
-
-      // Dynamic context (Part 2 - JSON blob)
       context: a.json(),
-
-      // Conversation history (JSON blob)
       exchanges: a.json(),
-
-      // Status tracking
       status: a.enum(['baseline', 'exploring', 'almost_ready', 'ready']),
       gaps: a.string().array(),
-
-      // User persona signals (JSON blob)
       userSignals: a.json(),
-
-      // Generated outputs (when status = 'ready')
       jobDescription: a.json(),
       candidateFilters: a.json(),
       suggestedStages: a.json(),
@@ -354,7 +291,7 @@ const schema = a.schema({
     .mutation()
     .arguments({
       roleContext: a.json().required(),
-      responses: a.json(), // Array of { questionId, response }
+      responses: a.json(),
     })
     .returns(a.json())
     .handler(a.handler.function(questionAgent))
@@ -384,12 +321,6 @@ const schema = a.schema({
     .handler(a.handler.function(turnCredentials))
     .authorization((allow) => [allow.authenticated()]),
 
-  /**
-   * Scheduling Webhook Mutation
-   *
-   * Public-facing webhook receiver for Calendly/Cal.com callbacks.
-   * Accepts provider identifier and raw JSON payload.
-   */
   processSchedulingWebhook: a
     .mutation()
     .arguments({
@@ -400,12 +331,6 @@ const schema = a.schema({
     .handler(a.handler.function(schedulingWebhook))
     .authorization((allow) => [allow.publicApiKey()]),
 
-  /**
-   * Scheduling OAuth Mutation
-   *
-   * Handles OAuth code exchange, token refresh, event type fetching,
-   * and disconnection for scheduling providers.
-   */
   exchangeSchedulingOAuth: a
     .mutation()
     .arguments({
@@ -414,6 +339,71 @@ const schema = a.schema({
     })
     .returns(a.json())
     .handler(a.handler.function(schedulingOAuth))
+    .authorization((allow) => [allow.authenticated()]),
+
+  /**
+   * DevContainerSession Model
+   *
+   * Tracks the lifecycle of an AWS Fargate dev container session.
+   * Status updates are written by the ecsStatusBridge Lambda and
+   * consumed in real-time by the frontend via subscriptions.
+   */
+  DevContainerSession: a
+    .model({
+      // The ECS Task ARN is the unique identifier
+      taskArn: a.string().required(),
+      sessionId: a.string().required(),
+      status: a.enum(['PROVISIONING', 'BOOTING', 'READY', 'STOPPING', 'ERROR']),
+      url: a.string(),
+      // ALB resources created per-session by ecsStatusBridge on RUNNING;
+      // stored here so they can be cleaned up on STOPPED.
+      albTargetGroupArn: a.string(),
+      albListenerRuleArn: a.string(),
+    })
+    .identifier(['taskArn'])
+    .authorization((allow) => [
+      allow.authenticated(),      // Users can read/watch their sessions
+      allow.publicApiKey().to(['create', 'update']), // Bridge Lambda restricted to sync only
+    ]),
+
+  /**
+   * Dev Container Mutations / Queries
+   */
+  launchDevContainer: a
+    .mutation()
+    .arguments({
+      sessionId: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(devContainerLaunch))
+    .authorization((allow) => [allow.authenticated()]),
+
+  destroyDevContainer: a
+    .mutation()
+    .arguments({
+      taskArn: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(devContainerDestroy))
+    .authorization((allow) => [allow.authenticated()]),
+
+  getContainerStatus: a
+    .query()
+    .arguments({
+      taskArn: a.string().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(devContainerStatus))
+    .authorization((allow) => [allow.authenticated()]),
+
+  getContainerLogs: a
+    .query()
+    .arguments({
+      taskArn: a.string().required(),
+      limit: a.integer(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(getContainerLogs))
     .authorization((allow) => [allow.authenticated()]),
 
   /**

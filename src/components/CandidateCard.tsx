@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Building, MapPin, User } from "lucide-react";
-import { LiquidMetalCard } from "./LiquidMetalCard";
+import { Building, MapPin, ChevronRight, Activity, Target } from "lucide-react";
+import { LiquidMetalCard } from "./ui/LiquidMetalCard";
 
 export type CandidateSignal = "strong" | "yes" | "maybe" | "no";
 
@@ -36,22 +36,26 @@ export function CandidateCard({
     return () => clearTimeout(timer);
   }, [animationDelay]);
 
-  const signalColors: Record<CandidateSignal, { bg: string; text: string }> = {
+  const signalColors: Record<CandidateSignal, { color: string; bg: string; border: string }> = {
     strong: {
-      bg: "rgba(150,255,150,0.15)",
-      text: "rgba(150,255,150,0.8)",
+      color: "#34d399",
+      bg: "rgba(52, 211, 153, 0.1)",
+      border: "rgba(52, 211, 153, 0.2)",
     },
     yes: {
-      bg: "rgba(100,200,255,0.15)",
-      text: "rgba(100,200,255,0.8)",
+      color: "#60a5fa",
+      bg: "rgba(96, 165, 250, 0.1)",
+      border: "rgba(96, 165, 250, 0.2)",
     },
     maybe: {
-      bg: "rgba(255,200,100,0.15)",
-      text: "rgba(255,200,100,0.8)",
+      color: "#fbbf24",
+      bg: "rgba(251, 191, 36, 0.1)",
+      border: "rgba(251, 191, 36, 0.2)",
     },
     no: {
-      bg: "rgba(255,100,100,0.15)",
-      text: "rgba(255,100,100,0.8)",
+      color: "#f87171",
+      bg: "rgba(248, 113, 113, 0.1)",
+      border: "rgba(248, 113, 113, 0.2)",
     },
   };
 
@@ -63,143 +67,165 @@ export function CandidateCard({
         opacity: mounted ? 1 : 0,
         transform: mounted ? "translateY(0)" : "translateY(15px)",
         transition: "all 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+        marginBottom: 12,
+        ...style
       }}
+      className={className}
     >
       <LiquidMetalCard
         variant="dark"
-        hover
         onClick={onClick}
         style={{
-          marginBottom: 8,
+          padding: 0,
+          borderRadius: 8,
           cursor: onClick ? "pointer" : "default",
-          ...style,
+          overflow: 'hidden'
         }}
-        className={className}
       >
-        <div style={{ display: "flex" }}>
+        <div style={{ display: "flex", alignItems: "stretch" }}>
+          {/* Status Indicator Bar */}
+          <div
+            style={{
+              width: 4,
+              background: signalStyle.color,
+              opacity: 0.8,
+            }}
+          />
+
           {/* Initials block */}
           <div
             style={{
-              width: 90,
-              padding: 24,
-              borderRight: "1px solid rgba(255,255,255,0.06)",
+              width: 80,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              background: 'rgba(255,255,255,0.02)',
+              borderRight: '1px solid rgba(255,255,255,0.05)'
             }}
           >
             <span
               style={{
-                fontSize: 32,
+                fontSize: 24,
                 fontWeight: 800,
                 letterSpacing: "-0.02em",
-                background:
-                  "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.6) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
+                color: '#fff',
+                opacity: 0.9
               }}
             >
               {initials}
             </span>
           </div>
 
-          {/* Info section */}
-          <div style={{ flex: 1, padding: "20px 24px" }}>
-            {/* Company */}
+          {/* Main Content */}
+          <div style={{ flex: 1, padding: "16px 20px" }}>
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
+                gap: 12,
                 marginBottom: 8,
               }}
             >
-              <Building size={12} color="rgba(255,255,255,0.25)" />
-              <span
+              <div
                 style={{
-                  fontSize: 10,
-                  letterSpacing: "0.1em",
-                  color: "rgba(255,255,255,0.5)",
+                  fontSize: 8,
+                  fontWeight: 800,
+                  letterSpacing: "0.15em",
+                  padding: "4px 8px",
+                  background: signalStyle.bg,
+                  border: `1px solid ${signalStyle.border}`,
+                  color: signalStyle.color,
+                  borderRadius: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
                 }}
               >
-                {company.toUpperCase()}
-              </span>
-            </div>
-
-            {/* Location */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 8,
-              }}
-            >
-              <MapPin size={12} color="rgba(255,255,255,0.25)" />
-              <span
+                <Activity
+                  size={10}
+                  style={signal === 'strong' ? { animation: "pulse 1.5s ease-in-out infinite" } : {}}
+                />
+                {signal.toUpperCase()}
+              </div>
+              
+              <h3
                 style={{
-                  fontSize: 10,
-                  letterSpacing: "0.1em",
-                  color: "rgba(255,255,255,0.5)",
-                }}
-              >
-                {location.toUpperCase()}
-              </span>
-            </div>
-
-            {/* Name */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <User size={12} color="rgba(255,255,255,0.25)" />
-              <span
-                style={{
-                  fontSize: 10,
-                  letterSpacing: "0.05em",
-                  color: "rgba(255,255,255,0.5)",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#fff",
+                  margin: 0,
+                  letterSpacing: "0.01em",
                 }}
               >
                 {name.toUpperCase()}
-              </span>
-            </div>
-          </div>
+              </h3>
 
-          {/* Score section */}
-          <div
-            style={{
-              width: 80,
-              padding: 20,
-              borderLeft: "1px solid rgba(255,255,255,0.06)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(255,255,255,0.02)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 800,
-                letterSpacing: "-0.02em",
-                background:
-                  "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
-              {score}
+              <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Building size={12} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "rgba(255,255,255,0.4)",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {company.toUpperCase()}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <MapPin size={12} color="rgba(255,255,255,0.2)" />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "rgba(255,255,255,0.4)",
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    {location.toUpperCase()}
+                  </span>
+                </div>
+              </div>
             </div>
-            <span
-              style={{
-                fontSize: 7,
-                letterSpacing: "0.15em",
-                marginTop: 6,
-                padding: "3px 8px",
-                background: signalStyle.bg,
-                color: signalStyle.text,
-              }}
-            >
-              {signal.toUpperCase()}
-            </span>
+
+            {/* Bottom Row */}
+            <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                 <Target size={14} color="rgba(255,255,255,0.2)" />
+                 <div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#fff",
+                        fontFamily: "Space Mono",
+                      }}
+                    >
+                      {String(score).padStart(2, "0")}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 7,
+                        color: "rgba(255,255,255,0.3)",
+                        letterSpacing: "0.1em",
+                      }}
+                    >
+                      OVERALL_SCORE
+                    </div>
+                 </div>
+              </div>
+
+              <div
+                style={{
+                  marginLeft: "auto",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <ChevronRight size={16} color="rgba(255,255,255,0.2)" />
+              </div>
+            </div>
           </div>
         </div>
       </LiquidMetalCard>

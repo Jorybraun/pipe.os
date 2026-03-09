@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Video,
   Clock,
@@ -243,7 +244,8 @@ function QuestionCard({
 }
 
 export default function ScreeningStageBuilderPage(): JSX.Element {
-  const [activeSection, setActiveSection] = useState('roles');
+  const navigate = useNavigate();
+  const [activeSection] = useState('roles');
 
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -290,9 +292,11 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
       sidebar={
         <SidebarNav
           activeSection={activeSection}
-          onSectionChange={setActiveSection}
           isAgentOpen={isAgentOpen}
           onAgentToggle={() => setIsAgentOpen(!isAgentOpen)}
+          onRolesClick={() => {
+            navigate("/");
+          }}
         />
       }
       isAgentOpen={isAgentOpen}
