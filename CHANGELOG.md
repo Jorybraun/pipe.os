@@ -6,6 +6,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added
+- **`CodeReviewGymPrototype.tsx`**: New page prototype for the Code Review Gym challenge type — static PR diff review with inline comments, acceptance criteria, and scoring UI.
+- **`docs/specs/challenge-repo-integration.md`**: Spec for challenge repo integration architecture.
+- **`docs/specs/challenge-repo-scaffolding.md`**: Spec for challenge repo scaffolding system.
+
 #### Security
 - **Per-session code-server password**: Replaced `--auth none` (no authentication) with a `crypto.randomBytes(24)` per-session token injected as `PASSWORD` env var at ECS task launch. Each container now requires a unique credential. Token is returned from `launchDevContainer` mutation and surfaced via `useDevContainerSession.accessToken`.
 - **Removed open 0.0.0.0/0 ingress on port 8080**: Security group `code_server` no longer allows direct internet access to containers on port 8080; only the ALB security group can reach containers. Egress tightened to HTTP (80) and HTTPS (443) only — no unrestricted outbound.
