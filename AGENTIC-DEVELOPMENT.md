@@ -43,14 +43,15 @@ We use a multi-agent system where each agent has specialized expertise. You can 
 ### 📋 Paige (@product-owner)
 **Role:** Product Owner
 **Responsibilities:**
+- Linear task management and prioritization
 - Product briefs (`/brief`)
 - Scope definition and success metrics
-**Focus:** User outcomes, strategic value, and requirement clarity.
+**Focus:** Linear as Source of Truth, user outcomes, strategic value, and requirement clarity.
 
 ### 📊 Parker (@planner)
 **Role:** Strategic Planner
 **Responsibilities:**
-- Business requirements
+- Business requirements and Linear backlog alignment
 - Epic organization and prototype analysis
 **Focus:** Business alignment and long-term project planning.
 

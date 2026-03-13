@@ -3,8 +3,8 @@
 You are working on **Pipe**, an AI-native developer interview platform. This file defines **HOW** we work. 
 
 **Read these first:**
-1. **`docs/README.md`** — The Documentation Map (Where to find what).
-2. **`TASKS.md`** — The tactical to-do list (What to build).
+1. **Linear** — The **Source of Truth** for all tasks. If it's not in Linear, it doesn't exist.
+2. **`docs/README.md`** — The Documentation Map (Where to find what).
 3. **`docs/STATUS.md`** — Project memory & current progress (Where we are).
 
 ---
@@ -15,7 +15,7 @@ Gemini (this interface) is the **Orchestrator**. You must focus on research, tas
 
 1.  **Architecture & Schema:** Call **`archer`**. Gemini must NEVER change the schema or ADRs directly. All architectural changes require an ADR in `docs/decisions/`.
 2.  **Implementation & Code:** Call **`devin`**. Gemini must NEVER write source code directly. All code must follow the patterns in `.gemini/rules`.
-3.  **Requirements & Scoping:** Call **`paige`** or **`parker`**. Use them for PR descriptions, issue decomposition, and product briefs.
+3.  **Requirements & Scoping:** Call **`paige`** or **`parker`**. Use them for PR descriptions, issue decomposition, and product briefs. **Paige must ensure all tasks are tracked in Linear.**
 4.  **Validation & Quality:** Call **`quinn`**. Gemini must NEVER approve a task as "Done" without a validation report from Quinn (including `npx tsc --noEmit` checks and accessibility audits).
 
 ---
@@ -24,7 +24,7 @@ Gemini (this interface) is the **Orchestrator**. You must focus on research, tas
 
 Every task follows a strict **Research -> Strategy -> Execution -> Validation** cycle.
 
-1.  **Research:** Map the codebase and read relevant docs. Always check `docs/STATUS.md` for current blockers and context.
+1.  **Research:** Map the codebase and read relevant docs. Always check Linear and `docs/STATUS.md` for current blockers and context.
 2.  **Strategy:** Formulate a plan. If architectural, call `archer`. If feature-based, call `paige`. Ensure your strategy aligns with `.gemini/rules`.
 3.  **Execution:** Delegate code changes to `devin`. Ensure every commit has a detailed log in `docs/changelogs/`.
 4.  **Validation:** Call `quinn` to run tests, type checks, and verify behavior. Validation is the only path to finality.
@@ -40,6 +40,7 @@ You MUST enforce the standards defined in the project's rules directories. These
 
 ### **Key Conventions (Merged)**
 
+- **Linear First:** All work MUST be on a Linear-linked branch. Working on something not related to a Linear ticket is breaking the rules unless explicitly stated.
 - **TypeScript strict mode:** No `any`. Use `unknown` + type guards.
 - **Explicit return types:** Required on all exported functions.
 - **Named exports:** No default exports except for page components.
@@ -50,8 +51,8 @@ You MUST enforce the standards defined in the project's rules directories. These
 - **Amplify Data errors:** Always `if (errors) throw new Error(errors[0].message)`.
 - **Logging:** `console.error('[hookName] what failed:', context)`.
 - **Type check:** `npx tsc --noEmit` must pass before any commit.
-- **`TASKS.md`:** Agents MUST NOT add new tasks to this file unless explicitly permitted (e.g., "[Agent: Sub-tasks allowed]").
-- **CHANGELOG:** Update `CHANGELOG.md` under `[Unreleased]` for every source commit. Enforced by pre-commit hook.
+- **TASKS.md:** Deprecated. Use Linear as the source of truth.
+- **CHANGELOG:** Update `CHANGELOG.md` under `[Unreleased]` for every source commit. **Every entry MUST have a Linear ID associated with it.**
 - **ADRs:** Significant architectural decisions (schema changes, 3rd-party choices) get an ADR in `docs/decisions/`.
 
 ---
