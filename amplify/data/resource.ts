@@ -129,6 +129,28 @@ const schema = a.schema({
       codeArtifactId: a.id(),
       codeArtifact: a.belongsTo('CodeArtifact', 'codeArtifactId'),
 
+      /**
+       * Code Review Challenge Fields (STREAM2-001 through STREAM2-003)
+       * 
+       * These fields enable repository-backed code review challenges.
+       * Optional to avoid breaking existing CODE_IMPLEMENTATION, QUIZ_MCQ, QUIZ_SHORT_ANSWER challenges.
+       */
+      
+      /** S3 path to the repository archive (e.g., "challenge-repos/slopify-admin/coupon-support/v1.0.0/repo.tar.gz") */
+      repoS3Key: a.string(),
+      
+      /** Semantic version of the repository (e.g., 1, for v1.0.0) */
+      repoVersion: a.integer(),
+      
+      /** Git branch for the candidate to review (e.g., "feature/coupon-support") */
+      repoBranch: a.string(),
+      
+      /** Base branch for diff calculation (e.g., "main") */
+      repoBaseBranch: a.string(),
+      
+      /** S3 path to the metadata JSON (e.g., "challenge-repos/slopify-admin/coupon-support/v1.0.0/metadata.json") */
+      repoMetadataS3Key: a.string(),
+
       assessments: a.hasMany('Assessment', 'challengeId'),
     })
     .authorization((allow) => [
@@ -194,6 +216,22 @@ const schema = a.schema({
       score: a.float(),
       feedback: a.string(),    // Internal recruiter notes
       completedAt: a.datetime(),
+
+      /**
+       * Code Review Assessment Fields (STREAM2-004)
+       * 
+       * These fields capture code review-specific submission data.
+       * Optional to support existing assessment types without code review data.
+       */
+      
+      /** Array of { fileId, line, severity, comment, timestamp } annotations made by candidate */
+      codeReviewAnnotations: a.json(),
+      
+      /** Candidate's overall summary/assessment of the code review */
+      codeReviewSummary: a.string(),
+      
+      /** When the candidate submitted their review (distinct from completedAt which is scoring time) */
+      submittedAt: a.datetime(),
     })
     .authorization((allow) => [
       allow.owner(),                        
@@ -282,6 +320,63 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
+    ]),
+
+  /**
+   * RepoTemplate Model (STREAM2-005)
+   * 
+   * Catalog of available challenge repositories for code review and code implementation challenges.
+   * Used by ChallengePicker for discovery and filtering. Supports public read access via API key
+   * for unauthenticated challenge discovery.
+   */
+  RepoTemplate: a
+    .model({
+      /** Unique repository identifier (e.g., "slopify-coupon", "devhub-plugins") */
+      repoId: a.string().required(),
+
+      /** Application/product this repo belongs to (e.g., "slopify-admin", "devhub", "teamchat") */
+      app: a.string().required(),
+
+      /** Challenge type this repo is for */
+      type: a.enum(['CODE_REVIEW', 'CODE_IMPLEMENTATION']),
+
+      /** Human-readable title for the challenge (e.g., "Slopify: Add Coupon Support") */
+      title: a.string().required(),
+
+      /** Detailed description of what candidates will do */
+      description: a.string(),
+
+      /** Difficulty level for filtering and discovery */
+      difficulty: a.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED']),
+
+      /** Estimated time to complete (in minutes) */
+      estimatedMinutes: a.integer().required(),
+
+      /** S3 path to the repository archive (e.g., "challenge-repos/app/repo-id/version/repo.tar.gz") */
+      s3Key: a.string().required(),
+
+      /** S3 path to the metadata JSON file for this repository version */
+      metadataS3Key: a.string().required(),
+
+      /** Semantic version of the repository (e.g., "1.0.0", "1.1.0") */
+      version: a.string().required(),
+
+      /** Markdown-formatted instructions for candidates */
+      instructions: a.string().required(),
+
+      /** JSON scoring rubric for evaluation (see tech spec Section 3.1 for schema) */
+      scoring: a.json().required(),
+    })
+    .secondaryIndexes((index) => [
+      /** Index for efficient repo lookup by repoId */
+      index('repoId').name('repoTemplatesByRepoId'),
+      
+      /** Index for filtering by difficulty level */
+      index('difficulty').name('repoTemplatesByDifficulty'),
+    ])
+    .authorization((allow) => [
+      allow.owner(),
+      allow.publicApiKey().to(['read']),
     ]),
 
   /**
