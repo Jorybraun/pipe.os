@@ -10,6 +10,24 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`CodeReviewGymPrototype.tsx`**: New page prototype for the Code Review Gym challenge type — static PR diff review with inline comments, acceptance criteria, and scoring UI.
 - **`docs/specs/challenge-repo-integration.md`**: Spec for challenge repo integration architecture.
 - **`docs/specs/challenge-repo-scaffolding.md`**: Spec for challenge repo scaffolding system.
+- **`src/components/ui/ProgressBar.tsx`**: New ProgressBar UI component with stories and tests.
+- **`src/components/ui/StatusBadge.tsx`**: New StatusBadge UI component with stories and tests.
+- **`src/lib/designTokens.ts`**: Design token definitions.
+- **`docs/design/design-system-revised.md`**: Revised design system documentation.
+- **`docs/design/specs/`**: New design specs directory.
+- **`DEMO_LOGIN_SETUP.md`**: Demo login setup instructions.
+- **`scripts/demo-setup.sh`**: Demo environment setup script.
+- **`/prototype/code-review-gym` route**: Lazy-loaded route for the CodeReviewGymPrototype page.
+- **`@/*` path alias**: Added `baseUrl`/`paths` to `tsconfig.json` and `resolve.alias` to `vite.config.ts`.
+
+#### Changed
+- **`AGENTIC-DEVELOPMENT.md`**: Updated Paige and Parker agent descriptions to reflect Linear-first workflow.
+- **`GEMINI.md`**: Linear is now the source of truth for all tasks; TASKS.md deprecated.
+- **`README.md`**: Rewritten to reflect current architecture — Interview Container model, challenge generation, and scaffold overview.
+- **`src/App.tsx`**: Added lazy-loaded `/prototype/code-review-gym` route.
+
+#### Removed
+- **`marketing/index.html`** and all files under **`prototypes/`**: Deleted stale prototype and marketing files.
 
 #### Security
 - **Per-session code-server password**: Replaced `--auth none` (no authentication) with a `crypto.randomBytes(24)` per-session token injected as `PASSWORD` env var at ECS task launch. Each container now requires a unique credential. Token is returned from `launchDevContainer` mutation and surfaced via `useDevContainerSession.accessToken`.
