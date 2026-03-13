@@ -7,6 +7,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### [Unreleased]
 
 #### Added
+- **STREAM2 Phase 1 Amplify Schema Updates (STREAM2-001 to STREAM2-005):**
+  - Extended `Challenge` model with 5 code review fields: `repoS3Key`, `repoVersion`, `repoBranch`, `repoBaseBranch`, `repoMetadataS3Key` — optional fields for repository-backed code review challenges
+  - Extended `Assessment` model with 3 code review fields: `codeReviewAnnotations` (JSON), `codeReviewSummary` (string), `submittedAt` (datetime) — capture candidate review submissions separately from scoring
+  - New `RepoTemplate` model — catalog of challenge repositories with 10 fields (repoId, app, type, title, description, difficulty, estimatedMinutes, s3Key, metadataS3Key, version, instructions, scoring); includes secondary indexes on `repoId` and `difficulty`; supports public read access via API key for discovery
 - **`CodeReviewGymPrototype.tsx`**: New page prototype for the Code Review Gym challenge type — static PR diff review with inline comments, acceptance criteria, and scoring UI.
 - **`docs/specs/challenge-repo-integration.md`**: Spec for challenge repo integration architecture.
 - **`docs/specs/challenge-repo-scaffolding.md`**: Spec for challenge repo scaffolding system.
@@ -28,6 +32,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 #### Removed
 - **`marketing/index.html`** and all files under **`prototypes/`**: Deleted stale prototype and marketing files.
+
 
 #### Security
 - **Per-session code-server password**: Replaced `--auth none` (no authentication) with a `crypto.randomBytes(24)` per-session token injected as `PASSWORD` env var at ECS task launch. Each container now requires a unique credential. Token is returned from `launchDevContainer` mutation and surfaced via `useDevContainerSession.accessToken`.
