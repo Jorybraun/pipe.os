@@ -1,4 +1,4 @@
-import { defineFunction } from '@aws-amplify/backend';
+import { defineFunction, secret } from '@aws-amplify/backend';
 
 /**
  * fetchGitHubPR Lambda Function
@@ -27,11 +27,11 @@ export const fetchGitHubPR = defineFunction({
 
   // Environment variables
   environment: {
-    // GitHub token stored in Secrets Manager
-    GITHUB_TOKEN_SECRET_ARN: process.env.GITHUB_TOKEN_SECRET_ARN || 'pipe-github-pr-integration',
+    // GitHub token from Amplify secrets (set via: npx ampx sandbox secret set GITHUB_TOKEN)
+    GITHUB_TOKEN: secret('GITHUB_TOKEN'),
 
-    // AWS region
-    AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+    // AWS region is automatically provided by Lambda runtime
+    // Access via process.env.AWS_REGION in handler code
 
     // Logging
     LOG_LEVEL: 'INFO',

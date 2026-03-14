@@ -22,6 +22,7 @@ import { notificationStreamService } from './functions/notificationStreamService
 
 import { getContainerLogs } from './functions/getContainerLogs/resource';
 import { fetchGitHubPR } from './functions/fetchGitHubPR/resource';
+import { listGitHubPRs } from './functions/listGitHubPRs/resource';
 import { scoreCodeReview } from './functions/scoreCodeReview/resource';
 import { submitCodeReview } from './functions/submitCodeReview/resource';
 
@@ -32,6 +33,7 @@ export const backend = defineBackend({
   jobDescriptionAgent,
   scoringAgent,
   fetchGitHubPR,
+  listGitHubPRs,
   scoreCodeReview,
   submitCodeReview,
   turnCredentials,

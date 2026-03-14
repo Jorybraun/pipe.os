@@ -22,8 +22,8 @@ export const repoManagement = defineFunction({
     // DynamoDB table for repository templates
     REPO_TEMPLATE_TABLE: process.env.REPO_TEMPLATE_TABLE || 'RepoTemplate',
     
-    // AWS region
-    AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+    // AWS region is automatically provided by Lambda runtime
+    // Access via process.env.AWS_REGION in handler code
     
     // Metadata cache TTL (1 hour)
     METADATA_CACHE_TTL: '3600',

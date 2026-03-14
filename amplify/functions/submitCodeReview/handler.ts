@@ -22,7 +22,7 @@
  *   - message: Human-readable confirmation
  */
 
-import { DynamoDBClient, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, UpdateItemCommand, ReturnValue } from '@aws-sdk/client-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 
@@ -123,7 +123,7 @@ export async function handler(event: any): Promise<HandlerResponse> {
         ':submittedAt': submittedAt,
         ':completedAt': submittedAt,
       }),
-      ReturnValues: 'ALL_NEW',
+      ReturnValues: ReturnValue.ALL_NEW,
     };
 
     const updateResponse = await dbClient.send(new UpdateItemCommand(updateParams));

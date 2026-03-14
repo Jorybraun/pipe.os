@@ -32,8 +32,8 @@ export const submitCodeReview = defineFunction({
     // DynamoDB table name (provided by Amplify)
     // ASSESSMENT_TABLE_NAME is injected by amplify/data/resource.ts
 
-    // Region for AWS SDK clients
-    AWS_REGION: 'us-east-1',
+    // AWS region is automatically provided by Lambda runtime
+    // Access via process.env.AWS_REGION in handler code
 
     // Logging
     LOG_LEVEL: 'INFO',
