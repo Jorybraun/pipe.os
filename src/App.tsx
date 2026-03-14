@@ -24,9 +24,6 @@ import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 
-// Lazy-load prototype page to keep it isolated
-import { lazy, Suspense } from "react";
-const CodeReviewGymPrototype = lazy(() => import("./pages/CodeReviewGymPrototype"));
 
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
@@ -313,16 +310,6 @@ function App(): JSX.Element {
       <Routes>
         {/* Public Candidate Assessment Route */}
         <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
-
-        {/* Static Prototype: Code Review Gym */}
-        <Route
-          path="/prototype/code-review-gym"
-          element={
-            <Suspense fallback={<div style={{ background: '#0c0c0e', minHeight: '100vh' }} />}>
-              <CodeReviewGymPrototype />
-            </Suspense>
-          }
-        />
 
         {/* Protected Recruiter Routes */}
         <Route
