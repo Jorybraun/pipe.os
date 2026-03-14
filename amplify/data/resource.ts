@@ -12,6 +12,7 @@ import { notificationService } from '../functions/notificationService/resource';
 import { getContainerLogs } from '../functions/getContainerLogs/resource';
 import { submitCodeReview } from '../functions/submitCodeReview/resource';
 import { fetchGitHubPR } from '../functions/fetchGitHubPR/resource';
+import { listGitHubPRs } from '../functions/listGitHubPRs/resource';
 import { scoreCodeReview } from '../functions/scoreCodeReview/resource';
 
 const schema = a.schema({
@@ -194,8 +195,92 @@ const schema = a.schema({
        */
       groundTruthAnnotations: a.json(),
 
+      /**
+       * Practice Repository PR Challenge Fields (Phase 1)
+       * 
+       * NEW: Fields for challenges backed by practice repository PRs.
+       * These fields work alongside existing GitHub fields for the
+       * internal practice repository architecture.
+       * 
+       * IMMUTABLE: practiceRepo and prNumber cannot change after creation
+       * to ensure challenge-to-PR references remain valid.
+       */
+      
+      /**
+       * GitHub repository path for practice repo (e.g., "Jorybraun/challenge")
+       * Immutable — prevents orphaned challenge references
+       * Format: "{owner}/{repo}"
+       * Validation: Must match GitHub URL pattern
+       */
+      practiceRepo: a.string(),
+      
+      /**
+       * GitHub PR number on the practice repository
+       * Immutable — stores reference only, not cached copy
+       * Example: 42 (for PR #42 on Jorybraun/challenge)
+       * Validation: Must be > 0
+       * 
+       * Rationale (ADR-002): PR is source of truth. If PR is deleted,
+       * challenge becomes "archived" (not broken). Challenge stores
+       * reference only, not diff copy (prevents staleness).
+       */
+      prNumber: a.integer(),
+      
+      /**
+       * Feature branch name (e.g., "feature/user-auth")
+       * Optional — metadata for creating new challenges
+       * 
+       * Used by create-challenge-pr.sh to know which branch to create PR from.
+       * Stored for reference, not enforced in real-time (PR structure is
+       * single source of truth).
+       */
+      featureBranch: a.string(),
+      
+      /**
+       * Base branch name (e.g., "main" or "release/v1.0")
+       * Optional — metadata for PR scope
+       * 
+       * Stored for reference. If base changes between challenge creation and
+       * candidate review, candidate sees PR against new base (this is OK —
+       * reflects real-world feature development).
+       */
+      baseBranch: a.string(),
+      
+      /**
+       * Ground truth annotations for scoring (Phase 1 simplified version)
+       * 
+       * Structure:
+       * {
+       *   "seniors": [...GroundTruthAnnotation],
+       *   "mids": [...GroundTruthAnnotation],
+       *   "juniors": [...GroundTruthAnnotation],
+       *   "metadata": {
+       *     "expectedFeedbackCount": number,
+       *     "diffStats": { "additions": number, "deletions": number, "filesChanged": number },
+       *     "estimatedMinutes": number,
+       *     "createdBy": string (admin email),
+       *     "createdAt": string (ISO timestamp)
+       *   }
+       * }
+       * 
+       * Immutable after candidate review starts (frozen by system).
+       * Admin can update before reviews start (via Challenge Creator UI).
+       * 
+       * Note: groundTruthAnnotations continues to exist for backward
+       * compatibility. New challenges should use groundTruth.
+       */
+      groundTruth: a.json(),
+
       assessments: a.hasMany('Assessment', 'challengeId'),
     })
+    .secondaryIndexes((index) => [
+      /**
+       * GSI for efficient querying by practice repository and PR number
+       * Used by Phase 3-4 to lookup challenges by PR reference
+       * Example: practiceRepo=Jorybraun/challenge, prNumber=42
+       */
+      index('practiceRepo').sortKeys(['prNumber']).name('challengesByPracticeRepoAndPR'),
+    ])
     .authorization((allow) => [
       allow.owner(),
       allow.publicApiKey().to(['read']),
@@ -602,8 +687,25 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function(fetchGitHubPR))
     .authorization((allow) => [
-      allow.authenticated(), // Recruiter only
+      allow.authenticated(), // Recruiter (admin)
+      allow.publicApiKey(),  // Candidate (unauthenticated) — TODO: replace with single-use token gate (see ADR/Linear ticket)
     ]),
+
+  /**
+   * List GitHub PR summaries for a repository
+   *
+   * Called by ChallengePicker when creating CODE_REVIEW challenges.
+   * Returns lightweight PR metadata (no diffs) for display in the picker modal.
+   */
+  listGitHubPRs: a
+    .mutation()
+    .arguments({
+      repoUrl: a.string().required(),
+      state: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(listGitHubPRs))
+    .authorization((allow) => [allow.authenticated()]),
 
   /**
    * Score Code Review Assessment

@@ -13,8 +13,10 @@ import { DiffPanel, type DiffJson, type Annotation } from '../Assessment/DiffPan
 import { PreviewPanel } from '../Panels/PreviewPanel';
 import { CodeReviewChallenge } from './CodeReviewChallenge';
 
-// Client for on-demand diff fetch (uses default auth mode)
-const diffClient = generateClient<Schema>();
+// Client for on-demand diff fetch — uses apiKey so unauthenticated candidates
+// can call fetchGitHubPR. The mutation allows publicApiKey() auth.
+// TODO: replace with single-use token gate (see Linear ticket).
+const diffClient = generateClient<Schema>({ authMode: 'apiKey' });
 
 // ============================================================================
 // Types

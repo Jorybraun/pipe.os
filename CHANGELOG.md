@@ -12,6 +12,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
   - `src/components/Assessment/ChallengeRegistry.tsx` — CODE_REVIEW challenges now bypass the generic `WorkspaceLayout` and render `CodeReviewChallenge` directly; on-demand diff fetch via `fetchGitHubPR` when `cachedDiffJson` is null and `githubRepoUrl`/`githubPrNumber` are available
   - `src/hooks/useAssessment.ts` — added `githubRepoUrl`, `githubPrNumber`, `githubPrDescription`, `cachedMetadata` to selectionSet and `StageWithChallenges.challenges` type
 
+#### Security
+- `amplify/data/resource.ts` — `fetchGitHubPR` mutation now allows `publicApiKey()` in addition to `authenticated()` so candidates can trigger on-demand diff fetch; temporary until single-use token gate is implemented (tracked in Linear)
+- `src/components/Assessment/ChallengeRegistry.tsx` — `diffClient` now explicitly uses `authMode: 'apiKey'` for the candidate diff fetch
+
 #### Fixed
 - `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` check for CODE_REVIEW now correctly uses `Array.length` instead of `Object.keys()` on the annotations array
 - `src/components/Assessment/StageShell.tsx` — added `fullBleed` prop: removes padding/maxWidth/margin and switches to `height: 100vh` + `overflow: hidden` so full-bleed challenge types (CODE_REVIEW) can fill the viewport correctly
