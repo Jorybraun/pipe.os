@@ -150,12 +150,13 @@ export function ChallengeRegistry({
     setIsFetchingDiff(true);
     void (async () => {
       try {
-        const result = await diffClient.mutations.fetchGitHubPR({
+        const { data: raw } = await diffClient.mutations.fetchGitHubPR({
           repoUrl: challenge.githubRepoUrl!,
           prNumber: challenge.githubPrNumber!,
           skipCache: false,
         });
-        const payload = result.data as {
+        // AppSync returns a.json() as a serialized string — must parse
+        const payload = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
           success?: boolean;
           data?: { diff?: unknown };
         } | null;
