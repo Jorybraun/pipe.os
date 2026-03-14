@@ -45,6 +45,12 @@ export interface StageWithChallenges {
       title: string | null;
       groundTruth: unknown;
     } | null;
+    cachedDiffJson: unknown;
+    githubPrTitle: string | null;
+    githubRepoUrl: string | null;
+    githubPrNumber: number | null;
+    githubPrDescription: string | null;
+    cachedMetadata: unknown;
   }[];
 }
 
@@ -136,7 +142,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           'challenges.codeArtifact.code',
           'challenges.codeArtifact.language',
           'challenges.codeArtifact.title',
-          'challenges.codeArtifact.groundTruth'
+          'challenges.codeArtifact.groundTruth',
+          'challenges.cachedDiffJson',
+          'challenges.githubPrTitle',
+          'challenges.githubRepoUrl',
+          'challenges.githubPrNumber',
+          'challenges.githubPrDescription',
+          'challenges.cachedMetadata',
         ]
       });
 

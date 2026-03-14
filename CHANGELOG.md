@@ -7,6 +7,22 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### [Unreleased]
 
 #### Added
+- **CODE_REVIEW challenge layout in candidate assessment:**
+  - `src/components/Assessment/CodeReviewChallenge.tsx` — new component mirroring `CodeReviewGymPrototype` layout: left panel (instructions + PR metadata card), center panel (DiffPanel with inline annotations), right panel (APPROVE / REQUEST_CHANGES / COMMENT verdict buttons + summary textarea + SUBMIT_REVIEW)
+  - `src/components/Assessment/ChallengeRegistry.tsx` — CODE_REVIEW challenges now bypass the generic `WorkspaceLayout` and render `CodeReviewChallenge` directly; on-demand diff fetch via `fetchGitHubPR` when `cachedDiffJson` is null and `githubRepoUrl`/`githubPrNumber` are available
+  - `src/hooks/useAssessment.ts` — added `githubRepoUrl`, `githubPrNumber`, `githubPrDescription`, `cachedMetadata` to selectionSet and `StageWithChallenges.challenges` type
+
+#### Fixed
+- `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` check for CODE_REVIEW now correctly uses `Array.length` instead of `Object.keys()` on the annotations array
+
+- **GitHub PR Selection in ChallengePicker modal:**
+  - `amplify/functions/listGitHubPRs/` — new Lambda that lists open PRs for a GitHub repo via Octokit `pulls.list()`, returning lightweight `PRSummary[]` (no diffs); 30s timeout, 256MB, reuses shared `GITHUB_TOKEN` secret
+  - `amplify/data/resource.ts` — `listGitHubPRs` mutation wired to the Lambda, `allow.authenticated()` authorization
+  - `amplify/backend.ts` — `listGitHubPRs` registered in `defineBackend()`
+  - `src/types/challengeSelection.ts` — `ChallengeSelection` discriminated union: `{ source: 'library'; template }` | `{ source: 'github'; repoUrl, prNumber, prTitle, prDescription, prAuthor }`
+  - `src/components/Pipeline/ChallengePicker.tsx` — redesigned: CODE_REVIEW filter now shows GitHub PR browser (repo URL input + FETCH_PRS button + selectable PR cards with title, #number, author, branches, labels, draft badge); all other filters show existing template grid; `onSelect` type changed to `ChallengeSelection[]`
+  - `src/pages/StageDetailPage.tsx` — `handleChallengeSelect` updated to handle `ChallengeSelection` union: library selections create challenges as before; GitHub PR selections create `CODE_REVIEW` challenges then fire-and-forget `fetchGitHubPR` to cache the full diff
+
 - **STREAM3 Phase 4: Code Review Scoring Lambda (FINAL - STREAM 3 COMPLETE):**
   - **scoreCodeReview Lambda (`amplify/functions/scoreCodeReview/handler.ts`, 477 lines)**: Scoring engine that evaluates candidate code review annotations against ground truth. Features comprehensive matching algorithm with tolerance (file exact match, line ±1, severity ±1), weighted scoring by severity (critical=1.0x, major=0.8x, minor=0.6x), false positive penalty (-0.5 per annotation), dynamic score calculation, tiered feedback generation (Excellent 80%+ / Good 60-79% / Poor 40-59% / Significant <40%), severity breakdown reporting (expected vs found per severity level)
   - **Type Definitions (`types.ts`, 69 lines)**: `Annotation`, `ScoringResult`, `ScoringData` interfaces with input/output types, `ReviewerLevel` union type, `SeverityBreakdown` calculations
