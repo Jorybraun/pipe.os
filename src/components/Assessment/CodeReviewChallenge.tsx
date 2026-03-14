@@ -158,7 +158,7 @@ export function CodeReviewChallenge({
       style={{
         display: 'flex',
         flex: 1,
-        height: '100%',
+        minHeight: 0,
         overflow: 'hidden',
         fontFamily: '"Space Mono", monospace',
       }}
