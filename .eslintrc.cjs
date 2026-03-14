@@ -22,6 +22,17 @@ module.exports = {
         'caughtErrorsIgnorePattern': '^_*'
       }
     ],
+    // Code quality standards - no `any` type
+    '@typescript-eslint/no-explicit-any': 'error',
+    // Encourage explicit return types on exported functions
+    '@typescript-eslint/explicit-function-return-type': [
+      'warn',
+      {
+        allowExpressions: true,
+        allowTypedFunctionExpressions: true,
+        allowHigherOrderFunctions: true,
+      },
+    ],
     'local-rules/recording-shell-rule': 'error',
   },
   overrides: [

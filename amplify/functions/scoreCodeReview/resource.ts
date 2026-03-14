@@ -31,8 +31,8 @@ export const scoreCodeReview = defineFunction({
     // Database config
     ASSESSMENT_TABLE_NAME: process.env.ASSESSMENT_TABLE_NAME || 'Assessment',
 
-    // AWS region
-    AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+    // AWS region is automatically provided by Lambda runtime
+    // Access via process.env.AWS_REGION in handler code
 
     // Logging
     LOG_LEVEL: 'INFO',

@@ -324,7 +324,7 @@ async function handleHealthCheck(startTime: number): Promise<HandlerResponse> {
     });
 
     return {
-      success: result.healthy,
+      success: true as const,
       data: result,
     };
   } catch (error) {

@@ -26,7 +26,7 @@
  *   - statusCode: number
  */
 
-import { DynamoDBClient, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, UpdateItemCommand, ReturnValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import {
   ScoreCodeReviewInput,
@@ -130,7 +130,7 @@ export async function handler(event: any): Promise<ScoreCodeReviewResponse> {
         ':feedback': result.feedback,
         ':scoredAt': new Date().toISOString(),
       }),
-      ReturnValues: 'ALL_NEW',
+      ReturnValues: ReturnValue.ALL_NEW,
     };
 
     const updateResponse = await dbClient.send(new UpdateItemCommand(updateParams));

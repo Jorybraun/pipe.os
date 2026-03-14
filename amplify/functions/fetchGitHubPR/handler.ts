@@ -18,7 +18,6 @@
  */
 
 import { Octokit } from '@octokit/rest';
-import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 import {
   FetchGitHubPRInput,
   FetchGitHubPRResponse,
@@ -30,47 +29,36 @@ import {
   DiffLine,
 } from './types';
 
-const secretsClient = new SecretsManagerClient({ region: process.env.AWS_REGION || 'us-east-1' });
-
 // ============================================================
 // Constants
 // ============================================================
 
 const MAX_DIFF_SIZE = 10_485_760; // 10 MB
 const GITHUB_API_TIMEOUT = 30_000; // 30 seconds
-const GITHUB_TOKEN_SECRET_ARN =
-  process.env.GITHUB_TOKEN_SECRET_ARN || 'pipe-github-pr-integration';
 
 // ============================================================
 // GitHub Token Management
 // ============================================================
 
 /**
- * Retrieve GitHub token from AWS Secrets Manager
+ * Retrieve GitHub token from environment variable
  * NEVER log or expose token
+ * 
+ * Token is injected by Amplify via secret() function in resource.ts
+ * Set locally via: npx ampx sandbox secret set GITHUB_TOKEN
  */
-async function getGitHubToken(): Promise<string> {
-  try {
-    const secret = await secretsClient.send(
-      new GetSecretValueCommand({
-        SecretId: GITHUB_TOKEN_SECRET_ARN,
-      })
-    );
-
-    if ('SecretString' in secret) {
-      const parsed = JSON.parse(secret.SecretString!);
-      return parsed.token;
-    } else {
-      throw new Error('GitHub token is binary, expected JSON');
-    }
-  } catch (err) {
-    console.error('[getGitHubToken] Failed to fetch token from Secrets Manager');
+function getGitHubToken(): string {
+  const token = process.env.GITHUB_TOKEN;
+  
+  if (!token) {
     throw new GitHubAPIError(
       'GITHUB_AUTH_ERROR',
-      'Could not load GitHub token from Secrets Manager',
+      'GitHub token not configured. Set via: npx ampx sandbox secret set GITHUB_TOKEN',
       false
     );
   }
+  
+  return token;
 }
 
 // ============================================================
@@ -106,12 +94,12 @@ function parseGitHubUrl(url: string): ParsedGitHubRepo {
 /**
  * Validate fetchGitHubPR input parameters
  */
-function validateInput(input: any): asserts input is FetchGitHubPRInput {
+function validateInput(input: unknown): asserts input is FetchGitHubPRInput {
   if (typeof input !== 'object' || !input) {
     throw new GitHubAPIError('INVALID_INPUT', 'Input must be an object', false);
   }
 
-  const { repoUrl, prNumber } = input;
+  const { repoUrl, prNumber } = input as Record<string, unknown>;
 
   if (typeof repoUrl !== 'string' || !repoUrl) {
     throw new GitHubAPIError('INVALID_INPUT', 'repoUrl must be a non-empty string', false);
@@ -312,8 +300,13 @@ async function fetchPRFiles(
 /**
  * Main handler for fetchGitHubPR Lambda
  */
-export async function handler(input: any): Promise<FetchGitHubPRResponse> {
+export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse> {
   try {
+    // Amplify Gen 2 passes mutation arguments under `arguments` key
+    const ev = rawEvent as Record<string, unknown>;
+    const input = (ev['arguments'] as Record<string, unknown> | undefined) ?? ev;
+
+    console.log('[fetchGitHubPR] RawEvent keys:', Object.keys(ev));
     console.log('[fetchGitHubPR] Request:', {
       repoUrl: input?.repoUrl,
       prNumber: input?.prNumber,
@@ -322,13 +315,13 @@ export async function handler(input: any): Promise<FetchGitHubPRResponse> {
 
     // Validate input
     validateInput(input);
-    const { repoUrl, prNumber } = input;
+    const { repoUrl, prNumber } = input as { repoUrl: string; prNumber: number; skipCache?: boolean };
 
     // Parse GitHub URL
     const { owner, repo } = parseGitHubUrl(repoUrl);
 
     // Get GitHub token
-    const token = await getGitHubToken();
+    const token = getGitHubToken();
 
     // Initialize Octokit client
     const client = new Octokit({
