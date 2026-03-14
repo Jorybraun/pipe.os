@@ -12,6 +12,8 @@
  *   - studioId: ID of the dev container session to destroy
  *   - codeReviewAnnotations: Array of annotation objects
  *   - codeReviewSummary?: Optional overall assessment summary
+ *   - groundTruthAnnotations: Ground truth for scoring
+ *   - reviewerLevel: Expected reviewer level (junior | mid | senior)
  *
  * Output:
  *   - success: boolean
@@ -21,6 +23,7 @@
  */
 
 import { DynamoDBClient, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 
 // ============================================================
@@ -46,6 +49,8 @@ interface SubmitCodeReviewRequest {
   studioId: string;
   codeReviewAnnotations: CodeReviewAnnotation[];
   codeReviewSummary?: string;
+  groundTruthAnnotations?: any;
+  reviewerLevel?: string;
 }
 
 interface SubmitCodeReviewResponse {
@@ -71,6 +76,7 @@ const ASSESSMENT_TABLE = process.env.ASSESSMENT_TABLE_NAME || 'Assessment';
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
 const dbClient = new DynamoDBClient({ region: AWS_REGION });
+const lambdaClient = new LambdaClient({ region: AWS_REGION });
 
 // ============================================================
 // Main Handler
@@ -128,7 +134,19 @@ export async function handler(event: any): Promise<HandlerResponse> {
     });
 
     // ============================================
-    // 3. Destroy dev container (async, non-blocking)
+    // 3. Trigger scoring (async, non-blocking)
+    // ============================================
+    console.log('📊 Triggering code review scoring...');
+
+    scoreCodeReviewAsync(request).catch((err) => {
+      console.error('⚠️  Code review scoring failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Don't fail the submission if scoring fails
+    });
+
+    // ============================================
+    // 4. Destroy dev container (async, non-blocking)
     // ============================================
     console.log('🗑️  Triggering container destruction...');
 
@@ -140,7 +158,7 @@ export async function handler(event: any): Promise<HandlerResponse> {
     });
 
     // ============================================
-    // 4. Return success
+    // 5. Return success
     // ============================================
     return {
       success: true,
@@ -342,4 +360,78 @@ async function destroyDevContainerAsync(studioId: string): Promise<void> {
 
   // TODO: Implement actual container destruction in Phase 5
   // This would call the devContainerDestroy Lambda or publish to SQS
+}
+
+// ============================================================
+// Code Review Scoring (Async/Non-Blocking)
+// ============================================================
+
+/**
+ * Invoke scoreCodeReview Lambda asynchronously
+ * Does not block the response if this fails
+ */
+async function scoreCodeReviewAsync(request: SubmitCodeReviewRequest): Promise<void> {
+  if (!request.groundTruthAnnotations) {
+    console.warn('[submitCodeReview] No ground truth annotations provided, skipping scoring');
+    return;
+  }
+
+  try {
+    const scoringPayload = {
+      arguments: {
+        assessmentId: request.assessmentId,
+        candidateAnnotations: convertAnnotationsToScoringFormat(request.codeReviewAnnotations),
+        groundTruthAnnotations: request.groundTruthAnnotations,
+        reviewerLevel: request.reviewerLevel || 'mid',
+      },
+    };
+
+    console.log('[submitCodeReview] Invoking scoreCodeReview Lambda', {
+      assessmentId: request.assessmentId,
+      candidateAnnotationCount: request.codeReviewAnnotations.length,
+    });
+
+    const command = new InvokeCommand({
+      FunctionName: 'scoreCodeReview',
+      InvocationType: 'Event', // Async invocation
+      Payload: JSON.stringify(scoringPayload),
+    });
+
+    await lambdaClient.send(command);
+
+    console.log('[submitCodeReview] Scoring Lambda invoked successfully');
+  } catch (err) {
+    console.error('[submitCodeReview] Failed to invoke scoring Lambda', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+/**
+ * Convert CodeReviewAnnotation format to scoring format
+ */
+function convertAnnotationsToScoringFormat(annotations: CodeReviewAnnotation[]): any[] {
+  return annotations.map((ann) => ({
+    file: ann.filePath,
+    line: ann.lineNumber,
+    severity: mapSeverityToScoringFormat(ann.severity),
+    comment: ann.text,
+  }));
+}
+
+/**
+ * Map annotation severity to scoring format
+ */
+function mapSeverityToScoringFormat(severity?: string): 'critical' | 'major' | 'minor' {
+  switch (severity) {
+    case 'CRITICAL':
+      return 'critical';
+    case 'WARNING':
+      return 'major';
+    case 'INFO':
+      return 'minor';
+    default:
+      return 'major';
+  }
 }
