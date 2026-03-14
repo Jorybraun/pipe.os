@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { GroundTruthAnnotationEditor, Annotation } from '../GroundTruthAnnotationEditor';
+import { GroundTruthAnnotationEditor } from '../GroundTruthAnnotationEditor';
 
 describe('GroundTruthAnnotationEditor Component', () => {
   const mockOnAnnotationsChange = vi.fn();
@@ -94,7 +93,7 @@ describe('GroundTruthAnnotationEditor Component', () => {
     });
 
     it('calls onAnnotationsChange with proper structure', () => {
-      const { rerender } = render(
+      render(
         <GroundTruthAnnotationEditor onAnnotationsChange={mockOnAnnotationsChange} />
       );
 
