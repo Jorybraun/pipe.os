@@ -12,6 +12,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
   - `src/components/Assessment/ChallengeRegistry.tsx` — CODE_REVIEW challenges now bypass the generic `WorkspaceLayout` and render `CodeReviewChallenge` directly; on-demand diff fetch via `fetchGitHubPR` when `cachedDiffJson` is null and `githubRepoUrl`/`githubPrNumber` are available
   - `src/hooks/useAssessment.ts` — added `githubRepoUrl`, `githubPrNumber`, `githubPrDescription`, `cachedMetadata` to selectionSet and `StageWithChallenges.challenges` type
 
+#### Fixed
+- `src/components/Assessment/ChallengeRegistry.tsx` — on-demand diff fetch was silently failing because `a.json()` mutations return a serialized string from AppSync; added `JSON.parse` step to match the pattern in `StageDetailPage`
+
 #### Security
 - `amplify/data/resource.ts` — `fetchGitHubPR` mutation now allows `publicApiKey()` in addition to `authenticated()` so candidates can trigger on-demand diff fetch; temporary until single-use token gate is implemented (tracked in Linear)
 - `src/components/Assessment/ChallengeRegistry.tsx` — `diffClient` now explicitly uses `authMode: 'apiKey'` for the candidate diff fetch
