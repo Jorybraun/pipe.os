@@ -21,6 +21,7 @@ import { notificationService } from './functions/notificationService/resource';
 import { notificationStreamService } from './functions/notificationStreamService/resource';
 
 import { getContainerLogs } from './functions/getContainerLogs/resource';
+import { fetchGitHubPR } from './functions/fetchGitHubPR/resource';
 
 export const backend = defineBackend({
   auth,
@@ -28,6 +29,7 @@ export const backend = defineBackend({
   questionAgent,
   jobDescriptionAgent,
   scoringAgent,
+  fetchGitHubPR,
   turnCredentials,
   schedulingWebhook,
   schedulingOAuth,

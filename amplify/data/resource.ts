@@ -10,6 +10,8 @@ import { devContainerDestroy } from '../functions/devContainerDestroy/resource';
 import { devContainerStatus } from '../functions/devContainerStatus/resource';
 import { notificationService } from '../functions/notificationService/resource';
 import { getContainerLogs } from '../functions/getContainerLogs/resource';
+import { submitCodeReview } from '../functions/submitCodeReview/resource';
+import { fetchGitHubPR } from '../functions/fetchGitHubPR/resource';
 
 const schema = a.schema({
   /**
@@ -150,6 +152,46 @@ const schema = a.schema({
       
       /** S3 path to the metadata JSON (e.g., "challenge-repos/slopify-admin/coupon-support/v1.0.0/metadata.json") */
       repoMetadataS3Key: a.string(),
+
+      /**
+       * GitHub PR Integration Fields (STREAM2-004: Phase 1)
+       * 
+       * For CODE_REVIEW challenges backed by real GitHub PRs.
+       * Enables fetching live PR data for candidate review.
+       */
+      
+      /** GitHub repository URL (e.g., "https://github.com/owner/repo") */
+      githubRepoUrl: a.string(),
+      
+      /** GitHub PR number (e.g., 42) */
+      githubPrNumber: a.integer(),
+      
+      /** Cached PR title from GitHub (populated when challenge created) */
+      githubPrTitle: a.string(),
+      
+      /** Cached PR description from GitHub */
+      githubPrDescription: a.string(),
+      
+      /**
+       * Cached diff in structured JSON format
+       * { files: [{ path, status, additions, deletions, hunks: [...] }] }
+       */
+      cachedDiffJson: a.json(),
+      
+      /**
+       * Cached PR metadata snapshot
+       * { author, avatar, createdAt, state, labels, reviewers, etc. }
+       */
+      cachedMetadata: a.json(),
+      
+      /** When diff was cached (for cache expiry calculation) */
+      diffCachedAt: a.datetime(),
+      
+      /**
+       * Ground truth annotations for scoring
+       * { "senior": [...], "mid": [...], "junior": [...] }
+       */
+      groundTruthAnnotations: a.json(),
 
       assessments: a.hasMany('Assessment', 'challengeId'),
     })
@@ -516,6 +558,51 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function(notificationService))
     .authorization((allow) => [allow.authenticated()]),
+
+  /**
+   * Submit Code Review Mutation (STREAM2-016 through STREAM2-020)
+   *
+   * Handles code review submission from candidates:
+   * - Validates annotation structure
+   * - Saves Assessment with annotations, summary, and timestamp
+   * - Triggers async dev container destruction
+   * - Returns confirmation with submission metadata
+   *
+   * Authorization: Public API key (for unauthenticated candidate submissions)
+   */
+  submitCodeReview: a
+    .mutation()
+    .arguments({
+      assessmentId: a.id().required(),
+      challengeId: a.id().required(),
+      userId: a.string().required(),
+      studioId: a.string().required(),
+      codeReviewAnnotations: a.json().required(),
+      codeReviewSummary: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(submitCodeReview))
+    .authorization((allow) => [allow.publicApiKey()]),
+
+  /**
+   * Fetch GitHub PR metadata and diff
+   * 
+   * STREAM 2: Phase 1 - GitHub PR Integration
+   * Called by admin during challenge creation to fetch real PR from GitHub
+   * Validates PR exists, extracts diff, returns parsed for caching
+   */
+  fetchGitHubPR: a
+    .mutation()
+    .arguments({
+      repoUrl: a.string().required(),
+      prNumber: a.integer().required(),
+      skipCache: a.boolean(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(fetchGitHubPR))
+    .authorization((allow) => [
+      allow.authenticated(), // Recruiter only
+    ]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
