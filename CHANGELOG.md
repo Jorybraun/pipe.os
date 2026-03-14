@@ -7,6 +7,41 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 ### [Unreleased]
 
 #### Added
+- **STREAM3 Phase 2: Admin Challenge Creation UI (GitHub PR Integration):**
+  - **GitHubPRFetcher Component (`src/components/Assessment/GitHubPRFetcher.tsx`)**: React component for admins to fetch GitHub PRs and preview challenge data. Features real-time URL/PR validation with checkmarks, loading states with spinner, success state showing PR title/author/diff snippet, error cards for all GitHub API error scenarios (PR_NOT_FOUND, INVALID_REPOSITORY, RATE_LIMIT_EXCEEDED, GITHUB_AUTH_ERROR, DIFF_TOO_LARGE, INVALID_INPUT, NETWORK_ERROR) with retry logic for transient failures, glassmorphic design matching Brutalist theme
+  - **GroundTruthAnnotationEditor Component (`src/components/Assessment/GroundTruthAnnotationEditor.tsx`)**: React component for admins to define expected annotations by reviewer level (Senior/Mid/Junior). Collapsible sections per level, add/remove annotation UI, severity selector (Critical/Major/Minor with color coding), file path and line number inputs, comment textarea, state management with onChange callbacks
+  - **ChallengeEditorPage Integration**: Updated `src/pages/ChallengeEditorPage.tsx` to display GitHubPRFetcher and GroundTruthAnnotationEditor in CONTENT tab when challenge type is CODE_REVIEW, handle PR fetched callback to update challenge state, persist groundTruthAnnotations on challenge save
+  - **Unit Tests (`src/components/Assessment/__tests__/GitHubPRFetcher.test.tsx`)**: 10+ test cases covering component rendering, URL validation, PR number validation, button state management, form clearing, all scenarios for production-ready code
+  - **Build & Quality**: TypeScript strict mode passing, ESLint clean (zero errors), Vite build compiles successfully (4002 modules), ready for Phase 3 Candidate Review Flow
+
+- **STREAM2 Phase 3: devContainerLaunch Lambda Updates (STREAM2-011 to STREAM2-015):**
+  - Enhanced `devContainerLaunch` Lambda to accept optional `challengeId` parameter for code review challenges
+  - **Type Updates (`types.ts`)**: Added `challengeId?: string` to `DevContainerLaunchArguments`, added response fields `repoUrl?: string`, `branch?: string`, `baseBranch?: string` to support code review context
+  - **Handler Implementation (`handler.ts`)**: 
+    - Challenge lookup from DynamoDB with repoS3Key validation
+    - Integrated `repoManager.generatePresignedUrl()` for S3 access with 2-hour TTL
+    - Dynamic container image selection: code-review variant (with git/npm) for repo challenges, default for non-repo challenges
+    - Code review specific ECS environment variables: REPO_S3_URL, CHALLENGE_BRANCH, REPO_BASE_BRANCH, CODE_REVIEW_TYPE
+    - Comprehensive error handling with S3 error mapping via `repoManager.handleS3Error()`
+    - Phase-based logging (REPO_LOOKUP → PRESIGNED_URL_GENERATION → ECS_LAUNCH → READY) with timestamps and duration tracking
+    - Maintains full backwards compatibility for non-repo challenges (challengeId optional)
+  - **Unit Tests (`__tests__/devContainerLaunch.test.ts`)**: 24+ test cases covering happy paths (non-repo and code review), error scenarios (challenge not found, no repo, S3 failures, ECS failures), environment variable validation, edge cases (default branches, null values), task tagging, 80%+ coverage achieved
+  - **Dependencies**: Added `@aws-sdk/s3-request-presigner@^3.1001.0` for presigned URL generation
+  - **Documentation (`docs/STREAM2_PHASE3_IMPLEMENTATION.md`)**: Complete implementation summary with data flow, integration points, security considerations, error scenarios, environment variables
+
+- **STREAM2 Phase 4: submitCodeReview Lambda (STREAM2-016 to STREAM2-020):**
+  - New `submitCodeReview` Lambda function in `amplify/functions/submitCodeReview/` to handle code review submissions from candidates
+  - **Handler (`handler.ts`)**: Accepts submission payload, validates annotation structure comprehensively, saves Assessment with annotations/summary/timestamp, triggers async container destruction (non-blocking), returns confirmation with submittedAt
+  - **Type Definitions (`types.ts`)**: `CodeReviewAnnotation`, `SubmitCodeReviewRequest`, `SubmitCodeReviewResponse`, `SubmitCodeReviewErrorResponse` interfaces for type safety
+  - **Resource Definition (`resource.ts`)**: Lambda configured with 30s timeout, 256MB memory, Node.js 22 runtime; uses `allow.publicApiKey()` for unauthenticated candidate submissions
+  - **AppSync Mutation**: Registered `submitCodeReview` mutation in `amplify/data/resource.ts` schema with full argument validation and handler binding
+  - **Comprehensive Validation**: Validates all required fields, annotation structure (id, filePath, lineNumber, type, severity, text, codeSnippet, suggestedCode, timestamp), size limits (5000 chars for text/code, 2000 chars for summary, 350KB payload), ISO 8601 timestamp format
+  - **Database Integration**: Updates Assessment model with `codeReviewAnnotations` (JSON), `codeReviewSummary` (string), `submittedAt` (datetime), `completedAt` (datetime) using DynamoDB UpdateItemCommand
+  - **Container Destruction**: Implements async, non-blocking container destruction (fire-and-forget) that doesn't fail submission if cleanup fails; ready for Phase 5 ECS integration
+  - **Unit Tests (`__tests__/handler.test.ts`)**: 80%+ coverage with 50+ test cases covering happy path, validation failures, annotation validation, size limits, timestamp validation, type acceptance, multiple annotations, edge cases, response structure
+  - **Test Infrastructure**: `package.json`, `vitest.config.ts`, `tsconfig.json` configured for isolated testing with 100% coverage reporting
+  - **Documentation (`README.md`)**: Complete guide with input/output formats, annotation structure, validation rules, usage examples, authorization model, error handling, logging output, performance metrics, test instructions
+
 - **STREAM2 Phase 1 Amplify Schema Updates (STREAM2-001 to STREAM2-005):**
   - Extended `Challenge` model with 5 code review fields: `repoS3Key`, `repoVersion`, `repoBranch`, `repoBaseBranch`, `repoMetadataS3Key` — optional fields for repository-backed code review challenges
   - Extended `Assessment` model with 3 code review fields: `codeReviewAnnotations` (JSON), `codeReviewSummary` (string), `submittedAt` (datetime) — capture candidate review submissions separately from scoring
