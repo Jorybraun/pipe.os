@@ -14,6 +14,8 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 #### Fixed
 - `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` check for CODE_REVIEW now correctly uses `Array.length` instead of `Object.keys()` on the annotations array
+- `src/components/Assessment/StageShell.tsx` — added `fullBleed` prop: removes padding/maxWidth/margin and switches to `height: 100vh` + `overflow: hidden` so full-bleed challenge types (CODE_REVIEW) can fill the viewport correctly
+- `src/components/Assessment/CodeReviewChallenge.tsx` — use `minHeight: 0` instead of `height: 100%` for correct flex shrinking inside the full-bleed container
 
 - **GitHub PR Selection in ChallengePicker modal:**
   - `amplify/functions/listGitHubPRs/` — new Lambda that lists open PRs for a GitHub repo via Octokit `pulls.list()`, returning lightweight `PRSummary[]` (no diffs); 30s timeout, 256MB, reuses shared `GITHUB_TOKEN` secret
