@@ -12,6 +12,7 @@ import { notificationService } from '../functions/notificationService/resource';
 import { getContainerLogs } from '../functions/getContainerLogs/resource';
 import { submitCodeReview } from '../functions/submitCodeReview/resource';
 import { fetchGitHubPR } from '../functions/fetchGitHubPR/resource';
+import { scoreCodeReview } from '../functions/scoreCodeReview/resource';
 
 const schema = a.schema({
   /**
@@ -602,6 +603,28 @@ const schema = a.schema({
     .handler(a.handler.function(fetchGitHubPR))
     .authorization((allow) => [
       allow.authenticated(), // Recruiter only
+    ]),
+
+  /**
+   * Score Code Review Assessment
+   * 
+   * STREAM 2: Phase 4 - Code Review Scoring Engine
+   * Called by submitCodeReview Lambda after assessment saved
+   * Compares candidate annotations to ground truth, calculates score (0-100)
+   * Returns detailed feedback and severity breakdown
+   */
+  scoreCodeReview: a
+    .mutation()
+    .arguments({
+      assessmentId: a.id().required(),
+      candidateAnnotations: a.json().required(),
+      groundTruthAnnotations: a.json().required(),
+      reviewerLevel: a.string(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(scoreCodeReview))
+    .authorization((allow) => [
+      allow.authenticated(), // Lambda-to-Lambda via IAM
     ]),
 });
 
