@@ -94,12 +94,13 @@ function parseGitHubUrl(url: string): ParsedGitHubRepo {
 /**
  * Validate fetchGitHubPR input parameters
  */
-function validateInput(input: any): asserts input is FetchGitHubPRInput {
+function validateInput(input: unknown): asserts input is FetchGitHubPRInput {
   if (typeof input !== 'object' || !input) {
     throw new GitHubAPIError('INVALID_INPUT', 'Input must be an object', false);
   }
 
-  const { repoUrl, prNumber } = input;
+  const record = input as Record<string, unknown>;
+  const { repoUrl, prNumber } = record;
 
   if (typeof repoUrl !== 'string' || !repoUrl) {
     throw new GitHubAPIError('INVALID_INPUT', 'repoUrl must be a non-empty string', false);
@@ -187,11 +188,28 @@ function parseDiff(patch: string): DiffHunk[] {
 // ============================================================
 
 /**
+ * Minimal shape of a GitHub API (Octokit) error with HTTP context
+ */
+interface OctokitErrorShape {
+  status?: number;
+  response?: { headers: Record<string, string | undefined> };
+  code?: string;
+  message?: string;
+}
+
+function asOctokitError(err: unknown): OctokitErrorShape {
+  if (typeof err === 'object' && err !== null) {
+    return err as OctokitErrorShape;
+  }
+  return {};
+}
+
+/**
  * Check rate limit status from GitHub response headers
  */
-function getRateLimitInfo(headers: any): { remaining: number; reset: Date } {
-  const remaining = parseInt(headers['x-ratelimit-remaining'] || '0', 10);
-  const resetTimestamp = parseInt(headers['x-ratelimit-reset'] || '0', 10) * 1000;
+function getRateLimitInfo(headers: Record<string, string | undefined>): { remaining: number; reset: Date } {
+  const remaining = parseInt(headers['x-ratelimit-remaining'] ?? '0', 10);
+  const resetTimestamp = parseInt(headers['x-ratelimit-reset'] ?? '0', 10) * 1000;
   const reset = new Date(resetTimestamp);
 
   return { remaining, reset };
@@ -214,7 +232,8 @@ async function fetchPRFromGitHub(
     });
 
     return response.data;
-  } catch (err: any) {
+  } catch (rawErr: unknown) {
+    const err = asOctokitError(rawErr);
     if (err.status === 404) {
       throw new GitHubAPIError(
         'PULL_REQUEST_NOT_FOUND',
@@ -222,7 +241,7 @@ async function fetchPRFromGitHub(
         false
       );
     } else if (err.status === 403) {
-      const rateLimit = getRateLimitInfo(err.response?.headers || {});
+      const rateLimit = getRateLimitInfo(err.response?.headers ?? {});
       if (rateLimit.remaining === 0) {
         throw new GitHubAPIError(
           'RATE_LIMIT_EXCEEDED',
@@ -232,7 +251,7 @@ async function fetchPRFromGitHub(
       } else {
         throw new GitHubAPIError(
           'GITHUB_AUTH_ERROR',
-          'GitHub API returned 403. Check token permissions.',
+          'GitHub API returned 403. Check token permissions (scopes, SSO, org policy).',
           false
         );
       }
@@ -255,7 +274,7 @@ async function fetchPRFromGitHub(
         true
       );
     } else {
-      throw err; // Re-throw unknown errors
+      throw rawErr; // Re-throw unknown errors
     }
   }
 }
@@ -268,7 +287,7 @@ async function fetchPRFiles(
   owner: string,
   repo: string,
   prNumber: number
-) {
+): Promise<GitHubPRFileItem[]> {
   try {
     const files = await client.paginate('GET /repos/{owner}/{repo}/pulls/{pull_number}/files', {
       owner,
@@ -277,10 +296,11 @@ async function fetchPRFiles(
       per_page: 100,
     });
 
-    return files;
-  } catch (err: any) {
+    return files as GitHubPRFileItem[];
+  } catch (rawErr: unknown) {
+    const err = asOctokitError(rawErr);
     if (err.status === 403) {
-      const rateLimit = getRateLimitInfo(err.response?.headers || {});
+      const rateLimit = getRateLimitInfo(err.response?.headers ?? {});
       if (rateLimit.remaining === 0) {
         throw new GitHubAPIError(
           'RATE_LIMIT_EXCEEDED',
@@ -289,8 +309,19 @@ async function fetchPRFiles(
         );
       }
     }
-    throw err;
+    throw rawErr;
   }
+}
+
+/**
+ * Minimal type for a GitHub PR file item returned by the paginate API
+ */
+interface GitHubPRFileItem {
+  filename: string;
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+  patch?: string;
 }
 
 // ============================================================
@@ -308,9 +339,9 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
 
     console.log('[fetchGitHubPR] RawEvent keys:', Object.keys(ev));
     console.log('[fetchGitHubPR] Request:', {
-      repoUrl: input?.repoUrl,
-      prNumber: input?.prNumber,
-      skipCache: input?.skipCache,
+      repoUrl: input['repoUrl'],
+      prNumber: input['prNumber'],
+      skipCache: input['skipCache'],
     });
 
     // Validate input
@@ -337,7 +368,7 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
     const files = await fetchPRFiles(client, owner, repo, prNumber);
 
     // Check total diff size
-    const totalSize = files.reduce((sum: number, f: any) => sum + (f.patch?.length || 0), 0);
+    const totalSize = files.reduce((sum, f) => sum + (f.patch?.length ?? 0), 0);
     if (totalSize > MAX_DIFF_SIZE) {
       throw new GitHubAPIError(
         'DIFF_TOO_LARGE',
@@ -347,13 +378,17 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
     }
 
     // Parse diffs
-    const diffFiles = files.map((f: any) => ({
+    const diffFiles = files.map((f) => ({
       path: f.filename,
       status: f.status as 'added' | 'modified' | 'deleted' | 'renamed',
       additions: f.additions,
       deletions: f.deletions,
-      hunks: parseDiff(f.patch || ''),
+      hunks: parseDiff(f.patch ?? ''),
     }));
+
+    // Derive state: GitHub only returns 'open' | 'closed'; detect merged via merged_at
+    const prState: 'open' | 'closed' | 'merged' =
+      prData.merged_at ? 'merged' : (prData.state as 'open' | 'closed');
 
     // Build response
     const response: FetchGitHubPRResponse = {
@@ -361,24 +396,24 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
       data: {
         prNumber: prData.number,
         title: prData.title,
-        description: prData.body || '',
-        author: prData.user?.login || 'unknown',
-        state: prData.state as 'open' | 'closed' | 'merged',
+        description: prData.body ?? '',
+        author: prData.user?.login ?? 'unknown',
+        state: prState,
         filesChanged: files.length,
-        additions: files.reduce((s: number, f: any) => s + f.additions, 0),
-        deletions: files.reduce((s: number, f: any) => s + f.deletions, 0),
+        additions: files.reduce((s, f) => s + f.additions, 0),
+        deletions: files.reduce((s, f) => s + f.deletions, 0),
         diff: {
           files: diffFiles,
         },
         metadata: {
-          author: prData.user?.login || 'unknown',
-          avatar: prData.user?.avatar_url || '',
+          author: prData.user?.login ?? 'unknown',
+          avatar: prData.user?.avatar_url ?? '',
           createdAt: prData.created_at,
           updatedAt: prData.updated_at,
-          state: prData.state as 'open' | 'closed' | 'merged',
-          labels: prData.labels?.map((l: any) => l.name) || [],
+          state: prState,
+          labels: prData.labels?.map((l) => l.name) ?? [],
           htmlUrl: prData.html_url,
-          reviewers: prData.requested_reviewers?.map((r: any) => r.login) || [],
+          reviewers: prData.requested_reviewers?.map((r) => r.login) ?? [],
           featureBranch: prData.head.ref,
           baseBranch: prData.base.ref,
         },
@@ -394,18 +429,19 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
     });
 
     return response;
-  } catch (err: any) {
-    console.error('[fetchGitHubPR] Error:', err.message || err);
+  } catch (rawErr: unknown) {
+    const err = asOctokitError(rawErr);
+    console.error('[fetchGitHubPR] Error:', err.message ?? rawErr);
 
     // Handle known GitHub API errors
-    if (err instanceof GitHubAPIError) {
+    if (rawErr instanceof GitHubAPIError) {
       return {
         success: false,
         data: null,
         error: {
-          code: err.code,
-          message: err.message,
-          retryable: err.retryable,
+          code: rawErr.code,
+          message: rawErr.message,
+          retryable: rawErr.retryable,
         },
       };
     }
@@ -416,7 +452,7 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
       data: null,
       error: {
         code: 'UNKNOWN_ERROR',
-        message: `Unexpected error: ${err.message || 'Unknown'}`,
+        message: `Unexpected error: ${err.message ?? 'Unknown'}`,
         retryable: true,
       },
     };

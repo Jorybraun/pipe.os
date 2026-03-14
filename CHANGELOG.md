@@ -6,6 +6,22 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Security
+- **CRITICAL**: Removed `docs/setup/AWS_SECRETS_SETUP.md` which contained real API keys, OAuth secrets, and a GitHub PAT committed by mistake. **All exposed credentials must be rotated immediately** — METERED_API_KEY, CALENDLY_CLIENT_ID, CALENDLY_CLIENT_SECRET, and GITHUB_TOKEN.
+- `amplify/data/resource.ts` — removed `allow.publicApiKey()` from `fetchGitHubPR` mutation; callers are now `allow.authenticated()` only, preventing unauthenticated clients from spending the GitHub API token.
+
+#### Fixed
+- `docs/setup/GITHUB_TOKEN_SETUP.md` — replaced hardcoded developer-specific absolute paths (`/Users/hans/...`) with repo-relative paths (`./.env`, `cd <repo-root>`) for portability.
+- `amplify/functions/submitCodeReview/package.json` — moved `@aws-sdk/client-dynamodb` and `@aws-sdk/util-dynamodb` from `devDependencies` to `dependencies` so they are bundled at Lambda deploy time.
+- `amplify/functions/fetchGitHubPR/handler.ts` — removed all `any` types; `validateInput` now takes `unknown` + type guards; `getRateLimitInfo` uses typed headers; `OctokitErrorShape` helper replaces `err: any` catch patterns; access to `Record<string, unknown>` input uses bracket notation.
+- `amplify/functions/fetchGitHubPR/handler.ts` — PR `state` field now correctly derived: `'merged'` when `prData.merged_at` is non-null; otherwise uses the raw GitHub `'open' | 'closed'` state.
+- `amplify/functions/scoreCodeReview/resource.ts` — removed `process.env.ASSESSMENT_TABLE_NAME` from `defineFunction({ environment: ... })` (was captured at synth time); handler reads `process.env.ASSESSMENT_TABLE_NAME` at runtime.
+- `amplify/data/resource.ts` — corrected misleading comment on `scoreCodeReview` mutation authorization (`authenticated()`, not IAM service-to-service).
+- `amplify/functions/listGitHubPRs/handler.ts` — 403 errors are now disambiguated: checks `x-ratelimit-remaining` header to separate rate limit exceeded from permission/scope/SSO/org-policy failures; callers receive accurate, actionable error codes.
+- `amplify/functions/repoManagement/__tests__/repoManager.integration.test.ts` — integration tests now require explicit `ENABLE_INTEGRATION_TESTS=true` opt-in; removed automatic `CI=true` activation to prevent flaky CI runs.
+- `docs/qa/validation-results/2026-03-14-phase-4-scoring-lambda.md` — reconciled conflicting cost numbers; executive summary updated to `~$0.0005` per assessment to match the detailed breakdown.
+- `README.md` — fixed grammar: 'an developer' → 'a developer'; 'real world' → 'real-world'.
+
 #### Added
 - **CODE_REVIEW challenge layout in candidate assessment:**
   - `src/components/Assessment/CodeReviewChallenge.tsx` — new component mirroring `CodeReviewGymPrototype` layout: left panel (instructions + PR metadata card), center panel (DiffPanel with inline annotations), right panel (APPROVE / REQUEST_CHANGES / COMMENT verdict buttons + summary textarea + SUBMIT_REVIEW)

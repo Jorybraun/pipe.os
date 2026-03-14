@@ -687,8 +687,7 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function(fetchGitHubPR))
     .authorization((allow) => [
-      allow.authenticated(), // Recruiter (admin)
-      allow.publicApiKey(),  // Candidate (unauthenticated) — TODO: replace with single-use token gate (see ADR/Linear ticket)
+      allow.authenticated(), // Recruiter (admin) — candidates never need to call this directly
     ]),
 
   /**
@@ -726,7 +725,7 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function(scoreCodeReview))
     .authorization((allow) => [
-      allow.authenticated(), // Lambda-to-Lambda via IAM
+      allow.authenticated(), // Authenticated users only (recruiter or internal caller)
     ]),
 });
 

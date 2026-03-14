@@ -27,6 +27,23 @@ const GITHUB_URL_REGEX = /^https:\/\/github\.com\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9
 // Helpers
 // ============================================================
 
+/**
+ * Minimal shape of a GitHub API (Octokit) error with HTTP context
+ * Mirrors the helper in fetchGitHubPR/handler.ts
+ */
+interface OctokitErrorShape {
+  status?: number;
+  response?: { headers?: Record<string, string | undefined> };
+  message?: string;
+}
+
+function asOctokitError(err: unknown): OctokitErrorShape {
+  if (typeof err === 'object' && err !== null) {
+    return err as OctokitErrorShape;
+  }
+  return {};
+}
+
 function getGitHubToken(): string {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
@@ -137,11 +154,16 @@ export async function handler(rawEvent: unknown): Promise<ListGitHubPRsResponse>
       },
     };
 
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[listGitHubPRs] Error', { message });
+  } catch (rawErr: unknown) {
+    // Extract Octokit HTTP error details when available
+    const err = asOctokitError(rawErr);
+    const status = err.status;
+    const headers = err.response?.headers ?? {};
+    const message = rawErr instanceof Error ? rawErr.message : String(rawErr);
 
-    if (message.includes('Not Found') || message.includes('404')) {
+    console.error('[listGitHubPRs] Error', { status, message });
+
+    if (status === 404 || message.includes('Not Found') || message.includes('404')) {
       return {
         success: false,
         error: {
@@ -152,7 +174,7 @@ export async function handler(rawEvent: unknown): Promise<ListGitHubPRsResponse>
       };
     }
 
-    if (message.includes('Unauthorized') || message.includes('401') || message.includes('GITHUB_AUTH_ERROR')) {
+    if (status === 401 || message.includes('Unauthorized') || message.includes('401') || message.includes('GITHUB_AUTH_ERROR')) {
       return {
         success: false,
         error: {
@@ -163,13 +185,27 @@ export async function handler(rawEvent: unknown): Promise<ListGitHubPRsResponse>
       };
     }
 
-    if (message.includes('rate limit') || message.includes('403')) {
+    if (status === 403) {
+      const rateLimitRemaining = parseInt(headers['x-ratelimit-remaining'] ?? '-1', 10);
+      if (rateLimitRemaining === 0) {
+        const resetAt = parseInt(headers['x-ratelimit-reset'] ?? '0', 10);
+        const resetDate = resetAt ? new Date(resetAt * 1000).toISOString() : 'soon';
+        return {
+          success: false,
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: `GitHub API rate limit exceeded. Resets at ${resetDate}.`,
+            retryable: true,
+          },
+        };
+      }
+      // 403 with remaining quota: permission/scope/SSO/org-policy issue
       return {
         success: false,
         error: {
-          code: 'RATE_LIMIT_EXCEEDED',
-          message: 'GitHub API rate limit exceeded. Try again in a few minutes.',
-          retryable: true,
+          code: 'GITHUB_AUTH_ERROR',
+          message: 'GitHub API access denied (403). Check token scopes, SSO authorization, or org policy.',
+          retryable: false,
         },
       };
     }

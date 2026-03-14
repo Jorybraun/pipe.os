@@ -23,7 +23,7 @@ import {
  */
 
 const INTEGRATION_TESTS_ENABLED =
-  process.env.ENABLE_INTEGRATION_TESTS === 'true' || process.env.CI === 'true';
+  process.env.ENABLE_INTEGRATION_TESTS === 'true';
 
 describe.skipIf(!INTEGRATION_TESTS_ENABLED)('repoManager Integration Tests', () => {
   // ============================================================

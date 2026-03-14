@@ -16,9 +16,11 @@
   ],
   "author": "Pipe",
   "license": "MIT",
-  "devDependencies": {
+  "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.0.0",
-    "@aws-sdk/util-dynamodb": "^3.0.0",
+    "@aws-sdk/util-dynamodb": "^3.0.0"
+  },
+  "devDependencies": {
     "vitest": "^1.0.0"
   }
 }

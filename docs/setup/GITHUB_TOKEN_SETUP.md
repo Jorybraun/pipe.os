@@ -28,7 +28,7 @@ For production use, **a token is required**.
 
 ### For Local Development
 
-Add to `/Users/hans/Code/pipe-context/pipe-os/.env`:
+Add to `./.env` at the repo root:
 
 ```bash
 GITHUB_TOKEN=ghp_your_token_here
@@ -62,7 +62,7 @@ aws secretsmanager create-secret \
 Once you've added the token:
 
 ```bash
-cd /Users/hans/Code/pipe-context/pipe-os
+cd <repo-root>
 
 # Start Amplify sandbox (loads .env automatically)
 npx ampx sandbox

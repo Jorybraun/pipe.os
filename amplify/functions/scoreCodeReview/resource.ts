@@ -28,14 +28,9 @@ export const scoreCodeReview = defineFunction({
 
   // Environment variables
   environment: {
-    // Database config
-    ASSESSMENT_TABLE_NAME: process.env.ASSESSMENT_TABLE_NAME || 'Assessment',
-
-    // AWS region is automatically provided by Lambda runtime
-    // Access via process.env.AWS_REGION in handler code
-
-    // Logging
+    // LOG_LEVEL is a static config value (not a secret or computed env var)
     LOG_LEVEL: 'INFO',
+    // ASSESSMENT_TABLE_NAME is read from process.env at runtime inside the handler
   },
 
   // Resource group

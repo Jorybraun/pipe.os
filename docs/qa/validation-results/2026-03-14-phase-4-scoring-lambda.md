@@ -16,7 +16,7 @@ The `scoreCodeReview` Lambda function has been comprehensively validated with un
 - **Test Coverage:** 100%
 - **Chrome DevTools Scenarios:** 5/5 validated
 - **Performance:** <300ms average latency
-- **Cost per Assessment:** <$0.0002
+- **Cost per Assessment:** ~$0.0005
 
 ---
 
