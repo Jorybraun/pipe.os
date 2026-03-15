@@ -143,7 +143,7 @@
 
 ### Setup
 ```bash
-cd /Users/hans/Code/pipe-context/pipe-os
+cd <repo-root>
 
 # Install dependencies (already done)
 npm install

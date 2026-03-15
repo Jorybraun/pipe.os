@@ -92,7 +92,7 @@
   success: false,
   data: null,
   error: {
-    code: "PR_NOT_FOUND",  // or RATE_LIMIT_EXCEEDED, INVALID_INPUT, etc.
+    code: "PULL_REQUEST_NOT_FOUND",  // or RATE_LIMIT_EXCEEDED, INVALID_INPUT, etc.
     message: "PR #42 not found in octocat/Hello-World",
     retryable: false  // true for rate limit, network errors; false for not found
   }

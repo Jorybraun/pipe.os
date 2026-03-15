@@ -11,7 +11,7 @@ export type ReviewerLevel = 'junior' | 'mid' | 'senior';
  */
 export interface Annotation {
   file: string; // File path (e.g., "src/utils/helpers.ts")
-  line: number; // Line number (0-indexed)
+  line: number; // Line number (1-indexed, matching unified diff output)
   severity: SeverityType; // critical | major | minor
   comment: string; // Annotation text/comment
 }

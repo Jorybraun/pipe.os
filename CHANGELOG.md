@@ -6,6 +6,19 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed
+- `amplify/functions/fetchGitHubPR/handler.ts` — replaced all `any` annotations with proper interfaces (`GitHubPRFile`, `GitHubPRLabel`, `GitHubPRReviewer`) and `unknown`+narrowing in catch blocks; fixed merged PR state detection using `merged_at !== null` instead of casting `state` to include `'merged'`; fixed `getRateLimitInfo` to handle `string | string[] | undefined` header values
+- `amplify/functions/repoManagement/handler.ts` — removed `export default handler` (non-page default export); replaced `(event as any).action` with direct `event.action`; replaced `any` in default case with `Record<string, unknown>` cast; changed `HandlerResponse<T = any>` to `HandlerResponse<T = unknown>`
+- `amplify/functions/repoManagement/types.ts` — changed `[key: string]: any` index signature to `unknown`; changed `SuccessResponse<T = any>` and `LambdaResponse<T = any>` defaults to `unknown`
+- `amplify/functions/submitCodeReview/types.ts` — changed `value?: any` to `value?: unknown` in `ValidationError`; clarified `lineNumber` comment to 1-indexed
+- `amplify/functions/submitCodeReview/package.json` — moved `@aws-sdk/client-dynamodb` and `@aws-sdk/util-dynamodb` from `devDependencies` to `dependencies` to prevent runtime module-not-found errors
+- `amplify/functions/scoreCodeReview/types.ts` — corrected `line` field comment from 0-indexed to 1-indexed (matching unified diff format)
+- `amplify/functions/scoreCodeReview/resource.ts` — replaced `process.env.ASSESSMENT_TABLE_NAME || 'Assessment'` with static string to avoid baking local env values into deployed config at synth time
+- `amplify/functions/fetchGitHubPR/README.md` — fixed error code `PR_NOT_FOUND` → `PULL_REQUEST_NOT_FOUND` to match handler implementation
+- `docs/setup/GITHUB_TOKEN_SETUP.md` — updated to accurately describe Amplify secrets injection mechanism; removed incorrect Secrets Manager fallback instructions
+- `docs/STREAM2_PHASE3_TEST_REPORT.md` — replaced absolute local filesystem path with portable `<repo-root>` placeholder
+- `README.md` — fixed grammar: `an developer` → `a developer`; `real world` → `real-world`
+
 #### Added
 - **CODE_REVIEW challenge layout in candidate assessment:**
   - `src/components/Assessment/CodeReviewChallenge.tsx` — new component mirroring `CodeReviewGymPrototype` layout: left panel (instructions + PR metadata card), center panel (DiffPanel with inline annotations), right panel (APPROVE / REQUEST_CHANGES / COMMENT verdict buttons + summary textarea + SUBMIT_REVIEW)
