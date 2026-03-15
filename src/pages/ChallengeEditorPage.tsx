@@ -17,6 +17,8 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
 import { TimerProvider } from '../components/Assessment/TimerContext';
+import { GitHubPRFetcher } from '../components/Assessment/GitHubPRFetcher';
+import { GroundTruthAnnotationEditor } from '../components/Assessment/GroundTruthAnnotationEditor';
 
 const client = generateClient<Schema>();
 
@@ -35,6 +37,18 @@ export default function ChallengeEditorPage(): JSX.Element {
   const [isSaving, setIsSubmitting] = useState(false);
   const [activeTab, setActiveSection] = useState<'DETAILS' | 'CONTENT' | 'SCORING' | 'PREVIEW'>('DETAILS');
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
+  
+  // GitHub PR Integration state
+  const [prFetched, setPrFetched] = useState(false);
+  const [groundTruthAnnotations, setGroundTruthAnnotations] = useState<any>(() => {
+    if (challenge?.groundTruthAnnotations) {
+      const parsed = typeof challenge.groundTruthAnnotations === 'string' 
+        ? JSON.parse(challenge.groundTruthAnnotations)
+        : challenge.groundTruthAnnotations;
+      return parsed;
+    }
+    return { senior: [], mid: [], junior: [] };
+  });
 
   const fetchData = useCallback(async () => {
     if (!challengeId) return;
@@ -72,6 +86,21 @@ export default function ChallengeEditorPage(): JSX.Element {
         updateParams = { ...updateParams, config: JSON.stringify(config) };
       }
 
+      // Add GitHub PR fields if CODE_REVIEW
+      if (challenge.type === 'CODE_REVIEW' && challenge.githubRepoUrl) {
+        updateParams = {
+          ...updateParams,
+          githubRepoUrl: challenge.githubRepoUrl,
+          githubPrNumber: challenge.githubPrNumber,
+          githubPrTitle: challenge.githubPrTitle,
+          githubPrDescription: challenge.githubPrDescription,
+          cachedDiffJson: challenge.cachedDiffJson,
+          cachedMetadata: challenge.cachedMetadata,
+          diffCachedAt: new Date().toISOString(),
+          groundTruthAnnotations: groundTruthAnnotations,
+        };
+      }
+
       await client.models.Challenge.update(updateParams);
       // In real app, we might also update or create a CodeArtifact here
       navigate(-1);
@@ -80,6 +109,27 @@ export default function ChallengeEditorPage(): JSX.Element {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handlePRFetched = (prData: {
+    githubRepoUrl: string;
+    githubPrNumber: number;
+    githubPrTitle: string;
+    githubPrDescription: string;
+    cachedDiffJson: any;
+    cachedMetadata: any;
+  }) => {
+    setChallenge({
+      ...challenge!,
+      githubRepoUrl: prData.githubRepoUrl,
+      githubPrNumber: prData.githubPrNumber,
+      githubPrTitle: prData.githubPrTitle,
+      githubPrDescription: prData.githubPrDescription,
+      cachedDiffJson: prData.cachedDiffJson,
+      cachedMetadata: prData.cachedMetadata,
+      diffCachedAt: new Date().toISOString(),
+    });
+    setPrFetched(true);
   };
 
   if (isLoading) {
@@ -212,44 +262,45 @@ export default function ChallengeEditorPage(): JSX.Element {
                 <SubTitle>CHALLENGE_CONTENT</SubTitle>
                 <div style={{ marginTop: 32 }}>
                   {challenge.type === 'CODE_REVIEW' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
+                      {/* GitHub PR Fetcher */}
                       <div>
-                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>PULL_REQUEST_DESCRIPTION (MARKDOWN)</label>
-                        <textarea 
-                          value={(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return config.prDescription || '';
-                          })()}
-                          onChange={e => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: 16, fontFamily: 'Space Mono' }}>
+                          STEP_1:_FETCH_GITHUB_PR
+                        </div>
+                        <GitHubPRFetcher
+                          initialChallenge={{
+                            githubRepoUrl: challenge.githubRepoUrl || undefined,
+                            githubPrNumber: challenge.githubPrNumber || undefined,
+                          }}
+                          onPRFetched={handlePRFetched}
+                          onCleared={() => {
                             setChallenge({
                               ...challenge,
-                              config: JSON.stringify({ ...config, prDescription: e.target.value })
+                              githubRepoUrl: undefined,
+                              githubPrNumber: undefined,
+                              githubPrTitle: undefined,
+                              githubPrDescription: undefined,
+                              cachedDiffJson: undefined,
+                              cachedMetadata: undefined,
                             });
+                            setPrFetched(false);
                           }}
-                          placeholder="## Summary\nDescribe what this code change does..."
-                          style={{ width: '100%', height: 150, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 13, outline: 'none', resize: 'none', lineHeight: 1.6 }}
                         />
                       </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>BUGGY_CODE_SNIPPET</label>
-                        <textarea 
-                          value={(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return config.code || '';
-                          })()}
-                          onChange={e => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            const srvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
-                            setChallenge({
-                              ...challenge,
-                              config: JSON.stringify({ ...config, code: e.target.value }),
-                              serverConfig: JSON.stringify({ ...srvConfig, code: e.target.value })
-                            });
-                          }}
-                          style={{ width: '100%', height: 400, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#60a5fa', fontSize: 13, outline: 'none', resize: 'none', lineHeight: 1.6, fontFamily: 'Space Mono' }}
-                        />
-                      </div>
+
+                      {/* Ground Truth Annotations */}
+                      {prFetched && (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: 16, fontFamily: 'Space Mono' }}>
+                            STEP_2:_DEFINE_GROUND_TRUTH
+                          </div>
+                          <GroundTruthAnnotationEditor
+                            initialAnnotations={groundTruthAnnotations}
+                            onAnnotationsChange={setGroundTruthAnnotations}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
 

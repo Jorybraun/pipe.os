@@ -10,6 +10,8 @@ interface StageShellProps {
   isLastChallenge: boolean;
   canAdvance: boolean;
   isSubmitting: boolean;
+  /** When true, the content area fills the viewport edge-to-edge with no padding or maxWidth. Use for full-bleed challenge types like CODE_REVIEW. */
+  fullBleed?: boolean;
 }
 
 /**
@@ -25,6 +27,7 @@ export function StageShell({
   isLastChallenge,
   canAdvance,
   isSubmitting,
+  fullBleed = false,
 }: StageShellProps): JSX.Element {
   const { secondsRemaining, formatTime } = useTimer();
 
@@ -34,7 +37,7 @@ export function StageShell({
   const isCritical = secondsRemaining !== null && secondsRemaining < 30;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top Progress Bar */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 2, background: 'rgba(255,255,255,0.05)', zIndex: 100 }}>
         <div style={{ 
@@ -112,7 +115,13 @@ export function StageShell({
       </header>
 
       {/* Main Content */}
-      <main style={{ flex: 1, padding: '40px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+      <main
+        style={
+          fullBleed
+            ? { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }
+            : { flex: 1, padding: '40px', maxWidth: 1200, margin: '0 auto', width: '100%', overflowY: 'auto' }
+        }
+      >
         {children}
       </main>
 

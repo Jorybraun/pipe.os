@@ -1,0 +1,17 @@
+{
+  "recommendations": [
+    // Mandatory
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    
+    // Highly recommended
+    "aws-amplify.aws-amplify-vscode",
+    "ms-playwright.playwright",
+    "vitest.explorer",
+    
+    // Nice to have
+    "bradlc.vscode-tailwindcss",
+    "github.copilot",
+    "eamodio.gitlens"
+  ]
+}

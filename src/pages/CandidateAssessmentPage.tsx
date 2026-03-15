@@ -141,9 +141,10 @@ export default function CandidateAssessmentPage(): JSX.Element {
         currentChallengeIndex={currentChallengeIndex}
         onNext={handleSubmit}
         isLastChallenge={isLastChallenge}
+        fullBleed={currentChallenge.type === 'CODE_REVIEW'}
         canAdvance={
           currentSubmission !== null &&
-          (currentChallenge.type !== 'CODE_REVIEW' || Object.keys(currentSubmission.annotations || {}).length > 0)
+          (currentChallenge.type !== 'CODE_REVIEW' || (currentSubmission.annotations?.length ?? 0) > 0)
         }
         isSubmitting={isLoading}
       >

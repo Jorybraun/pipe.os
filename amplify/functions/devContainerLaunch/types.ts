@@ -3,11 +3,18 @@
  *
  * Handles spinning up an AWS Fargate task that runs a code-server
  * (VS Code in the browser) for a candidate interview session.
+ *
+ * STREAM2-011: Extended for code review challenges with optional challengeId parameter
  */
 
 export interface DevContainerLaunchArguments {
   /** Unique identifier for this interview session */
   sessionId: string;
+  /** 
+   * Optional: Challenge ID for code review challenges
+   * STREAM2: When provided, Lambda queries Challenge model and generates presigned S3 URL
+   */
+  challengeId?: string;
 }
 
 /**
@@ -35,6 +42,17 @@ export interface DevContainerLaunchResponse {
   launchedAt: string;
   /** Per-session code-server password — store securely, never log */
   accessToken: string;
+  
+  /**
+   * STREAM2: Code review challenge response fields
+   * These are present only when code review challenge is launched
+   */
+  /** Presigned S3 URL for repository download (2-hour TTL) */
+  repoUrl?: string;
+  /** Git branch for the challenge (e.g., "feature/coupon-support") */
+  branch?: string;
+  /** Base branch for diff calculation (e.g., "main") */
+  baseBranch?: string;
 }
 
 export interface DevContainerLaunchError {

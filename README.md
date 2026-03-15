@@ -2,98 +2,58 @@
 
 > Build better engineering teams by evaluating how developers actually work today.
 
+## Project Outline
+
+### Architecture Overview
+
+**Interview Container (Core Innovation)**
+```
+Single Container Per Interview:
+├── GitLab CE Server (lightweight git server)
+├── Pre-seeded Challenge Repos (from pipe-scaffold)
+├── VS Code Server (web-based IDE)
+├── AI Tools (Copilot, Amazon Q, etc.)
+├── Development Environment (Node, Python, etc.)
+└── Session Monitor (captures all activity)
+```
+
+**Real Git Workflow:**
+1. Container spawns with GitLab server + challenge repos
+2. Candidate clones, branches, commits, pushes normally
+3. Creates merge requests, reviews code in GitLab UI
+4. All git history preserved in GitLab database
+5. Container destroyed, GitLab data exported for evaluation
+
+### Core Components
+- **Interview Engine**: Containerized development environments
+- **Evaluation System**: Automated assessment of code quality, AI usage patterns, and problem-solving approach
+- **Candidate Portal**: Authentication, interview scheduling, and progress tracking
+- **Interviewer Dashboard**: Live monitoring, custom scenarios, and detailed analytics
+
+### Technical Stack
+- **Frontend**: React + Vite (this scaffold) - candidate/interviewer web interface
+- **Backend**: AWS Amplify with GraphQL API for real-time data
+- **Database**: DynamoDB for scalable candidate and session storage
+- **Authentication**: Cognito for secure multi-role access
+- **Infrastructure**: ECS Fargate for interview containers + serverless web platform
+
+### Why This Scaffold?
+This React app provides:
+- **Candidate Portal**: Schedule interviews, join sessions, view results
+- **Interviewer Dashboard**: Monitor live sessions, review evaluations
+- **Container Orchestration**: Spawn/manage interview environments
+- **Session Management**: Real-time streaming of container activity
+
+### Challenge Generation
+The `pipe-scaffold/` CLI tool generates realistic coding scenarios:
+- **Templates**: StoreFront, DevHub, TeamChat (production-like apps)
+- **Variants**: Composable frontend features (routing, state, styling)
+- **Challenge Types**: Code review (find bugs) + Implementation (build features)
+- **Output**: Docker containers with full-stack apps + AI agent access
+
 ## Overview
 
-Pipe is an AI-native developer interview platform that embraces and evaluates how developers work with AI tools—reflecting the modern reality of software development. Unlike traditional platforms that prevent AI use, Pipe assesses candidates' ability to leverage AI effectively.
-
-## Why Pipe?
-
-Traditional coding interviews are broken. AI tools can trivially solve standard algorithm questions, making them meaningless. The most successful developers today don't just write code—they:
-
-- Ask thoughtful clarifying questions
-- Use AI strategically for well-defined subtasks
-- Critically review and improve AI-generated code
-- Demonstrate strong debugging skills when AI solutions have issues
-
-Pipe evaluates these real-world skills.
-
-## Key Features
-
-- **AI-Native Assessment**: Evaluates AI collaboration skills, not just coding
-- **Agentic Pipeline Builder**: AI generates interview content, humans refine
-- **Multi-Stage Pipelines**: Code review, voice interviews, planning assessments
-- **Comprehensive Profiling**: AI-generated candidate profiles with evidence
-- **Real-World Simulation**: Mirrors actual development workflows
-
-
-## Project Structure
-
-```
-pipe-os/
-├── amplify/           # AWS Amplify backend (auth, data, infra)
-│   ├── backend.ts
-│   ├── auth/
-│   │   └── resource.ts
-│   ├── data/
-│   │   └── resource.ts
-│   ├── package.json
-│   └── tsconfig.json
-├── prototypes/        # UI prototypes (React JSX/TSX)
-│   ├── brutalist-glasomorphic-profile.jsx
-│   ├── candidate-screening.jsx
-│   ├── listing-page.jsx
-│   ├── overview-prototype.jsx
-│   ├── pipeline-builder.jsx
-│   ├── profile-example.tsx
-│   └── screening-stage-builder.jsx
-├── public/            # Static assets
-├── src/               # App source (Vite+React)
-│   ├── App.tsx
-│   ├── main.tsx
-│   ├── App.css
-│   ├── index.css
-│   ├── vite-env.d.ts
-│   └── assets/
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-├── README.md
-└── ... (other config/docs)
-```
-
-## Documentation Status
-
-
-## Tech Stack
-
-- **Frontend**: React 18, Vite, TypeScript, CSS Modules
-- **Prototyping**: React (JSX/TSX) in `/prototypes`
-- **Backend/Infra**: AWS Amplify (with Cognito, AppSync, DynamoDB, S3)
-- **Infrastructure as Code**: AWS CDK, Amplify CLI
-- **Linting/Formatting**: ESLint, TypeScript strict mode
-
-## Getting Started
-
-This repository currently contains documentation and prototypes. Implementation is tracked via the task breakdown in each feature's UI-REQUIREMENTS.md.
-
-### View Prototypes
-
-The prototypes are React components. To view them:
-
-1. Copy the prototype JSX into a React project, or
-2. Use an online React playground (CodeSandbox, StackBlitz)
-
-### Read Documentation
-
-Start with:
-
-1. [Business Requirements](./docs/business-requirements.md)
-2. [Pipeline Creation Epic](./docs/epics/pipeline-creation/EPIC.md)
-3. [Code Review Stage](./docs/epics/pipeline-creation/interview-stages/code-review/) (most complete)
-
-## Contributing
-
-See the task breakdown in `docs/epics/pipeline-creation/interview-stages/code-review/UI-REQUIREMENTS.md` for implementation tasks formatted for Claude Code.
+Pipe is a developer interview platform that embraces and evaluates how developers work with AI tools—reflecting the modern reality of software development. Pipe creates a real-world scenario to test developers in.
 
 ## License
 

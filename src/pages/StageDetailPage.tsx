@@ -13,6 +13,7 @@ import { LiquidMetalCard, SubTitle } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
 import { ChallengePicker } from "../components/Pipeline/ChallengePicker";
+import type { ChallengeSelection } from "../types/challengeSelection";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../../amplify/data/resource";
 import { EventTypePicker } from "../components/Scheduling/EventTypePicker";
@@ -137,26 +138,80 @@ export default function StageDetailPage(): JSX.Element {
     fetchData();
   }, [fetchData]);
 
-  const handleChallengeSelect = async (templates: any[]) => {
+  const handleChallengeSelect = async (selections: ChallengeSelection[]) => {
     if (!stageId) return;
     setPickerOpen(false);
     setIsLoading(true);
     try {
       const currentCount = stage?.challenges?.length || 0;
-      for (let i = 0; i < templates.length; i++) {
-        const template = templates[i];
-        await client.models.Challenge.create({
-          stageId: stageId,
-          type: template.type,
-          title: template.title,
-          instructions: template.instructions,
-          config: JSON.stringify(template.config),
-          order: currentCount + i,
-        });
+      let orderOffset = 0;
+      for (const sel of selections) {
+        const order = currentCount + orderOffset;
+        orderOffset++;
+
+        if (sel.source === 'library') {
+          const { template } = sel;
+          await client.models.Challenge.create({
+            stageId,
+            type: template.type,
+            title: template.title,
+            instructions: template.instructions,
+            config: JSON.stringify(template.config),
+            order,
+          });
+        } else {
+          // GitHub PR — create challenge then fire-and-forget diff cache
+          const { data: created, errors } = await client.models.Challenge.create({
+            stageId,
+            type: 'CODE_REVIEW',
+            title: sel.prTitle,
+            instructions: sel.prDescription,
+            githubRepoUrl: sel.repoUrl,
+            githubPrNumber: sel.prNumber,
+            githubPrTitle: sel.prTitle,
+            githubPrDescription: sel.prDescription,
+            order,
+          });
+
+          if (errors) {
+            console.error('[StageDetailPage] Failed to create GitHub PR challenge:', errors);
+            continue;
+          }
+
+          const challengeId = created?.id;
+          if (!challengeId) continue;
+
+          // Fire-and-forget: fetch full diff and cache it on the challenge record
+          const selRepoUrl = sel.repoUrl;
+          const selPrNumber = sel.prNumber;
+          void (async () => {
+            try {
+              const { data: raw } = await client.mutations.fetchGitHubPR({
+                repoUrl: selRepoUrl,
+                prNumber: selPrNumber,
+                skipCache: false,
+              });
+
+              const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+              if (result?.success && result.data) {
+                await client.models.Challenge.update({
+                  id: challengeId,
+                  cachedDiffJson: result.data.diff,
+                  cachedMetadata: result.data.metadata,
+                  diffCachedAt: new Date().toISOString(),
+                });
+                console.log('[StageDetailPage] Diff cached for challenge', challengeId);
+              }
+            } catch (cacheErr) {
+              console.error('[StageDetailPage] Failed to cache diff for challenge', challengeId, cacheErr);
+            }
+          })();
+        }
       }
       await fetchData();
     } catch (err) {
-      console.error("Failed to add challenges:", err);
+      console.error("[StageDetailPage] Failed to add challenges:", err);
     } finally {
       setIsLoading(false);
     }

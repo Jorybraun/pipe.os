@@ -21,8 +21,10 @@ import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import SchedulingPage from "./pages/SchedulingPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
+import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
+
 
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
@@ -344,6 +346,10 @@ function App(): JSX.Element {
                   <Route
                     path="/sandbox/dev-container"
                     element={<DevContainerSandboxPage />}
+                  />
+                  <Route
+                    path="/prototype/report"
+                    element={<CandidateReportPrototype />}
                   />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
