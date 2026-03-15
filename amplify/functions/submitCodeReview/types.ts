@@ -12,7 +12,7 @@ export interface CodeReviewAnnotation {
   /** Path to the file being annotated (e.g., src/index.ts) */
   filePath: string;
 
-  /** Line number where the annotation applies (0-indexed or 1-indexed based on editor) */
+  /** Line number where the annotation applies (1-indexed, matching unified diff output) */
   lineNumber: number;
 
   /** Type of annotation: general comment, suggestion, or question */
@@ -99,7 +99,7 @@ export type SubmitCodeReviewHandlerResponse = SubmitCodeReviewResponse | SubmitC
 export interface ValidationError {
   field: string;
   message: string;
-  value?: any;
+  value?: unknown;
 }
 
 /**

@@ -65,7 +65,7 @@ interface ErrorResponse {
   };
 }
 
-type HandlerResponse<T = any> = SuccessResponse<T> | ErrorResponse;
+type HandlerResponse<T = unknown> = SuccessResponse<T> | ErrorResponse;
 
 // ============================================================
 // Lambda Handler
@@ -78,7 +78,7 @@ export async function handler(event: HandlerEvent): Promise<HandlerResponse> {
   const startTime = Date.now();
 
   console.log('[repoManagement.handler] Request received', {
-    action: (event as any).action,
+    action: event.action,
     timestamp: new Date().toISOString(),
   });
 
@@ -97,18 +97,20 @@ export async function handler(event: HandlerEvent): Promise<HandlerResponse> {
       case 'healthCheck':
         return await handleHealthCheck(startTime);
 
-      default:
+      default: {
+        const unknownAction = String((event as Record<string, unknown>).action ?? 'unknown');
         console.warn('[repoManagement.handler] Unknown action', {
-          action: (event as any).action,
+          action: unknownAction,
         });
         return {
           success: false,
           error: {
             statusCode: 400,
             message: 'InvalidAction',
-            userMessage: `Unknown action: ${(event as any).action}`,
+            userMessage: `Unknown action: ${unknownAction}`,
           },
         };
+      }
     }
   } catch (error) {
     // Catch-all error handler
@@ -348,4 +350,3 @@ async function handleHealthCheck(startTime: number): Promise<HandlerResponse> {
 // Export handler
 // ============================================================
 
-export default handler;

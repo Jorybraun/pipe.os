@@ -38,24 +38,15 @@ GITHUB_TOKEN=ghp_your_token_here
 
 ### For Production (AWS)
 
-The Lambda checks two places (in order):
-1. **`GITHUB_TOKEN` env var** (local dev)
-2. **AWS Secrets Manager** (production)
+The Lambda reads the `GITHUB_TOKEN` environment variable, which is injected at deploy time via Amplify's secrets management (configured in `resource.ts` via `secret('GITHUB_TOKEN')`).
 
-To add to AWS Secrets Manager:
+To add the secret:
 
 ```bash
-aws secretsmanager create-secret \
-  --name pipe-github-pr-integration \
-  --secret-string '{"token":"ghp_YOUR_TOKEN_HERE"}' \
-  --region us-east-1
+npx ampx sandbox secret set GITHUB_TOKEN
 ```
 
-**OR** via AWS Console:
-1. Go to **AWS Secrets Manager**
-2. Create secret
-3. Name: `pipe-github-pr-integration`
-4. Value: `{"token":"ghp_YOUR_TOKEN_HERE"}`
+**OR** for production pipelines, set it via the Amplify Console under **App settings > Environment variables > Secrets**.
 
 ## How to Test It
 
@@ -84,7 +75,7 @@ npx ampx sandbox
 
 The Lambda will fail with:
 ```
-GITHUB_AUTH_ERROR: Could not load GitHub token from Secrets Manager or env var
+GITHUB_AUTH_ERROR: GitHub token not configured. Set via: npx ampx sandbox secret set GITHUB_TOKEN
 ```
 
 You can either:
@@ -93,6 +84,6 @@ You can either:
 
 ## Files Modified
 
-- `amplify/functions/fetchGitHubPR/handler.ts` — Reads `GITHUB_TOKEN` env var first, falls back to Secrets Manager
+- `amplify/functions/fetchGitHubPR/handler.ts` — Reads `GITHUB_TOKEN` env var (injected by Amplify secrets)
 - `.env` — Add `GITHUB_TOKEN=` here (gitignored)
 - `.env.example` — Documents all required env vars

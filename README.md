@@ -53,7 +53,7 @@ The `pipe-scaffold/` CLI tool generates realistic coding scenarios:
 
 ## Overview
 
-Pipe is an developer interview platform that embraces and evaluates how developers work with AI tools—reflecting the modern reality of software development. Pipe creates a real world scenario to test developers in.
+Pipe is a developer interview platform that embraces and evaluates how developers work with AI tools—reflecting the modern reality of software development. Pipe creates a real-world scenario to test developers in.
 
 ## License
 

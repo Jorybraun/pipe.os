@@ -30,6 +30,29 @@ import {
 } from './types';
 
 // ============================================================
+// Local API shape types
+// ============================================================
+
+/** Shape of a PR file item returned by GitHub's paginate endpoint */
+interface GitHubPRFile {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+
+/** Shape of a PR label as returned by Octokit */
+interface GitHubPRLabel {
+  name?: string;
+}
+
+/** Shape of a PR reviewer as returned by Octokit */
+interface GitHubPRReviewer {
+  login?: string;
+}
+
+// ============================================================
 // Constants
 // ============================================================
 
@@ -189,9 +212,11 @@ function parseDiff(patch: string): DiffHunk[] {
 /**
  * Check rate limit status from GitHub response headers
  */
-function getRateLimitInfo(headers: any): { remaining: number; reset: Date } {
-  const remaining = parseInt(headers['x-ratelimit-remaining'] || '0', 10);
-  const resetTimestamp = parseInt(headers['x-ratelimit-reset'] || '0', 10) * 1000;
+function getRateLimitInfo(headers: Record<string, string | string[] | undefined>): { remaining: number; reset: Date } {
+  const remainingHeader = headers['x-ratelimit-remaining'];
+  const resetHeader = headers['x-ratelimit-reset'];
+  const remaining = parseInt(Array.isArray(remainingHeader) ? remainingHeader[0] : (remainingHeader ?? '0'), 10);
+  const resetTimestamp = parseInt(Array.isArray(resetHeader) ? resetHeader[0] : (resetHeader ?? '0'), 10) * 1000;
   const reset = new Date(resetTimestamp);
 
   return { remaining, reset };
@@ -214,15 +239,16 @@ async function fetchPRFromGitHub(
     });
 
     return response.data;
-  } catch (err: any) {
-    if (err.status === 404) {
+  } catch (err: unknown) {
+    const httpErr = err as { status?: number; response?: { headers?: Record<string, string | string[]> }; code?: string };
+    if (httpErr.status === 404) {
       throw new GitHubAPIError(
         'PULL_REQUEST_NOT_FOUND',
         `PR #${prNumber} not found in ${owner}/${repo}`,
         false
       );
-    } else if (err.status === 403) {
-      const rateLimit = getRateLimitInfo(err.response?.headers || {});
+    } else if (httpErr.status === 403) {
+      const rateLimit = getRateLimitInfo(httpErr.response?.headers ?? {});
       if (rateLimit.remaining === 0) {
         throw new GitHubAPIError(
           'RATE_LIMIT_EXCEEDED',
@@ -236,19 +262,19 @@ async function fetchPRFromGitHub(
           false
         );
       }
-    } else if (err.status === 401) {
+    } else if (httpErr.status === 401) {
       throw new GitHubAPIError(
         'GITHUB_AUTH_ERROR',
         'GitHub API token invalid or expired',
         false
       );
-    } else if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+    } else if (httpErr.code === 'ECONNREFUSED' || httpErr.code === 'ENOTFOUND') {
       throw new GitHubAPIError(
         'NETWORK_ERROR',
         'Network error connecting to GitHub API',
         true
       );
-    } else if (err.code === 'ETIMEDOUT') {
+    } else if (httpErr.code === 'ETIMEDOUT') {
       throw new GitHubAPIError(
         'NETWORK_ERROR',
         'GitHub API request timed out',
@@ -268,7 +294,7 @@ async function fetchPRFiles(
   owner: string,
   repo: string,
   prNumber: number
-) {
+): Promise<GitHubPRFile[]> {
   try {
     const files = await client.paginate('GET /repos/{owner}/{repo}/pulls/{pull_number}/files', {
       owner,
@@ -277,10 +303,11 @@ async function fetchPRFiles(
       per_page: 100,
     });
 
-    return files;
-  } catch (err: any) {
-    if (err.status === 403) {
-      const rateLimit = getRateLimitInfo(err.response?.headers || {});
+    return files as GitHubPRFile[];
+  } catch (err: unknown) {
+    const httpErr = err as { status?: number; response?: { headers?: Record<string, string | string[]> } };
+    if (httpErr.status === 403) {
+      const rateLimit = getRateLimitInfo(httpErr.response?.headers ?? {});
       if (rateLimit.remaining === 0) {
         throw new GitHubAPIError(
           'RATE_LIMIT_EXCEEDED',
@@ -337,7 +364,7 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
     const files = await fetchPRFiles(client, owner, repo, prNumber);
 
     // Check total diff size
-    const totalSize = files.reduce((sum: number, f: any) => sum + (f.patch?.length || 0), 0);
+    const totalSize = files.reduce((sum: number, f: GitHubPRFile) => sum + (f.patch?.length ?? 0), 0);
     if (totalSize > MAX_DIFF_SIZE) {
       throw new GitHubAPIError(
         'DIFF_TOO_LARGE',
@@ -347,13 +374,20 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
     }
 
     // Parse diffs
-    const diffFiles = files.map((f: any) => ({
+    const diffFiles = files.map((f: GitHubPRFile) => ({
       path: f.filename,
       status: f.status as 'added' | 'modified' | 'deleted' | 'renamed',
       additions: f.additions,
       deletions: f.deletions,
-      hunks: parseDiff(f.patch || ''),
+      hunks: parseDiff(f.patch ?? ''),
     }));
+
+    // Determine PR state — GitHub's API returns 'open' or 'closed';
+    // merged PRs have state 'closed' with a non-null merged_at.
+    const prMerged = 'merged_at' in prData && prData.merged_at !== null;
+    const prState: 'open' | 'closed' | 'merged' = prMerged
+      ? 'merged'
+      : (prData.state as 'open' | 'closed');
 
     // Build response
     const response: FetchGitHubPRResponse = {
@@ -361,24 +395,26 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
       data: {
         prNumber: prData.number,
         title: prData.title,
-        description: prData.body || '',
-        author: prData.user?.login || 'unknown',
-        state: prData.state as 'open' | 'closed' | 'merged',
+        description: prData.body ?? '',
+        author: prData.user?.login ?? 'unknown',
+        state: prState,
         filesChanged: files.length,
-        additions: files.reduce((s: number, f: any) => s + f.additions, 0),
-        deletions: files.reduce((s: number, f: any) => s + f.deletions, 0),
+        additions: files.reduce((s: number, f: GitHubPRFile) => s + f.additions, 0),
+        deletions: files.reduce((s: number, f: GitHubPRFile) => s + f.deletions, 0),
         diff: {
           files: diffFiles,
         },
         metadata: {
-          author: prData.user?.login || 'unknown',
-          avatar: prData.user?.avatar_url || '',
+          author: prData.user?.login ?? 'unknown',
+          avatar: prData.user?.avatar_url ?? '',
           createdAt: prData.created_at,
           updatedAt: prData.updated_at,
-          state: prData.state as 'open' | 'closed' | 'merged',
-          labels: prData.labels?.map((l: any) => l.name) || [],
+          state: prState,
+          labels: (prData.labels as GitHubPRLabel[] | undefined)
+            ?.map((l) => l.name)
+            .filter((name): name is string => name !== undefined) ?? [],
           htmlUrl: prData.html_url,
-          reviewers: prData.requested_reviewers?.map((r: any) => r.login) || [],
+          reviewers: (prData.requested_reviewers as GitHubPRReviewer[] | undefined)?.map((r) => r.login ?? '') ?? [],
           featureBranch: prData.head.ref,
           baseBranch: prData.base.ref,
         },
@@ -394,8 +430,8 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
     });
 
     return response;
-  } catch (err: any) {
-    console.error('[fetchGitHubPR] Error:', err.message || err);
+  } catch (err: unknown) {
+    console.error('[fetchGitHubPR] Error:', err instanceof Error ? err.message : String(err));
 
     // Handle known GitHub API errors
     if (err instanceof GitHubAPIError) {
@@ -416,7 +452,7 @@ export async function handler(rawEvent: unknown): Promise<FetchGitHubPRResponse>
       data: null,
       error: {
         code: 'UNKNOWN_ERROR',
-        message: `Unexpected error: ${err.message || 'Unknown'}`,
+        message: `Unexpected error: ${err instanceof Error ? err.message : 'Unknown'}`,
         retryable: true,
       },
     };

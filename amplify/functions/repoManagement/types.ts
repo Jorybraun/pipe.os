@@ -209,7 +209,7 @@ export interface RepoMetadata {
   /**
    * Additional metadata (implementation-defined)
    */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ============================================================
@@ -269,7 +269,7 @@ export interface HealthCheckAction extends HandlerActionBase {
 
 export type LambdaEvent = GeneratePresignedUrlAction | LoadMetadataAction | GetVersionAction | HealthCheckAction;
 
-export interface SuccessResponse<T = any> {
+export interface SuccessResponse<T = unknown> {
   success: true;
   data: T;
 }
@@ -285,7 +285,7 @@ export interface ErrorResponseData {
   error: ErrorDetail;
 }
 
-export type LambdaResponse<T = any> = SuccessResponse<T> | ErrorResponseData;
+export type LambdaResponse<T = unknown> = SuccessResponse<T> | ErrorResponseData;
 
 // ============================================================
 // Cache Types
