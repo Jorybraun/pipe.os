@@ -1,46 +1,51 @@
-# Pipe — Project Documentation Map
+# Pipe — Documentation Map
 
-This directory contains the project's source of truth for design, decisions, and history.
-
----
-
-## 🏛️ **Pillar 1: System Foundations (The "Architecture")**
-
-*   **`ARCHITECTURE.md`** — The high-level system overview, data model, and auth flow.
-*   **`docs/decisions/`** — Architectural Decision Records (ADRs). **WHY** we chose specific tools or patterns.
-*   **`docs/specs/`** — Engineering standards (e.g., `engineering-standards.md`) and technical requirements.
-*   **`/.gemini/rules/`** — Project-wide coding, architecture, and UI standards.
-
-## 🎨 **Pillar 2: Feature & System Design (The "Execution")**
-
-*   **`docs/design/`** — Specific design specs for features (e.g., `challenge-architecture.md`). **HOW** it works.
-*   **`docs/briefs/`** — Product requirements and business context for why features exist.
-*   **`ROADMAP.md`** — High-level strategic timeline (different from `TASKS.md`'s tactical steps).
-
-## 🕒 **Pillar 3: Project State & Progress (The "Memory")**
-
-*   **`TASKS.md`** — (Project Root) The tactical, ordered list of steps to complete. **WHAT** is next.
-*   **`docs/STATUS.md`** — The active progress report and project context. **WHERE** we are right now.
-*   **`docs/changelogs/`** — Detailed technical summaries of every significant commit.
-*   **`CHANGELOG.md`** — (Project Root) The human-readable index of all commits.
-
-## 🧪 **Pillar 4: Quality & Operations (The "Validation")**
-
-*   **`docs/reviews/`** — Code review reports and quality gate results.
-*   **`docs/ops/`** — Runbooks and "How-To" guides for maintenance, migration, and data cleanup.
+This directory is the source of truth for design, decisions, and history.
 
 ---
 
-## 🗄️ **Historical Archive**
+## Pillar 1: System Foundations
 
-*   **`docs/archive/`** — Legacy designs and specs. **Do not act on these.**
+- **`ARCHITECTURE.md`** — System overview, file inventory, data model, and auth flow. The code map.
+- **`docs/decisions/`** — Architectural Decision Records (ADRs). Why we chose specific tools or patterns.
+- **`docs/specs/`** — Engineering standards (e.g., `engineering-standards.md`) and technical requirements.
+
+## Pillar 2: Feature & System Design
+
+- **`docs/design/`** — Design specs for features and systems. How things work.
+  - `design-system.md` — **UI source of truth** (Technical Terminal design language)
+  - `style-guide-recruiter.md` — Practical guide for building recruiter UI components
+  - `challenge-architecture.md` — Challenge data model and composition system
+  - `video-interview-architecture.md` — WebRTC and signaling design
+  - `scheduling-notification-flow.md` — Scheduling OAuth and webhook flow
+  - `notification-engine-architecture.md` — Notification Lambda design
+- **`docs/briefs/`** — Product requirements and business context.
+
+## Pillar 3: Project State & Progress
+
+- **`docs/STATUS.md`** — Current project state. What is implemented, what is in design, what is not built.
+- **`docs/changelogs/`** — Detailed technical summaries of significant commits.
+- **`CHANGELOG.md`** (project root) — Human-readable commit index.
+
+## Pillar 4: Quality & Operations
+
+- **`docs/reviews/`** — Code review reports and quality gate results.
+- **`docs/ops/`** — Runbooks and how-to guides for maintenance, migration, and data cleanup.
 
 ---
 
-## 🤖 **Agent Rules for Documentation**
+## Historical Archive
 
-1.  **Always Check `docs/STATUS.md` first.** It contains the "Project Memory" and current phase.
-2.  **Refer to ADRs (`docs/decisions/`)** before proposing structural changes.
-3.  **Create a Changelog Log** in `docs/changelogs/` for every significant commit.
-4.  **Follow `.gemini/rules/`** for all code implementation and UI development.
-5.  **Strictly adhere to the Persona Protocol** defined in `GEMINI.md`.
+- **`docs/archive/`** — Legacy designs and superseded specs. **Do not act on these.** Files here describe things that were cut, redesigned, or replaced.
+
+---
+
+## Documentation Rules
+
+These rules apply to any agent or developer updating documentation:
+
+1. **Only document what exists.** If a component, Lambda, page, or feature is not in the codebase, do not document it as implemented.
+2. **Design docs describe implemented UI only.** If a UI surface is under active design, mark it clearly as `[IN DESIGN — NOT FINAL]`.
+3. **Move stale content to `docs/archive/`.** Do not delete history — archive it.
+4. **`ARCHITECTURE.md` is the code map.** It lists what files exist and what they do. Keep it in sync with the codebase.
+5. **`docs/design/design-system.md` is the UI source of truth.** Do not introduce new visual patterns without updating it.

@@ -1,27 +1,13 @@
 # Pipe — Architecture
 
-**Last updated:** 2026-02-27 (Phase 7 pre-flight complete; Engineering Process + Content Seeding added)
-**Source of truth:** This file supersedes all earlier specs that conflict with it.
+**Last updated:** 2026-03-19
+**Source of truth:** This file supersedes all earlier architecture documents that conflict with it.
 
 ---
 
-## What Pipe does (one sentence)
+## What Pipe does
 
-A recruiter creates a technical hiring pipeline with composable challenges, sends a link to a candidate, and gets back a scored assessment report — without scheduling a call.
-
----
-
-## MVP scope
-
-The MVP covers one end-to-end flow:
-
-1. Recruiter signs up and creates a pipeline (title, seniority level, tech stack)
-2. Pipeline has one or more stages, each containing ordered challenges (code review, MCQ, free text)
-3. Recruiter adds a candidate → gets a shareable invite link
-4. Candidate opens the link (no sign-in required), works through challenges in sequence, submits
-5. Recruiter sees the candidate ranked by score in their dashboard
-
-Phase 7 has migrated to the full challenge architecture described here. The dual-FK strategy (Assessment holds both `stageId` and `challengeId`) ensures backward compatibility with existing data — see `docs/decisions/ADR-003-assessment-fk-strategy.md`.
+Pipe is a technical interview platform for engineering teams. Recruiters build assessment pipelines. Candidates complete async or live technical challenges. AI scores submissions.
 
 ---
 
@@ -29,13 +15,15 @@ Phase 7 has migrated to the full challenge architecture described here. The dual
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18 + Vite + TypeScript (strict) |
-| Auth | AWS Amplify Gen 2 — Amazon Cognito |
-| API | AWS Amplify Gen 2 — AWS AppSync (GraphQL) |
+| Frontend | React 18 + Vite + TypeScript (strict mode) |
+| Auth | AWS Cognito (Amplify Gen 2) |
+| API | AWS AppSync GraphQL (Amplify Gen 2) |
 | Database | Amazon DynamoDB (via AppSync) |
-| AI agents | AWS Lambda + Anthropic Claude SDK |
+| Functions | AWS Lambda (TypeScript) |
+| Containers | AWS ECS Fargate (dev container sessions) |
+| Infrastructure | Terraform (`infra/`) |
 | Hosting | AWS Amplify Hosting |
-| Design system | Brutalist glassmorphic — see `docs/design/design-system.md` |
+| Design system | Technical Terminal — see `docs/design/design-system.md` |
 
 ---
 
@@ -48,337 +36,236 @@ Phase 7 has migrated to the full challenge architecture described here. The dual
 
 ### Candidate (unauthenticated)
 - Never creates an account
-- Accesses their assessment via a URL: `/assess/:inviteToken`
+- Accesses their assessment via `/assess/:inviteToken`
 - The `inviteToken` is a UUID stored on their `Candidate` record
-- Reads their `Candidate` record, reads `Stage` + `Challenge` config, creates an `Assessment` per challenge on submit
+
+---
+
+## Frontend pages (`src/pages/`)
+
+| File | Route | Description |
+|---|---|---|
+| `ListingPage.tsx` | `/` | Recruiter pipeline list — Active Roles dashboard |
+| `OverviewPage.tsx` | `/pipeline/:id` | Pipeline detail / stage builder |
+| `StageDetailPage.tsx` | `/stage/:id` | Stage detail — challenges list and management |
+| `CandidateAssessmentPage.tsx` | `/assess/:token` | Candidate-facing assessment runner (unauthenticated) |
+| `CandidateProfilePage.tsx` | `/candidate/:id` | Candidate profile and score breakdown |
+| `CandidateReportPrototype.tsx` | — | Candidate score report (prototype) |
+| `CandidateScreeningPage.tsx` | — | Candidate screening flow |
+| `SchedulingPage.tsx` | `/schedule` | Interview scheduling dashboard |
+| `PipelineBuilderPage.tsx` | — | Pipeline builder |
+| `ScreeningStageBuilderPage.tsx` | — | Screening stage builder |
+| `DevContainerSandboxPage.tsx` | `/sandbox` | Dev container session UI |
+| `DevContainerTestPage.tsx` | — | Dev container test harness |
+| `RoleDiscoveryPage.tsx` | `/discover` | AI role discovery / job description agent (post-MVP) |
+
+---
+
+## Components (`src/components/`)
+
+### Assessment
+- `ChallengeRegistry.tsx` — entry point; resolves and renders the correct challenge panels
+- `CodeReviewChallenge.tsx` — CODE_REVIEW challenge renderer
+- `DiffPanel.tsx` — diff viewer for code review
+- `GitHubPRFetcher.tsx` — UI for loading a GitHub PR as a code review challenge
+- `GroundTruthAnnotationEditor.tsx` — recruiter tool for setting answer keys
+- `SchedulingStep.tsx` — scheduling step within assessment flow
+- `StageRegistry.tsx` — IoC registry for stage types
+- `StageShell.tsx` — workspace wrapper for challenge stages
+- `SubmissionPanel.tsx` — submission UI
+- `TimerContext.tsx` — timer state for timed challenges
+- `WorkspaceLayout.tsx` — 3-column CSS grid container
+- `CodeReview/` — subcomponents for code review challenge
+
+### Panels
+- `DiffAnnotationPanel.tsx` — annotated diff view
+- `MonacoPanel.tsx` — Monaco code editor panel
+- `OptionsPanel.tsx` — MCQ/options panel
+- `PreviewPanel.tsx` — live component preview (Sandpack)
+- `ProblemPanel.tsx` — problem description panel
+- `TextareaPanel.tsx` — free-text answer panel
+
+### Shells
+- `TimerShell.tsx` — wraps a challenge with countdown timer behavior
+- `VideoShell.tsx` — wraps a challenge with video session
+
+### Video
+- `VideoControls.tsx`
+- `VideoDeviceCheck.tsx`
+- `VideoFloatingPiP.tsx`
+- `VideoIncomingCall.tsx`
+- `VideoWaitingRoom.tsx`
+
+### Scheduling
+- `ConnectionSetup.tsx`
+- `ConnectionStatusBadge.tsx`
+- `EventTypePicker.tsx`
+- `InterviewCard.tsx`
+- `InterviewStatusBadge.tsx`
+- `SchedulingDashboard.tsx`
+- `SchedulingFilters.tsx`
+- `StatusOverrideModal.tsx`
+- `provider/` — scheduling provider plugin registry
+
+### Pipeline
+- `ChallengeCard.tsx` — challenge display card
+- `ChallengePicker.tsx` — UI for adding challenges to a stage
+
+---
+
+## Hooks (`src/hooks/`)
+
+| Hook | Description |
+|---|---|
+| `useAssessment.ts` | Candidate assessment state — loads stage/challenges, handles submission |
+| `useCandidateCreate.ts` | Create a candidate record and generate invite link |
+| `useDevContainerSession.ts` | Dev container lifecycle (launch, status, destroy) |
+| `usePageMeta.tsx` | Page title and metadata |
+| `usePipelineCreate.ts` | Pipeline creation form state |
+| `useRoleDiscovery.ts` | AI role discovery / job description agent (post-MVP) |
+| `useScheduledInterview.ts` | Single scheduled interview state |
+| `useScheduledInterviews.ts` | List of scheduled interviews |
+| `useSchedulingConnection.ts` | Scheduling provider OAuth connection state |
+| `useVideoSession.ts` | WebRTC video session state |
+| `useVideoSignaling.ts` | AppSync-based WebRTC signaling |
+
+---
+
+## Lambda functions (`amplify/functions/`)
+
+### Dev containers
+| Function | Description |
+|---|---|
+| `devContainerLaunch` | Launch an ECS Fargate task for a dev container session |
+| `devContainerDestroy` | Stop and clean up a running container |
+| `devContainerStatus` | Get current status of a container task |
+| `ecsStatusBridge` | Bridge ECS task state changes to AppSync |
+| `getContainerLogs` | Retrieve CloudWatch logs for a container session |
+
+### GitHub
+| Function | Description |
+|---|---|
+| `fetchGitHubPR` | Fetch a single GitHub pull request as a code review challenge |
+| `listGitHubPRs` | List open pull requests for a given repo |
+
+### AI Agents
+| Function | Description |
+|---|---|
+| `jobDescriptionAgent` | Generate a job description from a role title and requirements |
+| `questionAgent` | Generate interview questions for a challenge (engineering standard reference implementation) |
+| `scoringAgent` | Score a candidate submission using Claude |
+
+### Assessment
+| Function | Description |
+|---|---|
+| `scoreCodeReview` | Server-side code review scoring against ground truth |
+| `submitCodeReview` | Record a code review submission |
+
+### Scheduling
+| Function | Description |
+|---|---|
+| `schedulingOAuth` | Handle OAuth flow for Calendly / Cal.com |
+| `schedulingWebhook` | Receive and process scheduling provider webhooks |
+
+### Notifications
+| Function | Description |
+|---|---|
+| `notificationService` | Send notifications (email, in-app) |
+| `notificationStreamService` | Stream notification events to subscribers |
+
+### Other
+| Function | Description |
+|---|---|
+| `repoManagement` | Repository lifecycle management |
+| `turnCredentials` | Generate TURN server credentials for WebRTC |
+
+---
+
+## Infrastructure (`infra/`)
+
+Terraform manages shared infrastructure:
+- ECS cluster and task definition (dev containers)
+- IAM roles and security groups
+- CloudWatch log groups
+- SSM parameter store entries
 
 ---
 
 ## Data model
 
-All models live in `amplify/data/resource.ts`. That file is the canonical schema. Do not define data models anywhere else.
+All models live in `amplify/data/resource.ts`. That file is the canonical schema.
 
 ```
 Pipeline
-  ├── title (required)
-  ├── level (enum: Junior | Mid | Senior | Staff | Principal | Lead | Manager)
+  ├── title
+  ├── level (Junior | Mid | Senior | Staff | Principal | Lead | Manager)
   ├── stack (string[])
   ├── description
-  ├── status (enum: DRAFT | ACTIVE | ARCHIVED)
+  ├── status (DRAFT | ACTIVE | ARCHIVED)
   ├── stages → [Stage]
   ├── candidates → [Candidate]
   └── codeArtifacts → [CodeArtifact]
 
 Stage
   ├── pipelineId (FK → Pipeline)
-  ├── name (string — "Technical Screen", "Take-Home Exercise")
-  ├── description (string — intro text shown to candidate)
-  ├── order (integer — 1-indexed)
-  ├── timeLimit (integer | null — minutes; null = untimed)
-  └── challenges → [Challenge]       ← Stage has NO type. It's a container.
+  ├── name
+  ├── description
+  ├── order (integer)
+  ├── mode (ASYNC | LIVE_VIDEO)
+  ├── timeLimit (minutes | null)
+  └── challenges → [Challenge]
 
 Challenge
   ├── stageId (FK → Stage)
-  ├── type (enum: CODE_REVIEW | CODE_IMPLEMENTATION | QUIZ_MCQ | QUIZ_SHORT_ANSWER)
-  ├── order (integer — 1-indexed within stage)
-  ├── title (string — e.g. "Find the bugs in this auth function")
-  ├── instructions (string | null — markdown, shown above challenge)
-  ├── config (JSON — type-specific payload, see below)
-  └── codeArtifactId (FK → CodeArtifact | null — shared code reference)
+  ├── type (CODE_REVIEW | CODE_IMPLEMENTATION | QUIZ_MCQ | QUIZ_SHORT_ANSWER)
+  ├── order (integer)
+  ├── title
+  ├── instructions (markdown)
+  ├── config (JSON — type-specific payload)
+  └── codeArtifactId (FK → CodeArtifact | null)
 
 CodeArtifact
   ├── pipelineId (FK → Pipeline)
-  ├── title (string — "AuthMiddleware v1")
-  ├── language (string — 'javascript', 'typescript', 'python')
-  ├── code (string — the source code)
-  └── groundTruth (JSON | null — Bug[] answer key; server-side only)
+  ├── title
+  ├── language
+  ├── code
+  └── groundTruth (JSON | null — server-side only)
 
 Candidate
   ├── pipelineId (FK → Pipeline)
   ├── name
   ├── email
   ├── inviteToken (UUID — used in /assess/:inviteToken URL)
-  ├── status (enum: INVITED | IN_PROGRESS | COMPLETED)
   └── assessments → [Assessment]
 
 Assessment
   ├── candidateId (FK → Candidate)
-  ├── challengeId (FK → Challenge)    ← was stageId in Phases 1–5; now challenge-level
-  ├── submission (JSON — candidate's answers, type-specific)
-  ├── score (float | null — 0–100; null until scored)
-  ├── maxScore (float — 100 for auto-scored; weighted for manual)
-  ├── scoredAt (datetime | null)
-  └── reviewedByRecruiter (boolean — true after manual review)
+  ├── stageId (FK → Stage)
+  ├── challengeId (FK → Challenge | null)
+  ├── score (float | null)
+  ├── submittedAt (timestamp | null)
+  └── response (JSON — type-specific submission data)
 ```
 
-> **Migration note:** The Phase 7 migration script (`scripts/migrateStageConfigToChallenges.ts`) converts existing `Stage.type` + `Assessment.stageId` records to this model. Run it once after deploying the Phase 7 schema — not before.
-
-### Challenge config JSON by type
-
-```typescript
-// CODE_REVIEW
-interface CodeReviewConfig {
-  codeArtifactId?: string;  // reference to CodeArtifact, OR
-  code?: string;            // inline code if not using shared artifact
-  language: string;
-  title: string;
-  // groundTruth is on CodeArtifact, not here
-}
-
-// CODE_IMPLEMENTATION
-interface CodeImplementationConfig {
-  codeArtifactId?: string;  // optional: show the buggy original for context
-  starterCode?: string;
-  language: string;
-  problemStatement: string; // markdown
-  examples?: Array<{ input: string; output: string; explanation?: string }>;
-  constraints?: string[];
-}
-
-// QUIZ_MCQ
-interface QuizMCQConfig {
-  question: string;
-  options: Array<{ id: string; text: string }>;
-  correctOptionId: string;  // answer key — NOT sent to client
-  explanation?: string;     // shown to recruiter post-submission
-}
-
-// QUIZ_SHORT_ANSWER
-interface QuizShortAnswerConfig {
-  question: string;
-  placeholder?: string;
-  maxLength?: number;
-  rubric?: string;          // shown to recruiter only
-}
-```
-
-### Assessment submission JSON by type
-
-```typescript
-// CODE_REVIEW submission
-interface CodeReviewSubmission {
-  annotations: Array<{
-    line: number;
-    comment: string;
-    severity: 'critical' | 'major' | 'minor';
-  }>;
-}
-
-// CODE_IMPLEMENTATION submission
-interface CodeImplementationSubmission {
-  code: string;  // candidate's written code
-}
-
-// QUIZ_MCQ submission
-interface QuizMCQSubmission {
-  selectedOptionId: string;
-}
-
-// QUIZ_SHORT_ANSWER submission
-interface QuizShortAnswerSubmission {
-  text: string;
-}
-```
+Full design rationale: `docs/design/challenge-architecture.md` and `docs/decisions/ADR-002-challenge-architecture.md`
 
 ---
 
-## Authorization model
+## Auth model
 
-Two auth modes are active: `userPool` (default) and `apiKey` (for guest/candidate access).
-
-| Model | Recruiter (owner) | Candidate (guest) |
+| Route pattern | Auth | Notes |
 |---|---|---|
-| Pipeline | Full CRUD | No access |
-| Stage | Full CRUD | Read only |
-| Challenge | Full CRUD | Read only |
-| CodeArtifact | Full CRUD | Read only |
-| Candidate | Full CRUD | Read only |
-| Assessment | Full CRUD | Create + Read |
-| RoleContext | Full CRUD | No access |
+| `/` (and all recruiter routes) | Cognito — `<Authenticator>` wrapper | Recruiter must be signed in |
+| `/assess/:token` | Public — API Key | No Cognito session required |
 
-The candidate can read their own `Candidate` record by querying on `inviteToken`. This is a client-side filter on a guest-readable model — it is not a server-enforced row-level filter. For MVP this is acceptable; post-MVP use a custom Lambda resolver to enforce token matching server-side.
-
-**Important:** `Challenge.config` for `QUIZ_MCQ` contains `correctOptionId`. This is sent to the client at MVP — acceptable for now. Post-MVP, move scoring to a Lambda resolver so the answer key never leaves the server.
+The AppSync API has both Cognito user pool auth and API Key auth. The API Key is used for all candidate-facing operations (`useAssessment.ts`).
 
 ---
 
-## Epics
+## Further reading
 
-### Epic: Candidate Flow ✅ Done (Phases 1–5, updated Phase 7)
-Core flow is complete and updated for challenge-level loading in Phase 7.
-
-Key files:
-- `src/hooks/useAssessment.ts`
-- `src/pages/CandidateAssessmentPage.tsx`
-- `/assess/:token` route in `App.tsx`
-
-### Epic: Challenge Architecture (Phase 7) 🎯 In progress (Steps 1–4 partial done)
-Migrates from Stage-as-challenge-type to Stage-as-container with ordered Challenges.
-
-Done:
-- ✅ `Challenge` + `CodeArtifact` schema models
-- ✅ `ChallengeRegistry` (replaces `StageRegistry`) + `StageShell`
-- ✅ `ChallengeCard`, `ChallengePicker`, `ChallengeEditorPage` (pipeline builder UI)
-- ✅ `useAssessment.ts` — challenge-level loading/submission, `StageWithChallenges` typed
-- ✅ Phase 7 pre-flight P0/P1 bugs resolved
-- ✅ `src/content/challengeLibrary.ts` — 65 pre-built challenge templates
-
-Remaining:
-- ⏳ `MonacoChallenge`, `MCQChallenge`, `ShortAnswerChallenge` renderer components (Step 4)
-- ⏳ Per-challenge recruiter review in `CandidateProfilePage` + manual scoring (Step 5)
-- ⏳ Score rollup: challenge → stage → candidate signal label (Step 5)
-- ⏳ Wire `ChallengePicker` to `challengeLibrary.ts` with search + filter
-
-Full design: `docs/design/challenge-architecture.md` | ADR: `docs/decisions/ADR-002-challenge-architecture.md`
-
-### Epic: Bug Fixes (Phase 6) ✅ Done
-- ✅ P0: Dev buttons gated behind `import.meta.env.DEV`
-- ✅ P0: Avg score fixed — reads from `Assessment`, not `Candidate`
-- ✅ P1: N+2 query in `ListingPage` fixed with `selectionSet`
-- ✅ P1: `useState<any>` in `CandidateProfilePage` replaced with proper types
-
-### Epic: Code Review Stage ✅ Done (Phase 2)
-- `src/content/codeReviewSnippets.ts` — 3 buggy snippets with ground truth
-- `DiffReviewCanvas.tsx` — diff view + inline annotation widgets
-- `src/lib/scoring/codeReview.ts` — ground-truth scorer with ±1 line tolerance
-
-### Epic: Quiz Stage ✅ Done (Phase 3)
-- `src/content/quizQuestions.ts` — 10 MCQ questions
-- `QuizRenderer.tsx` — single-question focus, 4 options
-- `src/lib/scoring/quiz.ts` — auto-scorer
-
-### Epic: Recruiter Dashboard ✅ Done (Phase 4)
-- Real data in `ListingPage`, `OverviewPage`, `CandidateProfilePage`
-- Candidates ranked by score, STRONG / YES / MAYBE / NO signal label
-
-### Epic: Role Discovery (post-MVP)
-Not in MVP. The agentic discovery flow (`useRoleDiscovery`, `generateQuestions` Lambda, `RoleContext` model) is already built but not active. Pipeline creation currently uses a simple 4-field form. When this epic opens, wire the form to the Lambda — don't rebuild from scratch.
-
----
-
-## AI agents
-
-### Current agents
-- `amplify/functions/questionAgent/` — generates tailored discovery questions from a RoleContext. **This is the engineering standard for all future agents.** See `docs/specs/engineering-standards.md`.
-- `amplify/functions/jobDescriptionAgent/` — generates job description from a completed RoleContext (post-MVP).
-
-### Future agents (post-MVP)
-- `challengeGeneratorAgent` — generates challenges (code snippets, quiz questions) from a job description and tech stack, using the `questionAgent` pattern
-- `scoreAgent` — AI-assisted scoring for `QUIZ_SHORT_ANSWER` and `CODE_IMPLEMENTATION` submissions
-- `summaryAgent` — generates a candidate signal report from all assessment data
-
-### Engineering standard
-Every agent Lambda must follow the `questionAgent` pattern. See `docs/specs/engineering-standards.md`.
-
----
-
-## Frontend structure
-
-```
-src/
-├── App.tsx                                   # Routes
-├── main.tsx                                  # Amplify.configure() entry point
-├── pages/
-│   ├── ListingPage.tsx                       # Recruiter: pipeline list ✅
-│   ├── PipelineCreatePage.tsx                # Recruiter: create pipeline ✅
-│   ├── OverviewPage.tsx                      # Recruiter: pipeline detail ✅
-│   ├── CandidateProfilePage.tsx              # Recruiter: candidate review ✅
-│   ├── ChallengeEditorPage.tsx               # Recruiter: edit a challenge — Phase 7
-│   ├── CandidateAssessmentPage.tsx           # Candidate: assessment UI ✅ Phase 7 updated
-│   └── RoleDiscoveryPage.tsx                 # Post-MVP: agentic discovery 🔒
-├── hooks/
-│   ├── usePipelineCreate.ts                  # Pipeline creation ✅
-│   ├── useAssessment.ts                      # Candidate flow ✅ Phase 7 updated — challenge-level
-│   └── useRoleDiscovery.ts                   # Post-MVP 🔒
-├── components/
-│   ├── ui/                                   # Design system primitives
-│   ├── Assessment/
-│   │   ├── ChallengeRegistry.tsx             # IoC router → challenge renderer (Phase 7)
-│   │   ├── StageShell.tsx                    # Timer + progress + navigation (Phase 7)
-│   │   ├── CodeReview/
-│   │   │   └── DiffReviewCanvas.tsx          # Diff view + annotations ✅
-│   │   ├── CodeImpl/
-│   │   │   └── MonacoChallenge.tsx           # Monaco editor split-pane (Phase 7)
-│   │   └── Quiz/
-│   │       ├── MCQChallenge.tsx              # Multiple choice (Phase 7)
-│   │       └── ShortAnswerChallenge.tsx      # Free text (Phase 7)
-│   └── Pipeline/
-│       ├── ChallengeCard.tsx                 # Drag-and-drop tile (Phase 7)
-│       ├── ChallengePicker.tsx               # Add challenge modal (Phase 7)
-│       └── CodeArtifactManager.tsx           # Manage reusable code snippets (Phase 7)
-├── content/
-│   ├── codeReviewSnippets.ts                 # Original 3 buggy snippets + ground truth ✅
-│   ├── quizQuestions.ts                      # Original 10 MCQ questions ✅
-│   └── challengeLibrary.ts                   # 65 challenge templates (all 4 types) ✅ New
-└── lib/
-    ├── generateInviteToken.ts                # crypto.randomUUID() wrapper ✅
-    ├── pipelinePresets.ts                    # DEFAULT + BLANK presets ✅ Phase 7
-    └── scoring/
-        ├── codeReview.ts                     # Pure scoring function ✅
-        └── quiz.ts                           # Pure scoring function ✅
-```
-
----
-
-## Key conventions
-
-- **TypeScript strict mode** — no `any`. Use `unknown` + type guards.
-- **Named exports** — no default exports except pages (required by lazy loading).
-- **Explicit return types** on all exported functions.
-- **Amplify Data errors** — always check `if (errors) throw new Error(errors[0].message)`.
-- **Logging prefix** — `console.error('[hookName] what failed:', context)`.
-- **Hooks** in `src/hooks/`, pages in `src/pages/`, reusable components in `src/components/`.
-- **`npx tsc --noEmit` must pass** before any commit.
-- **`CHANGELOG.md` must be updated** on every commit that touches source files — add entry under `[Unreleased]`. Enforced by pre-commit hook (`scripts/check-changelog.sh`). Bypass with `--no-verify` for doc/config-only commits.
-- **ADRs** — write one in `docs/decisions/` for every significant architectural decision. Copy `ADR-000-template.md`, use next sequence number, add to `README.md` index.
-
----
-
-## Sandbox & deployment
-
-```bash
-# Local development
-npm run dev
-
-# Deploy schema changes to your personal cloud sandbox
-npx ampx sandbox
-
-# Type check (use this — npm run build may fail on ARM64)
-npx tsc --noEmit
-
-# Production deploy (CI only — don't run manually)
-npx ampx pipeline-deploy
-```
-
----
-
-## What NOT to build (for MVP)
-
-| Idea | Why deferred |
-|---|---|
-| Test runner / auto-grading for CODE_IMPLEMENTATION | Needs sandboxed Lambda execution. Post-MVP. |
-| SYSTEM_DESIGN challenge type | Needs diagramming canvas library evaluation. Post-MVP. |
-| S3 media storage | Not needed until voice/video stages. Post-MVP. |
-| Agentic challenge generation | Simple curated content is faster to ship. Post-MVP. |
-| Real-time subscriptions | Polling/refresh on load is good enough for MVP. Post-MVP. |
-| Voice interview stage | Needs WebRTC + transcription pipeline. Post-MVP. |
-| Server-side scoring | Client-side scoring is acceptable for MVP. Post-MVP. |
-| Per-challenge time limits | Stage-level time limit is sufficient. Post-MVP. |
-
----
-
-## Docs index
-
-| Document | Purpose |
-|---|---|
-| `TASKS.md` | Ordered task list — what to build next |
-| `CHANGELOG.md` | Required on every source commit — update `[Unreleased]` section |
-| `docs/ARCHITECTURE.md` | This file — system overview |
-| `docs/decisions/README.md` | ADR index — write one for every architectural decision |
-| `docs/design/challenge-architecture.md` | Challenge architecture design — read before Phase 7 |
-| `docs/design/content-seeding-strategy.md` | Three-phase content strategy for challenge library |
-| `docs/specs/candidate-flow-spec.md` | Detailed spec for the candidate flow |
-| `docs/specs/engineering-standards.md` | Agent Lambda pattern — required reading before building any Lambda |
-| `docs/design/design-system.md` | Component library and visual language |
-| `docs/reviews/phase-7-code-review.md` | Code review of Phase 7 work |
-| `amplify/data/resource.ts` | Canonical data schema |
+- `docs/design/challenge-architecture.md` — challenge data model and stage architecture
+- `docs/design/video-interview-architecture.md` — WebRTC + signaling design
+- `docs/design/scheduling-notification-flow.md` — scheduling OAuth and webhook flow
+- `docs/design/notification-engine-architecture.md` — notification Lambda design
+- `docs/decisions/` — Architectural Decision Records (ADRs 001–019)
