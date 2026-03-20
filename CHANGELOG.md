@@ -6,6 +6,32 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (docs overhaul — remove stale/misleading documentation)
+- `README.md` — complete rewrite; removed AWS Amplify scaffold boilerplate and pipe-scaffold/GitLab fiction; replaced with accurate product description, feature list, and tech stack
+- `docs/ARCHITECTURE.md` — complete rewrite; accurate file inventory for all pages, components, hooks, Lambdas, and infra; updated data model and auth model
+- `docs/README.md` — updated docs index; removed agent-specific Gemini rules; replaced "Agent Rules" section with universal "Documentation Rules"
+- `docs/STATUS.md` — rewrote current state; removed STREAM2 agent-session noise; added clear implemented/in-design/not-built sections
+- `docs/design/design-system.md` — complete rewrite; replaces old "Brutalist Glassmorphic" design with accurate "Technical Terminal" design language
+- `docs/design/design-system-revised.md` → redirect stub (archived to `docs/archive/design/`)
+- `docs/design/challenge-management-technical-design.md` → redirect stub (archived to `docs/archive/design/`)
+- `docs/design/monaco-challenge-architecture.md` → redirect stub (archived to `docs/archive/design/`)
+- `docs/STREAM2_PHASE3_COMPLETION.md` → redirect stub (archived to `docs/archive/`)
+- `docs/STREAM2_PHASE3_IMPLEMENTATION.md` → redirect stub (archived to `docs/archive/`)
+- `docs/STREAM2_PHASE3_QUICKREF.md` → redirect stub (archived to `docs/archive/`)
+- `docs/STREAM2_PHASE3_TEST_REPORT.md` → redirect stub (archived to `docs/archive/`)
+- `docs/WORKLOG.md` → redirect stub (archived to `docs/archive/`)
+- `docs/decisions/ADR-012-challenge-studio-editor-architecture.md` → redirect stub (archived to `docs/archive/`)
+
+#### Added
+- `docs/design/style-guide-recruiter.md` — new practical style guide for recruiter dashboard UI components
+- `docs/archive/design/design-system.md` — archived old brutalism-era design system
+- `docs/archive/design/design-system-revised.md` — archived revised glassmorphic design system
+- `docs/archive/design/challenge-management-technical-design.md` — archived cut challenge editor design
+- `docs/archive/design/monaco-challenge-architecture.md` — archived superseded Monaco architecture doc
+- `docs/archive/STREAM2_PHASE3_*.md` — archived STREAM2 agent work logs
+- `docs/archive/WORKLOG.md` — archived agent-generated work log
+- `docs/archive/ADR-012-challenge-studio-editor-architecture.md` — archived cut challenge studio ADR
+
 #### Changed
 - `amplify/functions/fetchGitHubPR/handler.ts` — replaced all `any` annotations with proper interfaces (`GitHubPRFile`, `GitHubPRLabel`, `GitHubPRReviewer`) and `unknown`+narrowing in catch blocks; fixed merged PR state detection using `merged_at !== null` instead of casting `state` to include `'merged'`; fixed `getRateLimitInfo` to handle `string | string[] | undefined` header values
 - `amplify/functions/repoManagement/handler.ts` — removed `export default handler` (non-page default export); replaced `(event as any).action` with direct `event.action`; replaced `any` in default case with `Record<string, unknown>` cast; changed `HandlerResponse<T = any>` to `HandlerResponse<T = unknown>`
