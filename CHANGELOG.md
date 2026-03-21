@@ -12,7 +12,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `.env.local` — E2E credentials for Playwright auth setup
 
 #### Changed (Happy Path Bug Fixes + E2E Validation)
-- `src/pages/CandidateProfilePage.tsx` — removed `selectionSet` from `Assessment.list` query to fix TS2589 ("type instantiation is excessively deep"); full model type returned naturally, `followUpQuestionsJson` is `null` when not deployed
+- `src/pages/CandidateProfilePage.tsx` — fixed TS2589 in Assessment.list: Amplify filter generic is too deeply recursive for strict mode; fetch all assessments and filter client-side instead (assessment counts per candidate are small)
 - `src/hooks/usePipelineCreate.ts` — fixed pipeline created as `ACTIVE` instead of `DRAFT` (B1)
 - `src/pages/OverviewPage.tsx` — removed `disabled={pipeline?.status !== 'ACTIVE'}` guard on ADD_STAGE button so DRAFT pipelines can have stages added; added `handleDeleteStage` and per-stage trash delete button with confirm dialog (B2, B4)
 - `src/config/featureFlags.ts` — enabled `FEATURE_FLAG_PREDEFINED_CHALLENGES: true` so QUIZ_MCQ and QUIZ_SHORT_ANSWER appear in ChallengePicker (B3)

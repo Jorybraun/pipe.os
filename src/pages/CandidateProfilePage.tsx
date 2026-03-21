@@ -571,15 +571,16 @@ export default function CandidateProfilePage(): JSX.Element {
       if (!cand) return;
       setCandidate(cand);
 
-      const [assData, stagesData] = await Promise.all([
-        client.models.Assessment.list({
-          filter: { candidateId: { eq: id } },
-        }),
+      // Note: Assessment.list filter type is too deeply recursive for TS strict mode (TS2589).
+      // Fetch all and filter client-side — assessment counts per candidate are small.
+      const [allAssessments, stagesData] = await Promise.all([
+        client.models.Assessment.list(),
         client.models.Stage.list({
           filter: { pipelineId: { eq: cand.pipelineId } },
           selectionSet: ['id', 'title', 'order', 'mode', 'challenges.*'],
         }),
       ]);
+      const assData = { data: allAssessments.data.filter(a => a.candidateId === id) };
 
       setAssessments(assData.data);
 
