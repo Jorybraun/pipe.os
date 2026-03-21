@@ -450,7 +450,7 @@ function PanelStageConfig() {
 
 export default function PipelineBuilderPage(): JSX.Element {
   const [activeSection] = useState("pipeline");
-  const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const isAgentOpen = false;
   const [selectedStage, setSelectedStage] = useState<StageType>("SCREENING");
   const [stages] = useState<StageConfig[]>(initialStages);
   const [chatMessage, setChatMessage] = useState("");
@@ -486,8 +486,6 @@ export default function PipelineBuilderPage(): JSX.Element {
       sidebar={
         <SidebarNav
           activeSection={activeSection}
-          isAgentOpen={isAgentOpen}
-          onAgentToggle={() => setIsAgentOpen(!isAgentOpen)}
           onRolesClick={() => {
             window.location.href = "/";
           }}

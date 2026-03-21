@@ -247,7 +247,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection] = useState('roles');
 
-  const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const isAgentOpen = false;
   const [mounted, setMounted] = useState(false);
   const [questions, setQuestions] = useState<Question[]>(initialQuestions);
   const [showAddManual, setShowAddManual] = useState(false);
@@ -292,8 +292,6 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
       sidebar={
         <SidebarNav
           activeSection={activeSection}
-          isAgentOpen={isAgentOpen}
-          onAgentToggle={() => setIsAgentOpen(!isAgentOpen)}
           onRolesClick={() => {
             navigate("/");
           }}

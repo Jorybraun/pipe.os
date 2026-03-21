@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { FEATURE_FLAGS } from "../config/featureFlags";
+import { useParams } from "react-router-dom";
 import {
-  ArrowLeft,
   Plus,
   Settings,
   Video,
@@ -45,11 +45,10 @@ interface NotificationTemplate {
  * StageDetailPage - Manage challenges within a specific stage.
  */
 export default function StageDetailPage(): JSX.Element {
-  const { id: pipelineId, stageId } = useParams<{
+  const { stageId } = useParams<{
     id: string;
     stageId: string;
   }>();
-  const navigate = useNavigate();
 
   const [stage, setStage] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -345,17 +344,6 @@ export default function StageDetailPage(): JSX.Element {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <button
-            onClick={() => navigate(`/pipeline/${pipelineId}`)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "rgba(255,255,255,0.4)",
-              cursor: "pointer",
-            }}
-          >
-            <ArrowLeft size={20} />
-          </button>
           <div>
             <div
               style={{
@@ -456,9 +444,6 @@ export default function StageDetailPage(): JSX.Element {
                       key={c.id}
                       challenge={c}
                       index={i}
-                      onEdit={() =>
-                        navigate(`/pipeline/${pipelineId}/challenges/${c.id}`)
-                      }
                       onDelete={handleChallengeDelete}
                     />
                   ))}
@@ -780,7 +765,8 @@ export default function StageDetailPage(): JSX.Element {
                 </div>
               </div>
 
-              {/* STAGE_MODE — ASYNC (default) or LIVE_VIDEO */}
+              {/* STAGE_MODE — ASYNC (default) or LIVE_VIDEO — gated behind FEATURE_FLAG_LIVE_VIDEO */}
+              {FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO && (
               <div
                 style={{
                   borderTop: "1px solid rgba(255,255,255,0.05)",
@@ -901,6 +887,7 @@ export default function StageDetailPage(): JSX.Element {
                   </>
                 )}
               </div>
+              )}
             </div>
           </LiquidMetalCard>
         </aside>

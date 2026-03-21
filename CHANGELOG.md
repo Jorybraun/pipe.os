@@ -29,6 +29,8 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 #### Changed (P0 MVP UX Cleanup & Feature Flags)
 - `src/components/SidebarNav.tsx` — removed AI agent toggle button (Sparkles icon) and `isAgentOpen`/`onAgentToggle` props
+- `src/pages/PipelineBuilderPage.tsx` — removed `setIsAgentOpen` state (no longer togglable); inlined `isAgentOpen = false`
+- `src/pages/ScreeningStageBuilderPage.tsx` — same cleanup as PipelineBuilderPage
 - `src/App.tsx` — replaced `RoleDiscoveryPage` with `PipelineCreatePage` at `/pipeline/new`; gated challenge editor, schedule, and dev-container routes behind feature flags
 - `src/pages/StageDetailPage.tsx` — removed redundant back button (header navigation handles it); gated STAGE_MODE toggle (LIVE_VIDEO) behind `FEATURE_FLAG_LIVE_VIDEO`; removed unused `navigate` and `pipelineId` vars
 - `src/pages/OverviewPage.tsx` — simplified Add Candidate form to email-only with "SEND_INVITE" CTA; added `PUBLISH_PIPELINE` button when pipeline is DRAFT; gated ADD_STAGE button with disabled state + tooltip when pipeline is not ACTIVE; fixed pre-existing `exactOptionalPropertyTypes` errors
