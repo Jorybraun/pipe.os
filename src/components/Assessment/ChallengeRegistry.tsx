@@ -190,7 +190,6 @@ export function ChallengeRegistry({
         onSubmissionChange={(s) => {
           setSubmission(s as Record<string, unknown>);
         }}
-        onSubmit={onSubmit}
       />
     );
 

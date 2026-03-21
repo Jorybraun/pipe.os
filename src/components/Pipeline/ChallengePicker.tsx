@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { FEATURE_FLAGS } from '../../config/featureFlags';
 import {
   X, Code, Shield, FileText, Search, Filter, Timer,
   ChevronRight, Zap, CheckSquare, Plus, Loader, AlertCircle,
@@ -79,6 +80,10 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
         t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         t.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      // Hide QUIZ types when FEATURE_FLAG_PREDEFINED_CHALLENGES is off
+      if (!FEATURE_FLAGS.FEATURE_FLAG_PREDEFINED_CHALLENGES &&
+          (t.type === 'QUIZ_MCQ' || t.type === 'QUIZ_SHORT_ANSWER')) return false;
 
       const matchesType = selectedType === 'ALL' || t.type === selectedType;
 
@@ -354,7 +359,10 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
 
           {/* Type Filters */}
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            {TYPES.map(t => {
+            {TYPES.filter(t =>
+              FEATURE_FLAGS.FEATURE_FLAG_PREDEFINED_CHALLENGES ||
+              (t.id !== 'QUIZ_MCQ' && t.id !== 'QUIZ_SHORT_ANSWER')
+            ).map(t => {
               const isActive = selectedType === t.id;
               return (
                 <button

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { FEATURE_FLAGS } from "./config/featureFlags";
 import {
   BrowserRouter,
   Routes,
@@ -16,7 +17,7 @@ import OverviewPage from "./pages/OverviewPage";
 import StageDetailPage from "./pages/StageDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
-import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
+import PipelineCreatePage from "./pages/PipelineCreatePage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import SchedulingPage from "./pages/SchedulingPage";
@@ -286,14 +287,18 @@ function AppLayout(): JSX.Element {
             setActiveSection("roles");
             navigate("/");
           }}
-          onScheduleClick={() => {
-            setActiveSection("schedule");
-            navigate("/schedule");
-          }}
-          onSandboxClick={() => {
-            setActiveSection("sandbox");
-            navigate("/sandbox/dev-container");
-          }}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE ? {
+            onScheduleClick: () => {
+              setActiveSection("schedule");
+              navigate("/schedule");
+            }
+          } : {})}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_CODE_SANDBOX ? {
+            onSandboxClick: () => {
+              setActiveSection("sandbox");
+              navigate("/sandbox/dev-container");
+            }
+          } : {})}
         />
       }
     >
@@ -325,15 +330,13 @@ function App(): JSX.Element {
                     path="/pipeline/:id/stages/:stageId"
                     element={<StageDetailPage />}
                   />
-                  <Route
-                    path="/pipeline/:pipelineId/challenges/:challengeId"
-                    element={<ChallengeEditorPage />}
-                  />
-                  <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
-                  <Route
-                    path="/pipeline/new/discovery"
-                    element={<RoleDiscoveryPage />}
-                  />
+                  {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
+                    <Route
+                      path="/pipeline/:pipelineId/challenges/:challengeId"
+                      element={<ChallengeEditorPage />}
+                    />
+                  )}
+                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
                   <Route
                     path="/candidates/:id"
                     element={<CandidateProfilePage />}
@@ -342,11 +345,15 @@ function App(): JSX.Element {
                     path="/screenings/:id/preview"
                     element={<CandidateScreeningPage />}
                   />
-                  <Route path="/schedule" element={<SchedulingPage />} />
-                  <Route
-                    path="/sandbox/dev-container"
-                    element={<DevContainerSandboxPage />}
-                  />
+                  {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
+                    <Route path="/schedule" element={<SchedulingPage />} />
+                  )}
+                  {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
+                    <Route
+                      path="/sandbox/dev-container"
+                      element={<DevContainerSandboxPage />}
+                    />
+                  )}
                   <Route
                     path="/prototype/report"
                     element={<CandidateReportPrototype />}

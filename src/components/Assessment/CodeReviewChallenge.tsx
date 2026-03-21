@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   XCircle,
   MessageSquare,
-  Send,
   Loader2,
 } from 'lucide-react';
 import { DiffPanel, type DiffJson, type Annotation } from './DiffPanel';
@@ -46,11 +45,6 @@ export interface CodeReviewChallengeProps {
     summary: string;
   };
   onSubmissionChange: (s: {
-    annotations: Annotation[];
-    verdict: string | null;
-    summary: string;
-  }) => void;
-  onSubmit: (s: {
     annotations: Annotation[];
     verdict: string | null;
     summary: string;
@@ -104,7 +98,6 @@ export function CodeReviewChallenge({
   isFetchingDiff,
   submission,
   onSubmissionChange,
-  onSubmit,
 }: CodeReviewChallengeProps): JSX.Element {
   const [verdict, setVerdict] = useState<string | null>(submission.verdict);
   const [summary, setSummary] = useState(submission.summary);
@@ -133,10 +126,6 @@ export function CodeReviewChallenge({
     };
     const next = { annotations: [...submission.annotations, annotation], verdict, summary };
     onSubmissionChange(next);
-  };
-
-  const handleSubmit = (): void => {
-    onSubmit({ annotations: submission.annotations, verdict, summary });
   };
 
   const isReady = !!verdict && summary.trim().length > 0;
@@ -577,49 +566,46 @@ export function CodeReviewChallenge({
           </div>
         </div>
 
-        {/* Submit footer */}
+        {/* Review status indicator — submit is handled by StageShell footer */}
         <div
           style={{
             padding: '16px 24px',
             borderTop: '1px solid rgba(255,255,255,0.06)',
           }}
         >
-          <button
-            onClick={handleSubmit}
-            disabled={!isReady}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 10,
-              padding: '12px 20px',
-              background: isReady ? '#fff' : 'rgba(255,255,255,0.05)',
-              color: isReady ? '#000' : 'rgba(255,255,255,0.2)',
-              border: 'none',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: '0.1em',
-              fontFamily: '"Space Mono", monospace',
-              cursor: isReady ? 'pointer' : 'not-allowed',
-              transition: 'all 0.2s',
-            }}
-          >
-            SUBMIT_REVIEW
-            <Send size={14} />
-          </button>
-          {!isReady && (
+          {isReady ? (
             <div
               style={{
-                marginTop: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '10px 16px',
+                background: 'rgba(52,211,153,0.08)',
+                border: '1px solid rgba(52,211,153,0.25)',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                fontFamily: '"Space Mono", monospace',
+                color: '#34d399',
+              }}
+            >
+              <CheckCircle2 size={13} />
+              REVIEW_READY — click SUBMIT below
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: '10px 16px',
                 fontSize: 9,
                 color: 'rgba(255,255,255,0.2)',
                 textAlign: 'center',
-                letterSpacing: '0.05em',
+                letterSpacing: '0.08em',
+                fontFamily: '"Space Mono", monospace',
               }}
             >
-              SELECT VERDICT + ADD SUMMARY
+              SELECT VERDICT + ADD SUMMARY TO ENABLE SUBMIT
             </div>
           )}
         </div>

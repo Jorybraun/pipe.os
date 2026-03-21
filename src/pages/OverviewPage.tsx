@@ -514,7 +514,7 @@ export default function OverviewPage(): JSX.Element {
 
   // Add Candidate Form State
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newCandidate, setNewCandidate] = useState({ name: '', email: '' });
+  const [newCandidate, setNewCandidate] = useState({ email: '' });
   const { create: createCandidate, isSubmitting: isAdding } = useCandidateCreate();
 
   // Upcoming scheduled interviews for this pipeline (status=SCHEDULED)
@@ -533,6 +533,16 @@ export default function OverviewPage(): JSX.Element {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const handlePublishPipeline = async () => {
+    if (!id) return;
+    try {
+      await client.models.Pipeline.update({ id, status: 'ACTIVE' } as any);
+      await fetchData();
+    } catch (err) {
+      console.error('[OverviewPage] Failed to publish pipeline:', err);
+    }
+  };
 
   const handleAddStage = async () => {
     if (!id) return;
@@ -635,14 +645,16 @@ export default function OverviewPage(): JSX.Element {
   }, [fetchData]);
 
   const handleAddCandidate = async () => {
-    if (!id || !newCandidate.name || !newCandidate.email) return;
+    if (!id || !newCandidate.email) return;
+    // Derive name from email prefix (e.g. "john.doe@example.com" → "john.doe")
+    const derivedName = newCandidate.email.split('@')[0] ?? newCandidate.email;
     const result = await createCandidate({
       pipelineId: id,
-      name: newCandidate.name,
+      name: derivedName,
       email: newCandidate.email,
     });
     if (result) {
-      setNewCandidate({ name: '', email: '' });
+      setNewCandidate({ email: '' });
       setShowAddForm(false);
       fetchData(); // Refresh list
     }
@@ -699,8 +711,9 @@ export default function OverviewPage(): JSX.Element {
       if (connection?.id && connection.status === 'ACTIVE') {
         try {
           const eventTypes = await fetchEventTypes(connection.id);
-          if (eventTypes.length > 0) {
-            schedulingUrl = eventTypes[0].url;
+          const firstEvent = eventTypes[0];
+          if (firstEvent) {
+            schedulingUrl = firstEvent.url;
             console.log('[OverviewPage] Resolved scheduling URL from provider:', schedulingUrl);
           }
         } catch (err) {
@@ -925,6 +938,30 @@ export default function OverviewPage(): JSX.Element {
                   )}
                 </>
               )}
+              {pipeline?.status === 'DRAFT' && (
+                <button
+                  onClick={handlePublishPipeline}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 20px',
+                    background: 'linear-gradient(135deg, rgba(74,222,128,0.15), rgba(16,185,129,0.1))',
+                    border: '1px solid rgba(74,222,128,0.3)',
+                    color: '#4ade80',
+                    fontSize: 10,
+                    letterSpacing: '0.1em',
+                    fontFamily: 'Space Mono',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(74,222,128,0.25), rgba(16,185,129,0.18))'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(74,222,128,0.15), rgba(16,185,129,0.1))'}
+                >
+                  PUBLISH_PIPELINE
+                </button>
+              )}
               <button
                 onClick={() => setShowAddForm(true)}
                 style={{
@@ -951,58 +988,73 @@ export default function OverviewPage(): JSX.Element {
           )}
         </div>
 
-        {/* Add Candidate Form (Inline Modal-ish) */}
+        {/* Add Candidate Form (Invite by email) */}
         {showAddForm && (
           <div style={{ marginBottom: 32 }}>
             <LiquidMetalCard variant="chrome">
-              <div style={{ padding: 32, display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <FieldGroup label="CANDIDATE_NAME">
-                    <TextInput
-                      value={newCandidate.name}
-                      onChange={v => setNewCandidate(prev => ({ ...prev, name: v }))}
-                      placeholder="Enter name..."
-                    />
-                  </FieldGroup>
+              <div style={{ padding: 32 }}>
+                <div
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: '0.2em',
+                    color: 'rgba(255,255,255,0.3)',
+                    marginBottom: 20,
+                    fontFamily: 'Space Mono',
+                  }}
+                >
+                  INVITE_CANDIDATE
                 </div>
-                <div style={{ flex: 1 }}>
-                  <FieldGroup label="EMAIL_ADDRESS">
-                    <TextInput
-                      value={newCandidate.email}
-                      onChange={v => setNewCandidate(prev => ({ ...prev, email: v }))}
-                      placeholder="Enter email..."
-                    />
-                  </FieldGroup>
-                </div>
-                <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                  <button
-                    onClick={() => setShowAddForm(false)}
-                    style={{
-                      padding: '10px',
-                      background: 'transparent',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      color: 'rgba(255,255,255,0.4)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <X size={16} />
-                  </button>
-                  <button
-                    onClick={handleAddCandidate}
-                    disabled={isAdding || !newCandidate.name || !newCandidate.email}
-                    style={{
-                      padding: '10px 24px',
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      color: '#fff',
-                      fontSize: 10,
-                      letterSpacing: '0.1em',
-                      fontFamily: 'Space Mono',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {isAdding ? 'ADDING...' : 'ADD_CANDIDATE'}
-                  </button>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <FieldGroup label="EMAIL_ADDRESS">
+                      <TextInput
+                        value={newCandidate.email}
+                        onChange={v => setNewCandidate({ email: v })}
+                        placeholder="candidate@example.com"
+                      />
+                    </FieldGroup>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 10,
+                        color: 'rgba(255,255,255,0.25)',
+                        fontFamily: 'Space Mono',
+                      }}
+                    >
+                      We&apos;ll generate an invite link for this email address.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, paddingBottom: 4 }}>
+                    <button
+                      onClick={() => { setShowAddForm(false); setNewCandidate({ email: '' }); }}
+                      style={{
+                        padding: '10px',
+                        background: 'transparent',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: 'rgba(255,255,255,0.4)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <X size={16} />
+                    </button>
+                    <button
+                      onClick={handleAddCandidate}
+                      disabled={isAdding || !newCandidate.email}
+                      style={{
+                        padding: '10px 24px',
+                        background: newCandidate.email && !isAdding ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        color: newCandidate.email && !isAdding ? '#fff' : 'rgba(255,255,255,0.3)',
+                        fontSize: 10,
+                        letterSpacing: '0.1em',
+                        fontFamily: 'Space Mono',
+                        fontWeight: 700,
+                        cursor: newCandidate.email && !isAdding ? 'pointer' : 'not-allowed',
+                      }}
+                    >
+                      {isAdding ? 'SENDING...' : 'SEND_INVITE'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </LiquidMetalCard>
@@ -1034,10 +1086,10 @@ export default function OverviewPage(): JSX.Element {
                         <CandidateKanbanCard
                           key={candidate.id}
                           candidate={candidate}
-                          interview={interview}
                           onClick={() => navigate(`/candidates/${candidate.id}`)}
-                          onInvite={s.mode === 'LIVE_VIDEO' ? () => handleInviteToInterview(candidate.id, s.id) : undefined}
                           isInviting={invitingCandidateId === candidate.id}
+                          {...(interview ? { interview } : {})}
+                          {...(s.mode === 'LIVE_VIDEO' ? { onInvite: () => handleInviteToInterview(candidate.id, s.id) } : {})}
                         />
                       );
                     })}
@@ -1067,10 +1119,12 @@ export default function OverviewPage(): JSX.Element {
           {/* Add Stage Column */}
           <div style={{ flex: '0 0 320px' }}>
             <button
-              onClick={handleAddStage}
+              onClick={pipeline?.status === 'ACTIVE' ? handleAddStage : undefined}
+              disabled={pipeline?.status !== 'ACTIVE'}
+              title={pipeline?.status !== 'ACTIVE' ? 'Publish the pipeline before adding stages' : undefined}
               style={{
                 width: '100%',
-                height: 180, 
+                height: 180,
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px dashed rgba(255,255,255,0.1)',
                 borderRadius: 12,
@@ -1079,15 +1133,21 @@ export default function OverviewPage(): JSX.Element {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 12,
-                color: 'rgba(255,255,255,0.4)',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
+                color: pipeline?.status === 'ACTIVE' ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)',
+                cursor: pipeline?.status === 'ACTIVE' ? 'pointer' : 'not-allowed',
+                transition: 'all 0.2s',
+                opacity: pipeline?.status === 'ACTIVE' ? 1 : 0.5,
               }}
-              onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-              onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+              onMouseOver={e => { if (pipeline?.status === 'ACTIVE') e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseOut={e => { if (pipeline?.status === 'ACTIVE') e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
             >
               <Plus size={20} />
               <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
+              {pipeline?.status !== 'ACTIVE' && (
+                <span style={{ fontSize: 8, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>
+                  PUBLISH TO ENABLE
+                </span>
+              )}
             </button>
           </div>
         </div>

@@ -25,6 +25,7 @@ import { fetchGitHubPR } from './functions/fetchGitHubPR/resource';
 import { listGitHubPRs } from './functions/listGitHubPRs/resource';
 import { scoreCodeReview } from './functions/scoreCodeReview/resource';
 import { submitCodeReview } from './functions/submitCodeReview/resource';
+import { codeReviewFollowUpAgent } from './functions/codeReviewFollowUpAgent/resource';
 
 export const backend = defineBackend({
   auth,
@@ -32,6 +33,7 @@ export const backend = defineBackend({
   questionAgent,
   jobDescriptionAgent,
   scoringAgent,
+  codeReviewFollowUpAgent,
   fetchGitHubPR,
   listGitHubPRs,
   scoreCodeReview,
