@@ -15,6 +15,7 @@ import {
   Target,
   ChevronRight,
   GripVertical,
+  Trash2,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -684,6 +685,20 @@ export default function OverviewPage(): JSX.Element {
     }
   };
 
+  const handleDeleteStage = async (stageId: string, stageTitle: string) => {
+    if (!window.confirm(`Delete stage "${stageTitle}"? This cannot be undone.`)) return;
+    setIsLoading(true);
+    try {
+      await client.models.Stage.delete({ id: stageId });
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await fetchData();
+    } catch (err) {
+      console.error('[OverviewPage] Failed to delete stage:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   /** Create a ScheduledInterview record for a candidate (Invite to Interview) */
   const handleInviteToInterview = async (candidateId: string, stageId: string) => {
     if (!id) return;
@@ -1068,12 +1083,37 @@ export default function OverviewPage(): JSX.Element {
             return (
               <div key={s.id} style={{ flex: '0 0 320px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {/* Header */}
-                <StageHeaderCard
-                  stage={s}
-                  candidates={stageCandidates}
-                  isActive={false}
-                  onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}
-                />
+                <div style={{ position: 'relative' }}>
+                  <StageHeaderCard
+                    stage={s}
+                    candidates={stageCandidates}
+                    isActive={false}
+                    onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}
+                  />
+                  <button
+                    onClick={e => { e.stopPropagation(); void handleDeleteStage(s.id, s.title ?? 'Stage'); }}
+                    title="Delete this stage"
+                    style={{
+                      position: 'absolute',
+                      top: 10,
+                      right: 10,
+                      width: 28,
+                      height: 28,
+                      background: 'rgba(255,80,80,0.08)',
+                      border: '1px solid rgba(255,80,80,0.2)',
+                      borderRadius: 6,
+                      color: 'rgba(255,100,100,0.5)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,80,80,0.2)'; e.currentTarget.style.color = '#ff6464'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,80,80,0.08)'; e.currentTarget.style.color = 'rgba(255,100,100,0.5)'; }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
 
                 {/* Candidate Cards */}
                 <SortableContext items={stageCandidates.map((c: any) => c.id)} strategy={verticalListSortingStrategy}>
@@ -1119,9 +1159,7 @@ export default function OverviewPage(): JSX.Element {
           {/* Add Stage Column */}
           <div style={{ flex: '0 0 320px' }}>
             <button
-              onClick={pipeline?.status === 'ACTIVE' ? handleAddStage : undefined}
-              disabled={pipeline?.status !== 'ACTIVE'}
-              title={pipeline?.status !== 'ACTIVE' ? 'Publish the pipeline before adding stages' : undefined}
+              onClick={() => void handleAddStage()}
               style={{
                 width: '100%',
                 height: 180,
@@ -1133,21 +1171,15 @@ export default function OverviewPage(): JSX.Element {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 12,
-                color: pipeline?.status === 'ACTIVE' ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)',
-                cursor: pipeline?.status === 'ACTIVE' ? 'pointer' : 'not-allowed',
+                color: 'rgba(255,255,255,0.4)',
+                cursor: 'pointer',
                 transition: 'all 0.2s',
-                opacity: pipeline?.status === 'ACTIVE' ? 1 : 0.5,
               }}
-              onMouseOver={e => { if (pipeline?.status === 'ACTIVE') e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-              onMouseOut={e => { if (pipeline?.status === 'ACTIVE') e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+              onMouseOver={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
             >
               <Plus size={20} />
               <span style={{ fontSize: 10, letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'Space Mono' }}>ADD_STAGE</span>
-              {pipeline?.status !== 'ACTIVE' && (
-                <span style={{ fontSize: 8, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>
-                  PUBLISH TO ENABLE
-                </span>
-              )}
             </button>
           </div>
         </div>

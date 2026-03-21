@@ -58,7 +58,7 @@ export function usePipelineCreate(): UsePipelineCreateReturn {
           level: input.level,
           stack: input.stack,
           description: input.description?.trim() || undefined,
-          status: 'ACTIVE',
+          status: 'DRAFT',
           creationMode: input.presetId === 'BLANK' ? 'BLANK' : 'PRESET',
         });
 

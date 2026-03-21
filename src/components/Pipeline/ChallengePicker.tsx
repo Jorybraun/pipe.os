@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { FEATURE_FLAGS } from '../../config/featureFlags';
 import {
   X, Code, Shield, FileText, Search, Filter, Timer,
   ChevronRight, Zap, CheckSquare, Plus, Loader, AlertCircle,
-  GitPullRequest,
+  GitPullRequest, BookMarked, Trash2,
 } from 'lucide-react';
 import { generateClient } from 'aws-amplify/data';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
@@ -67,6 +67,50 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
   const [prError, setPrError] = useState<string | null>(null);
   const [selectedPRs, setSelectedPRs] = useState<Set<number>>(new Set());
 
+  // Saved repos (persisted in localStorage)
+  const SAVED_REPOS_KEY = 'pipe_saved_repos';
+  const [savedRepos, setSavedRepos] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_REPOS_KEY);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showAddRepoInput, setShowAddRepoInput] = useState(false);
+  const [newRepoUrl, setNewRepoUrl] = useState('');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SAVED_REPOS_KEY, JSON.stringify(savedRepos));
+    } catch { /* ignore */ }
+  }, [savedRepos]);
+
+  const handleSaveRepo = (): void => {
+    const trimmed = newRepoUrl.trim();
+    if (!isValidGitHubUrl(trimmed) || savedRepos.includes(trimmed)) return;
+    setSavedRepos(prev => [...prev, trimmed]);
+    setRepoUrl(trimmed);
+    setNewRepoUrl('');
+    setShowAddRepoInput(false);
+    void handleFetchPRsForUrl(trimmed);
+  };
+
+  const handleRemoveRepo = (url: string): void => {
+    setSavedRepos(prev => prev.filter(r => r !== url));
+    if (repoUrl === url) {
+      setRepoUrl('');
+      setPrs([]);
+      setPrError(null);
+      setSelectedPRs(new Set());
+    }
+  };
+
+  const handleSelectSavedRepo = (url: string): void => {
+    setRepoUrl(url);
+    void handleFetchPRsForUrl(url);
+  };
+
   const isCodeReviewMode = selectedType === 'CODE_REVIEW';
 
   // ─── Template library filtering ────────────────────────────────────────────
@@ -117,15 +161,15 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
 
   // ─── GitHub PR fetch ────────────────────────────────────────────────────────
 
-  const handleFetchPRs = async (): Promise<void> => {
-    if (!isValidGitHubUrl(repoUrl)) return;
+  const handleFetchPRsForUrl = async (url: string): Promise<void> => {
+    if (!isValidGitHubUrl(url)) return;
     setIsFetchingPRs(true);
     setPrError(null);
     setPrs([]);
     setSelectedPRs(new Set());
 
     try {
-      const trimmedUrl = repoUrl.trim();
+      const trimmedUrl = url.trim();
       console.log('[ChallengePicker] Calling listGitHubPRs:', { repoUrl: trimmedUrl });
       const { data: raw, errors: gqlErrors } = await client.mutations.listGitHubPRs({
         repoUrl: trimmedUrl,
@@ -153,7 +197,7 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
     } catch (err: unknown) {
       console.error('[ChallengePicker] Failed to list PRs:', err);
       // Amplify throws { data, errors } when the GraphQL call fails
-      const gqlErr = (err as any)?.errors?.[0]?.message as string | undefined;
+      const gqlErr = (err as { errors?: Array<{ message?: string }> } | null)?.errors?.[0]?.message;
       if (gqlErr?.includes('FieldUndefined') || gqlErr?.includes('undefined')) {
         setPrError('Schema not deployed. Run: npx ampx sandbox');
       } else {
@@ -303,57 +347,123 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
             </div>
           )}
 
-          {/* Repo URL input — only shown in CODE_REVIEW mode */}
+          {/* Saved repos UI — only shown in CODE_REVIEW mode */}
           {isCodeReviewMode && (
-            <div style={{ flex: 1, display: 'flex', gap: 10 }}>
-              <input
-                value={repoUrl}
-                onChange={e => setRepoUrl(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && isValidGitHubUrl(repoUrl)) void handleFetchPRs(); }}
-                placeholder="https://github.com/owner/repo"
-                style={{
-                  flex: 1,
-                  background: 'rgba(0,0,0,0.2)',
-                  border: `1px solid ${isValidGitHubUrl(repoUrl) ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.1)'}`,
-                  borderRadius: 4,
-                  padding: '10px 16px',
-                  color: '#fff',
-                  fontSize: 12,
-                  outline: 'none',
-                  fontFamily: 'Space Mono',
-                }}
-              />
-              <button
-                onClick={() => void handleFetchPRs()}
-                disabled={!isValidGitHubUrl(repoUrl) || isFetchingPRs}
-                style={{
-                  padding: '10px 20px',
-                  background: isValidGitHubUrl(repoUrl) && !isFetchingPRs ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${isValidGitHubUrl(repoUrl) && !isFetchingPRs ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                  borderRadius: 4,
-                  color: isValidGitHubUrl(repoUrl) && !isFetchingPRs ? '#60a5fa' : 'rgba(255,255,255,0.2)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  fontFamily: 'Space Mono',
-                  cursor: isValidGitHubUrl(repoUrl) && !isFetchingPRs ? 'pointer' : 'not-allowed',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {isFetchingPRs ? (
-                  <>
-                    <Loader size={11} style={{ animation: 'spin 1s linear infinite' }} />
-                    FETCHING...
-                  </>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Repo selector row */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {savedRepos.length > 0 ? (
+                  <div style={{ flex: 1, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <BookMarked size={13} style={{ color: '#60a5fa', flexShrink: 0 }} />
+                    <select
+                      value={repoUrl}
+                      onChange={e => { if (e.target.value) handleSelectSavedRepo(e.target.value); }}
+                      style={{
+                        flex: 1,
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(96,165,250,0.3)',
+                        borderRadius: 4,
+                        padding: '8px 12px',
+                        color: repoUrl ? '#fff' : 'rgba(255,255,255,0.4)',
+                        fontSize: 11,
+                        outline: 'none',
+                        fontFamily: 'Space Mono',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="" style={{ background: '#1a1a2e' }}>— select a repository —</option>
+                      {savedRepos.map(r => (
+                        <option key={r} value={r} style={{ background: '#1a1a2e' }}>{r.replace('https://github.com/', '')}</option>
+                      ))}
+                    </select>
+                    {repoUrl && (
+                      <button
+                        onClick={() => handleRemoveRepo(repoUrl)}
+                        title="Remove this repo"
+                        style={{ background: 'none', border: 'none', color: 'rgba(255,100,100,0.5)', cursor: 'pointer', padding: 4 }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
                 ) : (
-                  <>
-                    <GitPullRequest size={11} />
-                    FETCH_PRS
-                  </>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.3)', fontSize: 11, fontFamily: 'Space Mono' }}>
+                    <GitPullRequest size={13} />
+                    No repositories saved yet
+                  </div>
                 )}
-              </button>
+                <button
+                  onClick={() => setShowAddRepoInput(v => !v)}
+                  style={{
+                    padding: '8px 14px',
+                    background: showAddRepoInput ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${showAddRepoInput ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: 4,
+                    color: showAddRepoInput ? '#60a5fa' : 'rgba(255,255,255,0.5)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    fontFamily: 'Space Mono',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Plus size={11} />
+                  ADD_REPO
+                </button>
+              </div>
+
+              {/* Add repo inline input */}
+              {showAddRepoInput && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    autoFocus
+                    value={newRepoUrl}
+                    onChange={e => setNewRepoUrl(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveRepo(); if (e.key === 'Escape') { setShowAddRepoInput(false); setNewRepoUrl(''); } }}
+                    placeholder="https://github.com/owner/repo"
+                    style={{
+                      flex: 1,
+                      background: 'rgba(0,0,0,0.2)',
+                      border: `1px solid ${isValidGitHubUrl(newRepoUrl) ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: 4,
+                      padding: '8px 14px',
+                      color: '#fff',
+                      fontSize: 11,
+                      outline: 'none',
+                      fontFamily: 'Space Mono',
+                    }}
+                  />
+                  <button
+                    onClick={handleSaveRepo}
+                    disabled={!isValidGitHubUrl(newRepoUrl)}
+                    style={{
+                      padding: '8px 16px',
+                      background: isValidGitHubUrl(newRepoUrl) ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${isValidGitHubUrl(newRepoUrl) ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                      borderRadius: 4,
+                      color: isValidGitHubUrl(newRepoUrl) ? '#60a5fa' : 'rgba(255,255,255,0.2)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: 'Space Mono',
+                      cursor: isValidGitHubUrl(newRepoUrl) ? 'pointer' : 'not-allowed',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    SAVE &amp; LOAD
+                  </button>
+                </div>
+              )}
+
+              {/* Fetching indicator */}
+              {isFetchingPRs && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(96,165,250,0.7)', fontSize: 10, fontFamily: 'Space Mono' }}>
+                  <Loader size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                  FETCHING PULL REQUESTS...
+                </div>
+              )}
             </div>
           )}
 

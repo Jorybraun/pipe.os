@@ -6,6 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Happy Path Bug Fixes + E2E Validation)
+- `e2e/happy-path.spec.ts` — Playwright E2E suite covering all recruiter + candidate happy path scenarios: pipeline creates as DRAFT, stage add/delete on DRAFT pipeline, ChallengePicker shows all 4 challenge types, CODE_REVIEW shows saved-repos dropdown, /assess/:token renders correctly, CandidateProfilePage loads without crashing
+- `src/components/Pipeline/ChallengePicker.tsx` — replaced free-text GitHub repo URL input with saved-repos dropdown (localStorage key `pipe_saved_repos`); `+ ADD_REPO` button reveals inline input; saved repos persist across sessions; trash button to remove saved repos
+- `.env.local` — E2E credentials for Playwright auth setup
+
+#### Changed (Happy Path Bug Fixes + E2E Validation)
+- `src/hooks/usePipelineCreate.ts` — fixed pipeline created as `ACTIVE` instead of `DRAFT` (B1)
+- `src/pages/OverviewPage.tsx` — removed `disabled={pipeline?.status !== 'ACTIVE'}` guard on ADD_STAGE button so DRAFT pipelines can have stages added; added `handleDeleteStage` and per-stage trash delete button with confirm dialog (B2, B4)
+- `src/config/featureFlags.ts` — enabled `FEATURE_FLAG_PREDEFINED_CHALLENGES: true` so QUIZ_MCQ and QUIZ_SHORT_ANSWER appear in ChallengePicker (B3)
+- `src/pages/CandidateProfilePage.tsx` — added `.catch()` fallback on Assessment.list query to retry without `followUpQuestionsJson` field if Amplify sandbox schema is stale (B6)
+
 #### Added (E2E Code Review Challenge Flow)
 - `amplify/data/resource.ts` — added `followUpQuestionsJson: a.json()` to `Assessment` model; added `generateCodeReviewFollowUps` mutation wired to new Lambda
 - `amplify/functions/codeReviewFollowUpAgent/` — new Lambda (handler, types, prompts, validation, costTracker); one-turn Claude call generates exactly 5 `SHORT_ANSWER` follow-up questions grounded in candidate annotations; saves to `Assessment.followUpQuestionsJson`
