@@ -14,17 +14,18 @@ export type Stage = Schema['Stage']['type'];
 export type Assessment = Schema['Assessment']['type'];
 
 export interface CodeReviewSubmission {
-  annotations: Record<string, any[]>;
+  annotations: Record<string, unknown[]>;
 }
 
 export interface QuizSubmission {
   answers: Record<string, number>;
 }
 
-export type StageSubmission = CodeReviewSubmission | QuizSubmission | Record<string, any>;
+export type StageSubmission = CodeReviewSubmission | QuizSubmission | Record<string, unknown>;
 
 export interface StageWithChallenges {
   id: string;
+  title?: string | null;
   order: number | null;
   timeLimit?: number | null;
   type?: string | null;
@@ -54,6 +55,13 @@ export interface StageWithChallenges {
   }[];
 }
 
+export interface FollowUpQuestion {
+  id: string;
+  type: 'SHORT_ANSWER';
+  question: string;
+  context: string;
+}
+
 interface UseAssessmentState {
   candidate: Candidate | null;
   stages: StageWithChallenges[];
@@ -62,11 +70,20 @@ interface UseAssessmentState {
   isLoading: boolean;
   error: Error | null;
   isSubmitted: boolean;
+  hasStarted: boolean;
+  /** null = not yet loaded; non-null after CODE_REVIEW submission */
+  followUpQuestions: FollowUpQuestion[] | null;
+  followUpLoading: boolean;
+  followUpAnswers: Record<string, string>;
+  /** assessmentId of the most recently submitted assessment (for follow-up saving) */
+  lastAssessmentId: string | null;
 }
 
 interface UseAssessmentReturn extends UseAssessmentState {
   submitChallenge: (submission: StageSubmission) => Promise<void>;
+  submitFollowUpAnswers: (answers: Record<string, string>) => Promise<void>;
   nextChallenge: () => void;
+  onStart: () => void;
   reset: () => void;
 }
 
@@ -76,6 +93,12 @@ interface UseAssessmentReturn extends UseAssessmentState {
 
 /**
  * useAssessment - Handles candidate-side data fetching and submission for challenges.
+ *
+ * Key behaviours:
+ * - `hasStarted` is false until `onStart()` is called — gating the WelcomeScreen
+ * - The INVITED → IN_PROGRESS status update is deferred to `onStart()`
+ * - After a CODE_REVIEW submission, `generateCodeReviewFollowUps` is triggered
+ *   non-fatally; `followUpLoading` and `followUpQuestions` track the result
  */
 export function useAssessment(inviteToken: string): UseAssessmentReturn {
   const [state, setState] = useState<UseAssessmentState>({
@@ -86,6 +109,11 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     isLoading: true,
     error: null,
     isSubmitted: false,
+    hasStarted: false,
+    followUpQuestions: null,
+    followUpLoading: false,
+    followUpAnswers: {},
+    lastAssessmentId: null,
   });
 
   const fetchData = useCallback(async () => {
@@ -110,6 +138,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       }
 
       const candidate = candidates[0];
+
+      if (!candidate) {
+        throw new Error('INVALID_TOKEN');
+      }
 
       // 2. Check if already completed
       if (candidate.status === 'COMPLETED') {
@@ -163,10 +195,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           .filter(c => c !== null)
           .sort((a, b) => (a.order || 0) - (b.order || 0))
           .map(challenge => {
-            const parsedConfig = typeof challenge.config === 'string' 
-              ? JSON.parse(challenge.config) 
+            const parsedConfig = typeof challenge.config === 'string'
+              ? JSON.parse(challenge.config)
               : challenge.config;
-            
+
             return {
               ...challenge,
               config: sanitizeChallengeConfig(parsedConfig, challenge.type || '')
@@ -174,17 +206,8 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           })
       }));
 
-      // 4. Update status to IN_PROGRESS if it was INVITED
-      if (candidate.status === 'INVITED') {
-        try {
-          await client.models.Candidate.update({
-            id: candidate.id,
-            status: 'IN_PROGRESS',
-          });
-        } catch (updateErr) {
-          console.warn('[useAssessment] Status update failed (non-fatal):', updateErr);
-        }
-      }
+      // NOTE: Status update INVITED → IN_PROGRESS is deferred to onStart()
+      // so that the welcome screen is shown first.
 
       setState((prev) => ({
         ...prev,
@@ -204,12 +227,33 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     fetchData();
   }, [fetchData]);
 
+  /**
+   * Called when the candidate clicks START_INTERVIEW on the welcome screen.
+   * Updates the candidate status from INVITED → IN_PROGRESS and sets hasStarted.
+   */
+  const onStart = useCallback(() => {
+    setState((prev) => {
+      // Trigger status update non-fatally in background
+      if (prev.candidate && prev.candidate.status === 'INVITED') {
+        client.models.Candidate.update({
+          id: prev.candidate.id,
+          status: 'IN_PROGRESS',
+        }).catch((err: unknown) => {
+          console.warn('[useAssessment] Status update to IN_PROGRESS failed (non-fatal):', err);
+        });
+      }
+      return { ...prev, hasStarted: true };
+    });
+  }, []);
+
   const submitChallenge = useCallback(
     async (submission: StageSubmission): Promise<void> => {
       const { candidate, stages, currentStageIndex, currentChallengeIndex } = state;
       if (!candidate || stages.length === 0) return;
 
       const currentStage = stages[currentStageIndex];
+      if (!currentStage) return;
+
       const challenges = currentStage.challenges || [];
       const currentChallenge = challenges[currentChallengeIndex];
 
@@ -228,14 +272,55 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         });
 
         if (assessment) {
-          // Trigger scoring agent Lambda function
+          const assessmentId = assessment.id;
+
+          // Trigger scoring agent (non-fatal)
           try {
-            await client.mutations.scoreAssessment({
-              assessmentId: assessment.id
-            });
-            console.log(`[useAssessment] Triggered scoringAgent for assessment ${assessment.id}`);
+            await client.mutations.scoreAssessment({ assessmentId });
+            console.log(`[useAssessment] Triggered scoringAgent for ${assessmentId}`);
           } catch (lambdaErr) {
-            console.error(`[useAssessment] Failed to trigger scoringAgent for assessment ${assessment.id}:`, lambdaErr);
+            console.error(`[useAssessment] scoringAgent failed for ${assessmentId}:`, lambdaErr);
+          }
+
+          // For CODE_REVIEW challenges: trigger follow-up question generation
+          if (currentChallenge.type === 'CODE_REVIEW') {
+            setState((prev) => ({
+              ...prev,
+              followUpLoading: true,
+              lastAssessmentId: assessmentId,
+            }));
+
+            // Run asynchronously — don't block the submission flow
+            client.mutations.generateCodeReviewFollowUps({ assessmentId })
+              .then((result) => {
+                // result.data is a JSON value (the FollowUpAgentOutput)
+                let questions: FollowUpQuestion[] = [];
+                try {
+                  const raw = result.data;
+                  if (raw && typeof raw === 'object') {
+                    const output = raw as Record<string, unknown>;
+                    if (Array.isArray(output['questions'])) {
+                      questions = output['questions'] as FollowUpQuestion[];
+                    }
+                  }
+                } catch {
+                  console.warn('[useAssessment] Failed to parse follow-up questions');
+                }
+                setState((prev) => ({
+                  ...prev,
+                  followUpQuestions: questions,
+                  followUpLoading: false,
+                }));
+              })
+              .catch((err: unknown) => {
+                console.error('[useAssessment] generateCodeReviewFollowUps failed (non-fatal):', err);
+                // Set empty array so UI can show SKIP_FOLLOW_UP
+                setState((prev) => ({
+                  ...prev,
+                  followUpQuestions: [],
+                  followUpLoading: false,
+                }));
+              });
           }
         }
 
@@ -244,31 +329,115 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         const isLastStage = currentStageIndex === stages.length - 1;
 
         if (isLastChallengeInStage && isLastStage) {
-          // Final submission
-          await client.models.Candidate.update({
-            id: candidate.id,
-            status: 'COMPLETED',
-          });
-          setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+          // Final submission — but if CODE_REVIEW, wait for follow-up flow to finish
+          if (currentChallenge.type === 'CODE_REVIEW') {
+            // followUpQuestions will gate advancement in the page
+            setState((prev) => ({ ...prev, isLoading: false }));
+          } else {
+            await client.models.Candidate.update({
+              id: candidate.id,
+              status: 'COMPLETED',
+            });
+            setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+          }
         } else if (isLastChallengeInStage) {
-          // Move to next stage
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            currentStageIndex: prev.currentStageIndex + 1,
-            currentChallengeIndex: 0
-          }));
+          if (currentChallenge.type === 'CODE_REVIEW') {
+            setState((prev) => ({ ...prev, isLoading: false }));
+          } else {
+            setState((prev) => ({
+              ...prev,
+              isLoading: false,
+              currentStageIndex: prev.currentStageIndex + 1,
+              currentChallengeIndex: 0
+            }));
+          }
         } else {
-          // Move to next challenge in same stage
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            currentChallengeIndex: prev.currentChallengeIndex + 1
-          }));
+          if (currentChallenge.type === 'CODE_REVIEW') {
+            setState((prev) => ({ ...prev, isLoading: false }));
+          } else {
+            setState((prev) => ({
+              ...prev,
+              isLoading: false,
+              currentChallengeIndex: prev.currentChallengeIndex + 1
+            }));
+          }
         }
       } catch (err) {
         const error = err instanceof Error ? err : new Error('Failed to submit assessment');
         console.error('[useAssessment] ❌ SUBMISSION_ERROR:', error);
+        setState((prev) => ({ ...prev, isLoading: false, error }));
+      }
+    },
+    [state]
+  );
+
+  /**
+   * Saves follow-up answers to the Assessment and advances the flow.
+   */
+  const submitFollowUpAnswers = useCallback(
+    async (answers: Record<string, string>): Promise<void> => {
+      const { lastAssessmentId, followUpQuestions, candidate, stages, currentStageIndex, currentChallengeIndex } = state;
+      if (!lastAssessmentId || !followUpQuestions || !candidate) return;
+
+      setState((prev) => ({ ...prev, isLoading: true }));
+
+      try {
+        // Build the full followUpQuestionsJson with answers filled in
+        const followUpAnswers = Object.entries(answers).map(([questionId, answer]) => ({
+          questionId,
+          answer,
+          answeredAt: new Date().toISOString(),
+        }));
+
+        const followUpQuestionsJson = JSON.stringify({
+          questions: followUpQuestions,
+          answers: followUpAnswers,
+          generatedAt: new Date().toISOString(),
+        });
+
+        await client.models.Assessment.update({
+          id: lastAssessmentId,
+          followUpQuestionsJson,
+        });
+
+        console.log('[useAssessment] Follow-up answers saved');
+
+        // Advance the flow
+        const currentStage = stages[currentStageIndex];
+        const challenges = currentStage?.challenges || [];
+        const isLastChallengeInStage = currentChallengeIndex === challenges.length - 1;
+        const isLastStage = currentStageIndex === stages.length - 1;
+
+        if (isLastChallengeInStage && isLastStage) {
+          await client.models.Candidate.update({ id: candidate.id, status: 'COMPLETED' });
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            isSubmitted: true,
+            followUpQuestions: null,
+            followUpAnswers: {},
+          }));
+        } else if (isLastChallengeInStage) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            currentStageIndex: prev.currentStageIndex + 1,
+            currentChallengeIndex: 0,
+            followUpQuestions: null,
+            followUpAnswers: {},
+          }));
+        } else {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            currentChallengeIndex: prev.currentChallengeIndex + 1,
+            followUpQuestions: null,
+            followUpAnswers: {},
+          }));
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error('Failed to save follow-up answers');
+        console.error('[useAssessment] ❌ FOLLOW_UP_SAVE_ERROR:', error);
         setState((prev) => ({ ...prev, isLoading: false, error }));
       }
     },
@@ -286,7 +455,9 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
   return {
     ...state,
     submitChallenge,
+    submitFollowUpAnswers,
     nextChallenge,
+    onStart,
     reset,
   };
 }

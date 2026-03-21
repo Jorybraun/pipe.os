@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useAssessment } from '../hooks/useAssessment';
 import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
 import { VideoShell } from '../components/Shells/VideoShell';
 import { SchedulingStep } from '../components/Assessment/SchedulingStep';
+import { WelcomeScreen, type ChallengeType } from '../components/Assessment/WelcomeScreen';
+import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -18,9 +20,19 @@ import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
  * CandidateAssessmentPage - Unauthenticated entry point for candidates.
  *
  * Route: /assess/:token
+ *
+ * Flow:
+ *   1. Load data (stages + challenges)
+ *   2. Show WelcomeScreen (hasStarted = false)
+ *   3. onStart → update status IN_PROGRESS, set hasStarted = true
+ *   4. Render challenge via StageShell + ChallengeRegistry
+ *   5. On CODE_REVIEW submit: show FollowUpQuestionsPanel (or spinner while loading)
+ *   6. On follow-up submit/skip: advance to next challenge or isSubmitted screen
  */
 export default function CandidateAssessmentPage(): JSX.Element {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
+  const isPreview = searchParams.get('mode') === 'preview';
   const {
     candidate,
     stages,
@@ -29,23 +41,35 @@ export default function CandidateAssessmentPage(): JSX.Element {
     isLoading,
     error,
     isSubmitted,
+    hasStarted,
+    followUpQuestions,
+    followUpLoading,
     submitChallenge,
+    submitFollowUpAnswers,
+    onStart,
     reset,
   } = useAssessment(token || '');
 
-  const [currentSubmission, setCurrentSubmission] = useState<any>(null);
+  const [currentSubmission, setCurrentSubmission] = useState<unknown>(null);
 
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleSubmit = async () => {
-    await submitChallenge(currentSubmission || {});
+  const handleSubmit = async (): Promise<void> => {
+    await submitChallenge((currentSubmission as Record<string, unknown>) || {});
     setCurrentSubmission(null);
   };
 
+  const handleFollowUpSkip = (): void => {
+    // Skip follow-up: pass empty answers, triggers advancement
+    submitFollowUpAnswers({}).catch((err: unknown) => {
+      console.warn('[CandidateAssessmentPage] Skip follow-up failed:', err);
+    });
+  };
+
   // ---------------------------------------------------------------------------
-  // Render Helpers
+  // Loading state
   // ---------------------------------------------------------------------------
 
   if (isLoading && !candidate && !isSubmitted) {
@@ -61,6 +85,10 @@ export default function CandidateAssessmentPage(): JSX.Element {
       </div>
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Error state
+  // ---------------------------------------------------------------------------
 
   if (error) {
     const isInvalid = error.message === 'INVALID_TOKEN';
@@ -103,6 +131,10 @@ export default function CandidateAssessmentPage(): JSX.Element {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Completed state
+  // ---------------------------------------------------------------------------
+
   if (isSubmitted) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
@@ -122,16 +154,86 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
   const currentStage = stages[currentStageIndex];
   if (!currentStage || !currentStage.challenges) return <></>;
-  
+
   const currentChallenge = currentStage.challenges[currentChallengeIndex];
   if (!currentChallenge) return <></>;
 
-  const isLastChallenge = 
-    currentStageIndex === stages.length - 1 && 
+  // ---------------------------------------------------------------------------
+  // Welcome screen (before candidate starts)
+  // ---------------------------------------------------------------------------
+
+  if (!hasStarted) {
+    // Derive the pipeline name from the first stage if available
+    const pipelineName = candidate?.pipelineId ?? 'Technical Assessment';
+    const stageName = currentStage.title ?? 'Stage 1';
+    const challengeType = (currentChallenge.type ?? 'CODE_REVIEW') as ChallengeType;
+
+    return (
+      <WelcomeScreen
+        pipelineName={pipelineName}
+        stageName={stageName}
+        challengeType={challengeType}
+        onStart={onStart}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Follow-up question flow (after CODE_REVIEW submission)
+  // ---------------------------------------------------------------------------
+
+  if (currentChallenge.type === 'CODE_REVIEW') {
+    // Generating questions — show spinner
+    if (followUpLoading) {
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
+          <ChromeMeshGrid />
+          <div style={{ textAlign: 'center', zIndex: 1 }}>
+            <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
+            <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+              GENERATING_QUESTIONS...
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Questions ready — show follow-up panel
+    if (followUpQuestions !== null && !isLoading) {
+      return (
+        <>
+          <ChromeMeshGrid />
+          <FollowUpQuestionsPanel
+            questions={followUpQuestions}
+            onSubmit={submitFollowUpAnswers}
+            onSkip={handleFollowUpSkip}
+            isSubmitting={isLoading}
+          />
+          <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+            .animate-spin { animation: spin 1s linear infinite; }
+            @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          `}</style>
+        </>
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Challenge workspace
+  // ---------------------------------------------------------------------------
+
+  const isLastChallenge =
+    currentStageIndex === stages.length - 1 &&
     currentChallengeIndex === currentStage.challenges.length - 1;
 
   // Determine if this stage uses live video
   const isLiveVideoStage = currentStage.mode === 'LIVE_VIDEO';
+
+  const submission = currentSubmission as {
+    annotations?: unknown[];
+    [key: string]: unknown;
+  } | null;
 
   const challengeWorkspace = (
     <TimerProvider>
@@ -143,14 +245,15 @@ export default function CandidateAssessmentPage(): JSX.Element {
         isLastChallenge={isLastChallenge}
         fullBleed={currentChallenge.type === 'CODE_REVIEW'}
         canAdvance={
-          currentSubmission !== null &&
-          (currentChallenge.type !== 'CODE_REVIEW' || (currentSubmission.annotations?.length ?? 0) > 0)
+          !isPreview &&
+          submission !== null &&
+          (currentChallenge.type !== 'CODE_REVIEW' || (submission.annotations?.length ?? 0) > 0)
         }
         isSubmitting={isLoading}
       >
         <ChallengeRegistry
           challenge={currentChallenge}
-          stageTimeLimit={currentStage.order !== null ? (currentStage as any).timeLimit : null}
+          stageTimeLimit={currentStage.order !== null ? (currentStage as { timeLimit?: number | null }).timeLimit ?? null : null}
           onSubmissionChange={setCurrentSubmission}
           onSubmit={handleSubmit}
         />
@@ -160,25 +263,44 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
   // For LIVE_VIDEO stages: show scheduling widget if no challenges exist yet,
   // otherwise wrap the challenge workspace in VideoShell.
-  // TODO: The longer-term flow is: INVITED → candidate books (SchedulingStep) →
-  // recruiter marks SCHEDULED → recruiter joins VideoShell → candidate joins
-  // VideoShell. For now we show SchedulingStep when there are no challenges to
-  // avoid a blank screen; once recruiter starts the call the candidate refreshes
-  // and VideoShell takes over.
   const hasNoChallenges = !currentStage.challenges || currentStage.challenges.length === 0;
 
   return (
     <div style={{ minHeight: '100vh', background: '#0c0c0e' }}>
       <ChromeMeshGrid />
 
+      {isPreview && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          background: 'rgba(251,191,36,0.12)',
+          borderBottom: '1px solid rgba(251,191,36,0.3)',
+          padding: '10px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          fontSize: 10,
+          letterSpacing: '0.15em',
+          fontWeight: 700,
+          fontFamily: '"Space Mono", monospace',
+          color: '#fbbf24',
+        }}>
+          PREVIEW_MODE — This is a preview. Responses will not be scored or saved.
+        </div>
+      )}
+
       {isLiveVideoStage && hasNoChallenges && candidate ? (
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, paddingTop: isPreview ? 60 : 24 }}>
           <div style={{ width: '100%', maxWidth: 680, zIndex: 1 }}>
             <SchedulingStep
               candidateId={candidate.id}
               stageId={currentStage.id}
               candidateName={candidate.name ?? 'Candidate'}
-              candidateEmail={candidate.email ?? undefined}
+              {...(candidate.email ? { candidateEmail: candidate.email } : {})}
             />
           </div>
         </div>

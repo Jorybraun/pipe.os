@@ -6,6 +6,35 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (E2E Code Review Challenge Flow)
+- `amplify/data/resource.ts` — added `followUpQuestionsJson: a.json()` to `Assessment` model; added `generateCodeReviewFollowUps` mutation wired to new Lambda
+- `amplify/functions/codeReviewFollowUpAgent/` — new Lambda (handler, types, prompts, validation, costTracker); one-turn Claude call generates exactly 5 `SHORT_ANSWER` follow-up questions grounded in candidate annotations; saves to `Assessment.followUpQuestionsJson`
+- `src/components/Assessment/WelcomeScreen.tsx` — pre-challenge welcome screen with challenge-type-specific guidance copy; `START_INTERVIEW` button triggers `INVITED → IN_PROGRESS` transition
+- `src/components/Assessment/FollowUpQuestionsPanel.tsx` — post-CODE_REVIEW panel; shows 5 follow-up questions as `TextareaInput` fields; `SUBMIT_ANSWERS` enabled when all answered; `SKIP_FOLLOW_UP` escape hatch for Lambda failure path
+- `docs/decisions/ADR-020-follow-up-agent-architecture.md` — async follow-up agent design: one-turn, 5 questions, SHORT_ANSWER only, non-fatal trigger
+- `docs/decisions/ADR-021-deterministic-code-review-scoring.md` — deterministic scoring rationale: bugs found (40%), severity accuracy (25%), fix quality (25%), false positive penalty (−10%); no LLM
+
+#### Changed (E2E Code Review Challenge Flow)
+- `amplify/functions/scoringAgent/handler.ts` — replaced `SCHEMA_PUSH_STUB` with real deterministic CODE_REVIEW scorer; also handles QUIZ_MCQ (exact match); updates `Assessment.score` and `Assessment.feedback` via DynamoDB
+- `src/components/Assessment/CodeReviewChallenge.tsx` — removed duplicate `SUBMIT_REVIEW` button from right panel footer; replaced with read-only `✓ REVIEW_READY` indicator; canonical submit remains in `StageShell` footer only
+- `src/components/Assessment/DiffPanel.tsx` — added `TABBED / LONG_FORM` view toggle; `LONG_FORM` renders all files vertically with sticky file-header dividers; extracted `FileDiffBody` sub-component shared by both modes; added `annotatingFilePath` state for multi-file annotation in LONG_FORM
+- `src/hooks/useAssessment.ts` — moved `INVITED → IN_PROGRESS` status update from mount to `onStart` callback; added `followUpQuestions`, `followUpAnswers`, `followUpLoading`, `submitFollowUpAnswers` state for CODE_REVIEW follow-up flow
+- `src/pages/CandidateAssessmentPage.tsx` — added `hasStarted` gate rendering `WelcomeScreen` before first challenge; added follow-up question flow after CODE_REVIEW submission (spinner → `FollowUpQuestionsPanel` → advance)
+- `src/pages/CandidateProfilePage.tsx` — full redesign: header with `CANDIDATE_PROFILE` label + `GENERATE_REPORT` stub; OVERVIEW tab with overall score + signal + stage score cards; per-stage tabs with challenge cards; CODE_REVIEW annotation list + follow-up Q&A read-only; QUIZ_MCQ answer display; manual score slider + feedback textarea for SHORT_ANSWER/CODE_IMPLEMENTATION; `LiquidMetalCard` throughout
+- `docs/decisions/README.md` — added ADR-020 and ADR-021 to index
+
+#### Added (P0 MVP UX Cleanup & Feature Flags)
+- `src/config/featureFlags.ts` — centralized feature flag config with 6 flags all defaulting to `false`: `FEATURE_FLAG_SCHEDULE_ROUTE`, `FEATURE_FLAG_LIVE_VIDEO`, `FEATURE_FLAG_CODE_SANDBOX`, `FEATURE_FLAG_PREDEFINED_CHALLENGES`, `FEATURE_FLAG_DEV_CONTAINER_ROUTE`, `FEATURE_FLAG_CHALLENGE_EDITOR`
+- `src/pages/PipelineCreatePage.tsx` — new simplified pipeline creation form (name + description only); creates pipeline as DRAFT with 3 default stages
+
+#### Changed (P0 MVP UX Cleanup & Feature Flags)
+- `src/components/SidebarNav.tsx` — removed AI agent toggle button (Sparkles icon) and `isAgentOpen`/`onAgentToggle` props
+- `src/App.tsx` — replaced `RoleDiscoveryPage` with `PipelineCreatePage` at `/pipeline/new`; gated challenge editor, schedule, and dev-container routes behind feature flags
+- `src/pages/StageDetailPage.tsx` — removed redundant back button (header navigation handles it); gated STAGE_MODE toggle (LIVE_VIDEO) behind `FEATURE_FLAG_LIVE_VIDEO`; removed unused `navigate` and `pipelineId` vars
+- `src/pages/OverviewPage.tsx` — simplified Add Candidate form to email-only with "SEND_INVITE" CTA; added `PUBLISH_PIPELINE` button when pipeline is DRAFT; gated ADD_STAGE button with disabled state + tooltip when pipeline is not ACTIVE; fixed pre-existing `exactOptionalPropertyTypes` errors
+- `src/pages/CandidateAssessmentPage.tsx` — added `?mode=preview` support: shows amber banner ("PREVIEW MODE — responses will not be scored or saved") and disables submission when active
+- `src/components/Pipeline/ChallengePicker.tsx` — hides QUIZ_MCQ and QUIZ_SHORT_ANSWER templates and filter tabs behind `FEATURE_FLAG_PREDEFINED_CHALLENGES`
+
 #### Changed (docs overhaul — remove stale/misleading documentation)
 - `README.md` — complete rewrite; removed AWS Amplify scaffold boilerplate and pipe-scaffold/GitLab fiction; replaced with accurate product description, feature list, and tech stack
 - `docs/ARCHITECTURE.md` — complete rewrite; accurate file inventory for all pages, components, hooks, Lambdas, and infra; updated data model and auth model
