@@ -572,17 +572,8 @@ export default function CandidateProfilePage(): JSX.Element {
       setCandidate(cand);
 
       const [assData, stagesData] = await Promise.all([
-        // Try to fetch assessments with followUpQuestionsJson; degrade gracefully
-        // if the field isn't deployed in the current sandbox schema.
         client.models.Assessment.list({
           filter: { candidateId: { eq: id } },
-          selectionSet: ['id', 'challengeId', 'score', 'submission', 'feedback', 'completedAt', 'followUpQuestionsJson'],
-        }).catch(() => {
-          console.warn('[CandidateProfilePage] followUpQuestionsJson not in schema, retrying without it');
-          return client.models.Assessment.list({
-            filter: { candidateId: { eq: id } },
-            selectionSet: ['id', 'challengeId', 'score', 'submission', 'feedback', 'completedAt'],
-          });
         }),
         client.models.Stage.list({
           filter: { pipelineId: { eq: cand.pipelineId } },
