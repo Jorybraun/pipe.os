@@ -143,6 +143,19 @@ Full design: `docs/design/monaco-challenge-architecture.md` | Implementation run
 
 ---
 
+## Test credentials
+
+The Cognito test account used for E2E testing and manual browser validation:
+
+```
+Email:    braunjory@gmail.com
+Password: Wrx7UB35t$
+```
+
+Also stored in `.env.local` as `E2E_EMAIL` / `E2E_PASSWORD` for Playwright auth setup.
+
+---
+
 ## Amplify commands
 
 ```bash
