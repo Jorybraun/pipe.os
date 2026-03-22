@@ -15,6 +15,7 @@ import { fetchGitHubPR } from '../functions/fetchGitHubPR/resource';
 import { listGitHubPRs } from '../functions/listGitHubPRs/resource';
 import { scoreCodeReview } from '../functions/scoreCodeReview/resource';
 import { codeReviewFollowUpAgent } from '../functions/codeReviewFollowUpAgent/resource';
+import { resolveToken } from '../functions/resolveToken/resource';
 
 const schema = a.schema({
   /**
@@ -185,7 +186,7 @@ const schema = a.schema({
        * Cached PR metadata snapshot
        * { author, avatar, createdAt, state, labels, reviewers, etc. }
        */
-      cachedMetadata: a.json(),
+      cachedMetadata: a.json().authorization((allow) => [allow.owner()]),
       
       /** When diff was cached (for cache expiry calculation) */
       diffCachedAt: a.datetime(),
@@ -194,7 +195,7 @@ const schema = a.schema({
        * Ground truth annotations for scoring
        * { "senior": [...], "mid": [...], "junior": [...] }
        */
-      groundTruthAnnotations: a.json(),
+      groundTruthAnnotations: a.json().authorization((allow) => [allow.owner()]),
 
       /**
        * Practice Repository PR Challenge Fields (Phase 1)
@@ -270,7 +271,7 @@ const schema = a.schema({
        * Note: groundTruthAnnotations continues to exist for backward
        * compatibility. New challenges should use groundTruth.
        */
-      groundTruth: a.json(),
+      groundTruth: a.json().authorization((allow) => [allow.owner()]),
 
       assessments: a.hasMany('Assessment', 'challengeId'),
     })
@@ -297,8 +298,8 @@ const schema = a.schema({
       title: a.string(),
       language: a.string(),
       code: a.string(),
-      groundTruth: a.json(), // Legacy: move to serverConfig post-migration
-      serverConfig: a.json(), // Private answer keys / hidden test cases
+      groundTruth: a.json().authorization((allow) => [allow.owner()]), // Legacy: move to serverConfig post-migration
+      serverConfig: a.json().authorization((allow) => [allow.owner()]), // Private answer keys / hidden test cases
       challenges: a.hasMany('Challenge', 'codeArtifactId'),
     })
     .authorization((allow) => [
@@ -326,8 +327,12 @@ const schema = a.schema({
       index('email').name('candidatesByEmail'),
     ])
     .authorization((allow) => [
-      allow.owner(),                        
-      allow.publicApiKey().to(['read', 'update']), 
+      allow.owner(),
+      // publicApiKey can only update (status: IN_PROGRESS / COMPLETED).
+      // Read is removed — candidates must use the resolveToken query instead,
+      // which returns only {id, pipelineId, status} for their own token.
+      // This prevents Candidate.list() from exposing all candidates' PII.
+      allow.publicApiKey().to(['update']),
     ]),
 
   /**
@@ -374,7 +379,11 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-      allow.publicApiKey().to(['create', 'read', 'update']),
+      // publicApiKey: candidates can create their own assessments and update follow-up answers.
+      // Read is removed — candidates have no legitimate need to list assessments.
+      // TODO: replace create/update with Lambda resolvers that verify the inviteToken matches
+      // the candidateId, preventing a candidate from creating/updating another's assessment.
+      allow.publicApiKey().to(['create', 'update']),
     ]),
 
   /**
@@ -759,6 +768,25 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.authenticated(), // Lambda-to-Lambda via IAM
     ]),
+
+  /**
+   * Resolve invite token → candidate identity
+   *
+   * Replaces the insecure Candidate.list({ filter: { inviteToken } }) pattern.
+   * Server-side Lambda validates the token and returns ONLY { id, pipelineId, status }.
+   * Name, email, and inviteToken are never returned — prevents cross-candidate enumeration.
+   */
+  resolveToken: a
+    .query()
+    .arguments({ inviteToken: a.string().required() })
+    .returns(a.customType({
+      id: a.string(),
+      pipelineId: a.string(),
+      status: a.string(),
+      name: a.string(),
+    }))
+    .handler(a.handler.function(resolveToken))
+    .authorization((allow) => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

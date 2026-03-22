@@ -26,6 +26,7 @@ import { listGitHubPRs } from './functions/listGitHubPRs/resource';
 import { scoreCodeReview } from './functions/scoreCodeReview/resource';
 import { submitCodeReview } from './functions/submitCodeReview/resource';
 import { codeReviewFollowUpAgent } from './functions/codeReviewFollowUpAgent/resource';
+import { resolveToken } from './functions/resolveToken/resource';
 
 export const backend = defineBackend({
   auth,
@@ -34,6 +35,7 @@ export const backend = defineBackend({
   jobDescriptionAgent,
   scoringAgent,
   codeReviewFollowUpAgent,
+  resolveToken,
   fetchGitHubPR,
   listGitHubPRs,
   scoreCodeReview,
@@ -70,6 +72,11 @@ scoringAgentLambda.addEnvironment('CHALLENGE_TABLE_NAME', challengeTable.tableNa
 const followUpAgentLambda = backend.codeReviewFollowUpAgent.resources.lambda as unknown as LambdaFunction;
 followUpAgentLambda.addEnvironment('ASSESSMENT_TABLE_NAME', assessmentTable.tableName);
 followUpAgentLambda.addEnvironment('CHALLENGE_TABLE_NAME', challengeTable.tableName);
+
+// resolveToken — inject real Candidate table name and grant read access
+const resolveTokenLambda = backend.resolveToken.resources.lambda as unknown as LambdaFunction;
+resolveTokenLambda.addEnvironment('CANDIDATE_TABLE_NAME', candidateTable.tableName);
+candidateTable.grantReadData(resolveTokenLambda);
 
 // ─── GRANT DYNAMODB ACCESS TO AI LAMBDAS ─────────────────────────────────────
 // resourceGroupName: 'data' alone does NOT grant IAM table permissions.

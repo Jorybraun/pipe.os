@@ -5,10 +5,76 @@ import { sanitizeChallengeConfig } from '../lib/utils';
 
 const client = generateClient<Schema>({ authMode: 'apiKey' });
 
+// Selection set for challenge content — shared between initial load and stage-advance fetches.
+// groundTruth, serverConfig, and cachedMetadata are intentionally excluded (answer keys / sensitive data).
+const CHALLENGE_SELECTION_SET = [
+  'id', 'title', 'order', 'timeLimit', 'mode', 'videoConfig',
+  'challenges.id',
+  'challenges.type',
+  'challenges.title',
+  'challenges.instructions',
+  'challenges.config',
+  'challenges.order',
+  'challenges.codeArtifact.id',
+  'challenges.codeArtifact.code',
+  'challenges.codeArtifact.language',
+  'challenges.codeArtifact.title',
+  'challenges.cachedDiffJson',
+  'challenges.githubPrTitle',
+  'challenges.githubRepoUrl',
+  'challenges.githubPrNumber',
+  'challenges.githubPrDescription',
+] as const;
+
+/**
+ * Fetches challenge content for a single stage by ID.
+ * Called on-demand as the candidate advances — never bulk-prefetched.
+ */
+async function fetchStageChallenges(stageId: string): Promise<StageWithChallenges> {
+  const { data: stage, errors } = await client.models.Stage.get(
+    { id: stageId },
+    { selectionSet: CHALLENGE_SELECTION_SET }
+  );
+  if (errors) throw new Error(errors[0]?.message ?? 'Failed to fetch stage');
+  if (!stage) throw new Error(`Stage ${stageId} not found`);
+
+  return {
+    ...stage,
+    challenges: (stage.challenges || [])
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map(challenge => {
+        const parsedConfig = typeof challenge.config === 'string'
+          ? JSON.parse(challenge.config)
+          : challenge.config;
+        return {
+          ...challenge,
+          config: sanitizeChallengeConfig(parsedConfig, challenge.type ?? ''),
+        };
+      }),
+  };
+}
+
 // ============================================================================
 // Types
 // ============================================================================
 
+/**
+ * Candidate data available client-side during an assessment.
+ * Sourced from the resolveToken Lambda — intentionally excludes email and inviteToken
+ * to prevent cross-candidate enumeration.
+ */
+export interface ResolvedCandidate {
+  id: string;
+  pipelineId: string;
+  status: string | null;
+  name?: string | null;
+  // email is intentionally not fetched from resolveToken — only present here
+  // for UI compat. Always undefined in the candidate assessment flow.
+  email?: string | null;
+}
+
+// Keep the full Candidate type export for other consumers (recruiter pages)
 export type Candidate = Schema['Candidate']['type'];
 export type Stage = Schema['Stage']['type'];
 export type Assessment = Schema['Assessment']['type'];
@@ -44,14 +110,14 @@ export interface StageWithChallenges {
       code: string | null;
       language: string | null;
       title: string | null;
-      groundTruth: unknown;
+      // groundTruth intentionally excluded — answer keys must never be sent to the client
     } | null;
     cachedDiffJson: unknown;
     githubPrTitle: string | null;
     githubRepoUrl: string | null;
     githubPrNumber: number | null;
     githubPrDescription: string | null;
-    cachedMetadata: unknown;
+    // cachedMetadata intentionally excluded — may contain sensitive reviewer data
   }[];
 }
 
@@ -63,7 +129,7 @@ export interface FollowUpQuestion {
 }
 
 interface UseAssessmentState {
-  candidate: Candidate | null;
+  candidate: ResolvedCandidate | null;
   stages: StageWithChallenges[];
   currentStageIndex: number;
   currentChallengeIndex: number;
@@ -128,20 +194,21 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     }
 
     try {
-      // 1. Find candidate by token
-      const { data: candidates } = await client.models.Candidate.list({
-        filter: { inviteToken: { eq: inviteToken } },
-      });
+      // 1. Resolve invite token → candidate identity (server-side — no cross-candidate exposure)
+      const { data: resolved, errors: resolveErrors } = await client.queries.resolveToken({ inviteToken });
 
-      if (!candidates || candidates.length === 0) {
+      if (resolveErrors) throw new Error(resolveErrors[0]?.message ?? 'Token resolution failed');
+
+      if (!resolved?.id || !resolved?.pipelineId) {
         throw new Error('INVALID_TOKEN');
       }
 
-      const candidate = candidates[0];
-
-      if (!candidate) {
-        throw new Error('INVALID_TOKEN');
-      }
+      const candidate: ResolvedCandidate = {
+        id: resolved.id,
+        pipelineId: resolved.pipelineId,
+        status: resolved.status ?? null,
+        name: resolved.name ?? null,
+      };
 
       // 2. Check if already completed
       if (candidate.status === 'COMPLETED') {
@@ -154,57 +221,29 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         return;
       }
 
-      // 3. Fetch stages and nested challenges
-      const { data: stages } = await client.models.Stage.list({
+      // 3. Fetch stage metadata for all stages (no challenge content).
+      //    Challenge content is loaded lazily — only the current stage is fetched.
+      //    This prevents future stage questions from being visible in the browser.
+      const { data: stagesMeta, errors: stagesErrors } = await client.models.Stage.list({
         filter: { pipelineId: { eq: candidate.pipelineId } },
-        selectionSet: [
-          'id',
-          'title',
-          'order',
-          'timeLimit',
-          'mode',
-          'videoConfig',
-          'challenges.id',
-          'challenges.type',
-          'challenges.title',
-          'challenges.instructions',
-          'challenges.config',
-          'challenges.order',
-          'challenges.codeArtifact.id',
-          'challenges.codeArtifact.code',
-          'challenges.codeArtifact.language',
-          'challenges.codeArtifact.title',
-          'challenges.codeArtifact.groundTruth',
-          'challenges.cachedDiffJson',
-          'challenges.githubPrTitle',
-          'challenges.githubRepoUrl',
-          'challenges.githubPrNumber',
-          'challenges.githubPrDescription',
-          'challenges.cachedMetadata',
-        ]
+        selectionSet: ['id', 'title', 'order', 'timeLimit', 'mode', 'videoConfig'],
       });
+      if (stagesErrors) throw new Error(stagesErrors[0]?.message ?? 'Failed to fetch stages');
 
-      const sortedStages = [...stages]
-        .filter(s => s !== null)
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const sortedMetas = [...stagesMeta]
+        .filter((s): s is NonNullable<typeof s> => s !== null)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
-      // Sort challenges within each stage and sanitize configs
-      const sanitizedStages: StageWithChallenges[] = sortedStages.map(stage => ({
-        ...stage,
-        challenges: (stage.challenges || [])
-          .filter(c => c !== null)
-          .sort((a, b) => (a.order || 0) - (b.order || 0))
-          .map(challenge => {
-            const parsedConfig = typeof challenge.config === 'string'
-              ? JSON.parse(challenge.config)
-              : challenge.config;
-
-            return {
-              ...challenge,
-              config: sanitizeChallengeConfig(parsedConfig, challenge.type || '')
-            };
-          })
+      // Build placeholder stages with empty challenge arrays
+      const placeholderStages: StageWithChallenges[] = sortedMetas.map(s => ({
+        ...s,
+        challenges: [],
       }));
+
+      // 4. Eagerly load challenge content for stage 0 only
+      if (sortedMetas.length > 0 && sortedMetas[0]) {
+        placeholderStages[0] = await fetchStageChallenges(sortedMetas[0].id);
+      }
 
       // NOTE: Status update INVITED → IN_PROGRESS is deferred to onStart()
       // so that the welcome screen is shown first.
@@ -212,7 +251,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({
         ...prev,
         candidate,
-        stages: sanitizedStages,
+        stages: placeholderStages,
         isLoading: false,
         error: null,
       }));
@@ -235,10 +274,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     setState((prev) => {
       // Trigger status update non-fatally in background
       if (prev.candidate && prev.candidate.status === 'INVITED') {
-        client.models.Candidate.update({
-          id: prev.candidate.id,
-          status: 'IN_PROGRESS',
-        }).catch((err: unknown) => {
+        client.models.Candidate.update(
+          { id: prev.candidate.id, status: 'IN_PROGRESS' },
+          { selectionSet: ['id', 'status'] }
+        ).catch((err: unknown) => {
           console.warn('[useAssessment] Status update to IN_PROGRESS failed (non-fatal):', err);
         });
       }
@@ -263,13 +302,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
       try {
         // Create Assessment record
-        const { data: assessment } = await client.models.Assessment.create({
-          candidateId: candidate.id,
-          challengeId: currentChallenge.id,
-          submission: JSON.stringify(submission),
-          score: 0,
-          completedAt: new Date().toISOString(),
-        });
+        const { data: assessment } = await client.models.Assessment.create(
+          {
+            candidateId: candidate.id,
+            challengeId: currentChallenge.id,
+            submission: JSON.stringify(submission),
+            score: 0,
+            completedAt: new Date().toISOString(),
+          },
+          { selectionSet: ['id'] }
+        );
 
         if (assessment) {
           const assessmentId = assessment.id;
@@ -340,22 +382,46 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
             // followUpQuestions will gate advancement in the page
             setState((prev) => ({ ...prev, isLoading: false }));
           } else {
-            await client.models.Candidate.update({
-              id: candidate.id,
-              status: 'COMPLETED',
-            });
+            await client.models.Candidate.update(
+              { id: candidate.id, status: 'COMPLETED' },
+              { selectionSet: ['id', 'status'] }
+            );
             setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
           }
         } else if (isLastChallengeInStage) {
           if (currentChallenge.type === 'CODE_REVIEW') {
+            // Follow-up flow will trigger the advance via submitFollowUpAnswers
             setState((prev) => ({ ...prev, isLoading: false }));
           } else {
-            setState((prev) => ({
-              ...prev,
-              isLoading: false,
-              currentStageIndex: prev.currentStageIndex + 1,
-              currentChallengeIndex: 0
-            }));
+            // Load next stage's challenge content before advancing
+            const nextIndex = currentStageIndex + 1;
+            const nextStage = stages[nextIndex];
+            if (nextStage && nextStage.challenges.length === 0) {
+              try {
+                const enriched = await fetchStageChallenges(nextStage.id);
+                setState((prev) => {
+                  const updated = [...prev.stages];
+                  updated[nextIndex] = enriched;
+                  return {
+                    ...prev,
+                    isLoading: false,
+                    stages: updated,
+                    currentStageIndex: nextIndex,
+                    currentChallengeIndex: 0,
+                  };
+                });
+              } catch (loadErr) {
+                console.error('[useAssessment] Failed to load next stage:', loadErr);
+                setState((prev) => ({ ...prev, isLoading: false }));
+              }
+            } else {
+              setState((prev) => ({
+                ...prev,
+                isLoading: false,
+                currentStageIndex: nextIndex,
+                currentChallengeIndex: 0,
+              }));
+            }
           }
         } else {
           if (currentChallenge.type === 'CODE_REVIEW') {
@@ -364,7 +430,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
             setState((prev) => ({
               ...prev,
               isLoading: false,
-              currentChallengeIndex: prev.currentChallengeIndex + 1
+              currentChallengeIndex: prev.currentChallengeIndex + 1,
             }));
           }
         }
@@ -401,10 +467,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           generatedAt: new Date().toISOString(),
         });
 
-        await client.models.Assessment.update({
-          id: lastAssessmentId,
-          followUpQuestionsJson,
-        });
+        await client.models.Assessment.update(
+          { id: lastAssessmentId, followUpQuestionsJson },
+          { selectionSet: ['id'] }
+        );
 
         console.log('[useAssessment] Follow-up answers saved');
 
@@ -424,7 +490,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
         if (isLastChallengeInStage && isLastStage) {
           // Mark candidate as COMPLETED — non-fatal: isSubmitted is set regardless
-          client.models.Candidate.update({ id: candidate.id, status: 'COMPLETED' }).catch(
+          client.models.Candidate.update(
+            { id: candidate.id, status: 'COMPLETED' },
+            { selectionSet: ['id', 'status'] }
+          ).catch(
             (err: unknown) => console.warn('[useAssessment] Candidate.update COMPLETED failed (non-fatal):', err)
           );
           setState((prev) => ({
@@ -435,14 +504,39 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
             followUpAnswers: {},
           }));
         } else if (isLastChallengeInStage) {
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            currentStageIndex: prev.currentStageIndex + 1,
-            currentChallengeIndex: 0,
-            followUpQuestions: null,
-            followUpAnswers: {},
-          }));
+          // Load next stage content before advancing
+          const nextIndex = currentStageIndex + 1;
+          const nextStage = stages[nextIndex];
+          if (nextStage && nextStage.challenges.length === 0) {
+            try {
+              const enriched = await fetchStageChallenges(nextStage.id);
+              setState((prev) => {
+                const updated = [...prev.stages];
+                updated[nextIndex] = enriched;
+                return {
+                  ...prev,
+                  isLoading: false,
+                  stages: updated,
+                  currentStageIndex: nextIndex,
+                  currentChallengeIndex: 0,
+                  followUpQuestions: null,
+                  followUpAnswers: {},
+                };
+              });
+            } catch (loadErr) {
+              console.error('[useAssessment] Failed to load next stage:', loadErr);
+              setState((prev) => ({ ...prev, isLoading: false }));
+            }
+          } else {
+            setState((prev) => ({
+              ...prev,
+              isLoading: false,
+              currentStageIndex: nextIndex,
+              currentChallengeIndex: 0,
+              followUpQuestions: null,
+              followUpAnswers: {},
+            }));
+          }
         } else {
           setState((prev) => ({
             ...prev,
