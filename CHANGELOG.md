@@ -27,12 +27,23 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/components/Pipeline/ChallengePicker.tsx` — replaced free-text GitHub repo URL input with saved-repos dropdown (localStorage key `pipe_saved_repos`); `+ ADD_REPO` button reveals inline input; saved repos persist across sessions; trash button to remove saved repos
 - `.env.local` — E2E credentials for Playwright auth setup
 
+#### Changed (E2E test fixes — all 10 tests now pass)
+- `e2e/happy-path.spec.ts` — fixed parallel execution (`test.describe.serial`), URL regex to require UUID hyphen, networkidle→load state, increased timeouts for AppSync latency, stage-count selector uses delete-button count, `toHaveCount` replaces fixed 2s wait for delete
+- `src/pages/ListingPage.tsx` — removed `candidates.assessments.score` from selectionSet (Assessment records owned by candidates via publicApiKey, not recruiter — nested query failed silently, returning empty pipeline list)
+
 #### Changed (Happy Path Bug Fixes + E2E Validation)
 - `src/pages/CandidateProfilePage.tsx` — fixed TS2589 in Assessment.list: Amplify filter generic is too deeply recursive for strict mode; fetch all assessments and filter client-side instead (assessment counts per candidate are small)
 - `src/hooks/usePipelineCreate.ts` — fixed pipeline created as `ACTIVE` instead of `DRAFT` (B1)
 - `src/pages/OverviewPage.tsx` — removed `disabled={pipeline?.status !== 'ACTIVE'}` guard on ADD_STAGE button so DRAFT pipelines can have stages added; added `handleDeleteStage` and per-stage trash delete button with confirm dialog (B2, B4)
 - `src/config/featureFlags.ts` — enabled `FEATURE_FLAG_PREDEFINED_CHALLENGES: true` so QUIZ_MCQ and QUIZ_SHORT_ANSWER appear in ChallengePicker (B3)
 - `src/pages/CandidateProfilePage.tsx` — added `.catch()` fallback on Assessment.list query to retry without `followUpQuestionsJson` field if Amplify sandbox schema is stale (B6)
+- 
+#### Changed (local main cleanup)
+- `src/App.tsx` — import PipelineCreatePage from archived path; add PipelineBuilderPage + RoleDiscoveryPage imports
+- `src/pages/PipelineCreatePage.tsx` — updated simplified creation page
+- `src/pages/RoleDiscoveryPage.tsx` — removed from active routes (archived)
+- `src/pages/archived/PipelineCreatePage.tsx` — archived original pipeline creation page
+- `playwright/code-review-token.json` — E2E test fixture for code review challenge token
 
 #### Added (E2E Code Review Challenge Flow)
 - `amplify/data/resource.ts` — added `followUpQuestionsJson: a.json()` to `Assessment` model; added `generateCodeReviewFollowUps` mutation wired to new Lambda

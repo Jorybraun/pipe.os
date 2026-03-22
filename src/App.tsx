@@ -17,7 +17,7 @@ import OverviewPage from "./pages/OverviewPage";
 import StageDetailPage from "./pages/StageDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
-import PipelineCreatePage from "./pages/PipelineCreatePage";
+import PipelineCreatePage from "./pages/archived/PipelineCreatePage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import SchedulingPage from "./pages/SchedulingPage";
@@ -26,9 +26,10 @@ import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 
-
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
+import PipelineBuilderPage from "./pages/PipelineBuilderPage";
+import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 
 const client = generateClient<Schema>();
 
@@ -94,7 +95,9 @@ const SubHeader = () => {
     };
 
     fetchData();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id, isPipelineContext, isCandidateContext]);
 
   const currentStage = stage ? { title: stage } : null;
@@ -146,10 +149,10 @@ const SubHeader = () => {
               {questionId && currentStage
                 ? `BACK TO ${currentStage.title.toUpperCase()}`
                 : stage
-                ? "BACK TO OVERVIEW"
-                : isCandidateContext
-                ? "BACK"
-                : "BACK TO ROLES"}
+                  ? "BACK TO OVERVIEW"
+                  : isCandidateContext
+                    ? "BACK"
+                    : "BACK TO ROLES"}
             </button>
 
             <div
@@ -287,18 +290,22 @@ function AppLayout(): JSX.Element {
             setActiveSection("roles");
             navigate("/");
           }}
-          {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE ? {
-            onScheduleClick: () => {
-              setActiveSection("schedule");
-              navigate("/schedule");
-            }
-          } : {})}
-          {...(FEATURE_FLAGS.FEATURE_FLAG_CODE_SANDBOX ? {
-            onSandboxClick: () => {
-              setActiveSection("sandbox");
-              navigate("/sandbox/dev-container");
-            }
-          } : {})}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
+            ? {
+                onScheduleClick: () => {
+                  setActiveSection("schedule");
+                  navigate("/schedule");
+                },
+              }
+            : {})}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_CODE_SANDBOX
+            ? {
+                onSandboxClick: () => {
+                  setActiveSection("sandbox");
+                  navigate("/sandbox/dev-container");
+                },
+              }
+            : {})}
         />
       }
     >
@@ -336,7 +343,7 @@ function App(): JSX.Element {
                       element={<ChallengeEditorPage />}
                     />
                   )}
-                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
+                  <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
                   <Route
                     path="/candidates/:id"
                     element={<CandidateProfilePage />}
