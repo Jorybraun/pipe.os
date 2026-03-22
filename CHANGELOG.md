@@ -6,6 +6,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (BDD E2E — CODE_REVIEW happy path)
+- `e2e/code-review-happy-path.spec.ts` — full BDD Playwright spec against real AppSync + real Mistral Lambdas (no mocking): welcome → diff view → verdict+summary → FINAL_SUBMIT → FOLLOW_UP_QUESTIONS panel (5 AI questions) → fill answers → SUBMIT_ANSWERS → "Submitted."; passes in 14.6s
+- `playwright.config.ts` — added `candidate` project (no auth dependency, no storageState) matching `code-review-happy-path.spec.ts`
+- `src/App.tsx` — removed broken `RoleDiscoveryPage` import (file was deleted); route `/pipeline/new` now uses `PipelineCreatePage`
+
 #### Fixed (CODE_REVIEW end-to-end flow — validated in Preview)
 - `src/hooks/useAssessment.ts` — fix AppSync `a.json()` serialization: `result.data` from `generateCodeReviewFollowUps` is a JSON **string** on the wire, not a parsed object; added `JSON.parse()` guard so follow-up questions render correctly instead of auto-skipping; defer `scoreAssessment` for CODE_REVIEW until after follow-up answers are saved (scoring now sees the full Q&A context)
 - `src/pages/CandidateAssessmentPage.tsx` — fix `canAdvance` for CODE_REVIEW: verdict + summary required (annotations optional); add auto-skip `useEffect` when Lambda returns empty questions; add "COMPLETING..." spinner state for empty-questions path

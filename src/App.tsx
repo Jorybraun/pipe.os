@@ -29,7 +29,6 @@ import Logo from "./components/ui/Logo";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
 import PipelineBuilderPage from "./pages/PipelineBuilderPage";
-import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 
 const client = generateClient<Schema>();
 
@@ -343,7 +342,7 @@ function App(): JSX.Element {
                       element={<ChallengeEditorPage />}
                     />
                   )}
-                  <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
                   <Route
                     path="/candidates/:id"
                     element={<CandidateProfilePage />}
