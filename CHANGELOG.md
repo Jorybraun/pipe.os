@@ -21,6 +21,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/pages/OverviewPage.tsx` — removed `disabled={pipeline?.status !== 'ACTIVE'}` guard on ADD_STAGE button so DRAFT pipelines can have stages added; added `handleDeleteStage` and per-stage trash delete button with confirm dialog (B2, B4)
 - `src/config/featureFlags.ts` — enabled `FEATURE_FLAG_PREDEFINED_CHALLENGES: true` so QUIZ_MCQ and QUIZ_SHORT_ANSWER appear in ChallengePicker (B3)
 - `src/pages/CandidateProfilePage.tsx` — added `.catch()` fallback on Assessment.list query to retry without `followUpQuestionsJson` field if Amplify sandbox schema is stale (B6)
+- 
+#### Changed (local main cleanup)
+- `src/App.tsx` — import PipelineCreatePage from archived path; add PipelineBuilderPage + RoleDiscoveryPage imports
+- `src/pages/PipelineCreatePage.tsx` — updated simplified creation page
+- `src/pages/RoleDiscoveryPage.tsx` — removed from active routes (archived)
+- `src/pages/archived/PipelineCreatePage.tsx` — archived original pipeline creation page
+- `playwright/code-review-token.json` — E2E test fixture for code review challenge token
 
 #### Added (E2E Code Review Challenge Flow)
 - `amplify/data/resource.ts` — added `followUpQuestionsJson: a.json()` to `Assessment` model; added `generateCodeReviewFollowUps` mutation wired to new Lambda
