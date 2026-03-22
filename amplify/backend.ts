@@ -56,6 +56,28 @@ const scheduledInterviewTable = backend.data.resources.tables['ScheduledIntervie
 const candidateTable = backend.data.resources.tables['Candidate'];
 const stageTable = backend.data.resources.tables['Stage'];
 const pipelineTable = backend.data.resources.tables['Pipeline'];
+const assessmentTable = backend.data.resources.tables['Assessment'];
+const challengeTable = backend.data.resources.tables['Challenge'];
+
+// ─── INJECT REAL TABLE NAMES INTO AI LAMBDAS ─────────────────────────────────
+// Amplify Gen 2 generates DynamoDB table names with a hash suffix (e.g. Assessment-abc123-sandbox).
+// The Lambda resource files hardcode fallback names that DO NOT match.
+// We must inject the real tableName from CDK here so DynamoDB.GetItem/UpdateItem work.
+const scoringAgentLambda = backend.scoringAgent.resources.lambda as unknown as LambdaFunction;
+scoringAgentLambda.addEnvironment('ASSESSMENT_TABLE_NAME', assessmentTable.tableName);
+scoringAgentLambda.addEnvironment('CHALLENGE_TABLE_NAME', challengeTable.tableName);
+
+const followUpAgentLambda = backend.codeReviewFollowUpAgent.resources.lambda as unknown as LambdaFunction;
+followUpAgentLambda.addEnvironment('ASSESSMENT_TABLE_NAME', assessmentTable.tableName);
+followUpAgentLambda.addEnvironment('CHALLENGE_TABLE_NAME', challengeTable.tableName);
+
+// ─── GRANT DYNAMODB ACCESS TO AI LAMBDAS ─────────────────────────────────────
+// resourceGroupName: 'data' alone does NOT grant IAM table permissions.
+// Must explicitly grant read/write access so GetItem/UpdateItem succeed.
+assessmentTable.grantReadWriteData(scoringAgentLambda);
+challengeTable.grantReadData(scoringAgentLambda);
+assessmentTable.grantReadWriteData(followUpAgentLambda);
+challengeTable.grantReadData(followUpAgentLambda);
 
 // ─── BREAK CIRCULAR DEPENDENCY: SSM FOR TABLE NAMES ──────────────────────────
 // Handlers (schedulingWebhook, schedulingOAuth, notificationService) cannot 

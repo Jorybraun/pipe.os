@@ -78,6 +78,17 @@ export default defineConfig({
       // No auth_setup dependency — candidate routes are public
     },
 
+    // Authenticated project for recruiter CODE_REVIEW setup BDD
+    {
+      name: "recruiter",
+      testMatch: /recruiter-code-review\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: STORAGE_STATE,
+      },
+      dependencies: ["auth_setup"],
+    },
+
     // {
     //   name: 'firefox',
     //   use: {

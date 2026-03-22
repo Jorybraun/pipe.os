@@ -10,11 +10,13 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  *
  * Trigger: generateCodeReviewFollowUps AppSync mutation
  *
+ * Uses Mistral Large via the Mistral API (api.mistral.ai) with MISTRAL_API_KEY.
+ *
  * Steps:
  * 1. Validate input (assessmentId)
  * 2. Fetch Assessment + linked Challenge from DynamoDB
  * 3. Extract candidate annotations and challenge diff/code context
- * 4. Call Claude to generate exactly 5 SHORT_ANSWER questions
+ * 4. Call Mistral on Bedrock to generate exactly 5 SHORT_ANSWER questions
  * 5. Save questions to Assessment.followUpQuestionsJson
  * 6. Return questions
  *
@@ -23,7 +25,7 @@ import { defineFunction, secret } from '@aws-amplify/backend';
  * - Cost per invocation: < $0.05
  *
  * Environment Variables:
- * - ANTHROPIC_API_KEY: Claude API key (from Secrets Manager)
+ * - MISTRAL_API_KEY: Mistral API key (from Secrets Manager)
  * - ASSESSMENT_TABLE_NAME: DynamoDB table for Assessment
  * - CHALLENGE_TABLE_NAME: DynamoDB table for Challenge
  */
@@ -32,24 +34,25 @@ export const codeReviewFollowUpAgent = defineFunction({
   entry: './handler.ts',
 
   // Performance configuration
-  timeoutSeconds: 60,   // Claude API call + DynamoDB reads/write
+  timeoutSeconds: 60,   // Bedrock call + DynamoDB reads/write
   memoryMB: 512,
 
   // Environment variables
   environment: {
-    ANTHROPIC_API_KEY: secret('ANTHROPIC_API_KEY'),
+    MISTRAL_API_KEY: secret('MISTRAL_API_KEY'),
+    MISTRAL_AGENT_ID: secret('MISTRAL_AGENT_ID'),
 
     // Database config
     ASSESSMENT_TABLE_NAME: 'Assessment',
     CHALLENGE_TABLE_NAME: 'Challenge',
 
-    // Claude model configuration
-    CLAUDE_MODEL: 'claude-sonnet-4-20250514',
-    CLAUDE_MAX_TOKENS: '2048',
+    // Mistral model configuration
+    MISTRAL_MODEL: 'mistral-large-latest',
+    MODEL_MAX_TOKENS: '2048',
 
-    // Cost tracking (USD per million tokens)
-    CLAUDE_INPUT_COST_PER_M: '3',
-    CLAUDE_OUTPUT_COST_PER_M: '15',
+    // Cost tracking (USD per million tokens — Mistral Large 2407 on Bedrock)
+    MODEL_INPUT_COST_PER_M: '3',
+    MODEL_OUTPUT_COST_PER_M: '9',
 
     // Budget
     COST_BUDGET_PER_SESSION: '0.10',

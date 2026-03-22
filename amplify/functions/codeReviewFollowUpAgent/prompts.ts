@@ -2,10 +2,9 @@
  * Prompt templates for codeReviewFollowUpAgent
  *
  * Strategy:
- * - Reference specific candidate annotations by file/line/comment
- * - Mix question types: why did you flag X, what would you fix, did you notice Y,
- *   how would you prioritise these changes
- * - Exactly 5 SHORT_ANSWER questions
+ * - Questions emerge from what the candidate said, not from a fixed type template
+ * - The model acts as a senior engineer in a real debrief conversation
+ * - context field is a label the model assigns after writing the question — not a slot to fill
  * - Return valid JSON only — no markdown, no prose wrapper
  */
 
@@ -15,33 +14,44 @@ import type { CandidateAnnotation } from './types';
  * Builds the system prompt for the follow-up question generator.
  */
 export function buildSystemPrompt(): string {
-  return `You are a senior engineering interviewer reviewing a candidate's code review submission.
-Your job is to generate exactly 5 follow-up questions that probe the candidate's reasoning,
-depth of understanding, and awareness of issues they may have missed.
+  return `You are a senior engineer who has just finished reading a candidate's code review. You're now sitting across from them in a debrief conversation.
 
-CRITICAL RULES:
-- Return ONLY a valid JSON object — no markdown fences, no prose, no explanation
-- The JSON must have exactly one key: "questions" — an array of exactly 5 objects
-- Each question object must have: "id" (string), "question" (string), "context" (string)
-- Questions should be conversational and open-ended, like a real interview
-- Mix question types across the 5:
-  1. WHY question: probe reasoning behind a specific annotation they made
-  2. FIX question: ask what their fix would look like for an issue they flagged
-  3. MISSED question: ask about a significant issue they did NOT flag (pick one from the diff)
-  4. PRIORITISATION question: ask how they would order the fixes they found
-  5. DEPTH question: a conceptual question probing understanding of the underlying bug type
+You've seen the diff. You've read everything they wrote. Now you want to understand: do they actually get it?
 
-RESPONSE FORMAT (exactly):
+Your job is to ask exactly 5 questions — the questions you would genuinely ask this specific candidate right now, based on what they said and what they didn't say.
+
+There is no fixed question format. You decide what to ask based on the candidate's submission. Ask about whatever is most revealing:
+- If they said something that sounds right but might be shallow, probe the mechanics
+- If they missed something obvious, ask them to look at that part of the diff
+- If their fix suggestion is vague, ask them to write the actual code
+- If their verdict seems inconsistent with what they described, explore that tension
+- If they identified the core issue, push them further into consequences and edge cases
+- If they went deep on one thing and missed everything else, ask about the gaps
+
+The questions should feel like a natural conversation, not a quiz. Vary the style. Some questions might be short and direct. Some might set up context before asking. Don't use the same opener twice.
+
+One rule: every question must be answerable only by someone who has seen this specific diff. Nothing generic.
+
+After you write each question, assign it a context label that describes what kind of question it is:
+- WHY — probing their reasoning or understanding of something they said
+- FIX — asking them to write or specify the actual code change
+- MISSED — asking about something visible in the diff they didn't address
+- DEPTH — pushing further into impact, edge cases, callers, tests, or refactoring
+- EXPLAIN — asking them to walk through how the code works or what a specific change does
+
+Pick the label that fits the question you wrote. Do not write the question to fit a label.
+
+Return ONLY valid JSON — no markdown fences, no prose:
 {
   "questions": [
-    {
-      "id": "q1",
-      "question": "...",
-      "context": "..."
-    },
-    ...
+    { "id": "q1", "question": "...", "context": "WHY" },
+    { "id": "q2", "question": "...", "context": "FIX" },
+    { "id": "q3", "question": "...", "context": "MISSED" },
+    { "id": "q4", "question": "...", "context": "DEPTH" },
+    { "id": "q5", "question": "...", "context": "EXPLAIN" }
   ]
-}`;
+}
+The context values in the example above are illustrative — use whatever labels actually fit your questions.`;
 }
 
 /**
@@ -57,26 +67,24 @@ export function buildUserPrompt(
 ): string {
   const annotationsSummary = annotations.length > 0
     ? annotations.map((a, i) =>
-        `  [${i + 1}] File index ${a.fileIndex}, line ${a.lineNumber}, severity=${a.severity}: "${a.comment}"`
+        `  [${i + 1}] Line ${a.lineNumber}, severity=${a.severity}: "${a.comment}"`
       ).join('\n')
-    : '  (no annotations submitted)';
+    : '  (none — the candidate submitted no line annotations)';
 
-  return `CHALLENGE: ${challengeTitle}
+  return `Here's the PR you both just reviewed:
 
-INSTRUCTIONS TO CANDIDATE:
-${challengeInstructions}
-
-CODE/DIFF CONTEXT:
+\`\`\`
 ${codeContext}
+\`\`\`
 
-CANDIDATE'S REVIEW:
+The candidate was asked to: ${challengeInstructions}
+
+Here's what they submitted:
 Verdict: ${verdict}
-Summary: "${summary}"
+Summary: "${summary || '(no summary provided)'}"
 
-Annotations the candidate made:
+Annotations:
 ${annotationsSummary}
 
-Generate 5 follow-up questions based on the above. Reference specific annotations by their
-number (e.g. "In annotation [2] you flagged...") where relevant. For the MISSED question,
-pick a real issue visible in the diff that the candidate did not annotate.`;
+What 5 questions would you ask them right now?`;
 }

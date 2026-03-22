@@ -4,7 +4,7 @@
   "type": "module",
   "main": "handler.ts",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.20.9",
+    "@mistralai/mistralai": "^1.0.0",
     "@aws-sdk/client-dynamodb": "^3.0.0",
     "@aws-sdk/util-dynamodb": "^3.0.0",
     "uuid": "^9.0.0"

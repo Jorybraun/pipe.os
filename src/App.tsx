@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FEATURE_FLAGS } from "./config/featureFlags";
 import {
   BrowserRouter,
@@ -28,8 +29,6 @@ import Logo from "./components/ui/Logo";
 
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
-import PipelineBuilderPage from "./pages/PipelineBuilderPage";
-import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 
 const client = generateClient<Schema>();
 
@@ -322,7 +321,7 @@ function App(): JSX.Element {
     <BrowserRouter>
       <Routes>
         {/* Public Candidate Assessment Route */}
-        <Route path="/assess/:token" element={<CandidateAssessmentPage />} />
+        <Route path="/assess/:token" element={<ErrorBoundary><CandidateAssessmentPage /></ErrorBoundary>} />
 
         {/* Protected Recruiter Routes */}
         <Route
@@ -343,7 +342,7 @@ function App(): JSX.Element {
                       element={<ChallengeEditorPage />}
                     />
                   )}
-                  <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
                   <Route
                     path="/candidates/:id"
                     element={<CandidateProfilePage />}

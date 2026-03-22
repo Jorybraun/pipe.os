@@ -72,6 +72,41 @@ export interface AssessmentRecord {
 }
 
 /**
+ * A single hunk line from cachedDiffJson.
+ */
+export interface DiffLine {
+  type: 'context' | 'addition' | 'deletion';
+  lineNumber: number;
+  content: string;
+}
+
+/**
+ * A single hunk from cachedDiffJson.
+ */
+export interface DiffHunk {
+  header: string;
+  lines: DiffLine[];
+}
+
+/**
+ * A single file entry from cachedDiffJson.
+ */
+export interface DiffFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  hunks: DiffHunk[];
+}
+
+/**
+ * The structured diff stored in Challenge.cachedDiffJson.
+ */
+export interface CachedDiffJson {
+  files: DiffFile[];
+}
+
+/**
  * Raw Challenge record from DynamoDB (only fields we need).
  */
 export interface ChallengeRecord {
@@ -81,6 +116,9 @@ export interface ChallengeRecord {
   instructions?: string;
   serverConfig?: unknown;         // Contains ground truth, diff context
   config?: unknown;               // Public config
+  cachedDiffJson?: unknown;       // Structured diff: { files: [...] }
+  githubPrTitle?: string;
+  githubPrDescription?: string;
 }
 
 /**
@@ -97,9 +135,9 @@ export interface FollowUpAgentOutput {
 }
 
 /**
- * The structure Claude returns for the questions.
+ * The structure the model returns for the questions.
  */
-export interface ClaudeQuestionsOutput {
+export interface ModelQuestionsOutput {
   questions: Array<{
     id: string;
     question: string;

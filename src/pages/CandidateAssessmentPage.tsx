@@ -222,8 +222,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
       );
     }
 
-    // Questions ready — show follow-up panel
-    if (followUpQuestions !== null && followUpQuestions.length > 0 && !isLoading) {
+    // Questions ready — show follow-up panel (keep mounted while isLoading so isSubmitting can show spinner)
+    if (followUpQuestions !== null && followUpQuestions.length > 0) {
       return (
         <>
           <ChromeMeshGrid />

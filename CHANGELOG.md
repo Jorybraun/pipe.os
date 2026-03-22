@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Recruiter + Candidate CODE_REVIEW BDD — no API mocks)
+- `e2e/recruiter-code-review.spec.ts` — BDD test for recruiter path: navigates to existing pipeline detail, verifies CODE_REVIEW challenge visible, adds a candidate via ADD_CANDIDATE form, verifies copy-invite-link appears; also covers challenge editor navigation
+- `e2e/code-review-challenge.spec.ts` — removed all API mocks; tests now hit real Lambdas with 60s timeouts for AI calls; replaced specific mock question text assertions with generic answer-box count; fixed React textarea interaction with `click()` before `fill()`
+- `playwright.config.ts` — added `recruiter` project (authenticated, depends on `auth_setup`, matches `recruiter-code-review.spec.ts`)
+- `playwright/code-review-token.json` — regenerated with 3 fresh candidate tokens for new pipeline/challenge
+
 #### Fixed (Sandbox Deploy + E2E Parallelism)
 - `amplify/functions/fetchGitHubPR/handler.ts` — fixed TS2307 type error: `prNumber` cast to number before comparison so sandbox synthesis passes
 - `amplify/package.json` — installed `@anthropic-ai/sdk` and `@octokit/rest` so esbuild can bundle Lambda functions that import them (sandbox deploy was failing with "Could not resolve" errors)

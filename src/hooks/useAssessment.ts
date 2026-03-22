@@ -274,12 +274,15 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         if (assessment) {
           const assessmentId = assessment.id;
 
-          // Trigger scoring agent (non-fatal)
-          try {
-            await client.mutations.scoreAssessment({ assessmentId });
-            console.log(`[useAssessment] Triggered scoringAgent for ${assessmentId}`);
-          } catch (lambdaErr) {
-            console.error(`[useAssessment] scoringAgent failed for ${assessmentId}:`, lambdaErr);
+          // For non-CODE_REVIEW challenges: score immediately (deterministic, no follow-ups)
+          // For CODE_REVIEW: defer scoring until after follow-up answers are submitted
+          if (currentChallenge.type !== 'CODE_REVIEW') {
+            try {
+              await client.mutations.scoreAssessment({ assessmentId });
+              console.log(`[useAssessment] Triggered scoringAgent for ${assessmentId}`);
+            } catch (lambdaErr) {
+              console.error(`[useAssessment] scoringAgent failed for ${assessmentId}:`, lambdaErr);
+            }
           }
 
           // For CODE_REVIEW challenges: trigger follow-up question generation
@@ -296,9 +299,12 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
                 // result.data is a JSON value (the FollowUpAgentOutput)
                 let questions: FollowUpQuestion[] = [];
                 try {
+                  // AppSync serializes a.json() return values as a JSON string,
+                  // not a parsed object — parse it if needed.
                   const raw = result.data;
-                  if (raw && typeof raw === 'object') {
-                    const output = raw as Record<string, unknown>;
+                  const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                  if (parsed && typeof parsed === 'object') {
+                    const output = parsed as Record<string, unknown>;
                     if (Array.isArray(output['questions'])) {
                       questions = output['questions'] as FollowUpQuestion[];
                     }
@@ -402,6 +408,14 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
         console.log('[useAssessment] Follow-up answers saved');
 
+        // Now trigger agentic scoring — Mistral sees the full submission + follow-up answers
+        try {
+          await client.mutations.scoreAssessment({ assessmentId: lastAssessmentId });
+          console.log(`[useAssessment] Triggered agentic scoringAgent for ${lastAssessmentId}`);
+        } catch (lambdaErr) {
+          console.error(`[useAssessment] scoringAgent (post follow-up) failed:`, lambdaErr);
+        }
+
         // Advance the flow
         const currentStage = stages[currentStageIndex];
         const challenges = currentStage?.challenges || [];
@@ -409,7 +423,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         const isLastStage = currentStageIndex === stages.length - 1;
 
         if (isLastChallengeInStage && isLastStage) {
-          await client.models.Candidate.update({ id: candidate.id, status: 'COMPLETED' });
+          // Mark candidate as COMPLETED — non-fatal: isSubmitted is set regardless
+          client.models.Candidate.update({ id: candidate.id, status: 'COMPLETED' }).catch(
+            (err: unknown) => console.warn('[useAssessment] Candidate.update COMPLETED failed (non-fatal):', err)
+          );
           setState((prev) => ({
             ...prev,
             isLoading: false,
