@@ -59,24 +59,13 @@ export default function ListingPage(): JSX.Element {
           'stages.order',
           'candidates.id',
           'candidates.name',
-          'candidates.assessments.score',
         ],
       });
-      
+
       const enrichedPipelines = pipelineData.map((p) => {
-        let totalScore = 0;
-        let scoreCount = 0;
-
-        p.candidates?.forEach(cand => {
-          cand.assessments?.forEach(ass => {
-            if (typeof ass.score === 'number') {
-              totalScore += ass.score;
-              scoreCount++;
-            }
-          });
-        });
-
-        const avgScore = scoreCount > 0 ? Math.round(totalScore / scoreCount) : null;
+        // avgScore requires cross-auth query (assessments owned by candidates via publicApiKey)
+        // — computed separately on CandidateProfilePage instead
+        const avgScore = null;
 
         return {
           ...p,
