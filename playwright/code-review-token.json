@@ -1,6 +1,26 @@
 {
-  "token": "e2e-cr-c594ca68",
-  "candidateId": "42e9678d-e284-4955-b514-d92806251bdb",
-  "pipelineId": "c75acd71-18a4-4d9b-8cfe-0d8aaa7c5287",
-  "challengeId": "8b7bc4a9-9628-40b8-992a-71d079a04bb3"
+  "token": "e2e-cr-c35812d1",
+  "candidateId": "50656723-25b0-415d-aad0-2a9360b0e50c",
+  "pipelineId": "a43fb179-b6ce-4044-bf4a-78dfbe8cd26f",
+  "challengeId": "e8fd7a0a-5590-44b4-b2de-820b1f29b2e5",
+  "tokens": [
+    {
+      "token": "e2e-cr-c35812d1",
+      "candidateId": "50656723-25b0-415d-aad0-2a9360b0e50c",
+      "pipelineId": "a43fb179-b6ce-4044-bf4a-78dfbe8cd26f",
+      "challengeId": "e8fd7a0a-5590-44b4-b2de-820b1f29b2e5"
+    },
+    {
+      "token": "e2e-cr-281a746e",
+      "candidateId": "568e679e-2a5a-4d22-a8d9-805e7aa85b82",
+      "pipelineId": "a43fb179-b6ce-4044-bf4a-78dfbe8cd26f",
+      "challengeId": "e8fd7a0a-5590-44b4-b2de-820b1f29b2e5"
+    },
+    {
+      "token": "e2e-cr-d8944e89",
+      "candidateId": "15aa0672-b2db-4483-b5f7-1991ecc9bd78",
+      "pipelineId": "a43fb179-b6ce-4044-bf4a-78dfbe8cd26f",
+      "challengeId": "e8fd7a0a-5590-44b4-b2de-820b1f29b2e5"
+    }
+  ]
 }

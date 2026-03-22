@@ -106,6 +106,16 @@ export default defineConfig({
     //   },
     //   dependencies: ['setup'],
     // },
+
+    // Unauthenticated candidate routes — no auth dependency, no storageState
+    {
+      name: 'candidate',
+      testMatch: /code-review-happy-path\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: { cookies: [], origins: [] },
+      },
+    },
   ],
 
   // Run your local dev server before starting the tests

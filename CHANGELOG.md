@@ -27,6 +27,46 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` for CODE_REVIEW now checks `verdict && summary.length > 0` (not `annotations.length > 0`); annotations are optional and the gate now matches `isReady` in `CodeReviewChallenge.tsx`
 - `src/pages/CandidateAssessmentPage.tsx` — added `useEffect` to auto-call `submitFollowUpAnswers({})` when `followUpQuestions` loads as empty array (Lambda failure path); renders "COMPLETING..." spinner instead of a broken empty panel
 - `amplify/functions/scoringAgent/scorer.ts` — `scoreCodeReview` normalizes both flat `Annotation[]` (new DiffPanel format) and legacy `{[snippetId]: Annotation[]}` map; removed all `any` types
+#### Fixed (white screen after submitting follow-up answers)
+- `src/hooks/useAssessment.ts` — make `Candidate.update({ status: COMPLETED })` non-fatal in `submitFollowUpAnswers`: always set `isSubmitted: true` regardless of whether the status update succeeds; prevents the outer catch from blocking the submitted screen
+- `src/components/ErrorBoundary.tsx` — new error boundary component: catches any uncaught React render errors and shows a RENDER_ERROR recovery screen with REFRESH_PAGE button instead of leaving the user on a blank white page
+- `src/App.tsx` — wrap `CandidateAssessmentPage` in `ErrorBoundary` so render crashes are caught and surfaced rather than silently emptying the root div
+
+#### Added (real GitHub PR integration for CODE_REVIEW challenges)
+- `scripts/createRealPRTestCandidate.ts` — new script that fetches PR #1 from `Jorybraun/challenge` via GitHub API, parses the diff using the same `parsePatch` logic as the `fetchGitHubPR` Lambda, and seeds a full Pipeline + Stage + Challenge + Candidate; outputs `playwright/real-pr-token.json`; validated in Preview — 8 source files visible across file tabs with real diffs
+
+#### Changed (Follow-up questions — one-at-a-time UX)
+- `src/components/Assessment/FollowUpQuestionsPanel.tsx` — replaced overwhelming 5-textarea form with one-question-at-a-time step-by-step flow mirroring `QuizRenderer`: coloured context badge (WHY/FIX/MISSED/PRIORITISATION/DEPTH), progress bar, PREV/NEXT navigation, NEXT disabled until current question answered, SUBMIT_ANSWERS replaces NEXT on final question, SKIP_FOLLOW_UP de-emphasised at bottom
+- `e2e/code-review-happy-path.spec.ts` — updated BDD test for step-by-step flow: fill each answer then click NEXT; on last question click SUBMIT_ANSWERS
+
+#### Changed (Follow-up questions — dynamic question generation)
+- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — replaced rigid 5-slot template (WHY/FIX/MISSED/PRIORITISATION/DEPTH in fixed order) with open-ended interviewer persona: model decides what to ask based on the candidate's submission; context labels are assigned after writing the question, not before; user prompt is minimal — just diff + submission + "what would you ask?"; questions emerge from the candidate's actual words, not a predetermined format
+- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — always send system prompt in both `agents.complete()` and `chat.complete()` paths; platform agent instructions are intentionally cleared so code-controlled system prompt is the single source of truth
+- `amplify/functions/codeReviewFollowUpAgent/resource.ts` — retain `MISTRAL_AGENT_ID` secret (agent ID preserved, platform instructions cleared)
+
+#### Changed (Follow-up question prompt — candidate-anchored questions)
+- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system + user prompts to anchor every question to the candidate's own words: WHY probes all three dimensions (why/what/how-do-you-know) using their exact summary text; FIX asks for precise corrected code at the specific line they identified; MISSED targets issues absent from both summary AND annotations; DEPTH covers edge cases, callers, refactoring, or test coverage not mentioned in their summary; instructions define question goals rather than rigid templates to prevent repetitive phrasing
+
+#### Changed (Follow-up question prompt — hallucination fix)
+- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system prompt with IRONCLAD CONSTRAINTS: (1) questions must stay inside the diff only, never reference files/functions not in CODE/DIFF CONTEXT; (2) exactly one question of each type in order (WHY/FIX/MISSED/PRIORITISATION/DEPTH); (3) `context` field must be exactly one of those labels; (4) grounded in specific line numbers; (5) conversational interview tone, never accusatory; rewrote user prompt to prefix code context with "IMPORTANT: questions may ONLY reference content from this diff" and add explicit per-question task instructions
+
+#### Added (BDD E2E — CODE_REVIEW happy path)
+- `e2e/code-review-happy-path.spec.ts` — full BDD Playwright spec against real AppSync + real Mistral Lambdas (no mocking): welcome → diff view → verdict+summary → FINAL_SUBMIT → FOLLOW_UP_QUESTIONS panel (5 AI questions) → fill answers → SUBMIT_ANSWERS → "Submitted."; passes in 14.6s
+- `playwright.config.ts` — added `candidate` project (no auth dependency, no storageState) matching `code-review-happy-path.spec.ts`
+- `src/App.tsx` — removed broken `RoleDiscoveryPage` import (file was deleted); route `/pipeline/new` now uses `PipelineCreatePage`
+
+#### Fixed (CODE_REVIEW end-to-end flow — validated in Preview)
+- `src/hooks/useAssessment.ts` — fix AppSync `a.json()` serialization: `result.data` from `generateCodeReviewFollowUps` is a JSON **string** on the wire, not a parsed object; added `JSON.parse()` guard so follow-up questions render correctly instead of auto-skipping; defer `scoreAssessment` for CODE_REVIEW until after follow-up answers are saved (scoring now sees the full Q&A context)
+- `src/pages/CandidateAssessmentPage.tsx` — fix `canAdvance` for CODE_REVIEW: verdict + summary required (annotations optional); add auto-skip `useEffect` when Lambda returns empty questions; add "COMPLETING..." spinner state for empty-questions path
+- `src/components/Assessment/CodeReviewChallenge.tsx` — fix submit button enabling: replaced `useEffect`-based parent sync (stale closure/async-hop) with synchronous `handleVerdictChange`/`handleSummaryChange` handlers; removes `useEffect` import
+- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — add `cachedDiffJson` rendering as first-priority code context (renders structured diff as unified-diff text); add `renderDiffFile()` helper; fall back to `config.codeSnippet` then `serverConfig.codeSnippet`
+- `amplify/functions/codeReviewFollowUpAgent/types.ts` — add `CachedDiffJson`, `DiffFile`, `DiffHunk`, `DiffLine` interfaces; add `cachedDiffJson`, `githubPrTitle`, `githubPrDescription` to `ChallengeRecord`
+- `amplify/functions/codeReviewFollowUpAgent/costTracker.ts` — rename env vars from `CLAUDE_*` to `MODEL_*` (model-agnostic); update Mistral output token cost to $9/M
+- `amplify/functions/scoringAgent/handler.ts` — add agentic CODE_REVIEW scoring via Mistral: when `followUpQuestionsJson.answers` is populated, sends full submission + follow-up Q&A to Mistral for holistic scoring (40% bug ID, 20% severity, 20% verdict/summary, 20% follow-up depth); falls back to deterministic scoring when no follow-up answers present
+- `amplify/functions/scoringAgent/scorer.ts` — normalize annotation format: handle both flat array (new DiffPanel) and legacy object-map (DiffReviewCanvas); remove `any` types; fix `scoreQuizMCQ` to use type-safe property access
+- `amplify/functions/scoringAgent/resource.ts` — add `MISTRAL_API_KEY: secret()`, `MISTRAL_MODEL`, `MODEL_MAX_TOKENS` env vars; increase memory to 512 MB and timeout to 60s for agentic scoring
+- `amplify/backend.ts` — grant DynamoDB read access for `scoringAgentLambda` on Challenge table (needed to fetch serverConfig/groundTruth for scoring)
+- `scripts/createCodeReviewTestCandidate.ts` — seed script for E2E test data with pre-cached diff
 
 #### Added (Happy Path Bug Fixes + E2E Validation)
 - `e2e/happy-path.spec.ts` — Playwright E2E suite covering all recruiter + candidate happy path scenarios: pipeline creates as DRAFT, stage add/delete on DRAFT pipeline, ChallengePicker shows all 4 challenge types, CODE_REVIEW shows saved-repos dropdown, /assess/:token renders correctly, CandidateProfilePage loads without crashing
@@ -43,7 +83,6 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/pages/OverviewPage.tsx` — removed `disabled={pipeline?.status !== 'ACTIVE'}` guard on ADD_STAGE button so DRAFT pipelines can have stages added; added `handleDeleteStage` and per-stage trash delete button with confirm dialog (B2, B4)
 - `src/config/featureFlags.ts` — enabled `FEATURE_FLAG_PREDEFINED_CHALLENGES: true` so QUIZ_MCQ and QUIZ_SHORT_ANSWER appear in ChallengePicker (B3)
 - `src/pages/CandidateProfilePage.tsx` — added `.catch()` fallback on Assessment.list query to retry without `followUpQuestionsJson` field if Amplify sandbox schema is stale (B6)
-- 
 #### Changed (local main cleanup)
 - `src/App.tsx` — import PipelineCreatePage from archived path; add PipelineBuilderPage + RoleDiscoveryPage imports
 - `src/pages/PipelineCreatePage.tsx` — updated simplified creation page
