@@ -10,6 +10,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/components/Assessment/FollowUpQuestionsPanel.tsx` — replaced overwhelming 5-textarea form with one-question-at-a-time step-by-step flow mirroring `QuizRenderer`: coloured context badge (WHY/FIX/MISSED/PRIORITISATION/DEPTH), progress bar, PREV/NEXT navigation, NEXT disabled until current question answered, SUBMIT_ANSWERS replaces NEXT on final question, SKIP_FOLLOW_UP de-emphasised at bottom
 - `e2e/code-review-happy-path.spec.ts` — updated BDD test for step-by-step flow: fill each answer then click NEXT; on last question click SUBMIT_ANSWERS
 
+#### Changed (Follow-up question prompt — candidate-anchored questions)
+- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system + user prompts to anchor every question to the candidate's own words: WHY probes all three dimensions (why/what/how-do-you-know) using their exact summary text; FIX asks for precise corrected code at the specific line they identified; MISSED targets issues absent from both summary AND annotations; DEPTH covers edge cases, callers, refactoring, or test coverage not mentioned in their summary; instructions define question goals rather than rigid templates to prevent repetitive phrasing
+
 #### Changed (Follow-up question prompt — hallucination fix)
 - `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system prompt with IRONCLAD CONSTRAINTS: (1) questions must stay inside the diff only, never reference files/functions not in CODE/DIFF CONTEXT; (2) exactly one question of each type in order (WHY/FIX/MISSED/PRIORITISATION/DEPTH); (3) `context` field must be exactly one of those labels; (4) grounded in specific line numbers; (5) conversational interview tone, never accusatory; rewrote user prompt to prefix code context with "IMPORTANT: questions may ONLY reference content from this diff" and add explicit per-question task instructions
 
