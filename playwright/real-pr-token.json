@@ -1,0 +1,17 @@
+{
+  "token": "real-pr-96f4bcb2",
+  "candidateId": "9a147f14-e0ad-485c-b598-6d23a742c5e9",
+  "pipelineId": "0dbe4944-98f5-4113-9ea9-c64044421687",
+  "challengeId": "9d21f0ab-d276-4ce0-8d38-d5803e5cfb1e",
+  "prTitle": "Challenge PR #1: Product CRUD - Foundation",
+  "sourceFiles": [
+    "backend/package.json",
+    "backend/src/repositories/sqlite-raw/product.repository.js",
+    "backend/src/server.js",
+    "frontends/react/client/package.json",
+    "frontends/react/client/src/App.tsx",
+    "frontends/react/client/src/components/ProductDetail.tsx",
+    "frontends/react/client/src/components/ProductForm.tsx",
+    "frontends/react/client/src/components/ProductList.tsx"
+  ]
+}
