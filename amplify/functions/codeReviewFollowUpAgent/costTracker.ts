@@ -36,8 +36,8 @@ export function trackCost(
   inputTokens: number,
   outputTokens: number
 ): void {
-  const inputCostPerM = parseFloat(process.env.CLAUDE_INPUT_COST_PER_M ?? '3');
-  const outputCostPerM = parseFloat(process.env.CLAUDE_OUTPUT_COST_PER_M ?? '15');
+  const inputCostPerM = parseFloat(process.env.MODEL_INPUT_COST_PER_M ?? '3');
+  const outputCostPerM = parseFloat(process.env.MODEL_OUTPUT_COST_PER_M ?? '9');
 
   const inputCost = (inputTokens / 1_000_000) * inputCostPerM;
   const outputCost = (outputTokens / 1_000_000) * outputCostPerM;

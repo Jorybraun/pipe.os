@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   GitBranch,
   ChevronRight,
@@ -102,15 +102,19 @@ export function CodeReviewChallenge({
   const [verdict, setVerdict] = useState<string | null>(submission.verdict);
   const [summary, setSummary] = useState(submission.summary);
 
-  // Sync local verdict/summary to parent whenever they change
-  useEffect(() => {
-    onSubmissionChange({
-      annotations: submission.annotations,
-      verdict,
-      summary,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verdict, summary]);
+  // Call parent synchronously so canAdvance updates in the same render cycle.
+  // Using useEffect caused a stale-closure / async-hop problem where the parent
+  // state lagged behind local state and the SUBMIT button stayed disabled.
+  const handleVerdictChange = (v: string): void => {
+    setVerdict(v);
+    onSubmissionChange({ annotations: submission.annotations, verdict: v, summary });
+  };
+
+  const handleSummaryChange = (s: string): void => {
+    const trimmed = s.slice(0, 1000);
+    setSummary(trimmed);
+    onSubmissionChange({ annotations: submission.annotations, verdict, summary: trimmed });
+  };
 
   // When parent updates annotations, keep local state consistent
   const handleAnnotationAdd = (a: {
@@ -389,7 +393,7 @@ export function CodeReviewChallenge({
                 return (
                   <button
                     key={opt.key}
-                    onClick={() => setVerdict(opt.key)}
+                    onClick={() => handleVerdictChange(opt.key)}
                     style={{
                       padding: '14px 16px',
                       background: isActive ? opt.bg : 'rgba(255,255,255,0.02)',
@@ -466,7 +470,7 @@ export function CodeReviewChallenge({
 
             <textarea
               value={summary}
-              onChange={(e) => setSummary(e.target.value.slice(0, 1000))}
+              onChange={(e) => handleSummaryChange(e.target.value)}
               placeholder="Summarize your code review findings..."
               style={{
                 minHeight: 120,

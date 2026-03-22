@@ -6,6 +6,19 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (CODE_REVIEW end-to-end flow — validated in Preview)
+- `src/hooks/useAssessment.ts` — fix AppSync `a.json()` serialization: `result.data` from `generateCodeReviewFollowUps` is a JSON **string** on the wire, not a parsed object; added `JSON.parse()` guard so follow-up questions render correctly instead of auto-skipping; defer `scoreAssessment` for CODE_REVIEW until after follow-up answers are saved (scoring now sees the full Q&A context)
+- `src/pages/CandidateAssessmentPage.tsx` — fix `canAdvance` for CODE_REVIEW: verdict + summary required (annotations optional); add auto-skip `useEffect` when Lambda returns empty questions; add "COMPLETING..." spinner state for empty-questions path
+- `src/components/Assessment/CodeReviewChallenge.tsx` — fix submit button enabling: replaced `useEffect`-based parent sync (stale closure/async-hop) with synchronous `handleVerdictChange`/`handleSummaryChange` handlers; removes `useEffect` import
+- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — add `cachedDiffJson` rendering as first-priority code context (renders structured diff as unified-diff text); add `renderDiffFile()` helper; fall back to `config.codeSnippet` then `serverConfig.codeSnippet`
+- `amplify/functions/codeReviewFollowUpAgent/types.ts` — add `CachedDiffJson`, `DiffFile`, `DiffHunk`, `DiffLine` interfaces; add `cachedDiffJson`, `githubPrTitle`, `githubPrDescription` to `ChallengeRecord`
+- `amplify/functions/codeReviewFollowUpAgent/costTracker.ts` — rename env vars from `CLAUDE_*` to `MODEL_*` (model-agnostic); update Mistral output token cost to $9/M
+- `amplify/functions/scoringAgent/handler.ts` — add agentic CODE_REVIEW scoring via Mistral: when `followUpQuestionsJson.answers` is populated, sends full submission + follow-up Q&A to Mistral for holistic scoring (40% bug ID, 20% severity, 20% verdict/summary, 20% follow-up depth); falls back to deterministic scoring when no follow-up answers present
+- `amplify/functions/scoringAgent/scorer.ts` — normalize annotation format: handle both flat array (new DiffPanel) and legacy object-map (DiffReviewCanvas); remove `any` types; fix `scoreQuizMCQ` to use type-safe property access
+- `amplify/functions/scoringAgent/resource.ts` — add `MISTRAL_API_KEY: secret()`, `MISTRAL_MODEL`, `MODEL_MAX_TOKENS` env vars; increase memory to 512 MB and timeout to 60s for agentic scoring
+- `amplify/backend.ts` — grant DynamoDB read access for `scoringAgentLambda` on Challenge table (needed to fetch serverConfig/groundTruth for scoring)
+- `scripts/createCodeReviewTestCandidate.ts` — seed script for E2E test data with pre-cached diff
+
 #### Added (Happy Path Bug Fixes + E2E Validation)
 - `e2e/happy-path.spec.ts` — Playwright E2E suite covering all recruiter + candidate happy path scenarios: pipeline creates as DRAFT, stage add/delete on DRAFT pipeline, ChallengePicker shows all 4 challenge types, CODE_REVIEW shows saved-repos dropdown, /assess/:token renders correctly, CandidateProfilePage loads without crashing
 - `src/components/Pipeline/ChallengePicker.tsx` — replaced free-text GitHub repo URL input with saved-repos dropdown (localStorage key `pipe_saved_repos`); `+ ADD_REPO` button reveals inline input; saved repos persist across sessions; trash button to remove saved repos
@@ -21,7 +34,6 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/pages/OverviewPage.tsx` — removed `disabled={pipeline?.status !== 'ACTIVE'}` guard on ADD_STAGE button so DRAFT pipelines can have stages added; added `handleDeleteStage` and per-stage trash delete button with confirm dialog (B2, B4)
 - `src/config/featureFlags.ts` — enabled `FEATURE_FLAG_PREDEFINED_CHALLENGES: true` so QUIZ_MCQ and QUIZ_SHORT_ANSWER appear in ChallengePicker (B3)
 - `src/pages/CandidateProfilePage.tsx` — added `.catch()` fallback on Assessment.list query to retry without `followUpQuestionsJson` field if Amplify sandbox schema is stale (B6)
-- 
 #### Changed (local main cleanup)
 - `src/App.tsx` — import PipelineCreatePage from archived path; add PipelineBuilderPage + RoleDiscoveryPage imports
 - `src/pages/PipelineCreatePage.tsx` — updated simplified creation page

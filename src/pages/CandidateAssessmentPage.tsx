@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useAssessment } from '../hooks/useAssessment';
 import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
@@ -51,6 +51,15 @@ export default function CandidateAssessmentPage(): JSX.Element {
   } = useAssessment(token || '');
 
   const [currentSubmission, setCurrentSubmission] = useState<unknown>(null);
+
+  // Auto-skip when Lambda returns 0 follow-up questions (error/empty path).
+  // Empty array means no questions were generated — advance without showing the panel.
+  useEffect(() => {
+    if (followUpQuestions !== null && followUpQuestions.length === 0 && !isLoading) {
+      void submitFollowUpAnswers({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followUpQuestions]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -198,8 +207,23 @@ export default function CandidateAssessmentPage(): JSX.Element {
       );
     }
 
-    // Questions ready — show follow-up panel
-    if (followUpQuestions !== null && !isLoading) {
+    // Empty questions: Lambda failed — show completing spinner while useEffect auto-advances
+    if (followUpQuestions !== null && followUpQuestions.length === 0) {
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
+          <ChromeMeshGrid />
+          <div style={{ textAlign: 'center', zIndex: 1 }}>
+            <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
+            <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+              COMPLETING...
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Questions ready — show follow-up panel (keep mounted while isLoading so isSubmitting can show spinner)
+    if (followUpQuestions !== null && followUpQuestions.length > 0) {
       return (
         <>
           <ChromeMeshGrid />
@@ -230,8 +254,11 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // Determine if this stage uses live video
   const isLiveVideoStage = currentStage.mode === 'LIVE_VIDEO';
 
+  // TYPE SAFETY: For CODE_REVIEW, ChallengeRegistry always sets this shape.
   const submission = currentSubmission as {
     annotations?: unknown[];
+    verdict?: string | null;
+    summary?: string;
     [key: string]: unknown;
   } | null;
 
@@ -247,7 +274,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
         canAdvance={
           !isPreview &&
           submission !== null &&
-          (currentChallenge.type !== 'CODE_REVIEW' || (submission.annotations?.length ?? 0) > 0)
+          (currentChallenge.type !== 'CODE_REVIEW'
+            || (!!submission.verdict && (submission.summary ?? '').trim().length > 0))
         }
         isSubmitting={isLoading}
       >

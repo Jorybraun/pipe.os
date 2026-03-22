@@ -7,13 +7,13 @@
  * 1. Validate input (assessmentId)
  * 2. Fetch Assessment from DynamoDB
  * 3. Fetch linked Challenge from DynamoDB
- * 4. Build Claude prompt from candidate annotations + challenge context
- * 5. Call Claude to generate exactly 5 SHORT_ANSWER follow-up questions
+ * 4. Build prompt from candidate annotations + challenge context
+ * 5. Call Mistral on Amazon Bedrock to generate exactly 5 SHORT_ANSWER follow-up questions
  * 6. Save questions to Assessment.followUpQuestionsJson
  * 7. Return questions
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { Mistral } from '@mistralai/mistralai';
 import { DynamoDBClient, GetItemCommand, UpdateItemCommand, ReturnValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { v4 as uuid } from 'uuid';
@@ -25,7 +25,9 @@ import type {
   CandidateAnnotation,
   AssessmentRecord,
   ChallengeRecord,
-  ClaudeQuestionsOutput,
+  CachedDiffJson,
+  DiffFile,
+  ModelQuestionsOutput,
 } from './types';
 import { validateInput, sanitizeForPrompt } from './validation';
 import { createCostTracker, trackCost, getCostingSummary } from './costTracker';
@@ -33,8 +35,8 @@ import { buildSystemPrompt, buildUserPrompt } from './prompts';
 
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+const mistral = new Mistral({
+  apiKey: process.env.MISTRAL_API_KEY!,
 });
 
 const dynamo = new DynamoDBClient({
@@ -45,8 +47,9 @@ const dynamo = new DynamoDBClient({
 
 const ASSESSMENT_TABLE = process.env.ASSESSMENT_TABLE_NAME ?? 'Assessment';
 const CHALLENGE_TABLE = process.env.CHALLENGE_TABLE_NAME ?? 'Challenge';
-const MODEL = process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-20250514';
-const MAX_TOKENS = parseInt(process.env.CLAUDE_MAX_TOKENS ?? '2048', 10);
+const MISTRAL_AGENT_ID = process.env.MISTRAL_AGENT_ID ?? '';
+const MODEL = process.env.MISTRAL_MODEL ?? 'mistral-large-latest';
+const MAX_TOKENS = parseInt(process.env.MODEL_MAX_TOKENS ?? '2048', 10);
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -90,7 +93,7 @@ export async function handler(event: unknown): Promise<FollowUpAgentOutput> {
     codeContextLength: codeContext.length,
   });
 
-  // Step 5: Call Claude
+  // Step 5: Call Mistral on Bedrock
   const questions = await generateQuestions(
     challengeTitle,
     challengeInstructions,
@@ -229,12 +232,44 @@ function extractReviewData(assessment: AssessmentRecord): ReviewData {
   return { annotations, verdict, summary };
 }
 
+/**
+ * Renders a cachedDiffJson file as a unified-diff-style string for the prompt.
+ */
+function renderDiffFile(file: DiffFile): string {
+  const lines: string[] = [`--- a/${file.path}`, `+++ b/${file.path}`];
+  for (const hunk of file.hunks) {
+    lines.push(hunk.header);
+    for (const line of hunk.lines) {
+      const prefix = line.type === 'addition' ? '+' : line.type === 'deletion' ? '-' : ' ';
+      lines.push(`${prefix} ${line.content}`);
+    }
+  }
+  return lines.join('\n');
+}
+
 function extractCodeContext(challenge: ChallengeRecord | null): string {
   if (!challenge) return 'No code context available.';
 
-  // Try serverConfig for ground truth hints
-  let context = '';
+  // 1. Prefer cachedDiffJson — this is the actual diff shown to the candidate
+  if (challenge.cachedDiffJson) {
+    try {
+      const raw = typeof challenge.cachedDiffJson === 'string'
+        ? JSON.parse(challenge.cachedDiffJson)
+        : challenge.cachedDiffJson;
 
+      const diff = raw as CachedDiffJson;
+      if (diff && Array.isArray(diff.files) && diff.files.length > 0) {
+        const rendered = diff.files
+          .map((f) => renderDiffFile(f))
+          .join('\n\n');
+        return sanitizeForPrompt(rendered, 6000);
+      }
+    } catch {
+      console.warn('[CodeReviewFollowUpAgent] Failed to parse cachedDiffJson');
+    }
+  }
+
+  // 2. Fall back to config.codeSnippet / config.diff / config.code
   if (challenge.config) {
     try {
       const config = typeof challenge.config === 'string'
@@ -244,11 +279,11 @@ function extractCodeContext(challenge: ChallengeRecord | null): string {
       if (config && typeof config === 'object') {
         const c = config as Record<string, unknown>;
         if (typeof c['codeSnippet'] === 'string') {
-          context = c['codeSnippet'] as string;
+          return sanitizeForPrompt(c['codeSnippet'] as string, 6000);
         } else if (typeof c['diff'] === 'string') {
-          context = c['diff'] as string;
+          return sanitizeForPrompt(c['diff'] as string, 6000);
         } else if (typeof c['code'] === 'string') {
-          context = c['code'] as string;
+          return sanitizeForPrompt(c['code'] as string, 6000);
         }
       }
     } catch {
@@ -256,7 +291,8 @@ function extractCodeContext(challenge: ChallengeRecord | null): string {
     }
   }
 
-  if (!context && challenge.serverConfig) {
+  // 3. Fall back to serverConfig.codeSnippet
+  if (challenge.serverConfig) {
     try {
       const sc = typeof challenge.serverConfig === 'string'
         ? JSON.parse(challenge.serverConfig)
@@ -265,7 +301,7 @@ function extractCodeContext(challenge: ChallengeRecord | null): string {
       if (sc && typeof sc === 'object') {
         const s = sc as Record<string, unknown>;
         if (typeof s['codeSnippet'] === 'string') {
-          context = s['codeSnippet'] as string;
+          return sanitizeForPrompt(s['codeSnippet'] as string, 6000);
         }
       }
     } catch {
@@ -273,10 +309,10 @@ function extractCodeContext(challenge: ChallengeRecord | null): string {
     }
   }
 
-  return sanitizeForPrompt(context || 'No code snippet available in challenge config.', 6000);
+  return 'No code snippet available in challenge config.';
 }
 
-// ─── Claude Question Generation ───────────────────────────────────────────────
+// ─── Bedrock / Mistral Question Generation ────────────────────────────────────
 
 async function generateQuestions(
   challengeTitle: string,
@@ -297,28 +333,50 @@ async function generateQuestions(
     summary
   );
 
-  const message = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  // Use Mistral Agent when MISTRAL_AGENT_ID is configured (system prompt lives in the agent);
+  // fall back to chat completion with inline system prompt.
+  // responseFormat: json_object forces JSON output regardless of prompt compliance.
+  const response = MISTRAL_AGENT_ID
+    ? await mistral.agents.complete({
+        agentId: MISTRAL_AGENT_ID,
+        messages: [{ role: 'user', content: userPrompt }],
+        responseFormat: { type: 'json_object' },
+      })
+    : await mistral.chat.complete({
+        model: MODEL,
+        maxTokens: MAX_TOKENS,
+        responseFormat: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      });
 
-  trackCost(costTracker, message.usage.input_tokens, message.usage.output_tokens);
+  trackCost(
+    costTracker,
+    response.usage?.promptTokens ?? 0,
+    response.usage?.completionTokens ?? 0
+  );
 
-  const content = message.content[0];
-  if (content.type !== 'text') {
-    throw new Error('UNEXPECTED_RESPONSE_TYPE: Expected text from Claude');
+  const rawContent = response.choices?.[0]?.message?.content;
+  const text = typeof rawContent === 'string'
+    ? rawContent
+    : Array.isArray(rawContent)
+      ? rawContent.map((c) => ('text' in c ? (c as { text: string }).text : '')).join('')
+      : '';
+
+  if (!text) {
+    throw new Error('UNEXPECTED_RESPONSE_TYPE: Expected text from Mistral');
   }
 
-  let parsed: ClaudeQuestionsOutput;
+  let parsed: ModelQuestionsOutput;
   try {
     // Strip markdown fences if present (defensive)
-    const cleaned = content.text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
-    parsed = JSON.parse(cleaned) as ClaudeQuestionsOutput;
+    const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    parsed = JSON.parse(cleaned) as ModelQuestionsOutput;
   } catch (err) {
-    console.error('[CodeReviewFollowUpAgent] Failed to parse Claude response:', content.text);
-    throw new Error('PARSE_FAILED: Claude did not return valid JSON');
+    console.error('[CodeReviewFollowUpAgent] Failed to parse Mistral response:', text);
+    throw new Error('PARSE_FAILED: Model did not return valid JSON');
   }
 
   if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
