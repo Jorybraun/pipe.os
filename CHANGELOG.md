@@ -6,6 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (white screen after submitting follow-up answers)
+- `src/hooks/useAssessment.ts` — make `Candidate.update({ status: COMPLETED })` non-fatal in `submitFollowUpAnswers`: always set `isSubmitted: true` regardless of whether the status update succeeds; prevents the outer catch from blocking the submitted screen
+- `src/components/ErrorBoundary.tsx` — new error boundary component: catches any uncaught React render errors and shows a RENDER_ERROR recovery screen with REFRESH_PAGE button instead of leaving the user on a blank white page
+- `src/App.tsx` — wrap `CandidateAssessmentPage` in `ErrorBoundary` so render crashes are caught and surfaced rather than silently emptying the root div
+
+#### Added (real GitHub PR integration for CODE_REVIEW challenges)
+- `scripts/createRealPRTestCandidate.ts` — new script that fetches PR #1 from `Jorybraun/challenge` via GitHub API, parses the diff using the same `parsePatch` logic as the `fetchGitHubPR` Lambda, and seeds a full Pipeline + Stage + Challenge + Candidate; outputs `playwright/real-pr-token.json`; validated in Preview — 8 source files visible across file tabs with real diffs
+
 #### Changed (Follow-up questions — one-at-a-time UX)
 - `src/components/Assessment/FollowUpQuestionsPanel.tsx` — replaced overwhelming 5-textarea form with one-question-at-a-time step-by-step flow mirroring `QuizRenderer`: coloured context badge (WHY/FIX/MISSED/PRIORITISATION/DEPTH), progress bar, PREV/NEXT navigation, NEXT disabled until current question answered, SUBMIT_ANSWERS replaces NEXT on final question, SKIP_FOLLOW_UP de-emphasised at bottom
 - `e2e/code-review-happy-path.spec.ts` — updated BDD test for step-by-step flow: fill each answer then click NEXT; on last question click SUBMIT_ANSWERS

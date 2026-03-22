@@ -423,7 +423,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         const isLastStage = currentStageIndex === stages.length - 1;
 
         if (isLastChallengeInStage && isLastStage) {
-          await client.models.Candidate.update({ id: candidate.id, status: 'COMPLETED' });
+          // Mark candidate as COMPLETED — non-fatal: isSubmitted is set regardless
+          client.models.Candidate.update({ id: candidate.id, status: 'COMPLETED' }).catch(
+            (err: unknown) => console.warn('[useAssessment] Candidate.update COMPLETED failed (non-fatal):', err)
+          );
           setState((prev) => ({
             ...prev,
             isLoading: false,
