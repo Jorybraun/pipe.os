@@ -1,39 +1,59 @@
 import { Bug, CodeReviewConfig, QuizMCQConfig } from './types';
 
+// Minimal annotation shape used by the scoring logic
+interface AnnotationInput {
+  line: number;
+  severity: string;
+  comment: string;
+}
+
+/**
+ * Normalize submission.annotations to a flat array.
+ *
+ * Handles two formats:
+ *   - New (DiffPanel): flat `Annotation[]` — `{ annotations: [...], verdict, summary }`
+ *   - Legacy (DiffReviewCanvas): map `{ [snippetId]: Annotation[] }`
+ */
+function normalizeAnnotations(rawAnnotations: unknown): AnnotationInput[] {
+  if (Array.isArray(rawAnnotations)) {
+    // New format: flat array from DiffPanel/CodeReviewChallenge
+    return rawAnnotations as AnnotationInput[];
+  }
+  if (rawAnnotations && typeof rawAnnotations === 'object') {
+    // Legacy format: map of snippetId → Annotation[]
+    return Object.values(rawAnnotations as Record<string, AnnotationInput[]>).flat();
+  }
+  return [];
+}
+
 /**
  * server-side scoring logic for Code Review
  */
 export function scoreCodeReview(
-  submission: any,
+  submission: unknown,
   serverConfig: CodeReviewConfig
 ): number {
-  const groundTruth = serverConfig.groundTruth || [];
-  const annotationsMap = submission.annotations || {};
-  
-  let totalBugs = groundTruth.length;
+  if (!submission || typeof submission !== 'object') return 0;
+  const sub = submission as Record<string, unknown>;
+  const groundTruth: Bug[] = serverConfig.groundTruth ?? [];
+
+  const allAnnotations = normalizeAnnotations(sub['annotations']);
+
+  const totalBugs = groundTruth.length;
   let bugsFound = 0;
   let severityMatches = 0;
   let falsePositives = 0;
   let validComments = 0;
 
-  // For MVP we assume a single snippet or aggregate across them
-  // This logic matches src/lib/scoring/codeReview.ts
-  Object.entries(annotationsMap).forEach(([snippetId, snippetAnnotations]: [string, any]) => {
-    snippetAnnotations.forEach((a: any) => {
-      const match = groundTruth.find((bug: Bug) => Math.abs(a.line - bug.line) <= 1);
-      
-      if (match) {
-        bugsFound++;
-        if (match.severity === a.severity) {
-          severityMatches++;
-        }
-        if (a.comment.trim().length > 10) {
-          validComments++;
-        }
-      } else {
-        falsePositives++;
-      }
-    });
+  allAnnotations.forEach((a) => {
+    const match = groundTruth.find((bug) => Math.abs(a.line - bug.line) <= 1);
+    if (match) {
+      bugsFound++;
+      if (match.severity === a.severity) severityMatches++;
+      if (a.comment.trim().length > 10) validComments++;
+    } else {
+      falsePositives++;
+    }
   });
 
   const bugsFoundScore = totalBugs > 0 ? (bugsFound / totalBugs) * 50 : 0;
@@ -48,26 +68,28 @@ export function scoreCodeReview(
  * server-side scoring logic for MCQ
  */
 export function scoreQuizMCQ(
-  submission: any,
+  submission: unknown,
   serverConfig: QuizMCQConfig
 ): number {
-  const selectedId = submission.answers?.current;
+  if (!submission || typeof submission !== 'object') return 0;
+  const sub = submission as Record<string, unknown>;
+  const answers = sub['answers'] as Record<string, unknown> | undefined;
+  const selectedId = answers?.['current'];
   const correctId = serverConfig.correctOptionId;
-  
   return selectedId === correctId ? 100 : 0;
 }
 
 /**
  * Unified scorer function
  */
-export function scorer(type: string, submission: any, serverConfig: any): number {
-    switch (type) {
-        case 'CODE_REVIEW':
-            return scoreCodeReview(submission, serverConfig as CodeReviewConfig);
-        case 'QUIZ_MCQ':
-            return scoreQuizMCQ(submission, serverConfig as QuizMCQConfig);
-        default:
-            console.warn(`No scoring logic implemented for type: ${type}`);
-            return 0;
-    }
+export function scorer(type: string, submission: unknown, serverConfig: unknown): number {
+  switch (type) {
+    case 'CODE_REVIEW':
+      return scoreCodeReview(submission, serverConfig as CodeReviewConfig);
+    case 'QUIZ_MCQ':
+      return scoreQuizMCQ(submission, serverConfig as QuizMCQConfig);
+    default:
+      console.warn(`No scoring logic implemented for type: ${type}`);
+      return 0;
+  }
 }

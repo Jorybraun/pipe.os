@@ -6,6 +6,22 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Sandbox Deploy + E2E Parallelism)
+- `amplify/functions/fetchGitHubPR/handler.ts` — fixed TS2307 type error: `prNumber` cast to number before comparison so sandbox synthesis passes
+- `amplify/package.json` — installed `@anthropic-ai/sdk` and `@octokit/rest` so esbuild can bundle Lambda functions that import them (sandbox deploy was failing with "Could not resolve" errors)
+- `scripts/createCodeReviewTestCandidate.ts` — now creates 3 candidates (one per test) instead of 1; writes `tokens[]` array to `playwright/code-review-token.json`; each E2E test that completes the full flow needs its own fresh token since a submitted candidate cannot restart
+- `e2e/code-review-challenge.spec.ts` — each test now uses its own token from `tokens[0..2]`; removed `GENERATING_QUESTIONS...` transient spinner assertion (mock responds instantly, state transitions before Playwright checks); tests pass in under 7s
+
+#### Added (CODE_REVIEW BDD Happy Path)
+- `e2e/code-review-challenge.spec.ts` — full BDD Playwright E2E suite for CODE_REVIEW challenge: loading screen → welcome → START_INTERVIEW → diff workspace → REQUEST_CHANGES verdict → review summary → REVIEW_READY indicator → FINAL_SUBMIT → GENERATING_QUESTIONS spinner → 5 follow-up questions → SUBMIT_ANSWERS → "Submitted." completion; also covers SKIP_FOLLOW_UP path; mocks `scoreAssessment` + `generateCodeReviewFollowUps` mutations for determinism
+- `scripts/createCodeReviewTestCandidate.ts` — test data setup script: creates Pipeline + Stage + CODE_REVIEW Challenge (with pre-cached `calculateDiscount.js` diff, no GitHub fetch needed) + Candidate; writes `playwright/code-review-token.json`
+- `playwright.config.ts` — added `candidate` project (unauthenticated, matches `code-review-challenge.spec.ts`; no `auth_setup` dependency since `/assess/:token` is a public route)
+
+#### Fixed (CODE_REVIEW BDD Happy Path)
+- `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` for CODE_REVIEW now checks `verdict && summary.length > 0` (not `annotations.length > 0`); annotations are optional and the gate now matches `isReady` in `CodeReviewChallenge.tsx`
+- `src/pages/CandidateAssessmentPage.tsx` — added `useEffect` to auto-call `submitFollowUpAnswers({})` when `followUpQuestions` loads as empty array (Lambda failure path); renders "COMPLETING..." spinner instead of a broken empty panel
+- `amplify/functions/scoringAgent/scorer.ts` — `scoreCodeReview` normalizes both flat `Annotation[]` (new DiffPanel format) and legacy `{[snippetId]: Annotation[]}` map; removed all `any` types
+
 #### Added (Happy Path Bug Fixes + E2E Validation)
 - `e2e/happy-path.spec.ts` — Playwright E2E suite covering all recruiter + candidate happy path scenarios: pipeline creates as DRAFT, stage add/delete on DRAFT pipeline, ChallengePicker shows all 4 challenge types, CODE_REVIEW shows saved-repos dropdown, /assess/:token renders correctly, CandidateProfilePage loads without crashing
 - `src/components/Pipeline/ChallengePicker.tsx` — replaced free-text GitHub repo URL input with saved-repos dropdown (localStorage key `pipe_saved_repos`); `+ ADD_REPO` button reveals inline input; saved repos persist across sessions; trash button to remove saved repos
