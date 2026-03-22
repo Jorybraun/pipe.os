@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Security
+- `src/hooks/useAssessment.ts` — added `selectionSet` to all 5 mutation calls (`Candidate.update` ×3, `Assessment.create`, `Assessment.update`) so API-key clients never receive `email`, `inviteToken`, `owner`, `groundTruth`, `serverConfig`, or `cachedMetadata` in mutation responses; verified clean via live network inspection of every response body in the full candidate flow
+- `amplify/functions/resolveToken/` — new Lambda query: resolves an invite token server-side and returns only `{id, pipelineId, status, name}`; never exposes email, inviteToken, or other candidates' data
+- `amplify/data/resource.ts` — `Candidate.publicApiKey` permission downgraded from `['read', 'update']` to `['update']`; `Candidate.list()` is no longer callable by unauthenticated candidates
+- `amplify/data/resource.ts` — `Assessment.publicApiKey` permission downgraded from `['create', 'read', 'update']` to `['create', 'update']`; candidates can no longer read other candidates' assessment records
+- `amplify/data/resource.ts` — `resolveToken` custom query added (publicApiKey auth); entry point for all candidate auth going forward
+- `src/hooks/useAssessment.ts` — replaced `Candidate.list()` with `client.queries.resolveToken()` to eliminate cross-candidate enumeration
+- `src/hooks/useAssessment.ts` — removed `challenges.codeArtifact.groundTruth` and `challenges.cachedMetadata` from client selection set; answer keys and sensitive reviewer data no longer sent to candidate browsers
+- `src/hooks/useAssessment.ts` — progressive stage loading: only the current stage's challenge content is fetched on load; future stage questions are loaded on-demand when the candidate advances, preventing preview of upcoming challenges
+
 #### Added (Recruiter + Candidate CODE_REVIEW BDD — no API mocks)
 - `e2e/recruiter-code-review.spec.ts` — BDD test for recruiter path: navigates to existing pipeline detail, verifies CODE_REVIEW challenge visible, adds a candidate via ADD_CANDIDATE form, verifies copy-invite-link appears; also covers challenge editor navigation
 - `e2e/code-review-challenge.spec.ts` — removed all API mocks; tests now hit real Lambdas with 60s timeouts for AI calls; replaced specific mock question text assertions with generic answer-box count; fixed React textarea interaction with `click()` before `fill()`
