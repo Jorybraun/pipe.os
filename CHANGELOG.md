@@ -6,6 +6,27 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Recruiter + Candidate CODE_REVIEW BDD — no API mocks)
+- `e2e/recruiter-code-review.spec.ts` — BDD test for recruiter path: navigates to existing pipeline detail, verifies CODE_REVIEW challenge visible, adds a candidate via ADD_CANDIDATE form, verifies copy-invite-link appears; also covers challenge editor navigation
+- `e2e/code-review-challenge.spec.ts` — removed all API mocks; tests now hit real Lambdas with 60s timeouts for AI calls; replaced specific mock question text assertions with generic answer-box count; fixed React textarea interaction with `click()` before `fill()`
+- `playwright.config.ts` — added `recruiter` project (authenticated, depends on `auth_setup`, matches `recruiter-code-review.spec.ts`)
+- `playwright/code-review-token.json` — regenerated with 3 fresh candidate tokens for new pipeline/challenge
+
+#### Fixed (Sandbox Deploy + E2E Parallelism)
+- `amplify/functions/fetchGitHubPR/handler.ts` — fixed TS2307 type error: `prNumber` cast to number before comparison so sandbox synthesis passes
+- `amplify/package.json` — installed `@anthropic-ai/sdk` and `@octokit/rest` so esbuild can bundle Lambda functions that import them (sandbox deploy was failing with "Could not resolve" errors)
+- `scripts/createCodeReviewTestCandidate.ts` — now creates 3 candidates (one per test) instead of 1; writes `tokens[]` array to `playwright/code-review-token.json`; each E2E test that completes the full flow needs its own fresh token since a submitted candidate cannot restart
+- `e2e/code-review-challenge.spec.ts` — each test now uses its own token from `tokens[0..2]`; removed `GENERATING_QUESTIONS...` transient spinner assertion (mock responds instantly, state transitions before Playwright checks); tests pass in under 7s
+
+#### Added (CODE_REVIEW BDD Happy Path)
+- `e2e/code-review-challenge.spec.ts` — full BDD Playwright E2E suite for CODE_REVIEW challenge: loading screen → welcome → START_INTERVIEW → diff workspace → REQUEST_CHANGES verdict → review summary → REVIEW_READY indicator → FINAL_SUBMIT → GENERATING_QUESTIONS spinner → 5 follow-up questions → SUBMIT_ANSWERS → "Submitted." completion; also covers SKIP_FOLLOW_UP path; mocks `scoreAssessment` + `generateCodeReviewFollowUps` mutations for determinism
+- `scripts/createCodeReviewTestCandidate.ts` — test data setup script: creates Pipeline + Stage + CODE_REVIEW Challenge (with pre-cached `calculateDiscount.js` diff, no GitHub fetch needed) + Candidate; writes `playwright/code-review-token.json`
+- `playwright.config.ts` — added `candidate` project (unauthenticated, matches `code-review-challenge.spec.ts`; no `auth_setup` dependency since `/assess/:token` is a public route)
+
+#### Fixed (CODE_REVIEW BDD Happy Path)
+- `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` for CODE_REVIEW now checks `verdict && summary.length > 0` (not `annotations.length > 0`); annotations are optional and the gate now matches `isReady` in `CodeReviewChallenge.tsx`
+- `src/pages/CandidateAssessmentPage.tsx` — added `useEffect` to auto-call `submitFollowUpAnswers({})` when `followUpQuestions` loads as empty array (Lambda failure path); renders "COMPLETING..." spinner instead of a broken empty panel
+- `amplify/functions/scoringAgent/scorer.ts` — `scoreCodeReview` normalizes both flat `Annotation[]` (new DiffPanel format) and legacy `{[snippetId]: Annotation[]}` map; removed all `any` types
 #### Fixed (white screen after submitting follow-up answers)
 - `src/hooks/useAssessment.ts` — make `Candidate.update({ status: COMPLETED })` non-fatal in `submitFollowUpAnswers`: always set `isSubmitted: true` regardless of whether the status update succeeds; prevents the outer catch from blocking the submitted screen
 - `src/components/ErrorBoundary.tsx` — new error boundary component: catches any uncaught React render errors and shows a RENDER_ERROR recovery screen with REFRESH_PAGE button instead of leaving the user on a blank white page

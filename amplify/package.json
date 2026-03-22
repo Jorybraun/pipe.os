@@ -1,7 +1,9 @@
 {
   "type": "module",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@aws-sdk/client-dynamodb": "^3.1004.0",
-    "@aws-sdk/lib-dynamodb": "^3.1004.0"
+    "@aws-sdk/lib-dynamodb": "^3.1004.0",
+    "@octokit/rest": "^22.0.1"
   }
 }

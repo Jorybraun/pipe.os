@@ -67,6 +67,28 @@ export default defineConfig({
       dependencies: ["auth_setup"],
     },
 
+    // Unauthenticated project for candidate-facing routes (/assess/:token)
+    {
+      name: "candidate",
+      testMatch: /code-review-challenge\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: { cookies: [], origins: [] },
+      },
+      // No auth_setup dependency — candidate routes are public
+    },
+
+    // Authenticated project for recruiter CODE_REVIEW setup BDD
+    {
+      name: "recruiter",
+      testMatch: /recruiter-code-review\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: STORAGE_STATE,
+      },
+      dependencies: ["auth_setup"],
+    },
+
     // {
     //   name: 'firefox',
     //   use: {

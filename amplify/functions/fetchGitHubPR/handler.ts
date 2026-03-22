@@ -128,7 +128,7 @@ function validateInput(input: unknown): asserts input is FetchGitHubPRInput {
     throw new GitHubAPIError('INVALID_INPUT', 'repoUrl must be a non-empty string', false);
   }
 
-  if (!Number.isInteger(prNumber) || prNumber < 1) {
+  if (!Number.isInteger(prNumber) || (prNumber as number) < 1) {
     throw new GitHubAPIError(
       'INVALID_INPUT',
       'prNumber must be a positive integer',
