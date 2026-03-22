@@ -333,13 +333,16 @@ async function generateQuestions(
     summary
   );
 
-  // Use Mistral Agent when MISTRAL_AGENT_ID is configured (system prompt lives in the agent);
-  // fall back to chat completion with inline system prompt.
+  // System prompt is always sent in code — platform agent instructions are intentionally cleared.
+  // agents.complete() accepts system messages the same way chat.complete() does.
   // responseFormat: json_object forces JSON output regardless of prompt compliance.
   const response = MISTRAL_AGENT_ID
     ? await mistral.agents.complete({
         agentId: MISTRAL_AGENT_ID,
-        messages: [{ role: 'user', content: userPrompt }],
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
         responseFormat: { type: 'json_object' },
       })
     : await mistral.chat.complete({

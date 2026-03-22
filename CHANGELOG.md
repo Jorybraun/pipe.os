@@ -10,6 +10,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/components/Assessment/FollowUpQuestionsPanel.tsx` — replaced overwhelming 5-textarea form with one-question-at-a-time step-by-step flow mirroring `QuizRenderer`: coloured context badge (WHY/FIX/MISSED/PRIORITISATION/DEPTH), progress bar, PREV/NEXT navigation, NEXT disabled until current question answered, SUBMIT_ANSWERS replaces NEXT on final question, SKIP_FOLLOW_UP de-emphasised at bottom
 - `e2e/code-review-happy-path.spec.ts` — updated BDD test for step-by-step flow: fill each answer then click NEXT; on last question click SUBMIT_ANSWERS
 
+#### Changed (Follow-up questions — dynamic question generation)
+- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — replaced rigid 5-slot template (WHY/FIX/MISSED/PRIORITISATION/DEPTH in fixed order) with open-ended interviewer persona: model decides what to ask based on the candidate's submission; context labels are assigned after writing the question, not before; user prompt is minimal — just diff + submission + "what would you ask?"; questions emerge from the candidate's actual words, not a predetermined format
+- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — always send system prompt in both `agents.complete()` and `chat.complete()` paths; platform agent instructions are intentionally cleared so code-controlled system prompt is the single source of truth
+- `amplify/functions/codeReviewFollowUpAgent/resource.ts` — retain `MISTRAL_AGENT_ID` secret (agent ID preserved, platform instructions cleared)
+
 #### Changed (Follow-up question prompt — candidate-anchored questions)
 - `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system + user prompts to anchor every question to the candidate's own words: WHY probes all three dimensions (why/what/how-do-you-know) using their exact summary text; FIX asks for precise corrected code at the specific line they identified; MISSED targets issues absent from both summary AND annotations; DEPTH covers edge cases, callers, refactoring, or test coverage not mentioned in their summary; instructions define question goals rather than rigid templates to prevent repetitive phrasing
 
