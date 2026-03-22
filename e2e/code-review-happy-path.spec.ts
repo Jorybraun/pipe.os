@@ -12,19 +12,17 @@
  *   npx playwright test e2e/code-review-happy-path.spec.ts --project=candidate
  *
  * Flow tested:
- *   1. INITIALIZING_SECURE_SESSION loading spinner
- *   2. WelcomeScreen → START_INTERVIEW
- *   3. Diff view: calculateDiscount.js with the /100 bug visible
- *   4. FINAL_SUBMIT disabled before verdict + summary
- *   5. Select REQUEST_CHANGES verdict
- *   6. Fill review summary → REVIEW_READY indicator
- *   7. FINAL_SUBMIT enabled → click
- *   8. GENERATING_QUESTIONS... spinner (Mistral generating follow-ups)
- *   9. FOLLOW_UP_QUESTIONS panel with 5 real AI questions
- *  10. SUBMIT_ANSWERS disabled until all 5 answered
- *  11. Fill all 5 answers
- *  12. SUBMIT_ANSWERS enabled → click (triggers agentic scoring)
- *  13. "Submitted." confirmation screen
+ *   1. WelcomeScreen → START_INTERVIEW
+ *   2. Diff view: calculateDiscount.js with the /100 bug visible
+ *   3. FINAL_SUBMIT disabled before verdict + summary
+ *   4. Select REQUEST_CHANGES verdict
+ *   5. Fill review summary → REVIEW_READY indicator
+ *   6. FINAL_SUBMIT enabled → click
+ *   7. GENERATING_QUESTIONS... spinner (Mistral generating follow-ups)
+ *   8. FOLLOW_UP_QUESTIONS panel — one question at a time
+ *   9. NEXT disabled until current question answered; advance through all 5
+ *  10. SUBMIT_ANSWERS on last question, disabled until answered → click
+ *  11. "Submitted." confirmation screen
  */
 
 import { test, expect } from '@playwright/test';
@@ -47,6 +45,14 @@ function getToken(): string {
     );
   }
 }
+
+const ANSWERS = [
+  'Without /100 the discount is a multiplier, not a percentage — 20% discount becomes 20x the price.',
+  'Revert line 3 to: const discount = price * discountPercent / 100; to correctly compute the fractional discount.',
+  'The return statement on line 5 is present in the new code. The real issue is the missing /100 on line 3.',
+  'Fix the missing /100 first — it causes incorrect pricing on every non-zero discount, which is a production billing bug.',
+  'Customers would pay far more than intended — potentially thousands of times the correct price — causing financial loss and legal risk.',
+];
 
 // ─── Test ─────────────────────────────────────────────────────────────────────
 
@@ -103,40 +109,42 @@ test.describe('CODE_REVIEW challenge — full happy path (live)', () => {
     await expect(submitBtn).toBeEnabled();
     await submitBtn.click();
 
-    // ── 8. GENERATING_QUESTIONS... (Mistral call — may take a few seconds) ─
-    // Spinner may flash briefly — go straight to waiting for the panel
+    // ── 8. Wait for follow-up questions panel (Mistral call) ───────────────
     await expect(page.getByText('FOLLOW_UP_QUESTIONS')).toBeVisible({ timeout: 45000 });
 
-    // ── 9. 5 real AI-generated questions rendered ──────────────────────────
-    await expect(page.getByText('A few follow-up questions')).toBeVisible();
-    await expect(page.getByText('5 short questions', { exact: false })).toBeVisible();
-
-    // All 5 textareas present
-    const textareas = page.locator('textarea');
-    await expect(textareas).toHaveCount(5, { timeout: 5000 });
-
-    // ── 10. SUBMIT_ANSWERS disabled until all answered ─────────────────────
-    const submitAnswersBtn = page.getByRole('button', { name: 'SUBMIT_ANSWERS' });
-    await expect(submitAnswersBtn).toBeDisabled();
-
-    // ── 11. Fill all 5 answers ─────────────────────────────────────────────
-    const answers = [
-      'Without /100 the discount is a multiplier, not a percentage — 20% discount becomes 20x the price.',
-      'Revert line 3 to: const discount = price * discountPercent / 100; to correctly compute the fractional discount.',
-      'The return statement on line 5 is present in the new code. The real issue is the missing /100 on line 3.',
-      'Fix the missing /100 first — it causes incorrect pricing on every non-zero discount, which is a production billing bug.',
-      'Customers would pay far more than intended — potentially thousands of times the correct price — causing financial loss and legal risk.',
-    ];
-
+    // ── 9. Step through all 5 questions one by one ────────────────────────
     for (let i = 0; i < 5; i++) {
-      await textareas.nth(i).fill(answers[i]!);
+      // Progress counter visible
+      await expect(
+        page.getByText(`QUESTION ${i + 1} OF 5`)
+      ).toBeVisible({ timeout: 5000 });
+
+      const textarea = page.locator('textarea').first();
+
+      if (i < 4) {
+        // NEXT button disabled before answering
+        const nextBtn = page.getByRole('button', { name: 'NEXT' });
+        await expect(nextBtn).toBeDisabled();
+
+        // Fill answer
+        await textarea.fill(ANSWERS[i]!);
+
+        // NEXT now enabled → advance
+        await expect(nextBtn).toBeEnabled();
+        await nextBtn.click();
+      } else {
+        // Last question: SUBMIT_ANSWERS replaces NEXT
+        const submitAnswersBtn = page.getByRole('button', { name: 'SUBMIT_ANSWERS' });
+        await expect(submitAnswersBtn).toBeDisabled();
+
+        await textarea.fill(ANSWERS[i]!);
+
+        await expect(submitAnswersBtn).toBeEnabled();
+        await submitAnswersBtn.click();
+      }
     }
 
-    // ── 12. SUBMIT_ANSWERS enabled → click (triggers agentic scoring) ──────
-    await expect(submitAnswersBtn).toBeEnabled();
-    await submitAnswersBtn.click();
-
-    // ── 13. "Submitted." confirmation (scoring runs async) ─────────────────
+    // ── 10. "Submitted." confirmation (scoring runs async) ─────────────────
     await expect(page.getByText('Submitted.')).toBeVisible({ timeout: 30000 });
     await expect(
       page.getByText('Your assessment has been securely delivered.')

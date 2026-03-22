@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Follow-up questions — one-at-a-time UX)
+- `src/components/Assessment/FollowUpQuestionsPanel.tsx` — replaced overwhelming 5-textarea form with one-question-at-a-time step-by-step flow mirroring `QuizRenderer`: coloured context badge (WHY/FIX/MISSED/PRIORITISATION/DEPTH), progress bar, PREV/NEXT navigation, NEXT disabled until current question answered, SUBMIT_ANSWERS replaces NEXT on final question, SKIP_FOLLOW_UP de-emphasised at bottom
+- `e2e/code-review-happy-path.spec.ts` — updated BDD test for step-by-step flow: fill each answer then click NEXT; on last question click SUBMIT_ANSWERS
+
 #### Changed (Follow-up question prompt — hallucination fix)
 - `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system prompt with IRONCLAD CONSTRAINTS: (1) questions must stay inside the diff only, never reference files/functions not in CODE/DIFF CONTEXT; (2) exactly one question of each type in order (WHY/FIX/MISSED/PRIORITISATION/DEPTH); (3) `context` field must be exactly one of those labels; (4) grounded in specific line numbers; (5) conversational interview tone, never accusatory; rewrote user prompt to prefix code context with "IMPORTANT: questions may ONLY reference content from this diff" and add explicit per-question task instructions
 
