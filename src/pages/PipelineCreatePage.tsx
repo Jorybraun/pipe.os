@@ -1,235 +1,368 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../../amplify/data/resource";
+import { ConversationalForm } from "../components/RoleDiscovery/Conversational/ConversationalForm";
+import { PhaseProgress } from "../components/RoleDiscovery/Conversational/PhaseProgress";
 import { LiquidMetalCard } from "../components/ui/LiquidMetalCard";
-import { FieldGroup } from "../components/ui/form";
-import { TextInput } from "../components/ui/form";
-import { TextareaInput } from "../components/ui/form";
-import { Loader2 } from "lucide-react";
+import { FieldGroup, RadioGroup, SelectInput } from "../components/ui/form";
+import { Settings, Loader2, Check } from "lucide-react";
+import { useRoleDiscovery } from "../hooks/useRoleDiscovery";
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from "../../amplify/data/resource";
+import type { RoleDiscoveryData } from "../types/roleDiscovery";
+import type { Baseline } from "../types/discovery";
+import { PIPELINE_PRESETS } from "../lib/pipelinePresets";
 
 const client = generateClient<Schema>();
 
-// Default stage names for new pipelines
-const DEFAULT_STAGE_NAMES = ["Technical Screen", "Technical Assessment", "Final Round"];
-
 /**
- * PipelineCreatePage - Simplified pipeline creation form.
+ * RoleDiscoveryPage - Conversational Role Discovery Flow
  *
- * Route: /pipeline/new
- * Creates a pipeline with name + description, then scaffolds 3 empty stages.
+ * A multi-phase, guided onboarding experience for gathering role context.
+ * Implements a single semantic form with a powerful configuration sidebar.
  */
-export default function PipelineCreatePage(): JSX.Element {
+export default function RoleDiscoveryPage(): JSX.Element {
   const navigate = useNavigate();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    roleContext,
+    isLoading: isAgentLoading,
+    error,
+    costTracking,
+    submitBaseline,
+  } = useRoleDiscovery();
 
-  const titleTrimmed = title.trim();
-  const isValid = titleTrimmed.length >= 1 && titleTrimmed.length <= 100;
+  const [currentPhase, setCurrentPhase] = useState(0);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const handleCreate = async (): Promise<void> => {
-    if (!isValid || isSubmitting) return;
-    setIsSubmitting(true);
-    setError(null);
+  // Local state for the form inputs and pipeline configuration
+  const [formData, setFormData] = useState<Partial<RoleDiscoveryData & { 
+    allowFollowUps: boolean,
+    selectedPresetId: string,
+    questionLimit: string
+  }>>({
+    allowFollowUps: true,
+    selectedPresetId: 'DEFAULT',
+    questionLimit: '5',
+    stack: [],
+  });
 
+  const handleChange = (field: string, value: any): void => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handlePhaseChange = async (nextPhase: number) => {
+    if (nextPhase === 6 && !roleContext.baseline) {
+      const baseline: Baseline = {
+        title: formData.title || "",
+        level: (formData.level?.toLowerCase() as any) || "mid",
+        department: formData.department || "",
+        workModel: (formData.location?.toLowerCase() as any) || "hybrid",
+        teamSize: formData.teamSize || "",
+        reportsTo: formData.reportsTo || "",
+        stack: formData.stack || [],
+      };
+
+      const config = {
+        selectedPresetId: formData.selectedPresetId,
+        allowFollowUps: formData.allowFollowUps
+      };
+
+      await submitBaseline(baseline, config as any);
+    }
+    setCurrentPhase(nextPhase);
+  };
+
+  const handleComplete = async (finalData: any) => {
+    setIsCreating(true);
     try {
       // 1. Create Pipeline
       const { data: pipeline, errors: pErrors } = await client.models.Pipeline.create({
-        title: titleTrimmed,
-        description: description.trim() || undefined,
-        status: "DRAFT",
-        creationMode: "PRESET",
+        title: finalData.title,
+        level: finalData.level as any,
+        stack: finalData.stack,
+        description: finalData.challenges,
+        status: 'ACTIVE',
+        creationMode: formData.selectedPresetId === 'BLANK' ? 'BLANK' : 'PRESET',
       } as any);
 
-      if (pErrors || !pipeline) {
-        throw new Error(pErrors?.[0]?.message ?? "Failed to create pipeline");
+      if (pErrors || !pipeline) throw new Error(pErrors?.[0].message || 'Failed to create pipeline');
+
+      // 2. Create Stages and Challenges from Preset
+      const preset = PIPELINE_PRESETS[formData.selectedPresetId || 'DEFAULT'] || PIPELINE_PRESETS['BLANK'];
+      
+      if (preset && preset.stages.length > 0) {
+        console.log(`[RoleDiscovery] Creating ${preset.stages.length} stages from preset: ${preset.name}...`);
+        
+        for (let sIdx = 0; sIdx < preset.stages.length; sIdx++) {
+          const pStage = preset.stages[sIdx];
+          
+          // Create Stage record
+          const { data: stage, errors: sErrors } = await client.models.Stage.create({
+            pipelineId: pipeline.id,
+            title: pStage.name,
+            order: sIdx,
+          });
+
+          if (sErrors || !stage) {
+            console.error('Error creating stage:', sErrors);
+            continue;
+          }
+
+          // Create Challenges for this stage
+          for (let cIdx = 0; cIdx < pStage.challenges.length; cIdx++) {
+            const pChallenge = pStage.challenges[cIdx];
+            
+            await client.models.Challenge.create({
+              stageId: stage.id,
+              type: pChallenge.type as any,
+              order: cIdx,
+              title: pChallenge.title,
+              instructions: pChallenge.instructions,
+              config: JSON.stringify(pChallenge.config),
+            });
+          }
+        }
+        console.log('[RoleDiscovery] All stages and challenges created.');
       }
 
-      // 2. Create 3 empty stages (no challenges — added at stage level)
-      for (let i = 0; i < DEFAULT_STAGE_NAMES.length; i++) {
-        await client.models.Stage.create({
-          pipelineId: pipeline.id,
-          title: DEFAULT_STAGE_NAMES[i] ?? `Stage ${i + 1}`,
-          order: i,
-        });
-      }
+      // Small delay to ensure consistency before redirect
+      await new Promise(resolve => setTimeout(resolve, 800));
 
+      // 3. Redirect to Pipeline Overview
       navigate(`/pipeline/${pipeline.id}`);
+
     } catch (err) {
-      console.error("[PipelineCreatePage] Failed to create pipeline:", err);
-      setError(err instanceof Error ? err.message : "Failed to create pipeline");
+      console.error('Final Pipeline Creation Failed:', err);
+      alert('Failed to save pipeline. Please try again.');
     } finally {
-      setIsSubmitting(false);
+      setIsCreating(false);
     }
   };
 
+  const phases = [
+    "Role Identity",
+    "Team Context",
+    "Technical Environment",
+    "Success Criteria",
+    "Challenges",
+    "Culture",
+    "Agent Review"
+  ];
+
+  const isLoading = isAgentLoading || isCreating;
+
   return (
-    <div
-      style={{
-        maxWidth: 600,
-        margin: "80px auto",
-        padding: "0 24px",
-      }}
-    >
-      <div style={{ marginBottom: 40 }}>
-        <div
+    <div style={{ padding: "0 20px", maxWidth: 1400, margin: "0 auto" }}>
+      {/* Header / Progress Indicator */}
+      <PhaseProgress current={currentPhase + 1} phases={phases} />
+
+      <div style={{ display: "flex", gap: 24, marginTop: 32, position: 'relative' }}>
+        {/* Main Content Area */}
+        <section
           style={{
-            fontSize: 9,
-            letterSpacing: "0.2em",
-            color: "rgba(255,255,255,0.3)",
-            marginBottom: 12,
-            fontFamily: "Space Mono",
+            flex: 1,
+            position: "relative",
+            minHeight: "70vh",
           }}
         >
-          NEW_PIPELINE
-        </div>
-        <h1
-          style={{
-            fontSize: 28,
-            fontWeight: 800,
-            color: "#fff",
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Create a Pipeline
-        </h1>
-      </div>
+          <LiquidMetalCard 
+            variant="default"
+            style={{ 
+              padding: '48px',
+              minHeight: '640px',
+              position: 'relative'
+            }}
+          >
+            {/* Loading Overlay */}
+            {isLoading && (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'rgba(10, 10, 15, 0.7)',
+                backdropFilter: 'blur(4px)',
+                zIndex: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 20
+              }}>
+                <Loader2 size={40} className="animate-spin" color="#8b5cf6" />
+                <div style={{ fontSize: 12, letterSpacing: '0.2em', color: '#fff' }}>
+                  {isCreating ? 'BUILDING_PIPELINE...' : 'AGENT_THINKING...'}
+                </div>
+              </div>
+            )}
 
-      <LiquidMetalCard variant="chrome" style={{ padding: 40 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-          {/* Name */}
-          <div>
-            <FieldGroup label="PIPELINE NAME">
-              <TextInput
-                value={title}
-                onChange={setTitle}
-                placeholder="e.g. Senior Frontend Engineer"
-              />
-            </FieldGroup>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: 6,
-              }}
-            >
-              {titleTrimmed.length > 100 ? (
-                <span style={{ fontSize: 10, color: "#f87171", fontFamily: "Space Mono" }}>
-                  Name must be 100 characters or fewer
-                </span>
-              ) : (
-                <span />
-              )}
-              <span
-                style={{
-                  fontSize: 10,
-                  color: titleTrimmed.length > 100 ? "#f87171" : "rgba(255,255,255,0.3)",
-                  fontFamily: "Space Mono",
-                  marginLeft: "auto",
-                }}
-              >
-                {titleTrimmed.length}/100
-              </span>
-            </div>
-          </div>
+            <ConversationalForm
+              data={formData}
+              onChange={handleChange}
+              onComplete={handleComplete}
+              currentPhase={currentPhase}
+              onPhaseChange={handlePhaseChange}
+            />
 
-          {/* Description */}
-          <div>
-            <FieldGroup label="DESCRIPTION (OPTIONAL)">
-              <TextareaInput
-                value={description}
-                onChange={setDescription}
-                placeholder="What role is this pipeline evaluating?"
-                rows={3}
-              />
-            </FieldGroup>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-              <span
-                style={{
-                  fontSize: 10,
-                  color: description.length > 500 ? "#f87171" : "rgba(255,255,255,0.3)",
-                  fontFamily: "Space Mono",
-                }}
-              >
-                {description.length}/500
-              </span>
-            </div>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div
-              style={{
-                padding: "12px 16px",
-                background: "rgba(248,113,113,0.1)",
-                border: "1px solid rgba(248,113,113,0.3)",
-                borderRadius: 4,
+            {/* Error Message */}
+            {error && (
+              <div style={{ 
+                marginTop: 24, 
+                padding: 16, 
+                background: 'rgba(239, 68, 68, 0.1)', 
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                color: '#ef4444',
                 fontSize: 12,
-                color: "#f87171",
-                fontFamily: "Space Mono",
-              }}
-            >
-              {error}
-            </div>
-          )}
+                fontFamily: '"Space Mono", monospace'
+              }}>
+                ERROR: {error.message.toUpperCase()}
+              </div>
+            )}
+          </LiquidMetalCard>
+        </section>
 
-          {/* Actions */}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, paddingTop: 8 }}>
-            <button
-              onClick={() => navigate("/")}
-              disabled={isSubmitting}
-              style={{
-                padding: "12px 24px",
-                background: "transparent",
-                border: "1px solid rgba(255,255,255,0.1)",
-                color: "rgba(255,255,255,0.5)",
-                fontSize: 10,
-                letterSpacing: "0.12em",
-                fontWeight: 700,
-                fontFamily: "Space Mono",
-                cursor: isSubmitting ? "not-allowed" : "pointer",
-              }}
-            >
-              CANCEL
-            </button>
-            <button
-              onClick={handleCreate}
-              disabled={!isValid || isSubmitting}
-              style={{
-                padding: "12px 32px",
-                background: isValid && !isSubmitting
-                  ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-                  : "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                color: isValid && !isSubmitting ? "#fff" : "rgba(255,255,255,0.3)",
-                fontSize: 10,
-                letterSpacing: "0.12em",
-                fontWeight: 700,
-                fontFamily: "Space Mono",
-                cursor: isValid && !isSubmitting ? "pointer" : "not-allowed",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                transition: "all 0.2s ease",
-              }}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
-                  CREATING...
-                </>
-              ) : (
-                "CREATE PIPELINE"
-              )}
-            </button>
-          </div>
-        </div>
-      </LiquidMetalCard>
+        {/* Right Sidebar - Pipeline Configuration */}
+        <aside style={{ width: 400 }}>
+           <div 
+             style={{ 
+               padding: 32,
+               height: 'fit-content',
+               minHeight: '640px',
+               background: 'rgba(255, 255, 255, 0.03)',
+               backdropFilter: 'blur(40px) saturate(150%)',
+               border: '1px solid rgba(255, 255, 255, 0.1)',
+               borderRadius: 16,
+               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+               position: 'relative',
+               overflow: 'hidden',
+               display: 'flex',
+               flexDirection: 'column',
+               gap: 32
+             }}
+           >
+             {/* Decorative Gradient Glow */}
+             <div style={{
+               position: 'absolute',
+               top: -50,
+               right: -50,
+               width: 150,
+               height: 150,
+               background: 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)',
+               filter: 'blur(30px)',
+               pointerEvents: 'none'
+             }} />
 
+             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Settings size={18} color="#8b5cf6" />
+                <h3 style={{ 
+                  fontSize: 11, 
+                  letterSpacing: '0.3em', 
+                  color: '#fff', 
+                  textTransform: 'uppercase',
+                  fontFamily: '"Space Mono", monospace',
+                  fontWeight: 700
+                }}>
+                  PIPELINE_CONFIGURATION
+                </h3>
+             </div>
+
+             <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+                
+                {/* Discovery Mode */}
+                <FieldGroup 
+                  label="AI DISCOVERY AGENT" 
+                  hint="Tailored agents generate specific follow-ups based on role nuance."
+                >
+                  <RadioGroup
+                    value={formData.allowFollowUps ? 'Enabled' : 'Disabled'}
+                    onChange={(val) => handleChange('allowFollowUps', val === 'Enabled')}
+                    options={['Enabled', 'Disabled']}
+                  />
+                </FieldGroup>
+
+                <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+
+                {/* Pipeline Presets Config */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                    PIPELINE_PRESETS
+                  </span>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {Object.values(PIPELINE_PRESETS).map((preset) => (
+                      <div 
+                        key={preset.id}
+                        onClick={() => handleChange('selectedPresetId', preset.id)}
+                        style={{
+                          padding: '16px',
+                          background: formData.selectedPresetId === preset.id 
+                            ? 'rgba(139, 92, 246, 0.1)' 
+                            : 'rgba(255,255,255,0.02)',
+                          border: `1px solid ${formData.selectedPresetId === preset.id 
+                            ? 'rgba(139, 92, 246, 0.3)' 
+                            : 'rgba(255,255,255,0.05)'}`,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 4,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ 
+                            fontSize: 10, 
+                            color: formData.selectedPresetId === preset.id ? '#fff' : 'rgba(255,255,255,0.4)',
+                            fontWeight: 700,
+                            letterSpacing: '0.05em'
+                          }}>
+                            {preset.name.toUpperCase()}
+                          </span>
+                          {formData.selectedPresetId === preset.id && <Check size={12} color="#a78bfa" />}
+                        </div>
+                        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', lineHeight: 1.4 }}>
+                          {preset.description}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+
+                {/* Question Config */}
+                <FieldGroup label="AI PROBE LIMIT" hint="Max follow-up questions asked by the agent.">
+                  <SelectInput
+                    value={formData.questionLimit}
+                    onChange={(val) => handleChange('questionLimit', val)}
+                    options={['3', '5', '10']}
+                  />
+                </FieldGroup>
+
+                {/* Discovery Insights (Real-time cost) */}
+                <div style={{ 
+                  marginTop: 'auto',
+                  padding: 20, 
+                  background: 'rgba(139, 92, 246, 0.03)', 
+                  border: '1px solid rgba(139, 92, 246, 0.1)',
+                  borderRadius: 8
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.1em' }}>SESSION_COST</span>
+                    <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>${costTracking.sessionCost.toFixed(4)}</span>
+                  </div>
+                  <div style={{ height: 2, background: 'rgba(255,255,255,0.05)', borderRadius: 1 }}>
+                    <div style={{ 
+                      height: '100%', 
+                      width: `${(costTracking.sessionCost / 0.50) * 100}%`, 
+                      background: '#8b5cf6' 
+                    }} />
+                  </div>
+                </div>
+             </div>
+           </div>
+        </aside>
+      </div>
       <style>{`
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }

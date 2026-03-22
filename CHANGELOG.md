@@ -6,6 +6,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (local main cleanup)
+- `src/App.tsx` — import PipelineCreatePage from archived path; add PipelineBuilderPage + RoleDiscoveryPage imports
+- `src/pages/PipelineCreatePage.tsx` — updated simplified creation page
+- `src/pages/RoleDiscoveryPage.tsx` — removed from active routes (archived)
+- `src/pages/archived/PipelineCreatePage.tsx` — archived original pipeline creation page
+- `playwright/code-review-token.json` — E2E test fixture for code review challenge token
+
 #### Added (E2E Code Review Challenge Flow)
 - `amplify/data/resource.ts` — added `followUpQuestionsJson: a.json()` to `Assessment` model; added `generateCodeReviewFollowUps` mutation wired to new Lambda
 - `amplify/functions/codeReviewFollowUpAgent/` — new Lambda (handler, types, prompts, validation, costTracker); one-turn Claude call generates exactly 5 `SHORT_ANSWER` follow-up questions grounded in candidate annotations; saves to `Assessment.followUpQuestionsJson`
