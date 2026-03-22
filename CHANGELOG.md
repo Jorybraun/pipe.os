@@ -11,6 +11,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/components/Pipeline/ChallengePicker.tsx` — replaced free-text GitHub repo URL input with saved-repos dropdown (localStorage key `pipe_saved_repos`); `+ ADD_REPO` button reveals inline input; saved repos persist across sessions; trash button to remove saved repos
 - `.env.local` — E2E credentials for Playwright auth setup
 
+#### Changed (E2E test fixes — all 10 tests now pass)
+- `e2e/happy-path.spec.ts` — fixed parallel execution (`test.describe.serial`), URL regex to require UUID hyphen, networkidle→load state, increased timeouts for AppSync latency, stage-count selector uses delete-button count, `toHaveCount` replaces fixed 2s wait for delete
+- `src/pages/ListingPage.tsx` — removed `candidates.assessments.score` from selectionSet (Assessment records owned by candidates via publicApiKey, not recruiter — nested query failed silently, returning empty pipeline list)
+
 #### Changed (Happy Path Bug Fixes + E2E Validation)
 - `src/pages/CandidateProfilePage.tsx` — fixed TS2589 in Assessment.list: Amplify filter generic is too deeply recursive for strict mode; fetch all assessments and filter client-side instead (assessment counts per candidate are small)
 - `src/hooks/usePipelineCreate.ts` — fixed pipeline created as `ACTIVE` instead of `DRAFT` (B1)
