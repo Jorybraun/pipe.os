@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Follow-up question prompt — hallucination fix)
+- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system prompt with IRONCLAD CONSTRAINTS: (1) questions must stay inside the diff only, never reference files/functions not in CODE/DIFF CONTEXT; (2) exactly one question of each type in order (WHY/FIX/MISSED/PRIORITISATION/DEPTH); (3) `context` field must be exactly one of those labels; (4) grounded in specific line numbers; (5) conversational interview tone, never accusatory; rewrote user prompt to prefix code context with "IMPORTANT: questions may ONLY reference content from this diff" and add explicit per-question task instructions
+
 #### Added (BDD E2E — CODE_REVIEW happy path)
 - `e2e/code-review-happy-path.spec.ts` — full BDD Playwright spec against real AppSync + real Mistral Lambdas (no mocking): welcome → diff view → verdict+summary → FINAL_SUBMIT → FOLLOW_UP_QUESTIONS panel (5 AI questions) → fill answers → SUBMIT_ANSWERS → "Submitted."; passes in 14.6s
 - `playwright.config.ts` — added `candidate` project (no auth dependency, no storageState) matching `code-review-happy-path.spec.ts`
