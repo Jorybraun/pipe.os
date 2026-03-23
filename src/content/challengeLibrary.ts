@@ -11,7 +11,7 @@
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER';
+export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP';
 
 export interface Bug {
   line: number;
@@ -67,7 +67,7 @@ export interface ChallengeTemplate {
   topic: string;
   estimatedMinutes: number;
   instructions: string;
-  config: CodeReviewConfig | CodeImplementationConfig | QuizMCQConfig | QuizShortAnswerConfig;
+  config: CodeReviewConfig | CodeImplementationConfig | QuizMCQConfig | QuizShortAnswerConfig | Record<string, never>;
 }
 
 // ─── CODE_REVIEW Templates ──────────────────────────────────────────────────
@@ -2409,6 +2409,23 @@ cloneA.ref.ref === cloneA // true (circular structure preserved)
   },
 ];
 
+// ─── FOLLOW_UP Templates ─────────────────────────────────────────────────────
+
+export const FOLLOW_UP_TEMPLATES: ChallengeTemplate[] = [
+  {
+    id: 'follow-up-standard',
+    type: 'FOLLOW_UP',
+    title: 'Follow-Up Questions',
+    description: 'AI-generated follow-up questions based on the candidate\'s previous challenge submission. Probes depth of understanding through a debrief conversation.',
+    tags: ['follow-up', 'ai-generated', 'debrief'],
+    difficulty: 'intermediate',
+    topic: 'Assessment',
+    estimatedMinutes: 5,
+    instructions: 'Answer 5 follow-up questions generated from your previous submission.',
+    config: {},
+  },
+];
+
 // ─── Aggregated Exports ──────────────────────────────────────────────────────
 
 /** All templates combined — used for the Challenge Picker search index */
@@ -2417,6 +2434,7 @@ export const ALL_CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
   ...QUIZ_MCQ_TEMPLATES,
   ...SHORT_ANSWER_TEMPLATES,
   ...CODE_IMPLEMENTATION_TEMPLATES,
+  ...FOLLOW_UP_TEMPLATES,
 ];
 
 /** Template lookup by ID */
@@ -2437,5 +2455,6 @@ export const LIBRARY_STATS = {
     QUIZ_MCQ: QUIZ_MCQ_TEMPLATES.length,
     QUIZ_SHORT_ANSWER: SHORT_ANSWER_TEMPLATES.length,
     CODE_IMPLEMENTATION: CODE_IMPLEMENTATION_TEMPLATES.length,
+    FOLLOW_UP: FOLLOW_UP_TEMPLATES.length,
   },
 } as const;

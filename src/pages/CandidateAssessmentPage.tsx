@@ -45,7 +45,6 @@ export default function CandidateAssessmentPage(): JSX.Element {
     followUpQuestions,
     followUpLoading,
     submitChallenge,
-    submitFollowUpAnswers,
     onStart,
     reset,
   } = useAssessment(token || '');
@@ -56,7 +55,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // Empty array means no questions were generated — advance without showing the panel.
   useEffect(() => {
     if (followUpQuestions !== null && followUpQuestions.length === 0 && !isLoading) {
-      void submitFollowUpAnswers({});
+      void submitChallenge({ answers: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followUpQuestions]);
@@ -72,7 +71,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
   const handleFollowUpSkip = (): void => {
     // Skip follow-up: pass empty answers, triggers advancement
-    submitFollowUpAnswers({}).catch((err: unknown) => {
+    submitChallenge({ answers: {} }).catch((err: unknown) => {
       console.warn('[CandidateAssessmentPage] Skip follow-up failed:', err);
     });
   };
@@ -188,10 +187,10 @@ export default function CandidateAssessmentPage(): JSX.Element {
   }
 
   // ---------------------------------------------------------------------------
-  // Follow-up question flow (after CODE_REVIEW submission)
+  // Follow-up question flow (FOLLOW_UP challenge type)
   // ---------------------------------------------------------------------------
 
-  if (currentChallenge.type === 'CODE_REVIEW') {
+  if (currentChallenge.type === 'FOLLOW_UP') {
     // Generating questions — show spinner
     if (followUpLoading) {
       return (
@@ -229,7 +228,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
           <ChromeMeshGrid />
           <FollowUpQuestionsPanel
             questions={followUpQuestions}
-            onSubmit={submitFollowUpAnswers}
+            onSubmit={(answers) => submitChallenge({ answers })}
             onSkip={handleFollowUpSkip}
             isSubmitting={isLoading}
           />

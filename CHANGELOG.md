@@ -16,6 +16,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/hooks/useAssessment.ts` — removed `challenges.codeArtifact.groundTruth` and `challenges.cachedMetadata` from client selection set; answer keys and sensitive reviewer data no longer sent to candidate browsers
 - `src/hooks/useAssessment.ts` — progressive stage loading: only the current stage's challenge content is fetched on load; future stage questions are loaded on-demand when the candidate advances, preventing preview of upcoming challenges
 
+#### Added (FOLLOW_UP as first-class challenge type)
+- `amplify/data/resource.ts` — added `'FOLLOW_UP'` to Challenge type enum; renamed mutation `generateCodeReviewFollowUps` → `generateFollowUps`
+- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — full challenge-type routing: `buildPromptContext` dispatches to per-type context builders (`buildCodeReviewContext`, `buildCodeImplContext`, `buildMcqContext`, `buildShortAnswerContext`) based on `challenge.type` from DynamoDB; no longer hardcoded to CODE_REVIEW
+- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — `buildSystemPrompt` and `buildUserPrompt` now route by challenge type; added CODE_IMPLEMENTATION, QUIZ_MCQ, QUIZ_SHORT_ANSWER prompt strategies alongside existing CODE_REVIEW strategy
+- `src/hooks/useAssessment.ts` — FOLLOW_UP is now a first-class challenge type: auto-triggers `generateFollowUps` via `useEffect` when current challenge is FOLLOW_UP; `submitChallenge` has an early-return branch for FOLLOW_UP that saves answers to `lastAssessmentId`, fires `scoreAssessment`, and advances without creating a new Assessment record; scoring of non-FOLLOW_UP challenges deferred when next challenge is FOLLOW_UP
+- `src/pages/CandidateAssessmentPage.tsx` — follow-up panel now renders for `currentChallenge.type === 'FOLLOW_UP'` (not CODE_REVIEW); `onSubmit` and auto-skip both call `submitChallenge` (uniform flow); removed `submitFollowUpAnswers` from destructuring
+- `src/content/challengeLibrary.ts` — added `'FOLLOW_UP'` to `ChallengeType`; added `FOLLOW_UP_TEMPLATES` array with one standard template; added to `ALL_CHALLENGE_TEMPLATES` and `LIBRARY_STATS`
+- `src/lib/challenge/resolveLayout.ts` — added `'FOLLOW_UP'` to `ChallengeType`; added FOLLOW_UP case (page intercepts before layout is used)
+- `src/components/Pipeline/ChallengePicker.tsx` — added FOLLOW_UP to TYPES filter list (orange, always visible); FOLLOW_UP template appears in standard template grid
+
 #### Fixed (white screen on consecutive CODE_REVIEW challenges)
 - `src/pages/CandidateAssessmentPage.tsx` — added `key={currentChallenge.id}` to `TimerProvider`; forces full remount of challenge workspace on each new challenge, clearing stale `localDiff`/`submission` state in `ChallengeRegistry`; previously caused white screen on the second consecutive CODE_REVIEW in the same stage
 

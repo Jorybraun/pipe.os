@@ -41,6 +41,7 @@ const TYPES = [
   { id: 'CODE_IMPLEMENTATION', label: 'Implementation', icon: Code, color: '#a78bfa' },
   { id: 'QUIZ_MCQ', label: 'Multiple Choice', icon: Shield, color: '#34d399' },
   { id: 'QUIZ_SHORT_ANSWER', label: 'Short Answer', icon: FileText, color: '#fbbf24' },
+  { id: 'FOLLOW_UP', label: 'Follow-Up', icon: Zap, color: '#f97316' },
 ];
 
 function isValidGitHubUrl(url: string): boolean {
@@ -472,6 +473,7 @@ export function ChallengePicker({ isOpen, onClose, onSelect }: ChallengePickerPr
             {TYPES.filter(t =>
               FEATURE_FLAGS.FEATURE_FLAG_PREDEFINED_CHALLENGES ||
               (t.id !== 'QUIZ_MCQ' && t.id !== 'QUIZ_SHORT_ANSWER')
+            // FOLLOW_UP is always shown — it's not a predefined challenge template
             ).map(t => {
               const isActive = selectedType === t.id;
               return (

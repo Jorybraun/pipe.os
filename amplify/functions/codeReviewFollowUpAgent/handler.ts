@@ -1,14 +1,14 @@
 /**
- * codeReviewFollowUpAgent Lambda Handler
+ * Follow-Up Agent Lambda Handler
  *
- * Triggered by the generateCodeReviewFollowUps AppSync mutation.
+ * Triggered by the generateFollowUps AppSync mutation.
  *
  * Steps:
  * 1. Validate input (assessmentId)
  * 2. Fetch Assessment from DynamoDB
  * 3. Fetch linked Challenge from DynamoDB
- * 4. Build prompt from candidate annotations + challenge context
- * 5. Call Mistral on Amazon Bedrock to generate exactly 5 SHORT_ANSWER follow-up questions
+ * 4. Route to correct prompt strategy based on challenge.type
+ * 5. Call Mistral to generate exactly 5 SHORT_ANSWER follow-up questions
  * 6. Save questions to Assessment.followUpQuestionsJson
  * 7. Return questions
  */
@@ -31,7 +31,7 @@ import type {
 } from './types';
 import { validateInput, sanitizeForPrompt } from './validation';
 import { createCostTracker, trackCost, getCostingSummary } from './costTracker';
-import { buildSystemPrompt, buildUserPrompt } from './prompts';
+import { buildSystemPrompt, buildUserPrompt, type FollowUpContext } from './prompts';
 
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ const MAX_TOKENS = parseInt(process.env.MODEL_MAX_TOKENS ?? '2048', 10);
 
 export async function handler(event: unknown): Promise<FollowUpAgentOutput> {
   const startTime = Date.now();
-  console.log('[CodeReviewFollowUpAgent] Invoked', { event: JSON.stringify(event) });
+  console.log('[FollowUpAgent] Invoked', { event: JSON.stringify(event) });
 
   const costTracker = createCostTracker(
     parseFloat(process.env.COST_BUDGET_PER_SESSION ?? '0.10')
@@ -63,55 +63,40 @@ export async function handler(event: unknown): Promise<FollowUpAgentOutput> {
 
   // Step 1: Validate
   const { assessmentId } = validateInput(event);
-  console.log('[CodeReviewFollowUpAgent] assessmentId:', assessmentId);
+  console.log('[FollowUpAgent] assessmentId:', assessmentId);
 
   // Step 2: Fetch Assessment
   const assessment = await fetchAssessment(assessmentId);
   if (!assessment) {
     throw new Error(`ASSESSMENT_NOT_FOUND: ${assessmentId}`);
   }
-  console.log('[CodeReviewFollowUpAgent] Assessment loaded, challengeId:', assessment.challengeId);
 
   // Step 3: Fetch Challenge
   const challenge = assessment.challengeId ? await fetchChallenge(assessment.challengeId) : null;
+  const challengeType = challenge?.type ?? 'CODE_REVIEW';
+
+  console.log('[FollowUpAgent] challengeType:', challengeType, '  challengeId:', assessment.challengeId);
+
   if (!challenge) {
-    console.warn('[CodeReviewFollowUpAgent] Challenge not found — using minimal context');
+    console.warn('[FollowUpAgent] Challenge not found — using minimal context');
   }
 
-  // Step 4: Extract candidate review data
-  const { annotations, verdict, summary } = extractReviewData(assessment);
-  const codeContext = extractCodeContext(challenge);
-  const challengeTitle = sanitizeForPrompt(challenge?.title ?? 'Code Review Challenge', 100);
-  const challengeInstructions = sanitizeForPrompt(
-    (challenge?.instructions as string | undefined) ?? 'Review the code and identify any bugs or issues.',
-    500
-  );
+  // Step 4: Build prompt context based on challenge type
+  const ctx = buildPromptContext(challengeType, assessment, challenge);
 
-  console.log('[CodeReviewFollowUpAgent] Extracted', {
-    annotationCount: annotations.length,
-    verdict,
-    codeContextLength: codeContext.length,
-  });
+  console.log('[FollowUpAgent] Context built for type:', challengeType);
 
-  // Step 5: Call Mistral on Bedrock
-  const questions = await generateQuestions(
-    challengeTitle,
-    challengeInstructions,
-    codeContext,
-    annotations,
-    verdict,
-    summary,
-    costTracker
-  );
+  // Step 5: Call Mistral
+  const questions = await generateQuestions(challengeType, ctx, costTracker);
 
-  console.log('[CodeReviewFollowUpAgent] Generated', { questionCount: questions.length });
+  console.log('[FollowUpAgent] Generated', { questionCount: questions.length });
 
   // Step 6: Save to Assessment
   await saveQuestions(assessmentId, questions);
-  console.log('[CodeReviewFollowUpAgent] Questions saved to Assessment');
+  console.log('[FollowUpAgent] Questions saved');
 
   const processingTime = Date.now() - startTime;
-  console.log('[CodeReviewFollowUpAgent] Done', {
+  console.log('[FollowUpAgent] Done', {
     processingTime,
     cost: costTracker.estimatedCost.toFixed(4),
   });
@@ -123,6 +108,150 @@ export async function handler(event: unknown): Promise<FollowUpAgentOutput> {
   };
 }
 
+// ─── Context Router ────────────────────────────────────────────────────────────
+
+/**
+ * Extracts all prompt context from the assessment + challenge record,
+ * dispatching on challenge type for type-specific fields.
+ */
+function buildPromptContext(
+  challengeType: string,
+  assessment: AssessmentRecord,
+  challenge: ChallengeRecord | null
+): FollowUpContext {
+  const challengeTitle = sanitizeForPrompt(challenge?.title ?? 'Challenge', 100);
+  const challengeInstructions = sanitizeForPrompt(
+    (challenge?.instructions as string | undefined) ?? 'Complete the challenge.',
+    500
+  );
+
+  const base: FollowUpContext = { challengeTitle, challengeInstructions, codeContext: '' };
+
+  switch (challengeType) {
+    case 'CODE_REVIEW':
+      return buildCodeReviewContext(base, assessment, challenge);
+    case 'CODE_IMPLEMENTATION':
+      return buildCodeImplContext(base, assessment, challenge);
+    case 'QUIZ_MCQ':
+      return buildMcqContext(base, assessment, challenge);
+    case 'QUIZ_SHORT_ANSWER':
+      return buildShortAnswerContext(base, assessment, challenge);
+    default:
+      return buildCodeReviewContext(base, assessment, challenge);
+  }
+}
+
+// ─── Per-Type Context Builders ────────────────────────────────────────────────
+
+function buildCodeReviewContext(
+  base: FollowUpContext,
+  assessment: AssessmentRecord,
+  challenge: ChallengeRecord | null
+): FollowUpContext {
+  const { annotations, verdict, summary } = extractCodeReviewData(assessment);
+  const codeContext = extractDiffContext(challenge);
+  return { ...base, codeContext, annotations, verdict, summary };
+}
+
+function buildCodeImplContext(
+  base: FollowUpContext,
+  assessment: AssessmentRecord,
+  challenge: ChallengeRecord | null
+): FollowUpContext {
+  let submittedCode = '';
+  if (assessment.submission) {
+    try {
+      const sub = typeof assessment.submission === 'string'
+        ? JSON.parse(assessment.submission)
+        : assessment.submission;
+      if (sub && typeof sub === 'object') {
+        const s = sub as Record<string, unknown>;
+        if (typeof s['code'] === 'string') submittedCode = sanitizeForPrompt(s['code'], 4000);
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Starter code as fallback codeContext for "what they had to work with"
+  const codeContext = extractConfigCode(challenge);
+  return { ...base, codeContext, submittedCode };
+}
+
+function buildMcqContext(
+  base: FollowUpContext,
+  assessment: AssessmentRecord,
+  challenge: ChallengeRecord | null
+): FollowUpContext {
+  let selectedOption = '';
+  let questionText = base.challengeInstructions;
+  let options: string[] = [];
+
+  // Extract question text and options from challenge config
+  if (challenge?.config) {
+    try {
+      const config = typeof challenge.config === 'string'
+        ? JSON.parse(challenge.config)
+        : challenge.config;
+      const c = config as Record<string, unknown>;
+      if (typeof c['question'] === 'string') questionText = sanitizeForPrompt(c['question'], 500);
+      if (Array.isArray(c['options'])) {
+        options = (c['options'] as unknown[]).map(o =>
+          typeof o === 'string' ? o : typeof o === 'object' && o !== null
+            ? sanitizeForPrompt(String((o as Record<string, unknown>)['text'] ?? ''), 200)
+            : ''
+        ).filter(Boolean);
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Extract selected option from submission
+  if (assessment.submission) {
+    try {
+      const sub = typeof assessment.submission === 'string'
+        ? JSON.parse(assessment.submission)
+        : assessment.submission;
+      const s = sub as Record<string, unknown>;
+      const answers = s['answers'] as Record<string, string> | undefined;
+      if (answers?.['current']) {
+        const idx = parseInt(answers['current'], 10);
+        selectedOption = isNaN(idx) ? answers['current'] : (options[idx] ?? answers['current']);
+      }
+    } catch { /* ignore */ }
+  }
+
+  return { ...base, codeContext: '', questionText, selectedOption, options };
+}
+
+function buildShortAnswerContext(
+  base: FollowUpContext,
+  assessment: AssessmentRecord,
+  challenge: ChallengeRecord | null
+): FollowUpContext {
+  let answerText = '';
+  let questionText = base.challengeInstructions;
+
+  if (challenge?.config) {
+    try {
+      const config = typeof challenge.config === 'string'
+        ? JSON.parse(challenge.config)
+        : challenge.config;
+      const c = config as Record<string, unknown>;
+      if (typeof c['question'] === 'string') questionText = sanitizeForPrompt(c['question'], 500);
+    } catch { /* ignore */ }
+  }
+
+  if (assessment.submission) {
+    try {
+      const sub = typeof assessment.submission === 'string'
+        ? JSON.parse(assessment.submission)
+        : assessment.submission;
+      const s = sub as Record<string, unknown>;
+      if (typeof s['text'] === 'string') answerText = sanitizeForPrompt(s['text'], 2000);
+    } catch { /* ignore */ }
+  }
+
+  return { ...base, codeContext: '', questionText, answerText };
+}
+
 // ─── DynamoDB Helpers ─────────────────────────────────────────────────────────
 
 async function fetchAssessment(assessmentId: string): Promise<AssessmentRecord | null> {
@@ -130,7 +259,6 @@ async function fetchAssessment(assessmentId: string): Promise<AssessmentRecord |
     TableName: ASSESSMENT_TABLE,
     Key: marshall({ id: assessmentId }),
   }));
-
   if (!response.Item) return null;
   return unmarshall(response.Item) as AssessmentRecord;
 }
@@ -140,89 +268,61 @@ async function fetchChallenge(challengeId: string): Promise<ChallengeRecord | nu
     TableName: CHALLENGE_TABLE,
     Key: marshall({ id: challengeId }),
   }));
-
   if (!response.Item) return null;
   return unmarshall(response.Item) as ChallengeRecord;
 }
 
-async function saveQuestions(
-  assessmentId: string,
-  questions: FollowUpQuestion[]
-): Promise<void> {
+async function saveQuestions(assessmentId: string, questions: FollowUpQuestion[]): Promise<void> {
   const followUpQuestionsJson: FollowUpQuestionsJson = {
     questions,
     answers: [],
     generatedAt: new Date().toISOString(),
   };
-
   await dynamo.send(new UpdateItemCommand({
     TableName: ASSESSMENT_TABLE,
     Key: marshall({ id: assessmentId }),
     UpdateExpression: 'SET followUpQuestionsJson = :fq',
-    ExpressionAttributeValues: marshall({
-      ':fq': JSON.stringify(followUpQuestionsJson),
-    }),
+    ExpressionAttributeValues: marshall({ ':fq': JSON.stringify(followUpQuestionsJson) }),
     ReturnValues: ReturnValue.NONE,
   }));
 }
 
 // ─── Data Extraction Helpers ──────────────────────────────────────────────────
 
-interface ReviewData {
+function extractCodeReviewData(assessment: AssessmentRecord): {
   annotations: CandidateAnnotation[];
   verdict: string;
   summary: string;
-}
-
-function extractReviewData(assessment: AssessmentRecord): ReviewData {
+} {
   let annotations: CandidateAnnotation[] = [];
   let verdict = 'comment';
   let summary = '';
 
-  // Try new-style codeReviewAnnotations field first
   if (assessment.codeReviewAnnotations) {
     try {
       const raw = typeof assessment.codeReviewAnnotations === 'string'
         ? JSON.parse(assessment.codeReviewAnnotations)
         : assessment.codeReviewAnnotations;
-
-      if (Array.isArray(raw)) {
-        annotations = raw as CandidateAnnotation[];
-      }
-    } catch {
-      console.warn('[CodeReviewFollowUpAgent] Failed to parse codeReviewAnnotations');
-    }
+      if (Array.isArray(raw)) annotations = raw as CandidateAnnotation[];
+    } catch { /* ignore */ }
   }
 
-  // Fall back to submission.annotations
   if (annotations.length === 0 && assessment.submission) {
     try {
-      const submission = typeof assessment.submission === 'string'
+      const sub = typeof assessment.submission === 'string'
         ? JSON.parse(assessment.submission)
         : assessment.submission;
-
-      if (submission && typeof submission === 'object') {
-        const sub = submission as Record<string, unknown>;
-        if (Array.isArray(sub['annotations'])) {
-          annotations = sub['annotations'] as CandidateAnnotation[];
-        }
-        if (typeof sub['verdict'] === 'string') {
-          verdict = sub['verdict'];
-        }
-        if (typeof sub['summary'] === 'string') {
-          summary = sub['summary'];
-        }
+      if (sub && typeof sub === 'object') {
+        const s = sub as Record<string, unknown>;
+        if (Array.isArray(s['annotations'])) annotations = s['annotations'] as CandidateAnnotation[];
+        if (typeof s['verdict'] === 'string') verdict = s['verdict'];
+        if (typeof s['summary'] === 'string') summary = s['summary'];
       }
-    } catch {
-      console.warn('[CodeReviewFollowUpAgent] Failed to parse submission');
-    }
+    } catch { /* ignore */ }
   }
 
-  if (assessment.codeReviewSummary) {
-    summary = assessment.codeReviewSummary;
-  }
+  if (assessment.codeReviewSummary) summary = assessment.codeReviewSummary;
 
-  // Sanitize all string fields
   summary = sanitizeForPrompt(summary, 1000);
   annotations = annotations.map(a => ({
     ...a,
@@ -232,9 +332,6 @@ function extractReviewData(assessment: AssessmentRecord): ReviewData {
   return { annotations, verdict, summary };
 }
 
-/**
- * Renders a cachedDiffJson file as a unified-diff-style string for the prompt.
- */
 function renderDiffFile(file: DiffFile): string {
   const lines: string[] = [`--- a/${file.path}`, `+++ b/${file.path}`];
   for (const hunk of file.hunks) {
@@ -247,95 +344,47 @@ function renderDiffFile(file: DiffFile): string {
   return lines.join('\n');
 }
 
-function extractCodeContext(challenge: ChallengeRecord | null): string {
+function extractDiffContext(challenge: ChallengeRecord | null): string {
   if (!challenge) return 'No code context available.';
 
-  // 1. Prefer cachedDiffJson — this is the actual diff shown to the candidate
   if (challenge.cachedDiffJson) {
     try {
       const raw = typeof challenge.cachedDiffJson === 'string'
         ? JSON.parse(challenge.cachedDiffJson)
         : challenge.cachedDiffJson;
-
       const diff = raw as CachedDiffJson;
       if (diff && Array.isArray(diff.files) && diff.files.length > 0) {
-        const rendered = diff.files
-          .map((f) => renderDiffFile(f))
-          .join('\n\n');
-        return sanitizeForPrompt(rendered, 6000);
+        return sanitizeForPrompt(diff.files.map(renderDiffFile).join('\n\n'), 6000);
       }
-    } catch {
-      console.warn('[CodeReviewFollowUpAgent] Failed to parse cachedDiffJson');
-    }
+    } catch { /* ignore */ }
   }
 
-  // 2. Fall back to config.codeSnippet / config.diff / config.code
-  if (challenge.config) {
-    try {
-      const config = typeof challenge.config === 'string'
-        ? JSON.parse(challenge.config)
-        : challenge.config;
-
-      if (config && typeof config === 'object') {
-        const c = config as Record<string, unknown>;
-        if (typeof c['codeSnippet'] === 'string') {
-          return sanitizeForPrompt(c['codeSnippet'] as string, 6000);
-        } else if (typeof c['diff'] === 'string') {
-          return sanitizeForPrompt(c['diff'] as string, 6000);
-        } else if (typeof c['code'] === 'string') {
-          return sanitizeForPrompt(c['code'] as string, 6000);
-        }
-      }
-    } catch {
-      // No code context from config
-    }
-  }
-
-  // 3. Fall back to serverConfig.codeSnippet
-  if (challenge.serverConfig) {
-    try {
-      const sc = typeof challenge.serverConfig === 'string'
-        ? JSON.parse(challenge.serverConfig)
-        : challenge.serverConfig;
-
-      if (sc && typeof sc === 'object') {
-        const s = sc as Record<string, unknown>;
-        if (typeof s['codeSnippet'] === 'string') {
-          return sanitizeForPrompt(s['codeSnippet'] as string, 6000);
-        }
-      }
-    } catch {
-      // No code context from serverConfig
-    }
-  }
-
-  return 'No code snippet available in challenge config.';
+  return extractConfigCode(challenge) || 'No code snippet available.';
 }
 
-// ─── Bedrock / Mistral Question Generation ────────────────────────────────────
+function extractConfigCode(challenge: ChallengeRecord | null): string {
+  if (!challenge?.config) return '';
+  try {
+    const c = (typeof challenge.config === 'string'
+      ? JSON.parse(challenge.config)
+      : challenge.config) as Record<string, unknown>;
+    for (const key of ['codeSnippet', 'starterCode', 'diff', 'code']) {
+      if (typeof c[key] === 'string') return sanitizeForPrompt(c[key] as string, 4000);
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
+// ─── Mistral Question Generation ──────────────────────────────────────────────
 
 async function generateQuestions(
-  challengeTitle: string,
-  challengeInstructions: string,
-  codeContext: string,
-  annotations: CandidateAnnotation[],
-  verdict: string,
-  summary: string,
+  challengeType: string,
+  ctx: FollowUpContext,
   costTracker: ReturnType<typeof createCostTracker>
 ): Promise<FollowUpQuestion[]> {
-  const systemPrompt = buildSystemPrompt();
-  const userPrompt = buildUserPrompt(
-    challengeTitle,
-    challengeInstructions,
-    codeContext,
-    annotations,
-    verdict,
-    summary
-  );
+  const systemPrompt = buildSystemPrompt(challengeType);
+  const userPrompt = buildUserPrompt(challengeType, ctx);
 
-  // System prompt is always sent in code — platform agent instructions are intentionally cleared.
-  // agents.complete() accepts system messages the same way chat.complete() does.
-  // responseFormat: json_object forces JSON output regardless of prompt compliance.
   const response = MISTRAL_AGENT_ID
     ? await mistral.agents.complete({
         agentId: MISTRAL_AGENT_ID,
@@ -368,17 +417,14 @@ async function generateQuestions(
       ? rawContent.map((c) => ('text' in c ? (c as { text: string }).text : '')).join('')
       : '';
 
-  if (!text) {
-    throw new Error('UNEXPECTED_RESPONSE_TYPE: Expected text from Mistral');
-  }
+  if (!text) throw new Error('UNEXPECTED_RESPONSE_TYPE: Expected text from Mistral');
 
   let parsed: ModelQuestionsOutput;
   try {
-    // Strip markdown fences if present (defensive)
     const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
     parsed = JSON.parse(cleaned) as ModelQuestionsOutput;
   } catch (err) {
-    console.error('[CodeReviewFollowUpAgent] Failed to parse Mistral response:', text);
+    console.error('[FollowUpAgent] Failed to parse Mistral response:', text);
     throw new Error('PARSE_FAILED: Model did not return valid JSON');
   }
 
@@ -386,7 +432,6 @@ async function generateQuestions(
     throw new Error('INVALID_RESPONSE: questions array missing or empty');
   }
 
-  // Normalise to exactly 5 questions with stable IDs
   const questions: FollowUpQuestion[] = parsed.questions.slice(0, 5).map((q, i) => ({
     id: q.id ?? uuid(),
     type: 'SHORT_ANSWER' as const,
@@ -394,16 +439,14 @@ async function generateQuestions(
     context: sanitizeForPrompt(q.context ?? '', 200),
   }));
 
-  // Pad to 5 if Claude returned fewer
   while (questions.length < 5) {
-    const idx = questions.length + 1;
     questions.push({
       id: uuid(),
       type: 'SHORT_ANSWER',
-      question: `Can you walk through your overall approach to this code review?`,
+      question: `Can you walk through your overall approach to this challenge?`,
       context: `General reasoning`,
     });
-    console.warn('[CodeReviewFollowUpAgent] Padded question', idx);
+    console.warn('[FollowUpAgent] Padded question', questions.length);
   }
 
   return questions;

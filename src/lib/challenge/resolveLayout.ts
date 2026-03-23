@@ -1,5 +1,5 @@
 
-export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER';
+export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP';
 
 export type PanelType =
   | 'problem'
@@ -65,6 +65,15 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
       };
 
     case 'QUIZ_SHORT_ANSWER':
+      return {
+        leftPanel: null,
+        centerPanel: 'textarea',
+        rightPanel: null,
+      };
+
+    // FOLLOW_UP is intercepted at the page level before ChallengeRegistry is reached.
+    // This case exists only for type-safety completeness.
+    case 'FOLLOW_UP':
       return {
         leftPanel: null,
         centerPanel: 'textarea',

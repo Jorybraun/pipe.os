@@ -124,7 +124,7 @@ const schema = a.schema({
     .model({
       stageId: a.id().required(),
       stage: a.belongsTo('Stage', 'stageId'),
-      type: a.enum(['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER']),
+      type: a.enum(['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP']),
       order: a.integer(),
       title: a.string().required(),
       instructions: a.string(),
@@ -559,17 +559,17 @@ const schema = a.schema({
     .authorization((allow) => [allow.publicApiKey()]),
 
   /**
-   * generateCodeReviewFollowUps
+   * generateFollowUps
    *
-   * Invoked immediately after a candidate submits a CODE_REVIEW challenge.
-   * Reads the Assessment + Challenge from DynamoDB, calls the
-   * codeReviewFollowUpAgent Lambda to generate 5 SHORT_ANSWER follow-up
-   * questions, saves them to Assessment.followUpQuestionsJson, and returns
-   * the questions for immediate display.
+   * Invoked when a candidate reaches a FOLLOW_UP challenge.
+   * Reads the previous Assessment + its Challenge from DynamoDB, routes to
+   * the correct prompt strategy based on challenge type, calls Mistral to
+   * generate 5 SHORT_ANSWER follow-up questions, saves them to
+   * Assessment.followUpQuestionsJson, and returns the questions.
    *
    * Authorization: publicApiKey — candidates invoke this without auth.
    */
-  generateCodeReviewFollowUps: a
+  generateFollowUps: a
     .mutation()
     .arguments({
       assessmentId: a.id().required(),
