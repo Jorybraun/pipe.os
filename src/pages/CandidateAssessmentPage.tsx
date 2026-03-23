@@ -263,7 +263,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   } | null;
 
   const challengeWorkspace = (
-    <TimerProvider>
+    <TimerProvider key={currentChallenge.id}>
       <StageShell
         title={currentChallenge.title}
         totalChallenges={currentStage.challenges.length}

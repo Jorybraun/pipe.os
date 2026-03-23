@@ -116,6 +116,17 @@ export default defineConfig({
         storageState: { cookies: [], origins: [] },
       },
     },
+
+    // Intelligence report + candidate score display BDD
+    {
+      name: 'intelligence',
+      testMatch: /candidate-scores\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: STORAGE_STATE,
+      },
+      dependencies: ['auth_setup'],
+    },
   ],
 
   // Run your local dev server before starting the tests

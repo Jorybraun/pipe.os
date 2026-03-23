@@ -34,7 +34,7 @@ const dynamo = new DynamoDBClient({
 const ASSESSMENT_TABLE = process.env.ASSESSMENT_TABLE_NAME ?? 'Assessment';
 const CHALLENGE_TABLE = process.env.CHALLENGE_TABLE_NAME ?? 'Challenge';
 const MISTRAL_MODEL = process.env.MISTRAL_MODEL ?? 'mistral-large-latest';
-const MAX_TOKENS = parseInt(process.env.MODEL_MAX_TOKENS ?? '512', 10);
+const MAX_TOKENS = parseInt(process.env.MODEL_MAX_TOKENS ?? '800', 10);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -290,14 +290,16 @@ async function agenticScoreCodeReview(input: AgenticScoringInput): Promise<{ sco
 
   const systemPrompt = `You are a senior technical interviewer evaluating a developer's code review submission.
 
-Score the candidate from 0-100 based on:
-- Bug identification (40%): Did they find the actual issues? Miss any critical ones?
-- Severity & reasoning (20%): Were annotations well-explained and correctly prioritised?
-- Overall verdict & summary (20%): Was their written summary accurate and insightful?
-- Follow-up depth (20%): Do their answers show real understanding, or surface-level responses?
+Score the candidate from 0-100 across four dimensions:
+- bugIdentification (40%): Did they find the actual issues? Miss any critical ones?
+- severityJudgment (20%): Were annotations well-explained and correctly prioritised?
+- analyticalWriting (20%): Was their written summary accurate, clear and insightful?
+- technicalDepth (20%): Do their follow-up answers show real understanding, or surface-level responses?
 
-Respond with ONLY valid JSON in this exact format:
-{"score": <integer 0-100>, "feedback": "<1-2 sentence summary for the recruiter>"}`;
+The overall score is the weighted sum of the four dimension scores.
+
+Respond with ONLY valid JSON in this exact format (no markdown, no extra keys):
+{"score":<integer 0-100>,"summary":"<2-3 sentence holistic assessment for the recruiter>","strengths":["<strength 1>","<strength 2>"],"concerns":["<concern 1>","<concern 2>"],"skillProfile":{"bugIdentification":<integer 0-100>,"severityJudgment":<integer 0-100>,"analyticalWriting":<integer 0-100>,"technicalDepth":<integer 0-100>}}`;
 
   const userPrompt = `## Challenge Instructions
 ${challengeInstructions || 'Review the code and identify any bugs or issues.'}
@@ -345,10 +347,40 @@ ${qaSection}`;
 
   try {
     const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
-    const parsed = JSON.parse(cleaned) as { score: unknown; feedback: unknown };
-    const score = Math.round(Math.max(0, Math.min(100, Number(parsed.score))));
-    const feedback = typeof parsed.feedback === 'string' ? parsed.feedback : buildFeedback('CODE_REVIEW', score);
-    return { score, feedback };
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+    const score = Math.round(Math.max(0, Math.min(100, Number(parsed['score']))));
+
+    // Build the structured AgenticFeedback stored in the feedback field.
+    // The frontend detects this shape via JSON.parse and renders the rich view.
+    const skillProfileRaw = parsed['skillProfile'];
+    const skillProfile = (
+      skillProfileRaw && typeof skillProfileRaw === 'object' && !Array.isArray(skillProfileRaw)
+    ) ? (skillProfileRaw as Record<string, unknown>) : {};
+
+    const clampDim = (key: string): number =>
+      Math.round(Math.max(0, Math.min(100, Number(skillProfile[key] ?? 50))));
+
+    const strengths = Array.isArray(parsed['strengths'])
+      ? (parsed['strengths'] as unknown[]).filter(s => typeof s === 'string') as string[]
+      : [];
+    const concerns = Array.isArray(parsed['concerns'])
+      ? (parsed['concerns'] as unknown[]).filter(s => typeof s === 'string') as string[]
+      : [];
+
+    const agenticFeedback = {
+      score,
+      summary: typeof parsed['summary'] === 'string' ? parsed['summary'] : buildFeedback('CODE_REVIEW', score),
+      strengths,
+      concerns,
+      skillProfile: {
+        bugIdentification: clampDim('bugIdentification'),
+        severityJudgment: clampDim('severityJudgment'),
+        analyticalWriting: clampDim('analyticalWriting'),
+        technicalDepth: clampDim('technicalDepth'),
+      },
+    };
+
+    return { score, feedback: JSON.stringify(agenticFeedback) };
   } catch (err) {
     console.error('[ScoringAgent] Failed to parse Mistral scoring response:', text, err);
     return { score: 0, feedback: 'Scoring failed — could not parse model response.' };

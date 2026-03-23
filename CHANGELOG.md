@@ -16,6 +16,36 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/hooks/useAssessment.ts` — removed `challenges.codeArtifact.groundTruth` and `challenges.cachedMetadata` from client selection set; answer keys and sensitive reviewer data no longer sent to candidate browsers
 - `src/hooks/useAssessment.ts` — progressive stage loading: only the current stage's challenge content is fetched on load; future stage questions are loaded on-demand when the candidate advances, preventing preview of upcoming challenges
 
+#### Fixed (white screen on consecutive CODE_REVIEW challenges)
+- `src/pages/CandidateAssessmentPage.tsx` — added `key={currentChallenge.id}` to `TimerProvider`; forces full remount of challenge workspace on each new challenge, clearing stale `localDiff`/`submission` state in `ChallengeRegistry`; previously caused white screen on the second consecutive CODE_REVIEW in the same stage
+
+#### Changed (Intelligence Report — annotation breakdown + VIEW CODE REVIEW + GENERATE_REPORT)
+- `src/components/Analytics/IntelligenceReport.tsx` — replaced misleading percentage bars in annotation breakdown with count badges (large number + severity label coloured per severity); 1 critical no longer shows 100% bar
+- `src/components/Analytics/IntelligenceReport.tsx` — added VIEW CODE REVIEW ↗ button at top of `CodeReviewDeepDive`; links to `${githubRepoUrl}/pull/${githubPrNumber}`; only renders when both fields present on the challenge
+- `src/components/Analytics/IntelligenceReport.tsx` — extended `ChallengeRow` interface with `githubRepoUrl` and `githubPrNumber` optional fields
+- `src/pages/CandidateProfilePage.tsx` — GENERATE_REPORT button is now active; clicking it switches to INTELLIGENCE tab then calls `window.print()` after 300ms to allow tab render
+
+#### Added (Candidate Intelligence Report — feature-flagged analytics dashboard)
+- `src/lib/features.ts` — feature flag system; `FEATURES.INTELLIGENCE_REPORT` gated by `VITE_FEATURE_INTELLIGENCE_REPORT=true`; single swap point for future runtime billing/auth check
+- `src/components/Analytics/IntelligenceReport.tsx` — rich candidate analytics dashboard (~600 lines, pure SVG charts, no new npm deps): executive summary with `ScoreGauge`, AI narrative, strengths/concerns chips; stage performance horizontal bars; per-challenge deep dives (`CodeReviewDeepDive` with `SkillRadarChart`, annotation breakdown, follow-up Q&A transcript; `QuizMcqDeepDive`, `QuizShortAnswerDeepDive`, `CodeImplDeepDive`); `SkillsMatrix` showing 4 CODE_REVIEW skill dimensions
+- `amplify/functions/scoringAgent/handler.ts` — agentic scoring now returns structured `AgenticFeedback` JSON (score, summary, strengths, concerns, skillProfile with 4 dimensions) serialised into `Assessment.feedback`; no schema change; old plain-string feedback still renders via graceful fallback; `MAX_TOKENS` default 512 → 800
+- `amplify/functions/scoringAgent/types.ts` — added `AgenticFeedback` interface exported for frontend type alignment
+- `.env.local` — added `VITE_FEATURE_INTELLIGENCE_REPORT=true` to enable intelligence report in local dev
+- `e2e/candidate-scores.spec.ts` — BDD Playwright suite: intelligence tab visibility (enabled/disabled flag), executive summary + stage performance render, challenge deep dives section, Q&A in intelligence view, stage tabs still work independently
+- `playwright.config.ts` — added `intelligence` project (authenticated, depends on `auth_setup`, matches `candidate-scores.spec.ts`)
+
+#### Fixed (sandbox deploy)
+- `amplify/package.json` — added `@mistralai/mistralai` dependency; sandbox was failing with TS2307 "Cannot find module" for `scoringAgent` and `codeReviewFollowUpAgent` Lambda handlers
+
+#### Changed (OVERVIEW tab enrichment + skill radar)
+- `src/pages/CandidateProfilePage.tsx` — OVERVIEW tab now shows a `HIRING_RECOMMENDATION` hero card (score in signal colour, plain-English label, progress bar, challenges/responded stats), `AI_SNAPSHOT` card with AI narrative + strength/concern chips, richer stage cards showing per-challenge titles and scores, and `CANDIDATE_INFO` card; page header shows initials avatar with signal colour
+- `src/pages/CandidateProfilePage.tsx` — `MiniRadar` SVG component (4-axis spider chart) added to OVERVIEW's `AI_SNAPSHOT` card; reads real `skillProfile` from `Assessment.feedback` (`AgenticFeedback` JSON); shows `bugIdentification`, `severityJudgment`, `analyticalWriting`, `technicalDepth` scores labelled on each axis in signal colour
+- `scripts/seedIntelligenceReport.ts` — new seed script; creates complete E2E fixture (Pipeline → Stage → CODE_REVIEW Challenge → Candidate → Assessment with 4 annotations, 3 follow-up Q&A, score 82, `AgenticFeedback` JSON with skillProfile); writes `playwright/intelligence-report-token.json`
+
+#### Fixed (candidate score display)
+- `src/pages/CandidateProfilePage.tsx` — `avgScore` now defaults to `null` (not `0`) when no stages are complete; score hero renders `—` instead of `0` for empty candidates; progress bar still uses `0` as fallback for CSS width
+- `src/pages/CandidateProfilePage.tsx` — added INTELLIGENCE tab to tab bar (only when `FEATURES.INTELLIGENCE_REPORT`); `IntelligenceReport` renders in INTELLIGENCE tab; per-stage tab guard updated to exclude INTELLIGENCE tab id
+
 #### Added (Recruiter + Candidate CODE_REVIEW BDD — no API mocks)
 - `e2e/recruiter-code-review.spec.ts` — BDD test for recruiter path: navigates to existing pipeline detail, verifies CODE_REVIEW challenge visible, adds a candidate via ADD_CANDIDATE form, verifies copy-invite-link appears; also covers challenge editor navigation
 - `e2e/code-review-challenge.spec.ts` — removed all API mocks; tests now hit real Lambdas with 60s timeouts for AI calls; replaced specific mock question text assertions with generic answer-box count; fixed React textarea interaction with `click()` before `fill()`
