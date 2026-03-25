@@ -53,3 +53,4 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-019](ADR-019-github-pr-integration.md) | GitHub PR Integration for Code Review Challenges | Accepted | 2026-03-13 |
 | [ADR-020](ADR-020-follow-up-agent-architecture.md) | Follow-Up Question Agent — async, 5 SHORT_ANSWER questions per CODE_REVIEW | Accepted | 2026-03-20 |
 | [ADR-021](ADR-021-deterministic-code-review-scoring.md) | Deterministic algorithm for CODE_REVIEW scoring (no LLM) | Accepted | 2026-03-20 |
+| [ADR-022](ADR-022-candidate-media-storage.md) | Candidate Media Storage — CandidateMedia model + pipeAssets bucket | Accepted | 2026-03-25 |

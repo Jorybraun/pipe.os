@@ -6,6 +6,23 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Candidate Media Storage Domain — ADR-022)
+- `amplify/storage/resource.ts` — `pipeAssets` bucket with flat prefix paths: `candidate-documents/*` (recruiter read/write) and `candidate-recordings/*` (recruiter read-only)
+- `amplify/data/resource.ts` — `CandidateMedia` model (type: RESUME | VIDEO_RECORDING | AUDIO_RECORDING | ATTACHMENT, s3Key, filename, mimeType, stageId); `media: hasMany` on `Candidate`
+- `amplify/functions/parseCandidateCV/handler.ts` — replaced `pdf-parse` with AWS Textract (`DetectDocumentText` reading directly from S3); switched LLM model to `mistral-small-latest` (reliably under AppSync's 30s resolver timeout); renamed env var `CV_BUCKET_NAME` → `ASSET_BUCKET_NAME`
+- `amplify/backend.ts` — injects `ASSET_BUCKET_NAME` (pipeAssets bucket) into Lambda; grants `textract:DetectDocumentText` IAM permission
+- `src/components/Candidate/CandidateIntakeModal.tsx` — writes `resumeS3Key` to DynamoDB immediately after S3 upload (before Lambda) so VIEW_RESUME always works; CV parsing is now non-fatal (Lambda failure advances to CONFIRM with empty parsed data rather than rolling back the candidate)
+- `e2e/cv-upload-and-profile.spec.ts` — full BDD Playwright test proving: S3 upload, Lambda invocation, AI parsing, DynamoDB write, and real pre-signed URL on profile (all 9 tests pass)
+- `e2e/fixtures/test-resume.pdf` — 1-page John Smith CV fixture for E2E testing
+- `docs/decisions/ADR-022-candidate-media-storage.md` — documents CandidateMedia model decision, S3 path conventions, Amplify wildcard constraint, candidate auth limitations
+
+#### Fixed
+- `amplify/functions/parseCandidateCV/handler.ts` — `pdf-parse` bundles `pdfjs-dist` which calls `st.ensure` at runtime; this breaks in esbuild-bundled Lambdas; replaced with Textract which has no bundling issues
+- `src/components/Candidate/CandidateIntakeModal.tsx` — parsing failure previously deleted the candidate (wrong rollback); now only candidate creation / S3 upload failures trigger rollback
+
+#### Added
+- `e2e/cv-upload-and-profile.spec.ts` — full BDD Playwright test for CV upload flow: explicitly asserts PARSING step appears (proves upload + Lambda triggered), CONFIRM step shows non-empty parsed data (proves AI ran), profile page shows AI_PARSED_PROFILE, and VIEW_RESUME button opens a valid S3 URL; all failure modes are explicit assertions, never silent; fixed selectors: pipeline title uses `h3`, button uses exact text `ADD_CANDIDATE`, URL regex requires 10+ char ID to exclude the literal route `/pipeline/new`
+
 #### Security
 - `src/hooks/useAssessment.ts` — added `selectionSet` to all 5 mutation calls (`Candidate.update` ×3, `Assessment.create`, `Assessment.update`) so API-key clients never receive `email`, `inviteToken`, `owner`, `groundTruth`, `serverConfig`, or `cachedMetadata` in mutation responses; verified clean via live network inspection of every response body in the full candidate flow
 - `amplify/functions/resolveToken/` — new Lambda query: resolves an invite token server-side and returns only `{id, pipelineId, status, name}`; never exposes email, inviteToken, or other candidates' data
