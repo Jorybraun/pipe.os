@@ -6,6 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (OverviewPage, CandidateProfilePage, ListingPage, ChallengePicker/Editor)
+- `src/pages/OverviewPage.tsx` — replaced inline candidate creation form with `CandidateIntakeModal`; switched DnD to horizontal sort strategy with `arrayMove`
+- `src/pages/CandidateProfilePage.tsx` — VIEW_RESUME button using `getUrl` from `aws-amplify/storage`; AI_PARSED_PROFILE section with extracted skills, role, education; added `Briefcase`, `GraduationCap`, `Shield` icons
+- `src/pages/ListingPage.tsx` — single and bulk pipeline delete with multi-select (`selectedIds` set); trash icon from lucide
+- `src/hooks/useCandidateCreate.ts` — added `currentStageId` input field
+- `src/pages/ChallengeEditorPage.tsx`, `src/components/Pipeline/ChallengePicker.tsx` — major updates to challenge editing and picker UI
+- `src/App.tsx` — route param fix (`pipelineId` → `id` on challenge editor route), formatting cleanup
+
+#### Fixed
+- `src/pages/CandidateProfilePage.tsx` — removed unused `Activity` and `ExternalLinkIcon` imports; added null filter on `skills` array before `.map()` to satisfy `Nullable<string>[]` type
+
 #### Added (Candidate Media Storage Domain — ADR-022)
 - `amplify/storage/resource.ts` — `pipeAssets` bucket with flat prefix paths: `candidate-documents/*` (recruiter read/write) and `candidate-recordings/*` (recruiter read-only)
 - `amplify/data/resource.ts` — `CandidateMedia` model (type: RESUME | VIDEO_RECORDING | AUDIO_RECORDING | ATTACHMENT, s3Key, filename, mimeType, stageId); `media: hasMany` on `Candidate`

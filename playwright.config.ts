@@ -127,6 +127,17 @@ export default defineConfig({
       },
       dependencies: ['auth_setup'],
     },
+
+    // CV upload and profile verification BDD
+    {
+      name: 'cv-upload',
+      testMatch: /cv-upload-and-profile\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: STORAGE_STATE,
+      },
+      dependencies: ['auth_setup'],
+    },
   ],
 
   // Run your local dev server before starting the tests

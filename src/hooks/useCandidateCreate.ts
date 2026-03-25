@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
-import { generateClient } from 'aws-amplify/api';
-import type { Schema } from '../../amplify/data/resource';
-import { generateInviteToken } from '../lib/generateInviteToken';
+import { useState, useCallback } from "react";
+import { generateClient } from "aws-amplify/api";
+import type { Schema } from "../../amplify/data/resource";
+import { generateInviteToken } from "../lib/generateInviteToken";
 
 const client = generateClient<Schema>();
 
@@ -13,6 +13,7 @@ export interface CandidateCreateInput {
   pipelineId: string;
   name: string;
   email: string;
+  currentStageId?: string;
 }
 
 interface UseCandidateCreateState {
@@ -50,35 +51,42 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
           name: input.name.trim(),
           email: input.email.trim(),
           inviteToken: generateInviteToken(),
-          status: 'INVITED',
+          status: "INVITED",
+          currentStageId: input.currentStageId ?? null,
         });
 
         if (errors && errors.length > 0) {
-          const err = new Error(errors[0].message ?? 'Failed to create candidate');
-          console.error('[useCandidateCreate] GraphQL errors:', errors);
+          const err = new Error(
+            errors[0]?.message ?? "Failed to create candidate",
+          );
+          console.error("[useCandidateCreate] GraphQL errors:", errors);
           setState({ isSubmitting: false, error: err, createdId: null });
           return null;
         }
 
         if (!data?.id) {
-          const err = new Error('Candidate was created but no ID was returned');
-          console.error('[useCandidateCreate] No ID returned from create mutation');
+          const err = new Error("Candidate was created but no ID was returned");
+          console.error(
+            "[useCandidateCreate] No ID returned from create mutation",
+          );
           setState({ isSubmitting: false, error: err, createdId: null });
           return null;
         }
 
-        console.log('[useCandidateCreate] Candidate created:', data.id);
+        console.log("[useCandidateCreate] Candidate created:", data.id);
         setState({ isSubmitting: false, error: null, createdId: data.id });
         return data.id;
       } catch (err) {
         const error =
-          err instanceof Error ? err : new Error('An unexpected error occurred');
-        console.error('[useCandidateCreate] Unexpected error:', error);
+          err instanceof Error
+            ? err
+            : new Error("An unexpected error occurred");
+        console.error("[useCandidateCreate] Unexpected error:", error);
         setState({ isSubmitting: false, error, createdId: null });
         return null;
       }
     },
-    []
+    [],
   );
 
   const reset = useCallback(() => {

@@ -40,6 +40,7 @@ const SubHeader = () => {
   const { id, stage, questionId } = useParams();
   const location = useLocation();
   const { signOut } = useAuthenticator();
+  // this changing why is it state?
   const [headerData, setHeaderData] = useState<{
     title: string;
     count: number;
@@ -122,6 +123,8 @@ const SubHeader = () => {
           <>
             <button
               onClick={() => {
+                // i think back button should just go to the previous page unless there is no previous page
+                // in that case it should go to base route
                 if (questionId && stage) {
                   navigate(`/pipeline/${id}/${stage}`);
                 } else if (stage) {
@@ -321,7 +324,16 @@ function App(): JSX.Element {
     <BrowserRouter>
       <Routes>
         {/* Public Candidate Assessment Route */}
-        <Route path="/assess/:token" element={<ErrorBoundary><CandidateAssessmentPage /></ErrorBoundary>} />
+        {/* WHY DONT WE WRAP THIS WHOLE PAGE IN AN ERROR BOUNDARY. */}
+
+        <Route
+          path="/assess/:token"
+          element={
+            <ErrorBoundary>
+              <CandidateAssessmentPage />
+            </ErrorBoundary>
+          }
+        />
 
         {/* Protected Recruiter Routes */}
         <Route
@@ -338,11 +350,14 @@ function App(): JSX.Element {
                   />
                   {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
                     <Route
-                      path="/pipeline/:pipelineId/challenges/:challengeId"
+                      path="/pipeline/:id/challenges/:challengeId"
                       element={<ChallengeEditorPage />}
                     />
                   )}
-                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
+                  <Route
+                    path="/pipeline/new"
+                    element={<PipelineCreatePage />}
+                  />
                   <Route
                     path="/candidates/:id"
                     element={<CandidateProfilePage />}

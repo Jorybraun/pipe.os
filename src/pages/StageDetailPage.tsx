@@ -1,14 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { FEATURE_FLAGS } from "../config/featureFlags";
-import { useParams } from "react-router-dom";
-import {
-  Plus,
-  Settings,
-  Video,
-  Mail,
-  ChevronRight,
-  Save,
-} from "lucide-react";
+import { useParams, useNavigate } from "react-router-dom";
+import { Plus, Settings, Video, Mail, ChevronRight, Save } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
@@ -45,10 +38,11 @@ interface NotificationTemplate {
  * StageDetailPage - Manage challenges within a specific stage.
  */
 export default function StageDetailPage(): JSX.Element {
-  const { stageId } = useParams<{
+  const { id, stageId } = useParams<{
     id: string;
     stageId: string;
   }>();
+  const navigate = useNavigate();
 
   const [stage, setStage] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -148,7 +142,7 @@ export default function StageDetailPage(): JSX.Element {
         const order = currentCount + orderOffset;
         orderOffset++;
 
-        if (sel.source === 'library') {
+        if (sel.source === "library") {
           const { template } = sel;
           await client.models.Challenge.create({
             stageId,
@@ -160,20 +154,24 @@ export default function StageDetailPage(): JSX.Element {
           });
         } else {
           // GitHub PR — create challenge then fire-and-forget diff cache
-          const { data: created, errors } = await client.models.Challenge.create({
-            stageId,
-            type: 'CODE_REVIEW',
-            title: sel.prTitle,
-            instructions: sel.prDescription,
-            githubRepoUrl: sel.repoUrl,
-            githubPrNumber: sel.prNumber,
-            githubPrTitle: sel.prTitle,
-            githubPrDescription: sel.prDescription,
-            order,
-          });
+          const { data: created, errors } =
+            await client.models.Challenge.create({
+              stageId,
+              type: "CODE_REVIEW",
+              title: sel.prTitle,
+              instructions: sel.prDescription,
+              githubRepoUrl: sel.repoUrl,
+              githubPrNumber: sel.prNumber,
+              githubPrTitle: sel.prTitle,
+              githubPrDescription: sel.prDescription,
+              order,
+            });
 
           if (errors) {
-            console.error('[StageDetailPage] Failed to create GitHub PR challenge:', errors);
+            console.error(
+              "[StageDetailPage] Failed to create GitHub PR challenge:",
+              errors,
+            );
             continue;
           }
 
@@ -191,7 +189,7 @@ export default function StageDetailPage(): JSX.Element {
                 skipCache: false,
               });
 
-              const result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              const result = typeof raw === "string" ? JSON.parse(raw) : raw;
 
               if (result?.success && result.data) {
                 await client.models.Challenge.update({
@@ -200,10 +198,17 @@ export default function StageDetailPage(): JSX.Element {
                   cachedMetadata: result.data.metadata,
                   diffCachedAt: new Date().toISOString(),
                 });
-                console.log('[StageDetailPage] Diff cached for challenge', challengeId);
+                console.log(
+                  "[StageDetailPage] Diff cached for challenge",
+                  challengeId,
+                );
               }
             } catch (cacheErr) {
-              console.error('[StageDetailPage] Failed to cache diff for challenge', challengeId, cacheErr);
+              console.error(
+                "[StageDetailPage] Failed to cache diff for challenge",
+                challengeId,
+                cacheErr,
+              );
             }
           })();
         }
@@ -444,6 +449,9 @@ export default function StageDetailPage(): JSX.Element {
                       key={c.id}
                       challenge={c}
                       index={i}
+                      onEdit={(challenge) =>
+                        navigate(`/pipeline/${id}/challenges/${challenge.id}`)
+                      }
                       onDelete={handleChallengeDelete}
                     />
                   ))}
@@ -767,126 +775,126 @@ export default function StageDetailPage(): JSX.Element {
 
               {/* STAGE_MODE — ASYNC (default) or LIVE_VIDEO — gated behind FEATURE_FLAG_LIVE_VIDEO */}
               {FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO && (
-              <div
-                style={{
-                  borderTop: "1px solid rgba(255,255,255,0.05)",
-                  paddingTop: 20,
-                }}
-              >
-                <label
+                <div
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 9,
-                    color: "rgba(255,255,255,0.3)",
-                    marginBottom: 12,
-                    fontFamily: "Space Mono",
+                    borderTop: "1px solid rgba(255,255,255,0.05)",
+                    paddingTop: 20,
                   }}
                 >
-                  <Video size={12} />
-                  STAGE_MODE
-                </label>
-                {!modeFieldReady ? (
-                  <div
+                  <label
                     style={{
-                      padding: "10px 12px",
-                      background: "rgba(251,191,36,0.06)",
-                      border: "1px solid rgba(251,191,36,0.2)",
-                      borderRadius: 4,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 9,
+                      color: "rgba(255,255,255,0.3)",
+                      marginBottom: 12,
+                      fontFamily: "Space Mono",
                     }}
                   >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 9,
-                        color: "rgba(251,191,36,0.7)",
-                        lineHeight: 1.6,
-                        fontFamily: "Space Mono",
-                      }}
-                    >
-                      ⚠ SCHEMA_NOT_DEPLOYED
-                      <br />
-                      <span style={{ opacity: 0.6 }}>
-                        Run <code>npx ampx sandbox</code> to enable live video
-                        stages.
-                      </span>
-                    </p>
-                  </div>
-                ) : (
-                  <>
+                    <Video size={12} />
+                    STAGE_MODE
+                  </label>
+                  {!modeFieldReady ? (
                     <div
                       style={{
-                        display: "flex",
-                        gap: 0,
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        padding: "10px 12px",
+                        background: "rgba(251,191,36,0.06)",
+                        border: "1px solid rgba(251,191,36,0.2)",
                         borderRadius: 4,
-                        overflow: "hidden",
                       }}
                     >
-                      {(["ASYNC", "LIVE_VIDEO"] as const).map((m) => {
-                        const isActive = (stage.mode ?? "ASYNC") === m;
-                        return (
-                          <button
-                            key={m}
-                            onClick={async () => {
-                              if (isActive) return;
-                              setStage({ ...stage, mode: m });
-                              try {
-                                await client.models.Stage.update({
-                                  id: stage.id,
-                                  mode: m,
-                                });
-                              } catch (err) {
-                                console.error(
-                                  "[StageDetail] Failed to update mode:",
-                                  err,
-                                );
-                                setStage({ ...stage, mode: stage.mode });
-                              }
-                            }}
-                            style={{
-                              flex: 1,
-                              padding: "8px 0",
-                              background: isActive
-                                ? "rgba(255,255,255,0.12)"
-                                : "transparent",
-                              border: "none",
-                              color: isActive
-                                ? "#fff"
-                                : "rgba(255,255,255,0.3)",
-                              fontSize: 9,
-                              fontWeight: 700,
-                              letterSpacing: "0.12em",
-                              fontFamily: "Space Mono",
-                              cursor: isActive ? "default" : "pointer",
-                              transition: "background 0.15s, color 0.15s",
-                            }}
-                          >
-                            {m === "LIVE_VIDEO" ? "⦿ LIVE_VIDEO" : "ASYNC"}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {(stage.mode ?? "ASYNC") === "LIVE_VIDEO" && (
-                      <div
+                      <p
                         style={{
-                          marginTop: 20,
-                          borderTop: "1px solid rgba(255,255,255,0.05)",
-                          paddingTop: 20,
+                          margin: 0,
+                          fontSize: 9,
+                          color: "rgba(251,191,36,0.7)",
+                          lineHeight: 1.6,
+                          fontFamily: "Space Mono",
                         }}
                       >
-                        <EventTypePicker
-                          currentEventTypeId={
-                            stage.schedulingEventTypeId ?? null
-                          }
-                          onSelect={handleEventTypeSelect}
-                        />
+                        ⚠ SCHEMA_NOT_DEPLOYED
+                        <br />
+                        <span style={{ opacity: 0.6 }}>
+                          Run <code>npx ampx sandbox</code> to enable live video
+                          stages.
+                        </span>
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 0,
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          borderRadius: 4,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {(["ASYNC", "LIVE_VIDEO"] as const).map((m) => {
+                          const isActive = (stage.mode ?? "ASYNC") === m;
+                          return (
+                            <button
+                              key={m}
+                              onClick={async () => {
+                                if (isActive) return;
+                                setStage({ ...stage, mode: m });
+                                try {
+                                  await client.models.Stage.update({
+                                    id: stage.id,
+                                    mode: m,
+                                  });
+                                } catch (err) {
+                                  console.error(
+                                    "[StageDetail] Failed to update mode:",
+                                    err,
+                                  );
+                                  setStage({ ...stage, mode: stage.mode });
+                                }
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "8px 0",
+                                background: isActive
+                                  ? "rgba(255,255,255,0.12)"
+                                  : "transparent",
+                                border: "none",
+                                color: isActive
+                                  ? "#fff"
+                                  : "rgba(255,255,255,0.3)",
+                                fontSize: 9,
+                                fontWeight: 700,
+                                letterSpacing: "0.12em",
+                                fontFamily: "Space Mono",
+                                cursor: isActive ? "default" : "pointer",
+                                transition: "background 0.15s, color 0.15s",
+                              }}
+                            >
+                              {m === "LIVE_VIDEO" ? "⦿ LIVE_VIDEO" : "ASYNC"}
+                            </button>
+                          );
+                        })}
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
+                      {(stage.mode ?? "ASYNC") === "LIVE_VIDEO" && (
+                        <div
+                          style={{
+                            marginTop: 20,
+                            borderTop: "1px solid rgba(255,255,255,0.05)",
+                            paddingTop: 20,
+                          }}
+                        >
+                          <EventTypePicker
+                            currentEventTypeId={
+                              stage.schedulingEventTypeId ?? null
+                            }
+                            onSelect={handleEventTypeSelect}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </LiquidMetalCard>

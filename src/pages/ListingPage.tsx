@@ -8,6 +8,7 @@ import {
   Activity,
   Briefcase,
   Users,
+  Trash2,
 } from "lucide-react";
 import { RoleCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -43,6 +44,7 @@ export default function ListingPage(): JSX.Element {
     "all"
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const fetchPipelines = useCallback(async () => {
     try {
@@ -108,6 +110,65 @@ export default function ListingPage(): JSX.Element {
     navigate(`/pipeline/${id}`);
   };
 
+  const handleDeletePipeline = async (id: string, title: string): Promise<void> => {
+    if (!window.confirm(`Are you sure you want to delete the pipeline "${title}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await client.models.Pipeline.delete({ id });
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      await fetchPipelines();
+    } catch (err) {
+      console.error("[ListingPage] Error deleting pipeline:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+    
+    if (!window.confirm(`Delete ${count} selected pipeline${count > 1 ? 's' : ''}? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await Promise.all(
+        Array.from(selectedIds).map(id => client.models.Pipeline.delete({ id }))
+      );
+      setSelectedIds(new Set());
+      await fetchPipelines();
+    } catch (err) {
+      console.error("[ListingPage] Bulk delete error:", err);
+      alert("Failed to delete some pipelines.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleSelect = (id: string, isSelected: boolean) => {
+    const next = new Set(selectedIds);
+    if (isSelected) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredPipelines.map(p => p.id)));
+    }
+  };
+
   return (
     <div
       style={{
@@ -158,6 +219,44 @@ export default function ListingPage(): JSX.Element {
             borderRadius: 8
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+              <div 
+                onClick={toggleAll}
+                style={{
+                  padding: '4px 8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  borderRadius: 4,
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+              >
+                <div style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: 3,
+                  border: `1.5px solid ${selectedIds.size > 0 ? "#8b5cf6" : "rgba(255,255,255,0.2)"}`,
+                  background: selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 ? "#8b5cf6" : "transparent",
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {selectedIds.size > 0 && selectedIds.size < filteredPipelines.length && (
+                    <div style={{ width: 6, height: 1.5, background: '#8b5cf6' }} />
+                  )}
+                  {selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 && (
+                    <Check size={10} color="#fff" strokeWidth={4} />
+                  )}
+                </div>
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
+                  {selectedIds.size > 0 ? `${selectedIds.size}_SELECTED` : 'SELECT_ALL'}
+                </span>
+              </div>
+              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.05)' }} />
               <Search size={14} color="rgba(255,255,255,0.2)" />
               <input
                 type="text"
@@ -176,6 +275,31 @@ export default function ListingPage(): JSX.Element {
                 }}
               />
             </div>
+            {selectedIds.size > 0 && (
+              <button 
+                onClick={handleBulkDelete}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'rgba(255, 80, 80, 0.1)',
+                  border: '1px solid rgba(255, 80, 80, 0.2)',
+                  color: '#ff5050',
+                  padding: '4px 12px',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 80, 80, 0.2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 80, 80, 0.1)'}
+              >
+                <Trash2 size={14} />
+                DELETE_SELECTED ({selectedIds.size})
+              </button>
+            )}
             <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)' }} />
             <button 
               onClick={() => navigate("/pipeline/new")}
@@ -220,6 +344,7 @@ export default function ListingPage(): JSX.Element {
               {filteredPipelines.map((p) => (
                 <RoleCard
                   key={p.id}
+                  id={p.id}
                   title={p.title}
                   department={p.level || "Engineering"}
                   location="Remote"
@@ -233,7 +358,10 @@ export default function ListingPage(): JSX.Element {
                   stagesConfigured={p.stageCount}
                   totalStages={p.stageCount || 1}
                   createdAt={p.createdAt}
+                  isSelected={selectedIds.has(p.id)}
+                  onSelect={(sel) => toggleSelect(p.id, sel)}
                   onClick={() => handleRoleClick(p.id)}
+                  onDelete={() => handleDeletePipeline(p.id, p.title)}
                 />
               ))}
             </div>

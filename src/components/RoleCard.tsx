@@ -8,12 +8,14 @@ import {
   Users,
   Target,
   Trophy,
+  Check,
 } from "lucide-react";
 import { LiquidMetalCard } from "./ui/LiquidMetalCard";
 
 export type RoleStatus = "active" | "draft" | "closed";
 
 interface RoleCardProps {
+  id: string;
   title: string;
   department: string;
   location: string;
@@ -23,12 +25,16 @@ interface RoleCardProps {
   stagesConfigured: number;
   totalStages: number;
   createdAt: string;
+  isSelected?: boolean;
+  onSelect?: (selected: boolean) => void;
   onClick?: () => void;
+  onDelete?: () => void;
   style?: React.CSSProperties;
   className?: string;
 }
 
 export function RoleCard({
+  id,
   title,
   department,
   location,
@@ -38,7 +44,10 @@ export function RoleCard({
   stagesConfigured,
   totalStages,
   createdAt,
+  isSelected = false,
+  onSelect,
   onClick,
+  onDelete,
   style = {},
   className = "",
 }: RoleCardProps) {
@@ -88,6 +97,38 @@ export function RoleCard({
         }}
       >
         <div style={{ display: "flex", alignItems: "stretch" }}>
+          {/* Multi-select Checkbox */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect?.(!isSelected);
+            }}
+            style={{
+              width: 48,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: isSelected ? "rgba(139, 92, 246, 0.1)" : "rgba(255,255,255,0.01)",
+              borderRight: "1px solid rgba(255,255,255,0.05)",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <div style={{
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              border: `2px solid ${isSelected ? "#8b5cf6" : "rgba(255,255,255,0.1)"}`,
+              background: isSelected ? "#8b5cf6" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.15s ease",
+            }}>
+              {isSelected && <Check size={14} color="#fff" strokeWidth={3} />}
+            </div>
+          </div>
+
           {/* Status Indicator Bar */}
           <div
             style={{

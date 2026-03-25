@@ -16,5 +16,5 @@ export const FEATURE_FLAGS = {
   /** /sandbox/dev-container route */
   FEATURE_FLAG_DEV_CONTAINER_ROUTE: false,
   /** Challenge editor page — post-MVP, challenges are read-only for MVP */
-  FEATURE_FLAG_CHALLENGE_EDITOR: false,
+  FEATURE_FLAG_CHALLENGE_EDITOR: true,
 } as const;

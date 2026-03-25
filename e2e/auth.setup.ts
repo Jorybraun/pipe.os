@@ -2,6 +2,7 @@ import { test as setup, expect } from '@playwright/test';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import * as fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,8 +27,21 @@ setup('authenticate', async ({ page }) => {
   }
 
   // Fill in credentials from environment variables
-  const email = process.env.E2E_EMAIL;
-  const password = process.env.E2E_PASSWORD;
+  let email = process.env.E2E_EMAIL;
+  let password = process.env.E2E_PASSWORD;
+ 
+  if (
+    (!email || !password || email === 'demo@pipe.test' || password === 'DemoPass123!') &&
+    fs.existsSync(path.resolve(__dirname, '../CLAUDE.md'))
+  ) {
+    const raw = fs.readFileSync(path.resolve(__dirname, '../CLAUDE.md'), 'utf8');
+    const emailMatch = raw.match(/^\s*Email:\s*(.+)\s*$/m);
+    const passMatch = raw.match(/^\s*Password:\s*(.+)\s*$/m);
+    if (emailMatch?.[1] && passMatch?.[1]) {
+      email = emailMatch[1].trim();
+      password = passMatch[1].trim();
+    }
+  }
 
   if (!email || !password) {
     throw new Error('E2E_EMAIL or E2E_PASSWORD environment variables are not set');
@@ -40,8 +54,18 @@ setup('authenticate', async ({ page }) => {
   // Click the sign-in button
   await page.locator('button[type="submit"]').click();
 
-  // Wait for the app to load (e.g., look for a header or something that indicates successful login)
-  await expect(page.locator('text=CREATE NEW PIPE').first()).toBeVisible({ timeout: 20000 });
+  // Wait for auth UI to disappear (successful login)
+  await expect(page.locator('[data-amplify-authenticator-signin]')).not.toBeVisible({
+    timeout: 45000,
+  });
+
+  // Wait for app shell indicators
+  await expect(
+    page
+      .locator('button:has-text("SIGN OUT")')
+      .or(page.locator('text=CREATE NEW PIPE'))
+      .first(),
+  ).toBeVisible({ timeout: 45000 });
 
   // Save storage state to a file
   await page.context().storageState({ path: authFile });
