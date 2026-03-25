@@ -821,28 +821,67 @@ function ChallengeCard({
               <QuizMcqView challenge={challenge} submission={submission} />
             )}
 
-            {/* QUIZ_SHORT_ANSWER */}
-            {challenge.type === "QUIZ_SHORT_ANSWER" && (
-              <div
-                style={{
-                  fontSize: 14,
-                  color: "rgba(255,255,255,0.8)",
-                  lineHeight: 1.7,
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {(submission.text as string) || (
-                  <span
-                    style={{
-                      color: "rgba(255,255,255,0.2)",
-                      fontStyle: "italic",
-                    }}
-                  >
-                    No answer provided.
-                  </span>
-                )}
-              </div>
-            )}
+            {/* QUIZ_SHORT_ANSWER — discriminated by inputMode */}
+            {challenge.type === "QUIZ_SHORT_ANSWER" && (() => {
+              const inputMode = (submission.inputMode as string | undefined) ?? 'text';
+
+              if (inputMode === 'video') {
+                const videoS3Key = submission.videoS3Key as string | undefined;
+                return <S3VideoPlayer s3Key={videoS3Key ?? ''} label="CANDIDATE_VIDEO_RESPONSE" />;
+              }
+
+              if (inputMode === 'voice') {
+                const text = submission.text as string | undefined;
+                const audioS3Key = submission.audioS3Key as string | undefined;
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div
+                      style={{
+                        fontSize: 9,
+                        letterSpacing: '0.15em',
+                        color: 'rgba(255,255,255,0.3)',
+                        fontFamily: '"Space Mono", monospace',
+                      }}
+                    >
+                      VOICE_TRANSCRIPT
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: 'rgba(255,255,255,0.8)',
+                        lineHeight: 1.7,
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {text || (
+                        <span style={{ color: 'rgba(255,255,255,0.2)', fontStyle: 'italic' }}>
+                          No transcript captured.
+                        </span>
+                      )}
+                    </div>
+                    {audioS3Key && <S3AudioPlayer s3Key={audioS3Key} />}
+                  </div>
+                );
+              }
+
+              // Default: text mode (back-compat)
+              return (
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: 'rgba(255,255,255,0.8)',
+                    lineHeight: 1.7,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {(submission.text as string) || (
+                    <span style={{ color: 'rgba(255,255,255,0.2)', fontStyle: 'italic' }}>
+                      No answer provided.
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* CODE_IMPLEMENTATION */}
             {challenge.type === "CODE_IMPLEMENTATION" && (
@@ -995,6 +1034,88 @@ function ChallengeCard({
 // Main component
 // ============================================================================
 
+// ---------------------------------------------------------------------------
+// S3 media helpers — resolve presigned URL then render <audio> / <video>
+// ---------------------------------------------------------------------------
+
+function S3AudioPlayer({ s3Key }: { s3Key: string }): JSX.Element {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const result = await getUrl({ path: s3Key, options: { expiresIn: 3600 } });
+        setUrl(result.url.toString());
+      } catch (err) {
+        console.warn('[S3AudioPlayer] Failed to resolve URL:', err);
+      }
+    })();
+  }, [s3Key]);
+
+  if (!url) {
+    return (
+      <span style={{ fontFamily: '"Space Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>
+        LOADING_AUDIO...
+      </span>
+    );
+  }
+  return (
+    <audio
+      src={url}
+      controls
+      style={{ width: '100%', marginTop: 4 }}
+    />
+  );
+}
+
+function S3VideoPlayer({ s3Key, label = 'CANDIDATE_VIDEO_RESPONSE' }: { s3Key: string; label?: string }): JSX.Element {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!s3Key) return;
+    void (async () => {
+      try {
+        const result = await getUrl({ path: s3Key, options: { expiresIn: 3600 } });
+        setUrl(result.url.toString());
+      } catch (err) {
+        console.warn('[S3VideoPlayer] Failed to resolve URL:', err);
+      }
+    })();
+  }, [s3Key]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div
+        style={{
+          fontSize: 9,
+          letterSpacing: '0.15em',
+          color: 'rgba(255,255,255,0.3)',
+          fontFamily: '"Space Mono", monospace',
+        }}
+      >
+        {label}
+      </div>
+      {url ? (
+        <video
+          src={url}
+          controls
+          style={{
+            width: '100%',
+            maxHeight: 300,
+            borderRadius: 6,
+            border: '1px solid rgba(255,255,255,0.08)',
+            background: '#000',
+          }}
+        />
+      ) : (
+        <span style={{ fontFamily: '"Space Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>
+          {s3Key ? 'LOADING_VIDEO...' : 'NO_VIDEO_SUBMITTED'}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * CandidateProfilePage — Recruiter view of a candidate's assessment results.
  *
@@ -1031,18 +1152,18 @@ export default function CandidateProfilePage(): JSX.Element {
       if (!cand) return;
       setCandidate(cand);
 
-      // Note: Assessment.list filter type is too deeply recursive for TS strict mode (TS2589).
-      // Fetch all and filter client-side — assessment counts per candidate are small.
-      const [allAssessments, stagesData] = await Promise.all([
-        client.models.Assessment.list(),
+      // Filter assessments server-side by candidateId.
+      // The filter type is deeply recursive (TS2589), so we cast to avoid the strict-mode error.
+      const [candidateAssessments, stagesData] = await Promise.all([
+        client.models.Assessment.list({
+          filter: { candidateId: { eq: id } },
+        } as any),
         client.models.Stage.list({
           filter: { pipelineId: { eq: cand.pipelineId } },
           selectionSet: ["id", "title", "order", "mode", "challenges.*"],
         }),
       ]);
-      const assData = {
-        data: allAssessments.data.filter((a) => a.candidateId === id),
-      };
+      const assData = { data: candidateAssessments.data };
 
       setAssessments(assData.data);
 

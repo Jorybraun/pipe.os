@@ -69,6 +69,8 @@ export interface ResolvedCandidate {
   pipelineId: string;
   status: string | null;
   name?: string | null;
+  /** Cognito sub of the recruiter who owns the pipeline — set on Assessment.ownerId */
+  ownerId?: string | null;
   // email is intentionally not fetched from resolveToken — only present here
   // for UI compat. Always undefined in the candidate assessment flow.
   email?: string | null;
@@ -87,7 +89,48 @@ export interface QuizSubmission {
   answers: Record<string, number>;
 }
 
-export type StageSubmission = CodeReviewSubmission | QuizSubmission | Record<string, unknown>;
+/** QUIZ_SHORT_ANSWER typed text submission */
+export interface ShortAnswerTextSubmission {
+  inputMode: 'text';
+  text: string;
+}
+
+/** QUIZ_SHORT_ANSWER voice-to-text submission */
+export interface ShortAnswerVoiceSubmission {
+  inputMode: 'voice';
+  /** Speech-to-text transcript — primary answer */
+  text: string;
+  /** S3 key of the raw audio file (optional — may be absent if upload failed) */
+  audioS3Key?: string;
+}
+
+/** QUIZ_SHORT_ANSWER video recording submission */
+export interface ShortAnswerVideoSubmission {
+  inputMode: 'video';
+  /** S3 key of the candidate video file */
+  videoS3Key: string;
+  /** Filename shown in recruiter UI */
+  filename: string;
+}
+
+export type ShortAnswerSubmission =
+  | ShortAnswerTextSubmission
+  | ShortAnswerVoiceSubmission
+  | ShortAnswerVideoSubmission;
+
+/** Type guard for ShortAnswerSubmission */
+export function isShortAnswerSubmission(s: unknown): s is ShortAnswerSubmission {
+  return (
+    typeof s === 'object' &&
+    s !== null &&
+    'inputMode' in s &&
+    ((s as ShortAnswerSubmission).inputMode === 'text' ||
+      (s as ShortAnswerSubmission).inputMode === 'voice' ||
+      (s as ShortAnswerSubmission).inputMode === 'video')
+  );
+}
+
+export type StageSubmission = CodeReviewSubmission | QuizSubmission | ShortAnswerSubmission | Record<string, unknown>;
 
 export interface StageWithChallenges {
   id: string;
@@ -210,6 +253,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         pipelineId: resolved.pipelineId,
         status: resolved.status ?? null,
         name: resolved.name ?? null,
+        ownerId: resolved.ownerId ?? null,
       };
 
       // 2. Check if already completed
@@ -408,6 +452,8 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
             submission: JSON.stringify(submission),
             score: 0,
             completedAt: new Date().toISOString(),
+            // Denormalized pipeline owner — enables scoped recruiter read via ownerDefinedIn
+            ...(candidate.ownerId ? { ownerId: candidate.ownerId } : {}),
           },
           { selectionSet: ['id'] }
         );

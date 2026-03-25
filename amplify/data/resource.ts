@@ -17,6 +17,7 @@ import { scoreCodeReview } from "../functions/scoreCodeReview/resource";
 import { codeReviewFollowUpAgent } from "../functions/codeReviewFollowUpAgent/resource";
 import { resolveToken } from "../functions/resolveToken/resource";
 import { parseCandidateCV } from "../functions/parseCandidateCV/resource";
+import { generateMediaUploadUrl } from "../functions/generateMediaUploadUrl/resource";
 
 const schema = a.schema({
   /**
@@ -405,6 +406,9 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(), // Recruiter owns all candidate media records
+      // Candidates (unauthenticated, publicApiKey) can register their own recordings
+      // after uploading via the generateMediaUploadUrl presigned URL flow.
+      allow.publicApiKey().to(["create"]),
     ]),
 
   /**
@@ -417,6 +421,10 @@ const schema = a.schema({
 
       challengeId: a.id(), // New relationship in Phase 7
       challenge: a.belongsTo("Challenge", "challengeId"),
+
+      /** Cognito sub of the recruiter who owns the pipeline. Set during creation
+       *  so the recruiter can read assessments via ownerDefinedIn authorization. */
+      ownerId: a.string(),
 
       submission: a.json(), // Candidate's answers/annotations
       score: a.float(),
@@ -451,6 +459,9 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
+      // Recruiter who owns the pipeline can read assessments via the denormalized ownerId field.
+      // Candidates set ownerId during creation (resolved from the Candidate record's owner).
+      allow.ownerDefinedIn("ownerId").to(["read", "update"]),
       // publicApiKey: candidates can create their own assessments and update follow-up answers.
       // Read is removed — candidates have no legitimate need to list assessments.
       // TODO: replace create/update with Lambda resolvers that verify the inviteToken matches
@@ -869,9 +880,37 @@ const schema = a.schema({
         pipelineId: a.string(),
         status: a.string(),
         name: a.string(),
+        ownerId: a.string(),
       }),
     )
     .handler(a.handler.function(resolveToken))
+    .authorization((allow) => [allow.publicApiKey()]),
+
+  /**
+   * generateMediaUploadUrl
+   *
+   * Issues a presigned S3 PUT URL for candidate voice/video recording uploads.
+   * Candidates are not Cognito users and cannot use Amplify Storage directly.
+   * This mutation validates the candidateId exists, then returns a 5-minute
+   * presigned URL scoped to candidate-submissions/{candidateId}/{challengeId}.webm.
+   *
+   * Authorization: publicApiKey — candidates invoke this without Cognito auth.
+   */
+  generateMediaUploadUrl: a
+    .mutation()
+    .arguments({
+      candidateId: a.id().required(),
+      challengeId: a.id().required(),
+      mimeType: a.string().required(),
+      mediaType: a.string().required(),
+    })
+    .returns(
+      a.customType({
+        uploadUrl: a.string().required(),
+        s3Key: a.string().required(),
+      }),
+    )
+    .handler(a.handler.function(generateMediaUploadUrl))
     .authorization((allow) => [allow.publicApiKey()]),
 
   /**

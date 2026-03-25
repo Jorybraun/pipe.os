@@ -26,6 +26,7 @@ interface ResolveTokenResult {
   pipelineId: string;
   status: string;
   name: string | null;
+  ownerId: string | null;
 }
 
 export const handler: AppSyncResolverHandler<ResolveTokenArgs, ResolveTokenResult | null> = async (event) => {
@@ -43,8 +44,9 @@ export const handler: AppSyncResolverHandler<ResolveTokenArgs, ResolveTokenResul
       ':token': { S: inviteToken.trim() },
     },
     // Only project the fields we need — email and inviteToken are intentionally excluded
-    ProjectionExpression: 'id, pipelineId, #s, #n',
-    ExpressionAttributeNames: { '#s': 'status', '#n': 'name' },
+    // `owner` is the recruiter's Cognito sub (auto-set by Amplify when recruiter creates candidate)
+    ProjectionExpression: 'id, pipelineId, #s, #n, #o',
+    ExpressionAttributeNames: { '#s': 'status', '#n': 'name', '#o': 'owner' },
   }));
 
   if (!Items || Count === 0 || !Items[0]) {
@@ -59,5 +61,6 @@ export const handler: AppSyncResolverHandler<ResolveTokenArgs, ResolveTokenResul
     pipelineId: item['pipelineId'] as string,
     status: item['status'] as string,
     name: (item['name'] as string | undefined) ?? null,
+    ownerId: (item['owner'] as string | undefined) ?? null,
   };
 };

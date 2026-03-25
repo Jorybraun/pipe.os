@@ -1,0 +1,399 @@
+import { useRef, useState, useCallback, useEffect } from 'react';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '../../../amplify/data/resource';
+import { QuestionVideoPlayer } from '../Challenge/QuestionVideoPlayer';
+
+const client = generateClient<Schema>({ authMode: 'apiKey' });
+
+export interface VideoSubmissionPanelProps {
+  /** Question heading displayed above the recording controls */
+  question: string;
+  /** S3 key once uploaded (controlled) — empty string while not yet uploaded */
+  videoS3Key: string;
+  /** Filename for recruiter display */
+  filename: string;
+  /** Called when upload completes */
+  onUploaded: (s3Key: string, filename: string) => void;
+  /** Full URL for the recruiter's question video — shown above controls if present */
+  questionVideoUrl?: string;
+  /** Max recording duration in seconds (default 120) */
+  maxDurationSeconds?: number;
+  /** Candidate ID — used to call generateMediaUploadUrl */
+  candidateId: string;
+  /** Challenge ID — used to derive S3 path */
+  challengeId: string;
+}
+
+type PanelState = 'idle' | 'recording' | 'recorded' | 'uploading' | 'done' | 'error';
+
+/**
+ * VideoSubmissionPanel — candidate records and uploads a video response.
+ *
+ * Uses MediaRecorder for recording, then calls the generateMediaUploadUrl
+ * mutation to get a presigned S3 PUT URL, uploads directly, and creates
+ * a CandidateMedia record for the recruiter to read.
+ */
+export function VideoSubmissionPanel({
+  question,
+  videoS3Key,
+  filename: _filename,
+  onUploaded,
+  questionVideoUrl,
+  maxDurationSeconds = 120,
+  candidateId,
+  challengeId,
+}: VideoSubmissionPanelProps): JSX.Element {
+  const [panelState, setPanelState] = useState<PanelState>(
+    videoS3Key ? 'done' : 'idle',
+  );
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobEvent['data'][]>([]);
+  const blobRef = useRef<Blob | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [previewUrl]);
+
+  const startRecording = useCallback(async () => {
+    setErrorMsg(null);
+    chunksRef.current = [];
+    setElapsed(0);
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch {
+      setErrorMsg('Could not access camera/microphone. Check browser permissions.');
+      return;
+    }
+
+    streamRef.current = stream;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true;
+      void videoRef.current.play();
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+      ? 'video/webm;codecs=vp9,opus'
+      : 'video/webm';
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorderRef.current = recorder;
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (timerRef.current) clearInterval(timerRef.current);
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      blobRef.current = blob;
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        videoRef.current.src = url;
+        videoRef.current.muted = false;
+      }
+      setPanelState('recorded');
+    };
+
+    recorder.start(100);
+    setPanelState('recording');
+
+    // Timer + auto-stop at maxDurationSeconds
+    timerRef.current = setInterval(() => {
+      setElapsed((prev) => {
+        const next = prev + 1;
+        if (next >= maxDurationSeconds) {
+          recorder.stop();
+        }
+        return next;
+      });
+    }, 1000);
+  }, [maxDurationSeconds]);
+
+  const stopRecording = useCallback(() => {
+    recorderRef.current?.stop();
+  }, []);
+
+  const uploadRecording = useCallback(async () => {
+    const blob = blobRef.current;
+    if (!blob) return;
+    setPanelState('uploading');
+    setErrorMsg(null);
+
+    // Guard: candidateId must be present
+    if (!candidateId) {
+      console.error('[VideoSubmissionPanel] Cannot upload: missing candidateId');
+      setErrorMsg('Session error — please refresh and try again.');
+      setPanelState('error');
+      return;
+    }
+
+    // 1. Get presigned PUT URL
+    console.log('[VideoSubmissionPanel] Calling generateMediaUploadUrl', {
+      candidateId,
+      challengeId,
+    });
+    const { data, errors } = await client.mutations.generateMediaUploadUrl({
+      candidateId,
+      challengeId,
+      mimeType: 'video/webm',
+      mediaType: 'video',
+    });
+
+    if (errors || !data?.uploadUrl || !data.s3Key) {
+      console.error('[VideoSubmissionPanel] generateMediaUploadUrl error:', errors);
+      setErrorMsg('Could not prepare upload. Please try again.');
+      setPanelState('error');
+      return;
+    }
+
+    const { uploadUrl, s3Key } = data;
+
+    // 2. Upload directly to S3 via presigned PUT
+    try {
+      const res = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: blob,
+        headers: { 'Content-Type': 'video/webm' },
+      });
+      if (!res.ok) throw new Error(`S3 PUT responded ${res.status}`);
+    } catch (err) {
+      console.error('[VideoSubmissionPanel] S3 upload error:', err);
+      setErrorMsg('Upload to storage failed. Please try again.');
+      setPanelState('error');
+      return;
+    }
+
+    const fname = `response-${challengeId}.webm`;
+
+    // 3. Create CandidateMedia record (non-fatal — primary submission is the s3Key)
+    try {
+      await client.models.CandidateMedia.create({
+        candidateId,
+        type: 'VIDEO_RECORDING',
+        s3Key,
+        filename: fname,
+        mimeType: 'video/webm',
+      });
+    } catch (err) {
+      // Non-fatal — submission still works without this record
+      console.warn('[VideoSubmissionPanel] CandidateMedia create failed:', err);
+    }
+
+    setPanelState('done');
+    onUploaded(s3Key, fname);
+  }, [candidateId, challengeId, onUploaded]);
+
+  const reset = useCallback(() => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    blobRef.current = null;
+    setErrorMsg(null);
+    setElapsed(0);
+    setPanelState('idle');
+    if (videoRef.current) {
+      videoRef.current.src = '';
+      videoRef.current.srcObject = null;
+    }
+  }, [previewUrl]);
+
+  const mono: React.CSSProperties = {
+    fontFamily: '"Space Mono", monospace',
+  };
+
+  const btnBase: React.CSSProperties = {
+    ...mono,
+    fontSize: 11,
+    letterSpacing: '0.1em',
+    padding: '10px 20px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    border: '1px solid',
+  };
+
+  const timeStr = (s: number): string => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 20,
+        padding: '24px 32px',
+        height: '100%',
+        overflowY: 'auto',
+      }}
+    >
+      {/* Recruiter question video */}
+      {questionVideoUrl && <QuestionVideoPlayer src={questionVideoUrl} />}
+
+      {/* Question heading */}
+      <div
+        style={{
+          fontSize: 20,
+          fontWeight: 700,
+          color: 'rgba(255,255,255,0.9)',
+          lineHeight: 1.4,
+          maxWidth: 700,
+        }}
+      >
+        {question}
+      </div>
+
+      {/* Camera preview / playback */}
+      <video
+        ref={videoRef}
+        style={{
+          width: '100%',
+          maxHeight: 300,
+          borderRadius: 6,
+          border: '1px solid rgba(255,255,255,0.08)',
+          background: '#000',
+          objectFit: 'cover',
+          display:
+            panelState === 'idle' && !previewUrl && !videoS3Key ? 'none' : 'block',
+        }}
+        controls={panelState === 'recorded' || panelState === 'done'}
+        playsInline
+      />
+
+      {/* Max duration hint */}
+      {panelState === 'idle' && (
+        <div style={{ ...mono, fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>
+          MAX_DURATION: {timeStr(maxDurationSeconds)}
+        </div>
+      )}
+
+      {/* Recording timer */}
+      {panelState === 'recording' && (
+        <div style={{ ...mono, fontSize: 12, color: '#f87171', letterSpacing: '0.15em' }}>
+          ● REC &nbsp;{timeStr(elapsed)} / {timeStr(maxDurationSeconds)}
+        </div>
+      )}
+
+      {/* Error message */}
+      {errorMsg && (
+        <div style={{ ...mono, fontSize: 10, color: '#f87171', lineHeight: 1.5 }}>
+          {errorMsg}
+        </div>
+      )}
+
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {panelState === 'idle' && (
+          <button
+            onClick={() => void startRecording()}
+            style={{
+              ...btnBase,
+              background: 'rgba(74,222,128,0.1)',
+              borderColor: 'rgba(74,222,128,0.4)',
+              color: '#4ade80',
+            }}
+          >
+            ● START_RECORDING
+          </button>
+        )}
+
+        {panelState === 'recording' && (
+          <button
+            onClick={stopRecording}
+            style={{
+              ...btnBase,
+              background: 'rgba(248,113,113,0.1)',
+              borderColor: 'rgba(248,113,113,0.4)',
+              color: '#f87171',
+            }}
+          >
+            ■ STOP_RECORDING
+          </button>
+        )}
+
+        {panelState === 'recorded' && (
+          <>
+            <button
+              onClick={() => void uploadRecording()}
+              style={{
+                ...btnBase,
+                background: 'rgba(251,191,36,0.12)',
+                borderColor: 'rgba(251,191,36,0.4)',
+                color: '#fbbf24',
+              }}
+            >
+              SUBMIT_VIDEO
+            </button>
+            <button
+              onClick={reset}
+              style={{
+                ...btnBase,
+                background: 'rgba(255,255,255,0.04)',
+                borderColor: 'rgba(255,255,255,0.12)',
+                color: 'rgba(255,255,255,0.5)',
+              }}
+            >
+              RE-RECORD
+            </button>
+          </>
+        )}
+
+        {panelState === 'uploading' && (
+          <span style={{ ...mono, fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em' }}>
+            UPLOADING...
+          </span>
+        )}
+
+        {panelState === 'done' && (
+          <>
+            <span style={{ ...mono, fontSize: 10, color: '#4ade80', letterSpacing: '0.1em' }}>
+              ✓ VIDEO_SAVED
+            </span>
+            <button
+              onClick={reset}
+              style={{
+                ...btnBase,
+                fontSize: 10,
+                background: 'rgba(255,255,255,0.04)',
+                borderColor: 'rgba(255,255,255,0.12)',
+                color: 'rgba(255,255,255,0.4)',
+              }}
+            >
+              RE-RECORD
+            </button>
+          </>
+        )}
+
+        {panelState === 'error' && (
+          <button
+            onClick={reset}
+            style={{
+              ...btnBase,
+              background: 'rgba(255,255,255,0.04)',
+              borderColor: 'rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.5)',
+            }}
+          >
+            TRY_AGAIN
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

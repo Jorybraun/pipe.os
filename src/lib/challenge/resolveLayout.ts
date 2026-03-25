@@ -8,7 +8,9 @@ export type PanelType =
   | 'tests'
   | 'diff-annotation'
   | 'options'
-  | 'textarea';
+  | 'textarea'
+  | 'voice'
+  | 'video-submission';
 
 export interface ResolvedLayout {
   leftPanel: PanelType | null;
@@ -64,12 +66,16 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
         rightPanel: null,
       };
 
-    case 'QUIZ_SHORT_ANSWER':
-      return {
-        leftPanel: null,
-        centerPanel: 'textarea',
-        rightPanel: null,
-      };
+    case 'QUIZ_SHORT_ANSWER': {
+      const inputMode = (config as { inputMode?: string }).inputMode ?? 'text';
+      if (inputMode === 'voice') {
+        return { leftPanel: null, centerPanel: 'voice', rightPanel: null };
+      }
+      if (inputMode === 'video') {
+        return { leftPanel: null, centerPanel: 'video-submission', rightPanel: null };
+      }
+      return { leftPanel: null, centerPanel: 'textarea', rightPanel: null };
+    }
 
     // FOLLOW_UP is intercepted at the page level before ChallengeRegistry is reached.
     // This case exists only for type-safety completeness.

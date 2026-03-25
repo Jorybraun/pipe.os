@@ -32,6 +32,7 @@ import { submitCodeReview } from "./functions/submitCodeReview/resource";
 import { codeReviewFollowUpAgent } from "./functions/codeReviewFollowUpAgent/resource";
 import { resolveToken } from "./functions/resolveToken/resource";
 import { parseCandidateCV } from "./functions/parseCandidateCV/resource";
+import { generateMediaUploadUrl } from "./functions/generateMediaUploadUrl/resource";
 import { storage } from "./storage/resource";
 
 export const backend = defineBackend({
@@ -44,6 +45,7 @@ export const backend = defineBackend({
   codeReviewFollowUpAgent,
   resolveToken,
   parseCandidateCV,
+  generateMediaUploadUrl,
   fetchGitHubPR,
   listGitHubPRs,
   scoreCodeReview,
@@ -121,6 +123,20 @@ candidateTable.grantReadWriteData(parseCandidateCVLambda);
 
 // Grant S3 read access (Textract reads the PDF directly from S3 using the Lambda's role)
 backend.storage.resources.bucket.grantRead(parseCandidateCVLambda);
+
+// generateMediaUploadUrl — inject table/bucket names and grant IAM access
+const generateMediaUploadUrlLambda = backend.generateMediaUploadUrl.resources
+  .lambda as unknown as LambdaFunction;
+generateMediaUploadUrlLambda.addEnvironment(
+  "CANDIDATE_TABLE_NAME",
+  candidateTable.tableName,
+);
+generateMediaUploadUrlLambda.addEnvironment(
+  "ASSET_BUCKET_NAME",
+  backend.storage.resources.bucket.bucketName,
+);
+candidateTable.grantReadData(generateMediaUploadUrlLambda);
+backend.storage.resources.bucket.grantPut(generateMediaUploadUrlLambda);
 
 // Grant Textract permissions — DetectDocumentText reads the S3 object via S3Object reference,
 // which uses the Lambda's IAM role. Textract also needs s3:GetObject on the bucket.

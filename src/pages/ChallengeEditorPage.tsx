@@ -22,7 +22,8 @@ import { ChallengeRegistry } from "../components/Assessment/ChallengeRegistry";
 import { TimerProvider } from "../components/Assessment/TimerContext";
 import { GitHubPRFetcher } from "../components/Assessment/GitHubPRFetcher";
 import { GroundTruthAnnotationEditor } from "../components/Assessment/GroundTruthAnnotationEditor";
-import { ALL_CHALLENGE_TEMPLATES } from "../content/challengeLibrary";
+import { ALL_CHALLENGE_TEMPLATES, normalizeShortAnswerConfig } from "../content/challengeLibrary";
+import { QuestionVideoRecorder } from "../components/Challenge/QuestionVideoRecorder";
 
 import { MonacoPanel } from "../components/Panels/MonacoPanel";
 
@@ -1246,6 +1247,49 @@ export default function ChallengeEditorPage(): JSX.Element {
                       gap: 24,
                     }}
                   >
+                    {/* INPUT_MODE selector */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <label
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.3)",
+                          fontFamily: "Space Mono",
+                        }}
+                      >
+                        INPUT_MODE
+                      </label>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {(['text', 'voice', 'video'] as const).map((mode) => {
+                          const current = normalizeShortAnswerConfig(challenge.config).inputMode ?? 'text';
+                          const active = current === mode;
+                          return (
+                            <button
+                              key={mode}
+                              onClick={() =>
+                                setChallenge({
+                                  ...challenge,
+                                  config: { ...challenge.config, inputMode: mode },
+                                })
+                              }
+                              style={{
+                                fontFamily: 'Space Mono',
+                                fontSize: 10,
+                                letterSpacing: '0.1em',
+                                padding: '8px 16px',
+                                borderRadius: 4,
+                                cursor: 'pointer',
+                                border: `1px solid ${active ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.12)'}`,
+                                background: active ? 'rgba(251,191,36,0.1)' : 'rgba(255,255,255,0.03)',
+                                color: active ? '#fbbf24' : 'rgba(255,255,255,0.45)',
+                              }}
+                            >
+                              {mode.toUpperCase()}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div
                       style={{
                         display: "flex",
@@ -1328,6 +1372,37 @@ export default function ChallengeEditorPage(): JSX.Element {
                         }}
                       />
                     </div>
+
+                    {/* Question video recorder — shown for voice and video input modes */}
+                    {(() => {
+                      const saConfig = normalizeShortAnswerConfig(challenge.config);
+                      const mode = saConfig.inputMode ?? 'text';
+                      if (mode !== 'voice' && mode !== 'video') return null;
+                      const existingKey = (saConfig as { questionVideoS3Key?: string }).questionVideoS3Key;
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                          <label
+                            style={{
+                              fontSize: 10,
+                              color: "rgba(255,255,255,0.3)",
+                              fontFamily: "Space Mono",
+                            }}
+                          >
+                            QUESTION_VIDEO (OPTIONAL)
+                          </label>
+                          <QuestionVideoRecorder
+                            challengeId={challenge.id}
+                            {...(existingKey ? { existingS3Key: existingKey } : {})}
+                            onUploaded={(s3Key) =>
+                              setChallenge({
+                                ...challenge,
+                                config: { ...challenge.config, questionVideoS3Key: s3Key },
+                              })
+                            }
+                          />
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

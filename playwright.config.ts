@@ -138,6 +138,22 @@ export default defineConfig({
       },
       dependencies: ['auth_setup'],
     },
+
+    // QUIZ_SHORT_ANSWER configurable media input BDD
+    // Recruiter suites run with auth; candidate suites use test.use({ storageState: ... }) overrides
+    {
+      name: 'short-answer-media',
+      testMatch: /short-answer-media-config\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: STORAGE_STATE,
+        // Fake media streams so MediaRecorder/getUserMedia work in headless Chrome
+        launchOptions: {
+          args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+        },
+      },
+      dependencies: ['auth_setup'],
+    },
   ],
 
   // Run your local dev server before starting the tests

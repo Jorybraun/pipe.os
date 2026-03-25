@@ -273,8 +273,17 @@ export default function CandidateAssessmentPage(): JSX.Element {
         canAdvance={
           !isPreview &&
           submission !== null &&
-          (currentChallenge.type !== 'CODE_REVIEW'
-            || (!!submission.verdict && (submission.summary ?? '').trim().length > 0))
+          (() => {
+            if (currentChallenge.type === 'CODE_REVIEW') {
+              return !!submission.verdict && (submission.summary ?? '').trim().length > 0;
+            }
+            if (currentChallenge.type === 'QUIZ_SHORT_ANSWER') {
+              const inputMode = (submission['inputMode'] as string | undefined) ?? 'text';
+              if (inputMode === 'voice') return ((submission['text'] as string) ?? '').length > 0;
+              if (inputMode === 'video') return ((submission['videoS3Key'] as string) ?? '') !== '';
+            }
+            return true;
+          })()
         }
         isSubmitting={isLoading}
       >
@@ -283,6 +292,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
           stageTimeLimit={currentStage.order !== null ? (currentStage as { timeLimit?: number | null }).timeLimit ?? null : null}
           onSubmissionChange={setCurrentSubmission}
           onSubmit={handleSubmit}
+          candidateId={candidate?.id}
         />
       </StageShell>
     </TimerProvider>

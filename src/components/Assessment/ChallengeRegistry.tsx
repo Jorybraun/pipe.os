@@ -1,5 +1,6 @@
 import { useState, ReactNode, useMemo, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
+import { getUrl } from 'aws-amplify/storage';
 import type { Schema } from '../../../amplify/data/resource';
 import { resolveLayout, PanelType } from '../../lib/challenge/resolveLayout';
 import { resolveShells } from '../../lib/challenge/resolveShells';
@@ -12,6 +13,9 @@ import { TextareaPanel } from '../Panels/TextareaPanel';
 import { DiffPanel, type DiffJson, type Annotation } from '../Assessment/DiffPanel';
 import { PreviewPanel } from '../Panels/PreviewPanel';
 import { CodeReviewChallenge } from './CodeReviewChallenge';
+import { VoicePanel } from '../Panels/VoicePanel';
+import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
+import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
 
 // Client for on-demand diff fetch — uses apiKey so unauthenticated candidates
 // can call fetchGitHubPR. The mutation allows publicApiKey() auth.
@@ -40,6 +44,8 @@ interface ChallengeRegistryProps {
   stageTimeLimit?: number | null;
   onSubmissionChange: (submission: unknown) => void;
   onSubmit: (submission: unknown) => void;
+  /** Candidate ID — required for voice/video submission panels */
+  candidateId?: string;
 }
 
 // ============================================================================
@@ -98,6 +104,7 @@ export function ChallengeRegistry({
   stageTimeLimit,
   onSubmissionChange,
   onSubmit,
+  candidateId,
 }: ChallengeRegistryProps): JSX.Element {
   const layout = useMemo(() => resolveLayout(challenge), [challenge]);
   const shells = useMemo(() => resolveShells(challenge, stageTimeLimit), [challenge, stageTimeLimit]);
@@ -108,15 +115,44 @@ export function ChallengeRegistry({
       : ((challenge.config ?? {}) as Record<string, unknown>);
   }, [challenge.config]);
 
+  // Question video URL — resolved once per challenge when questionVideoS3Key is set
+  const [questionVideoUrl, setQuestionVideoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const s3Key = config.questionVideoS3Key as string | undefined;
+    if (!s3Key) return;
+    void (async () => {
+      try {
+        const result = await getUrl({
+          path: s3Key,
+          options: { expiresIn: 3600 },
+        });
+        setQuestionVideoUrl(result.url.toString());
+      } catch (err) {
+        console.warn('[ChallengeRegistry] Failed to resolve question video URL:', err);
+      }
+    })();
+    // Re-fetch only when the challenge changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challenge.id]);
+
   // Diff state (CODE_REVIEW only)
   const [localDiff, setLocalDiff] = useState<DiffJson | null>(null);
   const [isFetchingDiff, setIsFetchingDiff] = useState(false);
 
-  // Submission State
+  // Submission State — QUIZ_SHORT_ANSWER branches on inputMode
   const [submission, setSubmission] = useState<Record<string, unknown>>(() => {
     if (challenge.type === 'QUIZ_MCQ') return { answers: {} };
     if (challenge.type === 'CODE_REVIEW') return { annotations: [], verdict: null, summary: '' };
-    if (challenge.type === 'QUIZ_SHORT_ANSWER') return { text: '' };
+    if (challenge.type === 'QUIZ_SHORT_ANSWER') {
+      const saConfig = normalizeShortAnswerConfig(
+        typeof challenge.config === 'string'
+          ? (JSON.parse(challenge.config) as unknown)
+          : (challenge.config ?? {})
+      );
+      if (saConfig.inputMode === 'video') return { inputMode: 'video', videoS3Key: '', filename: '' };
+      if (saConfig.inputMode === 'voice') return { inputMode: 'voice', text: '' };
+      return { inputMode: 'text', text: '' };
+    }
     if (challenge.type === 'CODE_IMPLEMENTATION')
       return { code: (config.starterCode as string) || '' };
     return {};
@@ -373,6 +409,68 @@ export function ChallengeRegistry({
             TEST_PANEL_COMING_SOON
           </div>
         );
+
+      case 'voice': {
+        const voiceConfig = normalizeShortAnswerConfig(config);
+        return (
+          <VoicePanel
+            question={(voiceConfig as { question?: string }).question || challenge.title}
+            transcript={(submission.text as string) || ''}
+            onTranscriptChange={(text) =>
+              setSubmission((prev) => ({ ...prev, inputMode: 'voice', text }))
+            }
+            {...(questionVideoUrl !== null ? { questionVideoUrl } : {})}
+            onAudioReady={(blob) => {
+              // Fire-and-forget S3 upload for audio backup
+              void (async () => {
+                if (!candidateId) return;
+                try {
+                  const { default: d } = await import('aws-amplify/data');
+                  const apiClient = d.generateClient<Schema>({ authMode: 'apiKey' });
+                  const { data } = await apiClient.mutations.generateMediaUploadUrl({
+                    candidateId,
+                    challengeId: challenge.id,
+                    mimeType: 'audio/webm',
+                    mediaType: 'audio',
+                  });
+                  if (data?.uploadUrl && data.s3Key) {
+                    await fetch(data.uploadUrl, {
+                      method: 'PUT',
+                      body: blob,
+                      headers: { 'Content-Type': 'audio/webm' },
+                    });
+                    setSubmission((prev) => ({ ...prev, audioS3Key: data.s3Key }));
+                  }
+                } catch (err) {
+                  console.warn('[ChallengeRegistry] Audio backup upload failed:', err);
+                }
+              })();
+            }}
+          />
+        );
+      }
+
+      case 'video-submission': {
+        const vidConfig = normalizeShortAnswerConfig(config);
+        return (
+          <VideoSubmissionPanel
+            question={(vidConfig as { question?: string }).question || challenge.title}
+            videoS3Key={(submission.videoS3Key as string) || ''}
+            filename={(submission.filename as string) || ''}
+            onUploaded={(s3Key, filename) =>
+              setSubmission({ inputMode: 'video', videoS3Key: s3Key, filename })
+            }
+            {...(questionVideoUrl !== null ? { questionVideoUrl } : {})}
+            maxDurationSeconds={
+              typeof (vidConfig as { maxDurationSeconds?: unknown }).maxDurationSeconds === 'number'
+                ? (vidConfig as { maxDurationSeconds: number }).maxDurationSeconds
+                : 120
+            }
+            candidateId={candidateId ?? ''}
+            challengeId={challenge.id}
+          />
+        );
+      }
 
       default:
         return null;

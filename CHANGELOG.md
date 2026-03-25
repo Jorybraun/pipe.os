@@ -6,6 +6,24 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (QUIZ_SHORT_ANSWER configurable media input — voice, video, text)
+- `amplify/functions/generateMediaUploadUrl/` — Lambda that generates presigned S3 PUT URLs for unauthenticated candidates; validates candidateId + mimeType, returns `{ uploadUrl, s3Key }`
+- `amplify/storage/resource.ts` — added `candidate-submissions/*` (authenticated read) and `challenge-questions/*` (authenticated write, guest read) S3 paths
+- `amplify/data/resource.ts` — added `generateMediaUploadUrl` mutation (publicApiKey auth); added `allow.publicApiKey().to(['create'])` to `CandidateMedia` authorization
+- `amplify/backend.ts` — wired `generateMediaUploadUrl` Lambda with IAM grants for Candidate table read + S3 PUT
+- `src/content/challengeLibrary.ts` — replaced `QuizShortAnswerConfig` with discriminated union (`text | voice | video`); added `normalizeShortAnswerConfig()` helper
+- `src/lib/challenge/resolveLayout.ts` — added `'voice'` and `'video-submission'` to `PanelType`; QUIZ_SHORT_ANSWER routing branches on `config.inputMode`
+- `src/hooks/useAssessment.ts` — added `ShortAnswerTextSubmission`, `ShortAnswerVoiceSubmission`, `ShortAnswerVideoSubmission` types; added `isShortAnswerSubmission` type guard
+- `src/components/Challenge/QuestionVideoPlayer.tsx` — recruiter question video player (presentational `<video controls>`)
+- `src/components/Challenge/QuestionVideoRecorder.tsx` — recruiter records question video via MediaRecorder + authenticated Amplify Storage upload
+- `src/components/Panels/VoicePanel.tsx` — candidate voice-to-text panel using Web Speech API + MediaRecorder audio backup; shows question video if configured
+- `src/components/Panels/VideoSubmissionPanel.tsx` — candidate video recording + presigned S3 upload via `generateMediaUploadUrl` mutation
+- `src/components/Assessment/ChallengeRegistry.tsx` — `candidateId` prop; `questionVideoUrl` state resolved via `getUrl`; `voice` and `video-submission` panel cases
+- `src/pages/ChallengeEditorPage.tsx` — INPUT_MODE selector (TEXT/VOICE/VIDEO) and `QuestionVideoRecorder` section for QUIZ_SHORT_ANSWER
+- `src/pages/CandidateProfilePage.tsx` — discriminated union renderer for voice/video/text submissions; `S3AudioPlayer` and `S3VideoPlayer` inline helpers
+- `e2e/short-answer-media-config.spec.ts` — BDD Playwright test suite covering recruiter editor, candidate assessment (text/voice/video), and profile media rendering
+- `playwright.config.ts` — added `short-answer-media` project for the new E2E spec
+
 #### Added (OverviewPage, CandidateProfilePage, ListingPage, ChallengePicker/Editor)
 - `src/pages/OverviewPage.tsx` — replaced inline candidate creation form with `CandidateIntakeModal`; switched DnD to horizontal sort strategy with `arrayMove`
 - `src/pages/CandidateProfilePage.tsx` — VIEW_RESUME button using `getUrl` from `aws-amplify/storage`; AI_PARSED_PROFILE section with extracted skills, role, education; added `Briefcase`, `GraduationCap`, `Shield` icons
@@ -15,6 +33,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `src/App.tsx` — route param fix (`pipelineId` → `id` on challenge editor route), formatting cleanup
 
 #### Fixed
+- `amplify/data/resource.ts` — Assessment authorization: added `ownerId` field + `ownerDefinedIn('ownerId')` so only the pipeline-owning recruiter can read candidate assessments (was `allow.owner()` only — recruiter couldn't see assessments created by candidates via apiKey)
+- `amplify/functions/resolveToken/handler.ts` — returns `ownerId` (Candidate's `owner` field = recruiter's Cognito sub) so candidates can set it on Assessment.create
+- `src/hooks/useAssessment.ts` — captures `ownerId` from resolveToken; passes it to Assessment.create for scoped authorization
+- `src/components/Panels/VideoSubmissionPanel.tsx` — added early guard for missing `candidateId`; added pre-call diagnostic logging
+- `amplify/functions/generateMediaUploadUrl/handler.ts` — added cold-start config log; wrapped DynamoDB GetItem in try/catch with table name logging
 - `src/pages/CandidateProfilePage.tsx` — removed unused `Activity` and `ExternalLinkIcon` imports; added null filter on `skills` array before `.map()` to satisfy `Nullable<string>[]` type
 
 #### Added (Candidate Media Storage Domain — ADR-022)
