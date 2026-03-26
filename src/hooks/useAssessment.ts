@@ -1,9 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
 import { sanitizeChallengeConfig } from '../lib/utils';
 
-const client = generateClient<Schema>({ authMode: 'apiKey' });
+// publicApiKey client — used ONLY for resolveToken (the entry point).
+const publicClient = generateClient<Schema>({ authMode: 'apiKey' });
+
+/**
+ * Creates a candidate client using lambda auth with the session token.
+ * Falls back to apiKey if no token (backward compat during transition).
+ */
+function getCandidateClient(sessionToken: string | null) {
+  if (sessionToken) {
+    return generateClient<Schema>({
+      authMode: 'lambda',
+      authToken: sessionToken,
+    });
+  }
+  return publicClient;
+}
 
 // Selection set for challenge content — shared between initial load and stage-advance fetches.
 // groundTruth, serverConfig, and cachedMetadata are intentionally excluded (answer keys / sensitive data).
@@ -30,8 +45,11 @@ const CHALLENGE_SELECTION_SET = [
  * Fetches challenge content for a single stage by ID.
  * Called on-demand as the candidate advances — never bulk-prefetched.
  */
-async function fetchStageChallenges(stageId: string): Promise<StageWithChallenges> {
-  const { data: stage, errors } = await client.models.Stage.get(
+async function fetchStageChallenges(
+  stageId: string,
+  apiClient: ReturnType<typeof generateClient<Schema>> = publicClient,
+): Promise<StageWithChallenges> {
+  const { data: stage, errors } = await apiClient.models.Stage.get(
     { id: stageId },
     { selectionSet: CHALLENGE_SELECTION_SET }
   );
@@ -194,6 +212,8 @@ interface UseAssessmentReturn extends UseAssessmentState {
   nextChallenge: () => void;
   onStart: () => void;
   reset: () => void;
+  /** JWT session token for lambda-authorized API calls (null before resolveToken completes) */
+  sessionToken: string | null;
 }
 
 // ============================================================================
@@ -227,6 +247,12 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     lastAssessmentId: null,
   });
 
+  // Session token — stored in ref (not state) to avoid re-renders.
+  // Also persisted to sessionStorage so page refresh doesn't lose the session.
+  const sessionTokenRef = useRef<string | null>(
+    typeof window !== 'undefined' ? sessionStorage.getItem('pipe_session_token') : null
+  );
+
   const fetchData = useCallback(async () => {
     if (!inviteToken) {
       console.error('[useAssessment] CRITICAL: No token provided');
@@ -239,14 +265,31 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     }
 
     try {
-      // 1. Resolve invite token → candidate identity (server-side — no cross-candidate exposure)
-      const { data: resolved, errors: resolveErrors } = await client.queries.resolveToken({ inviteToken });
+      // Check for cached session token (survives page refresh)
+      const cachedToken = sessionStorage.getItem('pipe_session_token');
+
+      // 1. Resolve invite token → candidate identity + session token
+      const { data: resolved, errors: resolveErrors } = await publicClient.queries.resolveToken({ inviteToken });
 
       if (resolveErrors) throw new Error(resolveErrors[0]?.message ?? 'Token resolution failed');
 
       if (!resolved?.id || !resolved?.pipelineId) {
+        // If resolveToken fails but we have a cached token, the invite was claimed.
+        // Show a session-expired message.
+        if (cachedToken) {
+          throw new Error('SESSION_EXPIRED');
+        }
         throw new Error('INVALID_TOKEN');
       }
+
+      // Store session token if returned
+      if (resolved.sessionToken) {
+        sessionTokenRef.current = resolved.sessionToken;
+        sessionStorage.setItem('pipe_session_token', resolved.sessionToken);
+      }
+
+      // Create the authenticated candidate client (lambda auth if token available, apiKey fallback)
+      const client = getCandidateClient(sessionTokenRef.current);
 
       const candidate: ResolvedCandidate = {
         id: resolved.id,
@@ -287,7 +330,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
       // 4. Eagerly load challenge content for stage 0 only
       if (sortedMetas.length > 0 && sortedMetas[0]) {
-        placeholderStages[0] = await fetchStageChallenges(sortedMetas[0].id);
+        placeholderStages[0] = await fetchStageChallenges(sortedMetas[0].id, client);
       }
 
       // NOTE: Status update INVITED → IN_PROGRESS is deferred to onStart()
@@ -316,6 +359,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
    * Updates the candidate status from INVITED → IN_PROGRESS and sets hasStarted.
    */
   const onStart = useCallback(() => {
+    const client = getCandidateClient(sessionTokenRef.current);
     setState((prev) => {
       // Trigger status update non-fatally in background
       if (prev.candidate && prev.candidate.status === 'INVITED') {
@@ -348,6 +392,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
     setState((prev) => ({ ...prev, followUpLoading: true }));
 
+    const client = getCandidateClient(sessionTokenRef.current);
     client.mutations.generateFollowUps({ assessmentId: lastAssessmentId })
       .then((result) => {
         let questions: FollowUpQuestion[] = [];
@@ -385,6 +430,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
       if (!currentChallenge) return;
 
+      const client = getCandidateClient(sessionTokenRef.current);
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
@@ -482,7 +528,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
             const nextStage = stages[nextIndex];
             if (nextStage && nextStage.challenges.length === 0) {
               try {
-                const enriched = await fetchStageChallenges(nextStage.id);
+                const enriched = await fetchStageChallenges(nextStage.id, client);
                 setState((prev) => {
                   const updated = [...prev.stages];
                   updated[nextIndex] = enriched;
@@ -531,6 +577,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
    */
   const submitFollowUpAnswers = useCallback(
     async (answers: Record<string, string>): Promise<void> => {
+      const client = getCandidateClient(sessionTokenRef.current);
       const { lastAssessmentId, followUpQuestions, candidate, stages, currentStageIndex, currentChallengeIndex } = state;
       if (!lastAssessmentId || !followUpQuestions || !candidate) return;
 
@@ -592,7 +639,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           const nextStage = stages[nextIndex];
           if (nextStage && nextStage.challenges.length === 0) {
             try {
-              const enriched = await fetchStageChallenges(nextStage.id);
+              const enriched = await fetchStageChallenges(nextStage.id, client);
               setState((prev) => {
                 const updated = [...prev.stages];
                 updated[nextIndex] = enriched;
@@ -653,5 +700,6 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     nextChallenge,
     onStart,
     reset,
+    sessionToken: sessionTokenRef.current,
   };
 }

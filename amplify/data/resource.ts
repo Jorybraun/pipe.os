@@ -410,9 +410,8 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(), // Recruiter owns all candidate media records
-      // Candidates (unauthenticated, publicApiKey) can register their own recordings
-      // after uploading via the generateMediaUploadUrl presigned URL flow.
-      allow.publicApiKey().to(["create"]),
+      allow.publicApiKey().to(["create"]), // Transition: remove after frontend migrates
+      allow.custom().to(["create"]),
     ]),
 
   /**
@@ -466,11 +465,8 @@ const schema = a.schema({
       // Recruiter who owns the pipeline can read assessments via the denormalized ownerId field.
       // Candidates set ownerId during creation (resolved from the Candidate record's owner).
       allow.ownerDefinedIn("ownerId").to(["read", "update"]),
-      // publicApiKey: candidates can create their own assessments and update follow-up answers.
-      // Read is removed — candidates have no legitimate need to list assessments.
-      // TODO: replace create/update with Lambda resolvers that verify the inviteToken matches
-      // the candidateId, preventing a candidate from creating/updating another's assessment.
-      allow.publicApiKey().to(["create", "update"]),
+      allow.publicApiKey().to(["create", "update"]), // Transition: remove after frontend migrates
+      allow.custom().to(["create", "update"]),
     ]),
 
   /**
@@ -514,7 +510,8 @@ const schema = a.schema({
     ])
     .authorization((allow) => [
       allow.owner(),
-      allow.publicApiKey().to(["read"]),
+      allow.publicApiKey().to(["read"]), // Transition: remove after frontend migrates
+      allow.custom().to(["read"]),
     ]),
 
   /**
@@ -655,7 +652,7 @@ const schema = a.schema({
     })
     .returns(a.json())
     .handler(a.handler.function(scoringAgent))
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
   /**
    * generateFollowUps
@@ -675,7 +672,7 @@ const schema = a.schema({
     })
     .returns(a.json())
     .handler(a.handler.function(codeReviewFollowUpAgent))
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
   getTurnCredentials: a
     .query()
@@ -807,7 +804,7 @@ const schema = a.schema({
     })
     .returns(a.json())
     .handler(a.handler.function(submitCodeReview))
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
   /**
    * Fetch GitHub PR metadata and diff
@@ -827,7 +824,8 @@ const schema = a.schema({
     .handler(a.handler.function(fetchGitHubPR))
     .authorization((allow) => [
       allow.authenticated(), // Recruiter (admin)
-      allow.publicApiKey(), // Candidate (unauthenticated) — TODO: replace with single-use token gate (see ADR/Linear ticket)
+      allow.publicApiKey(), // Transition: remove after frontend migrates
+      allow.custom(), // Candidate via session JWT
     ]),
 
   /**
@@ -917,7 +915,7 @@ const schema = a.schema({
       }),
     )
     .handler(a.handler.function(createAssessment))
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
   /**
    * generateMediaUploadUrl
@@ -944,7 +942,7 @@ const schema = a.schema({
       }),
     )
     .handler(a.handler.function(generateMediaUploadUrl))
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
   /**
    * parseCandidateCV

@@ -32,13 +32,17 @@ interface CodeReviewToken {
   pipelineId: string;
 }
 
-function loadCodeReviewToken(): CodeReviewToken {
+import { existsSync } from 'fs';
+
+function loadCodeReviewToken(): CodeReviewToken | null {
   const tokenPath = join(process.cwd(), 'playwright/code-review-token.json');
+  if (!existsSync(tokenPath)) return null;
   return JSON.parse(readFileSync(tokenPath, 'utf8')) as CodeReviewToken;
 }
 
-function loadCandidateToken(): { candidateId: string; pipelineId: string } {
+function loadCandidateToken(): { candidateId: string; pipelineId: string } | null {
   const tokenPath = join(process.cwd(), 'playwright/candidate-token.json');
+  if (!existsSync(tokenPath)) return null;
   return JSON.parse(readFileSync(tokenPath, 'utf8')) as { candidateId: string; pipelineId: string };
 }
 
@@ -55,10 +59,9 @@ test.describe('Feature: Candidate score display on profile page', () => {
    * Then  the OVERALL_SCORE displays "—" instead of "0"
    */
   test('Scenario: Candidate with no submissions shows — not 0', async ({ page }) => {
-    // This scenario uses the candidate-token.json candidate (may have no submissions
-    // if test data hasn't been scored yet). We navigate to the profile page and
-    // assert that any score hero card does NOT show "0" as an overall score.
-    const { candidateId } = loadCandidateToken();
+    const token = loadCandidateToken();
+    test.skip(!token, 'Skipped — playwright/candidate-token.json fixture missing');
+    const { candidateId } = token!;
 
     await page.goto(`/candidates/${candidateId}`);
     await page.waitForLoadState('networkidle');
@@ -85,7 +88,9 @@ test.describe('Feature: Candidate score display on profile page', () => {
    * And   stage score cards are visible
    */
   test('Scenario: Candidate profile page loads for CODE_REVIEW candidate', async ({ page }) => {
-    const { candidateId } = loadCodeReviewToken();
+    const crToken = loadCodeReviewToken();
+    test.skip(!crToken, 'Skipped — playwright/code-review-token.json fixture missing');
+    const { candidateId } = crToken!;
 
     await page.goto(`/candidates/${candidateId}`);
     await page.waitForLoadState('networkidle');
@@ -108,7 +113,9 @@ test.describe('Feature: Candidate score display on profile page', () => {
    * And   a green check icon indicates the stage is complete
    */
   test('Scenario: Stage tab shows score chip when stage has submissions', async ({ page }) => {
-    const { candidateId } = loadCodeReviewToken();
+    const crToken = loadCodeReviewToken();
+    test.skip(!crToken, 'Skipped — playwright/code-review-token.json fixture missing');
+    const { candidateId } = crToken!;
 
     await page.goto(`/candidates/${candidateId}`);
     await page.waitForLoadState('networkidle');
@@ -138,7 +145,9 @@ test.describe('Feature: Candidate score display on profile page', () => {
    */
   test('Scenario: Intelligence tab visible when flag enabled', async ({ page }) => {
     // The dev server is started with .env.local which has VITE_FEATURE_INTELLIGENCE_REPORT=true
-    const { candidateId } = loadCodeReviewToken();
+    const crToken = loadCodeReviewToken();
+    test.skip(!crToken, 'Skipped — playwright/code-review-token.json fixture missing');
+    const { candidateId } = crToken!;
 
     await page.goto(`/candidates/${candidateId}`);
     await page.waitForLoadState('networkidle');
@@ -164,7 +173,9 @@ test.describe('Feature: Candidate score display on profile page', () => {
    * And   I see the STAGE_PERFORMANCE section header
    */
   test('Scenario: Intelligence tab renders executive summary and stage performance', async ({ page }) => {
-    const { candidateId } = loadCodeReviewToken();
+    const crToken = loadCodeReviewToken();
+    test.skip(!crToken, 'Skipped — playwright/code-review-token.json fixture missing');
+    const { candidateId } = crToken!;
 
     await page.goto(`/candidates/${candidateId}`);
     await page.waitForLoadState('networkidle');
@@ -188,7 +199,9 @@ test.describe('Feature: Candidate score display on profile page', () => {
    * And   the FOLLOW_UP_Q&A section appears for CODE_REVIEW challenges that have answers
    */
   test('Scenario: Challenge deep dives section is visible in intelligence tab', async ({ page }) => {
-    const { candidateId } = loadCodeReviewToken();
+    const crToken = loadCodeReviewToken();
+    test.skip(!crToken, 'Skipped — playwright/code-review-token.json fixture missing');
+    const { candidateId } = crToken!;
 
     await page.goto(`/candidates/${candidateId}`);
     await page.waitForLoadState('networkidle');
@@ -212,7 +225,9 @@ test.describe('Feature: Candidate score display on profile page', () => {
    * And   I do NOT see the intelligence report content
    */
   test('Scenario: Stage tabs render challenge cards not intelligence report', async ({ page }) => {
-    const { candidateId } = loadCodeReviewToken();
+    const crToken = loadCodeReviewToken();
+    test.skip(!crToken, 'Skipped — playwright/code-review-token.json fixture missing');
+    const { candidateId } = crToken!;
 
     await page.goto(`/candidates/${candidateId}`);
     await page.waitForLoadState('networkidle');

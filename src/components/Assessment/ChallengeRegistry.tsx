@@ -17,10 +17,16 @@ import { VoicePanel } from '../Panels/VoicePanel';
 import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
 import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
 
-// Client for on-demand diff fetch — uses apiKey so unauthenticated candidates
-// can call fetchGitHubPR. The mutation allows publicApiKey() auth.
-// TODO: replace with single-use token gate (see Linear ticket).
-const diffClient = generateClient<Schema>({ authMode: 'apiKey' });
+import { useSessionToken } from '../../contexts/SessionTokenContext';
+
+// Client for on-demand diff fetch — uses lambda auth when session token available,
+// falls back to apiKey during transition.
+function getDiffClient(sessionToken: string | null) {
+  if (sessionToken) {
+    return generateClient<Schema>({ authMode: 'lambda', authToken: sessionToken });
+  }
+  return generateClient<Schema>({ authMode: 'apiKey' });
+}
 
 // ============================================================================
 // Types
@@ -106,6 +112,7 @@ export function ChallengeRegistry({
   onSubmit,
   candidateId,
 }: ChallengeRegistryProps): JSX.Element {
+  const sessionToken = useSessionToken();
   const layout = useMemo(() => resolveLayout(challenge), [challenge]);
   const shells = useMemo(() => resolveShells(challenge, stageTimeLimit), [challenge, stageTimeLimit]);
 
@@ -186,7 +193,7 @@ export function ChallengeRegistry({
     setIsFetchingDiff(true);
     void (async () => {
       try {
-        const { data: raw } = await diffClient.mutations.fetchGitHubPR({
+        const { data: raw } = await getDiffClient(sessionToken).mutations.fetchGitHubPR({
           repoUrl: challenge.githubRepoUrl!,
           prNumber: challenge.githubPrNumber!,
           skipCache: false,

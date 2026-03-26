@@ -6,12 +6,28 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
-#### Added (Security hardening + test fixtures)
-- `amplify/functions/resolveToken/` — hardened handler with session token support; removed ownerId from client response
-- `amplify/functions/sessionAuthorizer/` — session-based authorization Lambda
-- `amplify/backend.ts` — wired createAssessment Lambda with table name injection and IAM grants
-- `amplify/data/resource.ts` — createAssessment mutation schema; updated authorization audit comments
-- `playwright/*.json` — E2E test fixtures (candidate tokens, profiles, challenge configs) for CI/CD
+#### Added (Phase C — JWT session token architecture)
+- `amplify/functions/_shared/jwt.ts` — zero-dependency JWT sign/verify using HMAC-SHA256 (8 unit tests)
+- `amplify/functions/sessionAuthorizer/` — AppSync Lambda authorizer validates session JWTs, returns candidateId/pipelineId in resolverContext (7 unit tests)
+- `amplify/data/resource.ts` — `lambdaAuthorizationMode` wired; `allow.custom()` added to all candidate-facing models and mutations alongside publicApiKey (transition coexistence)
+- `src/contexts/SessionTokenContext.tsx` — React context providing JWT to candidate-facing components
+- `docs/security/AUDIT-2026-03-25.md` — full security audit with authorization matrix and remediation roadmap
+
+#### Changed (Phase C — JWT session token architecture)
+- `amplify/functions/resolveToken/` — now issues short-lived JWT (2h), claims inviteToken (one-time use), no longer returns ownerId
+- `amplify/functions/createAssessment/` — supports both Lambda auth (resolverContext) and apiKey fallback; ownerId resolved server-side via GetItem instead of Scan (11 unit tests)
+- `amplify/functions/generateMediaUploadUrl/` — reads candidateId from resolverContext when available
+- `src/hooks/useAssessment.ts` — stores sessionToken from resolveToken, uses lambda auth for all subsequent calls, persists to sessionStorage
+- `src/components/Assessment/ChallengeRegistry.tsx` — uses lambda auth for fetchGitHubPR
+- `src/components/Panels/VideoSubmissionPanel.tsx` — uses lambda auth for media upload
+- `src/hooks/useVideoSignaling.ts` — accepts sessionToken, uses lambda auth for candidate signaling
+- `src/pages/CandidateAssessmentPage.tsx` — wraps with SessionTokenProvider
+
+#### Fixed (E2E test stability)
+- Removed 3 stale test files: `role-discovery.spec.ts`, `navigation.spec.ts`, `code-implementation-editor.spec.ts` (tested non-existent routes or brittle UI)
+- Added skip guards for missing fixtures in `candidate-flow.spec.ts` and `candidate-scores.spec.ts`
+- Enabled local retry (1) in `playwright.config.ts`; bumped default timeout to 60s, action timeout to 15s
+- Regenerated all playwright fixtures with fresh tokens and candidate data
 
 #### Added (Live speech transcription for video submissions)
 - `src/hooks/useSpeechTranscription.ts` — shared hook wrapping Web Speech API for live transcription; used by both VoicePanel and VideoSubmissionPanel

@@ -1,20 +1,23 @@
 /**
  * createAssessment Lambda Handler
  *
- * Secure replacement for client-side Assessment.create() via publicApiKey.
+ * Secure assessment creation with two auth paths:
+ *
+ * 1. Lambda auth (preferred): candidateId comes from sessionAuthorizer's
+ *    resolverContext — no inviteToken needed, identity already proven.
+ * 2. publicApiKey (transition): validates inviteToken server-side to resolve
+ *    candidateId. Will be removed after frontend migration to lambda auth.
  *
  * SECURITY:
- *   - Accepts inviteToken (NOT candidateId) as identity proof.
- *   - Resolves candidateId and ownerId server-side from DynamoDB.
- *   - Rejects duplicate assessments (same candidate + challenge).
  *   - NEVER trusts client-supplied candidateId or ownerId.
- *
- * Called by the candidate assessment flow (publicApiKey auth).
+ *   - Resolves ownerId server-side from the Candidate record's owner field.
+ *   - Rejects duplicate assessments (same candidate + challenge).
  */
 
 import {
   DynamoDBClient,
   ScanCommand,
+  GetItemCommand,
   PutItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
@@ -30,16 +33,30 @@ interface CreateAssessmentResult {
   error?: string;
 }
 
+/**
+ * Extract candidateId from the event. Prefers resolverContext (Lambda auth)
+ * over inviteToken (publicApiKey auth).
+ */
+function extractCandidateId(event: Record<string, unknown>): {
+  candidateId: string | null;
+  fromResolverContext: boolean;
+} {
+  // Path 1: Lambda authorizer sets identity.resolverContext.candidateId
+  const identity = event['identity'] as Record<string, unknown> | undefined;
+  const resolverContext = identity?.['resolverContext'] as Record<string, string> | undefined;
+  if (resolverContext?.['candidateId']) {
+    return { candidateId: resolverContext['candidateId'], fromResolverContext: true };
+  }
+
+  // Path 2: No resolverContext — fall through to inviteToken validation
+  return { candidateId: null, fromResolverContext: false };
+}
+
 export async function handler(event: unknown): Promise<CreateAssessmentResult> {
   try {
-    // ── 1. Extract and validate arguments ────────────────────────────────
-    const args = (event as Record<string, unknown>)?.['arguments'] as
-      | Record<string, unknown>
-      | undefined;
+    const eventObj = event as Record<string, unknown>;
+    const args = eventObj['arguments'] as Record<string, unknown> | undefined;
 
-    const inviteToken = typeof args?.['inviteToken'] === 'string'
-      ? args['inviteToken'].trim()
-      : '';
     const challengeId = typeof args?.['challengeId'] === 'string'
       ? args['challengeId'].trim()
       : '';
@@ -47,9 +64,6 @@ export async function handler(event: unknown): Promise<CreateAssessmentResult> {
       ? args['submission']
       : '';
 
-    if (!inviteToken) {
-      return { success: false, error: 'VALIDATION: inviteToken is required' };
-    }
     if (!challengeId) {
       return { success: false, error: 'VALIDATION: challengeId is required' };
     }
@@ -57,29 +71,55 @@ export async function handler(event: unknown): Promise<CreateAssessmentResult> {
       return { success: false, error: 'VALIDATION: submission is required' };
     }
 
-    // ── 2. Resolve inviteToken → candidate (server-side) ─────────────────
-    const { Items, Count } = await dynamo.send(new ScanCommand({
+    // ── 1. Resolve candidate identity ──────────────────────────────────────
+    let candidateId: string;
+
+    const { candidateId: resolvedId, fromResolverContext } = extractCandidateId(eventObj);
+
+    if (fromResolverContext && resolvedId) {
+      // Lambda auth path — identity proven by sessionAuthorizer
+      candidateId = resolvedId;
+    } else {
+      // publicApiKey path — validate inviteToken (transition period)
+      const inviteToken = typeof args?.['inviteToken'] === 'string'
+        ? args['inviteToken'].trim()
+        : '';
+
+      if (!inviteToken) {
+        return { success: false, error: 'VALIDATION: inviteToken is required' };
+      }
+
+      const { Items, Count } = await dynamo.send(new ScanCommand({
+        TableName: CANDIDATE_TABLE,
+        FilterExpression: 'inviteToken = :token',
+        ExpressionAttributeValues: {
+          ':token': { S: inviteToken },
+        },
+        ProjectionExpression: 'id',
+      }));
+
+      if (!Items || Count === 0 || !Items[0]) {
+        console.error('[createAssessment] Invalid invite token');
+        return { success: false, error: 'Invalid invite token' };
+      }
+
+      candidateId = unmarshall(Items[0])['id'] as string;
+    }
+
+    // ── 2. Look up ownerId from Candidate record ───────────────────────────
+    // Always done regardless of auth path — ownerId is never from client input
+    const { Item: candidateItem } = await dynamo.send(new GetItemCommand({
       TableName: CANDIDATE_TABLE,
-      FilterExpression: 'inviteToken = :token',
-      ExpressionAttributeValues: {
-        ':token': { S: inviteToken },
-      },
-      ProjectionExpression: 'id, pipelineId, #o',
+      Key: { id: { S: candidateId } },
+      ProjectionExpression: '#o',
       ExpressionAttributeNames: { '#o': 'owner' },
     }));
 
-    if (!Items || Count === 0 || !Items[0]) {
-      console.error('[createAssessment] Invalid invite token');
-      return { success: false, error: 'Invalid invite token' };
-    }
+    const ownerId = candidateItem
+      ? (unmarshall(candidateItem)['owner'] as string | undefined) ?? null
+      : null;
 
-    const candidate = unmarshall(Items[0]);
-    const candidateId = candidate['id'] as string;
-    const ownerId = (candidate['owner'] as string | undefined) ?? null;
-
-    // ── 3. Duplicate check (same candidate + challenge) ──────────────────
-    // Uses a Scan with filter — acceptable at MVP scale.
-    // TODO: Add GSI on candidateId+challengeId for O(1) lookup at scale.
+    // ── 3. Duplicate check (same candidate + challenge) ────────────────────
     const { Items: existingItems, Count: existingCount } = await dynamo.send(
       new ScanCommand({
         TableName: ASSESSMENT_TABLE,
@@ -96,7 +136,7 @@ export async function handler(event: unknown): Promise<CreateAssessmentResult> {
       return { success: false, error: 'Assessment already submitted for this challenge' };
     }
 
-    // ── 4. Create Assessment record ──────────────────────────────────────
+    // ── 4. Create Assessment record ────────────────────────────────────────
     const assessmentId = randomUUID();
     const now = new Date().toISOString();
 
@@ -109,11 +149,9 @@ export async function handler(event: unknown): Promise<CreateAssessmentResult> {
       completedAt: { S: now },
       createdAt: { S: now },
       updatedAt: { S: now },
-      // Amplify model type discriminator
       __typename: { S: 'Assessment' },
     };
 
-    // Only set ownerId if the candidate has an owner (recruiter Cognito sub)
     if (ownerId) {
       item['ownerId'] = { S: ownerId };
     }

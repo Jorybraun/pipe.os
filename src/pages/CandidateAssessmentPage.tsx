@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useAssessment } from '../hooks/useAssessment';
+import { SessionTokenProvider } from '../contexts/SessionTokenContext';
 import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
@@ -47,6 +48,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
     submitChallenge,
     onStart,
     reset,
+    sessionToken,
   } = useAssessment(token || '');
 
   const [currentSubmission, setCurrentSubmission] = useState<unknown>(null);
@@ -303,6 +305,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   const hasNoChallenges = !currentStage.challenges || currentStage.challenges.length === 0;
 
   return (
+    <SessionTokenProvider value={sessionToken}>
     <div style={{ minHeight: '100vh', background: '#0c0c0e' }}>
       <ChromeMeshGrid />
 
@@ -364,5 +367,6 @@ export default function CandidateAssessmentPage(): JSX.Element {
         }
       `}</style>
     </div>
+    </SessionTokenProvider>
   );
 }

@@ -1,22 +1,24 @@
 
 import { test, expect } from '@playwright/test';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+
+const FIXTURE_PATH = join(process.cwd(), 'playwright/candidate-token.json');
 
 test.describe('Candidate Flow', () => {
   let candidateToken: string;
 
   test.beforeAll(() => {
-    try {
-      const data = JSON.parse(readFileSync(join(process.cwd(), 'playwright/candidate-token.json'), 'utf8'));
-      candidateToken = data.token;
-    } catch (err) {
-      console.warn('Candidate token not found, some tests might fail if token is required');
-      candidateToken = 'test-token';
+    if (!existsSync(FIXTURE_PATH)) {
+      candidateToken = '';
+      return;
     }
+    const data = JSON.parse(readFileSync(FIXTURE_PATH, 'utf8'));
+    candidateToken = data.token;
   });
 
   test('Candidate assessment page renders correctly without authentication', async ({ page }) => {
+    test.skip(!candidateToken, 'Skipped — playwright/candidate-token.json fixture missing');
     await page.goto(`/assess/${candidateToken}`);
     
     // Wait for the page to load (loader should disappear)
@@ -28,6 +30,7 @@ test.describe('Candidate Flow', () => {
   });
 
   test('Progress indicator and navigation work', async ({ page }) => {
+    test.skip(!candidateToken, 'Skipped — playwright/candidate-token.json fixture missing');
     await page.goto(`/assess/${candidateToken}`);
     
     // Wait for load

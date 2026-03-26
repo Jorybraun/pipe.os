@@ -28,6 +28,8 @@ interface UseVideoSignalingOptions {
    * signals delivered here are from the remote party.
    */
   onSignal: (type: VideoSignalType, payload: VideoSignalPayload) => void;
+  /** JWT session token for lambda-authorized candidate calls (optional, falls back to apiKey) */
+  sessionToken?: string | null;
 }
 
 interface UseVideoSignalingReturn {
@@ -55,8 +57,15 @@ interface UseVideoSignalingReturn {
 // Hook
 // ============================================================================
 
-const candidateClient = generateClient<Schema>({ authMode: 'apiKey' });
+const fallbackCandidateClient = generateClient<Schema>({ authMode: 'apiKey' });
 const recruiterClient = generateClient<Schema>(); // userPool auth
+
+function getCandidateVideoClient(sessionToken: string | null) {
+  if (sessionToken) {
+    return generateClient<Schema>({ authMode: 'lambda', authToken: sessionToken });
+  }
+  return fallbackCandidateClient;
+}
 
 /**
  * useVideoSignaling — Manages the AppSync VideoSession record and
@@ -70,7 +79,9 @@ export function useVideoSignaling({
   candidateId,
   role,
   onSignal,
+  sessionToken,
 }: UseVideoSignalingOptions): UseVideoSignalingReturn {
+  const candidateClient = getCandidateVideoClient(sessionToken ?? null);
   const client = role === 'RECRUITER' ? recruiterClient : candidateClient;
 
   const [session, setSession] = useState<VideoSession | null>(null);

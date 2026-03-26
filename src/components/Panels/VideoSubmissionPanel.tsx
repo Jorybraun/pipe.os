@@ -3,8 +3,14 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
 import { QuestionVideoPlayer } from '../Challenge/QuestionVideoPlayer';
 import { useSpeechTranscription } from '../../hooks/useSpeechTranscription';
+import { useSessionToken } from '../../contexts/SessionTokenContext';
 
-const client = generateClient<Schema>({ authMode: 'apiKey' });
+function getClient(sessionToken: string | null) {
+  if (sessionToken) {
+    return generateClient<Schema>({ authMode: 'lambda', authToken: sessionToken });
+  }
+  return generateClient<Schema>({ authMode: 'apiKey' });
+}
 
 export interface VideoSubmissionPanelProps {
   /** Question heading displayed above the recording controls */
@@ -44,6 +50,8 @@ export function VideoSubmissionPanel({
   candidateId,
   challengeId,
 }: VideoSubmissionPanelProps): JSX.Element {
+  const sessionToken = useSessionToken();
+  const client = getClient(sessionToken);
   const [panelState, setPanelState] = useState<PanelState>(
     videoS3Key ? 'done' : 'idle',
   );

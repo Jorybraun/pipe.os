@@ -1,12 +1,13 @@
 /**
  * generateMediaUploadUrl Lambda Handler
  *
- * Called by the generateMediaUploadUrl AppSync mutation (publicApiKey auth).
+ * Called by the generateMediaUploadUrl AppSync mutation.
  *
- * Given a candidateId + challengeId, validates the candidate exists in DynamoDB
- * and returns a presigned S3 PUT URL for the media file.
+ * Two auth paths:
+ * 1. Lambda auth (preferred): candidateId from sessionAuthorizer resolverContext.
+ * 2. publicApiKey (transition): candidateId from client argument (validated exists).
  *
- * The candidate uploads directly to S3 using the presigned URL — no proxy needed.
+ * Returns a presigned S3 PUT URL for the media file.
  * S3 path: candidate-submissions/{candidateId}/{challengeId}.webm
  */
 
@@ -21,13 +22,7 @@ const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 
 const BUCKET = process.env.ASSET_BUCKET_NAME ?? 'pipeAssets';
 const CANDIDATE_TABLE = process.env.CANDIDATE_TABLE_NAME ?? 'Candidate';
-const URL_EXPIRY_SECONDS = 300; // 5 minutes — sufficient for a single upload
-
-// Cold-start diagnostic — shows in CloudWatch to verify env vars are injected
-console.log('[generateMediaUploadUrl] Config', {
-  bucket: BUCKET,
-  candidateTable: CANDIDATE_TABLE,
-});
+const URL_EXPIRY_SECONDS = 300; // 5 minutes
 
 function isValidId(id: unknown): id is string {
   return typeof id === 'string' && id.trim().length > 0 && id.length < 128;
@@ -45,9 +40,15 @@ export const handler: AppSyncResolverHandler<
   GenerateMediaUploadUrlArgs,
   GenerateMediaUploadUrlResult | null
 > = async (event) => {
-  const { candidateId, challengeId, mimeType, mediaType } = event.arguments;
+  const { challengeId, mimeType, mediaType } = event.arguments;
 
-  // Input validation
+  // ── 1. Resolve candidateId ───────────────────────────────────────────────
+  // Prefer resolverContext (Lambda auth) over client-supplied candidateId
+  const identity = (event as unknown as Record<string, unknown>)['identity'] as Record<string, unknown> | undefined;
+  const resolverContext = identity?.['resolverContext'] as Record<string, string> | undefined;
+  const candidateId = resolverContext?.['candidateId'] ?? event.arguments.candidateId;
+
+  // ── 2. Input validation ──────────────────────────────────────────────────
   if (!isValidId(candidateId)) {
     console.error('[generateMediaUploadUrl] Invalid candidateId');
     return null;
@@ -65,7 +66,7 @@ export const handler: AppSyncResolverHandler<
     return null;
   }
 
-  // Validate candidateId exists — prevents issuing URLs for phantom candidates
+  // ── 3. Validate candidateId exists (prevents URLs for phantom candidates)
   let candidateItem;
   try {
     const { Item } = await dynamo.send(new GetItemCommand({
@@ -76,20 +77,17 @@ export const handler: AppSyncResolverHandler<
     candidateItem = Item;
   } catch (err) {
     console.error('[generateMediaUploadUrl] DynamoDB GetItem error:', err);
-    console.error('[generateMediaUploadUrl] Table name used:', CANDIDATE_TABLE);
     return null;
   }
 
   if (!candidateItem) {
     console.error('[generateMediaUploadUrl] candidateId not found:', candidateId);
-    console.error('[generateMediaUploadUrl] Table name used:', CANDIDATE_TABLE);
     return null;
   }
 
-  // Derive S3 key — scoped to candidate + challenge for easy querying
+  // ── 4. Generate presigned PUT URL ────────────────────────────────────────
   const s3Key = `candidate-submissions/${candidateId}/${challengeId}.webm`;
 
-  // Generate presigned PUT URL
   const command = new PutObjectCommand({
     Bucket: BUCKET,
     Key: s3Key,
