@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (ChallengeEditor UX overhaul)
+- QUIZ_SHORT_ANSWER dedicated 2-column editor layout: response format selector, recruiter video recording, scoring guideline, follow-up toggle
+- FOLLOW_UP dedicated challenge editor: count selector (1–5), question type toggles (text/MCQ/voice/video/code), category toggles (WHY/DEPTH/FIX/MISSED/PRIORITY)
+- Auto-creation of FOLLOW_UP challenge on save when enableFollowUp is toggled on (with duplicate detection)
+- Preview button in challenge editor header
+
 #### Added (Phase C — JWT session token architecture)
 - `amplify/functions/_shared/jwt.ts` — zero-dependency JWT sign/verify using HMAC-SHA256 (8 unit tests)
 - `amplify/functions/sessionAuthorizer/` — AppSync Lambda authorizer validates session JWTs, returns candidateId/pipelineId in resolverContext (7 unit tests)

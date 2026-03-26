@@ -393,12 +393,31 @@ export default function ChallengeEditorPage(): JSX.Element {
           throw new Error("Cannot save challenge without a stage ID.");
         }
 
+        const challengeOrder = challenge.order ?? 0;
         const { data: newChallenge } = await client.models.Challenge.create({
           ...updateParams,
           stageId,
           type: challenge.type,
-          order: challenge.order ?? 0,
+          order: challengeOrder,
         });
+
+        // Auto-create FOLLOW_UP challenge if enabled
+        if (challenge.config?.enableFollowUp && stageId) {
+          try {
+            await client.models.Challenge.create({
+              stageId,
+              type: 'FOLLOW_UP',
+              title: 'Follow-Up Questions',
+              instructions: 'AI-generated follow-up questions based on your previous response.',
+              config: JSON.stringify({}),
+              serverConfig: JSON.stringify({}),
+              order: challengeOrder + 1,
+            });
+          } catch (err) {
+            console.warn('[ChallengeEditor] Failed to create follow-up challenge:', err);
+          }
+        }
+
         if (newChallenge?.id) {
           navigate(`/pipeline/${pipelineId}/challenges/${newChallenge.id}`, {
             replace: true,
@@ -410,6 +429,31 @@ export default function ChallengeEditorPage(): JSX.Element {
           id: challenge.id,
           ...updateParams,
         });
+
+        // Auto-create FOLLOW_UP challenge if newly enabled
+        if (challenge.config?.enableFollowUp && challenge.stageId) {
+          const { data: siblings } = await client.models.Challenge.list({
+            filter: { stageId: { eq: challenge.stageId } },
+          });
+          const hasFollowUp = siblings?.some(
+            (c) => c.type === 'FOLLOW_UP' && (c.order ?? 0) > (challenge.order ?? 0)
+          );
+          if (!hasFollowUp) {
+            try {
+              await client.models.Challenge.create({
+                stageId: challenge.stageId,
+                type: 'FOLLOW_UP',
+                title: 'Follow-Up Questions',
+                instructions: 'AI-generated follow-up questions based on your previous response.',
+                config: JSON.stringify({}),
+                serverConfig: JSON.stringify({}),
+                order: (challenge.order ?? 0) + 1,
+              });
+            } catch (err) {
+              console.warn('[ChallengeEditor] Failed to create follow-up challenge:', err);
+            }
+          }
+        }
       }
     } catch (err) {
       console.error("[ChallengeEditor] Error saving challenge:", err);
@@ -664,6 +708,26 @@ export default function ChallengeEditorPage(): JSX.Element {
             </button>
           )}
           <button
+            onClick={() => setIsPreviewFullscreen(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 18px",
+              background: "rgba(255,255,255,0.05)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 800,
+              fontFamily: "Space Mono",
+              cursor: "pointer",
+            }}
+          >
+            <Play size={16} />
+            PREVIEW
+          </button>
+          <button
             onClick={handleClone}
             disabled={isSaving}
             style={{
@@ -831,6 +895,498 @@ export default function ChallengeEditorPage(): JSX.Element {
             }
           />
         </div>
+      ) : challenge.type === "QUIZ_SHORT_ANSWER" ? (
+        /* ── QUIZ_SHORT_ANSWER — dedicated 2-column editor ── */
+        (() => {
+          const saConfig = normalizeShortAnswerConfig(challenge.config);
+          const currentMode = saConfig.inputMode ?? 'text';
+          const existingVideoKey = (saConfig as { questionVideoS3Key?: string }).questionVideoS3Key;
+          const hasFollowUp = !!challenge.config?.enableFollowUp;
+
+          return (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 32,
+              marginTop: 8,
+            }}>
+              {/* ── Left Column: Response Format & Question ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+                {/* Response Format Selector */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.35)',
+                    fontFamily: 'Space Mono', letterSpacing: '0.15em', marginBottom: 12, paddingLeft: 2,
+                  }}>HOW SHOULD CANDIDATES RESPOND?</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                    {([
+                      { mode: 'text' as const, icon: '⌨', label: 'Written', desc: 'Type a text response' },
+                      { mode: 'voice' as const, icon: '🎙', label: 'Voice', desc: 'Speak with transcription' },
+                      { mode: 'video' as const, icon: '🎬', label: 'Video', desc: 'Record on camera' },
+                    ]).map(({ mode, icon, label, desc }) => {
+                      const active = currentMode === mode;
+                      return (
+                        <button key={mode} onClick={() => setChallenge({
+                          ...challenge, config: { ...challenge.config, inputMode: mode },
+                        })} style={{
+                          fontFamily: 'Space Mono', padding: '18px 14px 16px', borderRadius: 8,
+                          cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 6,
+                          border: active ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(255,255,255,0.06)',
+                          background: active ? 'linear-gradient(135deg, rgba(251,191,36,0.08) 0%, rgba(251,191,36,0.02) 100%)' : 'rgba(255,255,255,0.02)',
+                          transition: 'all 0.2s ease',
+                        }}>
+                          <div style={{ fontSize: 20 }}>{icon}</div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: active ? '#fbbf24' : 'rgba(255,255,255,0.5)', letterSpacing: '0.05em' }}>{label}</div>
+                          <div style={{ fontSize: 9, color: active ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.2)', lineHeight: 1.4 }}>{desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Question Card */}
+                <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 24px',
+                    borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 3, height: 16, background: '#fbbf24', borderRadius: 1 }} />
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+                        fontFamily: 'Space Mono', letterSpacing: '0.15em',
+                      }}>QUESTION</span>
+                    </div>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)', fontFamily: 'Space Mono' }}>
+                      {(challenge.config?.question || '').length} chars
+                    </span>
+                  </div>
+                  <textarea
+                    value={challenge.config?.question || ''}
+                    onChange={(e) => setChallenge({
+                      ...challenge, config: { ...challenge.config, question: e.target.value },
+                    })}
+                    placeholder="Write the question your candidate will see..."
+                    style={{
+                      width: '100%', minHeight: 200, padding: '20px 24px',
+                      background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.9)',
+                      fontSize: 15, fontFamily: 'inherit', lineHeight: 1.8,
+                      outline: 'none', resize: 'vertical',
+                    }}
+                  />
+                </LiquidMetalCard>
+
+                {/* Time Limit */}
+                <div style={{
+                  marginTop: 24, display: 'flex', alignItems: 'center', gap: 16,
+                  padding: '14px 18px', background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8,
+                }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>MAX DURATION</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[2, 5, 10].map((mins) => {
+                      const isActive = challenge.config?.timeLimit === mins;
+                      return (
+                        <button key={mins} onClick={() => setChallenge({
+                          ...challenge, config: { ...challenge.config, timeLimit: mins },
+                        })} style={{
+                          fontFamily: 'Space Mono', fontSize: 10, padding: '5px 12px', borderRadius: 4, cursor: 'pointer',
+                          border: isActive ? '1px solid rgba(96,165,250,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                          background: isActive ? 'rgba(96,165,250,0.1)' : 'transparent',
+                          color: isActive ? '#60a5fa' : 'rgba(255,255,255,0.3)', transition: 'all 0.15s',
+                        }}>{mins}m</button>
+                      );
+                    })}
+                    <button onClick={() => setChallenge({
+                      ...challenge, config: { ...challenge.config, timeLimit: null },
+                    })} style={{
+                      fontFamily: 'Space Mono', fontSize: 10, padding: '5px 12px', borderRadius: 4, cursor: 'pointer',
+                      border: !challenge.config?.timeLimit ? '1px solid rgba(96,165,250,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                      background: !challenge.config?.timeLimit ? 'rgba(96,165,250,0.1)' : 'transparent',
+                      color: !challenge.config?.timeLimit ? '#60a5fa' : 'rgba(255,255,255,0.3)', transition: 'all 0.15s',
+                    }}>None</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Right Column: Video, Scoring, Follow-Up ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {/* Recruiter Video Message */}
+                <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 3, height: 16, background: '#a78bfa', borderRadius: 1 }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', letterSpacing: '0.15em' }}>YOUR MESSAGE</span>
+                    </div>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono', fontStyle: 'italic' }}>
+                      {existingVideoKey ? 'recorded' : 'optional'}
+                    </span>
+                  </div>
+                  <div style={{ padding: '20px 24px' }}>
+                    {!existingVideoKey && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', marginBottom: 16, lineHeight: 1.6 }}>
+                        Record a video message for candidates. Add context, set expectations, or give a personal touch.
+                      </div>
+                    )}
+                    <QuestionVideoRecorder
+                      challengeId={challenge.id}
+                      {...(existingVideoKey ? { existingS3Key: existingVideoKey } : {})}
+                      onUploaded={(s3Key) => setChallenge({
+                        ...challenge, config: { ...challenge.config, questionVideoS3Key: s3Key },
+                      })}
+                    />
+                  </div>
+                </LiquidMetalCard>
+
+                {/* Scoring Guideline */}
+                <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 3, height: 16, background: '#4ade80', borderRadius: 1 }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', letterSpacing: '0.15em' }}>SCORING GUIDELINE</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Shield size={10} color="rgba(255,255,255,0.15)" />
+                      <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)', fontFamily: 'Space Mono' }}>INTERNAL</span>
+                    </div>
+                  </div>
+                  <textarea
+                    value={challenge.serverConfig?.idealAnswer || ''}
+                    onChange={(e) => setChallenge({
+                      ...challenge, serverConfig: { ...challenge.serverConfig, idealAnswer: e.target.value },
+                    })}
+                    placeholder="Describe what a strong answer looks like. This guides AI scoring and your manual review."
+                    style={{
+                      width: '100%', minHeight: 160, padding: '20px 24px',
+                      background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.9)',
+                      fontSize: 13, fontFamily: 'inherit', lineHeight: 1.8,
+                      outline: 'none', resize: 'vertical',
+                    }}
+                  />
+                </LiquidMetalCard>
+
+                {/* Follow-Up Toggle */}
+                <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 3, height: 16, background: '#60a5fa', borderRadius: 1 }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', letterSpacing: '0.15em' }}>FOLLOW-UP</span>
+                    </div>
+                    <button onClick={() => setChallenge({
+                      ...challenge, config: { ...challenge.config, enableFollowUp: !hasFollowUp },
+                    })} style={{
+                      width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer',
+                      position: 'relative', transition: 'background 0.2s',
+                      background: hasFollowUp ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.1)',
+                    }}>
+                      <div style={{
+                        width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                        position: 'absolute', top: 3, transition: 'left 0.2s',
+                        left: hasFollowUp ? 21 : 3,
+                      }} />
+                    </button>
+                  </div>
+                  <div style={{ padding: '16px 24px' }}>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', lineHeight: 1.7 }}>
+                      {hasFollowUp
+                        ? 'AI will generate tailored follow-up questions after the candidate submits. Questions probe depth of understanding based on their specific answer.'
+                        : 'Enable to automatically ask follow-up questions after submission. AI generates probing questions based on the candidate\u0027s response.'}
+                    </div>
+                    {hasFollowUp && (
+                      <div style={{ marginTop: 14, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {['WHY', 'DEPTH', 'FIX', 'MISSED'].map((tag) => (
+                          <span key={tag} style={{
+                            fontSize: 9, fontFamily: 'Space Mono', padding: '4px 10px', borderRadius: 4,
+                            background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.15)',
+                            color: 'rgba(96,165,250,0.6)', letterSpacing: '0.1em',
+                          }}>{tag}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </LiquidMetalCard>
+
+              </div>
+
+              {/* ── Follow-Up inline card (spans full width, links to its own editor) ── */}
+              {hasFollowUp && (
+                <div style={{ gridColumn: '1 / -1', marginTop: 8 }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '0 0 12px 20px',
+                  }}>
+                    <div style={{
+                      width: 1, height: 20,
+                      background: 'linear-gradient(180deg, rgba(96,165,250,0.3) 0%, rgba(96,165,250,0.1) 100%)',
+                    }} />
+                    <span style={{
+                      fontSize: 8, color: 'rgba(96,165,250,0.4)',
+                      fontFamily: 'Space Mono', letterSpacing: '0.15em',
+                    }}>NEXT IN PIPELINE</span>
+                  </div>
+                  <div
+                    onClick={() => {
+                      // Navigate to the follow-up challenge editor if one exists
+                      // For now this is a visual placeholder — the FOLLOW_UP challenge
+                      // gets created on save and will appear in the stage's challenge list
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 16,
+                      padding: '18px 24px',
+                      background: 'rgba(96,165,250,0.03)',
+                      border: '1px solid rgba(96,165,250,0.12)',
+                      borderRadius: 8,
+                      borderLeft: '3px solid rgba(96,165,250,0.4)',
+                      cursor: 'default',
+                    }}
+                  >
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 8,
+                      background: 'rgba(96,165,250,0.08)',
+                      border: '1px solid rgba(96,165,250,0.15)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <ChevronDown size={16} color="rgba(96,165,250,0.6)" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)',
+                        fontFamily: 'Space Mono', marginBottom: 4,
+                      }}>Follow-Up Questions</div>
+                      <div style={{
+                        fontSize: 10, color: 'rgba(255,255,255,0.25)',
+                        fontFamily: 'Space Mono', lineHeight: 1.5,
+                      }}>
+                        AI-generated probing questions &mdash; configure on the follow-up detail page after saving
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 8, color: 'rgba(96,165,250,0.4)', fontFamily: 'Space Mono',
+                      letterSpacing: '0.1em', padding: '4px 10px',
+                      background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.1)',
+                      borderRadius: 4,
+                    }}>FOLLOW_UP</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()
+      ) : challenge.type === "FOLLOW_UP" ? (
+        /* ── FOLLOW_UP — dedicated config editor ── */
+        (() => {
+          const fuConfig = typeof challenge.config === 'object' ? challenge.config : {};
+          const questionCount = fuConfig.questionCount ?? 3;
+          const selectedTypes: string[] = fuConfig.questionTypes ?? ['text'];
+          const selectedCategories: string[] = fuConfig.categories ?? ['WHY', 'DEPTH', 'FIX', 'MISSED'];
+
+          const updateFUConfig = (updates: Record<string, unknown>) => {
+            setChallenge({
+              ...challenge,
+              config: { ...fuConfig, ...updates },
+            });
+          };
+
+          const questionTypes = [
+            { id: 'text', label: 'Text', icon: '⌨', desc: 'Written response' },
+            { id: 'mcq', label: 'Multiple Choice', icon: '☑', desc: 'Pick from options' },
+            { id: 'voice', label: 'Voice', icon: '🎙', desc: 'Spoken answer' },
+            { id: 'video', label: 'Video', icon: '🎬', desc: 'Record on camera' },
+            { id: 'code', label: 'Code', icon: '⟨/⟩', desc: 'Write a code snippet' },
+          ];
+
+          const categories = [
+            { id: 'WHY', label: 'Why', color: '#60a5fa', desc: 'Explain reasoning behind choices' },
+            { id: 'DEPTH', label: 'Depth', color: '#4ade80', desc: 'Go deeper on a topic' },
+            { id: 'FIX', label: 'Fix', color: '#f87171', desc: 'Correct a weakness in their answer' },
+            { id: 'MISSED', label: 'Missed', color: '#fbbf24', desc: 'Cover blind spots they skipped' },
+            { id: 'PRIORITISATION', label: 'Priority', color: '#a78bfa', desc: 'Rank trade-offs and decisions' },
+          ];
+
+          return (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+              {/* Description Card */}
+              <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{
+                  padding: '16px 24px',
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <div style={{ width: 3, height: 16, background: '#60a5fa', borderRadius: 1 }} />
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+                    fontFamily: 'Space Mono', letterSpacing: '0.15em',
+                  }}>ABOUT THIS CHALLENGE</span>
+                </div>
+                <div style={{ padding: '20px 24px' }}>
+                  <div style={{
+                    fontSize: 13, color: 'rgba(255,255,255,0.6)', fontFamily: 'Space Mono', lineHeight: 1.8,
+                  }}>
+                    After a candidate submits their answer to the previous challenge, AI generates
+                    tailored follow-up questions that probe their depth of understanding. Configure
+                    below how many questions to generate, what formats to use, and which categories
+                    to focus on.
+                  </div>
+                </div>
+              </LiquidMetalCard>
+
+              {/* Config Grid: Count | Types | Categories */}
+              <div style={{
+                display: 'grid', gridTemplateColumns: '240px 1fr 1fr',
+                gap: 24,
+              }}>
+
+                {/* Question Count */}
+                <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                  }}>
+                    <div style={{ width: 3, height: 16, background: '#fbbf24', borderRadius: 1 }} />
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+                      fontFamily: 'Space Mono', letterSpacing: '0.15em',
+                    }}>COUNT</span>
+                  </div>
+                  <div style={{ padding: '24px' }}>
+                    <div style={{
+                      fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Mono',
+                      marginBottom: 16, lineHeight: 1.6,
+                    }}>How many follow-up questions should AI generate?</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button key={n} onClick={() => updateFUConfig({ questionCount: n })} style={{
+                          width: 40, height: 40, borderRadius: 8, cursor: 'pointer',
+                          fontFamily: 'Space Mono', fontSize: 16, fontWeight: 700,
+                          border: questionCount === n
+                            ? '1px solid rgba(251,191,36,0.4)'
+                            : '1px solid rgba(255,255,255,0.06)',
+                          background: questionCount === n
+                            ? 'rgba(251,191,36,0.1)'
+                            : 'transparent',
+                          color: questionCount === n ? '#fbbf24' : 'rgba(255,255,255,0.2)',
+                          transition: 'all 0.15s',
+                        }}>{n}</button>
+                      ))}
+                    </div>
+                  </div>
+                </LiquidMetalCard>
+
+                {/* Question Types */}
+                <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 3, height: 16, background: '#a78bfa', borderRadius: 1 }} />
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+                        fontFamily: 'Space Mono', letterSpacing: '0.15em',
+                      }}>QUESTION TYPES</span>
+                    </div>
+                    <span style={{
+                      fontSize: 9, color: 'rgba(255,255,255,0.15)', fontFamily: 'Space Mono',
+                    }}>{selectedTypes.length} selected</span>
+                  </div>
+                  <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {questionTypes.map(({ id, label, icon, desc }) => {
+                      const isOn = selectedTypes.includes(id);
+                      return (
+                        <button key={id} onClick={() => {
+                          const next = isOn
+                            ? selectedTypes.filter((t: string) => t !== id)
+                            : [...selectedTypes, id];
+                          if (next.length > 0) updateFUConfig({ questionTypes: next });
+                        }} style={{
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          padding: '10px 14px', borderRadius: 6, cursor: 'pointer',
+                          fontFamily: 'Space Mono', fontSize: 11, textAlign: 'left',
+                          border: isOn ? '1px solid rgba(167,139,250,0.3)' : '1px solid rgba(255,255,255,0.04)',
+                          background: isOn ? 'rgba(167,139,250,0.06)' : 'transparent',
+                          color: isOn ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.25)',
+                          transition: 'all 0.15s',
+                        }}>
+                          <span style={{ fontSize: 16, width: 24, textAlign: 'center' }}>{icon}</span>
+                          <span style={{ flex: 1, fontWeight: isOn ? 700 : 400 }}>{label}</span>
+                          <span style={{
+                            fontSize: 9, color: isOn ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.1)',
+                          }}>{desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </LiquidMetalCard>
+
+                {/* Categories */}
+                <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
+                  <div style={{
+                    padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 3, height: 16, background: '#4ade80', borderRadius: 1 }} />
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+                        fontFamily: 'Space Mono', letterSpacing: '0.15em',
+                      }}>CATEGORIES</span>
+                    </div>
+                    <span style={{
+                      fontSize: 9, color: 'rgba(255,255,255,0.15)', fontFamily: 'Space Mono',
+                    }}>{selectedCategories.length} active</span>
+                  </div>
+                  <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {categories.map(({ id, label, color, desc }) => {
+                      const isOn = selectedCategories.includes(id);
+                      return (
+                        <button key={id} onClick={() => {
+                          const next = isOn
+                            ? selectedCategories.filter((c: string) => c !== id)
+                            : [...selectedCategories, id];
+                          if (next.length > 0) updateFUConfig({ categories: next });
+                        }} style={{
+                          display: 'flex', alignItems: 'center', gap: 12,
+                          padding: '10px 14px', borderRadius: 6, cursor: 'pointer',
+                          fontFamily: 'Space Mono', fontSize: 11, textAlign: 'left',
+                          border: isOn ? `1px solid ${color}33` : '1px solid rgba(255,255,255,0.04)',
+                          background: isOn ? `${color}0a` : 'transparent',
+                          color: isOn ? color : 'rgba(255,255,255,0.25)',
+                          transition: 'all 0.15s',
+                        }}>
+                          <div style={{
+                            width: 8, height: 8, borderRadius: '50%',
+                            background: isOn ? color : 'rgba(255,255,255,0.08)',
+                            boxShadow: isOn ? `0 0 6px ${color}44` : 'none',
+                            flexShrink: 0,
+                          }} />
+                          <span style={{ flex: 1, fontWeight: isOn ? 700 : 400 }}>{label}</span>
+                          <span style={{
+                            fontSize: 9, color: isOn ? `${color}66` : 'rgba(255,255,255,0.1)',
+                          }}>{desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </LiquidMetalCard>
+              </div>
+            </div>
+          );
+        })()
       ) : (
         <div
           style={{
@@ -1236,173 +1792,6 @@ export default function ChallengeEditorPage(): JSX.Element {
                         }}
                       />
                     </div>
-                  </div>
-                )}
-
-                {challenge.type === "QUIZ_SHORT_ANSWER" && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 24,
-                    }}
-                  >
-                    {/* INPUT_MODE selector */}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <label
-                        style={{
-                          fontSize: 10,
-                          color: "rgba(255,255,255,0.3)",
-                          fontFamily: "Space Mono",
-                        }}
-                      >
-                        INPUT_MODE
-                      </label>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {(['text', 'voice', 'video'] as const).map((mode) => {
-                          const current = normalizeShortAnswerConfig(challenge.config).inputMode ?? 'text';
-                          const active = current === mode;
-                          return (
-                            <button
-                              key={mode}
-                              onClick={() =>
-                                setChallenge({
-                                  ...challenge,
-                                  config: { ...challenge.config, inputMode: mode },
-                                })
-                              }
-                              style={{
-                                fontFamily: 'Space Mono',
-                                fontSize: 10,
-                                letterSpacing: '0.1em',
-                                padding: '8px 16px',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                                border: `1px solid ${active ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.12)'}`,
-                                background: active ? 'rgba(251,191,36,0.1)' : 'rgba(255,255,255,0.03)',
-                                color: active ? '#fbbf24' : 'rgba(255,255,255,0.45)',
-                              }}
-                            >
-                              {mode.toUpperCase()}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                      }}
-                    >
-                      <label
-                        style={{
-                          fontSize: 10,
-                          color: "rgba(255,255,255,0.3)",
-                          fontFamily: "Space Mono",
-                        }}
-                      >
-                        QUESTION_PROMPT
-                      </label>
-                      <textarea
-                        value={challenge.config?.question || ""}
-                        onChange={(e) => {
-                          setChallenge({
-                            ...challenge,
-                            config: {
-                              ...challenge.config,
-                              question: e.target.value,
-                            },
-                          });
-                        }}
-                        style={{
-                          width: "100%",
-                          height: 120,
-                          padding: "12px 16px",
-                          background: "rgba(0,0,0,0.2)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          color: "#fff",
-                          fontSize: 14,
-                          outline: "none",
-                          resize: "none",
-                        }}
-                      />
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                      }}
-                    >
-                      <label
-                        style={{
-                          fontSize: 10,
-                          color: "rgba(255,255,255,0.3)",
-                          fontFamily: "Space Mono",
-                        }}
-                      >
-                        IDEAL_ANSWER_GUIDELINE (FOR_SCORING)
-                      </label>
-                      <textarea
-                        value={challenge.serverConfig?.idealAnswer || ""}
-                        onChange={(e) => {
-                          setChallenge({
-                            ...challenge,
-                            serverConfig: {
-                              ...challenge.serverConfig,
-                              idealAnswer: e.target.value,
-                            },
-                          });
-                        }}
-                        placeholder="What should the grader look for in a good answer?"
-                        style={{
-                          width: "100%",
-                          height: 160,
-                          padding: "16px",
-                          background: "rgba(0,0,0,0.2)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          borderRadius: 4,
-                          color: "#fff",
-                          fontSize: 13,
-                          resize: "vertical",
-                        }}
-                      />
-                    </div>
-
-                    {/* Question video recorder — shown for voice and video input modes */}
-                    {(() => {
-                      const saConfig = normalizeShortAnswerConfig(challenge.config);
-                      const mode = saConfig.inputMode ?? 'text';
-                      if (mode !== 'voice' && mode !== 'video') return null;
-                      const existingKey = (saConfig as { questionVideoS3Key?: string }).questionVideoS3Key;
-                      return (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                          <label
-                            style={{
-                              fontSize: 10,
-                              color: "rgba(255,255,255,0.3)",
-                              fontFamily: "Space Mono",
-                            }}
-                          >
-                            QUESTION_VIDEO (OPTIONAL)
-                          </label>
-                          <QuestionVideoRecorder
-                            challengeId={challenge.id}
-                            {...(existingKey ? { existingS3Key: existingKey } : {})}
-                            onUploaded={(s3Key) =>
-                              setChallenge({
-                                ...challenge,
-                                config: { ...challenge.config, questionVideoS3Key: s3Key },
-                              })
-                            }
-                          />
-                        </div>
-                      );
-                    })()}
                   </div>
                 )}
 
