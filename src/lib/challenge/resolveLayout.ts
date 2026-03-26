@@ -12,10 +12,13 @@ export type PanelType =
   | 'voice'
   | 'video-submission';
 
+export type LayoutType = 'browser' | 'algorithm' | 'standard';
+
 export interface ResolvedLayout {
   leftPanel: PanelType | null;
   centerPanel: PanelType;
   rightPanel: PanelType | null;
+  layoutType: LayoutType;
 }
 
 /**
@@ -32,6 +35,7 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
         leftPanel: 'problem',
         centerPanel: 'diff-annotation',
         rightPanel: null,
+        layoutType: 'standard',
       };
 
     case 'CODE_IMPLEMENTATION': {
@@ -42,6 +46,7 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
             leftPanel: 'problem',
             centerPanel: 'monaco',
             rightPanel: 'preview',
+            layoutType: 'browser',
           };
         case 'WRITE_FUNCTION':
         case 'REFACTOR_FUNCTION':
@@ -49,12 +54,14 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
             leftPanel: 'problem',
             centerPanel: 'monaco',
             rightPanel: 'tests',
+            layoutType: 'algorithm',
           };
         default:
           return {
             leftPanel: 'problem',
             centerPanel: 'monaco',
             rightPanel: null,
+            layoutType: 'standard',
           };
       }
     }
@@ -64,17 +71,18 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
         leftPanel: null,
         centerPanel: 'options',
         rightPanel: null,
+        layoutType: 'standard',
       };
 
     case 'QUIZ_SHORT_ANSWER': {
       const inputMode = (config as { inputMode?: string }).inputMode ?? 'text';
       if (inputMode === 'voice') {
-        return { leftPanel: null, centerPanel: 'voice', rightPanel: null };
+        return { leftPanel: null, centerPanel: 'voice', rightPanel: null, layoutType: 'standard' };
       }
       if (inputMode === 'video') {
-        return { leftPanel: null, centerPanel: 'video-submission', rightPanel: null };
+        return { leftPanel: null, centerPanel: 'video-submission', rightPanel: null, layoutType: 'standard' };
       }
-      return { leftPanel: null, centerPanel: 'textarea', rightPanel: null };
+      return { leftPanel: null, centerPanel: 'textarea', rightPanel: null, layoutType: 'standard' };
     }
 
     // FOLLOW_UP is intercepted at the page level before ChallengeRegistry is reached.
@@ -84,6 +92,7 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
         leftPanel: null,
         centerPanel: 'textarea',
         rightPanel: null,
+        layoutType: 'standard',
       };
 
     default:
@@ -91,6 +100,7 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
         leftPanel: 'problem',
         centerPanel: 'monaco',
         rightPanel: null,
+        layoutType: 'standard',
       };
   }
 }

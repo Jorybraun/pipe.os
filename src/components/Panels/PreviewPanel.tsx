@@ -4,13 +4,14 @@ import { useMemo } from 'react';
 interface PreviewPanelProps {
   code: string;
   language: string;
+  hideHeader?: boolean;
 }
 
 /**
  * PreviewPanel - Renders a live preview of code using Sandpack.
  * Optimized for React component challenges.
  */
-export function PreviewPanel({ code, language }: PreviewPanelProps): JSX.Element {
+export function PreviewPanel({ code, language, hideHeader = false }: PreviewPanelProps): JSX.Element {
   const files = useMemo(() => {
     if (language.toLowerCase() === 'javascript' || language.toLowerCase() === 'typescript') {
       const extension = language.toLowerCase() === 'typescript' ? 'tsx' : 'js';
@@ -27,19 +28,21 @@ export function PreviewPanel({ code, language }: PreviewPanelProps): JSX.Element
 
   return (
     <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#0c0c0e' }}>
-      <header style={{ 
-        padding: '12px 20px', 
-        borderBottom: '1px solid rgba(255,255,255,0.06)', 
-        display: 'flex', 
-        alignItems: 'center',
-        gap: 12,
-        background: 'rgba(255,255,255,0.02)'
-      }}>
-        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
-          LIVE_PREVIEW
-        </span>
-      </header>
+      {!hideHeader && (
+        <header style={{
+          padding: '12px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          background: 'rgba(255,255,255,0.02)'
+        }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
+            LIVE_PREVIEW
+          </span>
+        </header>
+      )}
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <SandpackProvider

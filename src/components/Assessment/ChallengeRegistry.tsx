@@ -5,6 +5,7 @@ import type { Schema } from '../../../amplify/data/resource';
 import { resolveLayout, PanelType } from '../../lib/challenge/resolveLayout';
 import { resolveShells } from '../../lib/challenge/resolveShells';
 import { WorkspaceLayout } from './WorkspaceLayout';
+import { ChallengeWorkspace } from './ChallengeWorkspace';
 import { TimerShell } from '../Shells/TimerShell';
 import { ProblemPanel } from '../Panels/ProblemPanel';
 import { MonacoPanel } from '../Panels/MonacoPanel';
@@ -13,9 +14,11 @@ import { TextareaPanel } from '../Panels/TextareaPanel';
 import { DiffPanel, type DiffJson, type Annotation } from '../Assessment/DiffPanel';
 import { PreviewPanel } from '../Panels/PreviewPanel';
 import { CodeReviewChallenge } from './CodeReviewChallenge';
+import { FollowUpQuestionsPanel } from './FollowUpQuestionsPanel';
 import { VoicePanel } from '../Panels/VoicePanel';
 import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
 import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
+import type { FollowUpQuestion } from '../../hooks/useAssessment';
 
 import { useSessionToken } from '../../contexts/SessionTokenContext';
 
@@ -52,6 +55,10 @@ interface ChallengeRegistryProps {
   onSubmit: (submission: unknown) => void;
   /** Candidate ID — required for voice/video submission panels */
   candidateId?: string;
+  /** FOLLOW_UP — generated questions from the previous challenge */
+  followUpQuestions?: FollowUpQuestion[] | null;
+  followUpLoading?: boolean;
+  isSubmitting?: boolean;
 }
 
 // ============================================================================
@@ -111,6 +118,9 @@ export function ChallengeRegistry({
   onSubmissionChange,
   onSubmit,
   candidateId,
+  followUpQuestions,
+  followUpLoading,
+  isSubmitting,
 }: ChallengeRegistryProps): JSX.Element {
   const sessionToken = useSessionToken();
   const layout = useMemo(() => resolveLayout(challenge), [challenge]);
@@ -250,10 +260,78 @@ export function ChallengeRegistry({
   }
 
   // ---------------------------------------------------------------------------
-  // Panel Rendering (non-CODE_REVIEW)
+  // FOLLOW_UP bypass — renders step-through panel using existing panel components
   // ---------------------------------------------------------------------------
 
-  const renderPanel = (panelType: PanelType | null): ReactNode => {
+  if (challenge.type === 'FOLLOW_UP') {
+    if (followUpLoading || !followUpQuestions || followUpQuestions.length === 0) {
+      return (
+        <div
+          style={{
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              border: '2px solid rgba(255,255,255,0.1)',
+              borderTop: '2px solid rgba(255,255,255,0.4)',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+            }}
+          />
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: '0.2em',
+              color: 'rgba(255,255,255,0.4)',
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
+            GENERATING_QUESTIONS...
+          </div>
+        </div>
+      );
+    }
+
+    const followUpContent = (
+      <WorkspaceLayout
+        leftPanel={null}
+        centerPanel={
+          <FollowUpQuestionsPanel
+            questions={followUpQuestions ?? []}
+            isSubmitting={isSubmitting ?? false}
+            onSubmit={(answers) => onSubmit({ answers })}
+            onSkip={() => onSubmit({ answers: {} })}
+            {...(candidateId !== undefined ? { candidateId } : {})}
+            challengeId={challenge.id}
+          />
+        }
+        rightPanel={null}
+      />
+    );
+
+    if (shells.timer.enabled) {
+      return (
+        <TimerShell timeLimit={shells.timer.timeLimit} onExpire={() => onSubmit({})}>
+          {followUpContent}
+        </TimerShell>
+      );
+    }
+    return followUpContent;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Panel Rendering (non-CODE_REVIEW, non-FOLLOW_UP)
+  // ---------------------------------------------------------------------------
+
+  const renderPanel = (panelType: PanelType | null, headerless = false): ReactNode => {
     if (!panelType) return null;
 
     switch (panelType) {
@@ -299,6 +377,7 @@ export function ChallengeRegistry({
             onChange={(code) =>
               setSubmission((prev) => ({ ...prev, code }))
             }
+            hideHeader={headerless}
           />
         );
 
@@ -399,6 +478,7 @@ export function ChallengeRegistry({
           <PreviewPanel
             code={(submission.code as string) || (config.starterCode as string) || ''}
             language={(config.language as string) || 'javascript'}
+            hideHeader={headerless}
           />
         );
 
@@ -488,13 +568,37 @@ export function ChallengeRegistry({
   // Assembly (non-CODE_REVIEW)
   // ---------------------------------------------------------------------------
 
-  const workspace = (
-    <WorkspaceLayout
-      leftPanel={renderPanel(layout.leftPanel)}
-      centerPanel={renderPanel(layout.centerPanel) as ReactNode}
-      rightPanel={renderPanel(layout.rightPanel)}
-    />
-  );
+  let workspace: ReactNode;
+
+  if (layout.layoutType === 'browser') {
+    workspace = (
+      <ChallengeWorkspace
+        layoutType="browser"
+        descriptionPanel={renderPanel(layout.leftPanel)}
+        codeEditorPanel={renderPanel(layout.centerPanel, true)}
+        previewPanel={renderPanel(layout.rightPanel, true)}
+        language={(config.language as string) || 'javascript'}
+      />
+    );
+  } else if (layout.layoutType === 'algorithm') {
+    workspace = (
+      <ChallengeWorkspace
+        layoutType="algorithm"
+        descriptionPanel={renderPanel(layout.leftPanel)}
+        codeEditorPanel={renderPanel(layout.centerPanel, true)}
+        testCasesPanel={renderPanel(layout.rightPanel)}
+        language={(config.language as string) || 'javascript'}
+      />
+    );
+  } else {
+    workspace = (
+      <WorkspaceLayout
+        leftPanel={renderPanel(layout.leftPanel)}
+        centerPanel={renderPanel(layout.centerPanel) as ReactNode}
+        rightPanel={renderPanel(layout.rightPanel)}
+      />
+    );
+  }
 
   let content = workspace;
 

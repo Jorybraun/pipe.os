@@ -19,6 +19,7 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../../amplify/data/resource";
 import { ChallengeRegistry } from "../components/Assessment/ChallengeRegistry";
+import { ChallengeWorkspace } from "../components/Assessment/ChallengeWorkspace";
 import { TimerProvider } from "../components/Assessment/TimerContext";
 import { GitHubPRFetcher } from "../components/Assessment/GitHubPRFetcher";
 import { GroundTruthAnnotationEditor } from "../components/Assessment/GroundTruthAnnotationEditor";
@@ -546,12 +547,7 @@ export default function ChallengeEditorPage(): JSX.Element {
 
   if (!challenge) return <div>Challenge not found.</div>;
 
-  const bottomPadding =
-    challenge.type === "CODE_IMPLEMENTATION"
-      ? runPanel.isOpen
-        ? 320
-        : 140
-      : 100;
+  const bottomPadding = 100;
 
   const codeLanguage = String(
     (challenge.config?.language as string | undefined) || "javascript",

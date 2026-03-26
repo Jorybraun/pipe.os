@@ -6,6 +6,21 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Composable challenge system — ADR-005 restoration)
+- `InterviewProvider` + `useInterview()` context — holds challenge queue, submission, navigation, run state. No prop drilling.
+- `StageConfig` / `ChallengeNode` types — standardized config describing shells, layout, panels, initialSubmission
+- `resolveStageConfig()` — single pure function replacing `resolveLayout` + `resolveShells`, uses `BLUEPRINT_MAP` (map lookup, no switch)
+- `COMPONENT_MAP` — flat `string → Component` registry for shells, panels, layouts
+- `connectInterview()` HOC — bridges context → panel props, returns memoized component. Panels stay pure.
+- `StageRenderer` + `ChallengeRenderer` — config-driven recursive composition. Stage shells wrap challenge shells wrap layout wrap panels. Two loops and a map.
+- `VerdictPanel` — extracted from `CodeReviewChallenge` monolith, now a standard panel
+- Connected panel wrappers: Problem, Monaco, Options, Textarea, Preview, Diff, Verdict
+
+#### Added (Challenge workspace redesign — to be replaced by composable system)
+- `ChallengeWorkspace` component (transitional)
+- `resolveLayout` `layoutType` field (transitional)
+- `MonacoPanel` and `PreviewPanel` `hideHeader` prop
+
 #### Added (ChallengeEditor UX overhaul)
 - QUIZ_SHORT_ANSWER dedicated 2-column editor layout: response format selector, recruiter video recording, scoring guideline, follow-up toggle
 - FOLLOW_UP dedicated challenge editor: count selector (1–5), question type toggles (text/MCQ/voice/video/code), category toggles (WHY/DEPTH/FIX/MISSED/PRIORITY)

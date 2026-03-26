@@ -1,17 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useAssessment } from '../hooks/useAssessment';
 import { SessionTokenProvider } from '../contexts/SessionTokenContext';
-import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
+// ChallengeRegistry replaced by InterviewProvider + StageRenderer
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
 import { VideoShell } from '../components/Shells/VideoShell';
 import { SchedulingStep } from '../components/Assessment/SchedulingStep';
 import { WelcomeScreen, type ChallengeType } from '../components/Assessment/WelcomeScreen';
-import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { InterviewProvider } from '../contexts/InterviewContext';
+import { StageRenderer } from '../components/Assessment/StageRenderer';
+import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 
 // ============================================================================
 // Component
@@ -44,7 +46,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
     isSubmitted,
     hasStarted,
     followUpQuestions,
-    followUpLoading,
+    followUpLoading: _followUpLoading, // TODO: wire into InterviewProvider for dynamic queue
     submitChallenge,
     onStart,
     reset,
@@ -66,16 +68,12 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleSubmit = async (): Promise<void> => {
-    await submitChallenge((currentSubmission as Record<string, unknown>) || {});
+  const handleSubmit = async (submissionOverride?: unknown): Promise<void> => {
+    const toSubmit = submissionOverride !== undefined
+      ? (submissionOverride as Record<string, unknown>)
+      : (currentSubmission as Record<string, unknown>) ?? {};
+    await submitChallenge(toSubmit);
     setCurrentSubmission(null);
-  };
-
-  const handleFollowUpSkip = (): void => {
-    // Skip follow-up: pass empty answers, triggers advancement
-    submitChallenge({ answers: {} }).catch((err: unknown) => {
-      console.warn('[CandidateAssessmentPage] Skip follow-up failed:', err);
-    });
   };
 
   // ---------------------------------------------------------------------------
@@ -189,65 +187,10 @@ export default function CandidateAssessmentPage(): JSX.Element {
   }
 
   // ---------------------------------------------------------------------------
-  // Follow-up question flow (FOLLOW_UP challenge type)
+  // Challenge workspace — config-driven composition
   // ---------------------------------------------------------------------------
 
-  if (currentChallenge.type === 'FOLLOW_UP') {
-    // Generating questions — show spinner
-    if (followUpLoading) {
-      return (
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
-          <ChromeMeshGrid />
-          <div style={{ textAlign: 'center', zIndex: 1 }}>
-            <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
-            <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
-              GENERATING_QUESTIONS...
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Empty questions: Lambda failed — show completing spinner while useEffect auto-advances
-    if (followUpQuestions !== null && followUpQuestions.length === 0) {
-      return (
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
-          <ChromeMeshGrid />
-          <div style={{ textAlign: 'center', zIndex: 1 }}>
-            <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
-            <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
-              COMPLETING...
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Questions ready — show follow-up panel (keep mounted while isLoading so isSubmitting can show spinner)
-    if (followUpQuestions !== null && followUpQuestions.length > 0) {
-      return (
-        <>
-          <ChromeMeshGrid />
-          <FollowUpQuestionsPanel
-            questions={followUpQuestions}
-            onSubmit={(answers) => submitChallenge({ answers })}
-            onSkip={handleFollowUpSkip}
-            isSubmitting={isLoading}
-          />
-          <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-            .animate-spin { animation: spin 1s linear infinite; }
-            @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-          `}</style>
-        </>
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Challenge workspace
-  // ---------------------------------------------------------------------------
-
+  const stageConfig = useMemo(() => resolveStageConfig(currentStage), [currentStage]);
   const isLastChallenge =
     currentStageIndex === stages.length - 1 &&
     currentChallengeIndex === currentStage.challenges.length - 1;
@@ -255,49 +198,29 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // Determine if this stage uses live video
   const isLiveVideoStage = currentStage.mode === 'LIVE_VIDEO';
 
-  // TYPE SAFETY: For CODE_REVIEW, ChallengeRegistry always sets this shape.
-  const submission = currentSubmission as {
-    annotations?: unknown[];
-    verdict?: string | null;
-    summary?: string;
-    [key: string]: unknown;
-  } | null;
-
   const challengeWorkspace = (
-    <TimerProvider key={currentChallenge.id}>
-      <StageShell
-        title={currentChallenge.title}
-        totalChallenges={currentStage.challenges.length}
-        currentChallengeIndex={currentChallengeIndex}
-        onNext={handleSubmit}
-        isLastChallenge={isLastChallenge}
-        fullBleed={currentChallenge.type === 'CODE_REVIEW'}
-        canAdvance={
-          !isPreview &&
-          submission !== null &&
-          (() => {
-            if (currentChallenge.type === 'CODE_REVIEW') {
-              return !!submission.verdict && (submission.summary ?? '').trim().length > 0;
-            }
-            if (currentChallenge.type === 'QUIZ_SHORT_ANSWER') {
-              const inputMode = (submission['inputMode'] as string | undefined) ?? 'text';
-              if (inputMode === 'voice') return ((submission['text'] as string) ?? '').length > 0;
-              if (inputMode === 'video') return ((submission['videoS3Key'] as string) ?? '') !== '';
-            }
-            return true;
-          })()
-        }
-        isSubmitting={isLoading}
-      >
-        <ChallengeRegistry
-          challenge={currentChallenge}
-          stageTimeLimit={currentStage.order !== null ? (currentStage as { timeLimit?: number | null }).timeLimit ?? null : null}
-          onSubmissionChange={setCurrentSubmission}
-          onSubmit={handleSubmit}
-          candidateId={candidate?.id}
-        />
-      </StageShell>
-    </TimerProvider>
+    <InterviewProvider
+      key={currentChallenge.id}
+      stageConfig={stageConfig}
+      currentIndex={currentChallengeIndex}
+      onSubmit={handleSubmit}
+      onSubmissionChange={setCurrentSubmission}
+    >
+      <TimerProvider>
+        <StageShell
+          title={currentChallenge.title}
+          totalChallenges={currentStage.challenges.length}
+          currentChallengeIndex={currentChallengeIndex}
+          onNext={handleSubmit}
+          isLastChallenge={isLastChallenge}
+          fullBleed={currentChallenge.type === 'CODE_REVIEW'}
+          canAdvance={!isPreview && (currentSubmission !== null)}
+          isSubmitting={isLoading}
+        >
+          <StageRenderer />
+        </StageShell>
+      </TimerProvider>
+    </InterviewProvider>
   );
 
   // For LIVE_VIDEO stages: show scheduling widget if no challenges exist yet,
