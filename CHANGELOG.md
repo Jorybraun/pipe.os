@@ -6,6 +6,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Security hardening + test fixtures)
+- `amplify/functions/resolveToken/` — hardened handler with session token support; removed ownerId from client response
+- `amplify/functions/sessionAuthorizer/` — session-based authorization Lambda
+- `amplify/backend.ts` — wired createAssessment Lambda with table name injection and IAM grants
+- `amplify/data/resource.ts` — createAssessment mutation schema; updated authorization audit comments
+- `playwright/*.json` — E2E test fixtures (candidate tokens, profiles, challenge configs) for CI/CD
+
 #### Added (Live speech transcription for video submissions)
 - `src/hooks/useSpeechTranscription.ts` — shared hook wrapping Web Speech API for live transcription; used by both VoicePanel and VideoSubmissionPanel
 - `src/components/Panels/VideoSubmissionPanel.tsx` — runs speech-to-text in parallel with video recording; shows live transcript below video; includes transcript in submission payload

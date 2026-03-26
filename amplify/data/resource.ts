@@ -19,6 +19,7 @@ import { resolveToken } from "../functions/resolveToken/resource";
 import { parseCandidateCV } from "../functions/parseCandidateCV/resource";
 import { generateMediaUploadUrl } from "../functions/generateMediaUploadUrl/resource";
 import { createAssessment } from "../functions/createAssessment/resource";
+import { sessionAuthorizer } from "../functions/sessionAuthorizer/resource";
 
 const schema = a.schema({
   /**
@@ -91,7 +92,8 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-      allow.publicApiKey().to(["read"]),
+      allow.publicApiKey().to(["read"]), // Transition: remove after frontend migrates to lambda auth
+      allow.custom().to(["read"]),
     ]),
 
   /**
@@ -108,7 +110,8 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(), // Recruiter (Cognito owner)
-      allow.publicApiKey().to(["read", "update"]), // Candidate via API key
+      allow.publicApiKey().to(["read", "update"]), // Transition: remove after frontend migrates
+      allow.custom().to(["read", "update"]),
     ]),
 
   /**
@@ -125,7 +128,8 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner(), // Recruiter can write
       allow.authenticated().to(["read"]), // Recruiter can read candidate signals
-      allow.publicApiKey().to(["create", "read"]), // Candidate can signal back
+      allow.publicApiKey().to(["create", "read"]), // Transition: remove after frontend migrates
+      allow.custom().to(["create", "read"]),
     ]),
 
   /**
@@ -306,7 +310,8 @@ const schema = a.schema({
     ])
     .authorization((allow) => [
       allow.owner(),
-      allow.publicApiKey().to(["read"]),
+      allow.publicApiKey().to(["read"]), // Transition: remove after frontend migrates
+      allow.custom().to(["read"]),
     ]),
 
   /**
@@ -325,7 +330,8 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner(),
-      allow.publicApiKey().to(["read"]),
+      allow.publicApiKey().to(["read"]), // Transition: remove after frontend migrates
+      allow.custom().to(["read"]),
     ]),
 
   /**
@@ -357,11 +363,8 @@ const schema = a.schema({
     .secondaryIndexes((index) => [index("email").name("candidatesByEmail")])
     .authorization((allow) => [
       allow.owner(),
-      // publicApiKey can only update (status: IN_PROGRESS / COMPLETED).
-      // Read is removed — candidates must use the resolveToken query instead,
-      // which returns only {id, pipelineId, status} for their own token.
-      // This prevents Candidate.list() from exposing all candidates' PII.
-      allow.publicApiKey().to(["update"]),
+      allow.publicApiKey().to(["update"]), // Transition: remove after frontend migrates
+      allow.custom().to(["update"]),
     ]),
 
   /**
@@ -881,9 +884,9 @@ const schema = a.schema({
         pipelineId: a.string(),
         status: a.string(),
         name: a.string(),
-        // ownerId intentionally removed — recruiter Cognito sub must NEVER be
-        // sent to candidate clients. Assessment creation sets it server-side
-        // via the createAssessment Lambda.
+        /** Short-lived JWT session token (2h). Used as the Authorization header
+         *  for all subsequent Lambda-authorized candidate API calls. */
+        sessionToken: a.string(),
       }),
     )
     .handler(a.handler.function(resolveToken))
@@ -968,6 +971,10 @@ export const data = defineData({
     defaultAuthorizationMode: "userPool",
     apiKeyAuthorizationMode: {
       expiresInDays: 365,
+    },
+    lambdaAuthorizationMode: {
+      function: sessionAuthorizer,
+      timeToLiveInSeconds: 300,
     },
   },
 });

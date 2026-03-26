@@ -1,0 +1,20 @@
+{
+  "token": "e2e-sa-video-1-783e77c2",
+  "candidateId": "f14a2dfc-f429-4c65-bfba-b83bc7026f96",
+  "pipelineId": "3d005abd-00ee-48ea-a49a-64bdeee68aaa",
+  "challengeId": "d6e3650d-3f27-413e-9b77-c3bf6121ed63",
+  "tokens": [
+    {
+      "token": "e2e-sa-video-1-783e77c2",
+      "candidateId": "f14a2dfc-f429-4c65-bfba-b83bc7026f96"
+    },
+    {
+      "token": "e2e-sa-video-2-63d12065",
+      "candidateId": "45d5c55a-b405-45d1-b2fe-bcd4d77823df"
+    },
+    {
+      "token": "e2e-sa-video-3-f5f9bd9b",
+      "candidateId": "b8c25558-534c-402a-91d4-3c7ce8e6d693"
+    }
+  ]
+}

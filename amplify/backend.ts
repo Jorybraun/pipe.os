@@ -101,14 +101,15 @@ followUpAgentLambda.addEnvironment(
   challengeTable.tableName,
 );
 
-// resolveToken — inject real Candidate table name and grant read access
+// resolveToken — inject real Candidate table name and grant read/write access
+// (write needed to claim inviteToken after issuing JWT session token)
 const resolveTokenLambda = backend.resolveToken.resources
   .lambda as unknown as LambdaFunction;
 resolveTokenLambda.addEnvironment(
   "CANDIDATE_TABLE_NAME",
   candidateTable.tableName,
 );
-candidateTable.grantReadData(resolveTokenLambda);
+candidateTable.grantReadWriteData(resolveTokenLambda);
 
 // parseCandidateCV — inject real Candidate table name and grant read/write access
 const parseCandidateCVLambda = backend.parseCandidateCV.resources
