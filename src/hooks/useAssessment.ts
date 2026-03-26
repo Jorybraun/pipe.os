@@ -69,8 +69,8 @@ export interface ResolvedCandidate {
   pipelineId: string;
   status: string | null;
   name?: string | null;
-  /** Cognito sub of the recruiter who owns the pipeline — set on Assessment.ownerId */
-  ownerId?: string | null;
+  // ownerId removed — recruiter Cognito sub is no longer sent to candidate clients.
+  // Assessment.ownerId is now set server-side by the createAssessment Lambda.
   // email is intentionally not fetched from resolveToken — only present here
   // for UI compat. Always undefined in the candidate assessment flow.
   email?: string | null;
@@ -253,7 +253,6 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         pipelineId: resolved.pipelineId,
         status: resolved.status ?? null,
         name: resolved.name ?? null,
-        ownerId: resolved.ownerId ?? null,
       };
 
       // 2. Check if already completed
@@ -444,22 +443,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           return;
         }
 
-        // Create Assessment record
-        const { data: assessment } = await client.models.Assessment.create(
-          {
-            candidateId: candidate.id,
-            challengeId: currentChallenge.id,
-            submission: JSON.stringify(submission),
-            score: 0,
-            completedAt: new Date().toISOString(),
-            // Denormalized pipeline owner — enables scoped recruiter read via ownerDefinedIn
-            ...(candidate.ownerId ? { ownerId: candidate.ownerId } : {}),
-          },
-          { selectionSet: ['id'] }
-        );
+        // Create Assessment via secure Lambda resolver — validates inviteToken server-side,
+        // sets candidateId and ownerId from the Candidate record (never from client input).
+        const { data: assessmentResult } = await client.mutations.submitAssessment({
+          inviteToken,
+          challengeId: currentChallenge.id,
+          submission: JSON.stringify(submission),
+        });
 
-        if (assessment) {
-          const assessmentId = assessment.id;
+        if (assessmentResult?.success && assessmentResult.assessmentId) {
+          const assessmentId = assessmentResult.assessmentId;
 
           // Determine next step
           const isLastChallengeInStage = currentChallengeIndex === challenges.length - 1;

@@ -33,6 +33,7 @@ import { codeReviewFollowUpAgent } from "./functions/codeReviewFollowUpAgent/res
 import { resolveToken } from "./functions/resolveToken/resource";
 import { parseCandidateCV } from "./functions/parseCandidateCV/resource";
 import { generateMediaUploadUrl } from "./functions/generateMediaUploadUrl/resource";
+import { createAssessment } from "./functions/createAssessment/resource";
 import { storage } from "./storage/resource";
 
 export const backend = defineBackend({
@@ -46,6 +47,7 @@ export const backend = defineBackend({
   resolveToken,
   parseCandidateCV,
   generateMediaUploadUrl,
+  createAssessment,
   fetchGitHubPR,
   listGitHubPRs,
   scoreCodeReview,
@@ -137,6 +139,20 @@ generateMediaUploadUrlLambda.addEnvironment(
 );
 candidateTable.grantReadData(generateMediaUploadUrlLambda);
 backend.storage.resources.bucket.grantPut(generateMediaUploadUrlLambda);
+
+// createAssessment — inject real table names and grant DynamoDB access
+const createAssessmentLambda = backend.createAssessment.resources
+  .lambda as unknown as LambdaFunction;
+createAssessmentLambda.addEnvironment(
+  "CANDIDATE_TABLE_NAME",
+  candidateTable.tableName,
+);
+createAssessmentLambda.addEnvironment(
+  "ASSESSMENT_TABLE_NAME",
+  assessmentTable.tableName,
+);
+candidateTable.grantReadData(createAssessmentLambda);
+assessmentTable.grantReadWriteData(createAssessmentLambda);
 
 // Grant Textract permissions — DetectDocumentText reads the S3 object via S3Object reference,
 // which uses the Lambda's IAM role. Textract also needs s3:GetObject on the bucket.

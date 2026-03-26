@@ -457,8 +457,8 @@ export function ChallengeRegistry({
             question={(vidConfig as { question?: string }).question || challenge.title}
             videoS3Key={(submission.videoS3Key as string) || ''}
             filename={(submission.filename as string) || ''}
-            onUploaded={(s3Key, filename) =>
-              setSubmission({ inputMode: 'video', videoS3Key: s3Key, filename })
+            onUploaded={(s3Key, filename, transcript) =>
+              setSubmission({ inputMode: 'video', videoS3Key: s3Key, filename, transcript })
             }
             {...(questionVideoUrl !== null ? { questionVideoUrl } : {})}
             maxDurationSeconds={

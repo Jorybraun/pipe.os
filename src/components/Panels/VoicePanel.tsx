@@ -1,5 +1,6 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import { QuestionVideoPlayer } from '../Challenge/QuestionVideoPlayer';
+import { useSpeechTranscription } from '../../hooks/useSpeechTranscription';
 
 export interface VoicePanelProps {
   /** Question heading displayed above the recording controls */
@@ -16,44 +17,12 @@ export interface VoicePanelProps {
 
 type RecorderState = 'idle' | 'recording' | 'done';
 
-// Browser SpeechRecognition types
-interface SpeechRecognitionResult {
-  readonly isFinal: boolean;
-  readonly [index: number]: { transcript: string };
-}
-interface SpeechRecognitionResultList {
-  readonly length: number;
-  readonly [index: number]: SpeechRecognitionResult;
-}
-interface SpeechRecognitionEvent extends Event {
-  readonly resultIndex: number;
-  readonly results: SpeechRecognitionResultList;
-}
-interface SpeechRecognitionConstructor {
-  new(): SpeechRecognitionInstance;
-}
-interface SpeechRecognitionInstance extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start(): void;
-  stop(): void;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onend: (() => void) | null;
-}
-
-function getSpeechRecognition(): SpeechRecognitionConstructor | null {
-  const w = window as unknown as Record<string, unknown>;
-  const SR = (w['SpeechRecognition'] ?? w['webkitSpeechRecognition']) as SpeechRecognitionConstructor | undefined;
-  return SR ?? null;
-}
-
 /**
  * VoicePanel — candidate answers by speaking.
  *
- * Uses the Web Speech API for live transcription. If Speech API is unavailable
- * (Firefox, some Safari versions) a fallback textarea is shown with a warning.
+ * Uses the Web Speech API (via useSpeechTranscription) for live transcription.
+ * If Speech API is unavailable (Firefox, some Safari versions) a fallback textarea
+ * is shown with a warning.
  *
  * A parallel MediaRecorder captures raw audio for S3 backup; the audio blob is
  * delivered via onAudioReady after the candidate stops recording.
@@ -66,29 +35,27 @@ export function VoicePanel({
   questionVideoUrl,
 }: VoicePanelProps): JSX.Element {
   const [state, setState] = useState<RecorderState>('idle');
-  const [interimText, setInterimText] = useState('');
-  const [speechSupported] = useState(() => getSpeechRecognition() !== null);
+  const speech = useSpeechTranscription();
 
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobEvent['data'][]>([]);
-  const finalTranscriptRef = useRef(transcript);
 
-  // Keep ref in sync with controlled prop
-  useEffect(() => {
-    finalTranscriptRef.current = transcript;
-  }, [transcript]);
+  // Sync speech hook transcript → controlled prop
+  const lastPushed = useRef('');
+  if (speech.transcript !== lastPushed.current) {
+    lastPushed.current = speech.transcript;
+    // Defer to avoid setState during render
+    queueMicrotask(() => onTranscriptChange(speech.transcript));
+  }
 
   const stopAll = useCallback(() => {
-    recognitionRef.current?.stop();
+    speech.stop();
     mediaRecorderRef.current?.stop();
-    setInterimText('');
     setState('done');
-  }, []);
+  }, [speech]);
 
   const startRecording = useCallback(async () => {
     if (state === 'recording') return;
-    setInterimText('');
     audioChunksRef.current = [];
 
     // Start MediaRecorder for audio backup
@@ -116,51 +83,9 @@ export function VoicePanel({
       console.warn('[VoicePanel] Could not start audio recorder');
     }
 
-    // Start Web Speech API
-    const SR = getSpeechRecognition();
-    if (!SR) {
-      setState('recording');
-      return;
-    }
-
-    const recognition = new SR();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognitionRef.current = recognition;
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interim = '';
-      let final = finalTranscriptRef.current;
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result) {
-          const text = result[0]?.transcript ?? '';
-          if (result.isFinal) {
-            final += text + ' ';
-          } else {
-            interim += text;
-          }
-        }
-      }
-
-      finalTranscriptRef.current = final;
-      onTranscriptChange(final);
-      setInterimText(interim);
-    };
-
-    recognition.onerror = () => {
-      console.warn('[VoicePanel] Speech recognition error');
-    };
-
-    recognition.onend = () => {
-      setInterimText('');
-    };
-
-    recognition.start();
+    speech.start();
     setState('recording');
-  }, [state, onAudioReady, onTranscriptChange]);
+  }, [state, onAudioReady, speech]);
 
   const mono: React.CSSProperties = {
     fontFamily: '"Space Mono", monospace',
@@ -205,7 +130,7 @@ export function VoicePanel({
       </div>
 
       {/* Speech API unavailable fallback */}
-      {!speechSupported && (
+      {!speech.isSupported && (
         <div
           style={{
             ...mono,
@@ -224,7 +149,7 @@ export function VoicePanel({
       )}
 
       {/* Recording controls */}
-      {speechSupported && (
+      {speech.isSupported && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {state === 'idle' && (
             <button
@@ -271,6 +196,7 @@ export function VoicePanel({
               <button
                 onClick={() => {
                   setState('idle');
+                  speech.reset();
                   onTranscriptChange('');
                 }}
                 style={{
@@ -290,7 +216,7 @@ export function VoicePanel({
 
       {/* Live transcript / editable text area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
-        {state === 'recording' && interimText && (
+        {state === 'recording' && speech.interimText && (
           <div
             style={{
               ...mono,
@@ -300,15 +226,14 @@ export function VoicePanel({
               lineHeight: 1.6,
             }}
           >
-            {interimText}
+            {speech.interimText}
           </div>
         )}
         <textarea
-          value={transcript + (state === 'recording' ? interimText : '')}
+          value={transcript + (state === 'recording' ? speech.interimText : '')}
           onChange={(e) => {
             // Allow manual editing at any time
             onTranscriptChange(e.target.value);
-            finalTranscriptRef.current = e.target.value;
           }}
           placeholder={
             state === 'recording'
@@ -338,7 +263,7 @@ export function VoicePanel({
             textAlign: 'right',
           }}
         >
-          {(transcript + (state === 'recording' ? interimText : '')).length} chars
+          {(transcript + (state === 'recording' ? speech.interimText : '')).length} chars
         </div>
       </div>
     </div>

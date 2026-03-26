@@ -18,6 +18,7 @@ import { codeReviewFollowUpAgent } from "../functions/codeReviewFollowUpAgent/re
 import { resolveToken } from "../functions/resolveToken/resource";
 import { parseCandidateCV } from "../functions/parseCandidateCV/resource";
 import { generateMediaUploadUrl } from "../functions/generateMediaUploadUrl/resource";
+import { createAssessment } from "../functions/createAssessment/resource";
 
 const schema = a.schema({
   /**
@@ -880,10 +881,39 @@ const schema = a.schema({
         pipelineId: a.string(),
         status: a.string(),
         name: a.string(),
-        ownerId: a.string(),
+        // ownerId intentionally removed — recruiter Cognito sub must NEVER be
+        // sent to candidate clients. Assessment creation sets it server-side
+        // via the createAssessment Lambda.
       }),
     )
     .handler(a.handler.function(resolveToken))
+    .authorization((allow) => [allow.publicApiKey()]),
+
+  /**
+   * createAssessment (secure)
+   *
+   * Server-side assessment creation that replaces client-side Assessment.create()
+   * via publicApiKey. Validates inviteToken → candidateId mapping, sets ownerId
+   * from the Candidate record's owner field, and prevents duplicate submissions.
+   *
+   * SECURITY: candidateId and ownerId are NEVER accepted from the client.
+   * The inviteToken is the sole identity proof.
+   */
+  submitAssessment: a
+    .mutation()
+    .arguments({
+      inviteToken: a.string().required(),
+      challengeId: a.id().required(),
+      submission: a.string().required(),
+    })
+    .returns(
+      a.customType({
+        success: a.boolean().required(),
+        assessmentId: a.string(),
+        error: a.string(),
+      }),
+    )
+    .handler(a.handler.function(createAssessment))
     .authorization((allow) => [allow.publicApiKey()]),
 
   /**

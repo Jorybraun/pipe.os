@@ -13,6 +13,7 @@ You are working on **Pipe**, an AI-native developer interview platform. Solo-fou
 5. **`docs/reviews/phase-7-code-review.md`** — code review of Phase 7 work (read before touching any Phase 7 code)
 6. **`docs/specs/engineering-standards.md`** — required reading before building any Lambda
 7. **`docs/decisions/README.md`** — ADR index (read when making architectural decisions; write one when you make one)
+8. **`docs/security/AUDIT-2026-03-25.md`** — security audit with P0-P2 findings, remediation roadmap, and authorization matrix (read before touching auth rules or candidate flow)
 
 ---
 

@@ -6,6 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Live speech transcription for video submissions)
+- `src/hooks/useSpeechTranscription.ts` — shared hook wrapping Web Speech API for live transcription; used by both VoicePanel and VideoSubmissionPanel
+- `src/components/Panels/VideoSubmissionPanel.tsx` — runs speech-to-text in parallel with video recording; shows live transcript below video; includes transcript in submission payload
+- `src/components/Panels/VoicePanel.tsx` — refactored to use shared `useSpeechTranscription` hook (removed duplicated Speech API types/logic)
+- `src/components/Assessment/ChallengeRegistry.tsx` — video submission now includes `transcript` field in payload
+
+#### Added (Secure Assessment creation via Lambda resolver)
+- `amplify/functions/createAssessment/` — Lambda resolver that validates inviteToken server-side, sets candidateId and ownerId from Candidate record (never from client input)
+- `amplify/data/resource.ts` — Assessment authorization: `ownerDefinedIn('ownerId')` scoped to pipeline-owning recruiter; security audit comments on all authorization rules
+- `CLAUDE.md` — security rules section: no internal IDs to untrusted clients, authorization model, known risks table
+
 #### Added (QUIZ_SHORT_ANSWER configurable media input — voice, video, text)
 - `amplify/functions/generateMediaUploadUrl/` — Lambda that generates presigned S3 PUT URLs for unauthenticated candidates; validates candidateId + mimeType, returns `{ uploadUrl, s3Key }`
 - `amplify/storage/resource.ts` — added `candidate-submissions/*` (authenticated read) and `challenge-questions/*` (authenticated write, guest read) S3 paths

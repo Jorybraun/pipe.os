@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
 import { QuestionVideoPlayer } from '../Challenge/QuestionVideoPlayer';
+import { useSpeechTranscription } from '../../hooks/useSpeechTranscription';
 
 const client = generateClient<Schema>({ authMode: 'apiKey' });
 
@@ -12,8 +13,8 @@ export interface VideoSubmissionPanelProps {
   videoS3Key: string;
   /** Filename for recruiter display */
   filename: string;
-  /** Called when upload completes */
-  onUploaded: (s3Key: string, filename: string) => void;
+  /** Called when upload completes — transcript is the live speech-to-text result */
+  onUploaded: (s3Key: string, filename: string, transcript: string) => void;
   /** Full URL for the recruiter's question video — shown above controls if present */
   questionVideoUrl?: string;
   /** Max recording duration in seconds (default 120) */
@@ -49,6 +50,8 @@ export function VideoSubmissionPanel({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+
+  const speech = useSpeechTranscription();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -111,6 +114,7 @@ export function VideoSubmissionPanel({
     };
 
     recorder.start(100);
+    speech.start();
     setPanelState('recording');
 
     // Timer + auto-stop at maxDurationSeconds
@@ -127,7 +131,8 @@ export function VideoSubmissionPanel({
 
   const stopRecording = useCallback(() => {
     recorderRef.current?.stop();
-  }, []);
+    speech.stop();
+  }, [speech]);
 
   const uploadRecording = useCallback(async () => {
     const blob = blobRef.current;
@@ -196,8 +201,8 @@ export function VideoSubmissionPanel({
     }
 
     setPanelState('done');
-    onUploaded(s3Key, fname);
-  }, [candidateId, challengeId, onUploaded]);
+    onUploaded(s3Key, fname, speech.transcript);
+  }, [candidateId, challengeId, onUploaded, speech.transcript]);
 
   const reset = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -205,12 +210,13 @@ export function VideoSubmissionPanel({
     blobRef.current = null;
     setErrorMsg(null);
     setElapsed(0);
+    speech.reset();
     setPanelState('idle');
     if (videoRef.current) {
       videoRef.current.src = '';
       videoRef.current.srcObject = null;
     }
-  }, [previewUrl]);
+  }, [previewUrl, speech]);
 
   const mono: React.CSSProperties = {
     fontFamily: '"Space Mono", monospace',
@@ -280,6 +286,7 @@ export function VideoSubmissionPanel({
       {panelState === 'idle' && (
         <div style={{ ...mono, fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>
           MAX_DURATION: {timeStr(maxDurationSeconds)}
+          {speech.isSupported && ' · LIVE_TRANSCRIPTION: ON'}
         </div>
       )}
 
@@ -287,6 +294,35 @@ export function VideoSubmissionPanel({
       {panelState === 'recording' && (
         <div style={{ ...mono, fontSize: 12, color: '#f87171', letterSpacing: '0.15em' }}>
           ● REC &nbsp;{timeStr(elapsed)} / {timeStr(maxDurationSeconds)}
+        </div>
+      )}
+
+      {/* Live transcript */}
+      {(panelState === 'recording' || panelState === 'recorded' || panelState === 'done') &&
+        speech.isSupported && (speech.transcript || speech.interimText) && (
+        <div
+          style={{
+            ...mono,
+            fontSize: 12,
+            color: 'rgba(255,255,255,0.7)',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 6,
+            padding: '12px 16px',
+            lineHeight: 1.7,
+            maxHeight: 120,
+            overflowY: 'auto',
+          }}
+        >
+          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginBottom: 6, letterSpacing: '0.1em' }}>
+            TRANSCRIPT
+          </div>
+          {speech.transcript}
+          {speech.interimText && (
+            <span style={{ color: 'rgba(255,255,255,0.35)', fontStyle: 'italic' }}>
+              {speech.interimText}
+            </span>
+          )}
         </div>
       )}
 

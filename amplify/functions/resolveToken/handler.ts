@@ -26,7 +26,8 @@ interface ResolveTokenResult {
   pipelineId: string;
   status: string;
   name: string | null;
-  ownerId: string | null;
+  // ownerId intentionally removed — recruiter Cognito sub must NEVER be sent
+  // to candidate clients. createAssessment Lambda sets it server-side.
 }
 
 export const handler: AppSyncResolverHandler<ResolveTokenArgs, ResolveTokenResult | null> = async (event) => {
@@ -43,10 +44,10 @@ export const handler: AppSyncResolverHandler<ResolveTokenArgs, ResolveTokenResul
     ExpressionAttributeValues: {
       ':token': { S: inviteToken.trim() },
     },
-    // Only project the fields we need — email and inviteToken are intentionally excluded
-    // `owner` is the recruiter's Cognito sub (auto-set by Amplify when recruiter creates candidate)
-    ProjectionExpression: 'id, pipelineId, #s, #n, #o',
-    ExpressionAttributeNames: { '#s': 'status', '#n': 'name', '#o': 'owner' },
+    // Only project the fields we need — email, inviteToken, and owner are intentionally excluded.
+    // owner (recruiter Cognito sub) must NEVER be returned to candidate clients.
+    ProjectionExpression: 'id, pipelineId, #s, #n',
+    ExpressionAttributeNames: { '#s': 'status', '#n': 'name' },
   }));
 
   if (!Items || Count === 0 || !Items[0]) {
@@ -61,6 +62,5 @@ export const handler: AppSyncResolverHandler<ResolveTokenArgs, ResolveTokenResul
     pipelineId: item['pipelineId'] as string,
     status: item['status'] as string,
     name: (item['name'] as string | undefined) ?? null,
-    ownerId: (item['owner'] as string | undefined) ?? null,
   };
 };
