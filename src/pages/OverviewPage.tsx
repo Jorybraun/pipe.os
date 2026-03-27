@@ -16,6 +16,7 @@ import {
   ChevronRight,
   GripVertical,
   Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -245,7 +246,9 @@ function CandidateKanbanCard({
   candidate,
   onClick,
   onInvite,
+  onReset,
   isInviting,
+  isResetting,
   interview,
   isOverlay = false,
   disabled = false,
@@ -253,7 +256,9 @@ function CandidateKanbanCard({
   candidate: any;
   onClick: () => void;
   onInvite?: () => void;
+  onReset?: () => void;
   isInviting?: boolean;
+  isResetting?: boolean;
   interview?: any;
   isOverlay?: boolean;
   disabled?: boolean;
@@ -284,15 +289,19 @@ function CandidateKanbanCard({
     cursor: isDragging ? "grabbing" : "pointer",
   };
 
+  // Strip CLAIMED:: prefix so the copy-link always produces a usable URL
+  const rawToken = (candidate.inviteToken || '').replace(/^CLAIMED::/, '');
+  const isClaimed = (candidate.inviteToken || '').startsWith('CLAIMED::');
+
   const handleCopyLink = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      const inviteUrl = `${window.location.origin}/assess/${candidate.inviteToken}`;
+      const inviteUrl = `${window.location.origin}/assess/${rawToken}`;
       navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     },
-    [candidate.inviteToken],
+    [rawToken],
   );
 
   const initials = (candidate.name || "")
@@ -506,9 +515,7 @@ function CandidateKanbanCard({
           </div>
 
           {/* Action Area */}
-          {!interview &&
-            (candidate.status === "INVITED" ||
-              candidate.status === "IN_PROGRESS") && (
+          {!interview && (
               <div
                 style={{
                   width: 44,
@@ -555,6 +562,28 @@ function CandidateKanbanCard({
                     }}
                   >
                     <Video size={14} />
+                  </button>
+                )}
+                {(isClaimed || candidate.status === 'COMPLETED' || candidate.status === 'IN_PROGRESS') && onReset && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReset();
+                    }}
+                    disabled={isResetting}
+                    title="Reset invite token (unclaim + delete assessments)"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: isResetting
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(251, 191, 36, 0.6)",
+                      cursor: isResetting ? "default" : "pointer",
+                      padding: 4,
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <RotateCcw size={14} />
                   </button>
                 )}
               </div>
@@ -606,6 +635,9 @@ export default function OverviewPage(): JSX.Element {
   const [invitingCandidateId, setInvitingCandidateId] = useState<string | null>(
     null,
   );
+
+  // Reset-token state
+  const [resettingCandidateId, setResettingCandidateId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -688,7 +720,6 @@ export default function OverviewPage(): JSX.Element {
             "inviteToken",
             "currentStageId",
             "assessments.id",
-            "assessments.challengeId",
             "assessments.score",
           ],
         }),
@@ -878,6 +909,32 @@ export default function OverviewPage(): JSX.Element {
       );
     } finally {
       setInvitingCandidateId(null);
+    }
+  };
+
+  /** Reset a candidate's invite token: unclaim, delete assessments, set INVITED */
+  const handleResetCandidate = async (candidateId: string) => {
+    setResettingCandidateId(candidateId);
+    try {
+      const candidate = candidates.find((c: any) => c.id === candidateId);
+      if (!candidate) return;
+
+      // Server-side reset: hard-deletes ChallengeSubmissions + CandidateMedia,
+      // resets Assessments to PENDING, unclaims invite token, sets status=INVITED.
+      const { data: resetResult, errors: resetErrors } = await client.mutations.resetCandidate({ candidateId });
+      if (resetErrors?.length) {
+        throw new Error(resetErrors[0]?.message ?? 'Reset failed');
+      }
+      if (!resetResult?.success) {
+        throw new Error(resetResult?.error ?? 'Reset failed');
+      }
+
+      // Refresh data
+      await fetchData();
+    } catch (err) {
+      console.error('[OverviewPage] Failed to reset candidate:', err);
+    } finally {
+      setResettingCandidateId(null);
     }
   };
 
@@ -1376,6 +1433,8 @@ export default function OverviewPage(): JSX.Element {
                             navigate(`/candidates/${candidate.id}`)
                           }
                           isInviting={invitingCandidateId === candidate.id}
+                          isResetting={resettingCandidateId === candidate.id}
+                          onReset={() => handleResetCandidate(candidate.id)}
                           {...(interview ? { interview } : {})}
                           {...(s.mode === "LIVE_VIDEO"
                             ? {

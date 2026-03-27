@@ -1,22 +1,23 @@
 /**
- * scoringAgent Lambda Handler
+ * scoringAgent Lambda Handler (ADR-023)
  *
- * Triggered by the scoreAssessment AppSync mutation.
+ * Triggered by the scoreChallengeSubmission AppSync mutation.
  *
  * Steps:
- * 1. Receive assessmentId
- * 2. Fetch Assessment from DynamoDB (submission + challengeId + followUpQuestionsJson)
+ * 1. Receive challengeSubmissionId
+ * 2. Fetch ChallengeSubmission from DynamoDB (submission + challengeId + followUpQuestionsJson)
  * 3. Fetch linked Challenge from DynamoDB (serverConfig with ground truth)
  * 4. Score based on challenge type:
  *    - CODE_REVIEW with follow-up answers → agentic Mistral scoring (holistic)
  *    - CODE_REVIEW without follow-up answers → deterministic scoring (initial pass)
  *    - QUIZ_MCQ → deterministic scoring (objective)
- * 5. Update Assessment.score and Assessment.feedback
- * 6. Return { score, feedback }
+ * 5. Update ChallengeSubmission.score and ChallengeSubmission.feedback
+ * 6. Re-aggregate Assessment.score from all child ChallengeSubmissions
+ * 7. Return { score, feedback }
  */
 
 import { Mistral } from '@mistralai/mistralai';
-import { DynamoDBClient, GetItemCommand, UpdateItemCommand, ReturnValue } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, GetItemCommand, UpdateItemCommand, ScanCommand, ReturnValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { scorer } from './scorer';
 import type { CodeReviewConfig, Bug } from './types';
@@ -31,6 +32,7 @@ const dynamo = new DynamoDBClient({
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+const CHALLENGE_SUBMISSION_TABLE = process.env.CHALLENGE_SUBMISSION_TABLE_NAME ?? 'ChallengeSubmission';
 const ASSESSMENT_TABLE = process.env.ASSESSMENT_TABLE_NAME ?? 'Assessment';
 const CHALLENGE_TABLE = process.env.CHALLENGE_TABLE_NAME ?? 'Challenge';
 const MISTRAL_MODEL = process.env.MISTRAL_MODEL ?? 'mistral-large-latest';
@@ -40,8 +42,9 @@ const MAX_TOKENS = parseInt(process.env.MODEL_MAX_TOKENS ?? '800', 10);
 
 interface ScoringResult {
   success: boolean;
-  score: number;
-  feedback?: string;
+  /** Score is intentionally omitted from the response to prevent candidates
+   *  from seeing their score during the assessment. The score is written
+   *  directly to DynamoDB — recruiters read it from there. */
   error?: string;
 }
 
@@ -69,36 +72,37 @@ export const handler = async (event: unknown): Promise<ScoringResult> => {
   console.log('[ScoringAgent] Invoked', { event: JSON.stringify(event) });
 
   try {
-    // Extract assessmentId from AppSync event
+    // Extract challengeSubmissionId from AppSync event
     const args = (event as Record<string, unknown>)['arguments'] as Record<string, unknown> | undefined;
-    const assessmentId = (args?.['assessmentId'] ?? (event as Record<string, unknown>)['assessmentId']) as string | undefined;
+    const challengeSubmissionId = (args?.['challengeSubmissionId'] ?? (event as Record<string, unknown>)['challengeSubmissionId']) as string | undefined;
 
-    if (!assessmentId || typeof assessmentId !== 'string') {
-      throw new Error('VALIDATION: assessmentId is required');
+    if (!challengeSubmissionId || typeof challengeSubmissionId !== 'string') {
+      throw new Error('VALIDATION: challengeSubmissionId is required');
     }
 
-    console.log('[ScoringAgent] assessmentId:', assessmentId);
+    console.log('[ScoringAgent] challengeSubmissionId:', challengeSubmissionId);
 
-    // Step 2: Fetch Assessment
-    const assessmentResponse = await dynamo.send(new GetItemCommand({
-      TableName: ASSESSMENT_TABLE,
-      Key: marshall({ id: assessmentId }),
+    // Step 2: Fetch ChallengeSubmission
+    const submissionResponse = await dynamo.send(new GetItemCommand({
+      TableName: CHALLENGE_SUBMISSION_TABLE,
+      Key: marshall({ id: challengeSubmissionId }),
     }));
 
-    if (!assessmentResponse.Item) {
-      throw new Error(`ASSESSMENT_NOT_FOUND: ${assessmentId}`);
+    if (!submissionResponse.Item) {
+      throw new Error(`CHALLENGE_SUBMISSION_NOT_FOUND: ${challengeSubmissionId}`);
     }
 
-    const assessment = unmarshall(assessmentResponse.Item) as Record<string, unknown>;
-    const challengeId = assessment['challengeId'] as string | undefined;
-    const submissionRaw = assessment['submission'];
-    const followUpRaw = assessment['followUpQuestionsJson'];
-    const codeReviewSummary = assessment['codeReviewSummary'] as string | undefined;
-    const codeReviewAnnotationsRaw = assessment['codeReviewAnnotations'];
+    const challengeSubmission = unmarshall(submissionResponse.Item) as Record<string, unknown>;
+    const challengeId = challengeSubmission['challengeId'] as string | undefined;
+    const assessmentId = challengeSubmission['assessmentId'] as string | undefined;
+    const submissionRaw = challengeSubmission['submission'];
+    const followUpRaw = challengeSubmission['followUpQuestionsJson'];
+    const codeReviewSummary = challengeSubmission['codeReviewSummary'] as string | undefined;
+    const codeReviewAnnotationsRaw = challengeSubmission['codeReviewAnnotations'];
 
     if (!challengeId) {
-      console.warn('[ScoringAgent] No challengeId on Assessment — cannot score');
-      return { success: true, score: 0, feedback: 'No challenge linked to this assessment.' };
+      console.warn('[ScoringAgent] No challengeId on ChallengeSubmission — cannot score');
+      return { success: true };
     }
 
     // Step 3: Fetch Challenge
@@ -109,7 +113,7 @@ export const handler = async (event: unknown): Promise<ScoringResult> => {
 
     if (!challengeResponse.Item) {
       console.warn('[ScoringAgent] Challenge not found:', challengeId);
-      return { success: true, score: 0, feedback: 'Challenge not found.' };
+      return { success: true };
     }
 
     const challenge = unmarshall(challengeResponse.Item) as Record<string, unknown>;
@@ -119,7 +123,7 @@ export const handler = async (event: unknown): Promise<ScoringResult> => {
 
     if (!challengeType) {
       console.warn('[ScoringAgent] Challenge has no type');
-      return { success: true, score: 0, feedback: 'Challenge type not set.' };
+      return { success: true };
     }
 
     // Step 4: Parse submission and serverConfig
@@ -135,7 +139,7 @@ export const handler = async (event: unknown): Promise<ScoringResult> => {
 
     if (!serverConfig) {
       console.warn('[ScoringAgent] Missing serverConfig', { challengeType });
-      return { success: true, score: 0, feedback: 'Scoring config not available.' };
+      return { success: true };
     }
 
     // Step 5: Score
@@ -222,35 +226,41 @@ export const handler = async (event: unknown): Promise<ScoringResult> => {
     } else {
       // Non-CODE_REVIEW: deterministic scoring
       if (!submission) {
-        return { success: true, score: 0, feedback: 'Submission not available.' };
+        return { success: true };
       }
       score = scorer(challengeType, submission, serverConfig);
       feedback = buildFeedback(challengeType, score);
     }
 
-    console.log('[ScoringAgent] Score calculated', { assessmentId, challengeType, score });
+    console.log('[ScoringAgent] Score calculated', { challengeSubmissionId, challengeType, score });
 
-    // Step 6: Update Assessment
+    // Step 6: Update ChallengeSubmission
+    const now = new Date().toISOString();
     await dynamo.send(new UpdateItemCommand({
-      TableName: ASSESSMENT_TABLE,
-      Key: marshall({ id: assessmentId }),
-      UpdateExpression: 'SET score = :score, feedback = :feedback, completedAt = :completedAt',
+      TableName: CHALLENGE_SUBMISSION_TABLE,
+      Key: marshall({ id: challengeSubmissionId }),
+      UpdateExpression: 'SET score = :score, feedback = :feedback, scoredAt = :scoredAt',
       ExpressionAttributeValues: marshall({
         ':score': score,
         ':feedback': feedback,
-        ':completedAt': new Date().toISOString(),
+        ':scoredAt': now,
       }),
       ReturnValues: ReturnValue.NONE,
     }));
 
-    console.log('[ScoringAgent] Assessment updated', { assessmentId, score });
+    console.log('[ScoringAgent] ChallengeSubmission updated', { challengeSubmissionId, score });
 
-    return { success: true, score, feedback };
+    // Step 7: Re-aggregate Assessment.score from all child ChallengeSubmissions
+    if (assessmentId) {
+      await aggregateAssessmentScore(assessmentId);
+    }
+
+    return { success: true };
 
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'INTERNAL_ERROR';
     console.error('[ScoringAgent] Error:', message);
-    return { success: false, score: 0, error: message };
+    return { success: false, error: message };
   }
 };
 
@@ -384,6 +394,53 @@ ${qaSection}`;
   } catch (err) {
     console.error('[ScoringAgent] Failed to parse Mistral scoring response:', text, err);
     return { score: 0, feedback: 'Scoring failed — could not parse model response.' };
+  }
+}
+
+// ─── Assessment Score Aggregation ─────────────────────────────────────────────
+
+/**
+ * Re-aggregate Assessment.score as the average of all child ChallengeSubmission scores.
+ */
+async function aggregateAssessmentScore(assessmentId: string): Promise<void> {
+  try {
+    const { Items } = await dynamo.send(new ScanCommand({
+      TableName: CHALLENGE_SUBMISSION_TABLE,
+      FilterExpression: 'assessmentId = :aid AND attribute_exists(score) AND (attribute_not_exists(#del) OR #del = :false)',
+      ExpressionAttributeNames: { '#del': '_deleted' },
+      ExpressionAttributeValues: marshall({
+        ':aid': assessmentId,
+        ':false': false,
+      }),
+      ProjectionExpression: 'score',
+    }));
+
+    if (!Items || Items.length === 0) {
+      console.log('[ScoringAgent] No scored submissions for assessment', assessmentId);
+      return;
+    }
+
+    const scores = Items.map(item => {
+      const record = unmarshall(item);
+      return typeof record['score'] === 'number' ? record['score'] : null;
+    }).filter((s): s is number => s !== null);
+
+    if (scores.length === 0) return;
+
+    const avgScore = Math.round(scores.reduce((sum, s) => sum + s, 0) / scores.length);
+
+    await dynamo.send(new UpdateItemCommand({
+      TableName: ASSESSMENT_TABLE,
+      Key: marshall({ id: assessmentId }),
+      UpdateExpression: 'SET score = :score',
+      ExpressionAttributeValues: marshall({ ':score': avgScore }),
+      ReturnValues: ReturnValue.NONE,
+    }));
+
+    console.log('[ScoringAgent] Assessment score aggregated', { assessmentId, avgScore, submissionCount: scores.length });
+  } catch (err) {
+    console.error('[ScoringAgent] Failed to aggregate assessment score:', err);
+    // Non-fatal — don't fail the scoring operation
   }
 }
 

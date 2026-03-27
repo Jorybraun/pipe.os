@@ -43,7 +43,7 @@ interface CodeReviewAnnotation {
 }
 
 interface SubmitCodeReviewRequest {
-  assessmentId: string;
+  challengeSubmissionId: string;
   challengeId: string;
   userId: string;
   studioId: string;
@@ -55,7 +55,7 @@ interface SubmitCodeReviewRequest {
 
 interface SubmitCodeReviewResponse {
   success: boolean;
-  assessmentId: string;
+  challengeSubmissionId: string;
   submittedAt: string;
   message: string;
 }
@@ -72,7 +72,7 @@ type HandlerResponse = SubmitCodeReviewResponse | ErrorResponse;
 // Constants
 // ============================================================
 
-const ASSESSMENT_TABLE = process.env.ASSESSMENT_TABLE_NAME || 'Assessment';
+const CHALLENGE_SUBMISSION_TABLE = process.env.CHALLENGE_SUBMISSION_TABLE_NAME || 'ChallengeSubmission';
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
 const dbClient = new DynamoDBClient({ region: AWS_REGION });
@@ -85,13 +85,13 @@ const lambdaClient = new LambdaClient({ region: AWS_REGION });
 export async function handler(event: any): Promise<HandlerResponse> {
   try {
     console.log('[submitCodeReview] Request received', {
-      assessmentId: event.arguments?.assessmentId,
+      challengeSubmissionId: event.arguments?.challengeSubmissionId,
       annotationCount: event.arguments?.codeReviewAnnotations?.length,
     });
 
     // Extract arguments from AppSync event
     const request: SubmitCodeReviewRequest = {
-      assessmentId: event.arguments?.assessmentId,
+      challengeSubmissionId: event.arguments?.challengeSubmissionId,
       challengeId: event.arguments?.challengeId,
       userId: event.arguments?.userId,
       studioId: event.arguments?.studioId,
@@ -106,30 +106,29 @@ export async function handler(event: any): Promise<HandlerResponse> {
     console.log('✅ Inputs validated');
 
     // ============================================
-    // 2. Save Assessment with annotations
+    // 2. Save ChallengeSubmission with annotations
     // ============================================
     const submittedAt = new Date().toISOString();
 
-    console.log('💾 Saving Assessment to DynamoDB...');
+    console.log('Saving ChallengeSubmission to DynamoDB...');
 
     const updateParams = {
-      TableName: ASSESSMENT_TABLE,
-      Key: marshall({ id: request.assessmentId }),
+      TableName: CHALLENGE_SUBMISSION_TABLE,
+      Key: marshall({ id: request.challengeSubmissionId }),
       UpdateExpression:
-        'SET codeReviewAnnotations = :annotations, codeReviewSummary = :summary, submittedAt = :submittedAt, completedAt = :completedAt',
+        'SET codeReviewAnnotations = :annotations, codeReviewSummary = :summary, submittedAt = :submittedAt',
       ExpressionAttributeValues: marshall({
         ':annotations': request.codeReviewAnnotations,
         ':summary': request.codeReviewSummary || null,
         ':submittedAt': submittedAt,
-        ':completedAt': submittedAt,
       }),
       ReturnValues: ReturnValue.ALL_NEW,
     };
 
     const updateResponse = await dbClient.send(new UpdateItemCommand(updateParams));
 
-    console.log('✅ Assessment saved', {
-      assessmentId: request.assessmentId,
+    console.log('ChallengeSubmission saved', {
+      challengeSubmissionId: request.challengeSubmissionId,
       updatedAttributes: Object.keys(updateResponse.Attributes || {}),
     });
 
@@ -162,7 +161,7 @@ export async function handler(event: any): Promise<HandlerResponse> {
     // ============================================
     return {
       success: true,
-      assessmentId: request.assessmentId,
+      challengeSubmissionId: request.challengeSubmissionId,
       submittedAt: submittedAt,
       message: 'Code review submitted successfully',
     };
@@ -208,8 +207,8 @@ export async function handler(event: any): Promise<HandlerResponse> {
  */
 function validateRequest(request: SubmitCodeReviewRequest): void {
   // Validate required fields
-  if (!request.assessmentId?.trim()) {
-    throw new Error('Validation: assessmentId is required');
+  if (!request.challengeSubmissionId?.trim()) {
+    throw new Error('Validation: challengeSubmissionId is required');
   }
 
   if (!request.challengeId?.trim()) {
@@ -379,7 +378,7 @@ async function scoreCodeReviewAsync(request: SubmitCodeReviewRequest): Promise<v
   try {
     const scoringPayload = {
       arguments: {
-        assessmentId: request.assessmentId,
+        challengeSubmissionId: request.challengeSubmissionId,
         candidateAnnotations: convertAnnotationsToScoringFormat(request.codeReviewAnnotations),
         groundTruthAnnotations: request.groundTruthAnnotations,
         reviewerLevel: request.reviewerLevel || 'mid',
@@ -387,7 +386,7 @@ async function scoreCodeReviewAsync(request: SubmitCodeReviewRequest): Promise<v
     };
 
     console.log('[submitCodeReview] Invoking scoreCodeReview Lambda', {
-      assessmentId: request.assessmentId,
+      challengeSubmissionId: request.challengeSubmissionId,
       candidateAnnotationCount: request.codeReviewAnnotations.length,
     });
 

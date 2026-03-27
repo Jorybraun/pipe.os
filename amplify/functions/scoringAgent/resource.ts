@@ -7,6 +7,7 @@ export const scoringAgent = defineFunction({
   memoryMB: 512,
   timeoutSeconds: 60,
   environment: {
+    CHALLENGE_SUBMISSION_TABLE_NAME: 'ChallengeSubmission',
     ASSESSMENT_TABLE_NAME: 'Assessment',
     CHALLENGE_TABLE_NAME: 'Challenge',
 

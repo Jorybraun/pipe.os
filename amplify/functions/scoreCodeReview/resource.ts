@@ -29,7 +29,7 @@ export const scoreCodeReview = defineFunction({
   // Environment variables
   environment: {
     // Database config
-    ASSESSMENT_TABLE_NAME: 'Assessment',
+    CHALLENGE_SUBMISSION_TABLE_NAME: 'ChallengeSubmission',
 
     // AWS region is automatically provided by Lambda runtime
     // Access via process.env.AWS_REGION in handler code

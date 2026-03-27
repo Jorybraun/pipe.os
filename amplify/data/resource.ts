@@ -18,8 +18,12 @@ import { codeReviewFollowUpAgent } from "../functions/codeReviewFollowUpAgent/re
 import { resolveToken } from "../functions/resolveToken/resource";
 import { parseCandidateCV } from "../functions/parseCandidateCV/resource";
 import { generateMediaUploadUrl } from "../functions/generateMediaUploadUrl/resource";
-import { createAssessment } from "../functions/createAssessment/resource";
+import { submitChallengeResponse } from "../functions/submitChallengeResponse/resource";
+import { getNextChallenge } from "../functions/getNextChallenge/resource";
+import { getChallenge } from "../functions/getChallenge/resource";
+import { resetCandidate } from "../functions/resetCandidate/resource";
 import { sessionAuthorizer } from "../functions/sessionAuthorizer/resource";
+import { intelligenceReportAgent } from "../functions/intelligenceReportAgent/resource";
 
 const schema = a.schema({
   /**
@@ -81,6 +85,7 @@ const schema = a.schema({
       mode: a.enum(["ASYNC", "LIVE_VIDEO"]), // Default: ASYNC
       videoConfig: a.json(), // { recordingEnabled: boolean }
       challenges: a.hasMany("Challenge", "stageId"),
+      assessments: a.hasMany("Assessment", "stageId"),
       videoSessions: a.hasMany("VideoSession", "stageId"),
       scheduledInterviews: a.hasMany("ScheduledInterview", "stageId"),
 
@@ -296,7 +301,7 @@ const schema = a.schema({
        */
       groundTruth: a.json().authorization((allow) => [allow.owner()]),
 
-      assessments: a.hasMany("Assessment", "challengeId"),
+      challengeSubmissions: a.hasMany("ChallengeSubmission", "challengeId"),
     })
     .secondaryIndexes((index) => [
       /**
@@ -369,17 +374,6 @@ const schema = a.schema({
 
   /**
    * CandidateMedia Model
-   *
-   * All binary assets associated with a candidate — CVs, video recordings,
-   * audio recordings, and other attachments. Each record points to one S3 object.
-   *
-   * S3 path conventions (see ADR-022 and amplify/storage/resource.ts):
-   *   candidates/{candidateId}/documents/{filename}         — RESUME / ATTACHMENT
-   *   candidates/{candidateId}/recordings/{stageId}.webm    — VIDEO_RECORDING / AUDIO_RECORDING
-   *
-   * Write patterns:
-   *   RESUME / ATTACHMENT     — recruiter uploads directly via Amplify Storage, then creates record
-   *   VIDEO_RECORDING / AUDIO_RECORDING — Lambda writes to S3 via IAM pre-signed URL, then creates record
    */
   CandidateMedia: a
     .model({
@@ -415,55 +409,98 @@ const schema = a.schema({
     ]),
 
   /**
-   * Assessment Model
+   * Assessment Model (ADR-023)
    */
   Assessment: a
     .model({
       candidateId: a.id().required(),
       candidate: a.belongsTo("Candidate", "candidateId"),
 
-      challengeId: a.id(), // New relationship in Phase 7
-      challenge: a.belongsTo("Challenge", "challengeId"),
+      stageId: a.id().required(),
+      stage: a.belongsTo("Stage", "stageId"),
 
-      /** Cognito sub of the recruiter who owns the pipeline. Set during creation
+      /** Cognito sub of the recruiter who owns the pipeline. Set server-side
        *  so the recruiter can read assessments via ownerDefinedIn authorization. */
       ownerId: a.string(),
 
-      submission: a.json(), // Candidate's answers/annotations
+      /** Recruiter-controlled status. NEVER set by candidate submission flow. */
+      status: a.enum(["PENDING", "IN_PROGRESS", "COMPLETED", "REVIEWED"]),
+
+      /** Aggregate score computed from ChallengeSubmissions. Overridable by recruiter. */
       score: a.float(),
-      feedback: a.string(), // Internal recruiter notes
+
+      /** Recruiter summary notes */
+      feedback: a.string(),
+
+      /** When the candidate entered this stage */
+      startedAt: a.datetime(),
+
+      /** When all challenges in this stage were completed */
       completedAt: a.datetime(),
 
-      /**
-       * Code Review Assessment Fields (STREAM2-004)
-       *
-       * These fields capture code review-specific submission data.
-       * Optional to support existing assessment types without code review data.
-       */
+      /** Child submissions — one per challenge attempted */
+      challengeSubmissions: a.hasMany("ChallengeSubmission", "assessmentId"),
+    })
+    .secondaryIndexes((index) => [
+      index("candidateId")
+        .sortKeys(["stageId"])
+        .name("assessmentsByCandidateAndStage"),
+    ])
+    .authorization((allow) => [
+      allow.owner(),
+      allow.ownerDefinedIn("ownerId").to(["read", "update"]),
+      allow.publicApiKey().to(["create", "update"]), // Transition: remove after frontend migrates
+      allow.custom().to(["create", "update"]),
+    ]),
 
-      /** Array of { fileId, line, severity, comment, timestamp } annotations made by candidate */
-      codeReviewAnnotations: a.json(),
+  /**
+   * ChallengeSubmission Model (ADR-023)
+   */
+  ChallengeSubmission: a
+    .model({
+      assessmentId: a.id().required(),
+      assessment: a.belongsTo("Assessment", "assessmentId"),
 
-      /** Candidate's overall summary/assessment of the code review */
-      codeReviewSummary: a.string(),
+      challengeId: a.id().required(),
+      challenge: a.belongsTo("Challenge", "challengeId"),
 
-      /** When the candidate submitted their review (distinct from completedAt which is scoring time) */
+      /** Cognito sub of the recruiter. Set server-side for ownerDefinedIn auth. */
+      ownerId: a.string(),
+
+      /** Candidate's answers/annotations — challenge-type-specific JSON */
+      submission: a.json(),
+
+      /** Score (0-100) set by scoring pipeline */
+      score: a.float(),
+
+      /** Feedback from scoring agent or recruiter */
+      feedback: a.string(),
+
+      /** When the candidate submitted this challenge */
       submittedAt: a.datetime(),
 
+      /** When the scoring agent completed scoring */
+      scoredAt: a.datetime(),
+
+      /** Array of { fileId, line, severity, comment, timestamp } annotations (CODE_REVIEW) */
+      codeReviewAnnotations: a.json(),
+
+      /** Candidate's overall summary of the code review (CODE_REVIEW) */
+      codeReviewSummary: a.string(),
+
       /**
-       * Follow-up questions generated by the codeReviewFollowUpAgent after
-       * the candidate submits a CODE_REVIEW challenge.
-       *
-       * Shape: { questions: FollowUpQuestion[], answers: FollowUpAnswer[] }
-       * - questions: set by the Lambda after submission
-       * - answers: updated by the candidate after completing the follow-up panel
+       * Follow-up questions + answers generated after challenge submission.
+       * Shape: { questions: FollowUpQuestion[], answers: FollowUpAnswer[], generatedAt: string }
        */
       followUpQuestionsJson: a.json(),
     })
+    .secondaryIndexes((index) => [
+      index("assessmentId")
+        .sortKeys(["challengeId"])
+        .name("submissionsByAssessmentAndChallenge"),
+    ])
     .authorization((allow) => [
       allow.owner(),
-      // Recruiter who owns the pipeline can read assessments via the denormalized ownerId field.
-      // Candidates set ownerId during creation (resolved from the Candidate record's owner).
       allow.ownerDefinedIn("ownerId").to(["read", "update"]),
       allow.publicApiKey().to(["create", "update"]), // Transition: remove after frontend migrates
       allow.custom().to(["create", "update"]),
@@ -515,115 +552,6 @@ const schema = a.schema({
     ]),
 
   /**
-   * SchedulingConnection Model
-   */
-  SchedulingConnection: a
-    .model({
-      recruiterId: a.string().required(),
-      providerId: a.enum(["CALENDLY", "CAL_COM"]),
-      accessToken: a.string().required(),
-      refreshToken: a.string(),
-      tokenExpiry: a.datetime(),
-      accountEmail: a.string(),
-      accountName: a.string(),
-      webhookSecret: a.string(),
-      webhookId: a.string(),
-      status: a.enum(["ACTIVE", "EXPIRED", "REVOKED"]),
-      connectedAt: a.datetime().required(),
-      lastSyncAt: a.datetime(),
-    })
-    .authorization((allow) => [allow.owner()]),
-
-  /**
-   * RoleContext Model
-   */
-  RoleContext: a
-    .model({
-      owner: a.string(),
-      title: a.string(),
-      level: a.enum([
-        "junior",
-        "mid",
-        "senior",
-        "staff",
-        "principal",
-        "lead",
-        "manager",
-      ]),
-      department: a.string(),
-      workModel: a.enum(["remote", "hybrid", "onsite"]),
-      teamSize: a.string(),
-      reportsTo: a.string(),
-      stack: a.string().array(),
-      context: a.json(),
-      exchanges: a.json(),
-      status: a.enum(["baseline", "exploring", "almost_ready", "ready"]),
-      gaps: a.string().array(),
-      userSignals: a.json(),
-      jobDescription: a.json(),
-      candidateFilters: a.json(),
-      suggestedStages: a.json(),
-    })
-    .authorization((allow) => [allow.owner()]),
-
-  /**
-   * RepoTemplate Model (STREAM2-005)
-   *
-   * Catalog of available challenge repositories for code review and code implementation challenges.
-   * Used by ChallengePicker for discovery and filtering. Supports public read access via API key
-   * for unauthenticated challenge discovery.
-   */
-  RepoTemplate: a
-    .model({
-      /** Unique repository identifier (e.g., "slopify-coupon", "devhub-plugins") */
-      repoId: a.string().required(),
-
-      /** Application/product this repo belongs to (e.g., "slopify-admin", "devhub", "teamchat") */
-      app: a.string().required(),
-
-      /** Challenge type this repo is for */
-      type: a.enum(["CODE_REVIEW", "CODE_IMPLEMENTATION"]),
-
-      /** Human-readable title for the challenge (e.g., "Slopify: Add Coupon Support") */
-      title: a.string().required(),
-
-      /** Detailed description of what candidates will do */
-      description: a.string(),
-
-      /** Difficulty level for filtering and discovery */
-      difficulty: a.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]),
-
-      /** Estimated time to complete (in minutes) */
-      estimatedMinutes: a.integer().required(),
-
-      /** S3 path to the repository archive (e.g., "challenge-repos/app/repo-id/version/repo.tar.gz") */
-      s3Key: a.string().required(),
-
-      /** S3 path to the metadata JSON file for this repository version */
-      metadataS3Key: a.string().required(),
-
-      /** Semantic version of the repository (e.g., "1.0.0", "1.1.0") */
-      version: a.string().required(),
-
-      /** Markdown-formatted instructions for candidates */
-      instructions: a.string().required(),
-
-      /** JSON scoring rubric for evaluation (see tech spec Section 3.1 for schema) */
-      scoring: a.json().required(),
-    })
-    .secondaryIndexes((index) => [
-      /** Index for efficient repo lookup by repoId */
-      index("repoId").name("repoTemplatesByRepoId"),
-
-      /** Index for filtering by difficulty level */
-      index("difficulty").name("repoTemplatesByDifficulty"),
-    ])
-    .authorization((allow) => [
-      allow.owner(),
-      allow.publicApiKey().to(["read"]),
-    ]),
-
-  /**
    * AI Agent Mutations
    */
   generateQuestions: a
@@ -645,34 +573,39 @@ const schema = a.schema({
     .handler(a.handler.function(jobDescriptionAgent))
     .authorization((allow) => [allow.authenticated()]),
 
-  scoreAssessment: a
+  scoreChallengeSubmission: a
     .mutation()
     .arguments({
-      assessmentId: a.id().required(),
+      challengeSubmissionId: a.id().required(),
     })
     .returns(a.json())
     .handler(a.handler.function(scoringAgent))
     .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
-  /**
-   * generateFollowUps
-   *
-   * Invoked when a candidate reaches a FOLLOW_UP challenge.
-   * Reads the previous Assessment + its Challenge from DynamoDB, routes to
-   * the correct prompt strategy based on challenge type, calls Mistral to
-   * generate 5 SHORT_ANSWER follow-up questions, saves them to
-   * Assessment.followUpQuestionsJson, and returns the questions.
-   *
-   * Authorization: publicApiKey — candidates invoke this without auth.
-   */
   generateFollowUps: a
     .mutation()
     .arguments({
-      assessmentId: a.id().required(),
+      challengeSubmissionId: a.id().required(),
     })
     .returns(a.json())
     .handler(a.handler.function(codeReviewFollowUpAgent))
     .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
+
+  /**
+   * generateIntelligenceReport
+   *
+   * Aggregates all candidate assessment data and generates a structured,
+   * block-based report using an LLM. Decisions on which blocks to include
+   * and their priority are made by the AI.
+   */
+  generateIntelligenceReport: a
+    .mutation()
+    .arguments({
+      candidateId: a.id().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(intelligenceReportAgent))
+    .authorization((allow) => [allow.authenticated()]),
 
   getTurnCredentials: a
     .query()
@@ -699,31 +632,6 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function(schedulingOAuth))
     .authorization((allow) => [allow.authenticated()]),
-
-  /**
-   * DevContainerSession Model
-   *
-   * Tracks the lifecycle of an AWS Fargate dev container session.
-   * Status updates are written by the ecsStatusBridge Lambda and
-   * consumed in real-time by the frontend via subscriptions.
-   */
-  DevContainerSession: a
-    .model({
-      // The ECS Task ARN is the unique identifier
-      taskArn: a.string().required(),
-      sessionId: a.string().required(),
-      status: a.enum(["PROVISIONING", "BOOTING", "READY", "STOPPING", "ERROR"]),
-      url: a.string(),
-      // ALB resources created per-session by ecsStatusBridge on RUNNING;
-      // stored here so they can be cleaned up on STOPPED.
-      albTargetGroupArn: a.string(),
-      albListenerRuleArn: a.string(),
-    })
-    .identifier(["taskArn"])
-    .authorization((allow) => [
-      allow.authenticated(), // Users can read/watch their sessions
-      allow.publicApiKey().to(["create", "update"]), // Bridge Lambda restricted to sync only
-    ]),
 
   /**
    * Dev Container Mutations / Queries
@@ -767,8 +675,6 @@ const schema = a.schema({
 
   /**
    * Adaptive Notification Mutation
-   *
-   * Manually trigger an invitation or notification email.
    */
   sendNotification: a
     .mutation()
@@ -782,20 +688,12 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()]),
 
   /**
-   * Submit Code Review Mutation (STREAM2-016 through STREAM2-020)
-   *
-   * Handles code review submission from candidates:
-   * - Validates annotation structure
-   * - Saves Assessment with annotations, summary, and timestamp
-   * - Triggers async dev container destruction
-   * - Returns confirmation with submission metadata
-   *
-   * Authorization: Public API key (for unauthenticated candidate submissions)
+   * submitCodeReview
    */
   submitCodeReview: a
     .mutation()
     .arguments({
-      assessmentId: a.id().required(),
+      challengeSubmissionId: a.id().required(),
       challengeId: a.id().required(),
       userId: a.string().required(),
       studioId: a.string().required(),
@@ -807,11 +705,7 @@ const schema = a.schema({
     .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
   /**
-   * Fetch GitHub PR metadata and diff
-   *
-   * STREAM 2: Phase 1 - GitHub PR Integration
-   * Called by admin during challenge creation to fetch real PR from GitHub
-   * Validates PR exists, extracts diff, returns parsed for caching
+   * fetchGitHubPR
    */
   fetchGitHubPR: a
     .mutation()
@@ -823,16 +717,13 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function(fetchGitHubPR))
     .authorization((allow) => [
-      allow.authenticated(), // Recruiter (admin)
-      allow.publicApiKey(), // Transition: remove after frontend migrates
-      allow.custom(), // Candidate via session JWT
+      allow.authenticated(),
+      allow.publicApiKey(),
+      allow.custom(),
     ]),
 
   /**
-   * List GitHub PR summaries for a repository
-   *
-   * Called by ChallengePicker when creating CODE_REVIEW challenges.
-   * Returns lightweight PR metadata (no diffs) for display in the picker modal.
+   * listGitHubPRs
    */
   listGitHubPRs: a
     .mutation()
@@ -845,17 +736,12 @@ const schema = a.schema({
     .authorization((allow) => [allow.authenticated()]),
 
   /**
-   * Score Code Review Assessment
-   *
-   * STREAM 2: Phase 4 - Code Review Scoring Engine
-   * Called by submitCodeReview Lambda after assessment saved
-   * Compares candidate annotations to ground truth, calculates score (0-100)
-   * Returns detailed feedback and severity breakdown
+   * scoreCodeReview
    */
   scoreCodeReview: a
     .mutation()
     .arguments({
-      assessmentId: a.id().required(),
+      challengeSubmissionId: a.id().required(),
       candidateAnnotations: a.json().required(),
       groundTruthAnnotations: a.json().required(),
       reviewerLevel: a.string(),
@@ -863,15 +749,11 @@ const schema = a.schema({
     .returns(a.json())
     .handler(a.handler.function(scoreCodeReview))
     .authorization((allow) => [
-      allow.authenticated(), // Lambda-to-Lambda via IAM
+      allow.authenticated(),
     ]),
 
   /**
-   * Resolve invite token → candidate identity
-   *
-   * Replaces the insecure Candidate.list({ filter: { inviteToken } }) pattern.
-   * Server-side Lambda validates the token and returns ONLY { id, pipelineId, status }.
-   * Name, email, and inviteToken are never returned — prevents cross-candidate enumeration.
+   * resolveToken
    */
   resolveToken: a
     .query()
@@ -882,8 +764,6 @@ const schema = a.schema({
         pipelineId: a.string(),
         status: a.string(),
         name: a.string(),
-        /** Short-lived JWT session token (2h). Used as the Authorization header
-         *  for all subsequent Lambda-authorized candidate API calls. */
         sessionToken: a.string(),
       }),
     )
@@ -891,41 +771,67 @@ const schema = a.schema({
     .authorization((allow) => [allow.publicApiKey()]),
 
   /**
-   * createAssessment (secure)
-   *
-   * Server-side assessment creation that replaces client-side Assessment.create()
-   * via publicApiKey. Validates inviteToken → candidateId mapping, sets ownerId
-   * from the Candidate record's owner field, and prevents duplicate submissions.
-   *
-   * SECURITY: candidateId and ownerId are NEVER accepted from the client.
-   * The inviteToken is the sole identity proof.
+   * getStageConfig
    */
-  submitAssessment: a
+  getStageConfig: a
     .mutation()
     .arguments({
       inviteToken: a.string().required(),
-      challengeId: a.id().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(getNextChallenge))
+    .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
+
+  /**
+   * getChallenge
+   */
+  getChallenge: a
+    .mutation()
+    .arguments({
+      inviteToken: a.string().required(),
+      order: a.integer().required(),
+    })
+    .returns(a.json())
+    .handler(a.handler.function(getChallenge))
+    .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
+
+  /**
+   * submitChallengeResponse
+   */
+  submitChallengeResponse: a
+    .mutation()
+    .arguments({
+      inviteToken: a.string().required(),
+      order: a.integer().required(),
       submission: a.string().required(),
     })
     .returns(
       a.customType({
         success: a.boolean().required(),
-        assessmentId: a.string(),
+        challengeSubmissionId: a.string(),
         error: a.string(),
       }),
     )
-    .handler(a.handler.function(createAssessment))
+    .handler(a.handler.function(submitChallengeResponse))
     .authorization((allow) => [allow.publicApiKey(), allow.custom()]),
 
   /**
+   * resetCandidate
+   */
+  resetCandidate: a
+    .mutation()
+    .arguments({ candidateId: a.id().required() })
+    .returns(
+      a.customType({
+        success: a.boolean().required(),
+        error: a.string(),
+      }),
+    )
+    .handler(a.handler.function(resetCandidate))
+    .authorization((allow) => [allow.authenticated()]),
+
+  /**
    * generateMediaUploadUrl
-   *
-   * Issues a presigned S3 PUT URL for candidate voice/video recording uploads.
-   * Candidates are not Cognito users and cannot use Amplify Storage directly.
-   * This mutation validates the candidateId exists, then returns a 5-minute
-   * presigned URL scoped to candidate-submissions/{candidateId}/{challengeId}.webm.
-   *
-   * Authorization: publicApiKey — candidates invoke this without Cognito auth.
    */
   generateMediaUploadUrl: a
     .mutation()
@@ -946,9 +852,6 @@ const schema = a.schema({
 
   /**
    * parseCandidateCV
-   *
-   * Invoked after a recruiter uploads a candidate CV.
-   * Extracts text from the PDF/Doc in S3 and uses an LLM to parse it into structured data.
    */
   parseCandidateCV: a
     .mutation()

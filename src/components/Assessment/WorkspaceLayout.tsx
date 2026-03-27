@@ -1,20 +1,23 @@
 import { ReactNode } from 'react';
 
 interface WorkspaceLayoutProps {
-  leftPanel: ReactNode | null;
-  centerPanel: ReactNode;
-  rightPanel: ReactNode | null;
+  /** Legacy direct-panel props (used by ChallengeRegistry) */
+  leftPanel?: ReactNode | null;
+  centerPanel?: ReactNode;
+  rightPanel?: ReactNode | null;
+  /** Generic slots (used by StageRenderer) */
+  slots?: Record<string, ReactNode>;
 }
 
 /**
  * WorkspaceLayout - Responsive grid container for challenge panels.
  * Adapts to 1, 2, or 3 column layouts based on panel presence.
  */
-export function WorkspaceLayout({
-  leftPanel,
-  centerPanel,
-  rightPanel,
-}: WorkspaceLayoutProps): JSX.Element {
+export function WorkspaceLayout(props: WorkspaceLayoutProps): JSX.Element {
+  // Support both legacy props and generic slots
+  const leftPanel = props.leftPanel ?? props.slots?.left ?? null;
+  const centerPanel = props.centerPanel ?? props.slots?.center ?? null;
+  const rightPanel = props.rightPanel ?? props.slots?.right ?? null;
   // Determine grid template based on active panels
   let gridTemplate = '1fr';
   if (leftPanel && rightPanel) {

@@ -43,7 +43,7 @@ export const codeReviewFollowUpAgent = defineFunction({
     MISTRAL_AGENT_ID: secret('MISTRAL_AGENT_ID'),
 
     // Database config
-    ASSESSMENT_TABLE_NAME: 'Assessment',
+    CHALLENGE_SUBMISSION_TABLE_NAME: 'ChallengeSubmission',
     CHALLENGE_TABLE_NAME: 'Challenge',
 
     // Mistral model configuration

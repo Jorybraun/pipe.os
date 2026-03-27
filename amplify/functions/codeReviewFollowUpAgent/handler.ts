@@ -45,7 +45,7 @@ const dynamo = new DynamoDBClient({
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const ASSESSMENT_TABLE = process.env.ASSESSMENT_TABLE_NAME ?? 'Assessment';
+const CHALLENGE_SUBMISSION_TABLE = process.env.CHALLENGE_SUBMISSION_TABLE_NAME ?? 'ChallengeSubmission';
 const CHALLENGE_TABLE = process.env.CHALLENGE_TABLE_NAME ?? 'Challenge';
 const MISTRAL_AGENT_ID = process.env.MISTRAL_AGENT_ID ?? '';
 const MODEL = process.env.MISTRAL_MODEL ?? 'mistral-large-latest';
@@ -62,13 +62,13 @@ export async function handler(event: unknown): Promise<FollowUpAgentOutput> {
   );
 
   // Step 1: Validate
-  const { assessmentId } = validateInput(event);
-  console.log('[FollowUpAgent] assessmentId:', assessmentId);
+  const { challengeSubmissionId } = validateInput(event);
+  console.log('[FollowUpAgent] challengeSubmissionId:', challengeSubmissionId);
 
-  // Step 2: Fetch Assessment
-  const assessment = await fetchAssessment(assessmentId);
+  // Step 2: Fetch ChallengeSubmission
+  const assessment = await fetchChallengeSubmission(challengeSubmissionId);
   if (!assessment) {
-    throw new Error(`ASSESSMENT_NOT_FOUND: ${assessmentId}`);
+    throw new Error(`CHALLENGE_SUBMISSION_NOT_FOUND: ${challengeSubmissionId}`);
   }
 
   // Step 3: Fetch Challenge
@@ -91,8 +91,8 @@ export async function handler(event: unknown): Promise<FollowUpAgentOutput> {
 
   console.log('[FollowUpAgent] Generated', { questionCount: questions.length });
 
-  // Step 6: Save to Assessment
-  await saveQuestions(assessmentId, questions);
+  // Step 6: Save to ChallengeSubmission
+  await saveQuestions(challengeSubmissionId, questions);
   console.log('[FollowUpAgent] Questions saved');
 
   const processingTime = Date.now() - startTime;
@@ -254,10 +254,10 @@ function buildShortAnswerContext(
 
 // ─── DynamoDB Helpers ─────────────────────────────────────────────────────────
 
-async function fetchAssessment(assessmentId: string): Promise<AssessmentRecord | null> {
+async function fetchChallengeSubmission(challengeSubmissionId: string): Promise<AssessmentRecord | null> {
   const response = await dynamo.send(new GetItemCommand({
-    TableName: ASSESSMENT_TABLE,
-    Key: marshall({ id: assessmentId }),
+    TableName: CHALLENGE_SUBMISSION_TABLE,
+    Key: marshall({ id: challengeSubmissionId }),
   }));
   if (!response.Item) return null;
   return unmarshall(response.Item) as AssessmentRecord;
@@ -272,15 +272,15 @@ async function fetchChallenge(challengeId: string): Promise<ChallengeRecord | nu
   return unmarshall(response.Item) as ChallengeRecord;
 }
 
-async function saveQuestions(assessmentId: string, questions: FollowUpQuestion[]): Promise<void> {
+async function saveQuestions(challengeSubmissionId: string, questions: FollowUpQuestion[]): Promise<void> {
   const followUpQuestionsJson: FollowUpQuestionsJson = {
     questions,
     answers: [],
     generatedAt: new Date().toISOString(),
   };
   await dynamo.send(new UpdateItemCommand({
-    TableName: ASSESSMENT_TABLE,
-    Key: marshall({ id: assessmentId }),
+    TableName: CHALLENGE_SUBMISSION_TABLE,
+    Key: marshall({ id: challengeSubmissionId }),
     UpdateExpression: 'SET followUpQuestionsJson = :fq',
     ExpressionAttributeValues: marshall({ ':fq': JSON.stringify(followUpQuestionsJson) }),
     ReturnValues: ReturnValue.NONE,

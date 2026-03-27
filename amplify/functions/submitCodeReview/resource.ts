@@ -29,13 +29,7 @@ export const submitCodeReview = defineFunction({
 
   // Environment variables
   environment: {
-    // DynamoDB table name (provided by Amplify)
-    // ASSESSMENT_TABLE_NAME is injected by amplify/data/resource.ts
-
-    // AWS region is automatically provided by Lambda runtime
-    // Access via process.env.AWS_REGION in handler code
-
-    // Logging
+    CHALLENGE_SUBMISSION_TABLE_NAME: 'ChallengeSubmission',
     LOG_LEVEL: 'INFO',
   },
 

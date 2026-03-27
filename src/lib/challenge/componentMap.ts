@@ -13,9 +13,11 @@ import { TextareaPanel } from '../../components/Panels/TextareaPanel';
 import { PreviewPanel } from '../../components/Panels/PreviewPanel';
 import { VerdictPanel } from '../../components/Panels/VerdictPanel';
 import { DiffPanel, type Annotation } from '../../components/Assessment/DiffPanel';
+import { VoicePanel } from '../../components/Panels/VoicePanel';
 
 // Layouts
 import { WorkspaceLayout } from '../../components/Assessment/WorkspaceLayout';
+import { FullBleedLayout } from '../../components/Assessment/FullBleedLayout';
 
 // ---------------------------------------------------------------------------
 // Connected panels — HOC wrappers that bridge InterviewContext → panel props
@@ -100,6 +102,12 @@ const ConnectedVerdictPanel = connectInterview(VerdictPanel, (ctx) => ({
   onSummaryChange: (summary: string) => ctx.updateSubmission({ summary }),
 }));
 
+const ConnectedVoicePanel = connectInterview(VoicePanel, (ctx) => ({
+  question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
+  transcript: (ctx.submission.text as string) || '',
+  onTranscriptChange: (text: string) => ctx.updateSubmission({ text, inputMode: 'voice' }),
+}));
+
 // ---------------------------------------------------------------------------
 // Component map — flat type → component lookup
 // ---------------------------------------------------------------------------
@@ -118,9 +126,11 @@ export const COMPONENT_MAP: Record<string, ComponentType<any>> = {
   'preview': ConnectedPreviewPanel,
   'diff': ConnectedDiffPanel,
   'verdict': ConnectedVerdictPanel,
+  'voice': ConnectedVoicePanel,
 
   // Layouts
   'workspace': WorkspaceLayout,
+  'fullbleed': FullBleedLayout,
 
   // TODO: connect these
   // 'voice': ConnectedVoicePanel,

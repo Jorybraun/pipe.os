@@ -57,15 +57,17 @@ export interface FollowUpAnswer {
  * Input for the follow-up agent — received from AppSync mutation arguments.
  */
 export interface FollowUpAgentInput {
-  assessmentId: string;
+  challengeSubmissionId: string;
 }
 
 /**
- * Raw Assessment record from DynamoDB (only fields we need).
+ * Raw ChallengeSubmission record from DynamoDB (only fields we need).
+ * Named AssessmentRecord for backward compatibility with existing code references.
  */
 export interface AssessmentRecord {
   id: string;
   challengeId?: string;
+  assessmentId?: string;
   submission?: unknown;           // Raw JSON blob
   codeReviewAnnotations?: unknown;
   codeReviewSummary?: string;

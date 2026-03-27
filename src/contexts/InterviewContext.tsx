@@ -80,13 +80,14 @@ export function InterviewProvider({
     setRunState({ status: 'idle', logs: [] });
   }, [currentChallenge.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Notify parent of submission changes via effect (not during render)
+  useEffect(() => {
+    onSubmissionChange?.(submission);
+  }, [submission, onSubmissionChange]);
+
   const updateSubmission = useCallback((patch: Record<string, unknown>) => {
-    setSubmission((prev) => {
-      const next = { ...prev, ...patch };
-      onSubmissionChange?.(next);
-      return next;
-    });
-  }, [onSubmissionChange]);
+    setSubmission((prev) => ({ ...prev, ...patch }));
+  }, []);
 
   const canAdvance = currentChallenge.isComplete(submission);
 

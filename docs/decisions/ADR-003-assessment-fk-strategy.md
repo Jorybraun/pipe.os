@@ -1,7 +1,7 @@
 # ADR-003: Assessment Holds Both stageId and challengeId
 
 **Date:** 2026-02-26
-**Status:** Accepted
+**Status:** Superseded by [ADR-023](ADR-023-assessment-challenge-submission-split.md)
 **Deciders:** Jory (solo founder)
 
 ---

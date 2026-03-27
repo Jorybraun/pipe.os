@@ -57,7 +57,7 @@ interface SeverityBreakdown {
 // Constants
 // ============================================================
 
-const ASSESSMENT_TABLE = process.env.ASSESSMENT_TABLE_NAME || 'Assessment';
+const CHALLENGE_SUBMISSION_TABLE = process.env.CHALLENGE_SUBMISSION_TABLE_NAME || 'ChallengeSubmission';
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
 const dbClient = new DynamoDBClient({ region: AWS_REGION });
@@ -84,14 +84,14 @@ const SEVERITY_ORDER: SeverityType[] = ['critical', 'major', 'minor'];
 export async function handler(event: any): Promise<ScoreCodeReviewResponse> {
   try {
     console.log('[scoreCodeReview] Request received', {
-      assessmentId: event.arguments?.assessmentId,
+      challengeSubmissionId: event.arguments?.challengeSubmissionId,
       candidateAnnotationCount: event.arguments?.candidateAnnotations?.length,
       groundTruthAnnotationCount: event.arguments?.groundTruthAnnotations?.length,
     });
 
     // Extract arguments
     const request: ScoreCodeReviewInput = {
-      assessmentId: event.arguments?.assessmentId,
+      assessmentId: event.arguments?.challengeSubmissionId,
       candidateAnnotations: event.arguments?.candidateAnnotations || [],
       groundTruthAnnotations: event.arguments?.groundTruthAnnotations || [],
       reviewerLevel: event.arguments?.reviewerLevel || 'mid',
@@ -117,14 +117,14 @@ export async function handler(event: any): Promise<ScoreCodeReviewResponse> {
     });
 
     // ============================================
-    // 3. Save score to Assessment
+    // 3. Save score to ChallengeSubmission
     // ============================================
-    console.log('💾 Updating Assessment with score...');
+    console.log('Updating ChallengeSubmission with score...');
 
     const updateParams = {
-      TableName: ASSESSMENT_TABLE,
+      TableName: CHALLENGE_SUBMISSION_TABLE,
       Key: marshall({ id: request.assessmentId }),
-      UpdateExpression: 'SET score = :score, feedbackNotes = :feedback, scoredAt = :scoredAt',
+      UpdateExpression: 'SET score = :score, feedback = :feedback, scoredAt = :scoredAt',
       ExpressionAttributeValues: marshall({
         ':score': result.score,
         ':feedback': result.feedback,
@@ -135,8 +135,8 @@ export async function handler(event: any): Promise<ScoreCodeReviewResponse> {
 
     const updateResponse = await dbClient.send(new UpdateItemCommand(updateParams));
 
-    console.log('✅ Assessment updated with score', {
-      assessmentId: request.assessmentId,
+    console.log('ChallengeSubmission updated with score', {
+      challengeSubmissionId: request.assessmentId,
     });
 
     // ============================================

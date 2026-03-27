@@ -6,6 +6,22 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (ADR-023 — Assessment/ChallengeSubmission data model)
+- `Assessment` model redesigned: stage-level entity (one per candidate per stage), `status` enum, `startedAt`, `completedAt`, `challengeSubmissions` hasMany
+- `ChallengeSubmission` model: per-challenge entity with `submission` (json), `score`, `feedback`, `scoredAt`, `followUpQuestionsJson`, `codeReviewAnnotations`, `codeReviewSummary`
+- `resetCandidate` Lambda: hard-deletes ChallengeSubmissions + CandidateMedia, resets Assessments to PENDING, unclaims invite token, sets candidate status=INVITED
+- Two-call secure candidate progression: `getStageConfig` (types + order only, no IDs) + `getChallenge(order)` (content by position index)
+- `submitChallengeResponse` updated to take `order` instead of `challengeId` — resolves all IDs server-side
+- `getStageConfig` now updates `Candidate.currentStageId` so Kanban reflects the active stage
+- Voice panel: `ConnectedVoicePanel` registered in `COMPONENT_MAP` as `'voice'`
+
+#### Fixed (Assessment/submission flow)
+- `CandidateProfilePage` reads scores/feedback from `ChallengeSubmission` instead of `Assessment`
+- FOLLOW_UP challenges now create a `ChallengeSubmission` record so `getStageConfig` marks them complete
+- Submission stored as DynamoDB Map (not String) — `submitChallengeResponse` uses `marshall(record)` with pre-parsed JSON
+- `OverviewPage` reset now surfaces actual AppSync/Lambda error instead of generic "Reset failed" fallback
+- `getStageConfig` Candidate table grant upgraded to read-write (needed for `currentStageId` updates)
+
 #### Added (Composable challenge system — ADR-005 restoration)
 - `InterviewProvider` + `useInterview()` context — holds challenge queue, submission, navigation, run state. No prop drilling.
 - `StageConfig` / `ChallengeNode` types — standardized config describing shells, layout, panels, initialSubmission
@@ -26,6 +42,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - FOLLOW_UP dedicated challenge editor: count selector (1–5), question type toggles (text/MCQ/voice/video/code), category toggles (WHY/DEPTH/FIX/MISSED/PRIORITY)
 - Auto-creation of FOLLOW_UP challenge on save when enableFollowUp is toggled on (with duplicate detection)
 - Preview button in challenge editor header
+
+#### Fixed (Session persistence after one-time token claiming)
+- `src/hooks/useAssessment.ts` — cache candidate data in sessionStorage alongside JWT; on page refresh, restore from cache instead of re-calling resolveToken (which now returns null after claiming). Detects JWT expiry on lambda-auth failures and surfaces SESSION_EXPIRED. `reset()` clears cache for clean retry.
+- `src/pages/CandidateAssessmentPage.tsx` — add explicit SESSION_EXPIRED error state with clear messaging; group terminal errors (invalid, completed, expired) to hide retry button when retry won't help.
+- `src/pages/OverviewPage.tsx` — copy-link now strips `CLAIMED::` prefix so recruiter URLs are always valid; added reset button (amber RotateCcw icon) on claimed candidates that unclaims the token, deletes assessments, and resets status to INVITED.
+- `scripts/resetCandidateToken.ts` — CLI script to reset claimed tokens (accepts token string or candidateId).
 
 #### Added (Phase C — JWT session token architecture)
 - `amplify/functions/_shared/jwt.ts` — zero-dependency JWT sign/verify using HMAC-SHA256 (8 unit tests)

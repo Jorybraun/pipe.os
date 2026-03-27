@@ -4,7 +4,7 @@ import type { StageConfig, ChallengeNode, PanelSlots } from './types';
 // Raw DB types (from useAssessment)
 // ---------------------------------------------------------------------------
 
-interface RawChallenge {
+export interface RawChallenge {
   id: string;
   type: string | null;
   title: string;
@@ -19,7 +19,7 @@ interface RawChallenge {
   githubPrDescription?: string | null;
 }
 
-interface RawStage {
+export interface RawStage {
   id: string;
   title?: string | null;
   order: number | null;

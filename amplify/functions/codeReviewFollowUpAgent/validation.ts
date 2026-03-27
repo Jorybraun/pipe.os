@@ -19,13 +19,13 @@ export function validateInput(event: unknown): FollowUpAgentInput {
   // AppSync mutations pass arguments under event.arguments
   const args = (e['arguments'] ?? e) as Record<string, unknown>;
 
-  const assessmentId = args['assessmentId'];
+  const challengeSubmissionId = args['challengeSubmissionId'];
 
-  if (typeof assessmentId !== 'string' || assessmentId.trim().length === 0) {
-    throw new Error('VALIDATION: assessmentId is required');
+  if (typeof challengeSubmissionId !== 'string' || challengeSubmissionId.trim().length === 0) {
+    throw new Error('VALIDATION: challengeSubmissionId is required');
   }
 
-  return { assessmentId: assessmentId.trim() };
+  return { challengeSubmissionId: challengeSubmissionId.trim() };
 }
 
 /**

@@ -34,6 +34,11 @@ import { resolveToken } from "./functions/resolveToken/resource";
 import { parseCandidateCV } from "./functions/parseCandidateCV/resource";
 import { generateMediaUploadUrl } from "./functions/generateMediaUploadUrl/resource";
 import { createAssessment } from "./functions/createAssessment/resource";
+import { submitChallengeResponse } from "./functions/submitChallengeResponse/resource";
+import { getNextChallenge } from "./functions/getNextChallenge/resource";
+import { getChallenge } from "./functions/getChallenge/resource";
+import { resetCandidate } from "./functions/resetCandidate/resource";
+import { intelligenceReportAgent } from "./functions/intelligenceReportAgent/resource";
 import { storage } from "./storage/resource";
 
 export const backend = defineBackend({
@@ -48,6 +53,11 @@ export const backend = defineBackend({
   parseCandidateCV,
   generateMediaUploadUrl,
   createAssessment,
+  submitChallengeResponse,
+  getNextChallenge,
+  getChallenge,
+  resetCandidate,
+  intelligenceReportAgent,
   fetchGitHubPR,
   listGitHubPRs,
   scoreCodeReview,
@@ -65,15 +75,25 @@ export const backend = defineBackend({
 });
 
 // 1. DYNAMODB ACCESS & STREAM WIRING
+// Feature-flagged: SchedulingConnection model removed from schema (post-MVP)
 const schedulingConnectionTable =
-  backend.data.resources.tables["SchedulingConnection"];
+  backend.data.resources.tables["SchedulingConnection"] ?? null;
 const scheduledInterviewTable =
   backend.data.resources.tables["ScheduledInterview"];
 const candidateTable = backend.data.resources.tables["Candidate"];
 const stageTable = backend.data.resources.tables["Stage"];
 const pipelineTable = backend.data.resources.tables["Pipeline"];
 const assessmentTable = backend.data.resources.tables["Assessment"];
+const challengeSubmissionTable = backend.data.resources.tables["ChallengeSubmission"];
 const challengeTable = backend.data.resources.tables["Challenge"];
+
+// Debug: verify all tables resolved
+for (const [name, table] of Object.entries({
+  scheduledInterviewTable, candidateTable,
+  stageTable, pipelineTable, assessmentTable, challengeSubmissionTable, challengeTable,
+})) {
+  if (!table) throw new Error(`Table "${name}" is undefined — check schema model name`);
+}
 
 // ─── INJECT REAL TABLE NAMES INTO AI LAMBDAS ─────────────────────────────────
 // Amplify Gen 2 generates DynamoDB table names with a hash suffix (e.g. Assessment-abc123-sandbox).
@@ -89,12 +109,16 @@ scoringAgentLambda.addEnvironment(
   "CHALLENGE_TABLE_NAME",
   challengeTable.tableName,
 );
+scoringAgentLambda.addEnvironment(
+  "CHALLENGE_SUBMISSION_TABLE_NAME",
+  challengeSubmissionTable.tableName,
+);
 
 const followUpAgentLambda = backend.codeReviewFollowUpAgent.resources
   .lambda as unknown as LambdaFunction;
 followUpAgentLambda.addEnvironment(
-  "ASSESSMENT_TABLE_NAME",
-  assessmentTable.tableName,
+  "CHALLENGE_SUBMISSION_TABLE_NAME",
+  challengeSubmissionTable.tableName,
 );
 followUpAgentLambda.addEnvironment(
   "CHALLENGE_TABLE_NAME",
@@ -155,6 +179,70 @@ createAssessmentLambda.addEnvironment(
 candidateTable.grantReadData(createAssessmentLambda);
 assessmentTable.grantReadWriteData(createAssessmentLambda);
 
+// submitChallengeResponse — inject real table names and grant DynamoDB access
+const submitChallengeResponseLambda = backend.submitChallengeResponse.resources
+  .lambda as unknown as LambdaFunction;
+submitChallengeResponseLambda.addEnvironment(
+  "CANDIDATE_TABLE_NAME",
+  candidateTable.tableName,
+);
+submitChallengeResponseLambda.addEnvironment(
+  "ASSESSMENT_TABLE_NAME",
+  assessmentTable.tableName,
+);
+submitChallengeResponseLambda.addEnvironment(
+  "CHALLENGE_SUBMISSION_TABLE_NAME",
+  challengeSubmissionTable.tableName,
+);
+candidateTable.grantReadData(submitChallengeResponseLambda);
+assessmentTable.grantReadData(submitChallengeResponseLambda);
+stageTable.grantReadData(submitChallengeResponseLambda);
+challengeTable.grantReadData(submitChallengeResponseLambda);
+challengeSubmissionTable.grantReadWriteData(submitChallengeResponseLambda);
+submitChallengeResponseLambda.addEnvironment("STAGE_TABLE_NAME", stageTable.tableName);
+submitChallengeResponseLambda.addEnvironment("CHALLENGE_TABLE_NAME", challengeTable.tableName);
+
+// getNextChallenge — server-side challenge progression
+const getNextChallengeLambda = backend.getNextChallenge.resources
+  .lambda as unknown as LambdaFunction;
+getNextChallengeLambda.addEnvironment("CANDIDATE_TABLE_NAME", candidateTable.tableName);
+getNextChallengeLambda.addEnvironment("STAGE_TABLE_NAME", stageTable.tableName);
+getNextChallengeLambda.addEnvironment("CHALLENGE_TABLE_NAME", challengeTable.tableName);
+getNextChallengeLambda.addEnvironment("ASSESSMENT_TABLE_NAME", assessmentTable.tableName);
+getNextChallengeLambda.addEnvironment("CHALLENGE_SUBMISSION_TABLE_NAME", challengeSubmissionTable.tableName);
+candidateTable.grantReadWriteData(getNextChallengeLambda);
+stageTable.grantReadData(getNextChallengeLambda);
+challengeTable.grantReadData(getNextChallengeLambda);
+assessmentTable.grantReadWriteData(getNextChallengeLambda);
+challengeSubmissionTable.grantReadData(getNextChallengeLambda);
+
+// getChallenge — returns single challenge content by order position
+const getChallengeLambda = backend.getChallenge.resources
+  .lambda as unknown as LambdaFunction;
+getChallengeLambda.addEnvironment("CANDIDATE_TABLE_NAME", candidateTable.tableName);
+getChallengeLambda.addEnvironment("STAGE_TABLE_NAME", stageTable.tableName);
+getChallengeLambda.addEnvironment("CHALLENGE_TABLE_NAME", challengeTable.tableName);
+getChallengeLambda.addEnvironment("ASSESSMENT_TABLE_NAME", assessmentTable.tableName);
+getChallengeLambda.addEnvironment("CHALLENGE_SUBMISSION_TABLE_NAME", challengeSubmissionTable.tableName);
+candidateTable.grantReadData(getChallengeLambda);
+stageTable.grantReadData(getChallengeLambda);
+challengeTable.grantReadData(getChallengeLambda);
+assessmentTable.grantReadData(getChallengeLambda);
+challengeSubmissionTable.grantReadData(getChallengeLambda);
+
+// resetCandidate — hard-deletes ChallengeSubmissions + CandidateMedia, resets Assessments + Candidate
+const candidateMediaTable = backend.data.resources.tables["CandidateMedia"];
+const resetCandidateLambda = backend.resetCandidate.resources
+  .lambda as unknown as LambdaFunction;
+resetCandidateLambda.addEnvironment("CANDIDATE_TABLE_NAME", candidateTable.tableName);
+resetCandidateLambda.addEnvironment("ASSESSMENT_TABLE_NAME", assessmentTable.tableName);
+resetCandidateLambda.addEnvironment("CHALLENGE_SUBMISSION_TABLE_NAME", challengeSubmissionTable.tableName);
+resetCandidateLambda.addEnvironment("CANDIDATE_MEDIA_TABLE_NAME", candidateMediaTable.tableName);
+candidateTable.grantReadWriteData(resetCandidateLambda);
+assessmentTable.grantReadWriteData(resetCandidateLambda);
+challengeSubmissionTable.grantReadWriteData(resetCandidateLambda);
+candidateMediaTable.grantReadWriteData(resetCandidateLambda);
+
 // Grant Textract permissions — DetectDocumentText reads the S3 object via S3Object reference,
 // which uses the Lambda's IAM role. Textract also needs s3:GetObject on the bucket.
 parseCandidateCVLambda.addToRolePolicy(
@@ -169,8 +257,9 @@ parseCandidateCVLambda.addToRolePolicy(
 // resourceGroupName: 'data' alone does NOT grant IAM table permissions.
 // Must explicitly grant read/write access so GetItem/UpdateItem succeed.
 assessmentTable.grantReadWriteData(scoringAgentLambda);
+challengeSubmissionTable.grantReadWriteData(scoringAgentLambda);
 challengeTable.grantReadData(scoringAgentLambda);
-assessmentTable.grantReadWriteData(followUpAgentLambda);
+challengeSubmissionTable.grantReadWriteData(followUpAgentLambda);
 challengeTable.grantReadData(followUpAgentLambda);
 
 // ─── BREAK CIRCULAR DEPENDENCY: SSM FOR TABLE NAMES ──────────────────────────
@@ -196,14 +285,16 @@ const TABLE_NAME_PARAMS = {
   DEVCONTAINERSESSION: `${ssmPrefix}/tables/dev-container-session`,
 };
 
-new StringParameter(
-  schedulingConnectionTable,
-  "SchedulingConnectionNameParam",
-  {
-    parameterName: TABLE_NAME_PARAMS.SCHEDULINGCONNECTION,
-    stringValue: schedulingConnectionTable.tableName,
-  },
-);
+if (schedulingConnectionTable) {
+  new StringParameter(
+    schedulingConnectionTable,
+    "SchedulingConnectionNameParam",
+    {
+      parameterName: TABLE_NAME_PARAMS.SCHEDULINGCONNECTION,
+      stringValue: schedulingConnectionTable.tableName,
+    },
+  );
+}
 new StringParameter(scheduledInterviewTable, "ScheduledInterviewNameParam", {
   parameterName: TABLE_NAME_PARAMS.SCHEDULEDINTERVIEW,
   stringValue: scheduledInterviewTable.tableName,
@@ -221,12 +312,15 @@ new StringParameter(pipelineTable, "PipelineNameParam", {
   stringValue: pipelineTable.tableName,
 });
 
+// Feature-flagged: DevContainerSession model removed from schema (post-MVP)
 const devContainerSessionTable =
-  backend.data.resources.tables["DevContainerSession"];
-new StringParameter(devContainerSessionTable, "DevContainerSessionNameParam", {
-  parameterName: TABLE_NAME_PARAMS.DEVCONTAINERSESSION,
-  stringValue: devContainerSessionTable.tableName,
-});
+  backend.data.resources.tables["DevContainerSession"] ?? null;
+if (devContainerSessionTable) {
+  new StringParameter(devContainerSessionTable, "DevContainerSessionNameParam", {
+    parameterName: TABLE_NAME_PARAMS.DEVCONTAINERSESSION,
+    stringValue: devContainerSessionTable.tableName,
+  });
+}
 
 // ─── PERMISSIONS & ENV FOR HANDLERS (Manual to avoid CFN Ref) ────────────────
 const webhookLambda = backend.schedulingWebhook.resources
@@ -290,7 +384,7 @@ notificationStreamLambda.addToRolePolicy(
       scheduledInterviewTable.tableArn,
       stageTable.tableArn,
       pipelineTable.tableArn,
-      schedulingConnectionTable.tableArn,
+      ...(schedulingConnectionTable ? [schedulingConnectionTable.tableArn] : []),
     ],
   }),
 );
@@ -326,10 +420,12 @@ notificationStreamLambda.addEnvironment(
   "SCHEDULEDINTERVIEW_TABLE_NAME",
   scheduledInterviewTable.tableName,
 );
-notificationStreamLambda.addEnvironment(
-  "SCHEDULINGCONNECTION_TABLE_NAME",
-  schedulingConnectionTable.tableName,
-);
+if (schedulingConnectionTable) {
+  notificationStreamLambda.addEnvironment(
+    "SCHEDULINGCONNECTION_TABLE_NAME",
+    schedulingConnectionTable.tableName,
+  );
+}
 
 // 2. SES & COGNITO PERMISSIONS (Shared by both notification services)
 const { cfnUserPool } = backend.auth.resources.cfnResources;

@@ -34,7 +34,7 @@ You do **not** need an ADR for every feature decision — only ones with archite
 |---|---|---|---|
 | [ADR-001](ADR-001-amplify-gen2-backend.md) | Use AWS Amplify Gen 2 as backend platform | Accepted | 2025-12-26 |
 | [ADR-002](ADR-002-challenge-architecture.md) | Stage = container, Challenge = atomic unit | Accepted | 2026-02-26 |
-| [ADR-003](ADR-003-assessment-fk-strategy.md) | Assessment holds both stageId and challengeId | Accepted | 2026-02-26 |
+| [ADR-003](ADR-003-assessment-fk-strategy.md) | Assessment holds both stageId and challengeId | Superseded | 2026-02-26 |
 | [ADR-004](ADR-004-static-challenge-library.md) | Static TypeScript files for challenge library at MVP | Accepted | 2026-02-27 |
 | [ADR-005](ADR-005-composable-challenge-system.md) | Composable Shell + Panel challenge architecture | Accepted | 2026-02-27 |
 | [ADR-006](ADR-006-submission-type-system.md) | Discriminated union for challenge submission types | Accepted | 2026-02-27 |
@@ -54,3 +54,4 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-020](ADR-020-follow-up-agent-architecture.md) | Follow-Up Question Agent — async, 5 SHORT_ANSWER questions per CODE_REVIEW | Accepted | 2026-03-20 |
 | [ADR-021](ADR-021-deterministic-code-review-scoring.md) | Deterministic algorithm for CODE_REVIEW scoring (no LLM) | Accepted | 2026-03-20 |
 | [ADR-022](ADR-022-candidate-media-storage.md) | Candidate Media Storage — CandidateMedia model + pipeAssets bucket | Accepted | 2026-03-25 |
+| [ADR-023](ADR-023-assessment-challenge-submission-split.md) | Split Assessment into stage-level Assessment + ChallengeSubmission | Proposed | 2026-03-26 |
