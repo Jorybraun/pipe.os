@@ -42,3 +42,43 @@ export interface CodeReviewConfig {
 export interface QuizMCQConfig {
   correctOptionId: string;
 }
+
+// ---------------------------------------------------------------------------
+// CODE_IMPLEMENTATION types
+// ---------------------------------------------------------------------------
+
+export interface VirtualFileServer {
+  content: string;
+  language: string;
+  readOnly?: boolean;
+}
+
+export type VirtualFSServer = Record<string, VirtualFileServer>;
+
+export interface CodeImplPublicConfig {
+  mode: 'backend' | 'frontend';
+  language: string;
+  files: VirtualFSServer;
+  sampleTestFiles?: VirtualFSServer;
+}
+
+export interface CodeImplServerConfig {
+  hiddenTestFiles: VirtualFSServer;
+  testLanguage: string;
+  scoringWeights?: { sampleTests: number; hiddenTests: number };
+}
+
+export interface CodeImplTestResult {
+  name: string;
+  status: 'pass' | 'fail' | 'error';
+  error?: string;
+  durationMs?: number;
+}
+
+export interface CodeImplFeedback {
+  score: number;
+  summary: string;
+  sampleTests: CodeImplTestResult[];
+  hiddenTests: { passed: number; total: number };
+  executionError?: string;
+}

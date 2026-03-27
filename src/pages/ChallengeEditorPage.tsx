@@ -1,13 +1,11 @@
-import { useState, useCallback, type ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useEditorChallenge } from '../hooks/useEditorChallenge';
-import { runTests, type RunResult } from '../lib/challenge/testRunner';
 import type { EditorFormProps } from '../components/Editor/types';
 
 // Editor components
 import { EditorHeader } from '../components/Editor/EditorHeader';
-import { ConsoleStrip } from '../components/Editor/ConsoleStrip';
 import { PreviewOverlay } from '../components/Editor/PreviewOverlay';
 import { CodeImplEditor } from '../components/Editor/CodeImplEditor';
 import { CodeReviewEditor } from '../components/Editor/CodeReviewEditor';
@@ -49,27 +47,6 @@ export default function ChallengeEditorPage(): JSX.Element {
   } = useEditorChallenge(challengeId, pipelineId);
 
   const [previewMode, setPreviewMode] = useState<'closed' | 'challenge' | 'stage'>('closed');
-  const [runResult, setRunResult] = useState<RunResult | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-
-  // -------------------------------------------------------------------------
-  // Test runner
-  // -------------------------------------------------------------------------
-
-  const handleRunTests = useCallback(async () => {
-    if (!challenge || challenge.type !== 'CODE_IMPLEMENTATION') return;
-    const starterCode = String(challenge.config?.starterCode || '');
-    const testCode = String(challenge.serverConfig?.testCode || '');
-    const testLanguage = String(
-      challenge.serverConfig?.testLanguage || challenge.config?.language || 'javascript',
-    ).toLowerCase();
-
-    setIsRunning(true);
-    setRunResult(null);
-    const result = await runTests(starterCode, testCode, testLanguage);
-    setRunResult(result);
-    setIsRunning(false);
-  }, [challenge]);
 
   // -------------------------------------------------------------------------
   // Loading / empty states
@@ -129,9 +106,9 @@ export default function ChallengeEditorPage(): JSX.Element {
         challenge={challenge}
         onChange={setChallenge}
         isSaving={isSaving}
-        isRunning={isRunning}
+        isRunning={false}
         onBack={() => navigate(-1)}
-        onRunTests={handleRunTests}
+        onRunTests={() => {/* handled internally by CodeImplEditor */}}
         onPreview={() => setPreviewMode('challenge')}
         {...(challenge.stageId ? { onPreviewStage: () => setPreviewMode('stage') } : {})}
         onClone={handleClone}
@@ -139,14 +116,6 @@ export default function ChallengeEditorPage(): JSX.Element {
       />
 
       {formContent}
-
-      {challenge.type === 'CODE_IMPLEMENTATION' && (
-        <ConsoleStrip
-          result={runResult}
-          isRunning={isRunning}
-          onClear={() => setRunResult(null)}
-        />
-      )}
 
       {previewMode !== 'closed' && (
         <PreviewOverlay

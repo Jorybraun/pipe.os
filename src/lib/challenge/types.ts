@@ -52,3 +52,6 @@ export interface RunState {
   error?: string;
   durationMs?: number;
 }
+
+// Re-export VirtualFS types for convenience
+export type { VirtualFile, VirtualFS, TestCaseResult, EnhancedRunResult } from './virtualFS';

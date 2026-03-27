@@ -40,19 +40,19 @@ export const codeReviewFollowUpAgent = defineFunction({
   // Environment variables
   environment: {
     MISTRAL_API_KEY: secret('MISTRAL_API_KEY'),
-    MISTRAL_AGENT_ID: secret('MISTRAL_AGENT_ID'),
 
     // Database config
     CHALLENGE_SUBMISSION_TABLE_NAME: 'ChallengeSubmission',
     CHALLENGE_TABLE_NAME: 'Challenge',
 
-    // Mistral model configuration
-    MISTRAL_MODEL: 'mistral-large-latest',
+    // Mistral model configuration — small model is sufficient for follow-up
+    // question generation (formulaic task, doesn't need large model reasoning)
+    MISTRAL_MODEL: 'mistral-small-latest',
     MODEL_MAX_TOKENS: '2048',
 
-    // Cost tracking (USD per million tokens — Mistral Large 2407 on Bedrock)
-    MODEL_INPUT_COST_PER_M: '3',
-    MODEL_OUTPUT_COST_PER_M: '9',
+    // Cost tracking (USD per million tokens — Mistral Small)
+    MODEL_INPUT_COST_PER_M: '0.2',
+    MODEL_OUTPUT_COST_PER_M: '0.6',
 
     // Budget
     COST_BUDGET_PER_SESSION: '0.10',

@@ -552,6 +552,109 @@ const schema = a.schema({
     ]),
 
   /**
+   * SchedulingConnection Model
+   */
+  SchedulingConnection: a
+    .model({
+      recruiterId: a.string().required(),
+      providerId: a.enum(["CALENDLY", "CAL_COM"]),
+      accessToken: a.string().required(),
+      refreshToken: a.string(),
+      tokenExpiry: a.datetime(),
+      accountEmail: a.string(),
+      accountName: a.string(),
+      webhookSecret: a.string(),
+      webhookId: a.string(),
+      status: a.enum(["ACTIVE", "EXPIRED", "REVOKED"]),
+      connectedAt: a.datetime().required(),
+      lastSyncAt: a.datetime(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  /**
+   * RoleContext Model
+   */
+  RoleContext: a
+    .model({
+      owner: a.string(),
+      title: a.string(),
+      level: a.enum([
+        "junior",
+        "mid",
+        "senior",
+        "staff",
+        "principal",
+        "lead",
+        "manager",
+      ]),
+      department: a.string(),
+      workModel: a.enum(["remote", "hybrid", "onsite"]),
+      teamSize: a.string(),
+      reportsTo: a.string(),
+      stack: a.string().array(),
+      context: a.json(),
+      exchanges: a.json(),
+      status: a.enum(["baseline", "exploring", "almost_ready", "ready"]),
+      gaps: a.string().array(),
+      userSignals: a.json(),
+      jobDescription: a.json(),
+      candidateFilters: a.json(),
+      suggestedStages: a.json(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
+  /**
+   * RepoTemplate Model
+   */
+  RepoTemplate: a
+    .model({
+      repoId: a.string().required(),
+      app: a.string().required(),
+      type: a.enum(["CODE_REVIEW", "CODE_IMPLEMENTATION"]),
+      title: a.string().required(),
+      description: a.string(),
+      difficulty: a.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]),
+      estimatedMinutes: a.integer().required(),
+      s3Key: a.string().required(),
+      metadataS3Key: a.string().required(),
+      version: a.string().required(),
+      instructions: a.string().required(),
+      scoring: a.json().required(),
+    })
+    .secondaryIndexes((index) => [
+      index("repoId").name("repoTemplatesByRepoId"),
+      index("difficulty").name("repoTemplatesByDifficulty"),
+    ])
+    .authorization((allow) => [
+      allow.owner(),
+      allow.publicApiKey().to(["read"]),
+    ]),
+
+  /**
+   * DevContainerSession Model
+   */
+  DevContainerSession: a
+    .model({
+      taskArn: a.string().required(),
+      sessionId: a.string().required(),
+      status: a.enum([
+        "PROVISIONING",
+        "BOOTING",
+        "READY",
+        "STOPPING",
+        "ERROR",
+      ]),
+      url: a.string(),
+      albTargetGroupArn: a.string(),
+      albListenerRuleArn: a.string(),
+    })
+    .identifier(["taskArn"])
+    .authorization((allow) => [
+      allow.authenticated(),
+      allow.publicApiKey().to(["create", "update"]),
+    ]),
+
+  /**
    * AI Agent Mutations
    */
   generateQuestions: a

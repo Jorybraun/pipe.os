@@ -1,4 +1,5 @@
 import type { StageConfig, ChallengeNode, PanelSlots } from './types';
+import { legacyToVFS, extractEditableFiles, type VirtualFS } from './virtualFS';
 
 // ---------------------------------------------------------------------------
 // Raw DB types (from useAssessment)
@@ -57,16 +58,29 @@ type BlueprintResolver = (config: Record<string, unknown>) => Blueprint;
  *  type-specific knowledge lives. Everything else is generic. */
 const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
   CODE_IMPLEMENTATION: (config) => {
-    const subtype = (config.subtype as string) ?? 'WRITE_FUNCTION';
+    const mode = (config.mode as string) ?? 'backend';
+    // Normalize files: support both new VirtualFS and legacy starterCode
+    const files: VirtualFS = (config.files as VirtualFS) ?? legacyToVFS(config);
+    const editableFiles = extractEditableFiles(files);
+
     const base = {
       shells: [] as string[],
-      initialSubmission: { code: (config.starterCode as string) || '' },
+      initialSubmission: { files: editableFiles },
       isComplete: () => true, // code challenges always submittable
     };
-    if (subtype === 'BUILD_COMPONENT') {
-      return { ...base, layout: 'workspace-browser', panels: { left: ['problem'], center: ['monaco'], right: ['preview'] } };
+
+    if (mode === 'frontend') {
+      return {
+        ...base,
+        layout: 'code-browser',
+        panels: { left: ['problem'], center: ['code-editor'], right: ['code-preview'], bottom: ['console'] },
+      };
     }
-    return { ...base, layout: 'workspace', panels: { left: ['problem'], center: ['monaco'], right: ['tests'], bottom: ['console'] } };
+    return {
+      ...base,
+      layout: 'code-workspace',
+      panels: { left: ['problem'], center: ['code-editor'], bottom: ['console'] },
+    };
   },
 
   CODE_REVIEW: () => ({

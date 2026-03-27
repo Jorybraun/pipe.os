@@ -1,25 +1,193 @@
-import { Shield, ChevronDown, Settings } from 'lucide-react';
+// ---------------------------------------------------------------------------
+// CodeImplEditor — recruiter challenge editor for CODE_IMPLEMENTATION
+//
+// Tabbed layout: INSTRUCTIONS | CODE (multi-file) | SAMPLE_TESTS | HIDDEN_TESTS
+// Resizable sidebar with mode selector, language, file manager, follow-up.
+// Docked console at bottom of editor area.
+// ---------------------------------------------------------------------------
+
+import { useState, useCallback, useMemo } from 'react';
+import { Settings, Terminal, Eye, EyeOff } from 'lucide-react';
 import { MonacoPanel } from '../Panels/MonacoPanel';
 import { LiquidMetalCard, SubTitle } from '../../components';
 import { FollowUpConfiguration } from './FollowUpConfiguration';
+import { EditorTabBar } from './EditorTabBar';
+import { FileTabBar } from './FileTabBar';
+import { ModeSelector } from './ModeSelector';
+import { ConsolePanel } from './ConsolePanel';
+import { ResizablePane, Allotment } from '../ui/ResizablePane';
+import {
+  legacyToVFS,
+  legacyTestsToVFS,
+  createDefaultFS,
+  createDefaultTestFS,
+  languageFromPath,
+} from '../../lib/challenge/virtualFS';
+import { runTestsVFS } from '../../lib/challenge/testRunner';
+import type { VirtualFS, EnhancedRunResult } from '../../lib/challenge/virtualFS';
 import type { EditorFormProps } from './types';
 
+type SectionTab = 'instructions' | 'code' | 'sample_tests' | 'hidden_tests';
+
+const SECTION_TABS = [
+  { key: 'instructions' as const, label: 'INSTRUCTIONS' },
+  { key: 'code' as const, label: 'CODE' },
+  { key: 'sample_tests' as const, label: 'SAMPLE_TESTS' },
+  { key: 'hidden_tests' as const, label: 'HIDDEN_TESTS', badge: 'SERVER' },
+];
+
 export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.Element {
-  const codeLanguage = String(challenge.config?.language || 'javascript').toLowerCase();
-  const testLanguage = String(challenge.serverConfig?.testLanguage || codeLanguage || 'javascript').toLowerCase();
-  const hasFollowUp = !!challenge.config?.enableFollowUp;
+  const [activeSection, setActiveSection] = useState<SectionTab>('code');
+  const [runResult, setRunResult] = useState<EnhancedRunResult | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
 
-  const setConfig = (patch: Record<string, unknown>) => 
-    onChange({ ...challenge, config: { ...challenge.config, ...patch } });
+  // ── Derived state ────────────────────────────────────────────────────────
+  const mode = (challenge.config?.mode as 'backend' | 'frontend') ?? 'backend';
+  const language = String(challenge.config?.language ?? 'javascript').toLowerCase();
 
-  const langSelect = (value: string, onSelect: (v: string) => void) => (
+  const codeFiles: VirtualFS = useMemo(
+    () => (challenge.config?.files as VirtualFS) ?? legacyToVFS(challenge.config ?? {}),
+    [challenge.config],
+  );
+
+  const sampleTestFiles: VirtualFS = useMemo(() => {
+    if (challenge.config?.sampleTestFiles) return challenge.config.sampleTestFiles as VirtualFS;
+    // Legacy: if there's no explicit sampleTestFiles, use an empty set
+    return {};
+  }, [challenge.config]);
+
+  const hiddenTestFiles: VirtualFS = useMemo(
+    () => (challenge.serverConfig?.hiddenTestFiles as VirtualFS) ?? legacyTestsToVFS(challenge.serverConfig ?? {}),
+    [challenge.serverConfig],
+  );
+
+  // Active file within each tab
+  const [activeCodeFile, setActiveCodeFile] = useState<string>(
+    (challenge.config?.activeFile as string) ?? Object.keys(codeFiles)[0] ?? '/solution.js',
+  );
+  const [activeSampleFile, setActiveSampleFile] = useState<string>(
+    Object.keys(sampleTestFiles)[0] ?? '',
+  );
+  const [activeHiddenFile, setActiveHiddenFile] = useState<string>(
+    Object.keys(hiddenTestFiles)[0] ?? '/solution.test.js',
+  );
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const setConfig = useCallback((patch: Record<string, unknown>) =>
+    onChange({ ...challenge, config: { ...challenge.config, ...patch } }),
+  [challenge, onChange]);
+
+  const setServerConfig = useCallback((patch: Record<string, unknown>) =>
+    onChange({ ...challenge, serverConfig: { ...challenge.serverConfig, ...patch } }),
+  [challenge, onChange]);
+
+  const updateCodeFile = useCallback((path: string, content: string | undefined) => {
+    const updated = { ...codeFiles };
+    if (updated[path]) {
+      updated[path] = { ...updated[path], content: content ?? '' };
+    }
+    setConfig({ files: updated });
+  }, [codeFiles, setConfig]);
+
+  const updateSampleFile = useCallback((path: string, content: string | undefined) => {
+    const updated = { ...sampleTestFiles };
+    if (updated[path]) {
+      updated[path] = { ...updated[path], content: content ?? '' };
+    }
+    setConfig({ sampleTestFiles: updated });
+  }, [sampleTestFiles, setConfig]);
+
+  const updateHiddenFile = useCallback((path: string, content: string | undefined) => {
+    const updated = { ...hiddenTestFiles };
+    if (updated[path]) {
+      updated[path] = { ...updated[path], content: content ?? '' };
+    }
+    setServerConfig({ hiddenTestFiles: updated });
+  }, [hiddenTestFiles, setServerConfig]);
+
+  // ── File CRUD ────────────────────────────────────────────────────────────
+  const addFile = useCallback((targetFS: 'code' | 'sample' | 'hidden') => {
+    const name = window.prompt('File name (e.g. utils.js):');
+    if (!name) return;
+    const path = name.startsWith('/') ? name : '/' + name;
+    const lang = languageFromPath(path);
+    const newFile = { content: '', language: lang };
+
+    if (targetFS === 'code') {
+      setConfig({ files: { ...codeFiles, [path]: newFile } });
+      setActiveCodeFile(path);
+    } else if (targetFS === 'sample') {
+      setConfig({ sampleTestFiles: { ...sampleTestFiles, [path]: newFile } });
+      setActiveSampleFile(path);
+    } else {
+      setServerConfig({ hiddenTestFiles: { ...hiddenTestFiles, [path]: newFile } });
+      setActiveHiddenFile(path);
+    }
+  }, [codeFiles, sampleTestFiles, hiddenTestFiles, setConfig, setServerConfig]);
+
+  const removeFile = useCallback((path: string, targetFS: 'code' | 'sample' | 'hidden') => {
+    if (targetFS === 'code') {
+      const updated = { ...codeFiles };
+      delete updated[path];
+      setConfig({ files: updated });
+      const remaining = Object.keys(updated);
+      if (activeCodeFile === path && remaining.length > 0) setActiveCodeFile(remaining[0] ?? '');
+    } else if (targetFS === 'sample') {
+      const updated = { ...sampleTestFiles };
+      delete updated[path];
+      setConfig({ sampleTestFiles: updated });
+      const remaining = Object.keys(updated);
+      if (activeSampleFile === path && remaining.length > 0) setActiveSampleFile(remaining[0] ?? '');
+    } else {
+      const updated = { ...hiddenTestFiles };
+      delete updated[path];
+      setServerConfig({ hiddenTestFiles: updated });
+      const remaining = Object.keys(updated);
+      if (activeHiddenFile === path && remaining.length > 0) setActiveHiddenFile(remaining[0] ?? '');
+    }
+  }, [codeFiles, sampleTestFiles, hiddenTestFiles, activeCodeFile, activeSampleFile, activeHiddenFile, setConfig, setServerConfig]);
+
+  // ── Mode switch ──────────────────────────────────────────────────────────
+  const handleModeChange = useCallback((newMode: 'backend' | 'frontend') => {
+    const hasExistingFiles = Object.keys(codeFiles).length > 0;
+    if (hasExistingFiles) {
+      const confirmed = window.confirm(
+        `Switch to ${newMode} mode? This will replace starter files with defaults.`,
+      );
+      if (!confirmed) return;
+    }
+    const defaults = createDefaultFS(newMode);
+    const defaultTests = createDefaultTestFS(newMode);
+    setConfig({ mode: newMode, files: defaults, sampleTestFiles: {} });
+    setServerConfig({ hiddenTestFiles: defaultTests });
+    setActiveCodeFile(Object.keys(defaults)[0] ?? '');
+    setActiveHiddenFile(Object.keys(defaultTests)[0] ?? '');
+  }, [codeFiles, setConfig, setServerConfig]);
+
+  // ── Run tests ────────────────────────────────────────────────────────────
+  const handleRunTests = useCallback(async () => {
+    setIsRunning(true);
+    setRunResult(null);
+    // Run sample + hidden tests together in editor context
+    const allTests: VirtualFS = { ...sampleTestFiles, ...hiddenTestFiles };
+    const result = await runTestsVFS(codeFiles, allTests, language);
+    setRunResult(result);
+    setIsRunning(false);
+  }, [codeFiles, sampleTestFiles, hiddenTestFiles, language]);
+
+  // ── Language selector ────────────────────────────────────────────────────
+  const langSelect = (
     <select
-      value={value}
-      onChange={(e) => onSelect(e.target.value)}
+      value={language}
+      onChange={(e) => setConfig({ language: e.target.value })}
       style={{
-        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-        color: 'rgba(255,255,255,0.7)', fontFamily: 'Space Mono', fontSize: 10,
-        padding: '6px 8px', borderRadius: 6, outline: 'none',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        color: 'rgba(255,255,255,0.7)',
+        fontFamily: 'Space Mono',
+        fontSize: 10,
+        padding: '4px 8px',
+        outline: 'none',
       }}
     >
       <option value="javascript">JAVASCRIPT</option>
@@ -27,97 +195,266 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
     </select>
   );
 
-  const sidebarSection = (title: string, icon: any, children: React.ReactNode) => (
-    <div style={{ marginBottom: 32 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <div style={{ color: 'rgba(255,255,255,0.4)' }}>{icon}</div>
+  // ── Section content ──────────────────────────────────────────────────────
+  const renderSection = (): JSX.Element => {
+    switch (activeSection) {
+      case 'instructions':
+        return (
+          <MonacoPanel
+            language="markdown"
+            value={challenge.instructions || ''}
+            onChange={(val) => onChange({ ...challenge, instructions: val ?? '' })}
+            hideHeader
+          />
+        );
+
+      case 'code':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <FileTabBar
+              files={codeFiles}
+              activeFile={activeCodeFile}
+              onSelect={setActiveCodeFile}
+              onAdd={() => addFile('code')}
+              onRemove={(p) => removeFile(p, 'code')}
+            />
+            <div style={{ flex: 1 }}>
+              {codeFiles[activeCodeFile] && (
+                <MonacoPanel
+                  language={codeFiles[activeCodeFile].language}
+                  value={codeFiles[activeCodeFile].content}
+                  onChange={(val) => updateCodeFile(activeCodeFile, val)}
+                  {...(codeFiles[activeCodeFile].readOnly ? { readOnly: true } : {})}
+                  hideHeader
+                />
+              )}
+            </div>
+          </div>
+        );
+
+      case 'sample_tests': {
+        const hasSample = Object.keys(sampleTestFiles).length > 0;
+        if (!hasSample) {
+          return (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              gap: 16,
+            }}>
+              <Eye size={24} style={{ color: 'rgba(255,255,255,0.15)' }} />
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', textAlign: 'center' }}>
+                Sample tests are visible to candidates.<br />
+                They run in-browser for instant feedback.
+              </div>
+              <button
+                onClick={() => addFile('sample')}
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  padding: '8px 20px',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  fontFamily: 'Space Mono',
+                  cursor: 'pointer',
+                }}
+              >
+                + ADD_SAMPLE_TEST
+              </button>
+            </div>
+          );
+        }
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <FileTabBar
+              files={sampleTestFiles}
+              activeFile={activeSampleFile}
+              onSelect={setActiveSampleFile}
+              onAdd={() => addFile('sample')}
+              onRemove={(p) => removeFile(p, 'sample')}
+            />
+            <div style={{ flex: 1 }}>
+              {sampleTestFiles[activeSampleFile] && (
+                <MonacoPanel
+                  language={sampleTestFiles[activeSampleFile].language}
+                  value={sampleTestFiles[activeSampleFile].content}
+                  onChange={(val) => updateSampleFile(activeSampleFile, val)}
+                  hideHeader
+                />
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      case 'hidden_tests':
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{
+              padding: '8px 16px',
+              background: 'rgba(248,113,113,0.06)',
+              borderBottom: '1px solid rgba(248,113,113,0.12)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <EyeOff size={12} style={{ color: 'rgba(248,113,113,0.6)' }} />
+              <span style={{ fontSize: 9, fontFamily: 'Space Mono', color: 'rgba(248,113,113,0.6)', letterSpacing: '0.1em' }}>
+                HIDDEN_FROM_CANDIDATES — runs server-side on submission
+              </span>
+            </div>
+            <FileTabBar
+              files={hiddenTestFiles}
+              activeFile={activeHiddenFile}
+              onSelect={setActiveHiddenFile}
+              onAdd={() => addFile('hidden')}
+              onRemove={(p) => removeFile(p, 'hidden')}
+            />
+            <div style={{ flex: 1 }}>
+              {hiddenTestFiles[activeHiddenFile] && (
+                <MonacoPanel
+                  language={hiddenTestFiles[activeHiddenFile].language}
+                  value={hiddenTestFiles[activeHiddenFile].content}
+                  onChange={(val) => updateHiddenFile(activeHiddenFile, val)}
+                  hideHeader
+                />
+              )}
+            </div>
+          </div>
+        );
+    }
+  };
+
+  // ── Sidebar ──────────────────────────────────────────────────────────────
+  const sidebarSection = (title: string, icon: JSX.Element, children: React.ReactNode): JSX.Element => (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div style={{ color: 'rgba(255,255,255,0.35)' }}>{icon}</div>
         <SubTitle>{title}</SubTitle>
       </div>
       {children}
     </div>
   );
 
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, marginTop: 16, alignItems: "start" }}>
-      
-      {/* MONACO PANELS AREA */}
-      <div style={{
-        height: 'calc(100vh - 200px)', display: 'grid', gridTemplateColumns: '1fr 1.5fr 1fr',
-        gap: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-        borderRadius: 16, overflow: 'hidden',
-      }}>
-        <MonacoPanel
-          label="INSTRUCTIONS"
-          language="markdown"
-          value={challenge.instructions || ''}
-          onChange={(val) => onChange({ ...challenge, instructions: val ?? '' })}
-        />
-
-        <MonacoPanel
-          label="CANDIDATE_CODE"
-          language={codeLanguage}
-          value={(challenge.config?.starterCode as string) || ''}
-          onChange={(val) => onChange({
-            ...challenge,
-            config: { ...challenge.config, starterCode: val ?? '' },
-          })}
-          headerRight={langSelect(codeLanguage, (next) => onChange({
-            ...challenge,
-            config: { ...challenge.config, language: next },
-            serverConfig: { ...challenge.serverConfig, testLanguage: (challenge.serverConfig?.testLanguage as string) || next },
-          }))}
-        />
-
-        <MonacoPanel
-          label="TESTS"
-          language={testLanguage}
-          value={(challenge.serverConfig?.testCode as string) || ''}
-          onChange={(val) => onChange({
-            ...challenge,
-            serverConfig: { ...challenge.serverConfig, testCode: val ?? '' },
-          })}
-          headerRight={langSelect(testLanguage, (next) => onChange({
-            ...challenge,
-            serverConfig: { ...challenge.serverConfig, testLanguage: next },
-          }))}
-        />
-      </div>
-
-      {/* CONFIGURATION SIDEBAR */}
-      <aside>
-        <LiquidMetalCard variant="chrome" style={{ padding: 24, borderRadius: 16 }}>
-          
-          <div style={{ marginBottom: 32, paddingBottom: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginBottom: 8 }}>
-              Code Implementation
-            </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
-              Candidate must implement logic to pass your automated test suite.
-            </div>
+    <div style={{ height: 'calc(100vh - 140px)', marginTop: 16 }}>
+      <ResizablePane defaultSizes={[75, 25]} minSizes={[400, 280]}>
+        {/* Left: Editor area */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          background: '#0c0c0e',
+          border: '1px solid rgba(255,255,255,0.08)',
+          overflow: 'hidden',
+        }}>
+          <EditorTabBar
+            tabs={SECTION_TABS}
+            activeKey={activeSection}
+            onSelect={(k) => setActiveSection(k as SectionTab)}
+          />
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <Allotment vertical defaultSizes={[75, 25]}>
+              <Allotment.Pane minSize={200}>
+                {renderSection()}
+              </Allotment.Pane>
+              <Allotment.Pane minSize={36}>
+                <ConsolePanel
+                  result={runResult}
+                  isRunning={isRunning}
+                  onClear={() => setRunResult(null)}
+                />
+              </Allotment.Pane>
+            </Allotment>
           </div>
+          {/* Run bar */}
+          <div style={{
+            padding: '8px 16px',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 10,
+          }}>
+            {langSelect}
+            <button
+              onClick={handleRunTests}
+              disabled={isRunning}
+              style={{
+                background: isRunning ? 'rgba(255,255,255,0.04)' : '#a78bfa',
+                border: 'none',
+                color: isRunning ? 'rgba(255,255,255,0.4)' : '#000',
+                padding: '8px 20px',
+                fontSize: 10,
+                fontWeight: 800,
+                fontFamily: 'Space Mono',
+                cursor: isRunning ? 'not-allowed' : 'pointer',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {isRunning ? 'RUNNING...' : 'RUN_ALL_TESTS'}
+            </button>
+          </div>
+        </div>
 
-          {sidebarSection('AI_FOLLOW_UP', <ChevronDown size={14} />, (
-            <FollowUpConfiguration
-              enabled={hasFollowUp}
-              onChange={(val) => setConfig({ enableFollowUp: val })}
-              accentColor="#fff"
-            />
-          ))}
-
-          {sidebarSection('ENGINE_SETTINGS', <Settings size={14} />, (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8 }}>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', marginBottom: 4 }}>ENVIRONMENT</div>
-                <div style={{ fontSize: 11, color: '#fff', fontWeight: 700 }}>Node.js / V8</div>
+        {/* Right: Config sidebar */}
+        <aside style={{ height: '100%', overflow: 'auto' }}>
+          <LiquidMetalCard variant="dark" style={{ padding: 24, height: '100%', borderRadius: 0 }}>
+            <div style={{ marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', marginBottom: 6 }}>
+                Code Implementation
               </div>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', paddingLeft: 2 }}>
-                Custom environments coming soon.
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, fontFamily: 'Space Mono' }}>
+                Candidate writes code to pass your test suite.
               </div>
             </div>
-          ))}
 
-        </LiquidMetalCard>
-      </aside>
+            {sidebarSection('MODE', <Terminal size={14} />,
+              <ModeSelector mode={mode} onChange={handleModeChange} />,
+            )}
+
+            {sidebarSection('ENGINE', <Settings size={14} />,
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{
+                  padding: 12,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                    RUNTIME
+                  </div>
+                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 700 }}>
+                    {mode === 'frontend' ? 'Browser (Sandpack)' : 'Node.js / V8'}
+                  </div>
+                </div>
+                <div style={{
+                  padding: 12,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                    SCORING
+                  </div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
+                    Sample 30% + Hidden 70%
+                  </div>
+                </div>
+              </div>,
+            )}
+
+            {sidebarSection('FOLLOW_UP', <Settings size={14} />,
+              <FollowUpConfiguration
+                enabled={!!challenge.config?.enableFollowUp}
+                onChange={(val) => setConfig({ enableFollowUp: val })}
+                accentColor="#a78bfa"
+              />,
+            )}
+          </LiquidMetalCard>
+        </aside>
+      </ResizablePane>
     </div>
   );
 }

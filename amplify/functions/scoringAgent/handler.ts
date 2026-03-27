@@ -19,8 +19,8 @@
 import { Mistral } from '@mistralai/mistralai';
 import { DynamoDBClient, GetItemCommand, UpdateItemCommand, ScanCommand, ReturnValue } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { scorer } from './scorer';
-import type { CodeReviewConfig, Bug } from './types';
+import { scorer, scoreCodeImplementation } from './scorer';
+import type { CodeReviewConfig, Bug, CodeImplPublicConfig, CodeImplServerConfig } from './types';
 
 // ─── Clients ─────────────────────────────────────────────────────────────────
 
@@ -223,8 +223,26 @@ export const handler = async (event: unknown): Promise<ScoringResult> => {
         score = scorer(challengeType, submission, serverConfig as CodeReviewConfig);
         feedback = buildFeedback(challengeType, score);
       }
+    } else if (challengeType === 'CODE_IMPLEMENTATION') {
+      // CODE_IMPLEMENTATION: execute candidate code against test suite
+      console.log('[ScoringAgent] Running CODE_IMPLEMENTATION scoring');
+
+      // Parse public config for mode + files
+      const configRaw = challenge['config'];
+      let publicConfig: unknown = configRaw;
+      if (typeof configRaw === 'string') {
+        try { publicConfig = JSON.parse(configRaw); } catch { publicConfig = {}; }
+      }
+
+      const result = await scoreCodeImplementation(
+        submission,
+        serverConfig as CodeImplServerConfig,
+        (publicConfig ?? {}) as CodeImplPublicConfig,
+      );
+      score = result.score;
+      feedback = result.feedback;
     } else {
-      // Non-CODE_REVIEW: deterministic scoring
+      // Non-CODE_REVIEW, non-CODE_IMPL: deterministic scoring
       if (!submission) {
         return { success: true };
       }

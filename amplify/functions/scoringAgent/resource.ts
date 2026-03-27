@@ -4,8 +4,8 @@ export const scoringAgent = defineFunction({
   name: 'scoringAgent',
   entry: './handler.ts',
   runtime: 22,
-  memoryMB: 512,
-  timeoutSeconds: 60,
+  memoryMB: 1024,
+  timeoutSeconds: 120,
   environment: {
     CHALLENGE_SUBMISSION_TABLE_NAME: 'ChallengeSubmission',
     ASSESSMENT_TABLE_NAME: 'Assessment',

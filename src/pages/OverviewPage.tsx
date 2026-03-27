@@ -703,7 +703,7 @@ export default function OverviewPage(): JSX.Element {
       }
 
       // Dynamically build selection set based on schema readiness
-      const stageFields = ["id", "title", "order", "challenges.*"];
+      const stageFields = ["id", "title", "order"];
       if (hasNewFields) {
         stageFields.push("mode", "schedulingEventTypeId");
       }
@@ -719,8 +719,6 @@ export default function OverviewPage(): JSX.Element {
             "status",
             "inviteToken",
             "currentStageId",
-            "assessments.id",
-            "assessments.score",
           ],
         }),
         client.models.Stage.list({
@@ -729,22 +727,62 @@ export default function OverviewPage(): JSX.Element {
         }),
       ]);
 
+      // Fetch challenges + assessments separately to avoid Amplify relation null crash
+      // (Amplify's list.ts crashes on data[key].items when a relation is null)
+      const challengesByStage: Record<string, { id: string }[]> = {};
+      const rawStages = stagesData?.data || [];
+      for (const stage of rawStages) {
+        if (!stage) continue;
+        try {
+          const { data: stageChallenges } = await client.models.Challenge.list({
+            filter: { stageId: { eq: (stage as any).id } },
+            selectionSet: ["id", "stageId"],
+          });
+          if (stageChallenges) {
+            challengesByStage[(stage as any).id] = stageChallenges.map((c: any) => ({ id: c.id }));
+          }
+        } catch { /* skip */ }
+      }
+
+      const assessmentsByCandidate: Record<string, { id: string; score: number | null; challengeId?: string }[]> = {};
+      const allCandidateIds = (candidatesData?.data || []).map((c: any) => c?.id).filter(Boolean) as string[];
+      for (const cId of allCandidateIds) {
+        try {
+          const { data: cAssessments } = await client.models.Assessment.list({
+            filter: { candidateId: { eq: cId } },
+            selectionSet: ["id", "score", "candidateId"],
+          });
+          if (cAssessments) {
+            assessmentsByCandidate[cId] = cAssessments.map((a: any) => ({
+              id: a.id,
+              score: a.score ?? null,
+            }));
+          }
+        } catch { /* skip — sandbox may not have Assessment table yet */ }
+      }
+
       setPipeline(pipelineData?.data || null);
+
+      // Enrich stages with separately-fetched challenges
+      const enrichedStages = rawStages
+        .filter(Boolean)
+        .map((s: any) => ({ ...s, challenges: challengesByStage[s.id] || [] }))
+        .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+      setStages(enrichedStages as any);
 
       // Enrichment logic with extra guards
       const rawCandidates = candidatesData?.data || [];
       const enrichedCandidates = rawCandidates
         .map((c) => {
           if (!c) return null;
-          const assessments = (c as any).assessments || [];
+          const assessments = assessmentsByCandidate[(c as any).id] || [];
           const scores = assessments
-            .map((a: any) => a.score)
-            .filter((s: any) => typeof s === "number");
+            .map((a) => a.score)
+            .filter((s): s is number => typeof s === "number");
           const score =
             scores.length > 0
               ? Math.round(
-                  scores.reduce((sum: number, s: number) => sum + s, 0) /
-                    scores.length,
+                  scores.reduce((sum, s) => sum + s, 0) / scores.length,
                 )
               : null;
           return { ...c, score };
@@ -752,13 +790,6 @@ export default function OverviewPage(): JSX.Element {
         .filter(Boolean);
 
       setCandidates(enrichedCandidates);
-
-      const rawStages = (stagesData?.data as any[]) || [];
-      setStages(
-        rawStages
-          .filter((s) => s !== null)
-          .sort((a, b) => (a.order || 0) - (b.order || 0)),
-      );
 
       // Load upcoming scheduled interviews — guarded
       try {

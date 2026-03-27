@@ -6,6 +6,19 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (CODE_IMPLEMENTATION — multi-file code environment)
+- `VirtualFS` type system (`src/lib/challenge/virtualFS.ts`): `VirtualFile`, `VirtualFS`, `TestCaseResult`, `EnhancedRunResult` + helpers (`createDefaultFS`, `legacyToVFS`, `fsToSandpackFiles`, `extractEditableFiles`, `mergeSubmissionIntoFS`)
+- Enhanced test runner (`testRunner.ts`): multi-file VirtualFS support, named `test()` / `describe()` framework, per-test `TestCaseResult[]` output, backward-compatible `runTests` legacy API
+- Resizable split panes via `allotment` library + `ResizablePane` wrapper component
+- Recruiter editor rewrite (`CodeImplEditor.tsx`): tabbed layout (INSTRUCTIONS / CODE / SAMPLE_TESTS / HIDDEN_TESTS), multi-file editing with `FileTabBar`, backend/frontend mode selector, docked `ConsolePanel`, resizable sidebar
+- New editor components: `EditorTabBar`, `FileTabBar`, `ModeSelector`, `ConsolePanel`
+- Candidate panels: `CodeEditorPanel` (multi-file Monaco + tabs), `RunConsolePanel` (Run button + per-test results), `PreviewPanel` upgraded for VirtualFS + Sandpack `vanilla` template auto-detection
+- Candidate layouts: `CodeWorkspaceLayout` (backend 2-column resizable) and `CodeBrowserLayout` (frontend 3-column with Sandpack preview)
+- Composition system wired: `'code-editor'`, `'console'`, `'code-preview'`, `'code-workspace'`, `'code-browser'` registered in `COMPONENT_MAP`
+- `resolveStageConfig` CODE_IMPLEMENTATION blueprint updated: detects `config.mode`, normalizes VirtualFS from legacy `starterCode`, uses new layouts
+- Server-side CODE_IMPLEMENTATION scoring in `scoringAgent`: `codeExecutor.ts` with `node:vm` (backend) and `jsdom` (frontend), `scoreCodeImplementation` with weighted sample/hidden test scoring, structured `CodeImplFeedback` JSON
+- `scoringAgent` resource bumped to 1024MB / 120s for code execution; `jsdom` added as dependency
+
 #### Added (ADR-023 — Assessment/ChallengeSubmission data model)
 - `Assessment` model redesigned: stage-level entity (one per candidate per stage), `status` enum, `startedAt`, `completedAt`, `challengeSubmissions` hasMany
 - `ChallengeSubmission` model: per-challenge entity with `submission` (json), `score`, `feedback`, `scoredAt`, `followUpQuestionsJson`, `codeReviewAnnotations`, `codeReviewSummary`

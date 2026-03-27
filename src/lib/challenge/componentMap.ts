@@ -1,5 +1,7 @@
 import type { ComponentType } from 'react';
 import { connectInterview } from './connectInterview';
+import type { VirtualFS } from './virtualFS';
+import { legacyToVFS, mergeSubmissionIntoFS } from './virtualFS';
 
 // Shells (context-free — they just wrap children)
 import { TimerShell } from '../../components/Shells/TimerShell';
@@ -14,10 +16,14 @@ import { PreviewPanel } from '../../components/Panels/PreviewPanel';
 import { VerdictPanel } from '../../components/Panels/VerdictPanel';
 import { DiffPanel, type Annotation } from '../../components/Assessment/DiffPanel';
 import { VoicePanel } from '../../components/Panels/VoicePanel';
+import { CodeEditorPanel } from '../../components/Panels/CodeEditorPanel';
+import { RunConsolePanel } from '../../components/Panels/RunConsolePanel';
 
 // Layouts
 import { WorkspaceLayout } from '../../components/Assessment/WorkspaceLayout';
 import { FullBleedLayout } from '../../components/Assessment/FullBleedLayout';
+import { CodeWorkspaceLayout } from '../../components/Assessment/CodeWorkspaceLayout';
+import { CodeBrowserLayout } from '../../components/Assessment/CodeBrowserLayout';
 
 // ---------------------------------------------------------------------------
 // Connected panels — HOC wrappers that bridge InterviewContext → panel props
@@ -108,6 +114,58 @@ const ConnectedVoicePanel = connectInterview(VoicePanel, (ctx) => ({
   onTranscriptChange: (text: string) => ctx.updateSubmission({ text, inputMode: 'voice' }),
 }));
 
+// CODE_IMPLEMENTATION connected panels
+
+const ConnectedCodeEditorPanel = connectInterview(CodeEditorPanel, (ctx) => {
+  const starterFiles: VirtualFS = (ctx.currentChallenge.data.files as VirtualFS)
+    ?? legacyToVFS(ctx.currentChallenge.data);
+  const submittedFiles = (ctx.submission.files as Record<string, string>) ?? {};
+
+  return {
+    starterFiles,
+    submittedFiles,
+    onFileChange: (path: string, content: string) => {
+      const current = (ctx.submission.files as Record<string, string>) ?? {};
+      ctx.updateSubmission({ files: { ...current, [path]: content } });
+    },
+  };
+});
+
+const ConnectedRunConsolePanel = connectInterview(RunConsolePanel, (ctx) => {
+  const starterFiles: VirtualFS = (ctx.currentChallenge.data.files as VirtualFS)
+    ?? legacyToVFS(ctx.currentChallenge.data);
+  const submittedFiles = (ctx.submission.files as Record<string, string>) ?? {};
+  const candidateFS = mergeSubmissionIntoFS(starterFiles, submittedFiles);
+  const sampleTestFiles = (ctx.currentChallenge.data.sampleTestFiles as VirtualFS) ?? {};
+  const language = String(ctx.currentChallenge.data.language ?? 'javascript').toLowerCase();
+
+  return {
+    candidateFiles: candidateFS,
+    sampleTestFiles,
+    language,
+    onRunComplete: (result) => {
+      ctx.setRunState({
+        status: result.status === 'success' ? 'success' : 'error',
+        logs: result.logs,
+        ...(result.error ? { error: result.error } : {}),
+        durationMs: result.durationMs,
+      });
+    },
+  };
+});
+
+const ConnectedCodePreviewPanel = connectInterview(PreviewPanel, (ctx) => {
+  const starterFiles: VirtualFS = (ctx.currentChallenge.data.files as VirtualFS)
+    ?? legacyToVFS(ctx.currentChallenge.data);
+  const submittedFiles = (ctx.submission.files as Record<string, string>) ?? {};
+  const merged = mergeSubmissionIntoFS(starterFiles, submittedFiles);
+
+  return {
+    virtualFS: merged,
+    hideHeader: true,
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Component map — flat type → component lookup
 // ---------------------------------------------------------------------------
@@ -128,16 +186,14 @@ export const COMPONENT_MAP: Record<string, ComponentType<any>> = {
   'verdict': ConnectedVerdictPanel,
   'voice': ConnectedVoicePanel,
 
+  // CODE_IMPLEMENTATION panels
+  'code-editor': ConnectedCodeEditorPanel,
+  'console': ConnectedRunConsolePanel,
+  'code-preview': ConnectedCodePreviewPanel,
+
   // Layouts
   'workspace': WorkspaceLayout,
   'fullbleed': FullBleedLayout,
-
-  // TODO: connect these
-  // 'voice': ConnectedVoicePanel,
-  // 'video-submission': ConnectedVideoSubmissionPanel,
-  // 'follow-up': ConnectedFollowUpPanel,
-  // 'console': ConnectedConsolePanel,
-  // 'tests': ConnectedTestsPanel,
-  // 'workspace-browser': BrowserLayout,
-  // 'fullbleed': FullBleedLayout,
+  'code-workspace': CodeWorkspaceLayout,
+  'code-browser': CodeBrowserLayout,
 };

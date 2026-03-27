@@ -6,6 +6,7 @@
   "dependencies": {
     "@mistralai/mistralai": "^1.0.0",
     "@aws-sdk/client-dynamodb": "^3.0.0",
-    "@aws-sdk/util-dynamodb": "^3.0.0"
+    "@aws-sdk/util-dynamodb": "^3.0.0",
+    "jsdom": "^25.0.0"
   }
 }
