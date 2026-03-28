@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Phase 0 — test suite compatibility)
+- Updated `useSchedulingConnection.test.ts`, `useRoleDiscovery.test.ts`, `GitHubPRFetcher.test.tsx` to use `PipeProviderRoot` wrapper instead of mocking `aws-amplify/data` directly
+- Pruned 5 stale git worktrees that caused duplicate test runs
+
 #### Changed (Phase 0C — Cloudflare migration provider abstraction)
 - Migrated `src/App.tsx` from direct Amplify `Authenticator`/`useAuthenticator` to `AmplifyAuthGate`/`AmplifyAuthWrapper`/`useAuth` — zero `@aws-amplify/*` imports remain
 - Migrated all `src/pages/` from module-level `generateClient<Schema>()` to `useData().createClient()` hook pattern — zero `aws-amplify/*` or `amplify/data/resource` imports remain in pages layer
