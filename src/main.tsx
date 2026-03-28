@@ -1,6 +1,5 @@
 import ReactDOM from "react-dom/client";
-import { Amplify } from "aws-amplify";
-import outputs from "../amplify_outputs.json";
+import { ClerkProvider } from "@clerk/react";
 import "@aws-amplify/ui-react/styles.css";
 import App from "./App.tsx";
 import "./index.css";
@@ -10,21 +9,35 @@ import {
   AmplifyStorageProvider,
 } from "./providers/amplify";
 
-// Initialize Amplify SDK — required for the Amplify provider implementations.
-// This stays here even after the Cloudflare migration; Phase 1 will swap out
-// AmplifyDataProviderFactory and AmplifyStorageProvider, at which point
-// Amplify.configure() can be removed.
+// NOTE: Amplify.configure() removed — auth is now Clerk.
+// AmplifyDataProviderFactory and AmplifyStorageProvider still rely on the
+// Amplify SDK for AppSync / S3 access. Phase 1 will replace them with
+// fetch-based Cloudflare Workers clients, at which point these imports can
+// be dropped entirely.
+//
+// IMPORTANT: AmplifyDataProviderFactory internally calls generateClient()
+// which requires Amplify to be configured at module load time via
+// amplify_outputs.json. Until Phase 1 lands, we must keep that configuration.
+// The import below is intentionally kept; remove alongside Phase 1 data swap.
+import { Amplify } from "aws-amplify";
+import outputs from "../amplify_outputs.json";
+
 Amplify.configure(outputs);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <PipeProviderRoot
-    providers={{
-      data: AmplifyDataProviderFactory,
-      storage: AmplifyStorageProvider,
-      // auth is provided by AmplifyAuthWrapper inside the Authenticator boundary.
-      // See src/App.tsx — AmplifyAuthWrapper wraps the protected routes.
-    }}
+  <ClerkProvider
+    publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string}
+    afterSignOutUrl="/"
   >
-    <App />
-  </PipeProviderRoot>,
+    <PipeProviderRoot
+      providers={{
+        data: AmplifyDataProviderFactory,
+        storage: AmplifyStorageProvider,
+        // auth is provided by ClerkAuthWrapper inside the ClerkAuthGate boundary.
+        // See src/App.tsx — ClerkAuthWrapper wraps the protected routes.
+      }}
+    >
+      <App />
+    </PipeProviderRoot>
+  </ClerkProvider>,
 );

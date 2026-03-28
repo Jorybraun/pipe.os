@@ -243,18 +243,13 @@ describe('PipeProviderRoot + useAuth()', () => {
       // auth intentionally omitted
     };
 
-    const { result } = renderHook(() => {
-      try {
-        return useAuth();
-      } catch (e) {
-        return e;
-      }
-    }, {
+    const { result } = renderHook(() => useAuth(), {
       wrapper: createWrapper(providers),
     });
 
-    expect(result.current).toBeInstanceOf(Error);
-    expect((result.current as Error).message).toMatch(/auth provider not yet initialized/);
+    // Returns a loading stub instead of throwing
+    expect(result.current.currentUser).toBe(null);
+    expect(result.current.isLoading).toBe(true);
   });
 
   it('returns auth when provided at init', () => {

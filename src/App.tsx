@@ -11,7 +11,7 @@ import {
   useParams,
   useLocation,
 } from "react-router-dom";
-import { AmplifyAuthGate, AmplifyAuthWrapper } from "./providers/amplify";
+import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
 import { useAuth, useData } from "./providers";
 import { Layout, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
@@ -339,8 +339,8 @@ function App(): JSX.Element {
         <Route
           path="*"
           element={
-            <AmplifyAuthGate>
-              <AmplifyAuthWrapper>
+            <ClerkAuthGate>
+              <ClerkAuthWrapper>
                 <Routes>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />
@@ -383,8 +383,8 @@ function App(): JSX.Element {
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
-              </AmplifyAuthWrapper>
-            </AmplifyAuthGate>
+              </ClerkAuthWrapper>
+            </ClerkAuthGate>
           }
         />
       </Routes>

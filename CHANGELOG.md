@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Phase 1 — Clerk auth)
+- Integrated Clerk React SDK (`@clerk/react@6.1.3`) for recruiter authentication
+- `src/providers/clerk/auth.tsx` — ClerkAuthGate, ClerkAuthWrapper, useClerkAuth
+- `<ClerkProvider>` wraps app in main.tsx, replaces Amplify Authenticator in App.tsx
+- `useAuth()` returns loading stub before auth initializes (prevents render crash)
+
 #### Fixed (Phase 0 — cleanup)
 - Removed last 3 `Schema` type imports from `amplify/data/resource` in consumer code (ChallengeCard, IntelligenceReport, scheduling/types) — replaced with local interfaces
 - Fixed test file type errors (mock casts, createElement children prop)

@@ -97,7 +97,15 @@ export function useStorage(): StorageProvider {
 export function useAuth(): AuthProvider {
   const ctx = useContext(PipeProviderContext);
   if (!ctx) throw new Error('useAuth must be used within PipeProviderRoot');
-  if (!ctx.auth) throw new Error('useAuth: auth provider not yet initialized. Ensure component is inside an auth boundary.');
+  // Return a loading stub if auth isn't wired in yet (first render before useEffect fires)
+  if (!ctx.auth) {
+    return {
+      currentUser: null,
+      isLoading: true,
+      signOut: async () => {},
+      getSessionToken: async () => null,
+    };
+  }
   return ctx.auth;
 }
 
