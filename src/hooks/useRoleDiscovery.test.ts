@@ -54,7 +54,7 @@ function createMockDataProvider(): DataProvider {
   }
 
   // Wire RoleContext.create to the shared mock handle
-  (models.RoleContext as { create: ReturnType<typeof vi.fn> }).create =
+  (models.RoleContext as unknown as { create: ReturnType<typeof vi.fn> }).create =
     mocks.mockRoleContextCreate;
 
   return {
@@ -82,7 +82,7 @@ function createWrapper() {
   };
 
   return function Wrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(PipeProviderRoot, { providers }, children);
+    return React.createElement(PipeProviderRoot, { providers, children });
   };
 }
 
@@ -272,7 +272,7 @@ describe('useRoleDiscovery', () => {
     expect(firstSection).not.toBeNull();
 
     if (firstSection) {
-      const firstQuestionId = firstSection.questions[0].id;
+      const firstQuestionId = firstSection.questions[0]!.id;
       mocks.mockGenerateQuestions.mockResolvedValueOnce(makeReadyResponse(firstQuestionId));
 
       await act(async () => {

@@ -5,10 +5,7 @@ import {
   FileDown,
   CheckCircle,
   Briefcase,
-  GraduationCap,
-  Shield,
   Mail,
-  Target,
   Clock,
   ExternalLink,
   ChevronRight,
@@ -181,123 +178,6 @@ function TypeBadge({ type }: { type: string }): JSX.Element {
     >
       {type}
     </span>
-  );
-}
-
-interface SkillProfileShape {
-  bugIdentification: number;
-  severityJudgment: number;
-  analyticalWriting: number;
-  technicalDepth: number;
-}
-
-const RADAR_DIMS: Array<{
-  key: keyof SkillProfileShape;
-  angleDeg: number;
-  label: string;
-}> = [
-  { key: "bugIdentification", angleDeg: -90, label: "BUG_ID" },
-  { key: "severityJudgment", angleDeg: 0, label: "SEVERITY" },
-  { key: "analyticalWriting", angleDeg: 90, label: "WRITING" },
-  { key: "technicalDepth", angleDeg: 180, label: "DEPTH" },
-];
-
-function MiniRadar({
-  skillProfile,
-  color,
-}: {
-  skillProfile: SkillProfileShape;
-  color: string;
-}): JSX.Element {
-  const cx = 110, cy = 110, maxR = 72;
-
-  function toXY(value: number, angleDeg: number): { x: number; y: number } {
-    const r = (value / 100) * maxR;
-    const rad = (angleDeg * Math.PI) / 180;
-    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
-  }
-
-  const gridLevels = [0.25, 0.5, 0.75, 1.0];
-  const dataPoints = RADAR_DIMS.map((d) => toXY(skillProfile[d.key], d.angleDeg));
-  const dataPolygon = dataPoints.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-
-  return (
-    <div style={{ textAlign: "center", flexShrink: 0 }}>
-      <svg width="180" height="180" viewBox="0 0 220 220">
-        {gridLevels.map((level) => {
-          const pts = RADAR_DIMS.map((d) => {
-            const r = level * maxR;
-            const rad = (d.angleDeg * Math.PI) / 180;
-            return `${(cx + r * Math.cos(rad)).toFixed(1)},${(cy + r * Math.sin(rad)).toFixed(1)}`;
-          }).join(" ");
-          return (
-            <polygon
-              key={level}
-              points={pts}
-              fill="none"
-              stroke="rgba(255,255,255,0.06)"
-              strokeWidth="1"
-            />
-          );
-        })}
-        {RADAR_DIMS.map((d) => {
-          const rad = (d.angleDeg * Math.PI) / 180;
-          return (
-            <line
-              key={d.key}
-              x1={cx}
-              y1={cy}
-              x2={(cx + maxR * Math.cos(rad)).toFixed(1)}
-              y2={(cy + maxR * Math.sin(rad)).toFixed(1)}
-              stroke="rgba(255,255,255,0.08)"
-              strokeWidth="1"
-            />
-          );
-        })}
-        <polygon
-          points={dataPolygon}
-          fill={`${color}28`}
-          stroke={color}
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-        />
-        {dataPoints.map((pt, i) => (
-          <circle key={i} cx={pt.x.toFixed(1)} cy={pt.y.toFixed(1)} r="3" fill={color} />
-        ))}
-        {RADAR_DIMS.map((d) => {
-          const rad = (d.angleDeg * Math.PI) / 180;
-          const lx = cx + (maxR + 20) * Math.cos(rad);
-          const ly = cy + (maxR + 20) * Math.sin(rad);
-          const anchor = d.angleDeg === 0 ? "start" : d.angleDeg === 180 ? "end" : "middle";
-          return (
-            <g key={d.key}>
-              <text
-                x={lx.toFixed(1)}
-                y={(ly - 4).toFixed(1)}
-                textAnchor={anchor}
-                fill="rgba(255,255,255,0.3)"
-                fontSize="7"
-                fontFamily="Space Mono, monospace"
-                letterSpacing="0.08em"
-              >
-                {d.label}
-              </text>
-              <text
-                x={lx.toFixed(1)}
-                y={(ly + 8).toFixed(1)}
-                textAnchor={anchor}
-                fill={color}
-                fontSize="9"
-                fontFamily="Space Mono, monospace"
-                fontWeight="700"
-              >
-                {skillProfile[d.key]}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
   );
 }
 

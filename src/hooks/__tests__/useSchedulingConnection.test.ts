@@ -40,7 +40,7 @@ function createMockDataProvider(): DataProvider {
   }
 
   // Wire up SchedulingConnection.observeQuery to use our mock
-  (models.SchedulingConnection as { observeQuery: ReturnType<typeof vi.fn> }).observeQuery =
+  (models.SchedulingConnection as unknown as { observeQuery: ReturnType<typeof vi.fn> }).observeQuery =
     vi.fn().mockReturnValue({ subscribe: mocks.mockObserveQuery });
 
   return {
@@ -67,7 +67,7 @@ function createWrapper() {
   };
 
   return function Wrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(PipeProviderRoot, { providers }, children);
+    return React.createElement(PipeProviderRoot, { providers, children });
   };
 }
 

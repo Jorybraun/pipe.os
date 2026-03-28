@@ -8,11 +8,8 @@ import {
   Clock,
 } from "lucide-react";
 import { LiquidMetalCard } from "../ui/LiquidMetalCard";
-import type { Schema } from "../../../amplify/data/resource";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-type Challenge = Schema["Challenge"]["type"];
 
 interface ChallengeCardProps {
   challenge: any; // Allow partial/template challenges

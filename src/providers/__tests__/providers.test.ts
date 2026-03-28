@@ -72,7 +72,7 @@ function createMockAuthProvider(): AuthProvider {
 
 function createWrapper(providers: PipeProviders) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(PipeProviderRoot, { providers }, children);
+    return React.createElement(PipeProviderRoot, { providers, children });
   };
 }
 
@@ -293,19 +293,6 @@ describe('PipeProviderRoot + useAuth()', () => {
     act(() => {
       setAuthHook.result.current(mockAuth);
     });
-
-    // Now useAuth should work in a new hook within the same tree
-    // We need to test this in a combined component
-    let authResult: AuthProvider | Error | null = null;
-
-    function TestComponent() {
-      try {
-        authResult = useAuth();
-      } catch (e) {
-        authResult = e as Error;
-      }
-      return null;
-    }
 
     // Re-render the wrapper to pick up state change
     const wrapper = createWrapper(providers);

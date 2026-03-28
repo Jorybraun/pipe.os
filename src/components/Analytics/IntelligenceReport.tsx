@@ -9,7 +9,6 @@
  * No external chart library deps.
  */
 
-import type { Schema } from '../../../amplify/data/resource';
 import { calculateSignal } from '../../lib/utils';
 import type { CandidateSignal } from '../../lib/utils';
 
@@ -93,8 +92,13 @@ interface ParsedFollowUp {
   answers?: FollowUpAnswerRecord[];
 }
 
+interface CandidateRow {
+  name?: string | null;
+  email?: string | null;
+}
+
 export interface IntelligenceReportProps {
-  candidate: Schema['Candidate']['type'];
+  candidate: CandidateRow;
   assessments: AssessmentRow[];
   stages: StageRow[];
   stageStats: StageStatRow[];

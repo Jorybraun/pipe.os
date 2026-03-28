@@ -6,7 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
-#### Fixed (Phase 0 — test suite compatibility)
+#### Fixed (Phase 0 — cleanup)
+- Removed last 3 `Schema` type imports from `amplify/data/resource` in consumer code (ChallengeCard, IntelligenceReport, scheduling/types) — replaced with local interfaces
+- Fixed test file type errors (mock casts, createElement children prop)
+- Removed unused imports from CandidateProfilePage
 - Updated `useSchedulingConnection.test.ts`, `useRoleDiscovery.test.ts`, `GitHubPRFetcher.test.tsx` to use `PipeProviderRoot` wrapper instead of mocking `aws-amplify/data` directly
 - Pruned 5 stale git worktrees that caused duplicate test runs
 

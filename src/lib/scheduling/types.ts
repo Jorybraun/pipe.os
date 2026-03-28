@@ -1,5 +1,3 @@
-import type { Schema } from '../../../amplify/data/resource';
-
 export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
 export type SchedulingProvider = 'CALENDLY' | 'CAL_COM' | 'MANUAL';
@@ -8,11 +6,49 @@ export type SchedulingProvider = 'CALENDLY' | 'CAL_COM' | 'MANUAL';
 export type SyncSource = 'MANUAL' | 'WEBHOOK';
 
 /**
- * Re-export the generated Amplify type so all scheduling code imports from one place.
+ * Local mirror of the ScheduledInterview Amplify model.
+ * Fields match the schema defined in amplify/data/resource.ts.
  */
-export type ScheduledInterview = Schema['ScheduledInterview']['type'];
+export interface ScheduledInterview {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  candidateId: string;
+  pipelineId: string;
+  stageId: string;
+  status?: InterviewStatus | null;
+  scheduledAt?: string | null;
+  meetingUrl?: string | null;
+  schedulingProvider?: SchedulingProvider | null;
+  schedulingUrl?: string | null;
+  externalEventId?: string | null;
+  recruiterNotes?: string | null;
+  syncSource?: SyncSource | null;
+  lastSyncedAt?: string | null;
+  inviteLinkSentAt?: string | null;
+  emailSentAt?: string | null;
+  owner?: string | null;
+}
 
 /**
- * Re-export the SchedulingConnection type for hooks and components.
+ * Local mirror of the SchedulingConnection Amplify model.
+ * Fields match the schema defined in amplify/data/resource.ts.
  */
-export type SchedulingConnection = Schema['SchedulingConnection']['type'];
+export interface SchedulingConnection {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  recruiterId: string;
+  providerId?: 'CALENDLY' | 'CAL_COM' | null;
+  accessToken: string;
+  refreshToken?: string | null;
+  tokenExpiry?: string | null;
+  accountEmail?: string | null;
+  accountName?: string | null;
+  webhookSecret?: string | null;
+  webhookId?: string | null;
+  status?: 'ACTIVE' | 'EXPIRED' | 'REVOKED' | null;
+  connectedAt: string;
+  lastSyncAt?: string | null;
+  owner?: string | null;
+}
