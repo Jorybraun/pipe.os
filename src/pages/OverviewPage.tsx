@@ -20,8 +20,7 @@ import {
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../../amplify/data/resource";
+import { useData } from "../providers";
 import { useSchedulingConnection } from "../hooks/useSchedulingConnection";
 import { CandidateIntakeModal } from "../components/Candidate/CandidateIntakeModal";
 import {
@@ -43,8 +42,6 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-const client = generateClient<Schema>();
 
 const OverviewSkeleton = () => (
   <div
@@ -611,6 +608,7 @@ function CandidateKanbanCard({
 export default function OverviewPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const dataFactory = useData();
   const [pipeline, setPipeline] = useState<any>(null);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [stages, setStages] = useState<any[]>([]);
@@ -652,6 +650,7 @@ export default function OverviewPage(): JSX.Element {
 
   const handlePublishPipeline = async () => {
     if (!id) return;
+    const client = dataFactory.createClient();
     try {
       await client.models.Pipeline.update({ id, status: "ACTIVE" } as any);
       await fetchData();
@@ -666,6 +665,7 @@ export default function OverviewPage(): JSX.Element {
     const title = window.prompt("Enter new stage name:");
     if (!title || title.trim() === "") return;
 
+    const client = dataFactory.createClient();
     setIsLoading(true);
     try {
       await client.models.Stage.create({
@@ -683,6 +683,7 @@ export default function OverviewPage(): JSX.Element {
 
   const fetchData = useCallback(async () => {
     if (!id) return;
+    const client = dataFactory.createClient();
     try {
       setIsLoading(true);
       setError(null);
@@ -813,7 +814,7 @@ export default function OverviewPage(): JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [id, schemaReady]);
+  }, [id, schemaReady, dataFactory]);
 
   useEffect(() => {
     fetchData();
@@ -828,6 +829,7 @@ export default function OverviewPage(): JSX.Element {
     )
       return;
 
+    const client = dataFactory.createClient();
     setIsLoading(true);
     try {
       // Fetch all stages first
@@ -836,7 +838,7 @@ export default function OverviewPage(): JSX.Element {
       });
       // Delete them
       await Promise.all(
-        stagesToDelete.map((s) => client.models.Stage.delete({ id: s.id })),
+        stagesToDelete.map((s) => client.models.Stage.delete({ id: (s as { id: string }).id })),
       );
 
       // Wait for consistency. Amplify Data backend is eventually consistent.
@@ -853,6 +855,7 @@ export default function OverviewPage(): JSX.Element {
   const handleDeleteStage = async (stageId: string, stageTitle: string) => {
     if (!window.confirm(`Delete stage "${stageTitle}"? This cannot be undone.`))
       return;
+    const client = dataFactory.createClient();
     setIsLoading(true);
     try {
       await client.models.Stage.delete({ id: stageId });
@@ -881,6 +884,7 @@ export default function OverviewPage(): JSX.Element {
       return;
     }
 
+    const client = dataFactory.createClient();
     setInvitingCandidateId(candidateId);
     try {
       // Prevent duplicate invites: check for an existing record first
@@ -945,6 +949,7 @@ export default function OverviewPage(): JSX.Element {
 
   /** Reset a candidate's invite token: unclaim, delete assessments, set INVITED */
   const handleResetCandidate = async (candidateId: string) => {
+    const client = dataFactory.createClient();
     setResettingCandidateId(candidateId);
     try {
       const candidate = candidates.find((c: any) => c.id === candidateId);
@@ -952,10 +957,13 @@ export default function OverviewPage(): JSX.Element {
 
       // Server-side reset: hard-deletes ChallengeSubmissions + CandidateMedia,
       // resets Assessments to PENDING, unclaims invite token, sets status=INVITED.
-      const { data: resetResult, errors: resetErrors } = await client.mutations.resetCandidate({ candidateId });
+      const resetCandidate = client.mutations['resetCandidate'];
+      if (!resetCandidate) throw new Error('resetCandidate mutation not available');
+      const { data: resetResultRaw, errors: resetErrors } = await resetCandidate({ candidateId });
       if (resetErrors?.length) {
         throw new Error(resetErrors[0]?.message ?? 'Reset failed');
       }
+      const resetResult = resetResultRaw as { success?: boolean; error?: string } | null;
       if (!resetResult?.success) {
         throw new Error(resetResult?.error ?? 'Reset failed');
       }
@@ -971,6 +979,7 @@ export default function OverviewPage(): JSX.Element {
 
   const handleSeedStage = async () => {
     if (!id) return;
+    const client = dataFactory.createClient();
     setIsLoading(true);
     try {
       console.log("[Overview] Seeding MVP stages...");
@@ -1065,6 +1074,7 @@ export default function OverviewPage(): JSX.Element {
     setActiveStage(null);
 
     if (!over) return;
+    const client = dataFactory.createClient();
 
     // Handle Stage Reordering
     if (

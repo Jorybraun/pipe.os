@@ -1,9 +1,7 @@
 import { useState, useCallback } from "react";
-import { generateClient } from "aws-amplify/api";
-import type { Schema } from "../../amplify/data/resource";
+import { useData } from "../providers";
+import type { DataProviderFactory } from "../providers";
 import { generateInviteToken } from "../lib/generateInviteToken";
-
-const client = generateClient<Schema>();
 
 // ============================================================================
 // Types
@@ -35,6 +33,8 @@ interface UseCandidateCreateReturn extends UseCandidateCreateState {
  * useCandidateCreate - Handles candidate creation with an automatically generated inviteToken.
  */
 export function useCandidateCreate(): UseCandidateCreateReturn {
+  const factory: DataProviderFactory = useData();
+
   const [state, setState] = useState<UseCandidateCreateState>({
     isSubmitting: false,
     error: null,
@@ -46,6 +46,7 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
       setState({ isSubmitting: true, error: null, createdId: null });
 
       try {
+        const client = factory.createClient();
         const { data, errors } = await client.models.Candidate.create({
           pipelineId: input.pipelineId,
           name: input.name.trim(),
@@ -64,7 +65,17 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
           return null;
         }
 
-        if (!data?.id) {
+        if (!data) {
+          const err = new Error("Candidate was created but no data was returned");
+          console.error(
+            "[useCandidateCreate] No data returned from create mutation",
+          );
+          setState({ isSubmitting: false, error: err, createdId: null });
+          return null;
+        }
+
+        const record = data as Record<string, unknown>;
+        if (!record['id']) {
           const err = new Error("Candidate was created but no ID was returned");
           console.error(
             "[useCandidateCreate] No ID returned from create mutation",
@@ -73,9 +84,10 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
           return null;
         }
 
-        console.log("[useCandidateCreate] Candidate created:", data.id);
-        setState({ isSubmitting: false, error: null, createdId: data.id });
-        return data.id;
+        const candidateId = record['id'] as string;
+        console.log("[useCandidateCreate] Candidate created:", candidateId);
+        setState({ isSubmitting: false, error: null, createdId: candidateId });
+        return candidateId;
       } catch (err) {
         const error =
           err instanceof Error
@@ -86,7 +98,7 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
         return null;
       }
     },
-    [],
+    [factory],
   );
 
   const reset = useCallback(() => {

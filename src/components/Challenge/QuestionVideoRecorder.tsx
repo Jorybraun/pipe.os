@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { uploadData } from 'aws-amplify/storage';
+import { useStorage } from '../../providers';
 
 export interface QuestionVideoRecorderProps {
   /** Challenge ID — drives S3 path: challenge-questions/{challengeId}/question.webm */
@@ -24,6 +24,7 @@ export function QuestionVideoRecorder({
   existingS3Key,
   onUploaded,
 }: QuestionVideoRecorderProps): JSX.Element {
+  const storage = useStorage();
   const [state, setState] = useState<RecorderState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
@@ -102,11 +103,11 @@ export function QuestionVideoRecorder({
     const s3Key = `challenge-questions/${challengeId}/question.webm`;
 
     try {
-      await uploadData({
+      await storage.upload({
         path: s3Key,
         data: recordedBlob,
-        options: { contentType: 'video/webm' },
-      }).result;
+        contentType: 'video/webm',
+      });
 
       setState('done');
       onUploaded(s3Key);

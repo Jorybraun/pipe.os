@@ -9,11 +9,27 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { generateClient } from 'aws-amplify/data';
+import { useData } from '../providers';
+import type { DataProviderFactory, DataProvider, MutationOperation, QueryOperation } from '../providers';
 import { v4 as uuid } from 'uuid';
-import type { Schema } from '../../amplify/data/resource';
 
-const client = generateClient<Schema>();
+function mut<TArgs, TResult>(
+  client: DataProvider,
+  name: string,
+): MutationOperation<TArgs, TResult> {
+  const fn = (client.mutations as Record<string, MutationOperation<TArgs, TResult>>)[name];
+  if (!fn) throw new Error(`Mutation '${name}' not available`);
+  return fn;
+}
+
+function qry<TArgs, TResult>(
+  client: DataProvider,
+  name: string,
+): QueryOperation<TArgs, TResult> {
+  const fn = (client.queries as Record<string, QueryOperation<TArgs, TResult>>)[name];
+  if (!fn) throw new Error(`Query '${name}' not available`);
+  return fn;
+}
 
 // ─── Lambda response type guards ─────────────────────────────────────────────
 
@@ -56,33 +72,33 @@ function coerceJson(value: unknown): unknown {
 function parseStatusPayload(result: unknown): StatusPayload {
   const parsed = coerceJson(result);
   if (!isRecord(parsed)) return {};
-  return {
-    status: typeof parsed['status'] === 'string' ? parsed['status'] : undefined,
-    containerUrl: typeof parsed['containerUrl'] === 'string' ? parsed['containerUrl'] : undefined,
-    success: typeof parsed['success'] === 'boolean' ? parsed['success'] : undefined,
-    error: typeof parsed['error'] === 'string' ? parsed['error'] : undefined,
-  };
+  const out: StatusPayload = {};
+  if (typeof parsed['status'] === 'string') out.status = parsed['status'];
+  if (typeof parsed['containerUrl'] === 'string') out.containerUrl = parsed['containerUrl'];
+  if (typeof parsed['success'] === 'boolean') out.success = parsed['success'];
+  if (typeof parsed['error'] === 'string') out.error = parsed['error'];
+  return out;
 }
 
 function parseLaunchPayload(result: unknown): LaunchPayload {
   const parsed = coerceJson(result);
   if (!isRecord(parsed)) return {};
-  return {
-    taskArn: typeof parsed['taskArn'] === 'string' ? parsed['taskArn'] : undefined,
-    status: typeof parsed['status'] === 'string' ? parsed['status'] : undefined,
-    accessToken: typeof parsed['accessToken'] === 'string' ? parsed['accessToken'] : undefined,
-    success: typeof parsed['success'] === 'boolean' ? parsed['success'] : undefined,
-    error: typeof parsed['error'] === 'string' ? parsed['error'] : undefined,
-  };
+  const out: LaunchPayload = {};
+  if (typeof parsed['taskArn'] === 'string') out.taskArn = parsed['taskArn'];
+  if (typeof parsed['status'] === 'string') out.status = parsed['status'];
+  if (typeof parsed['accessToken'] === 'string') out.accessToken = parsed['accessToken'];
+  if (typeof parsed['success'] === 'boolean') out.success = parsed['success'];
+  if (typeof parsed['error'] === 'string') out.error = parsed['error'];
+  return out;
 }
 
 function parseDestroyPayload(result: unknown): DestroyPayload {
   const parsed = coerceJson(result);
   if (!isRecord(parsed)) return {};
-  return {
-    success: typeof parsed['success'] === 'boolean' ? parsed['success'] : undefined,
-    error: typeof parsed['error'] === 'string' ? parsed['error'] : undefined,
-  };
+  const out: DestroyPayload = {};
+  if (typeof parsed['success'] === 'boolean') out.success = parsed['success'];
+  if (typeof parsed['error'] === 'string') out.error = parsed['error'];
+  return out;
 }
 
 /**
@@ -127,6 +143,8 @@ export interface UseDevContainerSessionReturn {
 }
 
 export function useDevContainerSession(): UseDevContainerSessionReturn {
+  const factory: DataProviderFactory = useData();
+
   const [state, setState] = useState<ContainerSessionState>('IDLE');
   const [containerUrl, setContainerUrl] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -160,7 +178,8 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
       if (!arn) return;
 
       try {
-        const { data: result } = await client.queries.getContainerStatus({
+        const client = factory.createClient();
+        const { data: result } = await qry<{ taskArn: string }, unknown>(client, 'getContainerStatus')({
           taskArn: arn,
         });
         if (unsubscribed || !result) return;
@@ -180,28 +199,30 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
       }
     };
 
-    // Subscribe to model updates for this specific task (fast path —
-    // avoids polling delay when AppSync subscription delivers the event).
+    // Subscribe to model updates for this specific task via observeQuery
+    // filtered by taskArn (provider-agnostic equivalent of onUpdate).
+    const client = factory.createClient();
     const sub = client.models.DevContainerSession
-      .onUpdate({
+      .observeQuery({
         filter: {
-          taskArn: { eq: taskArn }
-        }
+          taskArn: { eq: taskArn },
+        },
       })
       .subscribe({
-        next: (update) => {
+        next: ({ items }) => {
           if (unsubscribed) return;
-          if (!update) return;
+          const record = (items as Array<Record<string, unknown>>)[0];
+          if (!record) return;
 
-          console.log('[useDevContainerSession] Subscription update:', update.status, 'URL:', update.url);
+          console.log('[useDevContainerSession] Subscription update:', record['status'], 'URL:', record['url']);
 
-          if (update.status === 'READY' && update.url) {
+          if (record['status'] === 'READY' && record['url']) {
             setState('READY');
-            setContainerUrl(update.url);
-          } else if (update.status === 'ERROR') {
+            setContainerUrl(record['url'] as string);
+          } else if (record['status'] === 'ERROR') {
             setState('ERROR');
             setError('Container failed to start');
-          } else if (update.status === 'STOPPING') {
+          } else if (record['status'] === 'STOPPING') {
             setState('IDLE');
             setTaskArn(null);
             setContainerUrl(null);
@@ -228,7 +249,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
       sub.unsubscribe();
       clearInterval(poll);
     };
-  }, [state, taskArn]);
+  }, [state, taskArn, factory]);
 
   // ─── launch ────────────────────────────────────────────────────────────────
 
@@ -242,11 +263,12 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     sessionIdRef.current = newSessionId;
 
     try {
-      const { data: result, errors } = await client.mutations.launchDevContainer({
+      const client = factory.createClient();
+      const { data: result, errors } = await mut<{ sessionId: string }, unknown>(client, 'launchDevContainer')({
         sessionId: newSessionId,
       });
 
-      if (errors) throw new Error(errors[0].message);
+      if (errors) throw new Error(errors[0]?.message ?? 'Launch failed');
       const payload = parseLaunchPayload(result);
 
       if (payload.success === false || !payload.taskArn) {
@@ -264,7 +286,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
       setState('ERROR');
       setError(err instanceof Error ? err.message : 'Failed to launch container');
     }
-  }, []);
+  }, [factory]);
 
   // ─── destroy ───────────────────────────────────────────────────────────────
 
@@ -275,11 +297,12 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     setState('DESTROYING');
 
     try {
-      const { data: result, errors } = await client.mutations.destroyDevContainer({
+      const client = factory.createClient();
+      const { data: result, errors } = await mut<{ taskArn: string }, unknown>(client, 'destroyDevContainer')({
         taskArn: arn,
       });
 
-      if (errors) throw new Error(errors[0].message);
+      if (errors) throw new Error(errors[0]?.message ?? 'Destroy failed');
       const payload = parseDestroyPayload(result);
 
       if (payload.success === false) throw new Error(payload.error ?? 'Destroy failed');
@@ -294,7 +317,7 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
       setAccessToken(null);
       sessionIdRef.current = null;
     }
-  }, []);
+  }, [factory]);
 
   // ─── reset ─────────────────────────────────────────────────────────────────
 

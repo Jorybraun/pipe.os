@@ -1,8 +1,6 @@
 import { useState, useCallback } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
-
-const client = generateClient<Schema>();
+import { useData } from '../providers';
+import type { DataProviderFactory } from '../providers';
 
 // ============================================================================
 // Types
@@ -41,6 +39,8 @@ interface UsePipelineCreateReturn extends UsePipelineCreateState {
 // ============================================================================
 
 export function usePipelineCreate(): UsePipelineCreateReturn {
+  const factory: DataProviderFactory = useData();
+
   const [state, setState] = useState<UsePipelineCreateState>({
     isSubmitting: false,
     error: null,
@@ -52,6 +52,8 @@ export function usePipelineCreate(): UsePipelineCreateReturn {
       setState({ isSubmitting: true, error: null, createdId: null });
 
       try {
+        const client = factory.createClient();
+
         // 1. Create the Pipeline
         const { data: pipeline, errors } = await client.models.Pipeline.create({
           title: input.title.trim(),
@@ -62,12 +64,14 @@ export function usePipelineCreate(): UsePipelineCreateReturn {
           creationMode: input.presetId === 'BLANK' ? 'BLANK' : 'PRESET',
         });
 
-        if (errors && errors.length > 0) throw new Error(errors[0].message);
+        if (errors && errors.length > 0) throw new Error(errors[0]?.message ?? 'Create failed');
         if (!pipeline) throw new Error('Failed to create pipeline');
 
-        console.log('[usePipelineCreate] Pipeline created:', pipeline.id);
-        setState({ isSubmitting: false, error: null, createdId: pipeline.id });
-        return pipeline.id;
+        const pipelineRecord = pipeline as Record<string, unknown>;
+        const pipelineId = pipelineRecord['id'] as string;
+        console.log('[usePipelineCreate] Pipeline created:', pipelineId);
+        setState({ isSubmitting: false, error: null, createdId: pipelineId });
+        return pipelineId;
       } catch (err) {
         const error = err instanceof Error ? err : new Error('An unexpected error occurred');
         console.error('[usePipelineCreate] Unexpected error:', error);
@@ -75,7 +79,7 @@ export function usePipelineCreate(): UsePipelineCreateReturn {
         return null;
       }
     },
-    []
+    [factory]
   );
 
   const reset = useCallback(() => {

@@ -1,15 +1,12 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Minimize2, Loader2 } from 'lucide-react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import { useData } from '../../providers';
 import { InterviewProvider } from '../../contexts/InterviewContext';
 import { StageShell } from '../Assessment/StageShell';
 import { StageRenderer } from '../Assessment/StageRenderer';
 import { TimerProvider } from '../Assessment/TimerContext';
 import { resolveStageConfig, type RawChallenge, type RawStage } from '../../lib/challenge/resolveStageConfig';
 import type { EditorChallenge } from './types';
-
-const client = generateClient<Schema>();
 
 // ---------------------------------------------------------------------------
 // Props
@@ -55,6 +52,8 @@ function editorToRaw(c: EditorChallenge): RawChallenge {
 // ---------------------------------------------------------------------------
 
 export function PreviewOverlay({ challenge, onClose, stageMode }: PreviewOverlayProps): JSX.Element {
+  const client = useData().createClient();
+
   // Prevent background scroll
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -86,29 +85,49 @@ export function PreviewOverlay({ challenge, onClose, stageMode }: PreviewOverlay
 
         if (cancelled) return;
 
-        if (stageData) {
-          setStageTitle(stageData.title || 'Stage Preview');
-          setStageTimeLimit(stageData.timeLimit ?? null);
+        // Cast to the minimal typed shapes needed for this component
+        type RawStageData = { title?: string; timeLimit?: number | null } | null;
+        type RawChallengeData = {
+          id: unknown;
+          type?: unknown;
+          title: unknown;
+          instructions?: unknown;
+          config?: unknown;
+          serverConfig?: unknown;
+          order?: unknown;
+          stageId?: unknown;
+          githubRepoUrl?: unknown;
+          githubPrNumber?: unknown;
+          githubPrTitle?: unknown;
+          githubPrDescription?: unknown;
+          cachedDiffJson?: unknown;
+        };
+
+        const stageRecord = stageData as RawStageData;
+
+        if (stageRecord) {
+          setStageTitle((stageRecord.title as string | undefined) ?? 'Stage Preview');
+          setStageTimeLimit((stageRecord.timeLimit as number | null | undefined) ?? null);
         }
 
         if (challenges && challenges.length > 0) {
-          const parsed: EditorChallenge[] = challenges
+          const parsed: EditorChallenge[] = (challenges as RawChallengeData[])
             .map((c) => ({
-              id: c.id,
-              type: c.type || 'CODE_IMPLEMENTATION',
-              title: c.title,
-              instructions: c.instructions ?? null,
-              config: (typeof c.config === 'string' ? JSON.parse(c.config) : c.config || {}) as Record<string, unknown>,
-              serverConfig: (typeof c.serverConfig === 'string' ? JSON.parse(c.serverConfig) : c.serverConfig || {}) as Record<string, unknown>,
-              order: c.order ?? 0,
-              stageId: c.stageId,
-              ...(c.githubRepoUrl ? { githubRepoUrl: c.githubRepoUrl } : {}),
-              ...(c.githubPrNumber != null ? { githubPrNumber: c.githubPrNumber } : {}),
-              ...(c.githubPrTitle ? { githubPrTitle: c.githubPrTitle ?? undefined } : {}),
-              ...(c.githubPrDescription ? { githubPrDescription: c.githubPrDescription ?? undefined } : {}),
-              ...(c.cachedDiffJson != null ? { cachedDiffJson: c.cachedDiffJson } : {}),
+              id: c.id as string,
+              type: (c.type as string | null) || 'CODE_IMPLEMENTATION',
+              title: c.title as string,
+              instructions: (c.instructions as string | null | undefined) ?? null,
+              config: (typeof c.config === 'string' ? JSON.parse(c.config as string) : (c.config as Record<string, unknown>) || {}) as Record<string, unknown>,
+              serverConfig: (typeof c.serverConfig === 'string' ? JSON.parse(c.serverConfig as string) : (c.serverConfig as Record<string, unknown>) || {}) as Record<string, unknown>,
+              order: (c.order as number | undefined) ?? 0,
+              ...(c.stageId != null ? { stageId: c.stageId as string } : {}),
+              ...(c.githubRepoUrl ? { githubRepoUrl: c.githubRepoUrl as string } : {}),
+              ...(c.githubPrNumber != null ? { githubPrNumber: c.githubPrNumber as number } : {}),
+              ...(c.githubPrTitle ? { githubPrTitle: (c.githubPrTitle as string) ?? undefined } : {}),
+              ...(c.githubPrDescription ? { githubPrDescription: (c.githubPrDescription as string) ?? undefined } : {}),
+              ...(c.cachedDiffJson != null ? { cachedDiffJson: c.cachedDiffJson as unknown } : {}),
             }))
-            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+            .sort((a, b) => ((a.order as number) ?? 0) - ((b.order as number) ?? 0));
 
           setStageChallenges(parsed);
 

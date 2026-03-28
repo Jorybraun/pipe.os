@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useData } from '../providers';
+import type { DataProvider, DataProviderFactory } from '../providers';
 import type {
   VideoRole,
   VideoSessionStatus,
@@ -12,8 +12,22 @@ import type {
 // Types
 // ============================================================================
 
-export type VideoSession = Schema['VideoSession']['type'];
-export type VideoSignal = Schema['VideoSignal']['type'];
+export type VideoSession = Record<string, unknown> & {
+  id: string;
+  stageId: string;
+  candidateId: string;
+  recruiterId: string;
+  status: string;
+  createdAt?: string;
+};
+
+export type VideoSignal = Record<string, unknown> & {
+  id: string;
+  sessionId: string;
+  senderRole: string;
+  type: string;
+  payload?: string | unknown;
+};
 
 interface UseVideoSignalingOptions {
   /** ID of the Stage this video session belongs to */
@@ -57,16 +71,6 @@ interface UseVideoSignalingReturn {
 // Hook
 // ============================================================================
 
-const fallbackCandidateClient = generateClient<Schema>({ authMode: 'apiKey' });
-const recruiterClient = generateClient<Schema>(); // userPool auth
-
-function getCandidateVideoClient(sessionToken: string | null) {
-  if (sessionToken) {
-    return generateClient<Schema>({ authMode: 'lambda', authToken: sessionToken });
-  }
-  return fallbackCandidateClient;
-}
-
 /**
  * useVideoSignaling — Manages the AppSync VideoSession record and
  * VideoSignal messages that drive WebRTC signaling between peers.
@@ -81,8 +85,18 @@ export function useVideoSignaling({
   onSignal,
   sessionToken,
 }: UseVideoSignalingOptions): UseVideoSignalingReturn {
-  const candidateClient = getCandidateVideoClient(sessionToken ?? null);
-  const client = role === 'RECRUITER' ? recruiterClient : candidateClient;
+  const factory: DataProviderFactory = useData();
+
+  function getCandidateVideoClient() {
+    if (sessionToken) {
+      return factory.createSessionClient(sessionToken);
+    }
+    return factory.createPublicClient();
+  }
+
+  const client: DataProvider = role === 'RECRUITER'
+    ? factory.createClient()
+    : getCandidateVideoClient();
 
   const [session, setSession] = useState<VideoSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -115,17 +129,19 @@ export function useVideoSignaling({
         if (!isMounted) return;
         setIsLoading(false);
 
+        const typedItems = items as VideoSession[];
+
         // Pick the most recently created non-ended session
-        const active = [...items]
+        const active = [...typedItems]
           .filter((s) => s.status !== 'ENDED')
           .sort((a, b) =>
-            (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+            ((b.createdAt as string) ?? '').localeCompare((a.createdAt as string) ?? '')
           )[0] ?? null;
 
         if (active) {
           setSession(active);
           sessionIdRef.current = active.id;
-        } else if (!active && items.every((s) => s.status === 'ENDED')) {
+        } else if (!active && typedItems.every((s) => s.status === 'ENDED')) {
           // All sessions ended — clear local state
           setSession(null);
           sessionIdRef.current = null;
@@ -146,7 +162,7 @@ export function useVideoSignaling({
       isMounted = false;
       sub.unsubscribe();
     };
-  }, [stageId, candidateId, client]);
+  }, [stageId, candidateId, role, sessionToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Subscribe to incoming signals from the remote peer -----------------
 
@@ -168,7 +184,8 @@ export function useVideoSignaling({
         // observeQuery replays the full list on every new item. Guard
         // against re-processing signals we've already dispatched (e.g.
         // the SDP OFFER or earlier ICE candidates).
-        items.forEach((sig) => {
+        const typedItems = items as VideoSignal[];
+        typedItems.forEach((sig) => {
           if (!sig.payload) return;
           if (processedSignalIds.current.has(sig.id)) return;
           processedSignalIds.current.add(sig.id);
@@ -185,7 +202,7 @@ export function useVideoSignaling({
     });
 
     return () => sub.unsubscribe();
-  }, [session?.id, role, onSignal, client]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session?.id, role, onSignal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Mutations ----------------------------------------------------------
 
@@ -195,6 +212,7 @@ export function useVideoSignaling({
       return null;
     }
     try {
+      const recruiterClient = factory.createClient();
       const { data: newSession, errors } =
         await recruiterClient.models.VideoSession.create({
           stageId,
@@ -202,20 +220,21 @@ export function useVideoSignaling({
           recruiterId: 'self', // Amplify owner field is set automatically
           status: 'WAITING',
         });
-      if (errors) throw new Error(errors[0].message);
+      if (errors) throw new Error(errors[0]?.message ?? 'Operation failed');
       // Optimistic local update (observeQuery will confirm shortly)
       if (newSession) {
-        setSession(newSession);
-        sessionIdRef.current = newSession.id;
+        const typedSession = newSession as VideoSession;
+        setSession(typedSession);
+        sessionIdRef.current = typedSession.id;
       }
-      return newSession ?? null;
+      return (newSession as VideoSession) ?? null;
     } catch (err) {
       const e = err instanceof Error ? err : new Error('Failed to create session');
       console.error('[useVideoSignaling] createSession error:', e);
       setError(e);
       return null;
     }
-  }, [role, stageId, candidateId]);
+  }, [role, stageId, candidateId, factory]);
 
   const updateStatus = useCallback(
     async (status: VideoSessionStatus): Promise<void> => {
@@ -226,12 +245,12 @@ export function useVideoSignaling({
           id,
           status,
         });
-        if (errors) throw new Error(errors[0].message);
+        if (errors) throw new Error(errors[0]?.message ?? 'Operation failed');
       } catch (err) {
         console.error(`[useVideoSignaling] updateStatus(${status}) error:`, err);
       }
     },
-    [client]
+    [role, sessionToken] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const markCalling = useCallback(() => updateStatus('CALLING'), [updateStatus]);
@@ -255,12 +274,12 @@ export function useVideoSignaling({
           type,
           payload: JSON.stringify(payload),
         });
-        if (errors) throw new Error(errors[0].message);
+        if (errors) throw new Error(errors[0]?.message ?? 'Operation failed');
       } catch (err) {
         console.error('[useVideoSignaling] sendSignal error:', err);
       }
     },
-    [role, client]
+    [role, sessionToken] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return {

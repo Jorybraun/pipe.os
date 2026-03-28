@@ -1,9 +1,6 @@
 import { useState } from 'react';
 import { AlertCircle, CheckCircle2, RefreshCw, Trash2, Loader } from 'lucide-react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
-
-const client = generateClient<Schema>();
+import { useData } from '../../providers';
 
 export interface GitHubPRFetcherProps {
   initialChallenge?: {
@@ -68,6 +65,8 @@ export function GitHubPRFetcher({
   onCleared,
   isLoading: parentIsLoading = false,
 }: GitHubPRFetcherProps): JSX.Element {
+  const client = useData().createClient();
+
   const [repoUrl, setRepoUrl] = useState(initialChallenge?.githubRepoUrl || '');
   const [prNumber, setPrNumber] = useState(
     initialChallenge?.githubPrNumber ? String(initialChallenge.githubPrNumber) : ''
@@ -107,87 +106,40 @@ export function GitHubPRFetcher({
     setError(null);
 
     try {
-      // Call GraphQL mutation via Amplify
-      const response = await client.graphql({
-        query: `
-          mutation FetchGitHubPR($input: FetchGitHubPRInput!) {
-            fetchGitHubPR(input: $input) {
-              success
-              data {
-                prNumber
-                title
-                description
-                author
-                state
-                createdAt
-                updatedAt
-                featureBranch
-                baseBranch
-                filesChanged
-                additions
-                deletions
-                diff {
-                  files {
-                    path
-                    status
-                    additions
-                    deletions
-                    hunks {
-                      header
-                      lines {
-                        type
-                        lineNumber
-                        content
-                      }
-                    }
-                  }
-                }
-                metadata {
-                  htmlUrl
-                  author
-                  avatar
-                  labels
-                  milestone
-                  reviewers
-                }
-                fetchedAt
-                warnings
-              }
-              error {
-                code
-                message
-                retryable
-              }
-            }
-          }
-        `,
-        variables: {
-          input: {
-            githubRepoUrl: repoUrl,
-            prNumber: parseInt(prNumber, 10),
-          },
-        },
-      } as any);
+      const { data: raw, errors: gqlErrors } = await client.mutations.fetchGitHubPR!({
+        repoUrl,
+        prNumber: parseInt(prNumber, 10),
+        skipCache: false,
+      });
 
-      const result = (response as any)?.data?.fetchGitHubPR;
+      if (gqlErrors?.length) {
+        console.error('[GitHubPRFetcher] GraphQL errors:', gqlErrors);
+        throw new Error(gqlErrors[0]?.message ?? 'GraphQL error');
+      }
 
-      if (!result.success) {
-        setError(result.error);
+      const result = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
+        success: boolean;
+        data?: PRPreviewData;
+        error?: FetchError;
+      } | null;
+
+      if (!result?.success) {
+        setError(result?.error ?? { code: 'UNKNOWN_ERROR', message: 'Unknown error', retryable: false });
         setUiState('ERROR');
         setPrData(null);
         return;
       }
 
-      setPrData(result.data);
+      setPrData(result.data ?? null);
       setUiState('SUCCESS');
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[GitHubPRFetcher] Error fetching PR:', err);
       setError({
         code: 'NETWORK_ERROR',
         message: 'Network error connecting to GitHub. Check console for details.',
         retryable: true,
-        details: err.message,
+        details: err instanceof Error ? err.message : String(err),
       });
       setUiState('ERROR');
       setPrData(null);

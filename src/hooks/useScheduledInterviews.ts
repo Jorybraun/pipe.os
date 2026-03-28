@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useData } from '../providers';
+import type { DataProviderFactory } from '../providers';
 import type { ScheduledInterview, InterviewStatus } from '../lib/scheduling/types';
-
-// Recruiter hook — uses Cognito user pool auth (default)
-const client = generateClient<Schema>();
 
 interface UseScheduledInterviewsResult {
   interviews: ScheduledInterview[];
@@ -30,6 +27,9 @@ interface UseScheduledInterviewsResult {
  * the filtering happens client-side inside SchedulingFilters.
  */
 export function useScheduledInterviews(): UseScheduledInterviewsResult {
+  const factory: DataProviderFactory = useData();
+  const client = factory.createClient();
+
   const [interviews, setInterviews] = useState<ScheduledInterview[]>([]);
   const [isLoading, setIsLoading]   = useState(true);
   const [error, setError]           = useState<Error | null>(null);
@@ -43,7 +43,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
 
     const subscription = client.models.ScheduledInterview.observeQuery().subscribe({
       next: ({ items, isSynced }) => {
-        setInterviews([...items]);
+        setInterviews([...(items as ScheduledInterview[])]);
         if (isSynced) setIsLoading(false);
       },
       error: (err: unknown) => {
@@ -54,7 +54,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateStatus = useCallback(
     async (
@@ -72,10 +72,10 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       });
       if (errors) {
         console.error('[useScheduledInterviews] updateStatus failed:', errors);
-        throw new Error(errors[0].message);
+        throw new Error(errors[0]?.message ?? 'Update failed');
       }
     },
-    []
+    [] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   return { interviews, isLoading, error, updateStatus };

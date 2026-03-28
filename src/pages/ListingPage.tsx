@@ -12,12 +12,14 @@ import {
 } from "lucide-react";
 import { RoleCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from "../../amplify/data/resource";
+import { useData } from '../providers';
 
-const client = generateClient<Schema>();
-
-type PipelineWithStats = Schema['Pipeline']['type'] & {
+type PipelineWithStats = {
+  id: string;
+  title: string;
+  status?: string | null;
+  level?: string | null;
+  createdAt?: string;
   candidateCount: number;
   stageCount: number;
   avgScore: number | null;
@@ -37,6 +39,7 @@ const ListingSkeleton = () => (
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
+  const dataFactory = useData();
   const [mounted, setMounted] = useState(false);
   const [pipelines, setPipelines] = useState<PipelineWithStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,6 +50,7 @@ export default function ListingPage(): JSX.Element {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const fetchPipelines = useCallback(async () => {
+    const client = dataFactory.createClient();
     try {
       setIsLoading(true);
       const { data: pipelineData } = await client.models.Pipeline.list({
@@ -64,11 +68,16 @@ export default function ListingPage(): JSX.Element {
         ],
       });
 
-      const enrichedPipelines = pipelineData.map((p) => {
-        // avgScore requires cross-auth query (assessments owned by candidates via publicApiKey)
-        // — computed separately on CandidateProfilePage instead
+      const enrichedPipelines = (pipelineData as unknown as Array<{
+        id: string;
+        title: string;
+        status?: string | null;
+        level?: string | null;
+        createdAt?: string;
+        stages?: { id: string }[] | null;
+        candidates?: { id: string }[] | null;
+      }>).map((p) => {
         const avgScore = null;
-
         return {
           ...p,
           stageCount: p.stages?.length || 0,
@@ -77,13 +86,13 @@ export default function ListingPage(): JSX.Element {
         };
       });
 
-      setPipelines(enrichedPipelines as unknown as PipelineWithStats[]);
+      setPipelines(enrichedPipelines as PipelineWithStats[]);
     } catch (err) {
       console.error("[ListingPage] Error fetching pipelines:", err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [dataFactory]);
 
   useEffect(() => {
     setMounted(true);
@@ -115,6 +124,7 @@ export default function ListingPage(): JSX.Element {
       return;
     }
 
+    const client = dataFactory.createClient();
     try {
       setIsLoading(true);
       await client.models.Pipeline.delete({ id });
@@ -134,11 +144,12 @@ export default function ListingPage(): JSX.Element {
   const handleBulkDelete = async () => {
     const count = selectedIds.size;
     if (count === 0) return;
-    
+
     if (!window.confirm(`Delete ${count} selected pipeline${count > 1 ? 's' : ''}? This cannot be undone.`)) {
       return;
     }
 
+    const client = dataFactory.createClient();
     try {
       setIsLoading(true);
       await Promise.all(
@@ -357,7 +368,7 @@ export default function ListingPage(): JSX.Element {
                   avgScore={p.avgScore}
                   stagesConfigured={p.stageCount}
                   totalStages={p.stageCount || 1}
-                  createdAt={p.createdAt}
+                  createdAt={p.createdAt ?? new Date().toISOString()}
                   isSelected={selectedIds.has(p.id)}
                   onSelect={(sel) => toggleSelect(p.id, sel)}
                   onClick={() => handleRoleClick(p.id)}

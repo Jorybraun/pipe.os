@@ -1,7 +1,5 @@
 import { useState, ReactNode, useMemo, useEffect } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import { getUrl } from 'aws-amplify/storage';
-import type { Schema } from '../../../amplify/data/resource';
+import { useData, useStorage } from '../../providers';
 import { resolveLayout, PanelType } from '../../lib/challenge/resolveLayout';
 import { resolveShells } from '../../lib/challenge/resolveShells';
 import { WorkspaceLayout } from './WorkspaceLayout';
@@ -21,15 +19,6 @@ import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
 import type { FollowUpQuestion } from '../../hooks/useAssessment';
 
 import { useSessionToken } from '../../contexts/SessionTokenContext';
-
-// Client for on-demand diff fetch — uses lambda auth when session token available,
-// falls back to apiKey during transition.
-function getDiffClient(sessionToken: string | null) {
-  if (sessionToken) {
-    return generateClient<Schema>({ authMode: 'lambda', authToken: sessionToken });
-  }
-  return generateClient<Schema>({ authMode: 'apiKey' });
-}
 
 // ============================================================================
 // Types
@@ -123,6 +112,11 @@ export function ChallengeRegistry({
   isSubmitting,
 }: ChallengeRegistryProps): JSX.Element {
   const sessionToken = useSessionToken();
+  const dataFactory = useData();
+  const storage = useStorage();
+  const diffClient = sessionToken
+    ? dataFactory.createSessionClient(sessionToken)
+    : dataFactory.createPublicClient();
   const layout = useMemo(() => resolveLayout(challenge), [challenge]);
   const shells = useMemo(() => resolveShells(challenge, stageTimeLimit), [challenge, stageTimeLimit]);
 
@@ -139,7 +133,7 @@ export function ChallengeRegistry({
     if (!s3Key) return;
     void (async () => {
       try {
-        const result = await getUrl({
+        const result = await storage.getUrl({
           path: s3Key,
           options: { expiresIn: 3600 },
         });
@@ -203,7 +197,7 @@ export function ChallengeRegistry({
     setIsFetchingDiff(true);
     void (async () => {
       try {
-        const { data: raw } = await getDiffClient(sessionToken).mutations.fetchGitHubPR({
+        const { data: raw } = await diffClient.mutations.fetchGitHubPR!({
           repoUrl: challenge.githubRepoUrl!,
           prNumber: challenge.githubPrNumber!,
           skipCache: false,
@@ -512,21 +506,21 @@ export function ChallengeRegistry({
               void (async () => {
                 if (!candidateId) return;
                 try {
-                  const { default: d } = await import('aws-amplify/data');
-                  const apiClient = d.generateClient<Schema>({ authMode: 'apiKey' });
-                  const { data } = await apiClient.mutations.generateMediaUploadUrl({
+                  const apiClient = dataFactory.createPublicClient();
+                  const { data: uploadResult } = await apiClient.mutations.generateMediaUploadUrl!({
                     candidateId,
                     challengeId: challenge.id,
                     mimeType: 'audio/webm',
                     mediaType: 'audio',
                   });
-                  if (data?.uploadUrl && data.s3Key) {
-                    await fetch(data.uploadUrl, {
+                  const mediaData = uploadResult as { uploadUrl?: string; s3Key?: string } | null;
+                  if (mediaData?.uploadUrl && mediaData.s3Key) {
+                    await fetch(mediaData.uploadUrl, {
                       method: 'PUT',
                       body: blob,
                       headers: { 'Content-Type': 'audio/webm' },
                     });
-                    setSubmission((prev) => ({ ...prev, audioS3Key: data.s3Key }));
+                    setSubmission((prev) => ({ ...prev, audioS3Key: mediaData.s3Key }));
                   }
                 } catch (err) {
                   console.warn('[ChallengeRegistry] Audio backup upload failed:', err);

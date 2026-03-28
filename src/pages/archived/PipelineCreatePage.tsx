@@ -1,14 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../../../amplify/data/resource";
+import { useData } from "../../providers";
 import { LiquidMetalCard } from "../../components/ui/LiquidMetalCard";
 import { FieldGroup } from "../../components/ui/form";
 import { TextInput } from "../../components/ui/form";
 import { TextareaInput } from "../../components/ui/form";
 import { Loader2 } from "lucide-react";
-
-const client = generateClient<Schema>();
 
 // Default stage names for new pipelines
 const DEFAULT_STAGE_NAMES = [
@@ -25,6 +22,7 @@ const DEFAULT_STAGE_NAMES = [
  */
 export default function PipelineCreatePage(): JSX.Element {
   const navigate = useNavigate();
+  const dataFactory = useData();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,6 +33,7 @@ export default function PipelineCreatePage(): JSX.Element {
 
   const handleCreate = async (): Promise<void> => {
     if (!isValid || isSubmitting) return;
+    const client = dataFactory.createClient();
     setIsSubmitting(true);
     setError(null);
 
@@ -55,13 +54,13 @@ export default function PipelineCreatePage(): JSX.Element {
       // 2. Create 3 empty stages (no challenges — added at stage level)
       for (let i = 0; i < DEFAULT_STAGE_NAMES.length; i++) {
         await client.models.Stage.create({
-          pipelineId: pipeline.id,
+          pipelineId: (pipeline as { id: string }).id,
           title: DEFAULT_STAGE_NAMES[i] ?? `Stage ${i + 1}`,
           order: i,
         });
       }
 
-      navigate(`/pipeline/${pipeline.id}`);
+      navigate(`/pipeline/${(pipeline as { id: string }).id}`);
     } catch (err) {
       console.error("[PipelineCreatePage] Failed to create pipeline:", err);
       setError(

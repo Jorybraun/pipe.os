@@ -21,14 +21,10 @@ import {
 import { InterviewStatusBadge } from "../components/Scheduling/InterviewStatusBadge";
 import type { InterviewStatus } from "../lib/scheduling/types";
 import { LiquidMetalCard, SubTitle } from "../components";
-import { generateClient } from "aws-amplify/data";
-import { getUrl } from "aws-amplify/storage";
-import type { Schema } from "../../amplify/data/resource";
+import { useData, useStorage } from "../providers";
 import { calculateSignal } from "../lib/utils";
 import { FEATURES } from "../lib/features";
 import { IntelligenceReportRenderer, IntelligenceBlockConfig } from "../components/Analytics/IntelligenceReportBlock";
-
-const client = generateClient<Schema>();
 
 // ============================================================================
 // Local types
@@ -486,6 +482,7 @@ function ChallengeCard({
   onScoreChange: (assessmentId: string, score: number) => void;
   onFeedbackChange: (assessmentId: string, feedback: string) => void;
 }): JSX.Element {
+  const challengeCardFactory = useData();
   const isManual = challenge.type === "QUIZ_SHORT_ANSWER" || challenge.type === "CODE_IMPLEMENTATION";
   const submission = assessment?.submission
     ? typeof assessment.submission === "string"
@@ -592,7 +589,7 @@ function ChallengeCard({
                     <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.9)', lineHeight: 1.7, whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.2)', padding: 24, borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
                       {submission.text as string || <span style={{ color: 'rgba(255,255,255,0.2)', fontStyle: 'italic' }}>No transcript captured.</span>}
                     </div>
-                    {submission.audioS3Key && <S3AudioPlayer s3Key={submission.audioS3Key as string} />}
+                    {Boolean(submission.audioS3Key) && <S3AudioPlayer s3Key={submission.audioS3Key as string} />}
                   </div>
                 );
                 return (
@@ -623,7 +620,7 @@ function ChallengeCard({
                     <input type="range" min="0" max="100" value={assessment.score ?? 0} onChange={async (e) => {
                       const newScore = parseInt(e.target.value, 10);
                       onScoreChange(assessment.id, newScore);
-                      await client.models.Assessment.update({ id: assessment.id, score: newScore });
+                      await challengeCardFactory.createClient().models.Assessment.update({ id: assessment.id, score: newScore });
                     }} style={{ width: "100%", cursor: "pointer", accentColor: "#a78bfa" }} />
                   </div>
                   <div>
@@ -631,7 +628,7 @@ function ChallengeCard({
                     <textarea value={assessment.feedback ?? ""} onChange={async (e) => {
                       const newVal = e.target.value;
                       onFeedbackChange(assessment.id, newVal);
-                      await client.models.Assessment.update({ id: assessment.id, feedback: newVal });
+                      await challengeCardFactory.createClient().models.Assessment.update({ id: assessment.id, feedback: newVal });
                     }} placeholder="Add internal notes..." style={{ width: "100%", height: 200, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", padding: 16, color: "#fff", fontSize: 13, fontFamily: 'inherit', outline: "none", resize: "none", borderRadius: 8, boxSizing: "border-box", lineHeight: 1.6 }} />
                   </div>
                 </div>
@@ -645,30 +642,32 @@ function ChallengeCard({
 }
 
 function S3AudioPlayer({ s3Key }: { s3Key: string }): JSX.Element {
+  const storage = useStorage();
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     void (async () => {
       try {
-        const result = await getUrl({ path: s3Key, options: { expiresIn: 3600 } });
+        const result = await storage.getUrl({ path: s3Key, options: { expiresIn: 3600 } });
         setUrl(result.url.toString());
       } catch (err) { console.warn('[S3AudioPlayer] Failed to resolve URL:', err); }
     })();
-  }, [s3Key]);
+  }, [s3Key, storage]);
   if (!url) return <span style={{ fontFamily: '"Space Mono", monospace', fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>LOADING_AUDIO...</span>;
   return <audio src={url} controls style={{ width: '100%', marginTop: 4 }} />;
 }
 
 function S3VideoPlayer({ s3Key, label = 'CANDIDATE_VIDEO_RESPONSE' }: { s3Key: string; label?: string }): JSX.Element {
+  const storage = useStorage();
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!s3Key) return;
     void (async () => {
       try {
-        const result = await getUrl({ path: s3Key, options: { expiresIn: 3600 } });
+        const result = await storage.getUrl({ path: s3Key, options: { expiresIn: 3600 } });
         setUrl(result.url.toString());
       } catch (err) { console.warn('[S3VideoPlayer] Failed to resolve URL:', err); }
     })();
-  }, [s3Key]);
+  }, [s3Key, storage]);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <SubTitle>{label}</SubTitle>
@@ -681,9 +680,28 @@ function S3VideoPlayer({ s3Key, label = 'CANDIDATE_VIDEO_RESPONSE' }: { s3Key: s
   );
 }
 
+interface CandidateRecord {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  pipelineId: string;
+  status?: string | null;
+  inviteToken?: string | null;
+  currentStageId?: string | null;
+  resumeS3Key?: string | null;
+  score?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  currentRole?: string | null;
+  yearsOfExperience?: number | null;
+  skills?: string[] | null;
+}
+
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
-  const [candidate, setCandidate] = useState<Schema["Candidate"]["type"] | null>(null);
+  const dataFactory = useData();
+  const storage = useStorage();
+  const [candidate, setCandidate] = useState<CandidateRecord | null>(null);
   const [assessments, setAssessments] = useState<AssessmentRow[]>([]);
   const [stages, setStages] = useState<StageRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -698,12 +716,13 @@ export default function CandidateProfilePage(): JSX.Element {
 
   const fetchData = useCallback(async () => {
     if (!id) return;
+    const client = dataFactory.createClient();
     try {
       setIsLoading(true);
       setError(null);
       const { data: cand } = await client.models.Candidate.get({ id });
       if (!cand) return;
-      setCandidate(cand);
+      setCandidate(cand as unknown as CandidateRecord);
       const [candidateAssessments, stagesData] = await Promise.all([
         client.models.Assessment.list({ filter: { candidateId: { eq: id } } } as any),
         client.models.Stage.list({ filter: { pipelineId: { eq: cand.pipelineId } }, selectionSet: ["id", "title", "order", "mode", "challenges.*"] }),
@@ -718,45 +737,51 @@ export default function CandidateProfilePage(): JSX.Element {
         } as any);
         for (const sub of (subs ?? [])) {
           if (!sub) continue;
+          const s = sub as Record<string, unknown>;
+          if (!s['id']) continue;
           allSubmissions.push({
-            id: sub.id,
-            challengeId: (sub as any).challengeId ?? null,
-            score: (sub as any).score ?? null,
-            submission: (sub as any).submission ?? null,
-            feedback: (sub as any).feedback ?? null,
-            completedAt: (sub as any).scoredAt ?? null,
-            submittedAt: (sub as any).submittedAt ?? null,
-            followUpQuestionsJson: (sub as any).followUpQuestionsJson ?? null,
+            id: s['id'] as string,
+            challengeId: (s['challengeId'] as string | null) ?? null,
+            score: (s['score'] as number | null) ?? null,
+            submission: s['submission'] ?? null,
+            feedback: (s['feedback'] as string | null) ?? null,
+            completedAt: (s['scoredAt'] as string | null) ?? null,
+            submittedAt: (s['submittedAt'] as string | null) ?? null,
+            followUpQuestionsJson: s['followUpQuestionsJson'] ?? null,
           });
         }
       }
       setAssessments(allSubmissions);
-      const sortedStages: StageRow[] = stagesData.data.filter((s): s is NonNullable<typeof s> => s !== null).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      const sortedStages: StageRow[] = (stagesData.data as unknown as StageRow[]).filter((s): s is StageRow => s !== null).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       setStages(sortedStages);
       if (sortedStages.length > 0 && selectedTab === "") setSelectedTab("OVERVIEW");
       const liveStage = sortedStages.find((s) => s.mode === "LIVE_VIDEO");
       if (liveStage) {
         try {
           const siList = await client.models.ScheduledInterview.list({ filter: { candidateId: { eq: id } } });
-          const si = siList.data.find((s) => s.stageId === liveStage.id) ?? null;
-          setScheduledInterview(si as ScheduledInterviewRow | null);
-          if (si?.schedulingUrl) setInviteUrl(si.schedulingUrl);
+          const siData = siList.data as unknown as ScheduledInterviewRow[];
+          const si = siData.find((s) => s.stageId === liveStage.id) ?? null;
+          setScheduledInterview(si);
+          if (si?.schedulingUrl) setInviteUrl(si.schedulingUrl as string);
         } catch { /* ignore */ }
       }
     } catch (err) {
       console.error("[CandidateProfilePage] Error fetching data:", err);
       setError(err instanceof Error ? err : new Error("Failed to load candidate profile"));
     } finally { setIsLoading(false); }
-  }, [id, selectedTab]);
+  }, [id, selectedTab, dataFactory]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const generateReport = async () => {
     if (!id) return;
+    const client = dataFactory.createClient();
     setIsAiGenerating(true);
     try {
-      const { data, errors } = await client.mutations.generateIntelligenceReport({ candidateId: id });
-      if (errors) throw new Error(errors[0].message);
+      const generateIntelligenceReport = client.mutations['generateIntelligenceReport'];
+      if (!generateIntelligenceReport) throw new Error('generateIntelligenceReport mutation not available');
+      const { data, errors } = await generateIntelligenceReport({ candidateId: id });
+      if (errors) throw new Error(errors[0]?.message ?? 'Unknown error');
       setAiBlocks(JSON.parse(data as string));
     } catch (err) {
       console.error("[CandidateProfilePage] AI Error:", err);
@@ -771,20 +796,20 @@ export default function CandidateProfilePage(): JSX.Element {
 
   const handleScoreChange = (submissionId: string, score: number) => {
     setAssessments((prev) => prev.map((a) => (a.id === submissionId ? { ...a, score } : a)));
-    client.models.ChallengeSubmission.update({ id: submissionId, score } as any).catch(
+    dataFactory.createClient().models.ChallengeSubmission.update({ id: submissionId, score } as any).catch(
       (err: unknown) => console.error('[CandidateProfilePage] Score update failed:', err)
     );
   };
   const handleFeedbackChange = (submissionId: string, feedback: string) => {
     setAssessments((prev) => prev.map((a) => (a.id === submissionId ? { ...a, feedback } : a)));
-    client.models.ChallengeSubmission.update({ id: submissionId, feedback } as any).catch(
+    dataFactory.createClient().models.ChallengeSubmission.update({ id: submissionId, feedback } as any).catch(
       (err: unknown) => console.error('[CandidateProfilePage] Feedback update failed:', err)
     );
   };
   const handleDownloadResume = async () => {
     if (!candidate?.resumeS3Key) return;
     try {
-      const result = await getUrl({ path: candidate.resumeS3Key, options: { expiresIn: 3600 } });
+      const result = await storage.getUrl({ path: candidate.resumeS3Key, options: { expiresIn: 3600 } });
       window.open(result.url.toString(), "_blank");
     } catch (err) { console.error("[CandidateProfilePage] Failed to get resume URL:", err); }
   };
@@ -793,6 +818,7 @@ export default function CandidateProfilePage(): JSX.Element {
     if (!id || !candidate || !inviteUrl) return;
     const liveStage = stages.find((s) => s.mode === "LIVE_VIDEO");
     if (!liveStage) return;
+    const client = dataFactory.createClient();
     setInviteSaving(true);
     try {
       const provider = resolveSchedulingProvider(inviteUrl, ALL_PROVIDERS);
@@ -801,7 +827,7 @@ export default function CandidateProfilePage(): JSX.Element {
         status: "INVITED", schedulingUrl: inviteUrl, schedulingProvider: provider.type,
       });
       if (errors) throw new Error(errors[0]?.message ?? "Unknown error");
-      setScheduledInterview(data as ScheduledInterviewRow);
+      setScheduledInterview(data as unknown as ScheduledInterviewRow);
     } catch (err) { console.error("[CandidateProfilePage] Failed to send invite:", err);
     } finally { setInviteSaving(false); }
   };

@@ -1,16 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import { useData } from '../../providers';
 import { QuestionVideoPlayer } from '../Challenge/QuestionVideoPlayer';
 import { useSpeechTranscription } from '../../hooks/useSpeechTranscription';
 import { useSessionToken } from '../../contexts/SessionTokenContext';
-
-function getClient(sessionToken: string | null) {
-  if (sessionToken) {
-    return generateClient<Schema>({ authMode: 'lambda', authToken: sessionToken });
-  }
-  return generateClient<Schema>({ authMode: 'apiKey' });
-}
 
 export interface VideoSubmissionPanelProps {
   /** Question heading displayed above the recording controls */
@@ -51,7 +43,10 @@ export function VideoSubmissionPanel({
   challengeId,
 }: VideoSubmissionPanelProps): JSX.Element {
   const sessionToken = useSessionToken();
-  const client = getClient(sessionToken);
+  const dataFactory = useData();
+  const client = sessionToken
+    ? dataFactory.createSessionClient(sessionToken)
+    : dataFactory.createPublicClient();
   const [panelState, setPanelState] = useState<PanelState>(
     videoS3Key ? 'done' : 'idle',
   );
@@ -161,21 +156,23 @@ export function VideoSubmissionPanel({
       candidateId,
       challengeId,
     });
-    const { data, errors } = await client.mutations.generateMediaUploadUrl({
+    const { data: uploadResult, errors } = await client.mutations.generateMediaUploadUrl!({
       candidateId,
       challengeId,
       mimeType: 'video/webm',
       mediaType: 'video',
     });
 
-    if (errors || !data?.uploadUrl || !data.s3Key) {
+    const mediaData = uploadResult as { uploadUrl?: string; s3Key?: string } | null;
+
+    if (errors || !mediaData?.uploadUrl || !mediaData.s3Key) {
       console.error('[VideoSubmissionPanel] generateMediaUploadUrl error:', errors);
       setErrorMsg('Could not prepare upload. Please try again.');
       setPanelState('error');
       return;
     }
 
-    const { uploadUrl, s3Key } = data;
+    const { uploadUrl, s3Key } = mediaData as { uploadUrl: string; s3Key: string };
 
     // 2. Upload directly to S3 via presigned PUT
     try {

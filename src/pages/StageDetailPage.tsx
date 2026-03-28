@@ -7,8 +7,7 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
 import { ChallengePicker } from "../components/Pipeline/ChallengePicker";
 import type { ChallengeSelection } from "../types/challengeSelection";
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../../amplify/data/resource";
+import { useData } from "../providers";
 import { EventTypePicker } from "../components/Scheduling/EventTypePicker";
 import {
   DndContext,
@@ -26,8 +25,6 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
-const client = generateClient<Schema>();
-
 interface NotificationTemplate {
   trigger: "INVITATION" | "SUCCESS" | "FAILURE";
   subject: string;
@@ -43,6 +40,7 @@ export default function StageDetailPage(): JSX.Element {
     stageId: string;
   }>();
   const navigate = useNavigate();
+  const dataFactory = useData();
 
   const [stage, setStage] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,6 +64,7 @@ export default function StageDetailPage(): JSX.Element {
   );
 
   const checkModeField = useCallback(async (stageId: string) => {
+    const client = dataFactory.createClient();
     try {
       await client.models.Stage.list({
         filter: { id: { eq: stageId } },
@@ -75,10 +74,11 @@ export default function StageDetailPage(): JSX.Element {
     } catch {
       setModeFieldReady(false);
     }
-  }, []);
+  }, [dataFactory]);
 
   const fetchData = useCallback(async () => {
     if (!stageId) return;
+    const client = dataFactory.createClient();
     try {
       setIsLoading(true);
       const { data: stages } = modeFieldReady
@@ -121,7 +121,7 @@ export default function StageDetailPage(): JSX.Element {
     } finally {
       setIsLoading(false);
     }
-  }, [stageId, modeFieldReady]);
+  }, [stageId, modeFieldReady, dataFactory]);
 
   useEffect(() => {
     if (stageId) void checkModeField(stageId);
@@ -133,6 +133,7 @@ export default function StageDetailPage(): JSX.Element {
 
   const handleChallengeSelect = async (selections: ChallengeSelection[]) => {
     if (!stageId) return;
+    const client = dataFactory.createClient();
     setPickerOpen(false);
     setIsLoading(true);
     try {
@@ -175,38 +176,50 @@ export default function StageDetailPage(): JSX.Element {
             continue;
           }
 
-          const challengeId = created?.id;
-          if (!challengeId) continue;
+          const createdRecord = created as { id?: string } | null | undefined;
+          const resolvedChallengeId: string | undefined = createdRecord?.id;
+          if (!resolvedChallengeId) continue;
 
           // Fire-and-forget: fetch full diff and cache it on the challenge record
           const selRepoUrl = sel.repoUrl;
           const selPrNumber = sel.prNumber;
           void (async () => {
             try {
-              const { data: raw } = await client.mutations.fetchGitHubPR({
+              const fetchGitHubPR = client.mutations['fetchGitHubPR'];
+              if (!fetchGitHubPR) throw new Error('fetchGitHubPR mutation not available');
+              const { data: raw } = await fetchGitHubPR({
                 repoUrl: selRepoUrl,
                 prNumber: selPrNumber,
                 skipCache: false,
               });
 
-              const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+              const result = typeof raw === "string" ? JSON.parse(raw) : (raw as Record<string, unknown> | null);
 
               if (result?.success && result.data) {
-                await client.models.Challenge.update({
-                  id: challengeId,
-                  cachedDiffJson: result.data.diff,
-                  cachedMetadata: result.data.metadata,
-                  diffCachedAt: new Date().toISOString(),
-                });
+                const diffData = result.data as { diff?: string; metadata?: string };
+                if (diffData.diff || diffData.metadata) {
+                  const updatePayload: {
+                    id: string;
+                    diffCachedAt: string;
+                    cachedDiffJson?: string;
+                    cachedMetadata?: string;
+                  } = {
+                    id: resolvedChallengeId,
+                    diffCachedAt: new Date().toISOString(),
+                  };
+                  if (diffData.diff) updatePayload.cachedDiffJson = diffData.diff;
+                  if (diffData.metadata) updatePayload.cachedMetadata = diffData.metadata;
+                  await client.models.Challenge.update(updatePayload as Parameters<typeof client.models.Challenge.update>[0]);
+                }
                 console.log(
                   "[StageDetailPage] Diff cached for challenge",
-                  challengeId,
+                  resolvedChallengeId,
                 );
               }
             } catch (cacheErr) {
               console.error(
                 "[StageDetailPage] Failed to cache diff for challenge",
-                challengeId,
+                resolvedChallengeId,
                 cacheErr,
               );
             }
@@ -223,6 +236,7 @@ export default function StageDetailPage(): JSX.Element {
 
   const handleChallengeDelete = async (challenge: any) => {
     if (!window.confirm("Delete this challenge?")) return;
+    const client = dataFactory.createClient();
     try {
       await client.models.Challenge.delete({ id: challenge.id });
       await fetchData();
@@ -233,6 +247,7 @@ export default function StageDetailPage(): JSX.Element {
 
   const handleEventTypeSelect = async (eventTypeId: string) => {
     if (!stageId) return;
+    const client = dataFactory.createClient();
     try {
       await client.models.Stage.update({
         id: stageId,
@@ -249,6 +264,7 @@ export default function StageDetailPage(): JSX.Element {
   /** Update or Add an email template */
   const handleSaveTemplate = async () => {
     if (!stageId || !editingTemplate) return;
+    const client = dataFactory.createClient();
     setIsSavingTemplate(true);
     try {
       const currentTemplates = (stage.notificationTemplates ||
@@ -282,6 +298,7 @@ export default function StageDetailPage(): JSX.Element {
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
+    const client = dataFactory.createClient();
     if (over && active.id !== over.id && stage) {
       const oldIndex = stage.challenges.findIndex(
         (c: any) => c.id === active.id,
@@ -370,7 +387,7 @@ export default function StageDetailPage(): JSX.Element {
               onBlur={async () => {
                 if (stage.title) {
                   try {
-                    await client.models.Stage.update({
+                    await dataFactory.createClient().models.Stage.update({
                       id: stage.id,
                       title: stage.title,
                     });
@@ -753,7 +770,7 @@ export default function StageDetailPage(): JSX.Element {
                         ? parseInt(e.target.value)
                         : null;
                       setStage({ ...stage, timeLimit: val });
-                      await client.models.Stage.update({
+                      await dataFactory.createClient().models.Stage.update({
                         id: stage.id,
                         timeLimit: val,
                       });
@@ -841,7 +858,7 @@ export default function StageDetailPage(): JSX.Element {
                                 if (isActive) return;
                                 setStage({ ...stage, mode: m });
                                 try {
-                                  await client.models.Stage.update({
+                                  await dataFactory.createClient().models.Stage.update({
                                     id: stage.id,
                                     mode: m,
                                   });

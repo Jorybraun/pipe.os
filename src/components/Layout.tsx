@@ -56,7 +56,8 @@ export function Layout({
           distortion={0.07}
           contour={0.4}
           angle={70}
-          speed={0.3}
+          //speed={0.3}
+          speed={0.0}
           scale={0.6}
           fit="cover"
         />

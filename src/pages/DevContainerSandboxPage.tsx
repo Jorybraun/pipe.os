@@ -16,10 +16,7 @@
 import { useDevContainerSession } from '../hooks/useDevContainerSession';
 import type { ContainerSessionState } from '../hooks/useDevContainerSession';
 import React from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
-
-const client = generateClient<Schema>();
+import { useData } from '../providers';
 
 // ─── Status label + color mapping ────────────────────────────────────────────
 
@@ -98,6 +95,7 @@ function BootProgressBar(): JSX.Element {
 export default function DevContainerSandboxPage(): JSX.Element {
   const { state, containerUrl, taskArn, error, launch, destroy, reset } =
     useDevContainerSession();
+  const dataFactory = useData();
   const [logs, setLogs] = React.useState<string[]>([]);
   const [autoRefreshLogs, setAutoRefreshLogs] = React.useState(true);
 
@@ -110,11 +108,14 @@ export default function DevContainerSandboxPage(): JSX.Element {
     }
 
     const fetchLogs = async () => {
+      const client = dataFactory.createClient();
       console.log('[DevContainerSandboxPage] Fetching logs for taskArn:', taskArn);
       try {
-        const { data, errors } = await client.queries.getContainerLogs({ taskArn, limit: 50 });
+        const getContainerLogs = client.queries['getContainerLogs'];
+        if (!getContainerLogs) throw new Error('getContainerLogs query not available');
+        const { data, errors } = await getContainerLogs({ taskArn, limit: 50 });
         console.log('[DevContainerSandboxPage] getContainerLogs response:', { data, errors });
-        if (errors) throw new Error(errors[0].message);
+        if (errors) throw new Error(errors[0]?.message ?? 'Unknown error');
         const result = JSON.parse(data as string);
         console.log('[DevContainerSandboxPage] Parsed result:', result);
         if (result.logs) setLogs(result.logs);
@@ -126,7 +127,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
     fetchLogs();
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
-  }, [taskArn, autoRefreshLogs]);
+  }, [taskArn, autoRefreshLogs, dataFactory]);
 
   const isActive = state === 'LAUNCHING' || state === 'BOOTING';
   const statusColor = STATUS_COLORS[state];

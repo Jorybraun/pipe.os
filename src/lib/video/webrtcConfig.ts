@@ -1,5 +1,4 @@
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import type { DataProvider } from '../../providers/types';
 
 // ============================================================================
 // WebRTC Configuration
@@ -28,19 +27,18 @@ const STUN_FALLBACK: RTCIceServer[] = [
  * Returns combined STUN + TURN servers on success, STUN-only on failure.
  *
  * Credentials are cached for 1 hour to avoid excessive API calls.
+ *
+ * @param client - Authenticated DataProvider (recruiter userPool client).
  */
-export async function getIceServers(): Promise<RTCIceServer[]> {
+export async function getIceServers(client: DataProvider): Promise<RTCIceServer[]> {
   // Return cached if still fresh
   if (cachedIceServers && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
     return cachedIceServers;
   }
 
-  // Generate client inside the function to ensure Amplify is configured first
-  const client = generateClient<Schema>({ authMode: 'userPool' });
-
   try {
     console.log('[webrtcConfig] Fetching TURN credentials from API...');
-    const response = await client.queries.getTurnCredentials();
+    const response = await client.queries.getTurnCredentials!({});
 
     if (response.errors) {
       console.error('[webrtcConfig] getTurnCredentials GraphQL errors:', JSON.stringify(response.errors, null, 2));
@@ -81,11 +79,10 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
 /**
  * Builds a fully configured RTCPeerConnection.
  *
- * @param iceServers - Optional override. Candidates pass ICE servers received
- *   in the OFFER payload so they never need to call getTurnCredentials directly.
- *   If omitted (recruiter path), credentials are fetched from the Lambda.
+ * @param iceServers - ICE servers to use. Recruiters obtain these by calling
+ *   getIceServers(client) first. Candidates receive them via the OFFER payload.
+ *   Falls back to STUN-only if not provided.
  */
-export async function createPeerConnection(iceServers?: RTCIceServer[]): Promise<RTCPeerConnection> {
-  const servers = iceServers ?? await getIceServers();
-  return new RTCPeerConnection({ iceServers: servers });
+export function createPeerConnection(iceServers?: RTCIceServer[]): RTCPeerConnection {
+  return new RTCPeerConnection({ iceServers: iceServers ?? STUN_FALLBACK });
 }

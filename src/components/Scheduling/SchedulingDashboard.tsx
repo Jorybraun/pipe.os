@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Calendar, RefreshCw } from 'lucide-react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import { useData } from '../../providers';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import { InterviewCard } from './InterviewCard';
@@ -14,8 +13,6 @@ import {
 } from './SchedulingFilters';
 import { Skeleton } from '../ui/Skeleton';
 import { ConnectionSetup } from './ConnectionSetup';
-
-const client = generateClient<Schema>();
 
 // ---------------------------------------------------------------------------
 // Types for enrichment lookup tables
@@ -54,6 +51,7 @@ interface StageRef {
  * pattern on first load.
  */
 export function SchedulingDashboard(): JSX.Element {
+  const client = useData().createClient();
   const { interviews, isLoading, error, updateStatus } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
 
@@ -88,17 +86,20 @@ export function SchedulingDashboard(): JSX.Element {
 
         const pm: Record<string, PipelineRef> = {};
         pipGetResults.forEach(({ data: p }) => {
-          if (p) pm[p.id] = { id: p.id, title: p.title };
+          const pipeline = p as { id: string; title: string } | null;
+          if (pipeline) pm[pipeline.id] = { id: pipeline.id, title: pipeline.title };
         });
 
         const cm: Record<string, CandidateRef> = {};
         candGetResults.forEach(({ data: c }) => {
-          if (c) cm[c.id] = { id: c.id, name: c.name ?? null, email: c.email ?? null };
+          const candidate = c as { id: string; name: string | null; email: string | null } | null;
+          if (candidate) cm[candidate.id] = { id: candidate.id, name: candidate.name ?? null, email: candidate.email ?? null };
         });
 
         const sm: Record<string, StageRef> = {};
         stageGetResults.forEach(({ data: s }) => {
-          if (s) sm[s.id] = { id: s.id, title: s.title };
+          const stage = s as { id: string; title: string } | null;
+          if (stage) sm[stage.id] = { id: stage.id, title: stage.title };
         });
 
         setPipelinesMap(pm);

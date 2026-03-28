@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Phase 0C — Cloudflare migration provider abstraction)
+- Migrated `src/App.tsx` from direct Amplify `Authenticator`/`useAuthenticator` to `AmplifyAuthGate`/`AmplifyAuthWrapper`/`useAuth` — zero `@aws-amplify/*` imports remain
+- Migrated all `src/pages/` from module-level `generateClient<Schema>()` to `useData().createClient()` hook pattern — zero `aws-amplify/*` or `amplify/data/resource` imports remain in pages layer
+- Files migrated: `App.tsx`, `ListingPage.tsx`, `OverviewPage.tsx`, `CandidateProfilePage.tsx`, `StageDetailPage.tsx`, `PipeLineCreatePage.tsx`, `archived/PipelineCreatePage.tsx`, `DevContainerSandboxPage.tsx`, `DevContainerTestPage.tsx`
+- Named mutations/queries now accessed via bracket notation with null checks per `DataProvider` interface contract (`mutations: Record<string, MutationOperation>`)
+
 #### Added (CODE_IMPLEMENTATION — multi-file code environment)
 - `VirtualFS` type system (`src/lib/challenge/virtualFS.ts`): `VirtualFile`, `VirtualFS`, `TestCaseResult`, `EnhancedRunResult` + helpers (`createDefaultFS`, `legacyToVFS`, `fsToSandpackFiles`, `extractEditableFiles`, `mergeSubmissionIntoFS`)
 - Enhanced test runner (`testRunner.ts`): multi-file VirtualFS support, named `test()` / `describe()` framework, per-test `TestCaseResult[]` output, backward-compatible `runTests` legacy API

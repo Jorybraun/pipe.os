@@ -18,7 +18,7 @@ import {
   BookMarked,
   Trash2,
 } from "lucide-react";
-import { generateClient } from "aws-amplify/data";
+import { useData } from "../../providers";
 import { LiquidMetalCard } from "../ui/LiquidMetalCard";
 import { ChallengeCard } from "./ChallengeCard";
 import {
@@ -26,9 +26,6 @@ import {
   type ChallengeTemplate,
 } from "../../content/challengeLibrary";
 import type { ChallengeSelection } from "../../types/challengeSelection";
-import type { Schema } from "../../../amplify/data/resource";
-
-const client = generateClient<Schema>();
 
 interface PRSummary {
   number: number;
@@ -88,6 +85,8 @@ export function ChallengePicker({
   onClose,
   onSelect,
 }: ChallengePickerProps): JSX.Element | null {
+  const client = useData().createClient();
+
   // Template library state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("CODE_REVIEW");
@@ -214,7 +213,7 @@ export function ChallengePicker({
         repoUrl: trimmedUrl,
       });
       const { data: raw, errors: gqlErrors } =
-        await client.mutations.listGitHubPRs({
+        await client.mutations.listGitHubPRs!({
           repoUrl: trimmedUrl,
           state: "open",
         });

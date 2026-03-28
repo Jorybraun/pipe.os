@@ -1,14 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useData } from '../providers';
+import type { DataProviderFactory, DataProvider, MutationOperation, QueryOperation } from '../providers';
 
-const publicClient = generateClient<Schema>({ authMode: 'apiKey' });
+/** Type-safe mutation accessor — avoids noUncheckedIndexedAccess on Record<string, MutationOperation> */
+function mut<TArgs, TResult>(
+  client: DataProvider,
+  name: string,
+): MutationOperation<TArgs, TResult> {
+  const fn = (client.mutations as Record<string, MutationOperation<TArgs, TResult>>)[name];
+  if (!fn) throw new Error(`Mutation '${name}' not available`);
+  return fn;
+}
 
-function getCandidateClient(sessionToken: string | null) {
-  if (sessionToken) {
-    return generateClient<Schema>({ authMode: 'lambda', authToken: sessionToken });
-  }
-  return publicClient;
+/** Type-safe query accessor */
+function qry<TArgs, TResult>(
+  client: DataProvider,
+  name: string,
+): QueryOperation<TArgs, TResult> {
+  const fn = (client.queries as Record<string, QueryOperation<TArgs, TResult>>)[name];
+  if (!fn) throw new Error(`Query '${name}' not available`);
+  return fn;
 }
 
 // ============================================================================
@@ -22,10 +33,6 @@ export interface ResolvedCandidate {
   name?: string | null;
   email?: string | null;
 }
-
-export type Candidate = Schema['Candidate']['type'];
-export type Stage = Schema['Stage']['type'];
-export type Assessment = Schema['Assessment']['type'];
 
 export interface CodeReviewSubmission { annotations: Record<string, unknown[]> }
 export interface QuizSubmission { answers: Record<string, number> }
@@ -109,6 +116,8 @@ interface UseAssessmentReturn extends UseAssessmentState {
  * No database IDs, no future challenge content exposed to client.
  */
 export function useAssessment(inviteToken: string): UseAssessmentReturn {
+  const factory: DataProviderFactory = useData();
+
   const [state, setState] = useState<UseAssessmentState>({
     candidate: null,
     stageConfig: null,
@@ -126,6 +135,13 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
   const sessionTokenRef = useRef<string | null>(
     typeof window !== 'undefined' ? sessionStorage.getItem('pipe_session_token') : null
   );
+
+  function getCandidateClient(sessionToken: string | null) {
+    if (sessionToken) {
+      return factory.createSessionClient(sessionToken);
+    }
+    return factory.createPublicClient();
+  }
 
   // ── Resolve token on mount ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -159,20 +175,22 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           throw new Error('SESSION_EXPIRED');
         }
       } else {
-        const { data: resolved, errors } = await publicClient.queries.resolveToken({ inviteToken });
+        const publicClient = factory.createPublicClient();
+        const { data: resolvedRaw, errors } = await qry<{ inviteToken: string }, Record<string, unknown>>(publicClient, 'resolveToken')({ inviteToken });
         if (errors) throw new Error(errors[0]?.message ?? 'Token resolution failed');
-        if (!resolved?.id || !resolved?.pipelineId) throw new Error('INVALID_TOKEN');
+        const resolved = resolvedRaw as Record<string, unknown> | null;
+        if (!resolved?.['id'] || !resolved?.['pipelineId']) throw new Error('INVALID_TOKEN');
 
-        if (resolved.sessionToken) {
-          sessionTokenRef.current = resolved.sessionToken;
-          sessionStorage.setItem('pipe_session_token', resolved.sessionToken);
+        if (resolved['sessionToken']) {
+          sessionTokenRef.current = resolved['sessionToken'] as string;
+          sessionStorage.setItem('pipe_session_token', resolved['sessionToken'] as string);
         }
 
         candidate = {
-          id: resolved.id,
-          pipelineId: resolved.pipelineId,
-          status: resolved.status ?? null,
-          name: resolved.name ?? null,
+          id: resolved['id'] as string,
+          pipelineId: resolved['pipelineId'] as string,
+          status: (resolved['status'] as string) ?? null,
+          name: (resolved['name'] as string) ?? null,
         };
         sessionStorage.setItem('pipe_session_candidate', JSON.stringify(candidate));
       }
@@ -188,14 +206,14 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       console.error('[useAssessment] Error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
     }
-  }, [inviteToken]);
+  }, [inviteToken, factory]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // ── Load stage config from server ───────────────────────────────────────
   const loadStageConfig = useCallback(async (): Promise<StageConfigDTO | null> => {
     const client = getCandidateClient(sessionTokenRef.current);
-    const { data: raw, errors } = await client.mutations.getStageConfig({ inviteToken });
+    const { data: raw, errors } = await mut<{ inviteToken: string }, unknown>(client, 'getStageConfig')({ inviteToken });
 
     if (errors?.length) {
       const msg = errors[0]?.message ?? 'Failed to load stage config';
@@ -213,12 +231,12 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     if (result['error']) throw new Error(result['error'] as string);
 
     return result as unknown as StageConfigDTO;
-  }, [inviteToken]);
+  }, [inviteToken, factory]);
 
   // ── Load challenge content by order ─────────────────────────────────────
   const loadChallenge = useCallback(async (order: number): Promise<ChallengeContentDTO | null> => {
     const client = getCandidateClient(sessionTokenRef.current);
-    const { data: raw, errors } = await client.mutations.getChallenge({ inviteToken, order });
+    const { data: raw, errors } = await mut<{ inviteToken: string; order: number }, unknown>(client, 'getChallenge')({ inviteToken, order });
 
     if (errors?.length) {
       const msg = errors[0]?.message ?? 'Failed to load challenge';
@@ -236,7 +254,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     if (result['error']) throw new Error(result['error'] as string);
 
     return result as unknown as ChallengeContentDTO;
-  }, [inviteToken]);
+  }, [inviteToken, factory]);
 
   // ── onStart: load stage config + first challenge ────────────────────────
   const onStart = useCallback(async () => {
@@ -276,7 +294,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       console.error('[useAssessment] onStart error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
     }
-  }, [state.candidate, loadStageConfig, loadChallenge]);
+  }, [state.candidate, loadStageConfig, loadChallenge, factory]);
 
   // ── Auto-trigger follow-up generation ───────────────────────────────────
   useEffect(() => {
@@ -291,7 +309,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     setState((prev) => ({ ...prev, followUpLoading: true }));
 
     const client = getCandidateClient(sessionTokenRef.current);
-    client.mutations.generateFollowUps({ challengeSubmissionId: lastChallengeSubmissionId })
+    mut<{ challengeSubmissionId: string }, unknown>(client, 'generateFollowUps')({ challengeSubmissionId: lastChallengeSubmissionId })
       .then((result) => {
         let questions: FollowUpQuestion[] = [];
         try {
@@ -366,7 +384,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         setState((prev) => ({ ...prev, isLoading: false, error: err instanceof Error ? err : new Error('Failed to load stage') }));
       }
     }
-  }, [state, loadStageConfig, loadChallenge]);
+  }, [state, loadStageConfig, loadChallenge, factory]);
 
   // ── Submit challenge ────────────────────────────────────────────────────
   const submitChallenge = useCallback(
@@ -396,7 +414,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
               }),
             });
             try {
-              await client.mutations.scoreChallengeSubmission({ challengeSubmissionId: lastChallengeSubmissionId });
+              await mut<{ challengeSubmissionId: string }, unknown>(client, 'scoreChallengeSubmission')({ challengeSubmissionId: lastChallengeSubmissionId });
             } catch (e) {
               console.error('[useAssessment] scoringAgent (follow-up) failed:', e);
             }
@@ -405,7 +423,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
           // Create a ChallengeSubmission for the FOLLOW_UP challenge itself
           // so getStageConfig marks it as completed
           try {
-            await client.mutations.submitChallengeResponse({
+            await mut<{ inviteToken: string; order: number; submission: string }, unknown>(client, 'submitChallengeResponse')({
               inviteToken,
               order: currentOrder,
               submission: JSON.stringify(submission),
@@ -419,24 +437,26 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         }
 
         // ── Non-FOLLOW_UP: submit via Lambda ──────────────────────────────
-        const { data: submitResult } = await client.mutations.submitChallengeResponse({
+        const { data: submitResultRaw } = await mut<{ inviteToken: string; order: number; submission: string }, Record<string, unknown>>(client, 'submitChallengeResponse')({
           inviteToken,
           order: currentOrder,
           submission: JSON.stringify(submission),
         });
+        const submitResult = submitResultRaw as Record<string, unknown> | null;
 
-        if (submitResult?.success && submitResult.challengeSubmissionId) {
+        if (submitResult?.['success'] && submitResult['challengeSubmissionId']) {
+          const challengeSubmissionId = submitResult['challengeSubmissionId'] as string;
           // Score
           try {
-            await client.mutations.scoreChallengeSubmission({ challengeSubmissionId: submitResult.challengeSubmissionId });
+            await mut<{ challengeSubmissionId: string }, unknown>(client, 'scoreChallengeSubmission')({ challengeSubmissionId });
           } catch (e) {
             console.error('[useAssessment] scoringAgent failed:', e);
           }
 
-          setState((prev) => ({ ...prev, lastChallengeSubmissionId: submitResult.challengeSubmissionId! }));
+          setState((prev) => ({ ...prev, lastChallengeSubmissionId: challengeSubmissionId }));
           await advance();
         } else {
-          const errorMsg = submitResult?.error ?? 'Failed to submit';
+          const errorMsg = (submitResult?.['error'] as string) ?? 'Failed to submit';
           console.error('[useAssessment] submitChallengeResponse failed:', errorMsg);
           setState((prev) => ({ ...prev, isLoading: false, error: new Error(errorMsg) }));
         }
@@ -446,7 +466,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         setState((prev) => ({ ...prev, isLoading: false, error }));
       }
     },
-    [state, inviteToken, advance]
+    [state, inviteToken, advance, factory]
   );
 
   const reset = useCallback(() => {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useData } from '../providers';
 import { createPeerConnection } from '../lib/video/webrtcConfig';
 import {
   requestMediaPermissions,
@@ -83,6 +84,8 @@ export function useVideoSession({
   sendSignal,
   onEnded,
 }: UseVideoSessionOptions): UseVideoSessionReturn {
+  const dataFactory = useData();
+
   const [connectionState, setConnectionState] =
     useState<VideoConnectionState>('idle');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -142,7 +145,7 @@ export function useVideoSession({
     // Those candidates are already buffered; clearing the array would lose them.
     remoteDescSetRef.current = false;
 
-    const pc = await createPeerConnection(iceServers);
+    const pc = createPeerConnection(iceServers);
     pcRef.current = pc;
 
     // Forward ICE candidates to the remote peer via AppSync
@@ -210,7 +213,7 @@ export function useVideoSession({
       // They are embedded in the OFFER payload so the candidate never needs
       // to call getTurnCredentials — preventing unauthenticated API abuse.
       const { getIceServers } = await import('../lib/video/webrtcConfig');
-      const iceServers = await getIceServers();
+      const iceServers = await getIceServers(dataFactory.createClient());
 
       const pc = await initPeerConnection(iceServers);
       const offer = await pc.createOffer();
@@ -223,7 +226,7 @@ export function useVideoSession({
       console.error('[useVideoSession] startCall error:', err);
       setConnectionState('error');
     }
-  }, [role, initPeerConnection, sendSignal]);
+  }, [role, dataFactory, initPeerConnection, sendSignal]);
 
   const acceptCall = useCallback(
     async (offer: SdpPayload): Promise<void> => {

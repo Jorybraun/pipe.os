@@ -14,12 +14,8 @@ import {
 } from "lucide-react";
 import { LiquidMetalCard } from "..";
 import { FieldGroup, TextInput } from "../ui/form";
-import { generateClient } from "aws-amplify/data";
-import { uploadData } from "aws-amplify/storage";
-import type { Schema } from "../../../amplify/data/resource";
+import { useData, useStorage } from "../../providers";
 import { useCandidateCreate } from "../../hooks/useCandidateCreate";
-
-const client = generateClient<Schema>();
 
 interface CandidateIntakeModalProps {
   pipelineId: string;
@@ -51,6 +47,8 @@ export function CandidateIntakeModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { create, isSubmitting: isCreating } = useCandidateCreate();
+  const client = useData().createClient();
+  const storage = useStorage();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -113,13 +111,11 @@ export function CandidateIntakeModal({
 
       // 2. Upload CV — flat prefix required by Amplify wildcard constraint (ADR-022)
       const s3Key = `candidate-documents/${candidateId}/${file.name}`;
-      await uploadData({
+      await storage.upload({
         path: s3Key,
         data: file,
-        options: {
-          contentType: file.type
-        }
-      }).result;
+        contentType: file.type,
+      });
 
       // 2b. Persist the S3 key immediately on the Candidate record so VIEW_RESUME
       // works on the profile page even if AI parsing fails or is slow.
@@ -143,7 +139,7 @@ export function CandidateIntakeModal({
       // candidate record exists, so we always advance to CONFIRM regardless of whether
       // AI parsing succeeds. A Lambda timeout or Mistral error must not undo the intake.
       try {
-        const { data: parseResult, errors } = await client.mutations.parseCandidateCV({
+        const { data: parseResult, errors } = await client.mutations.parseCandidateCV!({
           candidateId,
           resumeS3Key: s3Key
         });

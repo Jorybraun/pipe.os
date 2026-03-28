@@ -1,10 +1,7 @@
 import { useState, useEffect } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useData } from '../providers';
+import type { DataProviderFactory } from '../providers';
 import type { ScheduledInterview } from '../lib/scheduling/types';
-
-// Candidate hook — uses API key auth, matching the useAssessment pattern
-const client = generateClient<Schema>({ authMode: 'apiKey' });
 
 interface UseScheduledInterviewResult {
   interview: ScheduledInterview | null;
@@ -30,6 +27,8 @@ export function useScheduledInterview(
   candidateId: string,
   stageId: string
 ): UseScheduledInterviewResult {
+  const factory: DataProviderFactory = useData();
+
   const [interview, setInterview] = useState<ScheduledInterview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError]         = useState<Error | null>(null);
@@ -44,6 +43,7 @@ export function useScheduledInterview(
 
     const load = async () => {
       try {
+        const client = factory.createPublicClient();
         const { data, errors } = await client.models.ScheduledInterview.list({
           filter: {
             candidateId: { eq: candidateId },
@@ -51,11 +51,12 @@ export function useScheduledInterview(
           },
         });
 
-        if (errors) throw new Error(errors[0].message);
+        if (errors) throw new Error(errors[0]?.message ?? 'List failed');
         if (!cancelled) {
           // Take the most recent record if multiple exist (shouldn't happen in practice)
           // TODO: enforce a unique constraint on (candidateId, stageId) at the schema level
-          setInterview(data[0] ?? null);
+          const items = data as ScheduledInterview[];
+          setInterview(items[0] ?? null);
           setIsLoading(false);
         }
       } catch (err) {
@@ -69,7 +70,7 @@ export function useScheduledInterview(
 
     load();
     return () => { cancelled = true; };
-  }, [candidateId, stageId]);
+  }, [candidateId, stageId, factory]);
 
   return { interview, isLoading, error };
 }

@@ -11,7 +11,8 @@ import {
   useParams,
   useLocation,
 } from "react-router-dom";
-import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
+import { AmplifyAuthGate, AmplifyAuthWrapper } from "./providers/amplify";
+import { useAuth, useData } from "./providers";
 import { Layout, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
 import OverviewPage from "./pages/OverviewPage";
@@ -27,11 +28,6 @@ import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../amplify/data/resource";
-
-const client = generateClient<Schema>();
-
 /**
  * SubHeader - Main interactive UI for navigation and context
  */
@@ -39,7 +35,9 @@ const SubHeader = () => {
   const navigate = useNavigate();
   const { id, stage, questionId } = useParams();
   const location = useLocation();
-  const { signOut } = useAuthenticator();
+  const auth = useAuth();
+  const dataFactory = useData();
+
   // this changing why is it state?
   const [headerData, setHeaderData] = useState<{
     title: string;
@@ -61,6 +59,7 @@ const SubHeader = () => {
   useEffect(() => {
     let cancelled = false;
     const fetchData = async () => {
+      const client = dataFactory.createClient();
       try {
         let pipelineId = isPipelineContext ? id : null;
 
@@ -68,7 +67,7 @@ const SubHeader = () => {
           const { data: candidate } = await client.models.Candidate.get({ id });
           if (cancelled) return;
           if (candidate) {
-            pipelineId = candidate.pipelineId;
+            pipelineId = (candidate as { pipelineId: string }).pipelineId;
           }
         }
 
@@ -80,7 +79,8 @@ const SubHeader = () => {
           if (cancelled) return;
 
           setHeaderData({
-            title: pipeline?.title || "POSITION",
+            title:
+              (pipeline as { title?: string } | null)?.title || "POSITION",
             count: 0, // Candidate count shown in OverviewPage, not header
           });
         } else {
@@ -98,7 +98,7 @@ const SubHeader = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, isPipelineContext, isCandidateContext]);
+  }, [id, isPipelineContext, isCandidateContext, dataFactory]);
 
   const currentStage = stage ? { title: stage } : null;
   const isHome = location.pathname === "/";
@@ -251,7 +251,7 @@ const SubHeader = () => {
           CREATE NEW PIPE
         </button>
         <button
-          onClick={signOut}
+          onClick={() => void auth.signOut()}
           style={{
             padding: "14px 18px",
             background: "transparent",
@@ -339,50 +339,52 @@ function App(): JSX.Element {
         <Route
           path="*"
           element={
-            <Authenticator>
-              <Routes>
-                <Route element={<AppLayout />}>
-                  <Route path="/" element={<ListingPage />} />
-                  <Route path="/pipeline/:id" element={<OverviewPage />} />
-                  <Route
-                    path="/pipeline/:id/stages/:stageId"
-                    element={<StageDetailPage />}
-                  />
-                  {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
+            <AmplifyAuthGate>
+              <AmplifyAuthWrapper>
+                <Routes>
+                  <Route element={<AppLayout />}>
+                    <Route path="/" element={<ListingPage />} />
+                    <Route path="/pipeline/:id" element={<OverviewPage />} />
                     <Route
-                      path="/pipeline/:id/challenges/:challengeId"
-                      element={<ChallengeEditorPage />}
+                      path="/pipeline/:id/stages/:stageId"
+                      element={<StageDetailPage />}
                     />
-                  )}
-                  <Route
-                    path="/pipeline/new"
-                    element={<PipelineCreatePage />}
-                  />
-                  <Route
-                    path="/candidates/:id"
-                    element={<CandidateProfilePage />}
-                  />
-                  <Route
-                    path="/screenings/:id/preview"
-                    element={<CandidateScreeningPage />}
-                  />
-                  {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
-                    <Route path="/schedule" element={<SchedulingPage />} />
-                  )}
-                  {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
+                    {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
+                      <Route
+                        path="/pipeline/:id/challenges/:challengeId"
+                        element={<ChallengeEditorPage />}
+                      />
+                    )}
                     <Route
-                      path="/sandbox/dev-container"
-                      element={<DevContainerSandboxPage />}
+                      path="/pipeline/new"
+                      element={<PipelineCreatePage />}
                     />
-                  )}
-                  <Route
-                    path="/prototype/report"
-                    element={<CandidateReportPrototype />}
-                  />
-                </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Authenticator>
+                    <Route
+                      path="/candidates/:id"
+                      element={<CandidateProfilePage />}
+                    />
+                    <Route
+                      path="/screenings/:id/preview"
+                      element={<CandidateScreeningPage />}
+                    />
+                    {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
+                      <Route path="/schedule" element={<SchedulingPage />} />
+                    )}
+                    {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
+                      <Route
+                        path="/sandbox/dev-container"
+                        element={<DevContainerSandboxPage />}
+                      />
+                    )}
+                    <Route
+                      path="/prototype/report"
+                      element={<CandidateReportPrototype />}
+                    />
+                  </Route>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </AmplifyAuthWrapper>
+            </AmplifyAuthGate>
           }
         />
       </Routes>

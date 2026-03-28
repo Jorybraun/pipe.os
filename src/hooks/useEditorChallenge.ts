@@ -1,11 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useData } from '../providers';
+import type { DataProviderFactory } from '../providers';
 import { ALL_CHALLENGE_TEMPLATES } from '../content/challengeLibrary';
 import type { EditorChallenge } from '../components/Editor/types';
-
-const client = generateClient<Schema>();
 
 // ---------------------------------------------------------------------------
 // Return type
@@ -32,6 +30,7 @@ export function useEditorChallenge(
   challengeId: string | undefined,
   pipelineId: string | undefined,
 ): UseEditorChallengeReturn {
+  const factory: DataProviderFactory = useData();
   const navigate = useNavigate();
   const [challenge, setChallengeRaw] = useState<EditorChallenge | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,28 +100,30 @@ export function useEditorChallenge(
       }
 
       // 3. Fetch from DB
+      const client = factory.createClient();
       const { data } = await client.models.Challenge.get({ id: challengeId });
       if (data) {
+        const record = data as Record<string, unknown>;
         const parsedConfig =
-          typeof data.config === 'string' ? JSON.parse(data.config) : data.config || {};
+          typeof record['config'] === 'string' ? JSON.parse(record['config'] as string) : record['config'] || {};
         const parsedServerConfig =
-          typeof data.serverConfig === 'string' ? JSON.parse(data.serverConfig) : data.serverConfig || {};
+          typeof record['serverConfig'] === 'string' ? JSON.parse(record['serverConfig'] as string) : record['serverConfig'] || {};
 
         setChallengeRaw({
-          ...(data as unknown as Record<string, unknown>),
+          ...record,
           config: parsedConfig as Record<string, unknown>,
           serverConfig: parsedServerConfig as Record<string, unknown>,
         } as EditorChallenge);
 
-        if (data.groundTruthAnnotations) {
+        if (record['groundTruthAnnotations']) {
           const parsed =
-            typeof data.groundTruthAnnotations === 'string'
-              ? JSON.parse(data.groundTruthAnnotations)
-              : data.groundTruthAnnotations;
+            typeof record['groundTruthAnnotations'] === 'string'
+              ? JSON.parse(record['groundTruthAnnotations'] as string)
+              : record['groundTruthAnnotations'];
           setGroundTruthAnnotations(parsed as Record<string, unknown[]>);
         }
 
-        if (data.type === 'CODE_REVIEW' && data.githubRepoUrl && data.githubPrNumber) {
+        if (record['type'] === 'CODE_REVIEW' && record['githubRepoUrl'] && record['githubPrNumber']) {
           setPrFetched(true);
         }
       }
@@ -131,7 +132,7 @@ export function useEditorChallenge(
     } finally {
       setIsLoading(false);
     }
-  }, [challengeId]);
+  }, [challengeId, factory]);
 
   useEffect(() => {
     fetchData();
@@ -145,6 +146,7 @@ export function useEditorChallenge(
     if (!challenge) return;
     setIsSaving(true);
     try {
+      const client = factory.createClient();
       const updateParams: Record<string, unknown> = {
         title: challenge.title,
         instructions: challenge.instructions,
@@ -153,20 +155,20 @@ export function useEditorChallenge(
       };
 
       if (challenge.type === 'CODE_REVIEW' && challenge.githubRepoUrl) {
-        updateParams.githubRepoUrl = challenge.githubRepoUrl;
-        updateParams.githubPrNumber = challenge.githubPrNumber;
-        updateParams.githubPrTitle = challenge.githubPrTitle;
-        updateParams.githubPrDescription = challenge.githubPrDescription;
-        updateParams.cachedDiffJson =
+        updateParams['githubRepoUrl'] = challenge.githubRepoUrl;
+        updateParams['githubPrNumber'] = challenge.githubPrNumber;
+        updateParams['githubPrTitle'] = challenge.githubPrTitle;
+        updateParams['githubPrDescription'] = challenge.githubPrDescription;
+        updateParams['cachedDiffJson'] =
           typeof challenge.cachedDiffJson === 'string'
             ? challenge.cachedDiffJson
             : JSON.stringify(challenge.cachedDiffJson);
-        updateParams.cachedMetadata =
+        updateParams['cachedMetadata'] =
           typeof challenge.cachedMetadata === 'string'
             ? challenge.cachedMetadata
             : JSON.stringify(challenge.cachedMetadata);
-        updateParams.diffCachedAt = new Date().toISOString();
-        updateParams.groundTruthAnnotations = JSON.stringify(groundTruthAnnotations);
+        updateParams['diffCachedAt'] = new Date().toISOString();
+        updateParams['groundTruthAnnotations'] = JSON.stringify(groundTruthAnnotations);
       }
 
       const isTemplate = challenge.isTemplate;
@@ -180,7 +182,8 @@ export function useEditorChallenge(
             filter: { pipelineId: { eq: pipelineId } },
           });
           if (stages && stages.length > 0 && stages[0]) {
-            stageId = stages[0].id;
+            const firstStage = stages[0] as Record<string, unknown>;
+            stageId = firstStage['id'] as string;
           }
         }
 
@@ -192,7 +195,7 @@ export function useEditorChallenge(
           stageId,
           type: challenge.type,
           order: challengeOrder,
-        } as Parameters<typeof client.models.Challenge.create>[0]);
+        });
 
         // Auto-create FOLLOW_UP challenge if enabled
         if (challenge.config?.enableFollowUp && stageId) {
@@ -211,22 +214,26 @@ export function useEditorChallenge(
           }
         }
 
-        if (newChallenge?.id) {
-          navigate(`/pipeline/${pipelineId}/challenges/${newChallenge.id}`, { replace: true });
+        if (newChallenge) {
+          const newRecord = newChallenge as Record<string, unknown>;
+          if (newRecord['id']) {
+            navigate(`/pipeline/${pipelineId}/challenges/${newRecord['id']}`, { replace: true });
+          }
         }
       } else {
         await client.models.Challenge.update({
           id: challenge.id,
           ...updateParams,
-        } as Parameters<typeof client.models.Challenge.update>[0]);
+        });
 
         // Auto-create FOLLOW_UP if newly enabled
         if (challenge.config?.enableFollowUp && challenge.stageId) {
           const { data: siblings } = await client.models.Challenge.list({
             filter: { stageId: { eq: challenge.stageId } },
           });
-          const hasFollowUp = siblings?.some(
-            (c) => c.type === 'FOLLOW_UP' && (c.order ?? 0) > (challenge.order ?? 0),
+          const typedSiblings = (siblings ?? []) as Array<Record<string, unknown>>;
+          const hasFollowUp = typedSiblings.some(
+            (c) => c['type'] === 'FOLLOW_UP' && ((c['order'] as number) ?? 0) > (challenge.order ?? 0),
           );
           if (!hasFollowUp) {
             try {
@@ -250,7 +257,7 @@ export function useEditorChallenge(
     } finally {
       setIsSaving(false);
     }
-  }, [challenge, groundTruthAnnotations, pipelineId, navigate]);
+  }, [challenge, groundTruthAnnotations, pipelineId, navigate, factory]);
 
   // -------------------------------------------------------------------------
   // Clone
@@ -260,6 +267,7 @@ export function useEditorChallenge(
     if (!challenge) return;
     setIsSaving(true);
     try {
+      const client = factory.createClient();
       const cloneParams: Record<string, unknown> = {
         title: `${challenge.title} (Clone)`,
         instructions: challenge.instructions,
@@ -271,34 +279,33 @@ export function useEditorChallenge(
       };
 
       if (challenge.type === 'CODE_REVIEW') {
-        cloneParams.githubRepoUrl = challenge.githubRepoUrl;
-        cloneParams.githubPrNumber = challenge.githubPrNumber;
-        cloneParams.githubPrTitle = challenge.githubPrTitle;
-        cloneParams.githubPrDescription = challenge.githubPrDescription;
-        cloneParams.cachedDiffJson =
+        cloneParams['githubRepoUrl'] = challenge.githubRepoUrl;
+        cloneParams['githubPrNumber'] = challenge.githubPrNumber;
+        cloneParams['githubPrTitle'] = challenge.githubPrTitle;
+        cloneParams['githubPrDescription'] = challenge.githubPrDescription;
+        cloneParams['cachedDiffJson'] =
           typeof challenge.cachedDiffJson === 'string'
             ? challenge.cachedDiffJson
             : JSON.stringify(challenge.cachedDiffJson);
-        cloneParams.cachedMetadata =
+        cloneParams['cachedMetadata'] =
           typeof challenge.cachedMetadata === 'string'
             ? challenge.cachedMetadata
             : JSON.stringify(challenge.cachedMetadata);
-        cloneParams.diffCachedAt = new Date().toISOString();
-        cloneParams.groundTruthAnnotations = JSON.stringify(groundTruthAnnotations);
+        cloneParams['diffCachedAt'] = new Date().toISOString();
+        cloneParams['groundTruthAnnotations'] = JSON.stringify(groundTruthAnnotations);
       }
 
-      const { data: newChallenge } = await client.models.Challenge.create(
-        cloneParams as Parameters<typeof client.models.Challenge.create>[0],
-      );
+      const { data: newChallenge } = await client.models.Challenge.create(cloneParams);
       if (newChallenge) {
-        navigate(`/pipeline/${pipelineId}/challenges/${newChallenge.id}`, { replace: true });
+        const newRecord = newChallenge as Record<string, unknown>;
+        navigate(`/pipeline/${pipelineId}/challenges/${newRecord['id']}`, { replace: true });
       }
     } catch (err) {
       console.error('[useEditorChallenge] clone error:', err);
     } finally {
       setIsSaving(false);
     }
-  }, [challenge, groundTruthAnnotations, pipelineId, navigate]);
+  }, [challenge, groundTruthAnnotations, pipelineId, navigate, factory]);
 
   return {
     challenge,

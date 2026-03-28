@@ -6,13 +6,10 @@ import { LiquidMetalCard } from "../components/ui/LiquidMetalCard";
 import { FieldGroup, RadioGroup, SelectInput } from "../components/ui/form";
 import { Settings, Loader2, Check } from "lucide-react";
 import { useRoleDiscovery } from "../hooks/useRoleDiscovery";
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from "../../amplify/data/resource";
+import { useData } from "../providers";
 import type { RoleDiscoveryData } from "../types/roleDiscovery";
 import type { Baseline } from "../types/discovery";
 import { PIPELINE_PRESETS } from "../lib/pipelinePresets";
-
-const client = generateClient<Schema>();
 
 /**
  * RoleDiscoveryPage - Conversational Role Discovery Flow
@@ -22,6 +19,7 @@ const client = generateClient<Schema>();
  */
 export default function RoleDiscoveryPage(): JSX.Element {
   const navigate = useNavigate();
+  const dataFactory = useData();
   const {
     roleContext,
     isLoading: isAgentLoading,
@@ -72,6 +70,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
   };
 
   const handleComplete = async (finalData: any) => {
+    const client = dataFactory.createClient();
     setIsCreating(true);
     try {
       // 1. Create Pipeline
@@ -84,7 +83,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
         creationMode: formData.selectedPresetId === 'BLANK' ? 'BLANK' : 'PRESET',
       } as any);
 
-      if (pErrors || !pipeline) throw new Error(pErrors?.[0].message || 'Failed to create pipeline');
+      if (pErrors || !pipeline) throw new Error(pErrors?.[0]?.message ?? 'Failed to create pipeline');
 
       // 2. Create Stages and Challenges from Preset
       const preset = PIPELINE_PRESETS[formData.selectedPresetId || 'DEFAULT'] || PIPELINE_PRESETS['BLANK'];
@@ -94,10 +93,12 @@ export default function RoleDiscoveryPage(): JSX.Element {
         
         for (let sIdx = 0; sIdx < preset.stages.length; sIdx++) {
           const pStage = preset.stages[sIdx];
-          
+          if (!pStage) continue;
+
           // Create Stage record
+          const pipelineId = (pipeline as { id: string }).id;
           const { data: stage, errors: sErrors } = await client.models.Stage.create({
-            pipelineId: pipeline.id,
+            pipelineId,
             title: pStage.name,
             order: sIdx,
           });
@@ -110,9 +111,10 @@ export default function RoleDiscoveryPage(): JSX.Element {
           // Create Challenges for this stage
           for (let cIdx = 0; cIdx < pStage.challenges.length; cIdx++) {
             const pChallenge = pStage.challenges[cIdx];
-            
+            if (!pChallenge) continue;
+
             await client.models.Challenge.create({
-              stageId: stage.id,
+              stageId: (stage as { id: string }).id,
               type: pChallenge.type as any,
               order: cIdx,
               title: pChallenge.title,
@@ -128,7 +130,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
       await new Promise(resolve => setTimeout(resolve, 800));
 
       // 3. Redirect to Pipeline Overview
-      navigate(`/pipeline/${pipeline.id}`);
+      navigate(`/pipeline/${(pipeline as { id: string }).id}`);
 
     } catch (err) {
       console.error('Final Pipeline Creation Failed:', err);

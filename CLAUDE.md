@@ -35,7 +35,55 @@ Never expose Cognito subs, DynamoDB record IDs, ARNs, or table names to candidat
 
 - React 18 + Vite + TypeScript (strict mode)
 - AWS Amplify Gen 2: Cognito + AppSync (GraphQL) + DynamoDB + Lambda + S3
-- Design system: "Technical Terminal" — see `docs/design/design-system.md`
+- Design system: brutalist glassmorphic, dark `#0c0c0e`, Space Mono font
+- See `.claude/rules/` for TypeScript, architecture, and component standards
+
+---
+
+## Key conventions
+
+- **TypeScript strict mode** — no `any`. Use `unknown` + type guards.
+- **Explicit return types** on all exported functions.
+- **Named exports** — no default exports except page components.
+- **Hooks** → `src/hooks/`, pages → `src/pages/`, components → `src/components/`
+- **Amplify Data errors** — always `if (errors) throw new Error(errors[0].message)`
+- **Logging** — `console.error('[hookName] what failed:', context)`
+- **Type check** — `npx tsc --noEmit` must pass before any commit. NEVER pipe tsc output through `head`, `tail`, or any command that masks the exit code. Always run `npx tsc --noEmit` bare so a non-zero exit code is visible. A piped command showing exit code 0 with errors is a silent failure.
+- **CHANGELOG** — every commit that touches source files must update `CHANGELOG.md` under `[Unreleased]`. Enforced by pre-commit hook. Bypass with `--no-verify` for doc/config-only commits.
+- **ADRs** — significant architectural decisions (schema changes, third-party choices, patterns) get an ADR in `docs/decisions/`. Copy `ADR-000-template.md`, use the next number, add to the index.
+
+---
+
+## Design system
+
+- Use existing primitives: `LiquidMetalCard` (named export), `FieldGroup`, `TextInput`
+- Do not invent new UI primitives — extend existing ones
+- Full component inventory: `docs/design/design-system.md`
+- Challenge type badge colors: CODE_REVIEW=blue `#60a5fa`, CODE_IMPLEMENTATION=purple `#a78bfa`, QUIZ_MCQ=green `#4ade80`, QUIZ_SHORT_ANSWER=amber `#fbbf24`
+
+---
+
+## Test credentials
+
+The Cognito test account used for E2E testing and manual browser validation:
+
+```
+Email:    braunjory@gmail.com
+Password: Wrx7UB35t$
+```
+
+Also stored in `.env.local` as `E2E_EMAIL` / `E2E_PASSWORD` for Playwright auth setup.
+
+---
+
+## Amplify commands
+
+```bash
+npm run dev                # Local dev server
+npx ampx sandbox           # Deploy schema to your personal cloud sandbox
+npx tsc --noEmit           # Type check (use this — npm run build may fail on ARM64)
+npx ampx pipeline-deploy   # Production deploy — CI only, don't run manually
+```
 
 ---
 

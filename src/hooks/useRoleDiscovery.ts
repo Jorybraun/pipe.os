@@ -6,8 +6,17 @@
  */
 
 import { useState, useCallback } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useData } from '../providers';
+import type { DataProviderFactory, DataProvider, MutationOperation } from '../providers';
+
+function mut<TArgs, TResult>(
+  dataClient: DataProvider,
+  name: string,
+): MutationOperation<TArgs, TResult> {
+  const fn = (dataClient.mutations as Record<string, MutationOperation<TArgs, TResult>>)[name];
+  if (!fn) throw new Error(`Mutation '${name}' not available`);
+  return fn;
+}
 import type {
   RoleContext,
   Baseline,
@@ -16,8 +25,6 @@ import type {
   JobDescriptionResponse,
 } from '../types/discovery';
 import { v4 as uuid } from 'uuid';
-
-const client = generateClient<Schema>();
 
 const initialContext: RoleContext = {
   id: uuid(),
@@ -63,6 +70,9 @@ export interface UseRoleDiscoveryReturn {
 }
 
 export function useRoleDiscovery(): UseRoleDiscoveryReturn {
+  const factory: DataProviderFactory = useData();
+  const client = factory.createClient();
+
   const [roleContext, setRoleContext] = useState<RoleContext>(initialContext);
   const [currentSection, setCurrentSection] = useState<FormSection | null>(null);
   const [reasoning, setReasoning] = useState<string>('');
@@ -126,12 +136,12 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
         };
       } else {
         // Real Lambda invocation via Amplify Mutation
-        const response = await client.mutations.generateQuestions({
-          roleContext: updatedContext as any, // Cast to any for JSON arg
+        const response = await mut<Record<string, unknown>, QuestionAgentResponse>(client, 'generateQuestions')({
+          roleContext: updatedContext as unknown as Record<string, unknown>,
         });
 
         if (response.errors) {
-          throw new Error(response.errors[0].message);
+          throw new Error(response.errors[0]?.message ?? 'generateQuestions failed');
         }
 
         data = response.data as unknown as QuestionAgentResponse;
@@ -143,10 +153,10 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
         context: data.updatedContext,
         status: data.status,
         gaps: data.gaps,
-        userSignals: data.userSignals,
+        userSignals: data.userSignals as RoleContext['userSignals'],
         updatedAt: Date.now(),
         ...config,
-      }));
+      } as RoleContext));
       setCurrentSection(data.nextSection);
       setReasoning(data.reasoning);
       setCostTracking(data.costTracking);
@@ -199,13 +209,13 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
           processingTime: 2000,
         };
       } else {
-        const response = await client.mutations.generateQuestions({
-          roleContext: roleContext as any,
-          responses: responses as any,
+        const response = await mut<Record<string, unknown>, QuestionAgentResponse>(client, 'generateQuestions')({
+          roleContext: roleContext as unknown as Record<string, unknown>,
+          responses: responses as unknown as Record<string, unknown>,
         });
 
         if (response.errors) {
-          throw new Error(response.errors[0].message);
+          throw new Error(response.errors[0]?.message ?? 'generateQuestions failed');
         }
 
         data = response.data as unknown as QuestionAgentResponse;
@@ -217,9 +227,9 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
         context: data.updatedContext,
         status: data.status,
         gaps: data.gaps,
-        userSignals: data.userSignals,
+        userSignals: data.userSignals as RoleContext['userSignals'],
         updatedAt: Date.now(),
-      }));
+      } as RoleContext));
       setCurrentSection(data.nextSection);
       setReasoning(data.reasoning);
       setCostTracking(data.costTracking);
@@ -282,12 +292,12 @@ export function useRoleDiscovery(): UseRoleDiscoveryReturn {
           processingTime: 3000,
         };
       } else {
-        const response = await client.mutations.generateJobDescription({
-          roleContext: roleContext as any,
+        const response = await mut<Record<string, unknown>, JobDescriptionResponse>(client, 'generateJobDescription')({
+          roleContext: roleContext as unknown as Record<string, unknown>,
         });
 
         if (response.errors) {
-          throw new Error(response.errors[0].message);
+          throw new Error(response.errors[0]?.message ?? 'generateJobDescription failed');
         }
 
         data = response.data as unknown as JobDescriptionResponse;
