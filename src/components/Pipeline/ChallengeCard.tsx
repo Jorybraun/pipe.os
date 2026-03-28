@@ -96,7 +96,7 @@ export function ChallengeCard({
   const timeLimit = config.timeLimit;
 
   return (
-    <div ref={setNodeRef} style={style} onClick={onClick}>
+    <div ref={setNodeRef} style={style} onClick={onClick} data-testid="challenge-card">
       <LiquidMetalCard
         variant={isSelected ? "chrome" : "dark"}
         style={{

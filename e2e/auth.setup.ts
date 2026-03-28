@@ -49,6 +49,11 @@ setup("authenticate via Clerk", async ({ page }) => {
       .first()
   ).toBeVisible({ timeout: 30000 });
 
+  // Wait for network to settle so Clerk has completed its async token refresh.
+  // The __session JWT is short-lived (60s in dev mode); saving state only after
+  // networkidle ensures the stored cookie is a freshly-issued token.
+  await page.waitForLoadState('networkidle');
+
   // Save storage state
   await page.context().storageState({ path: authFile });
 });

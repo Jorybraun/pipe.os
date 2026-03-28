@@ -1,5 +1,5 @@
-import { Shield, ChevronDown, Github, Edit3, Settings, ExternalLink, RefreshCw, FileText, MessageSquare } from 'lucide-react';
-import { GitHubPRFetcher } from '../Assessment/GitHubPRFetcher';
+import { Shield, ChevronDown, Github, ExternalLink, RefreshCw, FileText, MessageSquare } from 'lucide-react';
+import { GitHubPRFetcherV2 } from '../Assessment/GitHubPRFetcherV2';
 import { GroundTruthAnnotationEditor } from '../Assessment/GroundTruthAnnotationEditor';
 import { LiquidMetalCard, SubTitle } from '../../components';
 import { FollowUpConfiguration } from './FollowUpConfiguration';
@@ -63,23 +63,25 @@ export function CodeReviewEditor({
       {/* MAIN CONTENT AREA */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
         
-        {!prFetched ? (
-          <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
+        <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
             <div style={{ padding: '32px 40px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 16 }}>
                <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fbbf24' }}>
                   <Github size={20} />
                </div>
                <div>
                   <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>Connect Source Pull Request</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>STEP_01: FETCH_METADATA_FROM_GITHUB</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>STEP_1:_FETCH_GITHUB_PR</div>
                </div>
             </div>
             <div style={{ padding: '40px' }}>
-              <GitHubPRFetcher
-                initialChallenge={{
-                  githubRepoUrl: challenge.githubRepoUrl || '',
-                  githubPrNumber: challenge.githubPrNumber || 0,
-                }}
+              <GitHubPRFetcherV2
+                initialRepoUrl={challenge.githubRepoUrl || ''}
+                initialPrNumber={challenge.githubPrNumber || 0}
+                showCached={prFetched}
+                cachedTitle={challenge.githubPrTitle}
+                cachedAuthor={typeof challenge.cachedMetadata === 'object' && challenge.cachedMetadata !== null ? (challenge.cachedMetadata as Record<string, unknown>)['author'] as string | undefined : undefined}
+                cachedRepoUrl={challenge.githubRepoUrl}
+                cachedPrNumber={challenge.githubPrNumber}
                 onPRFetched={handlePRFetched}
                 onCleared={() => {
                   onChange({
@@ -96,7 +98,8 @@ export function CodeReviewEditor({
               />
             </div>
           </LiquidMetalCard>
-        ) : (
+
+        {prFetched && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
             {/* Instructions */}
             <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>

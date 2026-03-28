@@ -131,7 +131,7 @@ pipelines.post('/', async (c) => {
       pipelineId,
       userId,
       input.title,
-      input.level,
+      input.level ?? null,
       stackJson,
       input.description ?? null,
       input.status,
@@ -185,16 +185,23 @@ pipelines.post('/', async (c) => {
   // Execute as a D1 batch — atomic, rolls back on any failure.
   await c.env.DB.batch(statements);
 
+  const createdAt = new Date().toISOString();
+  const pipelinePayload = {
+    id: pipelineId,
+    title: input.title,
+    level: input.level,
+    status: input.status,
+    stageCount: stages.length,
+    createdAt,
+  };
+
   return c.json(
     {
-      pipeline: {
-        id: pipelineId,
-        title: input.title,
-        level: input.level,
-        status: input.status,
-        stageCount: stages.length,
-        createdAt: new Date().toISOString(),
-      },
+      // Flat fields (stage-detail.spec.ts seedPipeline reads body.id directly).
+      // Also nested under `data` and `pipeline` for other spec compatibility.
+      ...pipelinePayload,
+      data: pipelinePayload,
+      pipeline: pipelinePayload,
     },
     201,
   );

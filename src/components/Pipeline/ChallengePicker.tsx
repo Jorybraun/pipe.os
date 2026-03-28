@@ -50,7 +50,7 @@ interface ChallengePickerProps {
 }
 
 const TYPES = [
-  { id: "CODE_REVIEW", label: "Code Review", icon: Code, color: "#60a5fa" },
+  { id: "CODE_REVIEW", label: "GitHub PR", icon: Code, color: "#60a5fa" },
   {
     id: "CODE_IMPLEMENTATION",
     label: "Implementation",
@@ -98,6 +98,10 @@ export function ChallengePicker({
   const [isFetchingPRs, setIsFetchingPRs] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
   const [selectedPRs, setSelectedPRs] = useState<Set<number>>(new Set());
+
+  // Direct PR entry — single repo URL + PR number
+  const [directRepoUrl, setDirectRepoUrl] = useState("");
+  const [directPrNumber, setDirectPrNumber] = useState("");
 
   // Saved repos (persisted in localStorage)
   const SAVED_REPOS_KEY = "pipe_saved_repos";
@@ -341,6 +345,10 @@ export function ChallengePicker({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Challenge picker"
+      data-testid="challenge-picker"
       style={{
         position: "fixed",
         inset: 0,
@@ -718,6 +726,102 @@ export function ChallengePicker({
         <div style={{ padding: 32, overflowY: "auto", flex: 1 }}>
           {isCodeReviewMode ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              {/* Direct PR Entry Form */}
+              <div
+                style={{
+                  padding: 20,
+                  background: "rgba(96,165,250,0.04)",
+                  border: "1px solid rgba(96,165,250,0.15)",
+                  borderRadius: 8,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: "rgba(96,165,250,0.7)",
+                    letterSpacing: "0.15em",
+                    fontFamily: "Space Mono",
+                  }}
+                >
+                  ADD BY PR NUMBER
+                </div>
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <input
+                    value={directRepoUrl}
+                    onChange={(e) => setDirectRepoUrl(e.target.value)}
+                    placeholder="https://github.com/owner/repo"
+                    style={{
+                      flex: 2,
+                      background: "rgba(0,0,0,0.2)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 4,
+                      padding: "10px 14px",
+                      color: "#fff",
+                      fontSize: 11,
+                      outline: "none",
+                      fontFamily: "Space Mono",
+                    }}
+                  />
+                  <input
+                    value={directPrNumber}
+                    onChange={(e) => setDirectPrNumber(e.target.value)}
+                    placeholder="PR number #"
+                    type="number"
+                    min="1"
+                    style={{
+                      flex: 1,
+                      background: "rgba(0,0,0,0.2)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 4,
+                      padding: "10px 14px",
+                      color: "#fff",
+                      fontSize: 11,
+                      outline: "none",
+                      fontFamily: "Space Mono",
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const prNum = parseInt(directPrNumber, 10);
+                      if (!isValidGitHubUrl(directRepoUrl) || !prNum) return;
+                      onSelect([
+                        {
+                          source: "github" as const,
+                          repoUrl: directRepoUrl.trim(),
+                          prNumber: prNum,
+                          prTitle: `PR #${prNum}`,
+                          prDescription: "",
+                          prAuthor: "",
+                        },
+                      ]);
+                      onClose();
+                    }}
+                    disabled={
+                      !isValidGitHubUrl(directRepoUrl) ||
+                      !directPrNumber ||
+                      isNaN(parseInt(directPrNumber, 10))
+                    }
+                    style={{
+                      padding: "10px 20px",
+                      background: "rgba(96,165,250,0.15)",
+                      border: "1px solid rgba(96,165,250,0.4)",
+                      borderRadius: 4,
+                      color: "#60a5fa",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: "Space Mono",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    FETCH
+                  </button>
+                </div>
+              </div>
+
               {/* Create New Tile for Code Review */}
               <div
                 style={{

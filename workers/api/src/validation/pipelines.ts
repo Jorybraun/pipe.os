@@ -24,12 +24,18 @@ export const createPipelineSchema = z.object({
     .min(1, 'title must not be empty')
     .max(200, 'title must be 200 characters or fewer'),
 
-  /** Experience level for the role. */
-  level: z.enum(LEVEL_VALUES, {
-    errorMap: () => ({
-      message: `level must be one of: ${LEVEL_VALUES.join(', ')}`,
-    }),
-  }),
+  /**
+   * Experience level for the role.
+   * Optional — omitted when creating pipelines without a level (e.g. e2e seed helpers).
+   */
+  level: z
+    .enum(LEVEL_VALUES, {
+      errorMap: () => ({
+        message: `level must be one of: ${LEVEL_VALUES.join(', ')}`,
+      }),
+    })
+    .optional()
+    .nullable(),
 
   /** Optional technology stack tags. */
   stack: z.array(z.string()).optional(),

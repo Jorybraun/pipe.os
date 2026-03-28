@@ -1,6 +1,5 @@
-import { Shield, ChevronDown, List, Settings, HelpCircle, MessageSquare, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, List, HelpCircle, MessageSquare, Trash2 } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../../components';
-import { ButtonGroup } from '../ui/ButtonGroup';
 import { FollowUpConfiguration } from './FollowUpConfiguration';
 import type { EditorFormProps } from './types';
 
@@ -82,13 +81,14 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                 borderRadius: 6, fontSize: 10, fontFamily: 'Space Mono', fontWeight: 700, cursor: 'pointer'
               }}
             >
-              <Plus size={12} /> ADD_OPTION
+              + ADD_OPTION
             </button>
           </div>
           <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {options.map((opt, idx) => (
               <div key={opt.id} style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                 <button
+                  title="Mark as correct answer"
                   onClick={() => onChange({ ...challenge, serverConfig: { ...challenge.serverConfig, correctOptionId: opt.id } })}
                   style={{
                     width: 24, height: 24, borderRadius: '50%', cursor: 'pointer',
@@ -111,7 +111,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                       serverConfig: { ...challenge.serverConfig, options: newOptions },
                     });
                   }}
-                  placeholder={`Option ${String.fromCharCode(65 + idx)}...`}
+                  placeholder={`Option ${String.fromCharCode(65 + idx)} text...`}
                   style={{
                     flex: 1, padding: '16px 20px', background: 'rgba(255,255,255,0.03)',
                     border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', fontSize: 14,

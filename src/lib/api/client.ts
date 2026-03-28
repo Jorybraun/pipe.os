@@ -37,6 +37,8 @@ export interface ApiClientConfig {
 export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
+  patch<T>(path: string, body: unknown): Promise<T>;
+  put<T>(path: string, body: unknown): Promise<T>;
   del(path: string): Promise<void>;
 }
 
@@ -121,6 +123,32 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     return handleResponse<T>(response);
   }
 
+  async function patch<T>(path: string, body: unknown): Promise<T> {
+    const headers = await authHeader();
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<T>(response);
+  }
+
+  async function put<T>(path: string, body: unknown): Promise<T> {
+    const headers = await authHeader();
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<T>(response);
+  }
+
   async function del(path: string): Promise<void> {
     const headers = await authHeader();
     const response = await fetch(`${baseUrl}${path}`, {
@@ -133,5 +161,5 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     await handleResponse<void>(response);
   }
 
-  return { get, post, del };
+  return { get, post, patch, put, del };
 }

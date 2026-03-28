@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { FEATURE_FLAGS } from "../config/featureFlags";
 import { useParams, useNavigate } from "react-router-dom";
 import { Plus, Settings, Video, Mail, ChevronRight, Save } from "lucide-react";
@@ -7,8 +7,12 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
 import { ChallengePicker } from "../components/Pipeline/ChallengePicker";
 import type { ChallengeSelection } from "../types/challengeSelection";
-import { useData } from "../providers";
-import { EventTypePicker } from "../components/Scheduling/EventTypePicker";
+import { useStageDetail } from "../hooks/useStageDetail";
+import { useStageMutations } from "../hooks/useStageMutations";
+import { useChallengeMutations } from "../hooks/useChallengeMutations";
+import { useAuth as useClerkAuth } from "@clerk/react";
+import { createApiClient } from "../lib/api/client";
+import type { NotificationTemplate, ChallengeItem } from "../lib/api/types";
 import {
   DndContext,
   closestCenter,
@@ -16,7 +20,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  DragEndEvent,
+  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -25,139 +29,69 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
-interface NotificationTemplate {
-  trigger: "INVITATION" | "SUCCESS" | "FAILURE";
-  subject: string;
-  body: string;
-}
-
 /**
- * StageDetailPage - Manage challenges within a specific stage.
+ * StageDetailPage — manages challenges and settings for a pipeline stage.
+ *
+ * All data is loaded from the Cloudflare Worker API. No aws-amplify imports.
  */
 export default function StageDetailPage(): JSX.Element {
-  const { id, stageId } = useParams<{
-    id: string;
-    stageId: string;
-  }>();
+  const { id, stageId } = useParams<{ id: string; stageId: string }>();
   const navigate = useNavigate();
-  const dataFactory = useData();
+  const { getToken } = useClerkAuth();
 
-  const [stage, setStage] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { stage, isLoading, refetch } = useStageDetail(stageId);
+  const { updateStage } = useStageMutations();
+  const { createChallenge, deleteChallenge, reorderChallenges } =
+    useChallengeMutations();
+
+  // Local title state for the inline editable input (mirrors stage.title)
+  const [localTitle, setLocalTitle] = useState<string | null>(null);
+
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [modeFieldReady, setModeFieldReady] = useState(false);
 
   // Email Template State
   const [editingTemplate, setEditingTemplate] =
     useState<NotificationTemplate | null>(null);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
+  // Derived title: prefer local edit state, then server data
+  const displayTitle =
+    localTitle !== null ? localTitle : (stage?.title ?? "");
+
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
 
-  const checkModeField = useCallback(async (stageId: string) => {
-    const client = dataFactory.createClient();
-    try {
-      await client.models.Stage.list({
-        filter: { id: { eq: stageId } },
-        selectionSet: ["id", "mode"],
-      });
-      setModeFieldReady(true);
-    } catch {
-      setModeFieldReady(false);
-    }
-  }, [dataFactory]);
+  // ─── Challenge select handler ────────────────────────────────────────────────
 
-  const fetchData = useCallback(async () => {
-    if (!stageId) return;
-    const client = dataFactory.createClient();
-    try {
-      setIsLoading(true);
-      const { data: stages } = modeFieldReady
-        ? await client.models.Stage.list({
-            filter: { id: { eq: stageId } },
-            selectionSet: [
-              "id",
-              "title",
-              "order",
-              "timeLimit",
-              "mode",
-              "challenges.*",
-              "schedulingEventTypeId",
-              "notificationTemplates",
-            ],
-          })
-        : await client.models.Stage.list({
-            filter: { id: { eq: stageId } },
-            selectionSet: [
-              "id",
-              "title",
-              "order",
-              "timeLimit",
-              "challenges.*",
-              "notificationTemplates",
-            ],
-          });
+  const handleChallengeSelect = useCallback(
+    async (selections: ChallengeSelection[]): Promise<void> => {
+      if (!stageId) return;
+      setPickerOpen(false);
 
-      const data = stages[0];
-      if (data) {
-        // Parse templates if they are stored as JSON string
-        const templates =
-          typeof data.notificationTemplates === "string"
-            ? JSON.parse(data.notificationTemplates)
-            : data.notificationTemplates || [];
-        setStage({ ...data, notificationTemplates: templates });
-      }
-    } catch (err) {
-      console.error("[StageDetail] Error fetching stage:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [stageId, modeFieldReady, dataFactory]);
-
-  useEffect(() => {
-    if (stageId) void checkModeField(stageId);
-  }, [stageId, checkModeField]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleChallengeSelect = async (selections: ChallengeSelection[]) => {
-    if (!stageId) return;
-    const client = dataFactory.createClient();
-    setPickerOpen(false);
-    setIsLoading(true);
-    try {
-      const currentCount = stage?.challenges?.length || 0;
+      const currentCount = stage?.challenges?.length ?? 0;
       let orderOffset = 0;
+
       for (const sel of selections) {
         const order = currentCount + orderOffset;
         orderOffset++;
 
-        if (sel.source === "library") {
-          const { template } = sel;
-          await client.models.Challenge.create({
-            stageId,
-            type: template.type,
-            title: template.title,
-            instructions: template.instructions,
-            config: JSON.stringify(template.config),
-            order,
-          });
-        } else {
-          // GitHub PR — create challenge then fire-and-forget diff cache
-          const { data: created, errors } =
-            await client.models.Challenge.create({
-              stageId,
+        try {
+          if (sel.source === "library") {
+            const { template } = sel;
+            await createChallenge(stageId, {
+              type: template.type,
+              title: template.title,
+              instructions: template.instructions,
+              config: template.config as Record<string, unknown>,
+              order,
+            });
+          } else {
+            // GitHub PR — create challenge then fire-and-forget diff cache
+            const created = await createChallenge(stageId, {
               type: "CODE_REVIEW",
               title: sel.prTitle,
               instructions: sel.prDescription,
@@ -168,165 +102,165 @@ export default function StageDetailPage(): JSX.Element {
               order,
             });
 
-          if (errors) {
-            console.error(
-              "[StageDetailPage] Failed to create GitHub PR challenge:",
-              errors,
-            );
-            continue;
-          }
-
-          const createdRecord = created as { id?: string } | null | undefined;
-          const resolvedChallengeId: string | undefined = createdRecord?.id;
-          if (!resolvedChallengeId) continue;
-
-          // Fire-and-forget: fetch full diff and cache it on the challenge record
-          const selRepoUrl = sel.repoUrl;
-          const selPrNumber = sel.prNumber;
-          void (async () => {
-            try {
-              const fetchGitHubPR = client.mutations['fetchGitHubPR'];
-              if (!fetchGitHubPR) throw new Error('fetchGitHubPR mutation not available');
-              const { data: raw } = await fetchGitHubPR({
-                repoUrl: selRepoUrl,
-                prNumber: selPrNumber,
-                skipCache: false,
-              });
-
-              const result = typeof raw === "string" ? JSON.parse(raw) : (raw as Record<string, unknown> | null);
-
-              if (result?.success && result.data) {
-                const diffData = result.data as { diff?: string; metadata?: string };
-                if (diffData.diff || diffData.metadata) {
-                  const updatePayload: {
-                    id: string;
-                    diffCachedAt: string;
-                    cachedDiffJson?: string;
-                    cachedMetadata?: string;
-                  } = {
-                    id: resolvedChallengeId,
-                    diffCachedAt: new Date().toISOString(),
+            // Fire-and-forget: cache the full diff on the challenge record
+            void (async () => {
+              try {
+                const api = createApiClient({ getToken });
+                const result = await api.post<{
+                  success: boolean;
+                  data?: {
+                    diff?: Record<string, unknown>;
+                    metadata?: Record<string, unknown>;
                   };
-                  if (diffData.diff) updatePayload.cachedDiffJson = diffData.diff;
-                  if (diffData.metadata) updatePayload.cachedMetadata = diffData.metadata;
-                  await client.models.Challenge.update(updatePayload as Parameters<typeof client.models.Challenge.update>[0]);
+                }>("/api/v1/github/pr", {
+                  challengeId: created.id,
+                  repoUrl: sel.repoUrl,
+                  prNumber: sel.prNumber,
+                });
+
+                if (result?.success) {
+                  console.log(
+                    "[StageDetailPage] Diff cached for challenge",
+                    created.id,
+                  );
                 }
-                console.log(
-                  "[StageDetailPage] Diff cached for challenge",
-                  resolvedChallengeId,
+              } catch (cacheErr) {
+                console.error(
+                  "[StageDetailPage] Failed to cache diff for challenge",
+                  created.id,
+                  cacheErr,
                 );
               }
-            } catch (cacheErr) {
-              console.error(
-                "[StageDetailPage] Failed to cache diff for challenge",
-                resolvedChallengeId,
-                cacheErr,
-              );
-            }
-          })();
+            })();
+          }
+        } catch (err) {
+          console.error("[StageDetailPage] Failed to add challenge:", err);
         }
       }
-      await fetchData();
-    } catch (err) {
-      console.error("[StageDetailPage] Failed to add challenges:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  const handleChallengeDelete = async (challenge: any) => {
-    if (!window.confirm("Delete this challenge?")) return;
-    const client = dataFactory.createClient();
+      await refetch();
+    },
+    [stageId, stage?.challenges?.length, createChallenge, getToken, refetch],
+  );
+
+  // ─── Challenge delete handler ─────────────────────────────────────────────
+
+  const handleChallengeDelete = useCallback(
+    async (challenge: ChallengeItem): Promise<void> => {
+      if (!window.confirm("Delete this challenge?")) return;
+      try {
+        await deleteChallenge(challenge.id);
+        await refetch();
+      } catch (err) {
+        console.error("[StageDetailPage] Failed to delete challenge:", err);
+      }
+    },
+    [deleteChallenge, refetch],
+  );
+
+  // ─── Stage title save (onBlur) ────────────────────────────────────────────
+
+  const handleTitleBlur = useCallback(async (): Promise<void> => {
+    if (!stageId || localTitle === null) return;
+    const title = localTitle.trim();
+    if (!title) return;
     try {
-      await client.models.Challenge.delete({ id: challenge.id });
-      await fetchData();
+      await updateStage(stageId, { title });
     } catch (err) {
-      console.error("Failed to delete challenge:", err);
+      console.error("[StageDetailPage] Failed to update stage title:", err);
     }
-  };
+    setLocalTitle(null);
+  }, [stageId, localTitle, updateStage]);
 
-  const handleEventTypeSelect = async (eventTypeId: string) => {
-    if (!stageId) return;
-    const client = dataFactory.createClient();
-    try {
-      await client.models.Stage.update({
-        id: stageId,
-        schedulingEventTypeId: eventTypeId,
-      });
-      setStage((prev: any) =>
-        prev ? { ...prev, schedulingEventTypeId: eventTypeId } : prev,
-      );
-    } catch (err) {
-      console.error("[StageDetail] Failed to save event type:", err);
-    }
-  };
+  // ─── Email template save ──────────────────────────────────────────────────
 
-  /** Update or Add an email template */
-  const handleSaveTemplate = async () => {
-    if (!stageId || !editingTemplate) return;
-    const client = dataFactory.createClient();
+  const handleSaveTemplate = useCallback(async (): Promise<void> => {
+    if (!stageId || !editingTemplate || !stage) return;
     setIsSavingTemplate(true);
     try {
-      const currentTemplates = (stage.notificationTemplates ||
-        []) as NotificationTemplate[];
+      const currentTemplates = stage.notificationTemplates ?? [];
       const exists = currentTemplates.find(
         (t) => t.trigger === editingTemplate.trigger,
       );
 
-      let newTemplates;
-      if (exists) {
-        newTemplates = currentTemplates.map((t) =>
-          t.trigger === editingTemplate.trigger ? editingTemplate : t,
-        );
-      } else {
-        newTemplates = [...currentTemplates, editingTemplate];
-      }
+      const newTemplates = exists
+        ? currentTemplates.map((t) =>
+            t.trigger === editingTemplate.trigger ? editingTemplate : t,
+          )
+        : [...currentTemplates, editingTemplate];
 
-      await client.models.Stage.update({
-        id: stageId,
-        notificationTemplates: JSON.stringify(newTemplates),
-      });
-
-      setStage({ ...stage, notificationTemplates: newTemplates });
+      await updateStage(stageId, { notificationTemplates: newTemplates });
       setEditingTemplate(null);
+      await refetch();
     } catch (err) {
-      console.error("[StageDetail] Failed to save template:", err);
+      console.error("[StageDetailPage] Failed to save template:", err);
     } finally {
       setIsSavingTemplate(false);
     }
-  };
+  }, [stageId, editingTemplate, stage, updateStage, refetch]);
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    const client = dataFactory.createClient();
-    if (over && active.id !== over.id && stage) {
-      const oldIndex = stage.challenges.findIndex(
-        (c: any) => c.id === active.id,
-      );
-      const newIndex = stage.challenges.findIndex((c: any) => c.id === over.id);
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const newChallenges = arrayMove(
-          stage.challenges,
-          oldIndex,
-          newIndex,
-        ).map((c: any, i: number) => ({
-          ...c,
-          order: i,
-        }));
-        setStage({ ...stage, challenges: newChallenges });
-        try {
-          await Promise.all(
-            newChallenges.map((c: any) =>
-              client.models.Challenge.update({ id: c.id, order: c.order }),
-            ),
-          );
-        } catch (err) {
-          console.error("Failed to update challenge order:", err);
-          fetchData();
-        }
+  // ─── Stage mode toggle ────────────────────────────────────────────────────
+
+  const handleModeToggle = useCallback(
+    async (mode: "ASYNC" | "LIVE_VIDEO"): Promise<void> => {
+      if (!stageId) return;
+      try {
+        await updateStage(stageId, { mode });
+        await refetch();
+      } catch (err) {
+        console.error("[StageDetailPage] Failed to update mode:", err);
       }
-    }
-  };
+    },
+    [stageId, updateStage, refetch],
+  );
+
+  // ─── Time limit change ────────────────────────────────────────────────────
+
+  const handleTimeLimitChange = useCallback(
+    async (value: string): Promise<void> => {
+      if (!stageId) return;
+      const timeLimit = value ? parseInt(value, 10) : null;
+      try {
+        await updateStage(stageId, { timeLimit });
+        await refetch();
+      } catch (err) {
+        console.error("[StageDetailPage] Failed to update time limit:", err);
+      }
+    },
+    [stageId, updateStage, refetch],
+  );
+
+  // ─── Drag-and-drop reorder ────────────────────────────────────────────────
+
+  const handleDragEnd = useCallback(
+    async (event: DragEndEvent): Promise<void> => {
+      const { active, over } = event;
+      if (!over || active.id === over.id || !stage) return;
+
+      const oldIndex = stage.challenges.findIndex((c) => c.id === active.id);
+      const newIndex = stage.challenges.findIndex((c) => c.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reordered = arrayMove(stage.challenges, oldIndex, newIndex).map(
+        (c, i) => ({ ...c, order: i }),
+      );
+
+      // Optimistically update local state via refetch after API call
+      try {
+        await reorderChallenges(
+          stageId!,
+          reordered.map((c) => ({ id: c.id, order: c.order })),
+        );
+        await refetch();
+      } catch (err) {
+        console.error("[StageDetailPage] Failed to reorder challenges:", err);
+        await refetch(); // Revert to server state
+      }
+    },
+    [stage, stageId, reorderChallenges, refetch],
+  );
+
+  // ─── Loading state ────────────────────────────────────────────────────────
 
   if (isLoading && !stage) {
     return (
@@ -341,12 +275,13 @@ export default function StageDetailPage(): JSX.Element {
     );
   }
 
-  if (!stage)
+  if (!stage) {
     return <div style={{ padding: 40, color: "#fff" }}>Stage not found.</div>;
+  }
 
-  const challenges = [...(stage.challenges || [])]
+  const challenges = [...(stage.challenges ?? [])]
     .filter((c) => c !== null)
-    .sort((a, b) => (a.order || 0) - (b.order || 0));
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
   const triggers: NotificationTemplate["trigger"][] = [
     "INVITATION",
@@ -379,23 +314,11 @@ export default function StageDetailPage(): JSX.Element {
               PIPELINE_STAGE / {stage.id.substring(0, 8)}
             </div>
             <input
-              value={stage.title || ""}
-              onChange={(e) => {
-                const newVal = e.target.value;
-                setStage({ ...stage, title: newVal });
-              }}
-              onBlur={async () => {
-                if (stage.title) {
-                  try {
-                    await dataFactory.createClient().models.Stage.update({
-                      id: stage.id,
-                      title: stage.title,
-                    });
-                  } catch (err) {
-                    console.error("Failed to update stage title:", err);
-                  }
-                }
-              }}
+              data-testid="stage-title-input"
+              value={displayTitle}
+              onChange={(e) => setLocalTitle(e.target.value)}
+              onBlur={() => void handleTitleBlur()}
+              placeholder="Stage Title"
               style={{
                 background: "transparent",
                 border: "none",
@@ -409,7 +332,6 @@ export default function StageDetailPage(): JSX.Element {
                 width: "100%",
                 minWidth: 300,
               }}
-              placeholder="Stage Title"
             />
           </div>
         </div>
@@ -454,7 +376,7 @@ export default function StageDetailPage(): JSX.Element {
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
+              onDragEnd={(e) => void handleDragEnd(e)}
             >
               <SortableContext
                 items={challenges.map((c) => c.id)}
@@ -467,9 +389,13 @@ export default function StageDetailPage(): JSX.Element {
                       challenge={c}
                       index={i}
                       onEdit={(challenge) =>
-                        navigate(`/pipeline/${id}/challenges/${challenge.id}`)
+                        navigate(
+                          `/pipeline/${id}/challenges/${challenge.id}`,
+                        )
                       }
-                      onDelete={handleChallengeDelete}
+                      onDelete={(challenge) =>
+                        void handleChallengeDelete(challenge as ChallengeItem)
+                      }
                     />
                   ))}
                 </div>
@@ -542,8 +468,8 @@ export default function StageDetailPage(): JSX.Element {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {triggers.map((trigger) => {
                 const isEditing = editingTemplate?.trigger === trigger;
-                const hasTemplate = (stage.notificationTemplates || []).some(
-                  (t: any) => t.trigger === trigger,
+                const hasTemplate = (stage.notificationTemplates ?? []).some(
+                  (t) => t.trigger === trigger,
                 );
 
                 return (
@@ -556,11 +482,11 @@ export default function StageDetailPage(): JSX.Element {
                   >
                     <button
                       onClick={() => {
-                        const existing = (
-                          stage.notificationTemplates || []
-                        ).find((t: any) => t.trigger === trigger);
+                        const existing = (stage.notificationTemplates ?? []).find(
+                          (t) => t.trigger === trigger,
+                        );
                         setEditingTemplate(
-                          existing || { trigger, subject: "", body: "" },
+                          existing ?? { trigger, subject: "", body: "" },
                         );
                       }}
                       style={{
@@ -595,7 +521,7 @@ export default function StageDetailPage(): JSX.Element {
                       />
                     </button>
 
-                    {isEditing && (
+                    {isEditing && editingTemplate && (
                       <div
                         style={{
                           marginTop: 12,
@@ -616,6 +542,7 @@ export default function StageDetailPage(): JSX.Element {
                             SUBJECT
                           </label>
                           <input
+                            data-testid="template-subject-input"
                             value={editingTemplate.subject}
                             onChange={(e) =>
                               setEditingTemplate({
@@ -646,6 +573,7 @@ export default function StageDetailPage(): JSX.Element {
                             BODY (HTML)
                           </label>
                           <textarea
+                            data-testid="template-body-input"
                             value={editingTemplate.body}
                             onChange={(e) =>
                               setEditingTemplate({
@@ -668,7 +596,7 @@ export default function StageDetailPage(): JSX.Element {
                         </div>
                         <div style={{ display: "flex", gap: 8 }}>
                           <button
-                            onClick={handleSaveTemplate}
+                            onClick={() => void handleSaveTemplate()}
                             disabled={isSavingTemplate}
                             style={{
                               flex: 1,
@@ -763,17 +691,12 @@ export default function StageDetailPage(): JSX.Element {
                 </label>
                 <div style={{ display: "flex", gap: 12 }}>
                   <input
+                    data-testid="stage-time-limit-input"
                     type="number"
-                    value={stage.timeLimit || ""}
-                    onChange={async (e) => {
-                      const val = e.target.value
-                        ? parseInt(e.target.value)
-                        : null;
-                      setStage({ ...stage, timeLimit: val });
-                      await dataFactory.createClient().models.Stage.update({
-                        id: stage.id,
-                        timeLimit: val,
-                      });
+                    defaultValue={stage.timeLimit ?? ""}
+                    key={`time-limit-${stage.id}`}
+                    onBlur={async (e) => {
+                      await handleTimeLimitChange(e.target.value);
                     }}
                     placeholder="Untimed"
                     style={{
@@ -812,105 +735,42 @@ export default function StageDetailPage(): JSX.Element {
                     <Video size={12} />
                     STAGE_MODE
                   </label>
-                  {!modeFieldReady ? (
-                    <div
-                      style={{
-                        padding: "10px 12px",
-                        background: "rgba(251,191,36,0.06)",
-                        border: "1px solid rgba(251,191,36,0.2)",
-                        borderRadius: 4,
-                      }}
-                    >
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: 9,
-                          color: "rgba(251,191,36,0.7)",
-                          lineHeight: 1.6,
-                          fontFamily: "Space Mono",
-                        }}
-                      >
-                        ⚠ SCHEMA_NOT_DEPLOYED
-                        <br />
-                        <span style={{ opacity: 0.6 }}>
-                          Run <code>npx ampx sandbox</code> to enable live video
-                          stages.
-                        </span>
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 0,
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          borderRadius: 4,
-                          overflow: "hidden",
-                        }}
-                      >
-                        {(["ASYNC", "LIVE_VIDEO"] as const).map((m) => {
-                          const isActive = (stage.mode ?? "ASYNC") === m;
-                          return (
-                            <button
-                              key={m}
-                              onClick={async () => {
-                                if (isActive) return;
-                                setStage({ ...stage, mode: m });
-                                try {
-                                  await dataFactory.createClient().models.Stage.update({
-                                    id: stage.id,
-                                    mode: m,
-                                  });
-                                } catch (err) {
-                                  console.error(
-                                    "[StageDetail] Failed to update mode:",
-                                    err,
-                                  );
-                                  setStage({ ...stage, mode: stage.mode });
-                                }
-                              }}
-                              style={{
-                                flex: 1,
-                                padding: "8px 0",
-                                background: isActive
-                                  ? "rgba(255,255,255,0.12)"
-                                  : "transparent",
-                                border: "none",
-                                color: isActive
-                                  ? "#fff"
-                                  : "rgba(255,255,255,0.3)",
-                                fontSize: 9,
-                                fontWeight: 700,
-                                letterSpacing: "0.12em",
-                                fontFamily: "Space Mono",
-                                cursor: isActive ? "default" : "pointer",
-                                transition: "background 0.15s, color 0.15s",
-                              }}
-                            >
-                              {m === "LIVE_VIDEO" ? "⦿ LIVE_VIDEO" : "ASYNC"}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {(stage.mode ?? "ASYNC") === "LIVE_VIDEO" && (
-                        <div
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 0,
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: 4,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {(["ASYNC", "LIVE_VIDEO"] as const).map((m) => {
+                      const isActive = (stage.mode ?? "ASYNC") === m;
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => void handleModeToggle(m)}
                           style={{
-                            marginTop: 20,
-                            borderTop: "1px solid rgba(255,255,255,0.05)",
-                            paddingTop: 20,
+                            flex: 1,
+                            padding: "8px 0",
+                            background: isActive
+                              ? "rgba(255,255,255,0.12)"
+                              : "transparent",
+                            border: "none",
+                            color: isActive ? "#fff" : "rgba(255,255,255,0.3)",
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: "0.12em",
+                            fontFamily: "Space Mono",
+                            cursor: isActive ? "default" : "pointer",
+                            transition: "background 0.15s, color 0.15s",
                           }}
                         >
-                          <EventTypePicker
-                            currentEventTypeId={
-                              stage.schedulingEventTypeId ?? null
-                            }
-                            onSelect={handleEventTypeSelect}
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -921,7 +781,7 @@ export default function StageDetailPage(): JSX.Element {
       <ChallengePicker
         isOpen={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onSelect={handleChallengeSelect}
+        onSelect={(selections) => void handleChallengeSelect(selections)}
       />
     </div>
   );

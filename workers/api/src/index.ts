@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { pipelines } from './routes/pipelines';
+import { pipelineStages, stageOps, stageChallenges } from './routes/stages';
+import { challenges } from './routes/challenges';
+import { github } from './routes/github';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 
@@ -31,13 +34,23 @@ app.use(
       return undefined;
     },
     allowHeaders: ['Content-Type', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 86400,
   }),
 );
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.route('/api/v1/pipelines', pipelines);
+// Pipeline-scoped stage creation: POST /api/v1/pipelines/:pipelineId/stages
+app.route('/api/v1/pipelines', pipelineStages);
+// Flat stage routes: GET/PATCH/DELETE /api/v1/stages/:stageId
+app.route('/api/v1/stages', stageOps);
+// Stage-scoped challenge creation: POST /api/v1/stages/:stageId/challenges
+app.route('/api/v1/stages', stageChallenges);
+// Challenge CRUD: GET/PUT /api/v1/challenges/:id, POST /api/v1/challenges/:id/clone
+app.route('/api/v1/challenges', challenges);
+// GitHub PR proxy: POST /api/v1/github/pr
+app.route('/api/v1/github', github);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

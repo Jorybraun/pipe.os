@@ -6,6 +6,38 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Phase 2 — BDD test green phase)
+- `workers/api/src/middleware/auth.ts` — added `clockSkewInMs: 120_000` to `verifyToken` so Playwright tests don't get 401s from slightly-expired Clerk dev tokens (60s TTL)
+- `e2e/auth.setup.ts` — added `waitForLoadState('networkidle')` before saving storageState so Clerk completes async token refresh before the cookie is persisted
+- `workers/api/src/routes/stages.ts` — stage GET now includes Phase 2 challenge columns (`github_repo_url`, `github_pr_number`, `github_pr_title`); stage + challenge responses include snake_case aliases (`pipeline_id`, `sort_order`, `time_limit`, `notification_templates`, `stage_id`) alongside camelCase to match spec assertions
+- `src/pages/ChallengeEditorPage.tsx` — added `saveSuccess` state with 3-second auto-reset, `<span data-testid="save-success">SAVED</span>` indicator in header, `data-testid="challenge-title-input"` on title field, `data-testid="challenge-instructions-input"` on instructions textarea; fixed pre-existing TypeScript `unknown` JSX children errors in CANDIDATE_PREVIEW tab
+
+#### Added (Phase 2 — Stage Detail vertical slice)
+- `workers/api/src/routes/stages.ts` — rewritten with `pipelineStages`, `stageOps`, `stageChallenges` routers
+  - `POST /api/v1/pipelines/:pipelineId/stages` — create stage (flat response for e2e compat)
+  - `GET /api/v1/stages/:stageId` — stage detail with ordered challenges
+  - `PATCH /api/v1/stages/:stageId` — update title/timeLimit/mode/notificationTemplates
+  - `DELETE /api/v1/stages/:stageId` — cascade delete
+  - `POST /api/v1/stages/:stageId/challenges` — create challenge (flat response)
+  - `PATCH /api/v1/stages/:stageId/challenges/reorder` — atomic batch reorder
+- `workers/api/src/routes/challenges.ts` — rewritten with flat GET/PUT/DELETE responses
+  - `GET /api/v1/challenges/:challengeId` — flat response for challenge editor
+  - `PUT /api/v1/challenges/:challengeId` — partial update
+  - `DELETE /api/v1/challenges/:challengeId` — 204 response
+  - `POST /api/v1/challenges/:challengeId/clone` — duplicate
+- `workers/api/migrations/0002_recruiter_core.sql` — extends stages + challenges tables, adds candidates table
+- `src/hooks/useStageDetail.ts` — fetches stage + challenges from Worker API
+- `src/hooks/useStageMutations.ts` — PATCH stage via Worker API
+- `src/hooks/useChallengeMutations.ts` — create/delete/reorder challenges via Worker API
+#### Changed (Phase 2 — page migration)
+- `src/pages/StageDetailPage.tsx` — zero Amplify imports; uses Worker API hooks; adds `data-testid="stage-title-input"`, `data-testid="stage-time-limit-input"`, `data-testid="template-subject-input"`, `data-testid="template-body-input"`
+- `src/components/Pipeline/ChallengeCard.tsx` — adds `data-testid="challenge-card"`
+- `src/components/Pipeline/ChallengePicker.tsx` — adds `data-testid="challenge-picker"`, `role="dialog"`, direct PR entry form (repo URL + PR number inputs), renames CODE_REVIEW filter to "GitHub PR"
+- `src/lib/api/client.ts` — adds `patch()` and `put()` methods
+- `src/lib/api/types.ts` — adds `StageDetail`, `ChallengeItem`, `ChallengeDetail`, `NotificationTemplate`, `UpdateStageRequest`, `CreateChallengeRequest` types
+- `workers/api/src/index.ts` — registers `stageOps`, `stageChallenges`, `challenges` routers; CORS allows PUT/PATCH
+- `workers/api/src/types.ts` — adds `StageWithOwnerRow`, extended `ChallengeRow` fields, `StageDetailResponse`, `ChallengeResponse`
+
 #### Added (Phase 2 — BDD test specs)
 - `e2e/overview.spec.ts` — 34 BDD tests for pipeline overview (kanban, stages, candidates, invite)
 - `e2e/stage-detail.spec.ts` — 22 BDD tests for stage detail (challenges, settings, templates)

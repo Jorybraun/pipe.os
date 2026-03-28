@@ -58,6 +58,83 @@ export interface CreatePipelineResponse {
   };
 }
 
+// ─── Stage ────────────────────────────────────────────────────────────────────
+
+export type ChallengeType =
+  | 'CODE_REVIEW'
+  | 'CODE_IMPLEMENTATION'
+  | 'QUIZ_MCQ'
+  | 'QUIZ_SHORT_ANSWER'
+  | 'FOLLOW_UP';
+
+export interface NotificationTemplate {
+  trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE';
+  subject: string;
+  body: string;
+}
+
+export interface ChallengeItem {
+  id: string;
+  stageId: string;
+  type: ChallengeType;
+  order: number;
+  title: string;
+  instructions: string | null;
+  config: Record<string, unknown> | null;
+  githubRepoUrl: string | null;
+  githubPrNumber: number | null;
+  githubPrTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StageDetail {
+  id: string;
+  pipelineId: string;
+  title: string;
+  description: string | null;
+  order: number;
+  timeLimit: number | null;
+  mode: 'ASYNC' | 'LIVE_VIDEO';
+  notificationTemplates: NotificationTemplate[];
+  schedulingEventTypeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  challenges: ChallengeItem[];
+}
+
+// ─── Challenge editor ─────────────────────────────────────────────────────────
+
+export interface ChallengeDetail extends ChallengeItem {
+  pipelineId: string;
+  serverConfig: Record<string, unknown>;
+  groundTruthAnnotations: Record<string, unknown>;
+  cachedDiffJson: Record<string, unknown>;
+  cachedMetadata: Record<string, unknown>;
+  diffCachedAt: string | null;
+}
+
+export interface CreateChallengeRequest {
+  type: ChallengeType;
+  title: string;
+  instructions?: string;
+  config?: Record<string, unknown>;
+  serverConfig?: Record<string, unknown>;
+  order?: number;
+  githubRepoUrl?: string;
+  githubPrNumber?: number;
+  githubPrTitle?: string;
+  githubPrDescription?: string;
+}
+
+export interface UpdateStageRequest {
+  title?: string;
+  timeLimit?: number | null;
+  mode?: 'ASYNC' | 'LIVE_VIDEO';
+  notificationTemplates?: NotificationTemplate[];
+  schedulingEventTypeId?: string | null;
+}
+
 // ─── Error ────────────────────────────────────────────────────────────────────
 
 export interface ApiErrorBody {

@@ -7,6 +7,12 @@ export interface Env {
   DB: D1Database;
   /** Clerk secret key for JWT verification. Set via .dev.vars in dev. */
   CLERK_SECRET_KEY: string;
+  /**
+   * GitHub personal access token for the PR fetch proxy.
+   * Set via .dev.vars in dev, Worker secret in production.
+   * Optional — unauthenticated requests are rate-limited at 60/hour.
+   */
+  GITHUB_TOKEN?: string;
 }
 
 /**
@@ -59,8 +65,34 @@ export interface ChallengeRow {
   instructions: string | null;
   config: string | null;
   server_config: string | null;
+  owner_id: string | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  github_pr_title: string | null;
+  github_pr_description: string | null;
+  cached_diff_json: string | null;
+  cached_metadata: string | null;
+  diff_cached_at: string | null;
+  ground_truth_annotations: string | null;
+  ground_truth: string | null;
+  practice_repo: string | null;
+  pr_number: number | null;
+  feature_branch: string | null;
+  base_branch: string | null;
+  repo_s3_key: string | null;
+  repo_version: number | null;
+  repo_branch: string | null;
+  repo_base_branch: string | null;
+  repo_metadata_s3_key: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface StageWithOwnerRow extends StageRow {
+  owner_id: string | null;
+  notification_templates: string | null;
+  scheduling_event_type_id: string | null;
+  video_config: string | null;
 }
 
 // ─── API Response shapes (camelCase) ─────────────────────────────────────────
@@ -91,4 +123,41 @@ export interface ApiError {
     code: string;
     message: string;
   };
+}
+
+// ─── Stage API response shapes ────────────────────────────────────────────────
+
+export interface ChallengeResponse {
+  id: string;
+  stageId: string;
+  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP';
+  order: number;
+  title: string;
+  instructions: string | null;
+  /** Parsed JSON object — never a raw string in API responses. */
+  config: Record<string, unknown> | null;
+  githubRepoUrl: string | null;
+  githubPrNumber: number | null;
+  githubPrTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StageDetailResponse {
+  id: string;
+  pipelineId: string;
+  title: string;
+  description: string | null;
+  order: number;
+  timeLimit: number | null;
+  mode: string;
+  notificationTemplates: Array<{
+    trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE';
+    subject: string;
+    body: string;
+  }>;
+  schedulingEventTypeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  challenges: ChallengeResponse[];
 }
