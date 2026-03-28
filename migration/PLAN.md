@@ -13,11 +13,12 @@ Frontend:  Cloudflare Pages (React + Vite + TypeScript)
 API:       Cloudflare Workers (Hono router, V8 isolates)
 Database:  Cloudflare D1 (SQLite at edge)
 Storage:   Cloudflare R2 (S3-compatible, zero egress)
-Auth:      Clerk (free up to 10K MAU)
+Auth:      Clerk Pro ($25/mo — auth + billing + feature gating)
+Billing:   Clerk Billing (Stripe under the hood, 3.6% + $0.30/txn)
 Email:     Resend (3K emails/mo free)
 Realtime:  Cloudflare Durable Objects + WebSockets (video signaling)
            Polling for non-latency-sensitive updates (scheduling, interviews)
-Containers: Fly.io Machines (post-MVP, replaces ECS)
+Containers: Cloudflare Containers (Beta) — replaces Fly.io for dev sandboxes
 IaC:       Terraform (deterministic, multi-provider)
 CI/CD:     GitHub Actions + Cloudflare Wrangler + Terraform
 ```
@@ -41,23 +42,38 @@ CI/CD:     GitHub Actions + Cloudflare Wrangler + Terraform
 | 4 | Real-time signaling + Scheduling | `/schedule` | WebSocket signaling works, BDD tests pass |
 | 5 | CI/CD + Terraform + Cleanup | N/A | Deterministic deploys, delete `amplify/` |
 
+## Pricing Model
+
+| Plan | Price | Candidates/month | Features |
+|------|-------|-------------------|----------|
+| Free | $0 | 3 | Basic scoring only |
+| Pro | $40/month | Unlimited | Full AI scoring + intelligence reports + follow-ups |
+
+Clerk handles billing via `<PricingTable />` component + `has()` feature gating.
+
 ## Cost at Scale
 
-| Monthly volume | Estimated cost (excl. AI) |
-|---------------|--------------------------|
-| 0-100 candidates | $0 (free tiers) |
-| 1,000 candidates | $5-10 |
-| 10,000 candidates | $25-50 |
+| Monthly volume | Fixed costs | AI cost | Revenue (Pro) | Margin |
+|---------------|-------------|---------|---------------|--------|
+| 1 customer, 10 candidates | $30 (CF $5 + Clerk $25) | $0.30 | $40 | $9.70 |
+| 5 customers, 50 candidates | $30 | $1.50 | $200 | $168.50 |
+| 50 customers, 500 candidates | $30 | $15 | $2,000 | $1,955 |
 
-AI costs (Mistral/Anthropic) are ~$0.65-1.50 per candidate regardless of provider.
+Per-candidate AI cost: ~$0.02-0.05 (Mistral). Could upgrade to Claude for ~$0.20/candidate with room in the margin.
 
 ## Cross-Cutting Conventions
 
 These apply across all phases. Validated against Cloudflare official documentation (2026-03-28).
 
+### Auth Strategy
+- **Recruiter auth:** Clerk Pro — `@clerk/clerk-react` on frontend, `@clerk/backend` JWT verification in Workers
+- **Candidate auth:** Custom JWT session tokens (no Clerk, no sign-in required)
+- **Billing:** Clerk Billing — `<PricingTable />` for pricing page, `has()` for feature gating
+- **Exit strategy:** Clerk auth is isolated behind the provider abstraction (`src/providers/amplify/auth.tsx` → `src/providers/clerk/auth.tsx`). User data (email, password hash) lives in D1 if we ever need to migrate off Clerk — export users via Clerk API, switch to DIY auth, one provider file change.
+
 ### API Path Convention
 - **`/api/v1/*`** — Recruiter-facing routes, authenticated via Clerk JWT
-- **`/rpc/*`** — Candidate-facing routes, authenticated via custom session JWT or public (API key)
+- **`/rpc/*`** — Candidate-facing routes, authenticated via custom session JWT or public
 - All phases use this split consistently. Phase 1 routes are `/api/v1/pipelines`, not `/api/pipelines`.
 
 ### Wrangler Configuration
