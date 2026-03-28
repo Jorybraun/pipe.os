@@ -344,41 +344,44 @@ function App(): JSX.Element {
                 <Routes>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />
-                    <Route path="/pipeline/:id" element={<OverviewPage />} />
+                    {/* Phase 2+ pages — still on Amplify, wrapped in ErrorBoundary */}
+                    <Route path="/pipeline/:id" element={<ErrorBoundary><OverviewPage /></ErrorBoundary>} />
                     <Route
                       path="/pipeline/:id/stages/:stageId"
-                      element={<StageDetailPage />}
+                      element={<ErrorBoundary><StageDetailPage /></ErrorBoundary>}
                     />
                     {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
                       <Route
                         path="/pipeline/:id/challenges/:challengeId"
-                        element={<ChallengeEditorPage />}
+                        element={<ErrorBoundary><ChallengeEditorPage /></ErrorBoundary>}
                       />
                     )}
+                    {/* Phase 1 — migrated to Worker API */}
                     <Route
                       path="/pipeline/new"
                       element={<PipelineCreatePage />}
                     />
+                    {/* Phase 2+ pages */}
                     <Route
                       path="/candidates/:id"
-                      element={<CandidateProfilePage />}
+                      element={<ErrorBoundary><CandidateProfilePage /></ErrorBoundary>}
                     />
                     <Route
                       path="/screenings/:id/preview"
-                      element={<CandidateScreeningPage />}
+                      element={<ErrorBoundary><CandidateScreeningPage /></ErrorBoundary>}
                     />
                     {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
-                      <Route path="/schedule" element={<SchedulingPage />} />
+                      <Route path="/schedule" element={<ErrorBoundary><SchedulingPage /></ErrorBoundary>} />
                     )}
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
                       <Route
                         path="/sandbox/dev-container"
-                        element={<DevContainerSandboxPage />}
+                        element={<ErrorBoundary><DevContainerSandboxPage /></ErrorBoundary>}
                       />
                     )}
                     <Route
                       path="/prototype/report"
-                      element={<CandidateReportPrototype />}
+                      element={<ErrorBoundary><CandidateReportPrototype /></ErrorBoundary>}
                     />
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
