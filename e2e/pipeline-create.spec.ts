@@ -25,7 +25,7 @@ test.describe("Pipeline Create Page", () => {
   test("has a way to input a role title", async ({ page }) => {
     // Look for any text input that could be the title field
     const titleInput = page.locator(
-      'input[placeholder*="role"], input[placeholder*="title"], input[placeholder*="name"], input[name="title"]'
+      'input[placeholder*="Senior Frontend"], input[placeholder*="role"], input[placeholder*="title"], input[name="title"]'
     ).first();
 
     // The form should have a title input

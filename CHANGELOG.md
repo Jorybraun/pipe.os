@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Phase 1 — BDD test infrastructure)
+- `e2e/global.setup.ts` — Clerk testing token setup via `@clerk/testing/playwright`
+- `@clerk/testing` package for E2E auth bypass (bot detection + device verification)
+- Playwright webServer config for Wrangler dev + Vite
+- 10 passing E2E tests: 3 unauthenticated, 1 auth setup, 6 authenticated
+
 #### Added (Phase 1 — Cloudflare Workers API + Clerk auth)
 - `workers/api/` — Hono Worker with D1, Clerk JWT auth, pipeline CRUD routes
 - D1 schema: pipelines, stages, challenges tables with FK cascades

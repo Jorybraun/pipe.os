@@ -1,3 +1,4 @@
+import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { test as setup, expect } from "@playwright/test";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -8,43 +9,43 @@ const __dirname = path.dirname(__filename);
 const authFile = path.join(__dirname, "../playwright/.auth/user.json");
 
 /**
- * Authenticate via Clerk sign-in.
- * Saves session state so authenticated tests reuse the session.
+ * Authenticate via Clerk sign-in using testing tokens.
+ * @clerk/testing bypasses bot detection and device verification.
  */
 setup("authenticate via Clerk", async ({ page }) => {
   setup.setTimeout(60000);
 
+  // Inject Clerk testing token to bypass verification
+  await setupClerkTestingToken({ page });
+
   await page.goto("/");
 
-  // Clerk renders a sign-in modal/page when unauthenticated
-  // Wait for the Clerk sign-in form to appear
-  await page.waitForSelector('input[name="identifier"]', { timeout: 15000 });
+  // Step 1: Click the SIGN IN button on the custom gate
+  const signInButton = page.locator('button:has-text("SIGN IN")');
+  await expect(signInButton).toBeVisible({ timeout: 15000 });
+  await signInButton.click();
 
-  // Fill email
-  await page.locator('input[name="identifier"]').fill(
-    process.env.E2E_EMAIL ?? "braunjory@gmail.com"
-  );
+  // Step 2: Clerk modal opens — fill email
+  const emailInput = page.locator('input[name="identifier"]');
+  await expect(emailInput).toBeVisible({ timeout: 15000 });
+  await emailInput.fill(process.env.E2E_EMAIL ?? "e2e-test@pipe.dev");
 
-  // Click continue
+  // Step 3: Click continue
   await page.locator('button:has-text("Continue")').click();
 
-  // Wait for password field
-  await page.waitForSelector('input[name="password"]', { timeout: 10000 });
+  // Step 4: Fill password
+  const passwordInput = page.locator('input[name="password"]');
+  await expect(passwordInput).toBeVisible({ timeout: 10000 });
+  await passwordInput.fill(process.env.E2E_PASSWORD ?? "PipeE2E_Test2026!");
 
-  // Fill password
-  await page.locator('input[name="password"]').fill(
-    process.env.E2E_PASSWORD ?? "Wrx7UB35t$"
-  );
-
-  // Click continue to sign in
+  // Step 5: Submit
   await page.locator('button:has-text("Continue")').click();
 
-  // Wait for auth to complete — look for app shell indicators
+  // Step 6: Wait for app shell
   await expect(
     page
       .locator('text=CREATE NEW PIPE')
       .or(page.locator('text=SIGN OUT'))
-      .or(page.locator('text=PIPE_OS'))
       .first()
   ).toBeVisible({ timeout: 30000 });
 

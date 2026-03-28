@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, ".env.local") });
+dotenv.config({ path: path.resolve(__dirname, ".env") });
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,6 +17,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   timeout: 30_000,
+  globalSetup: "./e2e/global.setup.ts",
 
   use: {
     baseURL: "http://localhost:5173",
@@ -31,7 +33,7 @@ export default defineConfig({
     },
     {
       name: "authenticated",
-      testIgnore: /\.unauth\.spec\.ts/,
+      testIgnore: /\.(unauth|global)\..*\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: path.join(__dirname, "playwright/.auth/user.json"),
@@ -54,10 +56,9 @@ export default defineConfig({
       url: "http://localhost:8787/health",
       reuseExistingServer: true,
       timeout: 120000,
-      stdout: "pipe",
     },
     {
-      command: "curl -sf http://localhost:5173 >/dev/null 2>&1 || npm run dev -- --port 5173",
+      command: "npm run dev -- --port 5173",
       url: "http://localhost:5173",
       reuseExistingServer: true,
       timeout: 60000,
