@@ -31,11 +31,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <div
           style={{
-            minHeight: '100vh',
+            minHeight: '60vh',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#0c0c0e',
             padding: 24,
           }}
         >

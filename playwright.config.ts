@@ -6,167 +6,61 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Load environment variables from .env.local
- */
 dotenv.config({ path: path.resolve(__dirname, ".env.local") });
 
-/**
- * Path to store the authenticated storage state
- */
-export const STORAGE_STATE = path.join(__dirname, "playwright/.auth/user.json");
-
-/**
- * Playwright configuration for E2E tests
- * See https://playwright.dev/docs/test-configuration
- */
 export default defineConfig({
   testDir: "./e2e",
-
-  // Run tests in files in parallel
   fullyParallel: true,
-
-  // Fail the build on CI if you accidentally left test.only in the source code
   forbidOnly: !!process.env.CI,
-
-  // Retry flaky tests (sandbox latency, DynamoDB eventual consistency)
-  retries: process.env.CI ? 2 : 1,
-
-  // Opt out of parallel tests on CI
+  retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-
-  // Reporter to use
   reporter: "html",
-
-  // Shared settings for all the projects below
-  // Default timeout per test (sandbox + DynamoDB latency needs headroom)
-  timeout: 60_000,
+  timeout: 30_000,
 
   use: {
-    // Base URL to use in actions like `await page.goto('/')`
-    baseURL: "http://localhost:5174",
-
-    // Collect trace when retrying the failed test
+    baseURL: "http://localhost:5173",
     trace: "on-first-retry",
-
-    // Screenshot on failure
     screenshot: "only-on-failure",
-
-    // Increase default action timeout (clicks, fills, expects)
-    actionTimeout: 15_000,
+    actionTimeout: 10_000,
   },
 
-  // Configure projects for major browsers
   projects: [
-    // Setup project
     {
-      name: "auth_setup",
+      name: "setup",
       testMatch: /auth\.setup\.ts/,
     },
     {
-      name: "chromium",
+      name: "authenticated",
+      testIgnore: /\.unauth\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
-        // Use prepared auth state
-        storageState: STORAGE_STATE,
+        storageState: path.join(__dirname, "playwright/.auth/user.json"),
       },
-      dependencies: ["auth_setup"],
+      dependencies: ["setup"],
     },
-
-    // Unauthenticated project for candidate-facing routes (/assess/:token)
     {
-      name: "candidate",
-      testMatch: /code-review-challenge\.spec\.ts/,
+      name: "unauthenticated",
+      testMatch: /\.unauth\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: { cookies: [], origins: [] },
       },
-      // No auth_setup dependency — candidate routes are public
-    },
-
-    // Authenticated project for recruiter CODE_REVIEW setup BDD
-    {
-      name: "recruiter",
-      testMatch: /recruiter-code-review\.spec\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        storageState: STORAGE_STATE,
-      },
-      dependencies: ["auth_setup"],
-    },
-
-    // {
-    //   name: 'firefox',
-    //   use: {
-    //     ...devices['Desktop Firefox'],
-    //     storageState: STORAGE_STATE,
-    //   },
-    //   dependencies: ['setup'],
-    // },
-
-    // {
-    //   name: 'webkit',
-    //   use: {
-    //     ...devices['Desktop Safari'],
-    //     storageState: STORAGE_STATE,
-    //   },
-    //   dependencies: ['setup'],
-    // },
-
-    // Unauthenticated candidate routes — no auth dependency, no storageState
-    {
-      name: 'candidate',
-      testMatch: /code-review-happy-path\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        storageState: { cookies: [], origins: [] },
-      },
-    },
-
-    // Intelligence report + candidate score display BDD
-    {
-      name: 'intelligence',
-      testMatch: /candidate-scores\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        storageState: STORAGE_STATE,
-      },
-      dependencies: ['auth_setup'],
-    },
-
-    // CV upload and profile verification BDD
-    {
-      name: 'cv-upload',
-      testMatch: /cv-upload-and-profile\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        storageState: STORAGE_STATE,
-      },
-      dependencies: ['auth_setup'],
-    },
-
-    // QUIZ_SHORT_ANSWER configurable media input BDD
-    // Recruiter suites run with auth; candidate suites use test.use({ storageState: ... }) overrides
-    {
-      name: 'short-answer-media',
-      testMatch: /short-answer-media-config\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        storageState: STORAGE_STATE,
-        // Fake media streams so MediaRecorder/getUserMedia work in headless Chrome
-        launchOptions: {
-          args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
-        },
-      },
-      dependencies: ['auth_setup'],
     },
   ],
 
-  // Run your local dev server before starting the tests
-  webServer: {
-    command: "npm run dev -- --port 5174",
-    url: "http://localhost:5174",
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-  },
+  webServer: [
+    {
+      command: "cd workers/api && npx wrangler dev --port 8787",
+      url: "http://localhost:8787/health",
+      reuseExistingServer: true,
+      timeout: 120000,
+      stdout: "pipe",
+    },
+    {
+      command: "curl -sf http://localhost:5173 >/dev/null 2>&1 || npm run dev -- --port 5173",
+      url: "http://localhost:5173",
+      reuseExistingServer: true,
+      timeout: 60000,
+    },
+  ],
 });

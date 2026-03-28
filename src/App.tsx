@@ -12,7 +12,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
-import { useAuth, useData } from "./providers";
+import { useAuth } from "./providers";
 import { Layout, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
 import OverviewPage from "./pages/OverviewPage";
@@ -36,69 +36,18 @@ const SubHeader = () => {
   const { id, stage, questionId } = useParams();
   const location = useLocation();
   const auth = useAuth();
-  const dataFactory = useData();
-
-  // this changing why is it state?
-  const [headerData, setHeaderData] = useState<{
-    title: string;
-    count: number;
-  }>({
-    title: "PIPE_OS",
-    count: 0,
-  });
 
   const isPipelineContext =
     location.pathname.startsWith("/pipeline/") &&
     !location.pathname.startsWith("/pipeline/new");
   const isCandidateContext = location.pathname.startsWith("/candidates/");
 
+  // TODO: Phase 2 — fetch pipeline title from Worker API instead of Amplify
+  const headerData = { title: "PIPE_OS", count: 0 };
+
   const handleNewRole = (): void => {
     navigate("/pipeline/new");
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      const client = dataFactory.createClient();
-      try {
-        let pipelineId = isPipelineContext ? id : null;
-
-        if (isCandidateContext && id) {
-          const { data: candidate } = await client.models.Candidate.get({ id });
-          if (cancelled) return;
-          if (candidate) {
-            pipelineId = (candidate as { pipelineId: string }).pipelineId;
-          }
-        }
-
-        if (pipelineId) {
-          // Only fetch title — OverviewPage already fetches full pipeline + candidates
-          const { data: pipeline } = await client.models.Pipeline.get({
-            id: pipelineId,
-          });
-          if (cancelled) return;
-
-          setHeaderData({
-            title:
-              (pipeline as { title?: string } | null)?.title || "POSITION",
-            count: 0, // Candidate count shown in OverviewPage, not header
-          });
-        } else {
-          setHeaderData({
-            title: "PIPE_OS",
-            count: 0,
-          });
-        }
-      } catch (err) {
-        console.error("[SubHeader] Error fetching header data:", err);
-      }
-    };
-
-    fetchData();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, isPipelineContext, isCandidateContext, dataFactory]);
 
   const currentStage = stage ? { title: stage } : null;
   const isHome = location.pathname === "/";
