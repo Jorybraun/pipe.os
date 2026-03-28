@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Phase 2 — BDD test specs)
+- `e2e/overview.spec.ts` — 34 BDD tests for pipeline overview (kanban, stages, candidates, invite)
+- `e2e/stage-detail.spec.ts` — 22 BDD tests for stage detail (challenges, settings, templates)
+- `e2e/challenge-editor.spec.ts` — 21 BDD tests for challenge editor (edit, clone, new, GitHub PR)
+- All 77 tests fail as expected — backend routes not yet built (TDD red phase)
+
 #### Added (Phase 1 — BDD test infrastructure)
 - `e2e/global.setup.ts` — Clerk testing token setup via `@clerk/testing/playwright`
 - `@clerk/testing` package for E2E auth bypass (bot detection + device verification)
