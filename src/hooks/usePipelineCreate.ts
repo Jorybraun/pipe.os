@@ -1,94 +1,73 @@
+/**
+ * usePipelineCreate — creates a new pipeline via the Cloudflare Worker API.
+ *
+ * Replaces the Amplify-backed version of this hook. Uses Clerk's useAuth()
+ * hook to obtain the session JWT, then delegates to the API client.
+ *
+ * Returns the created pipeline ID so the caller can navigate to the new
+ * pipeline immediately.
+ *
+ * Usage:
+ *   const { create, isCreating, error } = usePipelineCreate();
+ *   const id = await create({ title: 'Senior Frontend Engineer', level: 'Senior' });
+ *   navigate(`/pipeline/${id}`);
+ */
+
 import { useState, useCallback } from 'react';
-import { useData } from '../providers';
-import type { DataProviderFactory } from '../providers';
+import { useAuth as useClerkAuth } from '@clerk/react';
+import { createApiClient } from '../lib/api/client';
+import type { CreatePipelineRequest, CreatePipelineResponse } from '../lib/api/types';
+import { ApiError } from '../lib/api/types';
 
-// ============================================================================
-// Types
-// ============================================================================
+// Re-export PipelineLevel so existing call sites can import from this module.
+export type { PipelineLevel } from '../lib/api/types';
 
-export type PipelineLevel =
-  | 'Junior'
-  | 'Mid'
-  | 'Senior'
-  | 'Staff'
-  | 'Principal'
-  | 'Lead'
-  | 'Manager';
-
-export interface PipelineCreateInput {
-  title: string;
-  level: PipelineLevel;
-  stack: string[];
-  description?: string;
-  presetId?: string;
+export interface UsePipelineCreateResult {
+  /**
+   * Submit a create request.
+   * Resolves with the new pipeline ID on success.
+   * Throws on failure — callers that need to suppress the throw should catch it
+   * themselves; the hook also sets `error` for UI consumption.
+   */
+  create: (input: CreatePipelineRequest) => Promise<string>;
+  isCreating: boolean;
+  error: string | null;
 }
 
-interface UsePipelineCreateState {
-  isSubmitting: boolean;
-  error: Error | null;
-  createdId: string | null;
-}
+export function usePipelineCreate(): UsePipelineCreateResult {
+  const { getToken } = useClerkAuth();
 
-interface UsePipelineCreateReturn extends UsePipelineCreateState {
-  create: (input: PipelineCreateInput) => Promise<string | null>;
-  reset: () => void;
-}
-
-// ============================================================================
-// Hook
-// ============================================================================
-
-export function usePipelineCreate(): UsePipelineCreateReturn {
-  const factory: DataProviderFactory = useData();
-
-  const [state, setState] = useState<UsePipelineCreateState>({
-    isSubmitting: false,
-    error: null,
-    createdId: null,
-  });
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const create = useCallback(
-    async (input: PipelineCreateInput): Promise<string | null> => {
-      setState({ isSubmitting: true, error: null, createdId: null });
+    async (input: CreatePipelineRequest): Promise<string> => {
+      setIsCreating(true);
+      setError(null);
+
+      const api = createApiClient({ getToken });
 
       try {
-        const client = factory.createClient();
-
-        // 1. Create the Pipeline
-        const { data: pipeline, errors } = await client.models.Pipeline.create({
-          title: input.title.trim(),
-          level: input.level,
-          stack: input.stack,
-          description: input.description?.trim() || undefined,
-          status: 'DRAFT',
-          creationMode: input.presetId === 'BLANK' ? 'BLANK' : 'PRESET',
-        });
-
-        if (errors && errors.length > 0) throw new Error(errors[0]?.message ?? 'Create failed');
-        if (!pipeline) throw new Error('Failed to create pipeline');
-
-        const pipelineRecord = pipeline as Record<string, unknown>;
-        const pipelineId = pipelineRecord['id'] as string;
-        console.log('[usePipelineCreate] Pipeline created:', pipelineId);
-        setState({ isSubmitting: false, error: null, createdId: pipelineId });
-        return pipelineId;
+        const data = await api.post<CreatePipelineResponse>('/api/v1/pipelines', input);
+        const id = data.pipeline.id;
+        console.log('[usePipelineCreate] Pipeline created:', id);
+        return id;
       } catch (err) {
-        const error = err instanceof Error ? err : new Error('An unexpected error occurred');
-        console.error('[usePipelineCreate] Unexpected error:', error);
-        setState({ isSubmitting: false, error, createdId: null });
-        return null;
+        if (err instanceof ApiError) {
+          console.error('[usePipelineCreate] API error:', err.code, err.message);
+          setError(err.message);
+        } else {
+          const message = err instanceof Error ? err.message : 'Failed to create pipeline';
+          console.error('[usePipelineCreate] Unexpected error:', message);
+          setError(message);
+        }
+        throw err;
+      } finally {
+        setIsCreating(false);
       }
     },
-    [factory]
+    [getToken],
   );
 
-  const reset = useCallback(() => {
-    setState({ isSubmitting: false, error: null, createdId: null });
-  }, []);
-
-  return {
-    ...state,
-    create,
-    reset,
-  };
+  return { create, isCreating, error };
 }

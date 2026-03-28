@@ -1,73 +1,59 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../../providers";
+import { usePipelineCreate, type PipelineLevel } from "../../hooks/usePipelineCreate";
 import { LiquidMetalCard } from "../../components/ui/LiquidMetalCard";
-import { FieldGroup } from "../../components/ui/form";
+import { FieldGroup, SelectInput } from "../../components/ui/form";
 import { TextInput } from "../../components/ui/form";
 import { TextareaInput } from "../../components/ui/form";
 import { Loader2 } from "lucide-react";
 
-// Default stage names for new pipelines
-const DEFAULT_STAGE_NAMES = [
-  "Technical Screen",
-  "Technical Assessment",
-  "Final Round",
+const LEVEL_OPTIONS: PipelineLevel[] = [
+  "Junior",
+  "Mid",
+  "Senior",
+  "Staff",
+  "Principal",
+  "Lead",
+  "Manager",
 ];
 
 /**
  * PipelineCreatePage - Simplified pipeline creation form.
  *
  * Route: /pipeline/new
- * Creates a pipeline with name + description, then scaffolds 3 empty stages.
+ * Creates a BLANK pipeline via the Worker API. The Worker handles all
+ * server-side setup; no client-side stage scaffolding is needed.
  */
 export default function PipelineCreatePage(): JSX.Element {
   const navigate = useNavigate();
-  const dataFactory = useData();
+  const { create, isCreating, error: apiError } = usePipelineCreate();
   const [title, setTitle] = useState("");
+  const [level, setLevel] = useState<PipelineLevel>("Senior");
   const [description, setDescription] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
   const titleTrimmed = title.trim();
   const isValid = titleTrimmed.length >= 1 && titleTrimmed.length <= 100;
+  const error = localError ?? apiError;
 
   const handleCreate = async (): Promise<void> => {
-    if (!isValid || isSubmitting) return;
-    const client = dataFactory.createClient();
-    setIsSubmitting(true);
-    setError(null);
+    if (!isValid || isCreating) return;
+    setLocalError(null);
 
     try {
-      // 1. Create Pipeline
-      const { data: pipeline, errors: pErrors } =
-        await client.models.Pipeline.create({
-          title: titleTrimmed,
-          description: description.trim() || undefined,
-          status: "DRAFT",
-          creationMode: "PRESET",
-        } as any);
+      const descriptionTrimmed = description.trim();
+      const pipelineId = await create({
+        title: titleTrimmed,
+        level,
+        ...(descriptionTrimmed.length > 0 && { description: descriptionTrimmed }),
+        status: "DRAFT",
+        creationMode: "BLANK",
+      });
 
-      if (pErrors || !pipeline) {
-        throw new Error(pErrors?.[0]?.message ?? "Failed to create pipeline");
-      }
-
-      // 2. Create 3 empty stages (no challenges — added at stage level)
-      for (let i = 0; i < DEFAULT_STAGE_NAMES.length; i++) {
-        await client.models.Stage.create({
-          pipelineId: (pipeline as { id: string }).id,
-          title: DEFAULT_STAGE_NAMES[i] ?? `Stage ${i + 1}`,
-          order: i,
-        });
-      }
-
-      navigate(`/pipeline/${(pipeline as { id: string }).id}`);
+      navigate(`/pipeline/${pipelineId}`);
     } catch (err) {
+      // apiError is set by the hook; surface it via the error display below.
       console.error("[PipelineCreatePage] Failed to create pipeline:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to create pipeline",
-      );
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -151,6 +137,15 @@ export default function PipelineCreatePage(): JSX.Element {
             </div>
           </div>
 
+          {/* Level */}
+          <FieldGroup label="EXPERIENCE LEVEL">
+            <SelectInput
+              value={level}
+              onChange={(val) => setLevel(val as PipelineLevel)}
+              options={LEVEL_OPTIONS}
+            />
+          </FieldGroup>
+
           {/* Description */}
           <div>
             <FieldGroup label="DESCRIPTION (OPTIONAL)">
@@ -211,7 +206,7 @@ export default function PipelineCreatePage(): JSX.Element {
           >
             <button
               onClick={() => navigate("/")}
-              disabled={isSubmitting}
+              disabled={isCreating}
               style={{
                 padding: "12px 24px",
                 background: "transparent",
@@ -221,35 +216,35 @@ export default function PipelineCreatePage(): JSX.Element {
                 letterSpacing: "0.12em",
                 fontWeight: 700,
                 fontFamily: "Space Mono",
-                cursor: isSubmitting ? "not-allowed" : "pointer",
+                cursor: isCreating ? "not-allowed" : "pointer",
               }}
             >
               CANCEL
             </button>
             <button
               onClick={handleCreate}
-              disabled={!isValid || isSubmitting}
+              disabled={!isValid || isCreating}
               style={{
                 padding: "12px 32px",
                 background:
-                  isValid && !isSubmitting
+                  isValid && !isCreating
                     ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
                     : "rgba(255,255,255,0.05)",
                 border: "1px solid rgba(255,255,255,0.2)",
                 color:
-                  isValid && !isSubmitting ? "#fff" : "rgba(255,255,255,0.3)",
+                  isValid && !isCreating ? "#fff" : "rgba(255,255,255,0.3)",
                 fontSize: 10,
                 letterSpacing: "0.12em",
                 fontWeight: 700,
                 fontFamily: "Space Mono",
-                cursor: isValid && !isSubmitting ? "pointer" : "not-allowed",
+                cursor: isValid && !isCreating ? "pointer" : "not-allowed",
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
                 transition: "all 0.2s ease",
               }}
             >
-              {isSubmitting ? (
+              {isCreating ? (
                 <>
                   <Loader2
                     size={12}

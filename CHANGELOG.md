@@ -6,11 +6,18 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
-#### Added (Phase 1 — Clerk auth)
+#### Added (Phase 1 — Cloudflare Workers API + Clerk auth)
+- `workers/api/` — Hono Worker with D1, Clerk JWT auth, pipeline CRUD routes
+- D1 schema: pipelines, stages, challenges tables with FK cascades
+- `GET/POST/DELETE /api/v1/pipelines` with ownership checks, Zod validation, preset expansion
+- `src/lib/api/client.ts` — typed fetch wrapper with Clerk token injection
+- `src/hooks/usePipelines.ts`, `usePipelineCreate.ts`, `usePipelineDelete.ts` — Worker API hooks
 - Integrated Clerk React SDK (`@clerk/react@6.1.3`) for recruiter authentication
 - `src/providers/clerk/auth.tsx` — ClerkAuthGate, ClerkAuthWrapper, useClerkAuth
-- `<ClerkProvider>` wraps app in main.tsx, replaces Amplify Authenticator in App.tsx
-- `useAuth()` returns loading stub before auth initializes (prevents render crash)
+
+#### Changed (Phase 1 — page migration)
+- `ListingPage.tsx` — uses `usePipelines()` + `usePipelineDelete()` instead of Amplify data provider
+- `archived/PipelineCreatePage.tsx` — uses `usePipelineCreate()` hook, server-side preset expansion
 
 #### Fixed (Phase 0 — cleanup)
 - Removed last 3 `Schema` type imports from `amplify/data/resource` in consumer code (ChallengeCard, IntelligenceReport, scheduling/types) — replaced with local interfaces

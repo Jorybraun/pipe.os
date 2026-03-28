@@ -32,6 +32,7 @@ amplifyconfiguration*
 .env
 .env.local
 amplify/functions/**/.env
+workers/api/.dev.vars
 
 # rulesync generated files
 .claude/

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 import { RoleCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
-import { useData } from '../providers';
+import { usePipelines } from "../hooks/usePipelines";
+import { usePipelineDelete } from "../hooks/usePipelineDelete";
+import type { PipelineListItem } from "../lib/api/types";
 
 type PipelineWithStats = {
   id: string;
@@ -25,6 +27,20 @@ type PipelineWithStats = {
   avgScore: number | null;
 };
 
+/** Maps the Worker API PipelineListItem to the internal PipelineWithStats shape. */
+function toPipelineWithStats(item: PipelineListItem): PipelineWithStats {
+  return {
+    id: item.id,
+    title: item.title,
+    status: item.status,
+    level: item.level,
+    createdAt: item.createdAt,
+    stageCount: item.stageCount,
+    candidateCount: item.candidateCount,
+    avgScore: null,
+  };
+}
+
 const ListingSkeleton = () => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
     {[1, 2, 3, 4, 5].map((i) => (
@@ -34,70 +50,28 @@ const ListingSkeleton = () => (
 );
 
 /**
- * ListingPage - Roles overview with a mixture of Pipeline Builder layout 
+ * ListingPage - Roles overview with a mixture of Pipeline Builder layout
  * and Meetings Page list style.
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
-  const dataFactory = useData();
   const [mounted, setMounted] = useState(false);
-  const [pipelines, setPipelines] = useState<PipelineWithStats[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { pipelines: rawPipelines, isLoading, refetch } = usePipelines();
+  const { deletePipeline } = usePipelineDelete();
   const [filter, setFilter] = useState<"all" | "ACTIVE" | "DRAFT" | "ARCHIVED">(
     "all"
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const fetchPipelines = useCallback(async () => {
-    const client = dataFactory.createClient();
-    try {
-      setIsLoading(true);
-      const { data: pipelineData } = await client.models.Pipeline.list({
-        selectionSet: [
-          'id',
-          'title',
-          'status',
-          'level',
-          'createdAt',
-          'stages.id',
-          'stages.title',
-          'stages.order',
-          'candidates.id',
-          'candidates.name',
-        ],
-      });
-
-      const enrichedPipelines = (pipelineData as unknown as Array<{
-        id: string;
-        title: string;
-        status?: string | null;
-        level?: string | null;
-        createdAt?: string;
-        stages?: { id: string }[] | null;
-        candidates?: { id: string }[] | null;
-      }>).map((p) => {
-        const avgScore = null;
-        return {
-          ...p,
-          stageCount: p.stages?.length || 0,
-          candidateCount: p.candidates?.length || 0,
-          avgScore,
-        };
-      });
-
-      setPipelines(enrichedPipelines as PipelineWithStats[]);
-    } catch (err) {
-      console.error("[ListingPage] Error fetching pipelines:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [dataFactory]);
+  const pipelines = useMemo(
+    () => rawPipelines.map(toPipelineWithStats),
+    [rawPipelines],
+  );
 
   useEffect(() => {
     setMounted(true);
-    fetchPipelines();
-  }, [fetchPipelines]);
+  }, []);
 
   const filteredPipelines = pipelines.filter((p) => {
     const matchesFilter = filter === "all" || p.status === filter;
@@ -124,24 +98,20 @@ export default function ListingPage(): JSX.Element {
       return;
     }
 
-    const client = dataFactory.createClient();
     try {
-      setIsLoading(true);
-      await client.models.Pipeline.delete({ id });
+      await deletePipeline(id);
       setSelectedIds(prev => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
-      await fetchPipelines();
+      await refetch();
     } catch (err) {
       console.error("[ListingPage] Error deleting pipeline:", err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = async (): Promise<void> => {
     const count = selectedIds.size;
     if (count === 0) return;
 
@@ -149,19 +119,13 @@ export default function ListingPage(): JSX.Element {
       return;
     }
 
-    const client = dataFactory.createClient();
     try {
-      setIsLoading(true);
-      await Promise.all(
-        Array.from(selectedIds).map(id => client.models.Pipeline.delete({ id }))
-      );
+      await Promise.all(Array.from(selectedIds).map(id => deletePipeline(id)));
       setSelectedIds(new Set());
-      await fetchPipelines();
+      await refetch();
     } catch (err) {
       console.error("[ListingPage] Bulk delete error:", err);
       alert("Failed to delete some pipelines.");
-    } finally {
-      setIsLoading(false);
     }
   };
 
