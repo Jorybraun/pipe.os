@@ -18,6 +18,7 @@ import {
   ChevronRight,
   GripVertical,
   Trash2,
+  Rocket,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -489,7 +490,7 @@ export default function OverviewPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { pipeline, stages, candidates, isLoading, error, refetch } =
+  const { pipeline, stages, candidates, isLoading, error, refetch, publishPipeline } =
     useOverviewData(id);
 
   const { createStage, reorderStages, deleteStage } = useStageMutations();
@@ -734,13 +735,38 @@ export default function OverviewPage(): JSX.Element {
           <div>
             <div
               style={{
-                fontSize: 10,
-                letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
                 marginBottom: 8,
               }}
             >
-              PIPELINE_OVERVIEW
+              <div
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.2em",
+                  color: "rgba(255,255,255,0.3)",
+                }}
+              >
+                PIPELINE_OVERVIEW
+              </div>
+              <div
+                data-testid="pipeline-status-badge"
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.15em",
+                  fontFamily: "Space Mono",
+                  padding: "2px 8px",
+                  borderRadius: 2,
+                  background: isDraft
+                    ? "rgba(251, 191, 36, 0.15)"
+                    : "rgba(74, 222, 128, 0.15)",
+                  color: isDraft ? "#fbbf24" : "#4ade80",
+                  border: `1px solid ${isDraft ? "rgba(251, 191, 36, 0.3)" : "rgba(74, 222, 128, 0.3)"}`,
+                }}
+              >
+                {pipeline?.status ?? ""}
+              </div>
             </div>
             <h1
               style={{
@@ -756,6 +782,43 @@ export default function OverviewPage(): JSX.Element {
 
           {!showAddForm && (
             <div style={{ display: "flex", gap: 12 }}>
+              {isDraft && (
+                <button
+                  onClick={() => void publishPipeline()}
+                  disabled={displayStages.length === 0}
+                  title={
+                    displayStages.length === 0
+                      ? "Add at least 1 stage before publishing"
+                      : "Publish pipeline to start inviting candidates"
+                  }
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 20px",
+                    background:
+                      displayStages.length === 0
+                        ? "rgba(255,255,255,0.02)"
+                        : "rgba(74, 222, 128, 0.1)",
+                    border: `1px solid ${displayStages.length === 0 ? "rgba(255,255,255,0.05)" : "rgba(74, 222, 128, 0.3)"}`,
+                    color:
+                      displayStages.length === 0
+                        ? "rgba(255,255,255,0.3)"
+                        : "#4ade80",
+                    fontSize: 10,
+                    letterSpacing: "0.1em",
+                    fontFamily: "Space Mono",
+                    cursor:
+                      displayStages.length === 0
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity: displayStages.length === 0 ? 0.5 : 1,
+                  }}
+                >
+                  <Rocket size={14} />
+                  PUBLISH_PIPELINE
+                </button>
+              )}
               {isActivePipeline && (
                 <button
                   onClick={() => setShowAddForm(true)}

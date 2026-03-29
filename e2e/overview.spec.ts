@@ -60,6 +60,10 @@ interface SeedResult {
  * Must be called after `page.goto()` so the storage state is hydrated.
  */
 async function getAuthToken(page: Page): Promise<string> {
+  // Wait for Clerk JS to refresh the session token (the stored JWT may be
+  // expired). networkidle ensures the async token refresh has completed.
+  await page.waitForLoadState("networkidle");
+
   const cookies = await page.context().cookies();
   const sessionCookie = cookies.find((c) => c.name === "__session");
   if (!sessionCookie) {
@@ -133,7 +137,7 @@ async function seedPipeline(
       `${API_BASE}/api/v1/pipelines/${pipeline.id}/stages`,
       {
         headers,
-        data: { title: stageTitle, sortOrder: i },
+        data: { title: stageTitle, order: i },
       },
     );
     expect(stageRes.status()).toBe(201);
@@ -270,7 +274,7 @@ test.describe("2.1 — Pipeline overview: populated pipeline", () => {
     const firstStageColumn = page
       .locator('[data-testid="stage-card"]')
       .first()
-      .locator(".."); // parent SortableStage wrapper
+      .locator("../.."); // SortableStage column div (skip position:relative wrapper)
 
     await expect(firstStageColumn.locator("text=CANDIDATE 1")).toBeVisible({
       timeout: 10_000,
@@ -380,8 +384,9 @@ test.describe("2.2 — Add stage to pipeline", () => {
       timeout: 10_000,
     });
 
-    // The new stage title should be visible.
-    await expect(page.locator("text=TECHNICAL SCREEN")).toBeVisible({
+    // The new stage title should be visible (use .nth(1) since the seeded stage
+    // also has a "Technical Screen" title — we check that count grew to 2).
+    await expect(page.locator("text=TECHNICAL SCREEN").nth(1)).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -492,6 +497,171 @@ test.describe("2.3 — Stage reorder via drag-and-drop", () => {
     await expect(stageCards.nth(2)).toContainText("FINAL", {
       ignoreCase: true,
     });
+  });
+});
+
+test.describe("2.5 — Publish pipeline (DRAFT → ACTIVE)", () => {
+  let seed: SeedResult;
+  let authToken: string;
+
+  test.beforeEach(async ({ page, request }) => {
+    await page.goto(`${APP_BASE}/`);
+    authToken = await getAuthToken(page);
+  });
+
+  test.afterEach(async ({ request }) => {
+    if (seed?.pipeline?.id) {
+      await teardownPipeline(request, authToken, seed.pipeline.id);
+    }
+  });
+
+  test("PUBLISH_PIPELINE button is visible on DRAFT pipeline with stages", async ({
+    page,
+    request,
+  }) => {
+    seed = await seedPipeline(request, authToken, {
+      title: "Draft Publish Test",
+      status: "DRAFT",
+      stageCount: 1,
+    });
+    await page.goto(`${APP_BASE}/pipeline/${seed.pipeline.id}`);
+
+    await expect(page.locator("text=PUBLISH_PIPELINE")).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+
+  test("PUBLISH_PIPELINE button is NOT visible on ACTIVE pipeline", async ({
+    page,
+    request,
+  }) => {
+    seed = await seedPipeline(request, authToken, {
+      title: "Active No Publish",
+      status: "ACTIVE",
+      stageCount: 1,
+    });
+    await page.goto(`${APP_BASE}/pipeline/${seed.pipeline.id}`);
+
+    // Wait for page to load by checking for the ADD_CANDIDATE button (ACTIVE pipeline).
+    await expect(page.locator("text=ADD_CANDIDATE")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.locator("text=PUBLISH_PIPELINE")).not.toBeVisible();
+  });
+
+  test("clicking PUBLISH_PIPELINE changes status to ACTIVE and shows ADD_CANDIDATE", async ({
+    page,
+    request,
+  }) => {
+    seed = await seedPipeline(request, authToken, {
+      title: "Publish Flow Test",
+      status: "DRAFT",
+      stageCount: 2,
+    });
+    await page.goto(`${APP_BASE}/pipeline/${seed.pipeline.id}`);
+
+    // Status badge should show DRAFT.
+    await expect(page.locator('[data-testid="pipeline-status-badge"]')).toContainText(
+      "DRAFT",
+      { timeout: 10_000 },
+    );
+
+    // Click publish.
+    await page.locator("text=PUBLISH_PIPELINE").click();
+
+    // Status badge should update to ACTIVE.
+    await expect(page.locator('[data-testid="pipeline-status-badge"]')).toContainText(
+      "ACTIVE",
+      { timeout: 10_000 },
+    );
+
+    // PUBLISH button should be gone, ADD_CANDIDATE should appear.
+    await expect(page.locator("text=PUBLISH_PIPELINE")).not.toBeVisible();
+    await expect(page.locator("text=ADD_CANDIDATE")).toBeVisible({
+      timeout: 5_000,
+    });
+  });
+
+  test("status badge shows DRAFT on draft pipeline", async ({
+    page,
+    request,
+  }) => {
+    seed = await seedPipeline(request, authToken, {
+      title: "Badge Draft Test",
+      status: "DRAFT",
+      stageCount: 1,
+    });
+    await page.goto(`${APP_BASE}/pipeline/${seed.pipeline.id}`);
+
+    await expect(page.locator('[data-testid="pipeline-status-badge"]')).toContainText(
+      "DRAFT",
+      { timeout: 10_000 },
+    );
+  });
+
+  test("status badge shows ACTIVE on active pipeline", async ({
+    page,
+    request,
+  }) => {
+    seed = await seedPipeline(request, authToken, {
+      title: "Badge Active Test",
+      status: "ACTIVE",
+      stageCount: 1,
+    });
+    await page.goto(`${APP_BASE}/pipeline/${seed.pipeline.id}`);
+
+    await expect(page.locator('[data-testid="pipeline-status-badge"]')).toContainText(
+      "ACTIVE",
+      { timeout: 10_000 },
+    );
+  });
+
+  test("API contract: PATCH /api/v1/pipelines/:id updates status", async ({
+    request,
+  }) => {
+    seed = await seedPipeline(request, authToken, {
+      title: "PATCH Contract Test",
+      status: "DRAFT",
+      stageCount: 1,
+    });
+
+    const res = await request.patch(
+      `${API_BASE}/api/v1/pipelines/${seed.pipeline.id}`,
+      {
+        headers: { Authorization: `Bearer ${authToken}` },
+        data: { status: "ACTIVE" },
+      },
+    );
+
+    expect(res.status()).toBe(200);
+
+    const body = await res.json() as {
+      id: string;
+      status: string;
+      title: string;
+    };
+    expect(body.id).toBe(seed.pipeline.id);
+    expect(body.status).toBe("ACTIVE");
+  });
+
+  test("API contract: PATCH rejects DRAFT→ACTIVE with 0 stages", async ({
+    request,
+  }) => {
+    seed = await seedPipeline(request, authToken, {
+      title: "No Stages Pipeline",
+      status: "DRAFT",
+      stageCount: 0,
+    });
+
+    const res = await request.patch(
+      `${API_BASE}/api/v1/pipelines/${seed.pipeline.id}`,
+      {
+        headers: { Authorization: `Bearer ${authToken}` },
+        data: { status: "ACTIVE" },
+      },
+    );
+
+    expect(res.status()).toBe(422);
   });
 });
 
@@ -638,6 +808,10 @@ test.describe("2.6 — Invite candidate", () => {
     // Grant clipboard permissions.
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
+    // Wait for ADD_CANDIDATE to be visible before clicking.
+    await expect(page.locator("text=ADD_CANDIDATE")).toBeVisible({
+      timeout: 10_000,
+    });
     await page.locator("text=ADD_CANDIDATE").click();
 
     const nameInput = page.locator('input[placeholder="E.g. John Doe"]');
@@ -691,7 +865,7 @@ test.describe("2.7 — Candidate status across stages", () => {
     const firstStageColumn = page
       .locator('[data-testid="stage-card"]')
       .first()
-      .locator("..");
+      .locator("../.."); // SortableStage column div (skip position:relative wrapper)
 
     await expect(firstStageColumn.locator("text=CANDIDATE 1")).toBeVisible({
       timeout: 10_000,
@@ -705,7 +879,7 @@ test.describe("2.7 — Candidate status across stages", () => {
     const secondStageColumn = page
       .locator('[data-testid="stage-card"]')
       .nth(1)
-      .locator("..");
+      .locator("../.."); // SortableStage column div (skip position:relative wrapper)
 
     await expect(secondStageColumn.locator("text=CANDIDATE 2")).toBeVisible({
       timeout: 10_000,
@@ -924,11 +1098,16 @@ test.describe("Worker API contract — /api/v1/pipelines/:id/overview", () => {
     expect(Array.isArray(body.interviews)).toBe(true);
   });
 
-  test("GET overview returns 401 without auth token", async ({ request }) => {
-    const res = await request.get(
-      `${API_BASE}/api/v1/pipelines/${seed.pipeline.id}/overview`,
-    );
-    expect(res.status()).toBe(401);
+  test("GET overview returns 401 without auth token", async ({ playwright }) => {
+    const unauthRequest = await playwright.request.newContext();
+    try {
+      const res = await unauthRequest.get(
+        `${API_BASE}/api/v1/pipelines/${seed.pipeline.id}/overview`,
+      );
+      expect(res.status()).toBe(401);
+    } finally {
+      await unauthRequest.dispose();
+    }
   });
 
   test("GET overview returns 404 for non-existent pipeline", async ({

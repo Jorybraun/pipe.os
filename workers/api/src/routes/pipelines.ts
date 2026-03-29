@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
 import { createPipelineSchema } from '../validation/pipelines';
@@ -205,6 +206,117 @@ pipelines.post('/', async (c) => {
     },
     201,
   );
+});
+
+// ─── PATCH /api/v1/pipelines/:id ─────────────────────────────────────────────
+
+/**
+ * Update a pipeline by ID.
+ *
+ * Supports updating: status, title.
+ * Business rule: DRAFT → ACTIVE requires at least 1 stage.
+ *
+ * Returns the updated pipeline object.
+ */
+pipelines.patch('/:id', async (c) => {
+  const userId = c.var.userId;
+  const pipelineId = c.req.param('id');
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const schema = z.object({
+    status: z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']).optional(),
+    title: z.string().min(1).max(200).optional(),
+  });
+
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const input = parsed.data;
+  if (!input.status && !input.title) {
+    return apiError(c, 'VALIDATION_ERROR', 'At least one field (status, title) must be provided.');
+  }
+
+  // Ownership check.
+  const existing = await c.env.DB.prepare(
+    'SELECT owner_id, status FROM pipelines WHERE id = ?1',
+  )
+    .bind(pipelineId)
+    .first<{ owner_id: string; status: string }>();
+
+  if (!existing) {
+    return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  }
+  if (existing.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this pipeline.');
+  }
+
+  // Business rule: DRAFT → ACTIVE requires ≥1 stage.
+  if (input.status === 'ACTIVE' && existing.status === 'DRAFT') {
+    const stageCount = await c.env.DB.prepare(
+      'SELECT COUNT(*) AS cnt FROM stages WHERE pipeline_id = ?1',
+    )
+      .bind(pipelineId)
+      .first<{ cnt: number }>();
+
+    if (!stageCount || stageCount.cnt === 0) {
+      return apiError(c, 'VALIDATION_ERROR', 'Pipeline must have at least 1 stage before publishing.');
+    }
+  }
+
+  // Build SET clause dynamically.
+  const setClauses: string[] = [];
+  const bindings: (string | number)[] = [];
+  let bindIdx = 1;
+
+  if (input.status) {
+    setClauses.push(`status = ?${bindIdx}`);
+    bindings.push(input.status);
+    bindIdx++;
+  }
+  if (input.title) {
+    setClauses.push(`title = ?${bindIdx}`);
+    bindings.push(input.title);
+    bindIdx++;
+  }
+
+  setClauses.push(`updated_at = ?${bindIdx}`);
+  bindings.push(new Date().toISOString());
+  bindIdx++;
+
+  bindings.push(pipelineId);
+
+  await c.env.DB.prepare(
+    `UPDATE pipelines SET ${setClauses.join(', ')} WHERE id = ?${bindIdx}`,
+  )
+    .bind(...bindings)
+    .run();
+
+  // Return updated pipeline.
+  const updated = await c.env.DB.prepare(
+    `SELECT id, title, level, status, creation_mode, created_at, updated_at
+     FROM pipelines WHERE id = ?1`,
+  )
+    .bind(pipelineId)
+    .first();
+
+  return c.json({
+    id: updated!.id as string,
+    title: updated!.title as string,
+    level: updated!.level as string | null,
+    status: updated!.status as string,
+    creationMode: updated!.creation_mode as string | null,
+    createdAt: updated!.created_at as string,
+    updatedAt: updated!.updated_at as string,
+  });
 });
 
 // ─── DELETE /api/v1/pipelines/:id ────────────────────────────────────────────

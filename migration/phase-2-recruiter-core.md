@@ -179,6 +179,48 @@ Feature: Candidate Invite
     When the recruiter clicks the copy button on Jane's card
     Then the clipboard contains "https://pipe.dev/assess/abc-123"
     And a "Copied" confirmation appears for 2 seconds
+
+  Scenario: Add candidate with CV upload
+    Given the recruiter is on an ACTIVE pipeline overview
+    When the recruiter clicks "ADD_CANDIDATE"
+    And fills in name "Jane Doe" and email "jane@example.com"
+    And uploads a PDF file "jane-resume.pdf"
+    And submits the form
+    Then a candidate record is created with status INVITED
+    And the file is uploaded to R2 via a presigned URL
+    And a candidate_media record is created with type RESUME
+    And the candidate card appears in the first stage column
+
+  Scenario: CV upload rejects invalid file types
+    Given the recruiter is on the ADD_CANDIDATE modal
+    When the recruiter selects a .txt file
+    Then an error message "Only .pdf and .docx files are supported." is shown
+    And the submit button remains enabled (file is optional)
+
+  Scenario: Candidate creation succeeds even if CV upload fails
+    Given the recruiter fills in name and email and attaches a PDF
+    When the form is submitted and the R2 upload fails
+    Then the candidate is still created with status INVITED
+    And an error toast indicates the CV upload failed
+    And the candidate card appears without a resume indicator
+```
+
+### 2.6b Recruiter publishes pipeline (DRAFT → ACTIVE)
+
+```gherkin
+Feature: Publish Pipeline
+
+  Scenario: Publish DRAFT pipeline with stages
+    Given the recruiter is on a DRAFT pipeline with 2 stages
+    When the recruiter clicks "PUBLISH_PIPELINE"
+    Then a PATCH /api/v1/pipelines/:id is sent with { status: "ACTIVE" }
+    And the status badge changes from DRAFT to ACTIVE
+    And the PUBLISH_PIPELINE button is replaced by ADD_CANDIDATE
+
+  Scenario: Publish blocked when pipeline has no stages
+    Given the recruiter is on a DRAFT pipeline with 0 stages
+    Then the PUBLISH_PIPELINE button is disabled
+    And hovering shows "Add at least 1 stage before publishing"
 ```
 
 ### 2.7 Recruiter views candidate status across stages
@@ -561,10 +603,16 @@ export function clerkAuth(): MiddlewareHandler {
 | `PUT` | `/challenges/:challengeId` | Full update challenge | UPDATE challenges |
 | `DELETE` | `/challenges/:challengeId` | Delete challenge | DELETE |
 | `POST` | `/challenges/:challengeId/clone` | Clone challenge | INSERT (copy of source) |
+| **Pipelines** | | | |
+| `PATCH` | `/pipelines/:pipelineId` | Update pipeline (status, title) | UPDATE pipelines |
 | **Candidates** | | | |
 | `POST` | `/pipelines/:pipelineId/candidates` | Create candidate with invite token | INSERT into candidates |
 | `PATCH` | `/candidates/:candidateId` | Update candidate (currentStageId, status) | UPDATE candidates |
 | `POST` | `/candidates/:candidateId/reset` | Reset candidate (unclaim token, delete submissions) | Transaction |
+| **Candidate Media** | | | |
+| `POST` | `/candidates/:candidateId/media/upload-url` | Generate R2 presigned upload URL | R2 presigned PUT |
+| `POST` | `/candidates/:candidateId/media` | Create candidate_media record after successful upload | INSERT into candidate_media |
+| `GET` | `/candidates/:candidateId/media` | List media for a candidate | SELECT from candidate_media |
 | **GitHub** | | | |
 | `POST` | `/github/pr` | Fetch GitHub PR diff + metadata | External GitHub API call |
 | `POST` | `/github/prs` | List PRs for a repository | External GitHub API call |
@@ -800,43 +848,48 @@ app.post('/api/v1/github/pr', clerkAuth(), async (c) => {
 
 ### 6.2 Worker Routes
 
-- [ ] **T2-04**: Implement `GET /pipelines/:pipelineId/overview` (the big join route)
-- [ ] **T2-05**: Implement `POST /pipelines/:pipelineId/stages` (create stage)
-- [ ] **T2-06**: Implement `PATCH /pipelines/:pipelineId/stages/reorder` (batch reorder)
-- [ ] **T2-07**: Implement `GET /stages/:stageId` (stage detail with challenges)
+- [x] **T2-04**: Implement `GET /pipelines/:pipelineId/overview` (the big join route)
+- [x] **T2-05**: Implement `POST /pipelines/:pipelineId/stages` (create stage)
+- [x] **T2-06**: Implement `PATCH /pipelines/:pipelineId/stages/reorder` (batch reorder)
+- [x] **T2-07**: Implement `GET /stages/:stageId` (stage detail with challenges)
 - [ ] **T2-08**: Implement `PATCH /stages/:stageId` (update stage settings)
-- [ ] **T2-09**: Implement `DELETE /stages/:stageId` (cascade delete)
-- [ ] **T2-10**: Implement `POST /stages/:stageId/challenges` (create challenge)
+- [x] **T2-09**: Implement `DELETE /stages/:stageId` (cascade delete)
+- [x] **T2-10**: Implement `POST /stages/:stageId/challenges` (create challenge)
 - [ ] **T2-11**: Implement `PATCH /stages/:stageId/challenges/reorder` (batch reorder)
-- [ ] **T2-12**: Implement `GET /challenges/:challengeId` (editor fetch)
-- [ ] **T2-13**: Implement `PUT /challenges/:challengeId` (full update)
+- [x] **T2-12**: Implement `GET /challenges/:challengeId` (editor fetch)
+- [x] **T2-13**: Implement `PUT /challenges/:challengeId` (full update)
 - [ ] **T2-14**: Implement `DELETE /challenges/:challengeId`
-- [ ] **T2-15**: Implement `POST /challenges/:challengeId/clone`
-- [ ] **T2-16**: Implement `POST /pipelines/:pipelineId/candidates` (create with invite token)
-- [ ] **T2-17**: Implement `PATCH /candidates/:candidateId` (move stage, update status)
+- [x] **T2-15**: Implement `POST /challenges/:challengeId/clone`
+- [x] **T2-16**: Implement `POST /pipelines/:pipelineId/candidates` (create with invite token)
+- [x] **T2-17**: Implement `PATCH /candidates/:candidateId` (move stage, update status)
 - [ ] **T2-18**: Implement `POST /candidates/:candidateId/reset` (transactional reset)
-- [ ] **T2-19**: Implement `POST /github/pr` (fetch PR diff + metadata)
+- [x] **T2-19**: Implement `POST /github/pr` (fetch PR diff + metadata)
 - [ ] **T2-20**: Implement `POST /github/prs` (list PRs)
 - [ ] **T2-21**: Implement `POST /pipelines/:pipelineId/interviews` (create scheduled interview)
 - [ ] **T2-22**: Implement `GET /pipelines/:pipelineId/interviews` (list interviews)
+- [x] **T2-22b**: Implement `PATCH /pipelines/:pipelineId` (update status/title, DRAFT→ACTIVE requires ≥1 stage)
+- [ ] **T2-23a**: Implement `POST /candidates/:candidateId/media/upload-url` (R2 presigned upload URL)
+- [ ] **T2-23b**: Implement `POST /candidates/:candidateId/media` (create candidate_media record)
+- [ ] **T2-23c**: Implement `GET /candidates/:candidateId/media` (list candidate media)
 
 ### 6.3 Frontend Hooks (Provider Abstraction)
 
-- [ ] **T2-23**: Create `useOverviewData(pipelineId)` hook calling `/pipelines/:id/overview`
-- [ ] **T2-24**: Create `useStageDetail(stageId)` hook calling `/stages/:id`
-- [ ] **T2-25**: Create `useEditorChallengeV2(challengeId)` hook replacing `useEditorChallenge.ts`
-- [ ] **T2-26**: Create `useStageMutations()` hook (create, reorder, update, delete)
-- [ ] **T2-27**: Create `useChallengeMutations()` hook (create, reorder, update, delete, clone)
-- [ ] **T2-28**: Create `useCandidateMutations()` hook (create, move, reset)
+- [x] **T2-23**: Create `useOverviewData(pipelineId)` hook calling `/pipelines/:id/overview`
+- [x] **T2-24**: Create `useStageDetail(stageId)` hook calling `/stages/:id`
+- [x] **T2-25**: Create `useEditorChallengeV2(challengeId)` hook replacing `useEditorChallenge.ts`
+- [x] **T2-26**: Create `useStageMutations()` hook (create, reorder, update, delete)
+- [x] **T2-27**: Create `useChallengeMutations()` hook (create, reorder, update, delete, clone)
+- [x] **T2-28**: Create `useCandidateMutations()` hook (create, move, reset)
 - [ ] **T2-29**: Create `useGitHubPR()` hook (fetch PR, list PRs)
 - [ ] **T2-30**: Create `useInterviews(pipelineId)` hook
 
 ### 6.4 Page Migration
 
-- [ ] **T2-31**: Migrate `OverviewPage.tsx` to use `useOverviewData` + mutation hooks
-- [ ] **T2-32**: Migrate `StageDetailPage.tsx` to use `useStageDetail` + mutation hooks
-- [ ] **T2-33**: Migrate `ChallengeEditorPage.tsx` to use `useEditorChallengeV2`
+- [x] **T2-31**: Migrate `OverviewPage.tsx` to use `useOverviewData` + mutation hooks
+- [x] **T2-32**: Migrate `StageDetailPage.tsx` to use `useStageDetail` + mutation hooks
+- [x] **T2-33**: Migrate `ChallengeEditorPage.tsx` to use `useEditorChallengeV2`
 - [ ] **T2-34**: Migrate `CandidateIntakeModal.tsx` to use `useCandidateMutations`
+- [ ] **T2-34b**: Migrate CV upload in `CandidateIntakeModal.tsx` from Amplify `useStorage` to R2 presigned URL flow
 - [ ] **T2-35**: Remove all `generateClient<Schema>()` calls from migrated files
 
 ### 6.5 Type Definitions
@@ -1026,6 +1079,55 @@ test.describe('Pipeline Overview', () => {
     // Verify candidate moved
     await page.reload();
     // Jane should now be in the Final Round column
+  });
+
+  test('publishes DRAFT pipeline and shows ADD_CANDIDATE', async ({ page }) => {
+    await page.goto('/pipeline/draft-pipeline-id');
+
+    await expect(page.getByTestId('pipeline-status-badge')).toContainText('DRAFT');
+    await page.getByText('PUBLISH_PIPELINE').click();
+
+    await expect(page.getByTestId('pipeline-status-badge')).toContainText('ACTIVE');
+    await expect(page.getByText('PUBLISH_PIPELINE')).not.toBeVisible();
+    await expect(page.getByText('ADD_CANDIDATE')).toBeVisible();
+  });
+
+  test('uploads CV during candidate creation', async ({ page }) => {
+    await page.goto('/pipeline/active-pipeline-id');
+    await page.getByText('ADD_CANDIDATE').click();
+
+    // Fill in basic info
+    await page.locator('input[placeholder="E.g. John Doe"]').fill('Jane Doe');
+    await page.locator('input[placeholder="john@example.com"]').fill('jane@example.com');
+
+    // Upload a PDF file
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: 'jane-resume.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('fake pdf content'),
+    });
+
+    await expect(page.getByText('jane-resume.pdf')).toBeVisible();
+
+    await page.getByText('INITIATE_INTAKE').click();
+
+    // Candidate should be created
+    await expect(page.getByText('JANE DOE')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('rejects invalid file types for CV upload', async ({ page }) => {
+    await page.goto('/pipeline/active-pipeline-id');
+    await page.getByText('ADD_CANDIDATE').click();
+
+    const fileInput = page.locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('not a resume'),
+    });
+
+    await expect(page.getByText('Only .pdf and .docx files are supported.')).toBeVisible();
   });
 });
 ```

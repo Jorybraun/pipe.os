@@ -25,6 +25,7 @@ export interface UseOverviewDataResult {
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
+  publishPipeline: () => Promise<void>;
 }
 
 /**
@@ -76,6 +77,25 @@ export function useOverviewData(pipelineId: string | undefined): UseOverviewData
     void fetchOverview();
   }, [fetchOverview]);
 
+  const publishPipeline = useCallback(async (): Promise<void> => {
+    if (!pipelineId) return;
+
+    const api = createApiClient({ getToken });
+
+    try {
+      await api.patch(`/api/v1/pipelines/${pipelineId}`, { status: 'ACTIVE' });
+      await fetchOverview();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        console.error('[useOverviewData] Publish failed:', err.code, err.message);
+        throw new Error(err.message);
+      }
+      const message = err instanceof Error ? err.message : 'Failed to publish pipeline';
+      console.error('[useOverviewData] Publish error:', message);
+      throw new Error(message);
+    }
+  }, [pipelineId, getToken, fetchOverview]);
+
   return {
     pipeline,
     stages,
@@ -84,5 +104,6 @@ export function useOverviewData(pipelineId: string | undefined): UseOverviewData
     isLoading,
     error,
     refetch: fetchOverview,
+    publishPipeline,
   };
 }

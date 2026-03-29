@@ -6,6 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Phase 2 — Publish pipeline + candidate domain)
+- `workers/api/src/routes/pipelines.ts` — `PATCH /api/v1/pipelines/:id` route for status/title updates; DRAFT→ACTIVE requires ≥1 stage
+- `src/pages/OverviewPage.tsx` — PUBLISH_PIPELINE button (DRAFT only), DRAFT/ACTIVE status badge with color coding
+- `src/hooks/useOverviewData.ts` — `publishPipeline` mutation for DRAFT→ACTIVE transition
+- `e2e/overview.spec.ts` — 7 new BDD tests in §2.5 (publish flow, status badge, API contract)
+- `migration/phase-2-recruiter-core.md` — CV upload BDD scenarios, publish scenarios, media routes, task progress tracking
+
+#### Fixed (Phase 2 — BDD test green phase, overview 42/42)
+- `vite.config.ts` — exclude `**/node_modules/**` and `amplify/functions/**` from vitest (was picking up 17+ dependency test files)
+- `e2e/overview.spec.ts` — fix ADD_STAGE strict mode violation (2 elements matched `text=TECHNICAL SCREEN`), fix clipboard copy test flakiness
+
 #### Fixed (Phase 2 — BDD test green phase)
 - `workers/api/src/middleware/auth.ts` — added `clockSkewInMs: 120_000` to `verifyToken` so Playwright tests don't get 401s from slightly-expired Clerk dev tokens (60s TTL)
 - `e2e/auth.setup.ts` — added `waitForLoadState('networkidle')` before saving storageState so Clerk completes async token refresh before the cookie is persisted

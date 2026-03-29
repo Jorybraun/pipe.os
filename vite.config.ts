@@ -15,5 +15,11 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    exclude: [
+      '**/node_modules/**',
+      'amplify/functions/**',
+      'e2e/**',
+      '.claude/**',
+    ],
   },
 })
