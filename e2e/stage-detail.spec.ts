@@ -469,8 +469,8 @@ test.describe("Feature: §2.4 Add challenge to stage", () => {
     await expect(prInput).toBeVisible({ timeout: 5000 });
     await prInput.fill("30000");
 
-    // Fetch / confirm
-    const fetchBtn = picker.getByRole("button", { name: /FETCH|LOAD|ADD/i }).first();
+    // Fetch / confirm — target the FETCH button adjacent to the PR number input
+    const fetchBtn = picker.locator('button', { hasText: /^FETCH$/ }).first();
     await fetchBtn.click();
 
     // Picker should eventually close after successful creation
@@ -888,6 +888,17 @@ test.describe("Feature: Delete challenge", () => {
       title: "Challenge To Delete",
       order: 0,
     });
+  });
+
+  test.afterEach(async ({ request }) => {
+    // Clean up the challenge if it survived (e.g. dismissed confirm dialog test).
+    try {
+      await request.delete(`${API_BASE}/api/v1/challenges/${challengeToDelete.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // Already deleted — ignore
+    }
   });
 
   test.afterAll(async ({ request }) => {

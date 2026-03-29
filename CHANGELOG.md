@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Phase 2 — stage-detail BDD 20/20 green)
+- `e2e/stage-detail.spec.ts` — fix CODE_REVIEW challenge picker test: FETCH button locator was matching ADD_REPO instead (narrowed to `button:has-text("FETCH")`)
+- `e2e/stage-detail.spec.ts` — fix delete challenge strict mode violation: added `afterEach` cleanup so dismissed-confirm test doesn't leave stale challenges for next test
+
 #### Phase 2 — Stage Detail + Challenge Editor + Worker routes
 - `workers/api/src/routes/stages.ts` — extended stage routes with challenge columns, snake_case aliases
 - `workers/api/src/routes/challenges.ts` — challenge CRUD improvements
