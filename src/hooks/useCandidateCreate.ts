@@ -1,17 +1,20 @@
-import { useState, useCallback } from "react";
-import { useData } from "../providers";
-import type { DataProviderFactory } from "../providers";
-import { generateInviteToken } from "../lib/generateInviteToken";
+/**
+ * useCandidateCreate — creates a candidate via the Worker API.
+ *
+ * Replaces the Amplify version. The invite token is generated server-side
+ * in the Worker so it never touches the frontend.
+ */
 
-// ============================================================================
-// Types
-// ============================================================================
+import { useState, useCallback } from 'react';
+import { useAuth as useClerkAuth } from '@clerk/react';
+import { createApiClient } from '../lib/api/client';
+import type { CreateCandidateResponse } from '../lib/api/types';
 
 export interface CandidateCreateInput {
   pipelineId: string;
   name: string;
   email: string;
-  currentStageId?: string;
+  currentStageId?: string | null;
 }
 
 interface UseCandidateCreateState {
@@ -25,15 +28,11 @@ interface UseCandidateCreateReturn extends UseCandidateCreateState {
   reset: () => void;
 }
 
-// ============================================================================
-// Hook
-// ============================================================================
-
 /**
- * useCandidateCreate - Handles candidate creation with an automatically generated inviteToken.
+ * useCandidateCreate - Handles candidate creation via the Worker API.
  */
 export function useCandidateCreate(): UseCandidateCreateReturn {
-  const factory: DataProviderFactory = useData();
+  const { getToken } = useClerkAuth();
 
   const [state, setState] = useState<UseCandidateCreateState>({
     isSubmitting: false,
@@ -46,59 +45,29 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
       setState({ isSubmitting: true, error: null, createdId: null });
 
       try {
-        const client = factory.createClient();
-        const { data, errors } = await client.models.Candidate.create({
-          pipelineId: input.pipelineId,
-          name: input.name.trim(),
-          email: input.email.trim(),
-          inviteToken: generateInviteToken(),
-          status: "INVITED",
-          currentStageId: input.currentStageId ?? null,
-        });
+        const api = createApiClient({ getToken });
+        const data = await api.post<CreateCandidateResponse>(
+          `/api/v1/pipelines/${input.pipelineId}/candidates`,
+          {
+            name: input.name.trim(),
+            email: input.email.trim(),
+            ...(input.currentStageId ? { currentStageId: input.currentStageId } : {}),
+          },
+        );
 
-        if (errors && errors.length > 0) {
-          const err = new Error(
-            errors[0]?.message ?? "Failed to create candidate",
-          );
-          console.error("[useCandidateCreate] GraphQL errors:", errors);
-          setState({ isSubmitting: false, error: err, createdId: null });
-          return null;
-        }
-
-        if (!data) {
-          const err = new Error("Candidate was created but no data was returned");
-          console.error(
-            "[useCandidateCreate] No data returned from create mutation",
-          );
-          setState({ isSubmitting: false, error: err, createdId: null });
-          return null;
-        }
-
-        const record = data as Record<string, unknown>;
-        if (!record['id']) {
-          const err = new Error("Candidate was created but no ID was returned");
-          console.error(
-            "[useCandidateCreate] No ID returned from create mutation",
-          );
-          setState({ isSubmitting: false, error: err, createdId: null });
-          return null;
-        }
-
-        const candidateId = record['id'] as string;
-        console.log("[useCandidateCreate] Candidate created:", candidateId);
+        const candidateId = data.candidate.id;
+        console.log('[useCandidateCreate] Candidate created:', candidateId);
         setState({ isSubmitting: false, error: null, createdId: candidateId });
         return candidateId;
       } catch (err) {
         const error =
-          err instanceof Error
-            ? err
-            : new Error("An unexpected error occurred");
-        console.error("[useCandidateCreate] Unexpected error:", error);
+          err instanceof Error ? err : new Error('An unexpected error occurred');
+        console.error('[useCandidateCreate] Unexpected error:', error);
         setState({ isSubmitting: false, error, createdId: null });
         return null;
       }
     },
-    [factory],
+    [getToken],
   );
 
   const reset = useCallback(() => {

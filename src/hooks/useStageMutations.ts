@@ -16,6 +16,9 @@ export interface UseStageMutationsResult {
     stageId: string,
     payload: UpdateStageRequest,
   ) => Promise<StageDetail>;
+  createStage: (pipelineId: string, title: string) => Promise<{ id: string }>;
+  reorderStages: (pipelineId: string, stages: { id: string; order: number }[]) => Promise<void>;
+  deleteStage: (stageId: string) => Promise<void>;
 }
 
 /**
@@ -43,5 +46,29 @@ export function useStageMutations(): UseStageMutationsResult {
     [getToken],
   );
 
-  return { updateStage };
+  const createStage = useCallback(
+    async (pipelineId: string, title: string): Promise<{ id: string }> => {
+      const api = createApiClient({ getToken });
+      return api.post<{ id: string }>(`/api/v1/pipelines/${pipelineId}/stages`, { title });
+    },
+    [getToken],
+  );
+
+  const reorderStages = useCallback(
+    async (pipelineId: string, stages: { id: string; order: number }[]): Promise<void> => {
+      const api = createApiClient({ getToken });
+      await api.patch(`/api/v1/pipelines/${pipelineId}/stages/reorder`, { stages });
+    },
+    [getToken],
+  );
+
+  const deleteStage = useCallback(
+    async (stageId: string): Promise<void> => {
+      const api = createApiClient({ getToken });
+      await api.del(`/api/v1/stages/${stageId}`);
+    },
+    [getToken],
+  );
+
+  return { updateStage, createStage, reorderStages, deleteStage };
 }

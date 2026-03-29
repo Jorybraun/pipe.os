@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FEATURE_FLAGS } from "./config/featureFlags";
 import {
@@ -37,12 +37,8 @@ const SubHeader = () => {
   const location = useLocation();
   const auth = useAuth();
 
-  const isPipelineContext =
-    location.pathname.startsWith("/pipeline/") &&
-    !location.pathname.startsWith("/pipeline/new");
   const isCandidateContext = location.pathname.startsWith("/candidates/");
 
-  // TODO: Phase 2 — fetch pipeline title from Worker API instead of Amplify
   const headerData = { title: "PIPE_OS", count: 0 };
 
   const handleNewRole = (): void => {
@@ -72,8 +68,6 @@ const SubHeader = () => {
           <>
             <button
               onClick={() => {
-                // i think back button should just go to the previous page unless there is no previous page
-                // in that case it should go to base route
                 if (questionId && stage) {
                   navigate(`/pipeline/${id}/${stage}`);
                 } else if (stage) {
@@ -136,42 +130,6 @@ const SubHeader = () => {
                 {headerData.title.toUpperCase()}
               </div>
             </div>
-
-            {(isPipelineContext || isCandidateContext) && (
-              <>
-                <div
-                  style={{
-                    width: 1,
-                    height: 40,
-                    background: "rgba(255,255,255,0.08)",
-                  }}
-                />
-                <div>
-                  <div
-                    style={{
-                      fontSize: 9,
-                      letterSpacing: "0.2em",
-                      color: "rgba(255,255,255,0.3)",
-                      marginBottom: 6,
-                    }}
-                  >
-                    ACTIVE CANDIDATES
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 24,
-                      fontWeight: 800,
-                      background:
-                        "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                    }}
-                  >
-                    {headerData.count}
-                  </div>
-                </div>
-              </>
-            )}
           </>
         )}
       </div>
@@ -192,8 +150,6 @@ const SubHeader = () => {
             display: "flex",
             alignItems: "center",
             gap: 10,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
           <Plus size={16} />
@@ -212,7 +168,6 @@ const SubHeader = () => {
             display: "flex",
             alignItems: "center",
             gap: 8,
-            transition: "all 0.2s ease",
           }}
           title="Sign out"
         >
@@ -273,8 +228,6 @@ function App(): JSX.Element {
     <BrowserRouter>
       <Routes>
         {/* Public Candidate Assessment Route */}
-        {/* WHY DONT WE WRAP THIS WHOLE PAGE IN AN ERROR BOUNDARY. */}
-
         <Route
           path="/assess/:token"
           element={
@@ -293,44 +246,38 @@ function App(): JSX.Element {
                 <Routes>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />
-                    {/* Phase 2+ pages — still on Amplify, wrapped in ErrorBoundary */}
-                    <Route path="/pipeline/:id" element={<ErrorBoundary><OverviewPage /></ErrorBoundary>} />
+                    <Route path="/pipeline/:id" element={<OverviewPage />} />
                     <Route
                       path="/pipeline/:id/stages/:stageId"
-                      element={<ErrorBoundary><StageDetailPage /></ErrorBoundary>}
+                      element={<StageDetailPage />}
                     />
                     {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
                       <Route
-                        path="/pipeline/:id/challenges/:challengeId"
-                        element={<ErrorBoundary><ChallengeEditorPage /></ErrorBoundary>}
+                        path="/pipeline/:pipelineId/challenges/:challengeId"
+                        element={<ChallengeEditorPage />}
                       />
                     )}
-                    {/* Phase 1 — migrated to Worker API */}
-                    <Route
-                      path="/pipeline/new"
-                      element={<PipelineCreatePage />}
-                    />
-                    {/* Phase 2+ pages */}
+                    <Route path="/pipeline/new" element={<PipelineCreatePage />} />
                     <Route
                       path="/candidates/:id"
-                      element={<ErrorBoundary><CandidateProfilePage /></ErrorBoundary>}
+                      element={<CandidateProfilePage />}
                     />
                     <Route
                       path="/screenings/:id/preview"
-                      element={<ErrorBoundary><CandidateScreeningPage /></ErrorBoundary>}
+                      element={<CandidateScreeningPage />}
                     />
                     {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
-                      <Route path="/schedule" element={<ErrorBoundary><SchedulingPage /></ErrorBoundary>} />
+                      <Route path="/schedule" element={<SchedulingPage />} />
                     )}
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
                       <Route
                         path="/sandbox/dev-container"
-                        element={<ErrorBoundary><DevContainerSandboxPage /></ErrorBoundary>}
+                        element={<DevContainerSandboxPage />}
                       />
                     )}
                     <Route
                       path="/prototype/report"
-                      element={<ErrorBoundary><CandidateReportPrototype /></ErrorBoundary>}
+                      element={<CandidateReportPrototype />}
                     />
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />

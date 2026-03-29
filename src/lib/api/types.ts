@@ -159,3 +159,55 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
+
+// ─── Overview ──────────────────────────────────────────────────────────────────
+
+export interface OverviewStage {
+  id: string;
+  title: string;
+  pipelineId: string;
+  sortOrder: number;
+  challengeCount: number;
+  mode: string | null;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OverviewCandidate {
+  id: string;
+  name: string | null;
+  email: string | null;
+  inviteToken: string;
+  status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED';
+  currentStageId: string | null;
+  score: number | null;
+  createdAt: string;
+}
+
+export interface OverviewResponse {
+  pipeline: PipelineListItem;
+  stages: OverviewStage[];
+  candidates: OverviewCandidate[];
+  interviews: unknown[];
+}
+
+// ─── Candidates ────────────────────────────────────────────────────────────────
+
+export interface CreateCandidateRequest {
+  name: string;
+  email: string;
+}
+
+export interface CreateCandidateResponse {
+  candidate: {
+    id: string;
+    name: string;
+    email: string;
+    inviteToken: string;
+    status: string;
+    currentStageId: string | null;
+  };
+}
+
+export type OverviewPipeline = PipelineListItem;
