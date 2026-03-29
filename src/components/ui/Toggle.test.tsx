@@ -194,10 +194,12 @@ describe('Toggle', () => {
       fireEvent.click(toggle);
       fireEvent.click(toggle);
 
-      // Each click should toggle the state
+      // Toggle is controlled — checked stays false between renders since
+      // the parent never re-renders with a new value, so each click
+      // calls onChange(!false) = onChange(true).
       expect(mockOnChange).toHaveBeenCalledTimes(3);
       expect(mockOnChange).toHaveBeenNthCalledWith(1, true);
-      expect(mockOnChange).toHaveBeenNthCalledWith(2, false);
+      expect(mockOnChange).toHaveBeenNthCalledWith(2, true);
       expect(mockOnChange).toHaveBeenNthCalledWith(3, true);
     });
 

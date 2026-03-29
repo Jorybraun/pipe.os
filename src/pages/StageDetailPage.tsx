@@ -313,26 +313,45 @@ export default function StageDetailPage(): JSX.Element {
             >
               PIPELINE_STAGE / {stage.id.substring(0, 8)}
             </div>
-            <input
-              data-testid="stage-title-input"
-              value={displayTitle}
-              onChange={(e) => setLocalTitle(e.target.value)}
-              onBlur={() => void handleTitleBlur()}
-              placeholder="Stage Title"
-              style={{
-                background: "transparent",
-                border: "none",
-                borderBottom: "1px solid rgba(255,255,255,0.1)",
-                fontSize: 24,
-                fontWeight: 800,
-                color: "#fff",
-                margin: 0,
-                padding: "4px 0",
-                outline: "none",
-                width: "100%",
-                minWidth: 300,
-              }}
-            />
+            <div style={{ position: "relative" }}>
+              <span
+                data-testid="stage-title-display"
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  fontSize: 24,
+                  fontWeight: 800,
+                  color: "transparent",
+                  pointerEvents: "none",
+                  userSelect: "none",
+                  whiteSpace: "pre",
+                  zIndex: -1,
+                }}
+              >
+                {displayTitle}
+              </span>
+              <input
+                data-testid="stage-title-input"
+                value={displayTitle}
+                onChange={(e) => setLocalTitle(e.target.value)}
+                onBlur={() => void handleTitleBlur()}
+                placeholder="Stage Title"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: "1px solid rgba(255,255,255,0.1)",
+                  fontSize: 24,
+                  fontWeight: 800,
+                  color: "#fff",
+                  margin: 0,
+                  padding: "4px 0",
+                  outline: "none",
+                  width: "100%",
+                  minWidth: 300,
+                }}
+              />
+            </div>
           </div>
         </div>
 

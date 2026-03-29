@@ -36,6 +36,10 @@ const API_BASE_URL = 'http://localhost:8787';
  * Must be called after page.goto() so storageState is hydrated.
  */
 async function getAuthToken(page: Page): Promise<string> {
+  // Wait for Clerk JS to refresh the session token (the stored JWT may be
+  // expired). networkidle ensures the async token refresh has completed.
+  await page.waitForLoadState("networkidle");
+
   const cookies = await page.context().cookies();
   const sessionCookie = cookies.find((c) => c.name === "__session");
   if (!sessionCookie) {
@@ -558,10 +562,11 @@ test.describe('Feature: Edit CODE_REVIEW challenge with cached PR data', () => {
     await page.getByText('CONTENT_EDITOR').click();
     await expect(page.getByText('STEP_1:_FETCH_GITHUB_PR')).toBeVisible({ timeout: 5000 });
 
-    // Trigger re-fetch. The component may expose a "FETCH" or "REFRESH" button.
-    const fetchBtn = page.getByRole('button', { name: /FETCH|REFRESH|fetch/i }).first();
-    if (await fetchBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await fetchBtn.click();
+    // Trigger re-fetch. The cached PR panel renders a dedicated REFRESH button
+    // (distinct from the "CLEAR & RE-FETCH" button, which only clears state).
+    const refreshBtn = page.getByRole('button', { name: 'REFRESH', exact: true });
+    if (await refreshBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await refreshBtn.click();
       // Give the request a moment to fire
       await page.waitForTimeout(1000);
       expect(prRequests.length).toBeGreaterThan(0);

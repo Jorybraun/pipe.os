@@ -1,4 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAuth as useClerkAuth } from "@clerk/react";
+import { createApiClient } from "../../lib/api/client";
 import { FEATURE_FLAGS } from "../../config/featureFlags";
 import {
   X,
@@ -18,7 +20,6 @@ import {
   BookMarked,
   Trash2,
 } from "lucide-react";
-import { useData } from "../../providers";
 import { LiquidMetalCard } from "../ui/LiquidMetalCard";
 import { ChallengeCard } from "./ChallengeCard";
 import {
@@ -85,11 +86,11 @@ export function ChallengePicker({
   onClose,
   onSelect,
 }: ChallengePickerProps): JSX.Element | null {
-  const client = useData().createClient();
+  const { getToken } = useClerkAuth();
 
   // Template library state
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedType, setSelectedType] = useState("CODE_REVIEW");
+  const [selectedType, setSelectedType] = useState("CODE_IMPLEMENTATION");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // GitHub PR browser state (used when selectedType === 'CODE_REVIEW')
@@ -204,7 +205,7 @@ export function ChallengePicker({
 
   // ─── GitHub PR fetch ────────────────────────────────────────────────────────
 
-  const handleFetchPRsForUrl = async (url: string): Promise<void> => {
+  const handleFetchPRsForUrl = useCallback(async (url: string): Promise<void> => {
     if (!isValidGitHubUrl(url)) return;
     setIsFetchingPRs(true);
     setPrError(null);
@@ -212,29 +213,19 @@ export function ChallengePicker({
     setSelectedPRs(new Set());
 
     try {
-      const trimmedUrl = url.trim();
-      console.log("[ChallengePicker] Calling listGitHubPRs:", {
-        repoUrl: trimmedUrl,
-      });
-      const { data: raw, errors: gqlErrors } =
-        await client.mutations.listGitHubPRs!({
-          repoUrl: trimmedUrl,
-          state: "open",
-        });
+      const api = createApiClient({ getToken });
+      const result = await api.get<{
+        success: boolean;
+        error?: string;
+        data?: { prs: PRSummary[] };
+      }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=open`);
 
-      if (gqlErrors?.length) {
-        console.error("[ChallengePicker] GraphQL errors:", gqlErrors);
-        throw gqlErrors[0];
-      }
-
-      const result = typeof raw === "string" ? JSON.parse(raw) : raw;
-
-      if (!result?.success) {
-        setPrError(result?.error?.message ?? "Failed to fetch pull requests.");
+      if (!result.success) {
+        setPrError(result.error ?? "Failed to fetch pull requests.");
         return;
       }
 
-      const fetchedPRs: PRSummary[] = result.data?.prs ?? [];
+      const fetchedPRs = result.data?.prs ?? [];
       setPrs(fetchedPRs);
 
       if (fetchedPRs.length === 0) {
@@ -242,21 +233,11 @@ export function ChallengePicker({
       }
     } catch (err: unknown) {
       console.error("[ChallengePicker] Failed to list PRs:", err);
-      // Amplify throws { data, errors } when the GraphQL call fails
-      const gqlErr = (err as { errors?: Array<{ message?: string }> } | null)
-        ?.errors?.[0]?.message;
-      if (gqlErr?.includes("FieldUndefined") || gqlErr?.includes("undefined")) {
-        setPrError("Schema not deployed. Run: npx ampx sandbox");
-      } else {
-        setPrError(
-          gqlErr ??
-            "Failed to fetch pull requests. Check the repo URL and try again.",
-        );
-      }
+      setPrError("Failed to fetch pull requests. Check the repo URL and try again.");
     } finally {
       setIsFetchingPRs(false);
     }
-  };
+  }, [getToken]);
 
   // ─── Confirm ────────────────────────────────────────────────────────────────
 
@@ -951,7 +932,6 @@ function CreateNewTile({
         type: type as any,
         title: `Create Custom ${type.replace("QUIZ_", "").replace("_", " ")}`,
         description: "Start from scratch with a clean slate",
-        difficulty: "beginner",
       }}
     />
   );

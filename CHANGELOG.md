@@ -6,6 +6,21 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Phase 2 — Stage Detail + Challenge Editor + Worker routes
+- `workers/api/src/routes/stages.ts` — extended stage routes with challenge columns, snake_case aliases
+- `workers/api/src/routes/challenges.ts` — challenge CRUD improvements
+- `workers/api/src/routes/github.ts` — GitHub PR fetch proxy for code review challenges
+- `src/pages/StageDetailPage.tsx` — migrated to Cloudflare Workers API
+- `src/pages/ChallengeEditorPage.tsx` — migrated to Cloudflare Workers API, save indicator
+- `src/hooks/useEditorChallengeV2.ts` — rewritten for Workers API
+- `src/hooks/useChallengeSave.ts` — Workers API integration
+- `src/components/Pipeline/ChallengePicker.tsx` — simplified, Workers API
+- `src/components/Editor/CodeReviewEditor.tsx` — updated for migration
+- `src/components/Assessment/GitHubPRFetcherV2.tsx` — updated for migration
+- `src/components/Candidate/CandidateIntakeModal.tsx` — updated for migration
+- `e2e/stage-detail.spec.ts` — BDD tests (18/23 passing, 2 failing, 3 skipped)
+- `e2e/challenge-editor.spec.ts` — BDD tests (22/23 passing, 1 skipped)
+
 #### Documentation overhaul
 - Archived 70+ legacy Amplify-era docs to `docs/archive-amplify/`
 - Added `DREAM.md` — product vision + route map

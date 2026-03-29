@@ -61,6 +61,10 @@ interface SeedChallenge {
  * the browser context's cookie jar to authenticate Worker API seeding calls.
  */
 async function getAuthToken(page: Page): Promise<string> {
+  // Wait for Clerk JS to refresh the session token (the stored JWT may be
+  // expired). networkidle ensures the async token refresh has completed.
+  await page.waitForLoadState("networkidle");
+
   const cookies = await page.context().cookies();
   const sessionCookie = cookies.find((c) => c.name === "__session");
   if (!sessionCookie) {

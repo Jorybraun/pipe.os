@@ -179,7 +179,7 @@ describe('StatusBadge', () => {
           label="Dismissible badge"
         />
       );
-      const dismissBtn = screen.getByLabelText(/Dismiss/);
+      const dismissBtn = screen.getByRole('button', { name: /Dismiss/ });
       dismissBtn.focus();
       expect(dismissBtn).toHaveFocus();
     });

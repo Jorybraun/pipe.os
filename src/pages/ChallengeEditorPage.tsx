@@ -137,12 +137,14 @@ export default function ChallengeEditorPage(): JSX.Element {
     }
   };
 
-  const handleClone = async (): Promise<void> => {
+  const handleClone = (): void => {
     if (!challenge || isNew) return;
-    const result = await clone(challenge.id);
-    if (result?.id) {
-      navigate(`/pipeline/${pipelineId}/challenges/${result.id}`, { replace: true });
-    }
+    const newId = crypto.randomUUID().replace(/-/g, '');
+    navigate(`/pipeline/${pipelineId}/challenges/${newId}`, {
+      replace: true,
+      state: { pendingTitle: `${challenge.title} (Clone)`, cloneOf: challenge.id },
+    });
+    void clone(challenge.id, newId);
   };
 
   // ─── Resolve form content for CONTENT_EDITOR tab ──────────────────────────────
@@ -321,7 +323,7 @@ export default function ChallengeEditorPage(): JSX.Element {
             </span>
           )}
           {!isNew && (
-            <button onClick={() => void handleClone()} disabled={isSaving} style={headerBtnStyle}>
+            <button onClick={handleClone} disabled={isSaving} style={headerBtnStyle}>
               <Copy size={16} />
               CLONE
             </button>
@@ -581,7 +583,7 @@ export default function ChallengeEditorPage(): JSX.Element {
             >
               CANDIDATE_VIEW
             </div>
-            {challenge.instructions && (
+            {challenge.instructions && !challenge.config?.question && (
               <div
                 style={{
                   fontSize: 15,

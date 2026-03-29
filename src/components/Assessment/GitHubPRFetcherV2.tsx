@@ -111,21 +111,14 @@ export function GitHubPRFetcherV2({
     return (
       <div>
         <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-          {cachedTitle && (
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>{cachedTitle}</div>
-          )}
-          {cachedAuthor && (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-              by {cachedAuthor}
-              {cachedRepoUrl && (
-                <>
-                  {' · '}
-                  <span>{cachedRepoUrl.replace('https://github.com/', '')}</span>
-                </>
-              )}
-              {cachedPrNumber && <span>{' · '}#{cachedPrNumber}</span>}
-            </div>
-          )}
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+            {[
+              cachedTitle,
+              cachedAuthor && `by ${cachedAuthor}`,
+              cachedRepoUrl && cachedRepoUrl.replace('https://github.com/', ''),
+              cachedPrNumber && `#${cachedPrNumber}`,
+            ].filter(Boolean).join(' · ')}
+          </div>
         </div>
         {onCleared && (
           <button

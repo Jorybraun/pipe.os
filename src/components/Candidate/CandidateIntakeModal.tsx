@@ -47,8 +47,17 @@ export function CandidateIntakeModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { create, isSubmitting: isCreating } = useCandidateCreate();
-  const client = useData().createClient();
-  const storage = useStorage();
+
+  // Data + storage providers are only needed for resume parsing (post-MVP).
+  // During the Cloudflare migration, providers may be empty (providers={}).
+  // These hooks must be called unconditionally (React rules). If the underlying
+  // provider is not configured, createClient() will throw — guard that call.
+  const dataFactory = useData();
+  const storageProvider = useStorage();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let client: any = null;
+  try { client = dataFactory?.createClient?.(); } catch { /* provider not configured */ }
+  const storage = storageProvider ?? null;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {

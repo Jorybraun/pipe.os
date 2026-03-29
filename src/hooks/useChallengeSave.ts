@@ -76,7 +76,7 @@ export interface UseChallengeSaveReturn {
     groundTruthAnnotations?: Record<string, unknown[]>,
   ) => Promise<string | null>;
   /** Clone the challenge. Returns the new challenge's metadata. */
-  clone: (challengeId: string) => Promise<CloneResponse | null>;
+  clone: (challengeId: string, newId?: string) => Promise<CloneResponse | null>;
   isSaving: boolean;
   error: string | null;
 }
@@ -167,14 +167,14 @@ export function useChallengeSave(): UseChallengeSaveReturn {
   );
 
   const clone = useCallback(
-    async (challengeId: string): Promise<CloneResponse | null> => {
+    async (challengeId: string, newId?: string): Promise<CloneResponse | null> => {
       setIsSaving(true);
       setError(null);
 
       try {
         const res = await api.post<CloneResponse>(
           `/api/v1/challenges/${challengeId}/clone`,
-          {},
+          newId ? { newId } : {},
         );
         return res;
       } catch (err) {

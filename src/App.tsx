@@ -253,7 +253,7 @@ function App(): JSX.Element {
                     />
                     {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
                       <Route
-                        path="/pipeline/:pipelineId/challenges/:challengeId"
+                        path="/pipeline/:id/challenges/:challengeId"
                         element={<ChallengeEditorPage />}
                       />
                     )}

@@ -157,18 +157,15 @@ export function CodeReviewEditor({
                 <SubTitle>SOURCE_PR</SubTitle>
               </div>
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '16px' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
-                  {challenge.githubPrTitle}
-                </div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', marginBottom: 12 }}>
-                  #{challenge.githubPrNumber} • {challenge.githubRepoUrl?.split('/').pop()}
+                  PR #{challenge.githubPrNumber}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                   <a 
+                   <a
                     href={`${challenge.githubRepoUrl}/pull/${challenge.githubPrNumber}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ 
+                    style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                       background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
                       color: '#fff', padding: '8px', borderRadius: 4, fontSize: 9,
@@ -177,9 +174,9 @@ export function CodeReviewEditor({
                   >
                     <ExternalLink size={10} /> VIEW
                   </a>
-                  <button 
+                  <button
                     onClick={() => onPrFetchedChange(false)}
-                    style={{ 
+                    style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                       background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
                       color: 'rgba(255,255,255,0.6)', padding: '8px', borderRadius: 4, fontSize: 9,

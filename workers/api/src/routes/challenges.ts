@@ -299,6 +299,9 @@ challenges.post('/:challengeId/clone', async (c) => {
   const userId = c.var.userId;
   const challengeId = c.req.param('challengeId');
 
+  const body = await c.req.json<{ newId?: string }>().catch(() => ({}));
+  const clientNewId = typeof body?.newId === 'string' && body.newId ? body.newId : null;
+
   const original = await c.env.DB.prepare(
     `SELECT ch.*, s.pipeline_id, p.owner_id AS pipeline_owner_id
      FROM challenges ch
@@ -320,7 +323,7 @@ challenges.post('/:challengeId/clone', async (c) => {
     .first<{ max_order: number | null }>();
 
   const nextOrder = (maxRow?.max_order ?? -1) + 1;
-  const newId = generateId();
+  const newId = clientNewId ?? generateId();
   const newTitle = `${original.title} (Clone)`;
 
   // Phase 1 core columns first.

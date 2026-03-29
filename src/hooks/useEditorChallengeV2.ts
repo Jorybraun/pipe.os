@@ -11,7 +11,9 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useApiClient } from './useApiClient';
+import { ApiError } from '../lib/api/types';
 import type { EditorChallenge } from '../components/Editor/types';
 
 // ─── Challenge type templates ─────────────────────────────────────────────────
@@ -114,11 +116,21 @@ export interface UseEditorChallengeV2Return {
  * @param challengeId — real ID or "NEW_<TYPE>" sentinel
  * @param pipelineId  — owning pipeline (for navigation, not fetching)
  */
+interface LocationState {
+  pendingTitle?: string;
+  cloneOf?: string;
+}
+
 export function useEditorChallengeV2(
   challengeId: string | undefined,
   pipelineId: string | undefined,
 ): UseEditorChallengeV2Return {
   const api = useApiClient();
+  const location = useLocation();
+  const locationState = location.state as LocationState | null;
+  const pendingTitle = locationState?.pendingTitle;
+  const cloneOf = locationState?.cloneOf;
+
   const [challenge, setChallengeRaw] = useState<EditorChallenge | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isNew, setIsNew] = useState(false);
@@ -152,41 +164,69 @@ export function useEditorChallengeV2(
       return;
     }
 
-    // Fetch from Worker API.
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const data = await api.get<ChallengeApiData>(`/api/v1/challenges/${challengeId}`);
-
+    // If navigating optimistically after a clone, show pending title immediately
+    // while we wait for the clone API to finish creating the record.
+    if (pendingTitle) {
       setChallengeRaw({
-        id: data.id,
-        type: data.type,
-        title: data.title,
-        instructions: data.instructions ?? null,
-        config: data.config ?? {},
-        serverConfig: data.serverConfig ?? {},
-        order: data.order,
-        stageId: data.stageId,
+        id: challengeId,
+        type: 'CODE_IMPLEMENTATION',
+        title: pendingTitle,
         isNew: false,
         isTemplate: false,
-        githubRepoUrl: data.githubRepoUrl ?? undefined,
-        githubPrNumber: data.githubPrNumber ?? undefined,
-        githubPrTitle: data.githubPrTitle ?? undefined,
-        githubPrDescription: data.githubPrDescription ?? undefined,
-        cachedDiffJson: data.cachedDiffJson ?? undefined,
-        cachedMetadata: data.cachedMetadata ?? undefined,
-        diffCachedAt: data.diffCachedAt ?? undefined,
-      });
-      setIsNew(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load challenge';
-      console.error('[useEditorChallengeV2] fetch error:', err);
-      setError(message);
-    } finally {
-      setIsLoading(false);
+        config: {},
+        serverConfig: {},
+        instructions: null,
+      } as EditorChallenge);
     }
-  }, [challengeId, api]);
+
+    // Fetch from Worker API. If this is an optimistic clone navigation, retry on
+    // 404 up to 8 times (4 seconds) while the clone POST completes in the background.
+    const maxRetries = cloneOf ? 8 : 0;
+    setIsLoading(true);
+    setError(null);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 500));
+      }
+      try {
+        const data = await api.get<ChallengeApiData>(`/api/v1/challenges/${challengeId}`);
+
+        setChallengeRaw({
+          id: data.id,
+          type: data.type,
+          title: data.title,
+          instructions: data.instructions ?? null,
+          config: data.config ?? {},
+          serverConfig: data.serverConfig ?? {},
+          order: data.order,
+          stageId: data.stageId,
+          isNew: false,
+          isTemplate: false,
+          githubRepoUrl: data.githubRepoUrl ?? undefined,
+          githubPrNumber: data.githubPrNumber ?? undefined,
+          githubPrTitle: data.githubPrTitle ?? undefined,
+          githubPrDescription: data.githubPrDescription ?? undefined,
+          cachedDiffJson: data.cachedDiffJson ?? undefined,
+          cachedMetadata: data.cachedMetadata ?? undefined,
+          diffCachedAt: data.diffCachedAt ?? undefined,
+        });
+        setIsNew(false);
+        setIsLoading(false);
+        return;
+      } catch (err) {
+        // Retry on 404 while waiting for optimistic clone to be persisted.
+        if (cloneOf && err instanceof ApiError && err.status === 404 && attempt < maxRetries) {
+          continue;
+        }
+        const message = err instanceof Error ? err.message : 'Failed to load challenge';
+        console.error('[useEditorChallengeV2] fetch error:', err);
+        setError(message);
+        setIsLoading(false);
+        return;
+      }
+    }
+  }, [challengeId, api, pendingTitle, cloneOf]);
 
   useEffect(() => {
     void fetchChallenge();

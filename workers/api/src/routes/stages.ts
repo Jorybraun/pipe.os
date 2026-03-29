@@ -26,7 +26,17 @@ const createStageSchema = z.object({
     .min(1, 'title must not be empty')
     .max(200, 'title must be 200 characters or fewer'),
   order: z.number().int().min(0).optional(),
+  sortOrder: z.number().int().min(0).optional(),
   description: z.string().optional(),
+});
+
+const reorderStagesSchema = z.object({
+  stages: z.array(
+    z.object({
+      id: z.string().min(1),
+      sortOrder: z.number().int().min(0),
+    }),
+  ),
 });
 
 const updateStageSchema = z.object({
@@ -121,8 +131,8 @@ pipelineStages.post('/:pipelineId/stages', async (c) => {
 
   const input = parsed.data;
 
-  // Auto-calculate order if not provided.
-  let sortOrder = input.order;
+  // Auto-calculate order if not provided. Accept `sortOrder` as alias for `order`.
+  let sortOrder = input.order ?? input.sortOrder;
   if (sortOrder === undefined) {
     const countRow = await c.env.DB.prepare(
       'SELECT COUNT(*) AS cnt FROM stages WHERE pipeline_id = ?1',
@@ -161,6 +171,57 @@ pipelineStages.post('/:pipelineId/stages', async (c) => {
   // Return the payload both flat (e2e seedStage reads body.id) and under
   // `data`/`stage` keys for backward compat with other specs.
   return c.json({ ...stagePayload, data: stagePayload, stage: stagePayload }, 201);
+});
+
+// ─── PATCH /api/v1/pipelines/:pipelineId/stages/reorder ─────────────────────
+
+/**
+ * Batch-reorder stages within a pipeline.
+ *
+ * Body: { stages: [{ id: string; sortOrder: number }] }
+ * Runs all updates in a single D1 batch (atomic).
+ */
+pipelineStages.patch('/:pipelineId/stages/reorder', async (c) => {
+  const userId = c.var.userId;
+  const pipelineId = c.req.param('pipelineId');
+
+  const pipeline = await c.env.DB.prepare(
+    'SELECT owner_id FROM pipelines WHERE id = ?1',
+  )
+    .bind(pipelineId)
+    .first<{ owner_id: string }>();
+
+  if (!pipeline) return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  if (pipeline.owner_id !== userId)
+    return apiError(c, 'FORBIDDEN', 'You do not own this pipeline.');
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = reorderStagesSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { stages } = parsed.data;
+  const now = new Date().toISOString();
+
+  const statements = stages.map(({ id, sortOrder }) =>
+    c.env.DB.prepare(
+      'UPDATE stages SET sort_order = ?1, updated_at = ?2 WHERE id = ?3 AND pipeline_id = ?4',
+    ).bind(sortOrder, now, id, pipelineId),
+  );
+
+  if (statements.length > 0) {
+    await c.env.DB.batch(statements);
+  }
+
+  return c.json({ updated: stages.length });
 });
 
 // ─── Router: /api/v1/stages (flat stage + challenge ops) ─────────────────────
