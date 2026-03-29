@@ -4,6 +4,8 @@ import { pipelines } from './routes/pipelines';
 import { pipelineStages, stageOps, stageChallenges } from './routes/stages';
 import { challenges } from './routes/challenges';
 import { github } from './routes/github';
+import { overview } from './routes/overview';
+import { pipelineCandidates, candidateOps } from './routes/candidates';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 
@@ -51,6 +53,12 @@ app.route('/api/v1/stages', stageChallenges);
 app.route('/api/v1/challenges', challenges);
 // GitHub PR proxy: POST /api/v1/github/pr
 app.route('/api/v1/github', github);
+// Overview: GET /api/v1/pipelines/:pipelineId/overview
+app.route('/api/v1/pipelines', overview);
+// Candidates: POST /api/v1/pipelines/:pipelineId/candidates
+app.route('/api/v1/pipelines', pipelineCandidates);
+// Candidate ops: PATCH /api/v1/candidates/:candidateId
+app.route('/api/v1/candidates', candidateOps);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

@@ -110,7 +110,7 @@ async function seedPipeline(
   // 1. Create the pipeline.
   const pipelineRes = await request.post(`${API_BASE}/api/v1/pipelines`, {
     headers,
-    data: { title, status, level: "SENIOR" },
+    data: { title, status, level: "Senior" },
   });
   expect(pipelineRes.status()).toBe(201);
   const { pipeline: pipelineData } = await pipelineRes.json() as {
