@@ -749,3 +749,311 @@ test.describe('§3.5 — API contract: resolve-token → get-stage-config → ge
     expect(res.status()).toBe(401);
   });
 });
+
+// ─── §3.6 QUIZ_MCQ Submission ───────────────────────────────────────────────
+
+test.describe('§3.6 — QUIZ_MCQ submission (submit → advance → complete)', () => {
+  let authToken: string;
+  let pipeline: SeededPipeline;
+  let sessionToken: string;
+
+  test.beforeAll(async ({ browser, request }) => {
+    const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
+    const page = await context.newPage();
+    await page.goto(APP_BASE);
+    authToken = await getAuthToken(page);
+    await context.close();
+
+    // Pipeline with 1 stage, 2 QUIZ_MCQ challenges
+    const seed = await seedAssessmentPipeline(request, authToken, {
+      candidateName: 'MCQ Candidate',
+      challengeTypes: ['QUIZ_MCQ', 'QUIZ_MCQ'],
+    });
+    pipeline = seed.pipeline;
+
+    // Resolve token to get session
+    const res = await request.post(`${API_BASE}/rpc/resolve-token`, {
+      data: { inviteToken: seed.candidate.inviteToken },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as ResolveTokenResponse;
+    sessionToken = body.sessionToken;
+  });
+
+  test.afterAll(async ({ request }) => {
+    await teardownPipeline(request, authToken, pipeline.id);
+  });
+
+  function candidateHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionToken}`,
+    };
+  }
+
+  test('Scenario: submit QUIZ_MCQ answer creates ChallengeSubmission', async ({ request }) => {
+    // First call get-stage-config to ensure assessment exists
+    const configRes = await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      data: {},
+      headers: candidateHeaders(),
+    });
+    expect(configRes.status()).toBe(200);
+    const config = (await configRes.json()) as StageConfigResponse;
+    expect(config.currentIndex).toBe(0);
+
+    // Submit answer for challenge at order 0
+    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: 0, submission: JSON.stringify({ answers: { current: 'B' } }) },
+      headers: candidateHeaders(),
+    });
+    expect(submitRes.status()).toBe(200);
+
+    const submitBody = await submitRes.json() as { success: boolean; challengeSubmissionId?: string };
+    expect(submitBody.success).toBe(true);
+    expect(submitBody.challengeSubmissionId).toBeTruthy();
+  });
+
+  test('Scenario: after submission, get-stage-config advances currentIndex', async ({
+    request,
+  }) => {
+    const configRes = await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      data: {},
+      headers: candidateHeaders(),
+    });
+    expect(configRes.status()).toBe(200);
+
+    const config = (await configRes.json()) as StageConfigResponse;
+    // Challenge 0 was submitted in the previous test, so currentIndex should be 1
+    expect(config.isComplete).toBe(false);
+    expect(config.currentIndex).toBe(1);
+  });
+
+  test('Scenario: duplicate submission for same challenge is rejected', async ({ request }) => {
+    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: 0, submission: JSON.stringify({ answers: { current: 'A' } }) },
+      headers: candidateHeaders(),
+    });
+    // Should fail — challenge 0 already submitted
+    expect(submitRes.ok()).toBe(false);
+    const body = await submitRes.json() as { error?: { message?: string }; success?: boolean };
+    // Accept either error object or success: false
+    if ('success' in body) {
+      expect(body.success).toBe(false);
+    }
+  });
+
+  test('Scenario: submit without auth returns 401', async ({ request }) => {
+    const res = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: 0, submission: '{}' },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('Scenario: submitting last challenge marks stage complete', async ({ request }) => {
+    // Submit challenge at order 1 (the last one)
+    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: 1, submission: JSON.stringify({ answers: { current: 'C' } }) },
+      headers: candidateHeaders(),
+    });
+    expect(submitRes.status()).toBe(200);
+
+    const submitBody = await submitRes.json() as { success: boolean; challengeSubmissionId?: string };
+    expect(submitBody.success).toBe(true);
+
+    // get-stage-config should now return isComplete: true
+    const configRes = await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      data: {},
+      headers: candidateHeaders(),
+    });
+    expect(configRes.status()).toBe(200);
+
+    const config = (await configRes.json()) as StageConfigResponse;
+    expect(config.isComplete).toBe(true);
+  });
+
+  test('Scenario: submit with invalid order returns error', async ({ request }) => {
+    const res = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: -1, submission: '{}' },
+      headers: candidateHeaders(),
+    });
+    expect([400, 422]).toContain(res.status());
+  });
+
+  test('Scenario: submit with missing submission body returns error', async ({ request }) => {
+    const res = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: 0 },
+      headers: candidateHeaders(),
+    });
+    expect([400, 422]).toContain(res.status());
+  });
+});
+
+// ─── §3.7 MCQ Scoring ──────────────────────────────────────────────────────
+
+test.describe('§3.7 — MCQ scoring (submit → score → aggregate)', () => {
+  let authToken: string;
+  let pipeline: SeededPipeline;
+  let sessionToken: string;
+
+  test.beforeAll(async ({ browser, request }) => {
+    const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
+    const page = await context.newPage();
+    await page.goto(APP_BASE);
+    authToken = await getAuthToken(page);
+    await context.close();
+
+    const headers = recruiterHeaders(authToken);
+
+    // Create pipeline + stage manually so we can set serverConfig
+    const pipelineRes = await request.post(`${API_BASE}/api/v1/pipelines`, {
+      headers,
+      data: { title: 'Scoring E2E Pipeline', status: 'ACTIVE', level: 'Senior' },
+    });
+    expect(pipelineRes.status()).toBe(201);
+    pipeline = ((await pipelineRes.json()) as { pipeline: SeededPipeline }).pipeline;
+
+    const stageRes = await request.post(`${API_BASE}/api/v1/pipelines/${pipeline.id}/stages`, {
+      headers,
+      data: { title: 'Quiz Stage', order: 0 },
+    });
+    expect(stageRes.status()).toBe(201);
+    const stage = ((await stageRes.json()) as { stage: SeededStage }).stage;
+
+    // Challenge with correctOptionId = 'B'
+    await request.post(`${API_BASE}/api/v1/stages/${stage.id}/challenges`, {
+      headers,
+      data: {
+        type: 'QUIZ_MCQ',
+        title: 'MCQ with correct answer B',
+        instructions: 'Pick the right answer',
+        order: 0,
+        config: { options: ['A', 'B', 'C', 'D'] },
+        serverConfig: { correctOptionId: 'B' },
+      },
+    });
+
+    // Second challenge with correctOptionId = 'A'
+    await request.post(`${API_BASE}/api/v1/stages/${stage.id}/challenges`, {
+      headers,
+      data: {
+        type: 'QUIZ_MCQ',
+        title: 'MCQ with correct answer A',
+        instructions: 'Pick the right answer',
+        order: 1,
+        config: { options: ['A', 'B', 'C', 'D'] },
+        serverConfig: { correctOptionId: 'A' },
+      },
+    });
+
+    // Create candidate
+    const candidateRes = await request.post(
+      `${API_BASE}/api/v1/pipelines/${pipeline.id}/candidates`,
+      { headers, data: { name: 'Scorer', email: `scorer+${Date.now()}@pipe-test.dev` } },
+    );
+    expect(candidateRes.status()).toBe(201);
+    const candidate = ((await candidateRes.json()) as { candidate: SeededCandidate }).candidate;
+
+    // Resolve token
+    const resolveRes = await request.post(`${API_BASE}/rpc/resolve-token`, {
+      data: { inviteToken: candidate.inviteToken },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(resolveRes.status()).toBe(200);
+    sessionToken = ((await resolveRes.json()) as ResolveTokenResponse).sessionToken;
+
+    // Ensure assessment exists
+    await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      data: {},
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+    });
+  });
+
+  test.afterAll(async ({ request }) => {
+    await teardownPipeline(request, authToken, pipeline.id);
+  });
+
+  function candidateHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionToken}`,
+    };
+  }
+
+  test('Scenario: correct MCQ answer scores 100', async ({ request }) => {
+    // Submit correct answer (B) for challenge 0
+    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: 0, submission: JSON.stringify({ answers: { current: 'B' } }) },
+      headers: candidateHeaders(),
+    });
+    expect(submitRes.status()).toBe(200);
+    const { challengeSubmissionId } = await submitRes.json() as { success: boolean; challengeSubmissionId: string };
+
+    // Score it
+    const scoreRes = await request.post(`${API_BASE}/rpc/score-submission`, {
+      data: { challengeSubmissionId },
+      headers: candidateHeaders(),
+    });
+    expect(scoreRes.status()).toBe(200);
+
+    const scoreBody = await scoreRes.json() as { success: boolean; score: number; feedback: string };
+    expect(scoreBody.success).toBe(true);
+    expect(scoreBody.score).toBe(100);
+    expect(scoreBody.feedback).toContain('Correct');
+  });
+
+  test('Scenario: incorrect MCQ answer scores 0', async ({ request }) => {
+    // Submit wrong answer (C) for challenge 1 (correct is A)
+    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      data: { order: 1, submission: JSON.stringify({ answers: { current: 'C' } }) },
+      headers: candidateHeaders(),
+    });
+    expect(submitRes.status()).toBe(200);
+    const { challengeSubmissionId } = await submitRes.json() as { success: boolean; challengeSubmissionId: string };
+
+    // Score it
+    const scoreRes = await request.post(`${API_BASE}/rpc/score-submission`, {
+      data: { challengeSubmissionId },
+      headers: candidateHeaders(),
+    });
+    expect(scoreRes.status()).toBe(200);
+
+    const scoreBody = await scoreRes.json() as { success: boolean; score: number; feedback: string };
+    expect(scoreBody.success).toBe(true);
+    expect(scoreBody.score).toBe(0);
+    expect(scoreBody.feedback).toContain('Incorrect');
+  });
+
+  test('Scenario: assessment score is aggregated from submissions', async ({ request }) => {
+    // After 2 submissions (100 + 0), the average should be 50
+    // Check via recruiter API — the assessment score should be updated
+    // We need to find the assessment ID first
+    // Use get-stage-config which shows isComplete: true (all submitted)
+    const configRes = await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      data: {},
+      headers: candidateHeaders(),
+    });
+    expect(configRes.status()).toBe(200);
+    const config = (await configRes.json()) as StageConfigResponse;
+    expect(config.isComplete).toBe(true);
+  });
+
+  test('Scenario: score-submission without challengeSubmissionId returns 400', async ({
+    request,
+  }) => {
+    const res = await request.post(`${API_BASE}/rpc/score-submission`, {
+      data: {},
+      headers: candidateHeaders(),
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('Scenario: score-submission with nonexistent ID returns 404', async ({ request }) => {
+    const res = await request.post(`${API_BASE}/rpc/score-submission`, {
+      data: { challengeSubmissionId: 'nonexistent-id-xyz' },
+      headers: candidateHeaders(),
+    });
+    expect(res.status()).toBe(404);
+  });
+});

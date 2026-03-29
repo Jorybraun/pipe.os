@@ -403,4 +403,228 @@ rpcAuth.post('/get-challenge', async (c) => {
   });
 });
 
+// ── POST /rpc/submit-challenge-response ─────────────────────────────────────
+
+rpcAuth.post('/submit-challenge-response', async (c) => {
+  const candidateId = c.get('candidateId');
+  const pipelineId = c.get('pipelineId');
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
+  }
+
+  const order = body.order;
+  const submission = body.submission;
+
+  if (typeof order !== 'number' || order < 0 || !Number.isInteger(order)) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'order must be a non-negative integer.' } },
+      400,
+    );
+  }
+
+  if (submission === undefined || submission === null) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'submission is required.' } },
+      400,
+    );
+  }
+
+  // Find candidate's current stage
+  const candidate = await c.env.DB.prepare(
+    `SELECT current_stage_id FROM candidates WHERE id = ?1`,
+  )
+    .bind(candidateId)
+    .first<{ current_stage_id: string | null }>();
+
+  if (!candidate?.current_stage_id) {
+    return c.json({ success: false, error: 'No active stage' }, 404);
+  }
+
+  const stageId = candidate.current_stage_id;
+
+  // Fetch challenges for the current stage, ordered
+  const challenges = await c.env.DB.prepare(`
+    SELECT id, type, sort_order, server_config
+    FROM challenges
+    WHERE stage_id = ?1
+    ORDER BY sort_order ASC
+  `)
+    .bind(stageId)
+    .all();
+
+  const rows = challenges.results ?? [];
+
+  if (order >= rows.length) {
+    return c.json({ success: false, error: 'Challenge not found at this order index' }, 404);
+  }
+
+  const challenge = rows[order] as Record<string, unknown>;
+  const challengeId = challenge.id as string;
+
+  // Get or create assessment for this stage
+  let assessment = await c.env.DB.prepare(
+    `SELECT id FROM assessments WHERE candidate_id = ?1 AND stage_id = ?2 LIMIT 1`,
+  )
+    .bind(candidateId, stageId)
+    .first<{ id: string }>();
+
+  const now = new Date().toISOString();
+
+  if (!assessment) {
+    const assessmentId = crypto.randomUUID();
+    const ownerRow = await c.env.DB.prepare(
+      `SELECT owner_id FROM candidates WHERE id = ?1`,
+    )
+      .bind(candidateId)
+      .first<{ owner_id: string }>();
+
+    await c.env.DB.prepare(`
+      INSERT INTO assessments (id, candidate_id, stage_id, status, owner_id, started_at, created_at, updated_at)
+      VALUES (?1, ?2, ?3, 'IN_PROGRESS', ?4, ?5, ?5, ?5)
+    `)
+      .bind(assessmentId, candidateId, stageId, ownerRow?.owner_id ?? null, now)
+      .run();
+
+    assessment = { id: assessmentId };
+  }
+
+  // Check for duplicate submission
+  const existing = await c.env.DB.prepare(
+    `SELECT id FROM challenge_submissions
+     WHERE assessment_id = ?1 AND challenge_id = ?2 LIMIT 1`,
+  )
+    .bind(assessment.id, challengeId)
+    .first<{ id: string }>();
+
+  if (existing) {
+    return c.json(
+      { success: false, error: 'Challenge already submitted' },
+      409,
+    );
+  }
+
+  // Create ChallengeSubmission
+  const submissionId = crypto.randomUUID();
+  const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);
+
+  await c.env.DB.prepare(`
+    INSERT INTO challenge_submissions (id, assessment_id, challenge_id, candidate_id, response_json, submitted_at, created_at, updated_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?6)
+  `)
+    .bind(submissionId, assessment.id, challengeId, candidateId, responseJson, now)
+    .run();
+
+  return c.json({
+    success: true,
+    challengeSubmissionId: submissionId,
+  });
+});
+
+// ── POST /rpc/score-submission ──────────────────────────────────────────────
+
+rpcAuth.post('/score-submission', async (c) => {
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
+  }
+
+  const challengeSubmissionId = body.challengeSubmissionId;
+  if (typeof challengeSubmissionId !== 'string' || !challengeSubmissionId) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'challengeSubmissionId is required.' } },
+      400,
+    );
+  }
+
+  // Fetch submission + challenge
+  const sub = await c.env.DB.prepare(`
+    SELECT cs.id, cs.response_json, cs.assessment_id,
+           ch.type, ch.server_config
+    FROM challenge_submissions cs
+    JOIN challenges ch ON ch.id = cs.challenge_id
+    WHERE cs.id = ?1
+  `)
+    .bind(challengeSubmissionId)
+    .first<{
+      id: string;
+      response_json: string | null;
+      assessment_id: string;
+      type: string;
+      server_config: string | null;
+    }>();
+
+  if (!sub) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Submission not found.' } }, 404);
+  }
+
+  let score: number | null = null;
+  let feedback: string | null = null;
+  const now = new Date().toISOString();
+
+  // Deterministic scoring for QUIZ_MCQ
+  if (sub.type === 'QUIZ_MCQ') {
+    let serverConfig: Record<string, unknown> = {};
+    if (sub.server_config) {
+      try {
+        serverConfig = JSON.parse(sub.server_config) as Record<string, unknown>;
+      } catch { /* empty config */ }
+    }
+
+    let response: Record<string, unknown> = {};
+    if (sub.response_json) {
+      try {
+        response = JSON.parse(sub.response_json) as Record<string, unknown>;
+      } catch { /* empty response */ }
+    }
+
+    const correctOptionId = serverConfig.correctOptionId as string | undefined;
+    const answers = response.answers as Record<string, string> | undefined;
+    const selectedAnswer = answers?.current;
+
+    if (correctOptionId && selectedAnswer) {
+      score = selectedAnswer === correctOptionId ? 100 : 0;
+      feedback = score === 100 ? 'Correct answer' : `Incorrect. The correct answer was ${correctOptionId}`;
+    } else {
+      // No correct answer configured — score as 0
+      score = 0;
+      feedback = 'No scoring criteria configured for this challenge';
+    }
+  }
+
+  // Update submission with score
+  if (score !== null) {
+    await c.env.DB.prepare(`
+      UPDATE challenge_submissions
+      SET score = ?1, feedback = ?2, scored_at = ?3, updated_at = ?3
+      WHERE id = ?4
+    `)
+      .bind(score, feedback, now, challengeSubmissionId)
+      .run();
+
+    // Re-aggregate assessment score (average of all child submissions)
+    await c.env.DB.prepare(`
+      UPDATE assessments
+      SET score = (
+        SELECT AVG(score) FROM challenge_submissions
+        WHERE assessment_id = ?1 AND score IS NOT NULL
+      ), updated_at = ?2
+      WHERE id = ?1
+    `)
+      .bind(sub.assessment_id, now)
+      .run();
+  }
+
+  return c.json({
+    success: true,
+    score,
+    feedback,
+  });
+});
+
 export { rpcPublic, rpcAuth };

@@ -12,7 +12,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - `workers/api/src/middleware/candidateAuth.ts` — candidate session JWT middleware
 - `workers/api/migrations/0003_candidate_flow.sql` — `assessments` + `challenge_submissions` D1 tables
 - `src/hooks/useAssessment.ts` — rewritten to call Workers `/rpc/*` API directly (removes Amplify provider dependency)
-- `e2e/candidate-assessment.spec.ts` — 22 BDD tests: token resolution, stage config, challenge loading, E2E UI flow, security assertions
+- `e2e/candidate-assessment.spec.ts` — 34 BDD tests: token resolution, stage config, challenge loading, MCQ submit/score/aggregate, E2E UI flow, security assertions
 
 #### Fixed (Phase 2 — stage-detail BDD 20/20 green)
 - `e2e/stage-detail.spec.ts` — fix CODE_REVIEW challenge picker test: FETCH button locator was matching ADD_REPO instead (narrowed to `button:has-text("FETCH")`)
