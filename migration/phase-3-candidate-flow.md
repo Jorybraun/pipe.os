@@ -77,26 +77,112 @@ Feature: Token resolution and assessment start
     Then the candidate sees "You have already completed this assessment"
 ```
 
-### 2.2 Candidate submits a CODE_REVIEW challenge with annotations
+### 2.2 Candidate completes a CODE_REVIEW challenge (multi-turn conversation)
+
+> **See [ADR-024](../docs/decisions/ADR-024-multi-turn-agentic-code-review.md) for full architectural context.**
+> This replaces the single-turn annotation + deterministic scoring flow (ADR-021) which was never completed to production.
 
 ```gherkin
-Feature: CODE_REVIEW submission
+Feature: Multi-turn CODE_REVIEW conversation
 
-  Scenario: Candidate submits annotations, verdict, and summary
+  Scenario: Candidate leaves initial review and receives author response
     Given the candidate is viewing a CODE_REVIEW challenge at order 0
-    And the candidate has added 3 annotations with severity levels
-    And the candidate has written a verdict of "request_changes"
-    And the candidate has written a summary
-    When the candidate clicks "Submit"
-    Then submitChallengeResponse creates a ChallengeSubmission in D1
-    And scoreChallengeSubmission is called with the new challengeSubmissionId
-    And the scoring agent calculates a deterministic preliminary score
-    And the hook advances to order 1 (FOLLOW_UP)
+    And the challenge is sourced from the slopify exercise repo
+    And a review session has been created in D1
+    When the candidate adds inline comments on specific lines + a general summary
+    And the candidate clicks "Submit Review"
+    Then POST /rpc/review/:sessionId/submit sends annotations to the server
+    And the implementer agent receives the comments + its persona prompt
+    And the implementer agent responds to each comment (pushback / clarify / fix)
+    And the candidate sees the author's responses inline in the conversation thread
+    And the round counter advances to 2
+
+  Scenario: Candidate responds to author pushback (rounds 2-4)
+    Given the candidate has received author responses from round 1
+    When the candidate replies to specific threads (defending, conceding, or clarifying)
+    And the candidate clicks "Submit Response"
+    Then POST /rpc/review/:sessionId/respond sends the full conversation history
+    And the implementer agent responds with full context of prior rounds
+    And the candidate sees updated responses
+    And the round counter advances
+
+  Scenario: Candidate submits final verdict
+    Given the conversation has had 2-4 rounds
+    When the candidate selects a verdict (APPROVE or REQUEST_CHANGES)
+    And writes a final summary of what's required vs nice-to-have
+    And clicks "Submit Final Verdict"
+    Then POST /rpc/review/:sessionId/verdict finalizes the transcript
+    And the scoring panel is triggered asynchronously:
+      | panelist | weight | sees ground truth |
+      | Communication Analyst | 25% | no |
+      | Technical Evaluator | 40% | yes |
+      | Review Practice Evaluator | 35% | no |
+    And the synthesizer produces an overall score (0-100), band, and narrative
+    And the ChallengeSubmission is created with the full transcript + score report
+    And the hook advances to the next challenge
+
+  Scenario: Implementer agent persona matches exercise difficulty
+    Given the challenge is configured with difficulty "hard"
+    Then the implementer agent uses a "senior" persona
+    And the agent defends its decisions with reasoning
+    And the agent is stubborn on some points but concedes when the reviewer provides strong evidence
+
+  Scenario: Scoring panel produces narrative report
+    Given the conversation transcript has been finalized
+    When the scoring panel completes (3 panelists + synthesizer)
+    Then the score report contains:
+      | field | description |
+      | overall.score | 0-100 weighted score |
+      | overall.band | strong (75-100) / adequate (45-74) / weak (0-44) |
+      | overall.narrative | 3-5 sentence assessment readable by a hiring manager |
+      | technical.bugsFound | which planted bugs the candidate identified |
+      | technical.bugsMissed | which they missed |
+      | technical.tradeoffsDiscussed | which design trade-offs they noticed |
+      | communication.pushbackHandling | how they handled author disagreement |
+      | reviewPractice.positiveRecognition | whether they acknowledged good decisions |
 
   Scenario: Duplicate submission is rejected
     Given a ChallengeSubmission already exists for this assessment + challenge
     When the candidate submits again
     Then the Worker returns { success: false, error: "Challenge already submitted" }
+
+  Scenario: Fallback for non-slopify PRs (legacy single-turn)
+    Given the challenge was created from an arbitrary GitHub PR (not slopify)
+    And no exercise case definition exists
+    Then the candidate sees the single-turn annotation flow (no conversation)
+    And scoring uses the deterministic algorithm (ADR-021)
+```
+
+#### New Worker endpoints for multi-turn CODE_REVIEW
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/rpc/review/:sessionId/submit` | Candidate submits initial review comments → triggers implementer agent |
+| `POST` | `/rpc/review/:sessionId/respond` | Candidate responds in subsequent rounds → triggers implementer agent |
+| `POST` | `/rpc/review/:sessionId/verdict` | Candidate submits final verdict → triggers scoring panel |
+| `GET` | `/rpc/review/:sessionId/status` | Poll for agent response / scoring completion |
+
+#### New D1 tables
+
+```sql
+-- Review sessions: tracks multi-turn conversation state
+CREATE TABLE review_sessions (
+  id              TEXT PRIMARY KEY,
+  challenge_submission_id TEXT REFERENCES challenge_submissions(id) ON DELETE CASCADE,
+  challenge_id    TEXT NOT NULL REFERENCES challenges(id) ON DELETE CASCADE,
+  assessment_id   TEXT NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  implementer_persona TEXT NOT NULL DEFAULT 'junior',  -- 'junior' | 'senior'
+  current_round   INTEGER NOT NULL DEFAULT 1,
+  max_rounds      INTEGER NOT NULL DEFAULT 4,
+  status          TEXT NOT NULL DEFAULT 'in_progress',  -- 'in_progress' | 'verdict_submitted' | 'scoring' | 'scored'
+  transcript_json TEXT,           -- full conversation history (ConversationTurn[])
+  score_report_json TEXT,         -- final ScoringReport from panel
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_review_sessions_assessment ON review_sessions(assessment_id);
+CREATE INDEX idx_review_sessions_status ON review_sessions(status);
 ```
 
 ### 2.3 Candidate submits a QUIZ_MCQ challenge

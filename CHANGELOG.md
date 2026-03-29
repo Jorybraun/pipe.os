@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Documentation overhaul
+- Archived 70+ legacy Amplify-era docs to `docs/archive-amplify/`
+- Added `DREAM.md` — product vision + route map
+- Updated `CLAUDE.md` — migration-aligned agent handoff
+- Added `migration/phase-3b-dev-containers.md` — ECS → Cloudflare Containers migration plan
+- Updated `migration/phase-2-recruiter-core.md` — R2 storage strategy (§5b), CV upload BDD scenarios, task progress
+- Updated `migration/phase-3-candidate-flow.md` — candidate media + R2 presigned URL routes
+- Updated `migration/PLAN.md` — Phase 3b reference
+- Added `docs/decisions/ADR-024`, `ADR-025` — multi-turn agentic code review
+
 #### Added (Phase 2 — Publish pipeline + candidate domain)
 - `workers/api/src/routes/pipelines.ts` — `PATCH /api/v1/pipelines/:id` route for status/title updates; DRAFT→ACTIVE requires ≥1 stage
 - `src/pages/OverviewPage.tsx` — PUBLISH_PIPELINE button (DRAFT only), DRAFT/ACTIVE status badge with color coding

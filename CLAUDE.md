@@ -6,37 +6,75 @@ AI-native developer interview platform. Solo-founder project.
 
 ## Read these first
 
-1. **`docs/ARCHITECTURE.md`** — system overview, data model, auth model
-2. **`docs/STATUS.md`** — what's built and working (authoritative current state)
-3. **`docs/ROADMAP.md`** — product direction
-4. **`docs/design/challenge-architecture.md`** — challenge type system design
-5. **`docs/design/monaco-challenge-architecture.md`** — composable Shell + Panel system
-6. **`docs/specs/engineering-standards.md`** — required before building any Lambda
-7. **`docs/decisions/README.md`** — ADR index (22 decisions; read before making architectural choices)
-8. **`docs/security/AUDIT-2026-03-25.md`** — P0-P2 findings, auth matrix (read before touching auth or candidate flow)
+1. **`DREAM.md`** — product vision, route map, what we're building and why
+2. **`migration/PLAN.md`** — architecture, tech stack, design principles (source of truth)
+3. **`migration/phase-*.md`** — implementation specs per phase with BDD scenarios
+4. **`docs/decisions/README.md`** — ADR index (23 decisions; read before making architectural choices)
+
+For code review features specifically:
+5. **`../research/code-review-arena/docs/vision.md`** — multi-turn code review vision + integration points
+
+---
+
+## Development approach
+
+**Route-based. BDD-first. Test-driven.**
+
+Every feature starts with a route. Every route starts with a Playwright test. See `DREAM.md` for the full philosophy.
+
+```
+1. Pick a route from the migration phase
+2. Write the BDD scenario as a Playwright test
+3. Watch it fail
+4. Build the Worker endpoint + frontend page
+5. Watch it pass
+6. Next route
+```
+
+The migration phases define the routes, BDD scenarios, and acceptance criteria. Follow them.
 
 ---
 
 ## Code quality
 
-**All code must be production-ready.** No toy implementations, no placeholders that "work for now," no shortcuts that require future cleanup. Every feature must handle edge cases, error states, and real-world data. If something isn't ready for production, don't ship it — design it properly first.
+**All code must be production-ready.** No toy implementations, no placeholders, no shortcuts. Every feature handles edge cases, error states, and real-world data.
 
-After completing any implementation, pause and reflect: "Would I be proud to ship this? Does it handle real-world usage, not just the happy path? Is this the right abstraction, or am I papering over a structural problem?" If the answer is no, fix it before presenting it as done.
-
----
-
-## Security: No internal IDs in candidate-facing code
-
-Never expose Cognito subs, DynamoDB record IDs, ARNs, or table names to candidate-facing clients. Candidates should only see invite tokens and session tokens. Internal entity IDs (assessment IDs, challenge submission IDs, candidate IDs) should be resolved server-side by Lambdas, never passed from client to server as trusted input.
+After completing any implementation, reflect: "Would I be proud to ship this? Does it handle real-world usage? Is this the right abstraction?" If no, fix it first.
 
 ---
 
-## Tech stack
+## Security
 
-- React 18 + Vite + TypeScript (strict mode)
-- AWS Amplify Gen 2: Cognito + AppSync (GraphQL) + DynamoDB + Lambda + S3
-- Design system: brutalist glassmorphic, dark `#0c0c0e`, Space Mono font
-- See `.claude/rules/` for TypeScript, architecture, and component standards
+Never expose internal IDs (D1 row IDs, R2 keys, user IDs) to candidate-facing clients. Candidates see only invite tokens and session tokens. Internal entities are resolved server-side by Workers, never passed from client as trusted input.
+
+Ground truth (planted bugs, scoring rubrics, correct answers) NEVER leaves the server.
+
+---
+
+## Tech stack (migration target)
+
+```
+Frontend:      Cloudflare Pages (React + Vite + TypeScript strict)
+API:           Cloudflare Workers (Hono router)
+Database:      Cloudflare D1 (SQLite at edge)
+Storage:       Cloudflare R2 (media, resumes)
+Auth:          Clerk Pro (recruiter) + custom JWT (candidate — no sign-in)
+Billing:       Clerk Billing (Stripe underneath)
+Email:         Resend
+AI:            Mistral (scoring, follow-ups, intelligence reports)
+Design:        Brutalist glassmorphic, dark #0c0c0e, Space Mono font
+```
+
+See `migration/PLAN.md` for full details.
+
+---
+
+## API conventions
+
+```
+/api/v1/*     Recruiter-facing routes (Clerk JWT auth)
+/rpc/*        Candidate-facing routes (custom session JWT or public)
+```
 
 ---
 
@@ -46,11 +84,11 @@ Never expose Cognito subs, DynamoDB record IDs, ARNs, or table names to candidat
 - **Explicit return types** on all exported functions.
 - **Named exports** — no default exports except page components.
 - **Hooks** → `src/hooks/`, pages → `src/pages/`, components → `src/components/`
-- **Amplify Data errors** — always `if (errors) throw new Error(errors[0].message)`
 - **Logging** — `console.error('[hookName] what failed:', context)`
-- **Type check** — `npx tsc --noEmit` must pass before any commit. NEVER pipe tsc output through `head`, `tail`, or any command that masks the exit code. Always run `npx tsc --noEmit` bare so a non-zero exit code is visible. A piped command showing exit code 0 with errors is a silent failure.
-- **CHANGELOG** — every commit that touches source files must update `CHANGELOG.md` under `[Unreleased]`. Enforced by pre-commit hook. Bypass with `--no-verify` for doc/config-only commits.
-- **ADRs** — significant architectural decisions (schema changes, third-party choices, patterns) get an ADR in `docs/decisions/`. Copy `ADR-000-template.md`, use the next number, add to the index.
+- **Type check** — `npx tsc --noEmit` must pass before any commit. NEVER pipe tsc output through `head`, `tail`, or any command that masks the exit code.
+- **CHANGELOG** — every commit that touches source files must update `CHANGELOG.md` under `[Unreleased]`.
+- **ADRs** — significant architectural decisions get an ADR in `docs/decisions/`.
+- See `.claude/rules/` for detailed TypeScript, architecture, and component standards.
 
 ---
 
@@ -58,72 +96,57 @@ Never expose Cognito subs, DynamoDB record IDs, ARNs, or table names to candidat
 
 - Use existing primitives: `LiquidMetalCard` (named export), `FieldGroup`, `TextInput`
 - Do not invent new UI primitives — extend existing ones
-- Full component inventory: `docs/design/design-system.md`
 - Challenge type badge colors: CODE_REVIEW=blue `#60a5fa`, CODE_IMPLEMENTATION=purple `#a78bfa`, QUIZ_MCQ=green `#4ade80`, QUIZ_SHORT_ANSWER=amber `#fbbf24`
 
 ---
 
-## Test credentials
-
-The Cognito test account used for E2E testing and manual browser validation:
-
-```
-Email:    braunjory@gmail.com
-Password: Wrx7UB35t$
-```
-
-Also stored in `.env.local` as `E2E_EMAIL` / `E2E_PASSWORD` for Playwright auth setup.
-
----
-
-## Amplify commands
+## Commands
 
 ```bash
 npm run dev                # Local dev server
-npx ampx sandbox           # Deploy schema to your personal cloud sandbox
-npx tsc --noEmit           # Type check (use this — npm run build may fail on ARM64)
-npx ampx pipeline-deploy   # Production deploy — CI only, don't run manually
+npx tsc --noEmit           # Type check (always run bare, never pipe)
+npx wrangler dev           # Workers dev server (post-migration)
+npx playwright test        # BDD tests
 ```
 
 ---
 
-## Preserved files (do not delete or modify without reason)
+## Code Review Research System
 
-| File | Why |
-|---|---|
-| `src/pages/RoleDiscoveryPage.tsx` | Post-MVP agentic discovery UI |
-| `src/hooks/useRoleDiscovery.ts` | Post-MVP discovery hook |
-| `src/components/RoleDiscovery/` | Post-MVP agent chat UI |
-| `amplify/data/resource.ts → RoleContext` | Post-MVP data model |
-| `amplify/functions/questionAgent/` | Reference Lambda implementation — engineering standard |
-| `amplify/functions/jobDescriptionAgent/` | Post-MVP agent stub |
-| `src/components/Assessment/CodeReview/DiffReviewCanvas.tsx` | Core CODE_REVIEW renderer |
-| `src/lib/scoring/codeReview.ts` | Ground-truth scorer |
-| `src/content/challengeLibrary.ts` | Static challenge template library |
-| `docs/decisions/` | ADR system — never delete existing ADRs |
-| `CHANGELOG.md` | Always update under [Unreleased] on source commits |
+The multi-turn code review challenge is developed in a separate research repo:
+
+- **`../research/code-review-arena/docs/vision.md`** — candidate journey, agent flow, scoring panel, integration points
+- **`../research/code-review-arena/spec/scoring-system.md`** — panel-based scorer (communication + technical + practice)
+- **`../research/code-review-arena/spec/training-loop.md`** — Karpathy-style training loop
+
+The research system produces:
+1. **Challenge library** — PRs with planted bugs + design trade-offs
+2. **Implementer agent** — responds to candidate review comments (pushback/clarify/fix)
+3. **Scoring panel** — evaluates conversations across 3 dimensions → narrative reports
 
 ---
 
-## Test credentials
+## Documentation structure
 
 ```
-Email:    braunjory@gmail.com
-Password: Wrx7UB35t$
+DREAM.md                         ← Product vision + route map (read first)
+CLAUDE.md                        ← This file (agent handoff)
+migration/                       ← Source of truth for architecture + implementation
+  ├── PLAN.md                    ← Tech stack, design principles, phase overview
+  ├── phase-0-abstraction.md     ← Provider-agnostic data layer
+  ├── phase-1-listing-pipeline.md
+  ├── phase-2-recruiter-core.md
+  ├── phase-3-candidate-flow.md
+  ├── phase-4-realtime.md
+  └── phase-5-cicd-terraform.md
+docs/
+  ├── decisions/                 ← ADRs (historical record, keep)
+  ├── archive-amplify/           ← Pre-migration docs (DO NOT reference as current)
+  └── archive/                   ← Older archived docs
+../research/code-review-arena/   ← Code review research system
 ```
 
-Also in `.env.local` as `E2E_EMAIL` / `E2E_PASSWORD`.
-
----
-
-## Amplify commands
-
-```bash
-npm run dev                # Local dev server
-npx ampx sandbox           # Deploy schema to sandbox
-npx tsc --noEmit           # Type check (use this — npm run build may fail on ARM64)
-npx ampx pipeline-deploy   # Production deploy — CI only
-```
+**Note:** `docs/archive-amplify/` contains documentation from the AWS Amplify era. These describe a system that is being replaced. Do not reference them for current architecture — use `migration/` instead.
 
 ---
 

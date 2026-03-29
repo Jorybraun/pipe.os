@@ -52,6 +52,8 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-018](ADR-018-dev-container-access-control.md) | Dev Container Access Control | Proposed | 2026-03-09 |
 | [ADR-019](ADR-019-github-pr-integration.md) | GitHub PR Integration for Code Review Challenges | Accepted | 2026-03-13 |
 | [ADR-020](ADR-020-follow-up-agent-architecture.md) | Follow-Up Question Agent — async, 5 SHORT_ANSWER questions per CODE_REVIEW | Accepted | 2026-03-20 |
-| [ADR-021](ADR-021-deterministic-code-review-scoring.md) | Deterministic algorithm for CODE_REVIEW scoring (no LLM) | Accepted | 2026-03-20 |
+| [ADR-021](ADR-021-deterministic-code-review-scoring.md) | Deterministic algorithm for CODE_REVIEW scoring (no LLM) | Superseded by ADR-024 | 2026-03-20 |
 | [ADR-022](ADR-022-candidate-media-storage.md) | Candidate Media Storage — CandidateMedia model + pipeAssets bucket | Accepted | 2026-03-25 |
 | [ADR-023](ADR-023-assessment-challenge-submission-split.md) | Split Assessment into stage-level Assessment + ChallengeSubmission | Proposed | 2026-03-26 |
+| [ADR-024](ADR-024-multi-turn-agentic-code-review.md) | Multi-turn agentic code review (supersedes ADR-021) | Accepted | 2026-03-29 |
+| [ADR-025](ADR-025-multi-turn-code-review-e2e-spec.md) | Multi-turn code review — end-to-end spec (agents, DTOs, BDD) | Accepted | 2026-03-29 |

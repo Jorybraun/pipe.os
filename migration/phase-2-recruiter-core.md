@@ -27,7 +27,7 @@ The OverviewPage alone makes ~20 data calls today (pipeline, candidates, stages,
 - Candidate-facing assessment flow (Phase 3)
 - Video signaling / scheduling (Phase 4)
 - AI scoring agents (Phase 3)
-- Dev container management (post-MVP)
+- Dev container management (Phase 3b — ECS → Cloudflare Containers)
 
 ---
 
@@ -115,13 +115,45 @@ Feature: Add Challenge
       | order | (current challenge count) |
     And the challenge appears in the stage's challenge list
 
-  Scenario: Add challenge from GitHub PR
+  Scenario: Add CODE_REVIEW challenge from org slopify repo
+    Given the recruiter is on StageDetailPage
+    And the organization has a slopify exercise repo configured
+    When the recruiter clicks "ADD_CHALLENGE"
+    And selects "Code Review" type
+    Then the repo dropdown shows the org's slopify repo (always present, per-project)
+    And the PR list shows branches prepared as exercise PRs
+    When the recruiter selects PR "SLOP-101: Search with Debounced Input"
+    Then a CODE_REVIEW challenge is created with:
+      | field | value |
+      | type | CODE_REVIEW |
+      | title | (PR title) |
+      | practice_repo | pipe-hq/slopify |
+      | pr_number | (PR number) |
+      | feature_branch | (PR branch) |
+      | base_branch | main |
+    And a background request to POST /api/v1/github/pr caches the diff JSON
+    And ground truth (planted bugs + design trade-offs) is loaded from the exercise case definition
+
+  Scenario: Slopify repo is always available in the repo dropdown
+    Given the recruiter clicks "ADD_CHALLENGE" and selects "Code Review"
+    Then the repo dropdown pre-populates with the org's slopify repo
+    And the recruiter cannot remove the slopify repo from the list
+    And the recruiter can still add additional repos via "Add repo" input
+
+  Scenario: Add challenge from arbitrary GitHub PR (legacy)
     Given the recruiter is on StageDetailPage
     When the recruiter clicks "ADD_CHALLENGE"
-    And selects a GitHub PR from repository "owner/repo" PR #42
+    And adds a custom repo URL and selects PR #42
     Then a CODE_REVIEW challenge is created with githubRepoUrl, githubPrNumber, githubPrTitle
     And a background request to POST /api/v1/github/pr caches the diff on the challenge record
+    And ground truth must be manually annotated (no exercise case definition exists)
 ```
+
+> **Note on challenge creation model change (see [ADR-024](../docs/decisions/ADR-024-multi-turn-agentic-code-review.md)):**
+>
+> The slopify repo is the primary source for CODE_REVIEW challenges. Each PR on slopify is a prepared exercise with planted bugs and design trade-offs defined in the research system (`research/code-review-arena/golden/cases.json`). When a recruiter selects a slopify PR, the ground truth is automatically loaded — no manual annotation needed.
+>
+> Arbitrary GitHub PRs are still supported but require manual ground truth annotation and will only support single-turn scoring (deterministic, per ADR-021). Multi-turn agentic conversation is only available for prepared slopify exercises where ground truth includes design trade-offs and implementer persona configuration.
 
 ### 2.5 Recruiter configures challenge settings (type, instructions, config)
 
@@ -187,8 +219,9 @@ Feature: Candidate Invite
     And uploads a PDF file "jane-resume.pdf"
     And submits the form
     Then a candidate record is created with status INVITED
-    And the file is uploaded to R2 via a presigned URL
+    And the file is uploaded to R2 via a presigned PUT URL
     And a candidate_media record is created with type RESUME
+    And the R2 key uses the convention "candidate-documents/{candidateId}/{ulid}.pdf"
     And the candidate card appears in the first stage column
 
   Scenario: CV upload rejects invalid file types
@@ -203,6 +236,12 @@ Feature: Candidate Invite
     Then the candidate is still created with status INVITED
     And an error toast indicates the CV upload failed
     And the candidate card appears without a resume indicator
+
+  # NOTE: The R2 presigned URL infrastructure (aws4fetch signing, bucket config,
+  # key conventions) is shared with Phase 3's candidate-side media uploads.
+  # Phase 2 adds the recruiter-authenticated upload path (Clerk JWT);
+  # Phase 3 adds the candidate-authenticated path (session JWT).
+  # Both write to the same R2 bucket ("pipe-assets") and candidate_media table.
 ```
 
 ### 2.6b Recruiter publishes pipeline (DRAFT → ACTIVE)
@@ -609,10 +648,12 @@ export function clerkAuth(): MiddlewareHandler {
 | `POST` | `/pipelines/:pipelineId/candidates` | Create candidate with invite token | INSERT into candidates |
 | `PATCH` | `/candidates/:candidateId` | Update candidate (currentStageId, status) | UPDATE candidates |
 | `POST` | `/candidates/:candidateId/reset` | Reset candidate (unclaim token, delete submissions) | Transaction |
-| **Candidate Media** | | | |
-| `POST` | `/candidates/:candidateId/media/upload-url` | Generate R2 presigned upload URL | R2 presigned PUT |
+| **Candidate Media (R2)** | | | |
+| `POST` | `/candidates/:candidateId/media/upload-url` | Generate R2 presigned PUT URL (recruiter auth, `aws4fetch` signing) | R2 presigned PUT to `pipe-assets` bucket |
 | `POST` | `/candidates/:candidateId/media` | Create candidate_media record after successful upload | INSERT into candidate_media |
 | `GET` | `/candidates/:candidateId/media` | List media for a candidate | SELECT from candidate_media |
+| `POST` | `/candidates/:candidateId/media/:mediaId/download-url` | Generate R2 presigned GET URL for playback/download | R2 presigned GET |
+| | | *Note: Phase 3 adds `/rpc/generate-upload-url` (candidate auth) and `/rpc/get-media-url` (recruiter auth) using the same R2 bucket and signing infrastructure. See `phase-3-candidate-flow.md` §7.* | |
 | **GitHub** | | | |
 | `POST` | `/github/pr` | Fetch GitHub PR diff + metadata | External GitHub API call |
 | `POST` | `/github/prs` | List PRs for a repository | External GitHub API call |
@@ -838,6 +879,78 @@ app.post('/api/v1/github/pr', clerkAuth(), async (c) => {
 
 ---
 
+## 5b. R2 Storage: S3 → R2 Migration
+
+Phase 2 introduces the first R2 usage (recruiter CV upload). This establishes the shared infrastructure that Phase 3 extends for candidate-side video/audio/resume uploads.
+
+### What moves
+
+| Amplify (S3) | Cloudflare (R2) |
+|---|---|
+| `pipeAssets` S3 bucket | `pipe-assets` R2 bucket |
+| `useStorage().upload()` (Amplify SDK) | Presigned R2 PUT URL via Worker route |
+| `getUrl()` (Amplify SDK) | Presigned R2 GET URL via Worker route |
+| `generateMediaUploadUrl` Lambda | `POST /api/v1/candidates/:id/media/upload-url` (Phase 2, Clerk auth) |
+| | `POST /rpc/generate-upload-url` (Phase 3, candidate session JWT auth) |
+| DynamoDB `CandidateMedia` model | D1 `candidate_media` table (Section 4) |
+| S3 path: `candidate-documents/{candidateId}/{filename}` | R2 key: `candidate-documents/{candidateId}/{ulid}.{ext}` |
+| S3 path: `candidate-recordings/{candidateId}/{stageId}.webm` | R2 key: `candidate-submissions/{candidateId}/{ulid}.webm` (Phase 3) |
+
+### R2 key conventions (from ADR-022 + PLAN.md)
+
+```
+candidate-documents/{candidateId}/{ulid}.pdf      RESUME, ATTACHMENT (recruiter upload)
+candidate-submissions/{candidateId}/{ulid}.webm   VIDEO_RECORDING, AUDIO_RECORDING (Phase 3)
+```
+
+- Keys use **opaque ULIDs**, not filenames or internal IDs (security: presigned URLs expose the key path)
+- Original filename is stored in the `candidate_media.filename` column, not in the R2 key
+- All media types share the `pipe-assets` bucket
+
+### Presigned URL signing (shared infrastructure)
+
+Both Phase 2 (recruiter auth) and Phase 3 (candidate auth) use `aws4fetch` to sign R2 requests:
+
+```typescript
+import { AwsClient } from 'aws4fetch';
+
+const r2 = new AwsClient({
+  accessKeyId: c.env.R2_ACCESS_KEY_ID,
+  secretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
+});
+
+// Generate presigned PUT URL (5-minute expiry)
+const url = new URL(`/${c.env.R2_BUCKET_NAME}/${r2Key}`,
+  `https://${c.env.CF_ACCOUNT_ID}.r2.cloudflarestorage.com`);
+url.searchParams.set('X-Amz-Expires', '300');
+const signed = await r2.sign(new Request(url, { method: 'PUT' }), { aws: { signQuery: true } });
+```
+
+### Wrangler bindings required
+
+```jsonc
+// wrangler.jsonc
+{
+  "r2_buckets": [{ "binding": "R2_BUCKET", "bucket_name": "pipe-assets" }]
+}
+// Secrets (via wrangler secret put):
+// R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, CF_ACCOUNT_ID
+```
+
+### Upload flow (recruiter-side, Phase 2)
+
+1. Frontend calls `POST /api/v1/candidates/:id/media/upload-url` with `{ filename, mimeType, mediaType }`
+2. Worker validates Clerk JWT, generates ULID key, signs R2 PUT URL, creates `candidate_media` record with status `PENDING`
+3. Frontend PUTs file directly to the presigned R2 URL
+4. Frontend calls `POST /api/v1/candidates/:id/media` to confirm upload → status changes to `UPLOADED`
+5. (Optional) Worker triggers CV parsing for `RESUME` type
+
+### Data migration: S3 → R2
+
+Existing S3 objects under `candidate-documents/` and `candidate-recordings/` need to be copied to R2. R2 is S3-compatible, so `aws s3 sync` or `rclone` works directly. DynamoDB `CandidateMedia` records migrate to D1 `candidate_media` with `s3_key` values unchanged (same key convention).
+
+---
+
 ## 6. Task List
 
 ### 6.1 D1 Schema & Migrations
@@ -868,9 +981,12 @@ app.post('/api/v1/github/pr', clerkAuth(), async (c) => {
 - [ ] **T2-21**: Implement `POST /pipelines/:pipelineId/interviews` (create scheduled interview)
 - [ ] **T2-22**: Implement `GET /pipelines/:pipelineId/interviews` (list interviews)
 - [x] **T2-22b**: Implement `PATCH /pipelines/:pipelineId` (update status/title, DRAFT→ACTIVE requires ≥1 stage)
-- [ ] **T2-23a**: Implement `POST /candidates/:candidateId/media/upload-url` (R2 presigned upload URL)
-- [ ] **T2-23b**: Implement `POST /candidates/:candidateId/media` (create candidate_media record)
-- [ ] **T2-23c**: Implement `GET /candidates/:candidateId/media` (list candidate media)
+- [ ] **T2-23a**: Create R2 bucket `pipe-assets` + configure `aws4fetch` signing in Worker
+- [ ] **T2-23b**: Implement `POST /candidates/:candidateId/media/upload-url` (R2 presigned PUT URL, Clerk auth)
+- [ ] **T2-23c**: Implement `POST /candidates/:candidateId/media` (confirm upload, create candidate_media record)
+- [ ] **T2-23d**: Implement `GET /candidates/:candidateId/media` (list candidate media)
+- [ ] **T2-23e**: Implement `POST /candidates/:candidateId/media/:mediaId/download-url` (R2 presigned GET URL)
+- [ ] **T2-23f**: Add R2 secrets to wrangler config (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `CF_ACCOUNT_ID`)
 
 ### 6.3 Frontend Hooks (Provider Abstraction)
 

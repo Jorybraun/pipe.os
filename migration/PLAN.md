@@ -39,6 +39,7 @@ CI/CD:     GitHub Actions + Cloudflare Wrangler + Terraform
 | 1 | Listing + Pipeline Create | `/`, `/pipeline/new` | BDD tests pass on Cloudflare |
 | 2 | Stage Detail + Overview + Challenge Editor | `/pipeline/:id/stages/:stageId`, `/pipeline/:id`, `/pipeline/:id/challenges/:challengeId` | BDD tests pass on Cloudflare |
 | 3 | Candidate Profile + Assessment | `/candidates/:id`, `/assess/:token` | BDD tests pass on Cloudflare |
+| 3b | Dev Containers (ECS → CF Containers) | `/container/:sessionId/*` | Container launch/proxy/destroy via Workers, zero AWS |
 | 4 | Real-time signaling + Scheduling | `/schedule` | WebSocket signaling works, BDD tests pass |
 | 5 | CI/CD + Terraform + Cleanup | N/A | Deterministic deploys, delete `amplify/` |
 
@@ -112,5 +113,6 @@ See:
 - [Phase 1: Listing + Pipeline Create](./phase-1-listing-pipeline.md)
 - [Phase 2: Stage Detail + Overview + Challenge Editor](./phase-2-recruiter-core.md)
 - [Phase 3: Candidate Profile + Assessment](./phase-3-candidate-flow.md)
+- [Phase 3b: Dev Containers — ECS to Cloudflare Containers](./phase-3b-dev-containers.md)
 - [Phase 4: Real-time Signaling + Scheduling](./phase-4-realtime.md)
 - [Phase 5: CI/CD + Terraform + Cleanup](./phase-5-cicd-terraform.md)

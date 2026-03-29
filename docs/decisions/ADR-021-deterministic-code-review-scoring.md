@@ -1,7 +1,7 @@
 # ADR-021: Deterministic Algorithm for Code Review Scoring
 
 **Date:** 2026-03-20
-**Status:** Accepted
+**Status:** Superseded by [ADR-024](ADR-024-multi-turn-agentic-code-review.md)
 
 ## Context
 
