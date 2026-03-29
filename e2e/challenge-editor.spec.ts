@@ -23,51 +23,65 @@
  *   6. GitHub PR fetch — happy path + error cases
  */
 
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const API_BASE_URL = 'http://localhost:8787';
 
-// ─── Seed helpers ─────────────────────────────────────────────────────────────
+// ─── Auth helper ─────────────────────────────────────────────────────────────
 
 /**
- * Create a pipeline via the Cloudflare Workers API and return its ID.
- * Uses the authenticated session cookie / Bearer token carried by `request`.
+ * Extract the Clerk session token from the browser cookie jar.
+ * Must be called after page.goto() so storageState is hydrated.
  */
+async function getAuthToken(page: Page): Promise<string> {
+  const cookies = await page.context().cookies();
+  const sessionCookie = cookies.find((c) => c.name === "__session");
+  if (!sessionCookie) {
+    throw new Error("No __session cookie found. Make sure the setup project ran first.");
+  }
+  return sessionCookie.value;
+}
+
+function authHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
+}
+
+// ─── Seed helpers ─────────────────────────────────────────────────────────────
+
 async function seedPipeline(
   request: APIRequestContext,
+  token: string,
   title: string,
 ): Promise<string> {
   const res = await request.post(`${API_BASE_URL}/api/v1/pipelines`, {
-    data: { title, status: 'DRAFT' },
+    headers: authHeaders(token),
+    data: { title, level: 'Senior', status: 'DRAFT' },
   });
   expect(res.ok(), `seedPipeline failed: ${await res.text()}`).toBeTruthy();
-  const body = await res.json() as { data: { id: string } };
-  return body.data.id;
+  const body = await res.json() as { pipeline: { id: string } };
+  return body.pipeline.id;
 }
 
-/**
- * Create a stage inside a pipeline and return its ID.
- */
 async function seedStage(
   request: APIRequestContext,
+  token: string,
   pipelineId: string,
   title: string,
 ): Promise<string> {
   const res = await request.post(`${API_BASE_URL}/api/v1/pipelines/${pipelineId}/stages`, {
+    headers: authHeaders(token),
     data: { title, order: 0 },
   });
   expect(res.ok(), `seedStage failed: ${await res.text()}`).toBeTruthy();
-  const body = await res.json() as { data: { id: string } };
-  return body.data.id;
+  const body = await res.json() as { id: string };
+  return body.id;
 }
 
-/**
- * Create a challenge inside a stage and return its ID.
- */
 async function seedChallenge(
   request: APIRequestContext,
+  token: string,
   stageId: string,
   payload: {
     type: 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'CODE_REVIEW' | 'QUIZ_SHORT_ANSWER';
@@ -84,24 +98,22 @@ async function seedChallenge(
   },
 ): Promise<string> {
   const res = await request.post(`${API_BASE_URL}/api/v1/stages/${stageId}/challenges`, {
-    data: {
-      ...payload,
-      order: 0,
-    },
+    headers: authHeaders(token),
+    data: { ...payload, order: 0 },
   });
   expect(res.ok(), `seedChallenge failed: ${await res.text()}`).toBeTruthy();
-  const body = await res.json() as { data: { id: string } };
-  return body.data.id;
+  const body = await res.json() as { id: string };
+  return body.id;
 }
 
-/**
- * Delete a pipeline (cascade-deletes all stages + challenges).
- */
 async function teardownPipeline(
   request: APIRequestContext,
+  token: string,
   pipelineId: string,
 ): Promise<void> {
-  await request.delete(`${API_BASE_URL}/api/v1/pipelines/${pipelineId}`);
+  await request.delete(`${API_BASE_URL}/api/v1/pipelines/${pipelineId}`, {
+    headers: authHeaders(token),
+  });
 }
 
 // ─── 1. Edit CODE_IMPLEMENTATION challenge ────────────────────────────────────
@@ -110,11 +122,14 @@ test.describe('Feature: Edit CODE_IMPLEMENTATION challenge', () => {
   let pipelineId: string;
   let stageId: string;
   let challengeId: string;
+  let token: string;
 
-  test.beforeEach(async ({ request }) => {
-    pipelineId = await seedPipeline(request, 'E2E — CODE_IMPLEMENTATION editor');
-    stageId    = await seedStage(request, pipelineId, 'Technical Screen');
-    challengeId = await seedChallenge(request, stageId, {
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId = await seedPipeline(request, token, 'E2E — CODE_IMPLEMENTATION editor');
+    stageId    = await seedStage(request, token, pipelineId, 'Technical Screen');
+    challengeId = await seedChallenge(request, token, stageId, {
       type: 'CODE_IMPLEMENTATION',
       title: 'FizzBuzz',
       instructions: 'Write FizzBuzz.',
@@ -126,7 +141,7 @@ test.describe('Feature: Edit CODE_IMPLEMENTATION challenge', () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await teardownPipeline(request, pipelineId);
+    await teardownPipeline(request, token, pipelineId);
   });
 
   /**
@@ -201,6 +216,7 @@ test.describe('Feature: Edit CODE_IMPLEMENTATION challenge', () => {
   test('Scenario: Reload after save — updated title persists', async ({ page, request }) => {
     // Update directly via API first to set known state
     const putRes = await request.put(`${API_BASE_URL}/api/v1/challenges/${challengeId}`, {
+      headers: authHeaders(token),
       data: { title: 'Binary Search', type: 'CODE_IMPLEMENTATION' },
     });
     expect(putRes.ok(), `Direct PUT failed: ${await putRes.text()}`).toBeTruthy();
@@ -235,6 +251,7 @@ test.describe('Feature: Edit QUIZ_MCQ challenge', () => {
   let pipelineId: string;
   let stageId: string;
   let challengeId: string;
+  let token: string;
 
   const initialOptions = [
     { id: 'a', text: 'Immutability' },
@@ -243,10 +260,12 @@ test.describe('Feature: Edit QUIZ_MCQ challenge', () => {
     { id: 'd', text: 'Prototype chain' },
   ];
 
-  test.beforeEach(async ({ request }) => {
-    pipelineId  = await seedPipeline(request, 'E2E — QUIZ_MCQ editor');
-    stageId     = await seedStage(request, pipelineId, 'Screen');
-    challengeId = await seedChallenge(request, stageId, {
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId  = await seedPipeline(request, token, 'E2E — QUIZ_MCQ editor');
+    stageId     = await seedStage(request, token, pipelineId, 'Screen');
+    challengeId = await seedChallenge(request, token, stageId, {
       type: 'QUIZ_MCQ',
       title: 'JavaScript Fundamentals',
       instructions: 'Choose the correct answer.',
@@ -263,7 +282,7 @@ test.describe('Feature: Edit QUIZ_MCQ challenge', () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await teardownPipeline(request, pipelineId);
+    await teardownPipeline(request, token, pipelineId);
   });
 
   /**
@@ -407,6 +426,7 @@ test.describe('Feature: Edit CODE_REVIEW challenge with cached PR data', () => {
   let pipelineId: string;
   let stageId: string;
   let challengeId: string;
+  let token: string;
 
   const cachedDiff = {
     files: [
@@ -439,10 +459,12 @@ test.describe('Feature: Edit CODE_REVIEW challenge with cached PR data', () => {
     head: 'fix/discount-boundary',
   };
 
-  test.beforeEach(async ({ request }) => {
-    pipelineId  = await seedPipeline(request, 'E2E — CODE_REVIEW editor');
-    stageId     = await seedStage(request, pipelineId, 'Code Review Stage');
-    challengeId = await seedChallenge(request, stageId, {
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId  = await seedPipeline(request, token, 'E2E — CODE_REVIEW editor');
+    stageId     = await seedStage(request, token, pipelineId, 'Code Review Stage');
+    challengeId = await seedChallenge(request, token, stageId, {
       type: 'CODE_REVIEW',
       title: 'Review: calculateDiscount()',
       instructions: 'Find the bugs in this code.',
@@ -456,7 +478,7 @@ test.describe('Feature: Edit CODE_REVIEW challenge with cached PR data', () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await teardownPipeline(request, pipelineId);
+    await teardownPipeline(request, token, pipelineId);
   });
 
   /**
@@ -557,11 +579,14 @@ test.describe('Feature: Clone challenge', () => {
   let pipelineId: string;
   let stageId: string;
   let challengeId: string;
+  let token: string;
 
-  test.beforeEach(async ({ request }) => {
-    pipelineId  = await seedPipeline(request, 'E2E — Clone challenge');
-    stageId     = await seedStage(request, pipelineId, 'Technical');
-    challengeId = await seedChallenge(request, stageId, {
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId  = await seedPipeline(request, token, 'E2E — Clone challenge');
+    stageId     = await seedStage(request, token, pipelineId, 'Technical');
+    challengeId = await seedChallenge(request, token, stageId, {
       type: 'QUIZ_MCQ',
       title: 'Array Methods',
       config: {
@@ -586,7 +611,7 @@ test.describe('Feature: Clone challenge', () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await teardownPipeline(request, pipelineId);
+    await teardownPipeline(request, token, pipelineId);
   });
 
   /**
@@ -634,14 +659,17 @@ test.describe('Feature: Clone challenge', () => {
 test.describe('Feature: Create new challenge from scratch', () => {
   let pipelineId: string;
   let stageId: string;
+  let token: string;
 
-  test.beforeEach(async ({ request }) => {
-    pipelineId = await seedPipeline(request, 'E2E — New challenge');
-    stageId    = await seedStage(request, pipelineId, 'Blank Stage');
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId = await seedPipeline(request, token, 'E2E — New challenge');
+    stageId    = await seedStage(request, token, pipelineId, 'Blank Stage');
   });
 
   test.afterEach(async ({ request }) => {
-    await teardownPipeline(request, pipelineId);
+    await teardownPipeline(request, token, pipelineId);
   });
 
   /**
@@ -747,11 +775,14 @@ test.describe('Feature: GitHub PR fetch', () => {
   let pipelineId: string;
   let stageId: string;
   let challengeId: string;
+  let token: string;
 
-  test.beforeEach(async ({ request }) => {
-    pipelineId  = await seedPipeline(request, 'E2E — GitHub PR fetch');
-    stageId     = await seedStage(request, pipelineId, 'Code Review');
-    challengeId = await seedChallenge(request, stageId, {
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId  = await seedPipeline(request, token, 'E2E — GitHub PR fetch');
+    stageId     = await seedStage(request, token, pipelineId, 'Code Review');
+    challengeId = await seedChallenge(request, token, stageId, {
       type: 'CODE_REVIEW',
       title: 'New Code Review',
       instructions: 'Review the following PR.',
@@ -759,7 +790,7 @@ test.describe('Feature: GitHub PR fetch', () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await teardownPipeline(request, pipelineId);
+    await teardownPipeline(request, token, pipelineId);
   });
 
   /**
@@ -946,11 +977,14 @@ test.describe('Feature: Challenge editor navigation and layout', () => {
   let pipelineId: string;
   let stageId: string;
   let challengeId: string;
+  let token: string;
 
-  test.beforeEach(async ({ request }) => {
-    pipelineId  = await seedPipeline(request, 'E2E — Editor navigation');
-    stageId     = await seedStage(request, pipelineId, 'Screen');
-    challengeId = await seedChallenge(request, stageId, {
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId  = await seedPipeline(request, token, 'E2E — Editor navigation');
+    stageId     = await seedStage(request, token, pipelineId, 'Screen');
+    challengeId = await seedChallenge(request, token, stageId, {
       type: 'QUIZ_SHORT_ANSWER',
       title: 'Explain CAP Theorem',
       instructions: 'In your own words, describe CAP Theorem.',
@@ -959,7 +993,7 @@ test.describe('Feature: Challenge editor navigation and layout', () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await teardownPipeline(request, pipelineId);
+    await teardownPipeline(request, token, pipelineId);
   });
 
   /**

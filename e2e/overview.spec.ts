@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
  * Phase 2 BDD: Pipeline Overview Page
@@ -51,36 +51,23 @@ interface SeedResult {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Reads the Clerk session token from localStorage, which is stored in the
- * authenticated project's storageState. This token is forwarded as the
- * Authorization header for direct Worker API calls from within tests.
+ * Return the Clerk session token stored in Playwright's auth state so we can
+ * attach it to direct API calls made from request fixtures.
+ *
+ * Clerk persists its session as a cookie named `__session`. We extract it from
+ * the browser context's cookie jar to authenticate Worker API seeding calls.
  *
  * Must be called after `page.goto()` so the storage state is hydrated.
  */
-async function getAuthToken(page: import("@playwright/test").Page): Promise<string> {
-  // Clerk stores the active session token in localStorage under a key that
-  // contains the publishable key prefix. We find it by looking for the
-  // first key whose value is a JWT string (starts with "ey").
-  const token = await page.evaluate((): string => {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      const value = localStorage.getItem(key);
-      if (value && value.startsWith("ey") && value.includes(".")) {
-        return value;
-      }
-    }
-    return "";
-  });
-
-  if (!token) {
+async function getAuthToken(page: Page): Promise<string> {
+  const cookies = await page.context().cookies();
+  const sessionCookie = cookies.find((c) => c.name === "__session");
+  if (!sessionCookie) {
     throw new Error(
-      "[overview.spec] Could not extract Clerk session token from localStorage. " +
-        "Ensure the setup project has run and the storageState is populated.",
+      "[overview.spec] No __session cookie found. Make sure the auth_setup project ran first.",
     );
   }
-
-  return token;
+  return sessionCookie.value;
 }
 
 /**

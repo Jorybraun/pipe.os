@@ -1,0 +1,17 @@
+{
+  "name": "pipe-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pipe-dev",
+      // Placeholder: wrangler dev uses local SQLite automatically.
+      // Replace with your real database_id after running:
+      //   npx wrangler d1 create pipe-dev
+      "database_id": "local",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
