@@ -7,6 +7,8 @@ export interface Env {
   DB: D1Database;
   /** Clerk secret key for JWT verification. Set via .dev.vars in dev. */
   CLERK_SECRET_KEY: string;
+  /** Session token secret for candidate JWT signing/verification. */
+  SESSION_TOKEN_SECRET: string;
   /**
    * GitHub personal access token for the PR fetch proxy.
    * Set via .dev.vars in dev, Worker secret in production.
