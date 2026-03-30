@@ -1,3 +1,4 @@
+import React from 'react';
 import { ChevronDown, List, HelpCircle, MessageSquare, Trash2 } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../../components';
 import { FollowUpConfiguration } from './FollowUpConfiguration';
@@ -8,12 +9,18 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
   const correctId = challenge.serverConfig?.correctOptionId as string | undefined;
   const hasFollowUp = !!challenge.config?.enableFollowUp;
 
-  const setConfig = (patch: Record<string, unknown>) => 
+  // Keep a ref to the latest options so addOption always reads current values,
+  // even if React hasn't flushed a pending input onChange yet (Bug #4 fix).
+  const optionsRef = React.useRef(options);
+  optionsRef.current = options;
+
+  const setConfig = (patch: Record<string, unknown>) =>
     onChange({ ...challenge, config: { ...challenge.config, ...patch } });
 
   const addOption = () => {
     const newId = crypto.randomUUID();
-    const newOptions = [...options, { id: newId, text: '' }];
+    const currentOptions = optionsRef.current;
+    const newOptions = [...currentOptions, { id: newId, text: '' }];
     onChange({
       ...challenge,
       config: { ...challenge.config, options: newOptions },

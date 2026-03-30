@@ -6,13 +6,37 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
-#### Added (Phase 3 — Candidate assessment flow, 22/22 BDD green)
+#### Fixed (QA bug regression — 2026-03-29)
+- **P0 — Bug #13**: Assessment FINAL_SUBMIT showed success but failed silently (`INVALID_TOKEN`). Root cause: `/rpc/submit-status` endpoint missing from Worker. Added endpoint + propagated error to UI instead of swallowing with `console.warn`.
+- **P1 — Bug #8**: Pipeline "..." menu buttons were empty (`onClick` only called `stopPropagation`). Added dropdown menu with Delete action.
+- **P1 — Bug #4**: MCQ answer option text lost when clicking "+ ADD_OPTION" (stale closure reading old options). Fixed with `useRef` to always read latest options.
+- **P3 — Bug #7**: Empty pipelines showed "0/1 STAGES" due to `stageCount || 1` fallback. Fixed to `stageCount ?? 0` with divide-by-zero guard.
+- `e2e/bug-regression.spec.ts` — BDD regression tests for all fixed bugs
+
+#### Added (Phase 3 — Candidate assessment flow + candidate profile BDD)
 - `workers/api/src/routes/rpc.ts` — `/rpc/resolve-token`, `/rpc/get-stage-config`, `/rpc/get-challenge`, `/rpc/refresh-session` Worker routes
 - `workers/api/src/lib/jwt.ts` — JWT sign/verify using Web Crypto API (replaces Node crypto for Workers)
 - `workers/api/src/middleware/candidateAuth.ts` — candidate session JWT middleware
 - `workers/api/migrations/0003_candidate_flow.sql` — `assessments` + `challenge_submissions` D1 tables
 - `src/hooks/useAssessment.ts` — rewritten to call Workers `/rpc/*` API directly (removes Amplify provider dependency)
-- `e2e/candidate-assessment.spec.ts` — 34 BDD tests: token resolution, stage config, challenge loading, MCQ submit/score/aggregate, E2E UI flow, security assertions
+- `e2e/candidate-assessment.spec.ts` — §3.1-3.8: token resolution, stage config, challenge loading, MCQ submit/score/aggregate, SHORT_ANSWER submission (text + voice), security assertions
+- `e2e/candidate-assessment.spec.ts` — §3.9: multi-turn CODE_REVIEW API contract tests (11 tests: session lifecycle, structured comments, implementer moves, rounds, verdict, scoring, security, ownership)
+- `e2e/candidate-assessment.spec.ts` — §3.10: multi-turn CODE_REVIEW UI journey (10 tests: DiffPanel, annotations, round indicator, agent responses, thread replies, verdict, scoring)
+- `e2e/candidate-assessment.spec.ts` — §3.11: legacy single-turn CODE_REVIEW fallback (2 tests: no practiceRepo → single submit, deterministic scoring)
+- `e2e/candidate-profile.spec.ts` — §4.1-4.7: profile loading, SHORT_ANSWER display (text/voice), MCQ display, manual scoring, stage tabs, API contract
+- `e2e/challenge-editor.spec.ts` — §8: QUIZ_SHORT_ANSWER editor BDD (question prompt, response type, time limit, rubric, follow-up, video instructions, API persistence)
+
+#### Added (Phase 3 — CODE_IMPLEMENTATION BDD)
+- `e2e/candidate-assessment.spec.ts` — §3.12: CODE_IMPLEMENTATION candidate journey (6 tests: editor + starter code, RUN + test results, edit + submit, submit error, API contract)
+
+#### Fixed (Phase 3 — error visibility + layout + render crash)
+- `src/pages/ChallengeEditorPage.tsx` — show `[data-testid="save-error"]` when save fails (was silent)
+- `src/pages/CandidateAssessmentPage.tsx` — submission errors show inline banner instead of false success; terminal vs non-terminal error distinction
+- `src/pages/CandidateAssessmentPage.tsx` — CODE_IMPLEMENTATION now uses fullBleed layout (was constrained to maxWidth 1200px)
+- `src/components/Panels/MonacoPanel.tsx` — guard against undefined `language` prop (crashed on `toLowerCase()`)
+- `src/components/Panels/CodeEditorPanel.tsx` — default `language` to `'javascript'` when VirtualFS file entry omits it
+- `e2e/challenge-editor.spec.ts` — §8: save error visibility BDD tests (2 tests)
+- `e2e/candidate-assessment.spec.ts` — §3.10: submission error display BDD, §3.11: CODE_IMPLEMENTATION full-bleed layout BDD
 
 #### Fixed (Phase 2 — stage-detail BDD 20/20 green)
 - `e2e/stage-detail.spec.ts` — fix CODE_REVIEW challenge picker test: FETCH button locator was matching ADD_REPO instead (narrowed to `button:has-text("FETCH")`)

@@ -287,11 +287,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
         if (!config || config.isComplete) {
           // Update candidate status to COMPLETED
-          try {
-            await rpcPost('/rpc/submit-status', { status: 'COMPLETED' }, sessionTokenRef.current);
-          } catch (e) {
-            console.warn('[useAssessment] COMPLETED update failed:', e);
-          }
+          await rpcPost('/rpc/submit-status', { status: 'COMPLETED' }, sessionTokenRef.current);
 
           sessionStorage.removeItem('pipe_session_token');
           sessionStorage.removeItem('pipe_session_candidate');

@@ -627,4 +627,44 @@ rpcAuth.post('/score-submission', async (c) => {
   });
 });
 
+// ── POST /rpc/submit-status ────────────────────────────────────────────────
+
+rpcAuth.post('/submit-status', async (c) => {
+  const candidateId = c.get('candidateId');
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
+  }
+
+  const status = body.status;
+  if (typeof status !== 'string' || !['COMPLETED', 'ABANDONED'].includes(status)) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'status must be COMPLETED or ABANDONED.' } },
+      400,
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  // Update candidate status
+  await c.env.DB.prepare(
+    `UPDATE candidates SET status = ?1, updated_at = ?2 WHERE id = ?3`,
+  )
+    .bind(status, now, candidateId)
+    .run();
+
+  // Also update any in-progress assessments for this candidate
+  await c.env.DB.prepare(
+    `UPDATE assessments SET status = ?1, completed_at = ?2, updated_at = ?2
+     WHERE candidate_id = ?3 AND status = 'IN_PROGRESS'`,
+  )
+    .bind(status, now, candidateId)
+    .run();
+
+  return c.json({ success: true });
+});
+
 export { rpcPublic, rpcAuth };

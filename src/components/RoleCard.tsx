@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import {
   Building,
   MapPin,
@@ -9,6 +10,7 @@ import {
   Target,
   Trophy,
   Check,
+  Trash2,
 } from "lucide-react";
 import { LiquidMetalCard } from "./ui/LiquidMetalCard";
 
@@ -77,9 +79,23 @@ export function RoleCard({
     }
   };
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
   const statusStyle = getStatusStyle(status);
   const isComplete = stagesConfigured === totalStages;
-  const progressPercent = (stagesConfigured / totalStages) * 100;
+  const progressPercent = totalStages > 0 ? (stagesConfigured / totalStages) * 100 : 0;
 
   const formattedDate = new Date(createdAt)
     .toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -315,28 +331,84 @@ export function RoleCard({
 
           {/* Action Area */}
           <div
+            ref={menuRef}
             style={{
               width: 48,
               borderLeft: "1px solid rgba(255,255,255,0.05)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              position: "relative",
             }}
           >
             <button
+              aria-label="Pipeline actions"
               style={{
-                background: "transparent",
+                background: menuOpen ? "rgba(255,255,255,0.05)" : "transparent",
                 border: "none",
-                color: "rgba(255,255,255,0.2)",
+                color: menuOpen ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)",
                 cursor: "pointer",
                 padding: 8,
+                borderRadius: 4,
+                transition: "all 0.15s ease",
               }}
               onClick={(e) => {
                 e.stopPropagation();
+                setMenuOpen(!menuOpen);
               }}
             >
               <MoreHorizontal size={16} />
             </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  zIndex: 50,
+                  minWidth: 160,
+                  background: "#1a1a1e",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 8,
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                  overflow: "hidden",
+                  marginTop: 4,
+                }}
+              >
+                {onDelete && (
+                  <button
+                    role="menuitem"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      onDelete();
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px",
+                      background: "transparent",
+                      border: "none",
+                      color: "#f87171",
+                      fontSize: 11,
+                      fontFamily: "Space Mono",
+                      fontWeight: 700,
+                      letterSpacing: "0.05em",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      transition: "background 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(248,113,113,0.1)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <Trash2 size={14} />
+                    DELETE
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

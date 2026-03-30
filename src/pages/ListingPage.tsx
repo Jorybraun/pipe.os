@@ -331,7 +331,7 @@ export default function ListingPage(): JSX.Element {
                   candidates={p.candidateCount}
                   avgScore={p.avgScore}
                   stagesConfigured={p.stageCount}
-                  totalStages={p.stageCount || 1}
+                  totalStages={p.stageCount ?? 0}
                   createdAt={p.createdAt ?? new Date().toISOString()}
                   isSelected={selectedIds.has(p.id)}
                   onSelect={(sel) => toggleSelect(p.id, sel)}
