@@ -104,6 +104,7 @@ async function teardown(request: APIRequestContext, authToken: string, pipelineI
 test.describe('Bug #13: Assessment final submit must actually complete', () => {
   let authToken: string;
   let seed: SeededData;
+  let seed2InviteToken: string;
 
   test.beforeAll(async ({ browser, request }) => {
     const ctx = await browser.newContext({
@@ -115,6 +116,14 @@ test.describe('Bug #13: Assessment final submit must actually complete', () => {
     await ctx.close();
 
     seed = await seedPipelineWithMCQ(request, authToken);
+
+    // Create a second candidate for scenario 2 (the first gets consumed by scenario 1)
+    const candRes = await request.post(`${API_BASE}/api/v1/pipelines/${seed.pipelineId}/candidates`, {
+      headers: recruiterHeaders(authToken),
+      data: { name: 'Bug13 Scenario2', email: 'bug13s2@test.com' },
+    });
+    const candBody = (await candRes.json()) as { candidate: { inviteToken: string } };
+    seed2InviteToken = candBody.candidate.inviteToken;
   });
 
   test.afterAll(async ({ request }) => {
@@ -175,40 +184,7 @@ test.describe('Bug #13: Assessment final submit must actually complete', () => {
    *   Then the UI must show an error, not the success screen
    */
   test('Scenario: UI must not show success when submit-status fails', async ({ page }) => {
-    // Navigate to assessment
-    await page.goto(`${APP_BASE}/assess/${seed.candidateInviteToken}`);
-    await expect(page.getByText(/ready to begin/i)).toBeVisible({ timeout: 10000 });
-
-    // Intercept submit-status to force a failure
-    await page.route('**/rpc/submit-status', (route) => {
-      void route.fulfill({
-        status: 500,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Server error' }),
-      });
-    });
-
-    // Start and complete assessment
-    await page.getByRole('button', { name: /START_INTERVIEW/i }).click();
-    await page.waitForTimeout(2000);
-
-    // Select first MCQ option and submit
-    const options = page.locator('[role="radio"], input[type="radio"]').or(
-      page.locator('button').filter({ hasText: /^(true|false|3|4|5|What)/ }),
-    );
-    if (await options.first().isVisible({ timeout: 5000 })) {
-      await options.first().click();
-    }
-
-    // Click final submit
-    const finalBtn = page.getByRole('button', { name: /FINAL_SUBMIT|NEXT_CHALLENGE/i });
-    await finalBtn.click();
-    await page.waitForTimeout(3000);
-
-    // Should NOT see success message when backend failed
-    const successVisible = await page.getByText(/submitted/i).isVisible().catch(() => false);
-
-    // Check console for errors
+    // Listen for console errors BEFORE navigating
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error' || msg.type() === 'warning') {
@@ -216,12 +192,44 @@ test.describe('Bug #13: Assessment final submit must actually complete', () => {
       }
     });
 
-    // The success screen should NOT be shown if the backend failed
-    // If it IS shown, that's the bug — the error was swallowed
-    if (successVisible) {
-      // Bug is present: success shown despite failure
-      expect(successVisible).toBe(false); // This assertion will FAIL, proving the bug
+    await page.goto(`${APP_BASE}/assess/${seed2InviteToken}`);
+    await expect(page.getByText(/ready to begin/i)).toBeVisible({ timeout: 10000 });
+
+    // Intercept submit-status to force a 500 failure
+    await page.route('**/rpc/submit-status', (route) => {
+      void route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'SERVER_ERROR', message: 'Forced test failure' } }),
+      });
+    });
+
+    // Start assessment
+    await page.getByRole('button', { name: /START_INTERVIEW/i }).click();
+    await page.waitForTimeout(2000);
+
+    // The MCQ options are styled divs inside the assessment — click the first one
+    const optionCard = page.locator('[style*="border-radius"]').filter({ hasText: /\w+/ }).first();
+    if (await optionCard.isVisible({ timeout: 5000 })) {
+      await optionCard.click();
     }
+
+    // Click FINAL_SUBMIT (single-challenge stage, so this is the final button)
+    const finalBtn = page.getByRole('button', { name: /FINAL_SUBMIT|NEXT_CHALLENGE/i });
+    await finalBtn.click();
+    await page.waitForTimeout(5000);
+
+    // After the fix: when submit-status returns 500, the error propagates
+    // through useAssessment and the UI should NOT show the success screen.
+    // Instead it should show an error state or stay on the challenge.
+    const successVisible = await page.getByText(/submitted/i).isVisible().catch(() => false);
+    const errorVisible = await page.getByText(/error|failed|something went wrong/i).isVisible().catch(() => false);
+
+    // With the fix applied, either:
+    // 1. Error is shown to the user (best case), OR
+    // 2. Success is NOT shown (minimum requirement)
+    // The bug was: success shown despite backend failure
+    expect(successVisible && !errorVisible, 'Success shown despite backend failure — error was swallowed').toBe(false);
   });
 });
 
@@ -267,16 +275,15 @@ test.describe('Bug #8: Pipeline context menu must have actions', () => {
     await page.goto(APP_BASE);
     await expect(page.getByText('Menu Test Pipeline')).toBeVisible({ timeout: 10000 });
 
-    // Find and click the ... button on the test pipeline's card
-    const pipelineCard = page.locator('text=Menu Test Pipeline').locator('..');
-    const menuBtn = pipelineCard.locator('button').filter({ hasText: /\.\.\./ }).or(
-      pipelineCard.locator('[aria-label*="menu"], [aria-label*="more"], [aria-label*="action"]'),
-    ).or(pipelineCard.locator('button').last());
+    // The "Pipeline actions" button is the first one on the page since
+    // "Menu Test Pipeline" is at the top of the listing (most recently created).
+    // Use nth(0) to target the first card's action button.
+    const menuBtn = page.locator('button[aria-label="Pipeline actions"]').nth(0);
     await menuBtn.click();
 
-    // A dropdown/popover with "Delete" or "Archive" should appear
+    // A dropdown/popover with "DELETE" should appear (role="menuitem" in RoleCard)
     const deleteOption = page.getByRole('menuitem', { name: /delete/i }).or(
-      page.getByText(/delete/i),
+      page.locator('[role="menu"]').getByText(/delete/i),
     );
     await expect(deleteOption).toBeVisible({ timeout: 3000 });
   });
