@@ -1,8 +1,9 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { useData } from '../../providers';
 import { QuestionVideoPlayer } from '../Challenge/QuestionVideoPlayer';
 import { useSpeechTranscription } from '../../hooks/useSpeechTranscription';
 import { useSessionToken } from '../../contexts/SessionTokenContext';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
 
 export interface VideoSubmissionPanelProps {
   /** Question heading displayed above the recording controls */
@@ -17,9 +18,9 @@ export interface VideoSubmissionPanelProps {
   questionVideoUrl?: string;
   /** Max recording duration in seconds (default 120) */
   maxDurationSeconds?: number;
-  /** Candidate ID — used to call generateMediaUploadUrl */
+  /** Candidate ID — included in R2 path (candidate-submissions/{candidateId}/...) */
   candidateId: string;
-  /** Challenge ID — used to derive S3 path */
+  /** Challenge ID — used to derive the R2 key */
   challengeId: string;
 }
 
@@ -28,9 +29,9 @@ type PanelState = 'idle' | 'recording' | 'recorded' | 'uploading' | 'done' | 'er
 /**
  * VideoSubmissionPanel — candidate records and uploads a video response.
  *
- * Uses MediaRecorder for recording, then calls the generateMediaUploadUrl
- * mutation to get a presigned S3 PUT URL, uploads directly, and creates
- * a CandidateMedia record for the recruiter to read.
+ * Uses MediaRecorder for recording, then POSTs the blob directly to
+ * POST /rpc/upload-media (Cloudflare Worker → R2). The R2 key is passed
+ * to onUploaded for inclusion in the challenge submission JSON.
  */
 export function VideoSubmissionPanel({
   question,
@@ -43,10 +44,6 @@ export function VideoSubmissionPanel({
   challengeId,
 }: VideoSubmissionPanelProps): JSX.Element {
   const sessionToken = useSessionToken();
-  const dataFactory = useData();
-  const client = sessionToken
-    ? dataFactory.createSessionClient(sessionToken)
-    : dataFactory.createPublicClient();
   const [panelState, setPanelState] = useState<PanelState>(
     videoS3Key ? 'done' : 'idle',
   );
@@ -143,71 +140,50 @@ export function VideoSubmissionPanel({
     setPanelState('uploading');
     setErrorMsg(null);
 
-    // Guard: candidateId must be present
+    // Guard: candidateId and session token must be present
     if (!candidateId) {
       console.error('[VideoSubmissionPanel] Cannot upload: missing candidateId');
       setErrorMsg('Session error — please refresh and try again.');
       setPanelState('error');
       return;
     }
-
-    // 1. Get presigned PUT URL
-    console.log('[VideoSubmissionPanel] Calling generateMediaUploadUrl', {
-      candidateId,
-      challengeId,
-    });
-    const { data: uploadResult, errors } = await client.mutations.generateMediaUploadUrl!({
-      candidateId,
-      challengeId,
-      mimeType: 'video/webm',
-      mediaType: 'video',
-    });
-
-    const mediaData = uploadResult as { uploadUrl?: string; s3Key?: string } | null;
-
-    if (errors || !mediaData?.uploadUrl || !mediaData.s3Key) {
-      console.error('[VideoSubmissionPanel] generateMediaUploadUrl error:', errors);
-      setErrorMsg('Could not prepare upload. Please try again.');
+    if (!sessionToken) {
+      console.error('[VideoSubmissionPanel] Cannot upload: missing session token');
+      setErrorMsg('Session expired — please refresh and try again.');
       setPanelState('error');
       return;
     }
 
-    const { uploadUrl, s3Key } = mediaData as { uploadUrl: string; s3Key: string };
+    // POST the blob directly to the Worker media upload endpoint
+    const formData = new FormData();
+    formData.append('file', blob, `response-${challengeId}.webm`);
+    formData.append('challengeId', challengeId);
 
-    // 2. Upload directly to S3 via presigned PUT
+    let r2Key: string;
     try {
-      const res = await fetch(uploadUrl, {
-        method: 'PUT',
-        body: blob,
-        headers: { 'Content-Type': 'video/webm' },
+      const res = await fetch(`${API_BASE}/rpc/upload-media`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionToken}` },
+        body: formData,
       });
-      if (!res.ok) throw new Error(`S3 PUT responded ${res.status}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({})) as { error?: { message?: string } };
+        const msg = payload.error?.message ?? `Upload failed (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      const data = await res.json() as { r2Key: string };
+      r2Key = data.r2Key;
     } catch (err) {
-      console.error('[VideoSubmissionPanel] S3 upload error:', err);
+      console.error('[VideoSubmissionPanel] upload-media error:', err);
       setErrorMsg('Upload to storage failed. Please try again.');
       setPanelState('error');
       return;
     }
 
     const fname = `response-${challengeId}.webm`;
-
-    // 3. Create CandidateMedia record (non-fatal — primary submission is the s3Key)
-    try {
-      await client.models.CandidateMedia.create({
-        candidateId,
-        type: 'VIDEO_RECORDING',
-        s3Key,
-        filename: fname,
-        mimeType: 'video/webm',
-      });
-    } catch (err) {
-      // Non-fatal — submission still works without this record
-      console.warn('[VideoSubmissionPanel] CandidateMedia create failed:', err);
-    }
-
     setPanelState('done');
-    onUploaded(s3Key, fname, speech.transcript);
-  }, [candidateId, challengeId, onUploaded, speech.transcript]);
+    onUploaded(r2Key, fname, speech.transcript);
+  }, [candidateId, challengeId, sessionToken, onUploaded, speech.transcript]);
 
   const reset = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);

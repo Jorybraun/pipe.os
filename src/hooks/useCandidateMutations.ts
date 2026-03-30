@@ -22,6 +22,10 @@ export interface UpdateCandidateInput {
   status?: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED';
 }
 
+export interface RefreshLinkResponse {
+  inviteToken: string;
+}
+
 export interface UseCandidateMutationsResult {
   createCandidate: (
     pipelineId: string,
@@ -31,6 +35,7 @@ export interface UseCandidateMutationsResult {
     candidateId: string,
     input: UpdateCandidateInput,
   ) => Promise<void>;
+  refreshLink: (candidateId: string) => Promise<string>;
 }
 
 /**
@@ -87,5 +92,30 @@ export function useCandidateMutations(): UseCandidateMutationsResult {
     [getToken],
   );
 
-  return { createCandidate, updateCandidate };
+  /**
+   * Regenerate a candidate's invite token and reset status to INVITED.
+   * Returns the new invite token.
+   */
+  const refreshLink = useCallback(
+    async (candidateId: string): Promise<string> => {
+      const api = createApiClient({ getToken });
+      try {
+        const data = await api.post<RefreshLinkResponse>(
+          `/api/v1/candidates/${candidateId}/refresh-link`,
+          {},
+        );
+        return data.inviteToken;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          console.error('[useCandidateMutations] refreshLink API error:', err.code, err.message);
+        } else {
+          console.error('[useCandidateMutations] refreshLink unexpected error:', err);
+        }
+        throw err;
+      }
+    },
+    [getToken],
+  );
+
+  return { createCandidate, updateCandidate, refreshLink };
 }

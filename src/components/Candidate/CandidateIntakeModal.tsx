@@ -14,8 +14,8 @@ import {
 } from "lucide-react";
 import { LiquidMetalCard } from "..";
 import { FieldGroup, TextInput } from "../ui/form";
-import { useData, useStorage } from "../../providers";
 import { useCandidateCreate } from "../../hooks/useCandidateCreate";
+import { useAuth as useClerkAuth } from "@clerk/react";
 
 interface CandidateIntakeModalProps {
   pipelineId: string;
@@ -36,7 +36,9 @@ export function CandidateIntakeModal({
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
-  const [parsedData, setParsedData] = useState<{
+  // parsedData is populated by AI CV parsing (post-MVP). It is null until then
+  // but the CONFIRM step renders it when present, so the read is intentional.
+  const [parsedData] = useState<{
     name?: string;
     skills?: string[];
     yearsOfExperience?: number;
@@ -47,17 +49,7 @@ export function CandidateIntakeModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { create, isSubmitting: isCreating } = useCandidateCreate();
-
-  // Data + storage providers are only needed for resume parsing (post-MVP).
-  // During the Cloudflare migration, providers may be empty (providers={}).
-  // These hooks must be called unconditionally (React rules). If the underlying
-  // provider is not configured, createClient() will throw — guard that call.
-  const dataFactory = useData();
-  const storageProvider = useStorage();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let client: any = null;
-  try { client = dataFactory?.createClient?.(); } catch { /* provider not configured */ }
-  const storage = storageProvider ?? null;
+  const { getToken } = useClerkAuth();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -118,73 +110,47 @@ export function CandidateIntakeModal({
       if (!candidateId) throw new Error("Failed to create candidate");
       setCreatedCandidateId(candidateId);
 
-      // 2. Upload CV — flat prefix required by Amplify wildcard constraint (ADR-022)
-      const s3Key = `candidate-documents/${candidateId}/${file.name}`;
-      await storage.upload({
-        path: s3Key,
-        data: file,
-        contentType: file.type,
-      });
+      // 2. Upload CV directly to the Worker, which stores it in R2.
+      //    The Worker returns the R2 key and persists it on the candidate record.
+      const formData = new FormData();
+      formData.append("file", file);
 
-      // 2b. Persist the S3 key immediately on the Candidate record so VIEW_RESUME
-      // works on the profile page even if AI parsing fails or is slow.
-      await client.models.Candidate.update({ id: candidateId, resumeS3Key: s3Key });
+      const token = await getToken();
+      const baseUrl =
+        typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
+          ? import.meta.env.VITE_API_URL
+          : "http://localhost:8787";
 
-      // 2c. Create CandidateMedia record — best-effort.
-      // Will fail gracefully if the sandbox schema hasn't been redeployed yet.
-      try {
-        await client.models.CandidateMedia.create({
-          candidateId,
-          type: "RESUME",
-          s3Key,
-          filename: file.name,
-          mimeType: file.type,
-        });
-      } catch (mediaErr) {
-        console.error('[CandidateIntake] CandidateMedia record creation failed (non-fatal):', mediaErr);
-      }
-
-      // 3. Trigger Parsing Mutation — best-effort. The CV is already in S3 and the
-      // candidate record exists, so we always advance to CONFIRM regardless of whether
-      // AI parsing succeeds. A Lambda timeout or Mistral error must not undo the intake.
-      try {
-        const { data: parseResult, errors } = await client.mutations.parseCandidateCV!({
-          candidateId,
-          resumeS3Key: s3Key
-        });
-
-        if (!errors && parseResult) {
-          const result = typeof parseResult === 'string' ? JSON.parse(parseResult) : parseResult;
-          if (result.success && result.data) {
-            setParsedData(result.data);
-          } else {
-            console.warn('[CandidateIntake] CV parsing returned failure:', result.error);
-          }
-        } else {
-          console.warn('[CandidateIntake] CV parsing errors:', errors);
+      const uploadResponse = await fetch(
+        `${baseUrl}/api/v1/candidates/${candidateId}/resume`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          // Do NOT set Content-Type — browser must set the multipart boundary.
+          body: formData,
         }
-      } catch (parseErr) {
-        console.error('[CandidateIntake] CV parsing threw (non-fatal):', parseErr);
+      );
+
+      if (!uploadResponse.ok) {
+        let errMsg = `Upload failed (HTTP ${uploadResponse.status})`;
+        try {
+          const body = (await uploadResponse.json()) as { error?: { message?: string } };
+          if (body.error?.message) errMsg = body.error.message;
+        } catch { /* non-JSON body */ }
+        throw new Error(errMsg);
       }
 
-      // Always advance — candidate + S3 key are committed regardless of parse outcome
+      // R2 key is now stored server-side; we don't need to do anything extra.
+      // The candidate record already has resume_s3_key set by the Worker.
+
+      // AI parsing is post-MVP — always advance to CONFIRM after successful upload.
       setStep("CONFIRM");
 
     } catch (err) {
-      // Only reaches here if candidate creation or S3 upload failed
+      // Reaches here if candidate creation or R2 upload failed.
       console.error("[CandidateIntake] Fatal intake error:", err);
       setError(err instanceof Error ? err.message : "An error occurred during intake.");
       setStep("BASIC");
-
-      // Rollback: Delete candidate only if S3 upload hadn't started yet
-      if (candidateId) {
-        try {
-          await client.models.Candidate.delete({ id: candidateId });
-          console.log("[CandidateIntake] Rolled back candidate creation:", candidateId);
-        } catch (deleteErr) {
-          console.error("[CandidateIntake] Failed to rollback candidate:", deleteErr);
-        }
-      }
     } finally {
       setIsProcessing(false);
     }

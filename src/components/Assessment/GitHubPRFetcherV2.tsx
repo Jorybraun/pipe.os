@@ -5,12 +5,47 @@
  * Replaces GitHubPRFetcher for pages migrated away from Amplify.
  *
  * POST /api/v1/github/pr — no GitHub token exposed to the browser.
+ *
+ * Persists previously used repos to localStorage key `pipe-saved-repos`
+ * (JSON string array, max 10 entries) and surfaces them as clickable chips.
  */
 
 import { useState } from 'react';
 import { Github, Loader, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useGitHubPR } from '../../hooks/useGitHubPR';
 import type { GitHubPRData } from '../../hooks/useGitHubPR';
+
+// ─── Saved repos helpers ──────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'pipe-saved-repos';
+const MAX_SAVED = 10;
+
+function loadSavedRepos(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is string => typeof v === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function saveRepo(repoUrl: string): void {
+  const existing = loadSavedRepos().filter((r) => r !== repoUrl);
+  const updated = [repoUrl, ...existing].slice(0, MAX_SAVED);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // Storage quota exceeded or unavailable — silently ignore.
+  }
+}
+
+/** Extracts "owner/repo" from a full GitHub URL for display. */
+function repoLabel(url: string): string {
+  return url.replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '');
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +92,7 @@ export function GitHubPRFetcherV2({
     initialPrNumber ? String(initialPrNumber) : '',
   );
   const [successData, setSuccessData] = useState<GitHubPRData | null>(null);
+  const [savedRepos, setSavedRepos] = useState<string[]>(() => loadSavedRepos());
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -94,6 +130,8 @@ export function GitHubPRFetcherV2({
     const data = await fetchPR(repoUrl, prNum);
     if (data) {
       setSuccessData(data);
+      saveRepo(repoUrl);
+      setSavedRepos(loadSavedRepos());
       onPRFetched({
         githubRepoUrl: repoUrl,
         githubPrNumber: prNum,
@@ -197,6 +235,37 @@ export function GitHubPRFetcherV2({
   return (
     <div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {savedRepos.length > 0 && (
+          <div data-testid="saved-repos">
+            <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 8, display: 'block' }}>
+              SAVED_REPOS
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {savedRepos.map((url) => (
+                <button
+                  key={url}
+                  onClick={() => setRepoUrl(url)}
+                  title={url}
+                  style={{
+                    padding: '4px 10px',
+                    background: repoUrl === url ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.05)',
+                    border: repoUrl === url ? '1px solid rgba(251,191,36,0.35)' : '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 4,
+                    color: repoUrl === url ? '#fbbf24' : 'rgba(255,255,255,0.55)',
+                    fontSize: 10,
+                    fontFamily: 'Space Mono, monospace',
+                    cursor: 'pointer',
+                    letterSpacing: '0.04em',
+                    transition: 'background 0.12s, border-color 0.12s, color 0.12s',
+                  }}
+                >
+                  {repoLabel(url)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div>
           <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
             REPO_URL

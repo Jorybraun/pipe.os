@@ -13,5 +13,14 @@
       "database_id": "local",
       "migrations_dir": "migrations"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      // Wrangler dev emulates R2 locally — no bucket needs to exist.
+      // For production, create the bucket first:
+      //   npx wrangler r2 bucket create pipe-assets
+      "bucket_name": "pipe-assets"
+    }
   ]
 }

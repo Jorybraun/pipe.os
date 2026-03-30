@@ -689,4 +689,101 @@ rpcAuth.post('/submit-status', async (c) => {
   return c.json({ success: true });
 });
 
+// ── POST /rpc/upload-media ──────────────────────────────────────────────────
+//
+// Accepts a media file (audio or video) as multipart/form-data and writes it
+// directly to R2. Returns the R2 key so the frontend can store it in the
+// submission JSON.
+//
+// Field layout:
+//   file        — the binary blob (Blob/File)
+//   challengeId — string identifier for the challenge (used in R2 path)
+//
+// R2 path: candidate-submissions/{candidateId}/{challengeId}.webm
+// Auth: candidate JWT (candidateId extracted from verified token)
+
+/** Maximum accepted media file size: 50 MB. */
+const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
+
+/** MIME type guard — only audio/* and video/* are accepted. */
+function isMediaMime(mimeType: string): boolean {
+  return /^(audio|video)\//.test(mimeType);
+}
+
+rpcAuth.post('/upload-media', async (c) => {
+  const candidateId = c.get('candidateId');
+
+  // Parse multipart/form-data
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'Request must be multipart/form-data.' } },
+      400,
+    );
+  }
+
+  const fileEntry = formData.get('file');
+  if (!(fileEntry instanceof File)) {
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'No "file" field found in the request.' } },
+      400,
+    );
+  }
+
+  const challengeIdEntry = formData.get('challengeId');
+  if (typeof challengeIdEntry !== 'string' || !challengeIdEntry.trim()) {
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: '"challengeId" field is required.' } },
+      400,
+    );
+  }
+  const challengeId = challengeIdEntry.trim();
+
+  // Validate MIME type — must be audio/* or video/*
+  if (!isMediaMime(fileEntry.type)) {
+    return c.json(
+      {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Only audio/* and video/* MIME types are accepted.',
+        },
+      },
+      415,
+    );
+  }
+
+  // Validate size
+  if (fileEntry.size > MAX_MEDIA_BYTES) {
+    return c.json(
+      { error: { code: 'VALIDATION_ERROR', message: 'File exceeds the 50 MB limit.' } },
+      413,
+    );
+  }
+
+  // Derive extension from MIME — prefer .webm, fall back to subtype
+  const mimeSubtype = fileEntry.type.split('/')[1] ?? 'webm';
+  const ext = mimeSubtype.replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'webm';
+  const r2Key = `candidate-submissions/${candidateId}/${challengeId}.${ext}`;
+
+  // Write to R2
+  if (!c.env.STORAGE) {
+    console.error('[rpc/upload-media] R2 STORAGE binding not configured');
+    return c.json(
+      { error: { code: 'SERVER_ERROR', message: 'Storage not configured.' } },
+      503,
+    );
+  }
+  const arrayBuffer = await fileEntry.arrayBuffer();
+  await c.env.STORAGE.put(r2Key, arrayBuffer, {
+    httpMetadata: { contentType: fileEntry.type },
+    customMetadata: { candidateId, challengeId },
+  });
+
+  console.log('[rpc/upload-media] Stored media', { candidateId, challengeId, r2Key, size: fileEntry.size });
+
+  return c.json({ r2Key, uploadUrl: null }, 201);
+});
+
 export { rpcPublic, rpcAuth };

@@ -264,6 +264,8 @@ export function ChallengeCard({
                     e.stopPropagation();
                     onDelete(challenge);
                   }}
+                  title="Delete challenge"
+                  aria-label="Delete challenge"
                   style={{
                     background: "none",
                     border: "none",

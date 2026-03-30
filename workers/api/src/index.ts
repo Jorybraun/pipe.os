@@ -6,6 +6,7 @@ import { challenges } from './routes/challenges';
 import { github } from './routes/github';
 import { overview } from './routes/overview';
 import { pipelineCandidates, candidateOps } from './routes/candidates';
+import { challengeSubmissions } from './routes/challengeSubmissions';
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
@@ -58,8 +59,10 @@ app.route('/api/v1/github', github);
 app.route('/api/v1/pipelines', overview);
 // Candidates: POST /api/v1/pipelines/:pipelineId/candidates
 app.route('/api/v1/pipelines', pipelineCandidates);
-// Candidate ops: PATCH /api/v1/candidates/:candidateId
+// Candidate ops: GET/PATCH /api/v1/candidates/:candidateId
 app.route('/api/v1/candidates', candidateOps);
+// Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
+app.route('/api/v1/challenge-submissions', challengeSubmissions);
 
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);

@@ -7,6 +7,10 @@ import type { EditorFormProps } from './types';
 export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Element {
   const options = Array.isArray(challenge.config?.options) ? (challenge.config.options as { id: string; text: string }[]) : [];
   const correctId = challenge.serverConfig?.correctOptionId as string | undefined;
+  const correctIds = Array.isArray(challenge.serverConfig?.correctOptionIds)
+    ? (challenge.serverConfig.correctOptionIds as string[])
+    : [];
+  const selectionMode = (challenge.config?.selectionMode as string) === 'multi' ? 'multi' : 'single';
   const hasFollowUp = !!challenge.config?.enableFollowUp;
 
   // Keep a ref to the latest options so addOption always reads current values,
@@ -16,6 +20,28 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
 
   const setConfig = (patch: Record<string, unknown>) =>
     onChange({ ...challenge, config: { ...challenge.config, ...patch } });
+
+  const setSelectionMode = (mode: 'single' | 'multi') => {
+    onChange({
+      ...challenge,
+      config: { ...challenge.config, selectionMode: mode },
+      // Clear the correct answer state when switching modes to avoid stale data
+      serverConfig: {
+        ...challenge.serverConfig,
+        correctOptionId: mode === 'single' ? (challenge.serverConfig?.correctOptionId as string | undefined) : undefined,
+        correctOptionIds: mode === 'multi' ? (Array.isArray(challenge.serverConfig?.correctOptionIds) ? challenge.serverConfig.correctOptionIds : []) : undefined,
+      },
+    });
+  };
+
+  const toggleCorrectId = (optId: string) => {
+    const current = Array.isArray(challenge.serverConfig?.correctOptionIds)
+      ? (challenge.serverConfig.correctOptionIds as string[])
+      : [];
+    const idx = current.indexOf(optId);
+    const next = idx >= 0 ? current.filter((id) => id !== optId) : [...current, optId];
+    onChange({ ...challenge, serverConfig: { ...challenge.serverConfig, correctOptionIds: next } });
+  };
 
   const addOption = () => {
     const newId = crypto.randomUUID();
@@ -92,21 +118,42 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
             </button>
           </div>
           <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {options.map((opt, idx) => (
+            {options.map((opt, idx) => {
+              const isSingleCorrect = selectionMode === 'single' && correctId === opt.id;
+              const isMultiCorrect = selectionMode === 'multi' && correctIds.includes(opt.id);
+              const isCorrect = isSingleCorrect || isMultiCorrect;
+
+              return (
               <div key={opt.id} style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                {selectionMode === 'multi' ? (
+                  <button
+                    title="Mark as correct answer"
+                    onClick={() => toggleCorrectId(opt.id)}
+                    style={{
+                      width: 24, height: 24, borderRadius: 4, cursor: 'pointer',
+                      border: `2px solid ${isCorrect ? '#34d399' : 'rgba(255,255,255,0.1)'}`,
+                      background: isCorrect ? '#34d399' : 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
+                      boxShadow: isCorrect ? '0 0 10px rgba(52, 211, 153, 0.3)' : 'none',
+                    }}
+                  >
+                    {isCorrect && <div style={{ width: 10, height: 10, borderRadius: 2, background: '#fff' }} />}
+                  </button>
+                ) : (
                 <button
                   title="Mark as correct answer"
                   onClick={() => onChange({ ...challenge, serverConfig: { ...challenge.serverConfig, correctOptionId: opt.id } })}
                   style={{
                     width: 24, height: 24, borderRadius: '50%', cursor: 'pointer',
-                    border: `2px solid ${correctId === opt.id ? '#34d399' : 'rgba(255,255,255,0.1)'}`,
-                    background: correctId === opt.id ? '#34d399' : 'transparent',
+                    border: `2px solid ${isCorrect ? '#34d399' : 'rgba(255,255,255,0.1)'}`,
+                    background: isCorrect ? '#34d399' : 'transparent',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s',
-                    boxShadow: correctId === opt.id ? '0 0 10px rgba(52, 211, 153, 0.3)' : 'none',
+                    boxShadow: isCorrect ? '0 0 10px rgba(52, 211, 153, 0.3)' : 'none',
                   }}
                 >
-                  {correctId === opt.id && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
+                  {isCorrect && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                 </button>
+                )}
                 <input
                   value={opt.text}
                   onChange={(e) => {
@@ -137,7 +184,8 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                   <Trash2 size={16} />
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         </LiquidMetalCard>
       </div>
@@ -150,8 +198,51 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 8 }}>
               Multiple Choice
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
-              A single-choice question for quick assessment. Use the radio buttons on the left to mark the correct answer.
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 20 }}>
+              {selectionMode === 'multi'
+                ? 'Select all that apply. Candidates must pick every correct answer.'
+                : 'A single-choice question for quick assessment. Use the radio buttons on the left to mark the correct answer.'}
+            </div>
+
+            {/* SELECTION_MODE toggle */}
+            <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <button
+                onClick={() => setSelectionMode('single')}
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  background: selectionMode === 'single' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                  border: 'none',
+                  borderRight: '1px solid rgba(255,255,255,0.1)',
+                  color: selectionMode === 'single' ? '#fff' : 'rgba(255,255,255,0.4)',
+                  fontSize: 10,
+                  fontFamily: 'Space Mono, monospace',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  letterSpacing: '0.05em',
+                  transition: 'all 0.15s',
+                }}
+              >
+                SINGLE
+              </button>
+              <button
+                onClick={() => setSelectionMode('multi')}
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  background: selectionMode === 'multi' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                  border: 'none',
+                  color: selectionMode === 'multi' ? '#fff' : 'rgba(255,255,255,0.4)',
+                  fontSize: 10,
+                  fontFamily: 'Space Mono, monospace',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  letterSpacing: '0.05em',
+                  transition: 'all 0.15s',
+                }}
+              >
+                MULTI
+              </button>
             </div>
           </div>
 

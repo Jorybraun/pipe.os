@@ -160,17 +160,6 @@ Feature: Add Challenge
 ```gherkin
 Feature: Challenge Editor
 
-  Scenario: Edit CODE_IMPLEMENTATION challenge
-    Given the recruiter navigates to /pipeline/:id/challenges/:challengeId
-    And the challenge is type CODE_IMPLEMENTATION
-    When the recruiter updates the title to "Binary Search"
-    And modifies the starter code in config
-    And adds test cases in serverConfig
-    And clicks "SAVE"
-    Then a PUT /api/v1/challenges/:challengeId is sent
-    And the challenge record in D1 is updated with new title, config, and serverConfig
-    And a success indicator appears
-
   Scenario: Edit QUIZ_MCQ challenge
     Given the recruiter opens a QUIZ_MCQ challenge in the editor
     When the recruiter updates the question text and answer options
@@ -190,6 +179,134 @@ Feature: Challenge Editor
     Then a blank CODE_IMPLEMENTATION editor is shown with starter code template
     And no API call is made until the recruiter clicks "SAVE"
     And saving creates a new challenge via POST /api/v1/stages/:stageId/challenges
+```
+
+### 2.5.1 Code challenge content editor
+
+> **Current state:** The CODE_IMPLEMENTATION content editor tab is a stub — a placeholder message saying "configured with templates." The tab exists but has no editing capability.
+>
+> **Goal:** A two-panel content editor that lets recruiters author code challenges with description, boilerplate code, and test files. Pre-existing challenges from the challenge library are **locked** unless the recruiter clicks **CLONE**, which creates an editable copy.
+>
+> **Future:** The follow-up agent should be able to programmatically create code challenges using the same data model, so it can generate assessment exercises based on what it's following up on.
+
+#### Layout
+
+The CONTENT_EDITOR tab for code challenges uses a **two-panel layout**:
+
+```
+┌─────────────────────────────────┬─────────────────────────────────┐
+│          LEFT PANEL             │          RIGHT PANEL            │
+│                                 │                                 │
+│  DESCRIPTION (markdown)         │  FILES                          │
+│                                 │  ┌─────────────────────────────┐│
+│  The problem statement that     │  │ [App.js] [styles.css] [+]   ││
+│  candidates see. Supports       │  ├─────────────────────────────┤│
+│  markdown with code blocks,     │  │                             ││
+│  lists, and formatting.         │  │  // Boilerplate code        ││
+│                                 │  │  // that candidates start   ││
+│                                 │  │  // with                    ││
+│                                 │  │                             ││
+│                                 │  ├─────────────────────────────┤│
+│                                 │  │ [test.js] (hidden from      ││
+│                                 │  │  candidate — validation     ││
+│                                 │  │  tests that run on submit)  ││
+│                                 │  └─────────────────────────────┘│
+│                                 │                                 │
+│  [PREVIEW]  ← button, not tab  │                                 │
+└─────────────────────────────────┴─────────────────────────────────┘
+```
+
+- **Left panel:** Markdown editor for the problem description (what the candidate sees)
+- **Right panel:** File editor with tabs. Each file has a name and content. Files can be added/removed.
+- **Test file:** A special file (e.g. `test.js`) that contains validation tests. May or may not be visible to the candidate (configurable). Runs on submit to verify correctness.
+- **Preview button:** Opens a preview of the full candidate view (description + code workspace). This is a button, NOT a tab — it opens in overlay/modal.
+
+#### Locked vs editable content
+
+```gherkin
+Feature: Code Challenge Content Editor
+
+  Scenario: Edit content of a new code challenge
+    Given the recruiter creates a new CODE_IMPLEMENTATION challenge
+    When the CONTENT_EDITOR tab is selected
+    Then the left panel shows an empty markdown editor for the description
+    And the right panel shows a file editor with a single starter file
+    And both panels are editable
+
+  Scenario: Pre-existing challenge content is locked
+    Given the recruiter selects a pre-existing challenge from the challenge library
+    When the CONTENT_EDITOR tab is selected
+    Then the description panel is read-only (not editable)
+    And the file editor is read-only (not editable)
+    And a banner reads "This challenge is from the library. Clone to edit."
+    And a CLONE button is visible
+
+  Scenario: Clone unlocks content for editing
+    Given the recruiter is viewing a locked pre-existing challenge
+    When the recruiter clicks "CLONE"
+    Then a new challenge is created with "(Clone)" appended to the title
+    And the recruiter is navigated to the new challenge's editor page
+    And both the description and file editor are now editable
+
+  Scenario: Add and remove files in the editor
+    Given the recruiter is editing a code challenge
+    When the recruiter clicks the [+] button in the file tab bar
+    Then a new file tab appears with a default name
+    And the recruiter can rename the file and add content
+    When the recruiter clicks the [x] on a file tab
+    Then the file is removed (with confirmation if it has content)
+
+  Scenario: Create a test file
+    Given the recruiter is editing a code challenge
+    When the recruiter adds a new file named "test.js"
+    And marks it as a test file via the file settings
+    Then the file is stored in serverConfig (not config)
+    And a toggle controls whether the test file is visible to candidates
+
+  Scenario: Preview the candidate view
+    Given the recruiter has authored a description and boilerplate files
+    When the recruiter clicks the "PREVIEW" button
+    Then an overlay shows the candidate's view of the challenge
+    And the preview includes the rendered description and the code workspace
+    And the preview is read-only (no editing)
+    And the recruiter can close the preview to return to editing
+
+  Scenario: Save code challenge content
+    Given the recruiter has edited the description and files
+    When the recruiter clicks "SAVE_CHANGES"
+    Then the description is stored in config.description
+    And each file is stored in config.files as an array of { name, content }
+    And test files are stored in serverConfig.testFiles
+    And the challenge is persisted via PUT /api/v1/challenges/:challengeId
+```
+
+#### Data model for code challenge content
+
+```typescript
+// config (sent to candidate)
+interface CodeChallengeConfig {
+  description: string;                    // Markdown problem statement
+  files: Array<{
+    name: string;                         // e.g. "App.js", "styles.css"
+    content: string;                      // Boilerplate/starter code
+    language: string;                     // e.g. "javascript", "html", "css"
+  }>;
+  visibleTestFile?: {                     // Test file shown to candidate (optional)
+    name: string;
+    content: string;
+    language: string;
+  };
+}
+
+// serverConfig (NEVER sent to candidate)
+interface CodeChallengeServerConfig {
+  testFiles: Array<{                      // Validation tests run on submit
+    name: string;
+    content: string;
+    language: string;
+  }>;
+  scoringRubric?: string;                 // Recruiter-authored scoring notes
+}
 ```
 
 ### 2.6 Recruiter invites a candidate (generates invite link)

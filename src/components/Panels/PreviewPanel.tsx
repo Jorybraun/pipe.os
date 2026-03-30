@@ -1,4 +1,5 @@
 import { SandpackProvider, SandpackPreview, SandpackLayout } from "@codesandbox/sandpack-react";
+import type { SandpackPredefinedTemplate } from "@codesandbox/sandpack-react";
 import { useMemo } from 'react';
 import type { VirtualFS } from '../../lib/challenge/virtualFS';
 import { fsToSandpackFiles } from '../../lib/challenge/virtualFS';
@@ -42,8 +43,8 @@ export function PreviewPanel({
     return {};
   }, [code, language, virtualFS]);
 
-  const resolvedTemplate = useMemo(() => {
-    if (templateOverride) return templateOverride;
+  const resolvedTemplate = useMemo((): SandpackPredefinedTemplate => {
+    if (templateOverride) return templateOverride as SandpackPredefinedTemplate;
     // Auto-detect: if VFS has .html file, use vanilla template
     if (virtualFS) {
       const hasHtml = Object.keys(virtualFS).some((p) => p.endsWith('.html'));
@@ -54,7 +55,10 @@ export function PreviewPanel({
   }, [language, virtualFS, templateOverride]);
 
   return (
-    <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#0c0c0e' }}>
+    <div
+      data-testid="preview-panel"
+      style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#0c0c0e' }}
+    >
       {!hideHeader && (
         <header style={{
           padding: '10px 16px',
@@ -74,8 +78,7 @@ export function PreviewPanel({
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <SandpackProvider
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          template={resolvedTemplate as any}
+          template={resolvedTemplate}
           files={files}
           theme="dark"
           options={{

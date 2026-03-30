@@ -1,5 +1,7 @@
 import { useState, ReactNode, useMemo, useEffect } from 'react';
 import { useData, useStorage } from '../../providers';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
 import { resolveLayout, PanelType } from '../../lib/challenge/resolveLayout';
 import { resolveShells } from '../../lib/challenge/resolveShells';
 import { WorkspaceLayout } from './WorkspaceLayout';
@@ -59,28 +61,37 @@ function parseDiffJson(raw: unknown): DiffJson | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as {
     files?: Array<{
-      path: string;
+      path?: string;
+      filename?: string;
       status: string;
       additions: number;
       deletions: number;
       hunks: Array<{
         header: string;
-        lines: Array<{ type: string; lineNumber: number; content: string }>;
+        lines: Array<{ type: string; lineNumber?: number; num?: number; content: string }>;
       }>;
     }>;
   };
   if (!r.files?.length) return null;
+
+  // Map API type names → DiffPanel type names
+  const mapType = (t: string): 'addition' | 'deletion' | 'context' => {
+    if (t === 'added' || t === 'addition') return 'addition';
+    if (t === 'removed' || t === 'deletion') return 'deletion';
+    return 'context';
+  };
+
   return {
     files: r.files.map((f) => ({
-      path: f.path,
+      path: f.path ?? f.filename ?? 'unknown',
       status: f.status as 'added' | 'modified' | 'deleted',
       additions: f.additions,
       deletions: f.deletions,
       hunks: f.hunks.map((h) => ({
         header: h.header,
-        lines: h.lines.map((l) => ({
-          type: l.type as 'addition' | 'deletion' | 'context',
-          num: l.lineNumber,
+        lines: h.lines.map((l, idx) => ({
+          type: mapType(l.type),
+          num: l.lineNumber ?? l.num ?? (idx + 1),
           content: l.content,
         })),
       })),
@@ -114,6 +125,7 @@ export function ChallengeRegistry({
   const sessionToken = useSessionToken();
   const dataFactory = useData();
   const storage = useStorage();
+  // diffClient is used for CODE_REVIEW on-demand PR fetching (Amplify — to be migrated separately)
   const diffClient = sessionToken
     ? dataFactory.createSessionClient(sessionToken)
     : dataFactory.createPublicClient();
@@ -502,25 +514,23 @@ export function ChallengeRegistry({
             }
             {...(questionVideoUrl !== null ? { questionVideoUrl } : {})}
             onAudioReady={(blob) => {
-              // Fire-and-forget S3 upload for audio backup
+              // Fire-and-forget R2 upload for audio backup via Worker endpoint
               void (async () => {
-                if (!candidateId) return;
+                if (!candidateId || !sessionToken) return;
                 try {
-                  const apiClient = dataFactory.createPublicClient();
-                  const { data: uploadResult } = await apiClient.mutations.generateMediaUploadUrl!({
-                    candidateId,
-                    challengeId: challenge.id,
-                    mimeType: 'audio/webm',
-                    mediaType: 'audio',
+                  const formData = new FormData();
+                  formData.append('file', blob, `response-${challenge.id}.webm`);
+                  formData.append('challengeId', challenge.id);
+                  const res = await fetch(`${API_BASE}/rpc/upload-media`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${sessionToken}` },
+                    body: formData,
                   });
-                  const mediaData = uploadResult as { uploadUrl?: string; s3Key?: string } | null;
-                  if (mediaData?.uploadUrl && mediaData.s3Key) {
-                    await fetch(mediaData.uploadUrl, {
-                      method: 'PUT',
-                      body: blob,
-                      headers: { 'Content-Type': 'audio/webm' },
-                    });
-                    setSubmission((prev) => ({ ...prev, audioS3Key: mediaData.s3Key }));
+                  if (res.ok) {
+                    const data = await res.json() as { r2Key: string };
+                    setSubmission((prev) => ({ ...prev, audioS3Key: data.r2Key }));
+                  } else {
+                    console.warn('[ChallengeRegistry] Audio backup upload failed with status:', res.status);
                   }
                 } catch (err) {
                   console.warn('[ChallengeRegistry] Audio backup upload failed:', err);

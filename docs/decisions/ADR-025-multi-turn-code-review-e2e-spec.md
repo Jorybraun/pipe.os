@@ -5,6 +5,9 @@
 **Depends on:** [ADR-024 — Multi-Turn Agentic Code Review](ADR-024-multi-turn-agentic-code-review.md)
 **Migration:** [Phase 3 — Candidate Flow](../../migration/phase-3-candidate-flow.md)
 
+> **Source of truth:** [`research/code-review-arena/spec/system-spec.md`](../../../research/code-review-arena/spec/system-spec.md)
+> This ADR records the original E2E spec. The system spec has been updated with structured comment formats, implementer move types (comment/change/pushback), per-comment scoring, and the full agent contracts. When this ADR conflicts with the system spec, the system spec wins.
+
 ---
 
 ## Context

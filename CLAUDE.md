@@ -33,6 +33,19 @@ Every feature starts with a route. Every route starts with a Playwright test. Se
 
 The migration phases define the routes, BDD scenarios, and acceptance criteria. Follow them.
 
+### QA / Bug-fix loop
+
+For bugs and QA validation, follow this cycle:
+
+```
+1. BDD    — Write a failing Playwright test that reproduces the bug / defines the feature
+2. Code   — Implement the fix or feature until the test passes
+3. Chrome — Validate visually in Chrome (browser automation) to confirm real UX
+4. Repeat — Move to the next item
+```
+
+Never skip steps. Never validate in Chrome before the BDD test exists.
+
 ---
 
 ## Code quality

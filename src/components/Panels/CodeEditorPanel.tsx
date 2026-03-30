@@ -62,7 +62,7 @@ export function CodeEditorPanel({
       <div style={{ flex: 1 }}>
         {currentFile ? (
           <MonacoPanel
-            language={currentFile.language}
+            language={currentFile.language ?? 'javascript'}
             value={currentFile.content}
             onChange={handleChange}
             {...(currentFile.readOnly ? { readOnly: true } : {})}

@@ -127,11 +127,18 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // Error state
   // ---------------------------------------------------------------------------
 
-  if (error) {
+  // Terminal errors (invalid token, completed, expired) show a full-page error.
+  // Non-terminal errors (submission failures) are shown inline so the candidate can retry.
+  const isTerminalError = error && (
+    error.message === 'INVALID_TOKEN' ||
+    error.message === 'ALREADY_COMPLETED' ||
+    error.message === 'SESSION_EXPIRED'
+  );
+
+  if (isTerminalError) {
     const isInvalid = error.message === 'INVALID_TOKEN';
     const isCompleted = error.message === 'ALREADY_COMPLETED';
     const isSessionExpired = error.message === 'SESSION_EXPIRED';
-    const isTerminal = isInvalid || isCompleted || isSessionExpired;
 
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
@@ -150,13 +157,32 @@ export default function CandidateAssessmentPage(): JSX.Element {
               : isSessionExpired ? 'Your session has expired. Please contact your recruiter for a new invite link.'
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
-          {!isTerminal && (
-            <button onClick={() => reset()} style={{
-              padding: '12px 24px', background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)', color: '#fff',
-              fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
-            }}>RETRY_CONNECTION</button>
-          )}
+          <button onClick={() => reset()} style={{
+            padding: '12px 24px', background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.2)', color: '#fff',
+            fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
+          }}>RETRY_CONNECTION</button>
+        </LiquidMetalCard>
+      </div>
+    );
+  }
+
+  // Non-terminal error (e.g. submission failure) — show before initial load only
+  if (error && !hasStarted) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
+        <ChromeMeshGrid />
+        <LiquidMetalCard variant="mercury" style={{ maxWidth: 480, padding: 48, textAlign: 'center', zIndex: 1 }}>
+          <AlertCircle size={48} color="rgba(255,100,100,0.5)" style={{ marginBottom: 24 }} />
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 16 }}>Connection Error</h2>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
+            There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.
+          </p>
+          <button onClick={() => reset()} style={{
+            padding: '12px 24px', background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.2)', color: '#fff',
+            fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
+          }}>RETRY_CONNECTION</button>
         </LiquidMetalCard>
       </div>
     );
@@ -239,6 +265,34 @@ export default function CandidateAssessmentPage(): JSX.Element {
         }}>PREVIEW_MODE — This is a preview. Responses will not be scored or saved.</div>
       )}
 
+      {/* Inline submission error banner — shown when submit fails mid-assessment */}
+      {error && hasStarted && (
+        <div
+          data-testid="submission-error"
+          style={{
+            position: 'fixed',
+            top: 12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 200,
+            background: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: 8,
+            padding: '12px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            maxWidth: 600,
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <AlertCircle size={18} color="#f87171" />
+          <span style={{ fontSize: 12, color: '#f87171', fontFamily: '"Space Mono", monospace', fontWeight: 700, letterSpacing: '0.05em' }}>
+            SUBMISSION_FAILED — {error.message}. Please try again.
+          </span>
+        </div>
+      )}
+
       <InterviewProvider
         key={`${currentOrder}-${challengeContent.title}`}
         stageConfig={resolvedConfig}
@@ -253,7 +307,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
             currentChallengeIndex={currentOrder}
             onNext={() => handleSubmit()}
             isLastChallenge={isLastChallenge}
-            fullBleed={currentType === 'CODE_REVIEW'}
+            fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION'}
             canAdvance={!isPreview && (followUpReady || (!isFollowUp && currentSubmission !== null))}
             isSubmitting={isLoading}
           >

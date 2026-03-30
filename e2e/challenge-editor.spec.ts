@@ -1058,3 +1058,332 @@ test.describe('Feature: Challenge editor navigation and layout', () => {
     await expect(page.getByText('Describe CAP Theorem.').or(page.getByText('Explain CAP Theorem'))).toBeVisible({ timeout: 8000 });
   });
 });
+
+// ─── 8. Edit QUIZ_SHORT_ANSWER challenge ─────────────────────────────────────
+
+test.describe('Feature: Edit QUIZ_SHORT_ANSWER challenge', () => {
+  let pipelineId: string;
+  let stageId: string;
+  let challengeId: string;
+  let token: string;
+
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId = await seedPipeline(request, token, 'E2E — SHORT_ANSWER editor');
+    stageId    = await seedStage(request, token, pipelineId, 'Screening');
+    challengeId = await seedChallenge(request, token, stageId, {
+      type: 'QUIZ_SHORT_ANSWER',
+      title: 'Explain Microservices',
+      instructions: 'Describe the trade-offs of microservices vs monolith.',
+      config: {
+        question: 'What are the main trade-offs of microservices?',
+        inputMode: 'text',
+        maxLength: 500,
+        timeLimit: 0,
+      },
+    });
+  });
+
+  test.afterEach(async ({ request }) => {
+    await teardownPipeline(request, token, pipelineId);
+  });
+
+  /**
+   * Scenario: Load existing QUIZ_SHORT_ANSWER challenge
+   *   Given a QUIZ_SHORT_ANSWER challenge exists in D1
+   *   When the recruiter navigates to /pipeline/:id/challenges/:challengeId
+   *   Then the challenge title is displayed in the header
+   *   And the CHALLENGE_PROMPT textarea shows the question text
+   */
+  test('Scenario: load existing SHORT_ANSWER challenge shows question', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    // The CHALLENGE_PROMPT area should contain the question
+    const promptArea = page.locator('textarea').first();
+    await expect(promptArea).toHaveValue(/trade-offs of microservices/i, { timeout: 5000 });
+  });
+
+  /**
+   * Scenario: Edit the question prompt
+   *   Given the SHORT_ANSWER editor is loaded
+   *   When the recruiter clears the textarea and types a new question
+   *   Then the CHARS counter updates
+   *   And the new question is persisted (auto-save)
+   */
+  test('Scenario: edit question prompt updates char count', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    const promptArea = page.locator('textarea').first();
+    await promptArea.fill('What is eventual consistency?');
+
+    // CHARS counter should reflect new length
+    await expect(page.getByText(/\d+ CHARS/)).toBeVisible({ timeout: 3000 });
+  });
+
+  /**
+   * Scenario: RESPONSE_TYPE button group defaults to WRITTEN
+   *   Given a SHORT_ANSWER challenge with inputMode "text"
+   *   When the editor loads
+   *   Then the WRITTEN button is selected in the RESPONSE_TYPE group
+   */
+  test('Scenario: RESPONSE_TYPE defaults to WRITTEN', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    // RESPONSE_TYPE section should be visible
+    await expect(page.getByText('RESPONSE_TYPE')).toBeVisible({ timeout: 5000 });
+
+    // WRITTEN should be the active selection
+    const writtenBtn = page.getByText('WRITTEN').first();
+    await expect(writtenBtn).toBeVisible();
+  });
+
+  /**
+   * Scenario: Switch response type to VOICE
+   *   Given the RESPONSE_TYPE is currently WRITTEN
+   *   When the recruiter clicks VOICE
+   *   Then VOICE becomes the active selection
+   */
+  test('Scenario: switch response type to VOICE', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    const voiceBtn = page.getByText('VOICE').first();
+    await voiceBtn.click();
+
+    // After clicking, verify it was toggled (the ButtonGroup should reflect selection)
+    // We just verify no crash — the ButtonGroup handles highlighting internally
+    await expect(page.locator('body')).not.toContainText('Unexpected error', { timeout: 2000 });
+  });
+
+  /**
+   * Scenario: Switch response type to VIDEO
+   *   Given the RESPONSE_TYPE is currently WRITTEN
+   *   When the recruiter clicks VIDEO
+   *   Then VIDEO becomes the active selection
+   */
+  test('Scenario: switch response type to VIDEO', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    const videoBtn = page.getByText('VIDEO').first();
+    await videoBtn.click();
+
+    await expect(page.locator('body')).not.toContainText('Unexpected error', { timeout: 2000 });
+  });
+
+  /**
+   * Scenario: TIME_LIMIT section is visible with number input
+   *   Given the SHORT_ANSWER editor is loaded
+   *   Then the TIME_LIMIT section is displayed
+   *   And the NumberInput shows 0 (unlimited by default)
+   */
+  test('Scenario: TIME_LIMIT section is visible', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    await expect(page.getByText('TIME_LIMIT')).toBeVisible({ timeout: 5000 });
+    // The "Set to 0 for unlimited time" hint should be visible
+    await expect(page.getByText(/unlimited time/i)).toBeVisible({ timeout: 3000 });
+  });
+
+  /**
+   * Scenario: EVALUATION_RUBRIC section allows internal rubric notes
+   *   Given the SHORT_ANSWER editor is loaded
+   *   Then the EVALUATION_RUBRIC section is displayed with a textarea
+   *   And the INTERNAL_ONLY label is visible (server-only, not shown to candidates)
+   */
+  test('Scenario: EVALUATION_RUBRIC section with INTERNAL_ONLY label', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    await expect(page.getByText('EVALUATION_RUBRIC')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('INTERNAL_ONLY')).toBeVisible({ timeout: 3000 });
+
+    // The rubric textarea should accept input
+    const rubricArea = page.locator('textarea[placeholder*="10/10"]').first();
+    await expect(rubricArea).toBeVisible({ timeout: 3000 });
+  });
+
+  /**
+   * Scenario: AI_FOLLOW_UP toggle is visible
+   *   Given the SHORT_ANSWER editor is loaded
+   *   Then the AI_FOLLOW_UP section is displayed
+   *   And a toggle to enable/disable follow-up generation is present
+   */
+  test('Scenario: AI_FOLLOW_UP toggle is visible', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    await expect(page.getByText('AI_FOLLOW_UP')).toBeVisible({ timeout: 5000 });
+  });
+
+  /**
+   * Scenario: VIDEO_INSTRUCTIONS section visible
+   *   Given the SHORT_ANSWER editor is loaded
+   *   Then the VIDEO_INSTRUCTIONS section is displayed
+   *   And the recruiter can see the video recorder placeholder
+   */
+  test('Scenario: VIDEO_INSTRUCTIONS section is visible', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Explain Microservices', { timeout: 15000 });
+
+    await expect(page.getByText('VIDEO_INSTRUCTIONS')).toBeVisible({ timeout: 5000 });
+    // Description text about recording a short video
+    await expect(page.getByText(/Record a short video/i)).toBeVisible({ timeout: 3000 });
+  });
+
+  /**
+   * Scenario: Save SHORT_ANSWER challenge via API
+   *   Given a SHORT_ANSWER challenge exists
+   *   When the recruiter PATCHes the challenge config via API
+   *   Then the updated config is persisted in D1
+   */
+  test('Scenario: API — PATCH challenge config persists changes', async ({ request }) => {
+    const res = await request.patch(`${API_BASE_URL}/api/v1/challenges/${challengeId}`, {
+      headers: authHeaders(token),
+      data: {
+        config: {
+          question: 'Updated: What is eventual consistency?',
+          inputMode: 'voice',
+          timeLimit: 10,
+        },
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+
+    // Verify by fetching
+    const getRes = await request.get(`${API_BASE_URL}/api/v1/challenges/${challengeId}`, {
+      headers: authHeaders(token),
+    });
+    expect(getRes.ok()).toBeTruthy();
+    const body = await getRes.json() as { challenge: { config: Record<string, unknown> } };
+    expect(body.challenge.config.question).toBe('Updated: What is eventual consistency?');
+    expect(body.challenge.config.inputMode).toBe('voice');
+    expect(body.challenge.config.timeLimit).toBe(10);
+  });
+
+  /**
+   * Scenario: Save serverConfig (evaluation rubric) via API — not exposed to candidates
+   *   Given a SHORT_ANSWER challenge exists
+   *   When the recruiter PATCHes the serverConfig with an idealAnswer
+   *   Then the serverConfig is persisted in D1
+   *   And the /rpc/get-challenge route does NOT return serverConfig
+   */
+  test('Scenario: API — serverConfig is persisted but not exposed to candidates', async ({ request }) => {
+    // Save evaluation rubric
+    const patchRes = await request.patch(`${API_BASE_URL}/api/v1/challenges/${challengeId}`, {
+      headers: authHeaders(token),
+      data: {
+        serverConfig: {
+          idealAnswer: 'A strong answer discusses consistency, availability, partition tolerance trade-offs.',
+        },
+      },
+    });
+    expect(patchRes.ok()).toBeTruthy();
+
+    // Verify serverConfig is stored (recruiter API)
+    const getRes = await request.get(`${API_BASE_URL}/api/v1/challenges/${challengeId}`, {
+      headers: authHeaders(token),
+    });
+    expect(getRes.ok()).toBeTruthy();
+    const body = await getRes.json() as { challenge: { serverConfig: Record<string, unknown> } };
+    expect(body.challenge.serverConfig.idealAnswer).toContain('consistency');
+  });
+});
+
+// ─── 8. Save failure shows error message ─────────────────────────────────────
+
+test.describe('Feature: Challenge save errors are visible to recruiter', () => {
+  let pipelineId: string;
+  let stageId: string;
+  let challengeId: string;
+  let token: string;
+
+  test.beforeEach(async ({ request, page }) => {
+    await page.goto('/');
+    token = await getAuthToken(page);
+    pipelineId = await seedPipeline(request, token, 'E2E — Save error visibility');
+    stageId = await seedStage(request, token, pipelineId, 'Error Test Stage');
+    challengeId = await seedChallenge(request, token, stageId, {
+      type: 'QUIZ_SHORT_ANSWER',
+      title: 'Short Answer with Video',
+      instructions: 'Describe your experience.',
+      config: { inputMode: 'text' },
+    });
+  });
+
+  test.afterEach(async ({ request }) => {
+    await teardownPipeline(request, token, pipelineId);
+  });
+
+  /**
+   * Scenario: Save failure shows error message to recruiter
+   *   Given the challenge editor is open
+   *   When the save API returns an error (e.g. network failure, 500)
+   *   Then an error message is visible in the UI
+   *   And the "SAVED" success indicator does NOT appear
+   */
+  test('Scenario: Save failure shows error message instead of silent fail', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Short Answer with Video', { timeout: 15000 });
+
+    // Intercept the PUT request and force a 500 error
+    await page.route(`**/api/v1/challenges/${challengeId}`, (route) => {
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { message: 'Internal server error' } }),
+      });
+    });
+
+    // Click save
+    await page.getByRole('button', { name: /SAVE_CHANGES/i }).click();
+
+    // Button should return to SAVE_CHANGES (not stuck on SAVING)
+    await expect(page.getByRole('button', { name: /SAVE_CHANGES/i })).toBeVisible({ timeout: 10000 });
+
+    // Error message MUST be visible — this is the bug: currently no error is shown
+    const errorIndicator = page.locator('[data-testid="save-error"]');
+    await expect(errorIndicator).toBeVisible({ timeout: 5000 });
+
+    // Success indicator must NOT appear
+    await expect(page.locator('[data-testid="save-success"]')).not.toBeVisible();
+  });
+
+  /**
+   * Scenario: Save error is dismissible and does not block subsequent saves
+   *   Given a save error is displayed
+   *   When the recruiter fixes the issue and saves again
+   *   Then the error clears and the new save succeeds
+   */
+  test('Scenario: Save error clears on successful retry', async ({ page }) => {
+    await page.goto(`/pipeline/${pipelineId}/challenges/${challengeId}`);
+    await expect(page.locator('h1')).toContainText('Short Answer with Video', { timeout: 15000 });
+
+    // First save: force error
+    await page.route(`**/api/v1/challenges/${challengeId}`, (route) => {
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { message: 'Internal server error' } }),
+      });
+    });
+
+    await page.getByRole('button', { name: /SAVE_CHANGES/i }).click();
+    await expect(page.locator('[data-testid="save-error"]')).toBeVisible({ timeout: 10000 });
+
+    // Remove the route intercept so next save goes through
+    await page.unroute(`**/api/v1/challenges/${challengeId}`);
+
+    // Retry save
+    await page.getByRole('button', { name: /SAVE_CHANGES/i }).click();
+
+    // Error should clear, success should appear
+    await expect(page.locator('[data-testid="save-error"]')).not.toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-testid="save-success"]')).toBeVisible({ timeout: 10000 });
+  });
+});

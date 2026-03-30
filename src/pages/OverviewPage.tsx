@@ -19,6 +19,7 @@ import {
   GripVertical,
   Trash2,
   Rocket,
+  RefreshCw,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -252,15 +253,18 @@ function SortableStage({
 function CandidateKanbanCard({
   candidate,
   onClick,
+  onRefresh,
   isOverlay = false,
   disabled = false,
 }: {
   candidate: OverviewCandidate;
   onClick: () => void;
+  onRefresh?: (candidateId: string) => Promise<void>;
   isOverlay?: boolean;
   disabled?: boolean;
 }): JSX.Element {
   const [copied, setCopied] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const {
     attributes,
@@ -284,6 +288,7 @@ function CandidateKanbanCard({
   };
 
   const rawToken = (candidate.inviteToken || "").replace(/^CLAIMED::/, "");
+  const isClaimed = (candidate.inviteToken || "").startsWith("CLAIMED::");
 
   const handleCopyLink = useCallback(
     (e: React.MouseEvent) => {
@@ -294,6 +299,20 @@ function CandidateKanbanCard({
       setTimeout(() => setCopied(false), 2000);
     },
     [rawToken],
+  );
+
+  const handleRefresh = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!onRefresh || refreshing) return;
+      setRefreshing(true);
+      try {
+        await onRefresh(candidate.id);
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [onRefresh, candidate.id, refreshing],
   );
 
   const initials = (candidate.name || "")
@@ -401,6 +420,29 @@ function CandidateKanbanCard({
               </div>
             </div>
 
+            {/* LINK_USED Badge */}
+            {isClaimed && (
+              <div style={{ marginBottom: 6 }}>
+                <span
+                  data-testid="link-used-badge"
+                  style={{
+                    display: "inline-block",
+                    fontSize: 8,
+                    fontWeight: 800,
+                    letterSpacing: "0.1em",
+                    fontFamily: "Space Mono",
+                    color: "#fbbf24",
+                    background: "rgba(251, 191, 36, 0.1)",
+                    border: "1px solid rgba(251, 191, 36, 0.25)",
+                    borderRadius: 3,
+                    padding: "2px 6px",
+                  }}
+                >
+                  LINK_USED
+                </span>
+              </div>
+            )}
+
             {/* Quick Stats & Status Row */}
             <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -471,6 +513,24 @@ function CandidateKanbanCard({
             >
               {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
             </button>
+            <button
+              onClick={handleRefresh}
+              aria-label="Regenerate invite link"
+              data-testid="refresh-candidate"
+              title="Regenerate invite link"
+              disabled={refreshing}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: refreshing ? "#8b5cf6" : "rgba(255,255,255,0.3)",
+                cursor: refreshing ? "wait" : "pointer",
+                padding: 4,
+                transition: "all 0.2s ease",
+                animation: refreshing ? "spin 1s linear infinite" : undefined,
+              }}
+            >
+              <RefreshCw size={14} />
+            </button>
           </div>
         </div>
       </LiquidMetalCard>
@@ -494,7 +554,7 @@ export default function OverviewPage(): JSX.Element {
     useOverviewData(id);
 
   const { createStage, reorderStages, deleteStage } = useStageMutations();
-  const { updateCandidate } = useCandidateMutations();
+  const { updateCandidate, refreshLink } = useCandidateMutations();
 
   const [localStages, setLocalStages] = useState<OverviewStage[] | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -514,6 +574,14 @@ export default function OverviewPage(): JSX.Element {
   );
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleRefreshLink = useCallback(
+    async (candidateId: string): Promise<void> => {
+      await refreshLink(candidateId);
+      await refetch();
+    },
+    [refreshLink, refetch],
+  );
 
   const handleAddStage = async (): Promise<void> => {
     if (!id) return;
@@ -930,6 +998,7 @@ export default function OverviewPage(): JSX.Element {
                         key={candidate.id}
                         candidate={candidate}
                         onClick={() => navigate(`/candidates/${candidate.id}`)}
+                        onRefresh={handleRefreshLink}
                         disabled={!isActivePipeline}
                       />
                     ))}

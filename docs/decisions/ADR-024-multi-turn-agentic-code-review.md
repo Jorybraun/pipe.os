@@ -4,6 +4,9 @@
 **Status:** Accepted
 **Supersedes:** [ADR-021 — Deterministic Code Review Scoring](ADR-021-deterministic-code-review-scoring.md)
 
+> **Source of truth:** [`research/code-review-arena/spec/system-spec.md`](../../../research/code-review-arena/spec/system-spec.md)
+> This ADR records the decision. The system spec contains the full implementation details, agent contracts, scoring rubric, and training loop.
+
 ---
 
 ## Context

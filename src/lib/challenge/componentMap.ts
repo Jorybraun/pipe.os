@@ -54,6 +54,28 @@ const ConnectedOptionsPanel = connectInterview(OptionsPanel, (ctx) => {
   const options = rawOptions.map((o: unknown, i: number) =>
     typeof o === 'string' ? { id: String(i), text: o } : (o as { id: string; text: string }),
   );
+  const selectionMode = (ctx.currentChallenge.data.selectionMode as string) === 'multi' ? 'multi' : 'single';
+
+  if (selectionMode === 'multi') {
+    const rawSelected = (ctx.submission.answers as Record<string, unknown>)?.selected;
+    const selectedIds: string[] = Array.isArray(rawSelected) ? (rawSelected as string[]) : [];
+    return {
+      question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
+      options,
+      selectionMode: 'multi' as const,
+      selectedId: null,
+      selectedIds,
+      onSelect: (id: string) => {
+        const rawCurrent = (ctx.submission.answers as Record<string, unknown>)?.selected;
+        const current: string[] = Array.isArray(rawCurrent) ? [...(rawCurrent as string[])] : [];
+        const idx = current.indexOf(id);
+        if (idx >= 0) current.splice(idx, 1);
+        else current.push(id);
+        ctx.updateSubmission({ answers: { selected: current } });
+      },
+    };
+  }
+
   return {
     question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
     options,

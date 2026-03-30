@@ -2,25 +2,20 @@
 // CodeImplEditor — recruiter challenge editor for CODE_IMPLEMENTATION
 //
 // Tabbed layout: INSTRUCTIONS | CODE (multi-file) | SAMPLE_TESTS | HIDDEN_TESTS
-// Resizable sidebar with mode selector, language, file manager, follow-up.
 // Docked console at bottom of editor area.
+// MODE / ENGINE / FOLLOW_UP config lives in the DETAILS tab of ChallengeEditorPage.
 // ---------------------------------------------------------------------------
 
 import { useState, useCallback, useMemo } from 'react';
-import { Settings, Terminal, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { MonacoPanel } from '../Panels/MonacoPanel';
-import { LiquidMetalCard, SubTitle } from '../../components';
-import { FollowUpConfiguration } from './FollowUpConfiguration';
 import { EditorTabBar } from './EditorTabBar';
 import { FileTabBar } from './FileTabBar';
-import { ModeSelector } from './ModeSelector';
 import { ConsolePanel } from './ConsolePanel';
-import { ResizablePane, Allotment } from '../ui/ResizablePane';
+import { Allotment } from '../ui/ResizablePane';
 import {
   legacyToVFS,
   legacyTestsToVFS,
-  createDefaultFS,
-  createDefaultTestFS,
   languageFromPath,
 } from '../../lib/challenge/virtualFS';
 import { runTestsVFS } from '../../lib/challenge/testRunner';
@@ -42,7 +37,6 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
   const [isRunning, setIsRunning] = useState(false);
 
   // ── Derived state ────────────────────────────────────────────────────────
-  const mode = (challenge.config?.mode as 'backend' | 'frontend') ?? 'backend';
   const language = String(challenge.config?.language ?? 'javascript').toLowerCase();
 
   const codeFiles: VirtualFS = useMemo(
@@ -146,23 +140,6 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
       if (activeHiddenFile === path && remaining.length > 0) setActiveHiddenFile(remaining[0] ?? '');
     }
   }, [codeFiles, sampleTestFiles, hiddenTestFiles, activeCodeFile, activeSampleFile, activeHiddenFile, setConfig, setServerConfig]);
-
-  // ── Mode switch ──────────────────────────────────────────────────────────
-  const handleModeChange = useCallback((newMode: 'backend' | 'frontend') => {
-    const hasExistingFiles = Object.keys(codeFiles).length > 0;
-    if (hasExistingFiles) {
-      const confirmed = window.confirm(
-        `Switch to ${newMode} mode? This will replace starter files with defaults.`,
-      );
-      if (!confirmed) return;
-    }
-    const defaults = createDefaultFS(newMode);
-    const defaultTests = createDefaultTestFS(newMode);
-    setConfig({ mode: newMode, files: defaults, sampleTestFiles: {} });
-    setServerConfig({ hiddenTestFiles: defaultTests });
-    setActiveCodeFile(Object.keys(defaults)[0] ?? '');
-    setActiveHiddenFile(Object.keys(defaultTests)[0] ?? '');
-  }, [codeFiles, setConfig, setServerConfig]);
 
   // ── Run tests ────────────────────────────────────────────────────────────
   const handleRunTests = useCallback(async () => {
@@ -328,133 +305,64 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
     }
   };
 
-  // ── Sidebar ──────────────────────────────────────────────────────────────
-  const sidebarSection = (title: string, icon: JSX.Element, children: React.ReactNode): JSX.Element => (
-    <div style={{ marginBottom: 28 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <div style={{ color: 'rgba(255,255,255,0.35)' }}>{icon}</div>
-        <SubTitle>{title}</SubTitle>
-      </div>
-      {children}
-    </div>
-  );
-
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div style={{ height: 'calc(100vh - 140px)', marginTop: 16 }}>
-      <ResizablePane defaultSizes={[75, 25]} minSizes={[400, 280]}>
-        {/* Left: Editor area */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          background: '#0c0c0e',
-          border: '1px solid rgba(255,255,255,0.08)',
-          overflow: 'hidden',
-        }}>
-          <EditorTabBar
-            tabs={SECTION_TABS}
-            activeKey={activeSection}
-            onSelect={(k) => setActiveSection(k as SectionTab)}
-          />
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            <Allotment vertical defaultSizes={[75, 25]}>
-              <Allotment.Pane minSize={200}>
-                {renderSection()}
-              </Allotment.Pane>
-              <Allotment.Pane minSize={36}>
-                <ConsolePanel
-                  result={runResult}
-                  isRunning={isRunning}
-                  onClear={() => setRunResult(null)}
-                />
-              </Allotment.Pane>
-            </Allotment>
-          </div>
-          {/* Run bar */}
-          <div style={{
-            padding: '8px 16px',
-            borderTop: '1px solid rgba(255,255,255,0.08)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 10,
-          }}>
-            {langSelect}
-            <button
-              onClick={handleRunTests}
-              disabled={isRunning}
-              style={{
-                background: isRunning ? 'rgba(255,255,255,0.04)' : '#a78bfa',
-                border: 'none',
-                color: isRunning ? 'rgba(255,255,255,0.4)' : '#000',
-                padding: '8px 20px',
-                fontSize: 10,
-                fontWeight: 800,
-                fontFamily: 'Space Mono',
-                cursor: isRunning ? 'not-allowed' : 'pointer',
-                letterSpacing: '0.05em',
-              }}
-            >
-              {isRunning ? 'RUNNING...' : 'RUN_ALL_TESTS'}
-            </button>
-          </div>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        background: '#0c0c0e',
+        border: '1px solid rgba(255,255,255,0.08)',
+        overflow: 'hidden',
+      }}>
+        <EditorTabBar
+          tabs={SECTION_TABS}
+          activeKey={activeSection}
+          onSelect={(k) => setActiveSection(k as SectionTab)}
+        />
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <Allotment vertical defaultSizes={[75, 25]}>
+            <Allotment.Pane minSize={200}>
+              {renderSection()}
+            </Allotment.Pane>
+            <Allotment.Pane minSize={36}>
+              <ConsolePanel
+                result={runResult}
+                isRunning={isRunning}
+                onClear={() => setRunResult(null)}
+              />
+            </Allotment.Pane>
+          </Allotment>
         </div>
-
-        {/* Right: Config sidebar */}
-        <aside style={{ height: '100%', overflow: 'auto' }}>
-          <LiquidMetalCard variant="dark" style={{ padding: 24, height: '100%', borderRadius: 0 }}>
-            <div style={{ marginBottom: 28, paddingBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', marginBottom: 6 }}>
-                Code Implementation
-              </div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.6, fontFamily: 'Space Mono' }}>
-                Candidate writes code to pass your test suite.
-              </div>
-            </div>
-
-            {sidebarSection('MODE', <Terminal size={14} />,
-              <ModeSelector mode={mode} onChange={handleModeChange} />,
-            )}
-
-            {sidebarSection('ENGINE', <Settings size={14} />,
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{
-                  padding: 12,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                }}>
-                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
-                    RUNTIME
-                  </div>
-                  <div style={{ fontSize: 11, color: '#fff', fontWeight: 700 }}>
-                    {mode === 'frontend' ? 'Browser (Sandpack)' : 'Node.js / V8'}
-                  </div>
-                </div>
-                <div style={{
-                  padding: 12,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.06)',
-                }}>
-                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
-                    SCORING
-                  </div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
-                    Sample 30% + Hidden 70%
-                  </div>
-                </div>
-              </div>,
-            )}
-
-            {sidebarSection('FOLLOW_UP', <Settings size={14} />,
-              <FollowUpConfiguration
-                enabled={!!challenge.config?.enableFollowUp}
-                onChange={(val) => setConfig({ enableFollowUp: val })}
-                accentColor="#a78bfa"
-              />,
-            )}
-          </LiquidMetalCard>
-        </aside>
-      </ResizablePane>
+        {/* Run bar */}
+        <div style={{
+          padding: '8px 16px',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 10,
+        }}>
+          {langSelect}
+          <button
+            onClick={handleRunTests}
+            disabled={isRunning}
+            style={{
+              background: isRunning ? 'rgba(255,255,255,0.04)' : '#a78bfa',
+              border: 'none',
+              color: isRunning ? 'rgba(255,255,255,0.4)' : '#000',
+              padding: '8px 20px',
+              fontSize: 10,
+              fontWeight: 800,
+              fontFamily: 'Space Mono',
+              cursor: isRunning ? 'not-allowed' : 'pointer',
+              letterSpacing: '0.05em',
+            }}
+          >
+            {isRunning ? 'RUNNING...' : 'RUN_ALL_TESTS'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

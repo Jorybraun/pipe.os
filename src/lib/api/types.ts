@@ -211,3 +211,53 @@ export interface CreateCandidateResponse {
 }
 
 export type OverviewPipeline = PipelineListItem;
+
+// ─── Candidate Profile ────────────────────────────────────────────────────────
+
+export interface ChallengeSubmissionDetail {
+  id: string;
+  score: number | null;
+  feedback: string | null;
+  response: Record<string, unknown> | null;
+  submittedAt: string | null;
+  scoredAt: string | null;
+}
+
+export interface ProfileChallenge {
+  id: string;
+  type: ChallengeType;
+  title: string;
+  instructions: string | null;
+  config: Record<string, unknown> | null;
+  order: number;
+  submission: ChallengeSubmissionDetail | null;
+}
+
+export interface ProfileStage {
+  id: string;
+  title: string;
+  order: number;
+  mode: string | null;
+  challenges: ProfileChallenge[];
+}
+
+export interface CandidateProfileRecord {
+  id: string;
+  name: string | null;
+  email: string | null;
+  status: string;
+  pipelineId: string;
+  currentStageId: string | null;
+  resumeS3Key: string | null;
+  skills: string[] | null;
+  yearsOfExperience: number | null;
+  currentRole: string | null;
+  score: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CandidateProfileResponse {
+  candidate: CandidateProfileRecord;
+  stages: ProfileStage[];
+}

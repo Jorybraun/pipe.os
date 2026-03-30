@@ -51,7 +51,7 @@ interface GitHubFilesResponse {
 
 interface DiffHunk {
   header: string;
-  lines: Array<{ type: 'context' | 'added' | 'removed'; content: string }>;
+  lines: Array<{ type: 'context' | 'added' | 'removed'; content: string; lineNumber: number }>;
 }
 
 interface DiffFile {
@@ -316,22 +316,30 @@ function extractRepoPath(url: string): string | null {
 
 /**
  * Parse a unified diff patch string into structured hunks.
+ * Extracts line numbers from @@ headers (e.g., @@ -10,5 +12,7 @@).
  */
 function parsePatch(patch: string): DiffHunk[] {
   const hunks: DiffHunk[] = [];
   let currentHunk: DiffHunk | null = null;
+  let newLineNum = 0;
 
   for (const line of patch.split('\n')) {
     if (line.startsWith('@@')) {
       if (currentHunk) hunks.push(currentHunk);
       currentHunk = { header: line, lines: [] };
+      // Extract new-file start line from @@ -old,count +new,count @@
+      const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
+      newLineNum = match ? parseInt(match[1], 10) : 1;
     } else if (currentHunk) {
       if (line.startsWith('+') && !line.startsWith('+++')) {
-        currentHunk.lines.push({ type: 'added', content: line.slice(1) });
+        currentHunk.lines.push({ type: 'added', content: line.slice(1), lineNumber: newLineNum });
+        newLineNum++;
       } else if (line.startsWith('-') && !line.startsWith('---')) {
-        currentHunk.lines.push({ type: 'removed', content: line.slice(1) });
+        currentHunk.lines.push({ type: 'removed', content: line.slice(1), lineNumber: newLineNum });
+        // Deleted lines don't advance the new-file line counter
       } else if (line.startsWith(' ')) {
-        currentHunk.lines.push({ type: 'context', content: line.slice(1) });
+        currentHunk.lines.push({ type: 'context', content: line.slice(1), lineNumber: newLineNum });
+        newLineNum++;
       }
     }
   }

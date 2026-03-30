@@ -12,13 +12,20 @@
  * No aws-amplify imports anywhere in this file.
  */
 
-import { useState, useEffect, type ComponentType } from 'react';
+import { useState, useEffect, useCallback, type ComponentType } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Copy, Save } from 'lucide-react';
+import { ArrowLeft, Copy, Save, Terminal, Settings } from 'lucide-react';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useEditorChallengeV2 } from '../hooks/useEditorChallengeV2';
 import { useChallengeSave } from '../hooks/useChallengeSave';
 import type { EditorFormProps } from '../components/Editor/types';
+import { ModeSelector } from '../components/Editor/ModeSelector';
+import { FollowUpConfiguration } from '../components/Editor/FollowUpConfiguration';
+import { SubTitle } from '../components';
+import {
+  createDefaultFS,
+  createDefaultTestFS,
+} from '../lib/challenge/virtualFS';
 
 // Editor components
 import { CodeImplEditor } from '../components/Editor/CodeImplEditor';
@@ -56,7 +63,7 @@ export default function ChallengeEditorPage(): JSX.Element {
     pipelineId,
   );
 
-  const { save, clone, isSaving } = useChallengeSave();
+  const { save, clone, isSaving, error: saveError } = useChallengeSave();
 
   const [activeTab, setActiveTab] = useState<EditorTab>('DETAILS');
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -81,6 +88,37 @@ export default function ChallengeEditorPage(): JSX.Element {
   const [groundTruthAnnotations, setGroundTruthAnnotations] = useState<Record<string, unknown[]>>(
     { senior: [], mid: [], junior: [] },
   );
+
+  /**
+   * Handle MODE switch for CODE_IMPLEMENTATION challenges.
+   * Declared before early returns to satisfy Rules of Hooks.
+   */
+  const handleModeChange = useCallback((newMode: 'backend' | 'frontend'): void => {
+    if (!challenge) return;
+    const codeFiles = (challenge.config?.files as Record<string, unknown> | undefined) ?? {};
+    const hasExistingFiles = Object.keys(codeFiles).length > 0;
+    if (hasExistingFiles) {
+      const confirmed = window.confirm(
+        `Switch to ${newMode} mode? This will replace starter files with defaults.`,
+      );
+      if (!confirmed) return;
+    }
+    const defaults = createDefaultFS(newMode);
+    const defaultTests = createDefaultTestFS(newMode);
+    setChallenge({
+      ...challenge,
+      config: {
+        ...challenge.config,
+        mode: newMode,
+        files: defaults,
+        sampleTestFiles: {},
+      },
+      serverConfig: {
+        ...challenge.serverConfig,
+        hiddenTestFiles: defaultTests,
+      },
+    });
+  }, [challenge, setChallenge]);
 
   // ─── Loading / error states ──────────────────────────────────────────────────
 
@@ -164,28 +202,7 @@ export default function ChallengeEditorPage(): JSX.Element {
     );
   } else if (challenge.type === 'CODE_IMPLEMENTATION') {
     contentEditorContent = (
-      <div
-        style={{
-          marginTop: 24,
-          padding: '40px',
-          border: '1px dashed rgba(255,255,255,0.1)',
-          borderRadius: 12,
-          textAlign: 'center',
-        }}
-      >
-        <div
-          style={{
-            fontSize: 12,
-            color: 'rgba(255,255,255,0.4)',
-            fontFamily: 'Space Mono',
-            lineHeight: 1.6,
-          }}
-        >
-          Code implementation challenges are configured with templates.
-          <br />
-          Use the INSTRUCTIONS tab to set the problem description.
-        </div>
-      </div>
+      <CodeImplEditor challenge={challenge} onChange={setChallenge} />
     );
   } else {
     const Form = EDITOR_FORM_MAP[challenge.type];
@@ -309,6 +326,19 @@ export default function ChallengeEditorPage(): JSX.Element {
 
         {/* Action buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {saveError && (
+            <span
+              data-testid="save-error"
+              style={{
+                fontSize: 10,
+                color: '#f87171',
+                fontFamily: 'Space Mono',
+                letterSpacing: '0.1em',
+              }}
+            >
+              SAVE_FAILED: {saveError}
+            </span>
+          )}
           {saveSuccess && (
             <span
               data-testid="save-success"
@@ -487,6 +517,82 @@ export default function ChallengeEditorPage(): JSX.Element {
               }}
             />
           </div>
+
+          {/* ── CODE_IMPLEMENTATION-specific config ──────────────────────── */}
+          {challenge.type === 'CODE_IMPLEMENTATION' && (
+            <>
+              {/* Divider */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 8 }} />
+
+              {/* MODE */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Terminal size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <SubTitle>MODE</SubTitle>
+                </div>
+                <ModeSelector
+                  mode={(challenge.config?.mode as 'backend' | 'frontend') ?? 'backend'}
+                  onChange={handleModeChange}
+                />
+              </div>
+
+              {/* ENGINE */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <SubTitle>ENGINE</SubTitle>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{
+                    padding: 12,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: 4,
+                  }}>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                      RUNTIME
+                    </div>
+                    <div style={{ fontSize: 11, color: '#fff', fontWeight: 700 }}>
+                      {(challenge.config?.mode as string | undefined) === 'frontend'
+                        ? 'Browser (Sandpack)'
+                        : 'Node.js / V8'}
+                    </div>
+                  </div>
+                  <div style={{
+                    padding: 12,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: 4,
+                  }}>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                      SCORING
+                    </div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
+                      Sample 30% + Hidden 70%
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* FOLLOW_UP */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <SubTitle>FOLLOW_UP</SubTitle>
+                </div>
+                <FollowUpConfiguration
+                  enabled={!!challenge.config?.enableFollowUp}
+                  onChange={(val) =>
+                    setChallenge({
+                      ...challenge,
+                      config: { ...challenge.config, enableFollowUp: val },
+                    })
+                  }
+                  accentColor="#a78bfa"
+                />
+              </div>
+            </>
+          )}
 
         </div>
       )}

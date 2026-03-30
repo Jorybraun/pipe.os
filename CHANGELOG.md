@@ -6,6 +6,58 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Voice/video upload migrated from Amplify S3 to Cloudflare R2 — 2026-03-30)
+- **`workers/api/src/routes/rpc.ts`** — Added `POST /rpc/upload-media` route (candidate JWT auth). Accepts `multipart/form-data` with `file` (audio/* or video/*) and `challengeId` fields. Validates MIME type, 50 MB size limit. Writes to R2 at `candidate-submissions/{candidateId}/{challengeId}.{ext}`. Returns `{ r2Key, uploadUrl: null }` (backwards-compatible shape). Removed dependency on Amplify `generateMediaUploadUrl` Lambda.
+- **`src/components/Panels/VideoSubmissionPanel.tsx`** — Replaced Amplify `client.mutations.generateMediaUploadUrl` + S3 presigned PUT + `CandidateMedia.create()` with a single `fetch()` POST (multipart/form-data) to `POST /rpc/upload-media`. Session token sourced from `useSessionToken()` context. Removed `useData` import.
+- **`src/components/Assessment/ChallengeRegistry.tsx`** — Replaced `onAudioReady` handler's Amplify `generateMediaUploadUrl` + S3 PUT flow with a direct `fetch()` POST to `POST /rpc/upload-media`. Audio R2 key stored in `audioS3Key` (field name preserved for backwards compatibility). `API_BASE` constant added.
+- **`e2e/media-upload.spec.ts`** — New BDD spec. 11 scenarios across 3 sections: §M1 upload (returns 201 + r2Key, pattern validation, video/webm, idempotent overwrites), §M2 validation (415 for non-media MIME, 400 for missing fields), §M3 auth (401 without header, 401 invalid token, 401 Clerk JWT rejected).
+
+#### Added (CV upload/download migrated from Amplify S3 to Cloudflare R2 — 2026-03-30)
+- **`workers/api/wrangler.jsonc`** — Added `r2_buckets` binding (`STORAGE` → `pipe-assets`). Wrangler dev emulates R2 locally; production bucket must be created with `npx wrangler r2 bucket create pipe-assets`.
+- **`workers/api/src/types.ts`** — Added `STORAGE: R2Bucket` to the `Env` interface.
+- **`workers/api/src/routes/candidates.ts`** — Added `POST /:candidateId/resume` (multipart upload → R2 → persists `resume_s3_key`) and `GET /:candidateId/resume` (streams from R2 with `Content-Type` + `Content-Disposition` headers). Added `resumeS3Key` to `updateCandidateSchema` so PATCH can set it too. Both new routes enforce recruiter ownership via pipeline join.
+- **`src/components/Candidate/CandidateIntakeModal.tsx`** — Replaced Amplify `storage.upload()` + `client.models.Candidate.update()` + `CandidateMedia.create()` + `parseCandidateCV` mutation with a single `fetch()` POST (multipart/form-data) to `POST /api/v1/candidates/:id/resume`. Removed `useData`, `useStorage` provider hooks. Added `useAuth` from Clerk for token injection.
+- **`src/pages/CandidateProfilePage.tsx`** — Added `handleViewResume` callback: fetches resume from `GET /api/v1/candidates/:id/resume`, creates a blob URL, opens it in a new tab (popup-blocked fallback: `<a download>`). VIEW_RESUME button wired to `onClick`. Button opacity/cursor now reflects disabled state visually.
+- **`e2e/candidate-resume.spec.ts`** — New BDD spec. 13 scenarios across 4 sections: §R1 upload (returns 201, persists r2Key on candidate, path pattern), §R2 download (200 + PDF content-type, non-empty body, Content-Disposition, 404 for no-resume candidate), §R3 profile page (button disabled without resume, enabled after upload), §R4 validation (401 no auth, 400 wrong MIME, 404 ghost candidate, 400 missing field).
+
+#### Added (Frontend preview panel — CODE_IMPLEMENTATION mode='frontend' — 2026-03-30)
+- **`src/components/Panels/PreviewPanel.tsx`** — Added `data-testid="preview-panel"` to the root container for E2E testability. Replaced `eslint-disable` `as any` cast on `template` prop with a typed `SandpackPredefinedTemplate` import. `resolvedTemplate` now returns the correct union type.
+- **`src/components/Assessment/CodeBrowserLayout.tsx`** — Added `data-testid="code-browser-layout"` to the root div for E2E testability.
+- **`e2e/frontend-preview.spec.ts`** — New BDD spec. 4 scenarios covering: 3-column layout renders for `mode='frontend'`, Sandpack iframe visible in right panel, file tab bar shows starter files (index.html / styles.css / script.js), problem panel shows instructions. Seeds a `CODE_IMPLEMENTATION` challenge with `mode='frontend'` via the Worker API.
+
+#### Added (QA #7 — Candidate profile page + error states — 2026-03-30)
+- **`workers/api/src/routes/candidates.ts`** — Added `GET /api/v1/candidates/:id` endpoint returning candidate record with all stages, challenges (including server_config merged for recruiter view), and challenge submissions in one round-trip.
+- **`workers/api/src/routes/challengeSubmissions.ts`** — New file. `PATCH /api/v1/challenge-submissions/:id` for recruiter scoring (score + feedback) with ownership verification.
+- **`workers/api/src/index.ts`** — Registered `GET/PATCH /api/v1/candidates/:id` and `PATCH /api/v1/challenge-submissions/:id` routes.
+- **`src/lib/api/types.ts`** — Added `CandidateProfileResponse`, `CandidateProfileRecord`, `ProfileStage`, `ProfileChallenge`, `ChallengeSubmissionDetail` types.
+- **`src/hooks/useCandidateProfile.ts`** — New hook. Fetches candidate profile from Worker API, provides `updateSubmissionScore` and `updateSubmissionFeedback` with optimistic updates.
+- **`src/pages/CandidateProfilePage.tsx`** — Migrated from Amplify to Cloudflare Workers API. Removed Amplify `useData()`/`useStorage()` dependencies. Added auto-tab-selection to first stage. Added `data-testid="candidate-not-found"` for error state. MCQ CORRECT/INCORRECT indicators now work (server_config merged into config). Score slider and feedback textarea use optimistic updates via `useCandidateProfile` callbacks.
+- **`workers/api/src/middleware/auth.ts`** — Removed `__session` cookie fallback; now requires explicit `Authorization: Bearer <token>` header. The React frontend uses `getToken()` (not cookies) for Worker API calls. This fix ensures `GET /api/v1/candidates/:id` without auth header returns 401 as specified.
+
+#### Fixed (Bug #13 — CODE_IMPL config moved to DETAILS tab — 2026-03-30)
+- **`src/pages/ChallengeEditorPage.tsx`** — Added MODE, ENGINE, and FOLLOW_UP sections to the DETAILS tab for `CODE_IMPLEMENTATION` challenges (after TIME_LIMIT). Added `handleModeChange` with confirmation dialog for file replacement. Imported `ModeSelector`, `FollowUpConfiguration`, `SubTitle`, `createDefaultFS`, `createDefaultTestFS`.
+- **`src/components/Editor/CodeImplEditor.tsx`** — Removed right config sidebar (MODE/ENGINE/FOLLOW_UP sections). Simplified layout from `ResizablePane` split to a single full-width editor area. Removed unused `mode`, `sidebarSection`, `handleModeChange`, and related imports (`Settings`, `Terminal`, `LiquidMetalCard`, `SubTitle`, `FollowUpConfiguration`, `ModeSelector`, `ResizablePane`, `createDefaultFS`, `createDefaultTestFS`).
+- **`e2e/code-impl-editor.spec.ts`** — Updated "sidebar configuration" test suite to "DETAILS tab configuration"; all 4 scenarios now navigate to DETAILS tab (the default) instead of CONTENT_EDITOR.
+
+#### Fixed (BDD test locator fixes — 2026-03-29)
+- **`e2e/stage-crud.spec.ts`** — 4 locator fixes:
+  - Delete stage (confirming): `deleteMeStageCard.locator('button[title=...])` failed because the delete button is a sibling of `data-testid="stage-card"`, not inside it. Fixed with `locator('xpath=..')` to reach the position:relative wrapper.
+  - Reorder via API: test used `request.put()` but the route is `PATCH`. Changed to `request.patch()`.
+  - Add challenge increases count: clicking the MULTIPLE CHOICE type filter only filters the grid; it doesn't select a template. Fixed to click type filter, then click the first challenge card tile, then confirm with ADD_SELECTED.
+  - Delete challenge trash button: ChallengeCard delete button lacked `title`/`aria-label`. Added both to the component.
+- **`e2e/code-impl-editor.spec.ts`** — 8 locator fixes:
+  - CONTENT_EDITOR section tabs: `getByText('CODE')` was ambiguous (also matches "Code Implementation" sidebar). Switched to `getByRole('button', { name: 'CODE' })` etc.
+  - HIDDEN_TESTS tab: button contains a "SERVER" badge span so `/^HIDDEN_TESTS$/` regex didn't match. Changed to `getByRole('button', { name: /HIDDEN_TESTS/ })`.
+  - RUN_ALL_TESTS: widened post-click assertion to accept RUNNING..., PASSED/FAILED, or the button itself (race condition when worker finishes instantly).
+  - FileTabBar delete button: tab container is a `div` not a button; `[data-testid="file-tab"]` doesn't exist. Fixed to `locator('div', { hasText: /^utils\.js$/ }).locator('button').first()`.
+  - ENGINE / FOLLOW_UP sidebar sections: SubTitle renders text in `<span>` inside a `<div>` — both match `getByText()`, causing strict mode violations. Added `.first()`.
+  - CANDIDATE_PREVIEW code editor: preview doesn't render Monaco; fixed assertion to check instructions/type label instead.
+- **`e2e/short-answer-editor.spec.ts`** — 3 locator fixes:
+  - RESPONSE_TYPE / VIDEO: `getByText('VIDEO')` matched VIDEO_INSTRUCTIONS label too. Switched to `getByRole('button', { name: 'VIDEO' })` for all three options.
+  - TIME_LIMIT: parent traversal via `locator('..')` reached wrong ancestor. Replaced value check with NumberInput `Decrease/Increase value` button assertion.
+  - VOICE preview: CANDIDATE_PREVIEW doesn't render voice-specific UI (that's in the live session). Fixed to assert the question text and type label which ARE rendered.
+- **`src/components/Pipeline/ChallengeCard.tsx`** — added `title="Delete challenge"` and `aria-label="Delete challenge"` to the delete button.
+
 #### Fixed (QA bug regression — 2026-03-29)
 - **P0 — Bug #13**: Assessment FINAL_SUBMIT showed success but failed silently (`INVALID_TOKEN`). Root cause: `/rpc/submit-status` endpoint missing from Worker. Added endpoint + propagated error to UI instead of swallowing with `console.warn`.
 - **P1 — Bug #8**: Pipeline "..." menu buttons were empty (`onClick` only called `stopPropagation`). Added dropdown menu with Delete action.

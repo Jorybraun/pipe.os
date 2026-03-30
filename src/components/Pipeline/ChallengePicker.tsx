@@ -100,18 +100,28 @@ export function ChallengePicker({
   const [prError, setPrError] = useState<string | null>(null);
   const [selectedPRs, setSelectedPRs] = useState<Set<number>>(new Set());
 
-  // Direct PR entry — single repo URL + PR number
-  const [directRepoUrl, setDirectRepoUrl] = useState("");
-  const [directPrNumber, setDirectPrNumber] = useState("");
+  // Direct PR entry removed — repos are managed via the dropdown
 
-  // Saved repos (persisted in localStorage)
+  // Default repos from the el-pipe-o org — always present as fallback
+  const DEFAULT_REPOS = [
+    "https://github.com/el-pipe-o/interview-monorepo",
+    "https://github.com/el-pipe-o/slopify",
+  ];
+
+  // Saved repos (persisted in localStorage, seeded with defaults)
   const SAVED_REPOS_KEY = "pipe_saved_repos";
   const [savedRepos, setSavedRepos] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(SAVED_REPOS_KEY);
-      return raw ? (JSON.parse(raw) as string[]) : [];
+      const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+      // Merge defaults with user-added repos (dedup)
+      const merged = [...DEFAULT_REPOS];
+      for (const r of parsed) {
+        if (!merged.includes(r)) merged.push(r);
+      }
+      return merged;
     } catch {
-      return [];
+      return [...DEFAULT_REPOS];
     }
   });
   const [showAddRepoInput, setShowAddRepoInput] = useState(false);
@@ -124,6 +134,22 @@ export function ChallengePicker({
       /* ignore */
     }
   }, [savedRepos]);
+
+  // Reset all transient state each time the modal opens so stale selections,
+  // search queries, and repo state never bleed across sessions. savedRepos is
+  // intentionally excluded — it is persisted state that the user manages.
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedIds(new Set());
+    setSelectedPRs(new Set());
+    setSelectedType("CODE_IMPLEMENTATION");
+    setSearchQuery("");
+    setRepoUrl("");
+    setPrs([]);
+    setPrError(null);
+    setShowAddRepoInput(false);
+    setNewRepoUrl("");
+  }, [isOpen]);
 
   const handleSaveRepo = (): void => {
     const trimmed = newRepoUrl.trim();
@@ -241,34 +267,39 @@ export function ChallengePicker({
 
   // ─── Confirm ────────────────────────────────────────────────────────────────
 
-  const hasSelection = isCodeReviewMode
-    ? selectedPRs.size > 0
-    : selectedIds.size > 0;
-  const selectionCount = isCodeReviewMode ? selectedPRs.size : selectedIds.size;
+  // Count ALL selections — templates + PRs — regardless of current tab
+  const totalSelections = selectedIds.size + selectedPRs.size;
+  const hasSelection = totalSelections > 0;
+  const selectionCount = totalSelections;
 
   const handleConfirm = (): void => {
-    let selections: ChallengeSelection[];
+    const selections: ChallengeSelection[] = [];
 
-    if (isCodeReviewMode && selectedPRs.size > 0) {
-      selections = prs
-        .filter((pr) => selectedPRs.has(pr.number))
-        .map((pr) => ({
+    // 1. Collect all selected GitHub PRs
+    if (selectedPRs.size > 0) {
+      for (const pr of prs.filter((p) => selectedPRs.has(p.number))) {
+        selections.push({
           source: "github" as const,
           repoUrl: repoUrl.trim(),
           prNumber: pr.number,
           prTitle: pr.title,
           prDescription: pr.description,
           prAuthor: pr.author,
-        }));
-    } else if (isCodeReviewMode && selectedIds.has("CREATE_NEW_CODE_REVIEW")) {
-      selections = [
-        {
+        });
+      }
+    }
+
+    // 2. Collect all "Create New" blank templates (they have CREATE_NEW_ prefix)
+    const createNewTypes = ["CODE_REVIEW", "CODE_IMPLEMENTATION", "QUIZ_MCQ", "QUIZ_SHORT_ANSWER"];
+    for (const cType of createNewTypes) {
+      if (selectedIds.has(`CREATE_NEW_${cType}`)) {
+        selections.push({
           source: "library" as const,
           template: {
-            id: "NEW_CODE_REVIEW",
-            type: "CODE_REVIEW",
-            title: "New Code Review",
-            description: "Create a blank code review challenge",
+            id: `NEW_${cType}`,
+            type: cType as "CODE_REVIEW" | "CODE_IMPLEMENTATION" | "QUIZ_MCQ" | "QUIZ_SHORT_ANSWER",
+            title: `New ${cType.replace("QUIZ_", "").replace(/_/g, " ")}`,
+            description: `Create a blank ${cType.toLowerCase().replace(/_/g, " ")} challenge`,
             difficulty: "beginner",
             topic: "Custom",
             estimatedMinutes: 30,
@@ -276,32 +307,15 @@ export function ChallengePicker({
             instructions: "",
             config: {},
           },
-        },
-      ];
-    } else {
-      const isCreateNew = selectedIds.has(`CREATE_NEW_${selectedType}`);
-      if (isCreateNew) {
-        selections = [
-          {
-            source: "library" as const,
-            template: {
-              id: `NEW_${selectedType}`,
-              type: selectedType as any,
-              title: `New ${selectedType.replace("QUIZ_", "").replace("_", " ")}`,
-              description: `Create a blank ${selectedType.toLowerCase()} challenge`,
-              difficulty: "beginner",
-              topic: "Custom",
-              estimatedMinutes: 30,
-              tags: [],
-              instructions: "",
-              config: {},
-            },
-          },
-        ];
-      } else {
-        selections = ALL_CHALLENGE_TEMPLATES.filter((t) =>
-          selectedIds.has(t.id),
-        ).map((t) => ({ source: "library" as const, template: t }));
+        });
+      }
+    }
+
+    // 3. Collect all selected library templates (non-CREATE_NEW_ ids)
+    const libraryIds = [...selectedIds].filter((id) => !id.startsWith("CREATE_NEW_"));
+    if (libraryIds.length > 0) {
+      for (const t of ALL_CHALLENGE_TEMPLATES.filter((t) => libraryIds.includes(t.id))) {
+        selections.push({ source: "library" as const, template: t });
       }
     }
 
@@ -316,9 +330,12 @@ export function ChallengePicker({
 
   const handleTypeToggle = (typeId: string): void => {
     setSelectedType(typeId);
-    // Clear selections when switching modes
-    setSelectedIds(new Set());
-    setSelectedPRs(new Set());
+    // Preserve template selections across category switches so users can
+    // multi-select from different types. Only clear PR-specific state when
+    // leaving the CODE_REVIEW mode.
+    if (typeId !== 'CODE_REVIEW') {
+      setSelectedPRs(new Set());
+    }
     setPrError(null);
   };
 
@@ -707,101 +724,9 @@ export function ChallengePicker({
         <div style={{ padding: 32, overflowY: "auto", flex: 1 }}>
           {isCodeReviewMode ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              {/* Direct PR Entry Form */}
-              <div
-                style={{
-                  padding: 20,
-                  background: "rgba(96,165,250,0.04)",
-                  border: "1px solid rgba(96,165,250,0.15)",
-                  borderRadius: 8,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 9,
-                    color: "rgba(96,165,250,0.7)",
-                    letterSpacing: "0.15em",
-                    fontFamily: "Space Mono",
-                  }}
-                >
-                  ADD BY PR NUMBER
-                </div>
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <input
-                    value={directRepoUrl}
-                    onChange={(e) => setDirectRepoUrl(e.target.value)}
-                    placeholder="https://github.com/owner/repo"
-                    style={{
-                      flex: 2,
-                      background: "rgba(0,0,0,0.2)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: 4,
-                      padding: "10px 14px",
-                      color: "#fff",
-                      fontSize: 11,
-                      outline: "none",
-                      fontFamily: "Space Mono",
-                    }}
-                  />
-                  <input
-                    value={directPrNumber}
-                    onChange={(e) => setDirectPrNumber(e.target.value)}
-                    placeholder="PR number #"
-                    type="number"
-                    min="1"
-                    style={{
-                      flex: 1,
-                      background: "rgba(0,0,0,0.2)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: 4,
-                      padding: "10px 14px",
-                      color: "#fff",
-                      fontSize: 11,
-                      outline: "none",
-                      fontFamily: "Space Mono",
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      const prNum = parseInt(directPrNumber, 10);
-                      if (!isValidGitHubUrl(directRepoUrl) || !prNum) return;
-                      onSelect([
-                        {
-                          source: "github" as const,
-                          repoUrl: directRepoUrl.trim(),
-                          prNumber: prNum,
-                          prTitle: `PR #${prNum}`,
-                          prDescription: "",
-                          prAuthor: "",
-                        },
-                      ]);
-                      onClose();
-                    }}
-                    disabled={
-                      !isValidGitHubUrl(directRepoUrl) ||
-                      !directPrNumber ||
-                      isNaN(parseInt(directPrNumber, 10))
-                    }
-                    style={{
-                      padding: "10px 20px",
-                      background: "rgba(96,165,250,0.15)",
-                      border: "1px solid rgba(96,165,250,0.4)",
-                      borderRadius: 4,
-                      color: "#60a5fa",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      fontFamily: "Space Mono",
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    FETCH
-                  </button>
-                </div>
-              </div>
+              {/* Repo selector + PR list is rendered above via savedRepos dropdown */}
+
+              {/* Removed: ADD BY PR NUMBER — repos are now managed via the dropdown */}
 
               {/* Create New Tile for Code Review */}
               <div

@@ -37,7 +37,7 @@ export function MonacoPanel({
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa' }} />
             <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
-              {label || `${language.toUpperCase()}_EDITOR`}
+              {label || `${(language ?? 'javascript').toUpperCase()}_EDITOR`}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -52,7 +52,7 @@ export function MonacoPanel({
       <div style={{ flex: 1, position: 'relative' }}>
         <Editor
           height="100%"
-          language={language.toLowerCase()}
+          language={(language ?? 'javascript').toLowerCase()}
           value={value}
           onChange={onChange}
           theme="vs-dark"

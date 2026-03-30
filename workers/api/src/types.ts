@@ -5,6 +5,8 @@
 export interface Env {
   /** D1 database binding — all SQL queries go through this. */
   DB: D1Database;
+  /** R2 bucket binding for candidate documents (CVs, resumes). */
+  STORAGE: R2Bucket;
   /** Clerk secret key for JWT verification. Set via .dev.vars in dev. */
   CLERK_SECRET_KEY: string;
   /** Session token secret for candidate JWT signing/verification. */

@@ -92,11 +92,13 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
       !!s.verdict && ((s.summary as string) ?? '').trim().length > 0,
   }),
 
-  QUIZ_MCQ: () => ({
+  QUIZ_MCQ: (config) => ({
     layout: 'fullbleed',
     panels: { center: ['options'] },
     shells: [],
-    initialSubmission: { answers: {} },
+    initialSubmission: (config.selectionMode as string) === 'multi'
+      ? { answers: { selected: [] } }
+      : { answers: {} },
     isComplete: () => true,
   }),
 

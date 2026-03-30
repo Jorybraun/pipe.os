@@ -19,11 +19,15 @@ interface CodeBrowserLayoutProps {
 
 export function CodeBrowserLayout({ slots }: CodeBrowserLayoutProps): JSX.Element {
   return (
-    <div style={{
-      height: 'calc(100vh - 160px)',
-      width: '100%',
-      overflow: 'hidden',
-    }} className="pipe-allotment">
+    <div
+      data-testid="code-browser-layout"
+      style={{
+        height: 'calc(100vh - 160px)',
+        width: '100%',
+        overflow: 'hidden',
+      }}
+      className="pipe-allotment"
+    >
       <style>{`
         .pipe-allotment .sash-container .sash {
           background: rgba(255, 255, 255, 0.06);
