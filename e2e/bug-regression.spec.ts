@@ -394,8 +394,9 @@ test.describe('Bug #6: Pipeline creation validates required name', () => {
       }
     });
 
-    // Click CREATE without filling name
-    await page.getByRole('button', { name: /CREATE PIPELINE/i }).click();
+    // Wait for the form to fully render, then click CREATE without filling name
+    await expect(page.getByRole('button', { name: /CREATE PIPELINE/i })).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: /CREATE PIPELINE/i }).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Should still be on the create page (not redirected)
@@ -481,20 +482,185 @@ test.describe('Bug #5: Challenge editor shows save confirmation', () => {
     await titleInput.clear();
     await titleInput.fill('Updated Title');
 
-    // Click save
+    // Click save and immediately watch for confirmation (3-second window)
     await page.getByRole('button', { name: /SAVE_CHANGES/i }).click();
-    await page.waitForTimeout(2000);
 
-    // Should see confirmation — toast, success text, button text change, etc.
-    const hasFeedback = await page
-      .getByText(/saved|success|updated/i)
-      .isVisible()
-      .catch(() => false);
-    const buttonChanged = await page
-      .getByRole('button', { name: /saved|done|✓/i })
-      .isVisible()
-      .catch(() => false);
+    // The SAVED indicator appears briefly after save — use data-testid for reliability
+    await expect(
+      page.locator('[data-testid="save-success"]').or(page.getByText(/^SAVED$/)),
+    ).toBeVisible({ timeout: 10000 });
+  });
+});
 
-    expect(hasFeedback || buttonChanged).toBe(true);
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUG #11 (P1) — Empty challenges (no content) shown to candidates
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Bug #11: Empty challenges must not be served to candidates', () => {
+  let authToken: string;
+  let pipelineId: string;
+  let stageId: string;
+  let candidateInviteToken: string;
+
+  test.beforeAll(async ({ browser, request }) => {
+    const ctx = await browser.newContext({
+      storageState: 'playwright/.auth/user.json',
+    });
+    const page = await ctx.newPage();
+    await page.goto(APP_BASE);
+    authToken = await getAuthToken(page);
+    await ctx.close();
+
+    const headers = recruiterHeaders(authToken);
+
+    // Create pipeline + stage
+    const pipeRes = await request.post(`${API_BASE}/api/v1/pipelines`, {
+      headers,
+      data: { title: 'Empty Challenge Pipeline', status: 'ACTIVE', level: 'Senior' },
+    });
+    const { pipeline } = (await pipeRes.json()) as { pipeline: { id: string } };
+    pipelineId = pipeline.id;
+
+    const stageRes = await request.post(`${API_BASE}/api/v1/pipelines/${pipelineId}/stages`, {
+      headers,
+      data: { title: 'Bug11 Stage', order: 0 },
+    });
+    const { stage } = (await stageRes.json()) as { stage: { id: string } };
+    stageId = stage.id;
+
+    // Add an EMPTY MCQ challenge (no config, no question)
+    await request.post(`${API_BASE}/api/v1/stages/${stageId}/challenges`, {
+      headers,
+      data: { type: 'QUIZ_MCQ', title: 'Empty MCQ', instructions: '', order: 0 },
+    });
+
+    // Add a VALID MCQ challenge (has question + options + correct answer)
+    await request.post(`${API_BASE}/api/v1/stages/${stageId}/challenges`, {
+      headers,
+      data: {
+        type: 'QUIZ_MCQ',
+        title: 'Valid MCQ',
+        instructions: 'Pick one',
+        order: 1,
+        config: {
+          question: 'What is 2+2?',
+          options: [
+            { id: 'a', text: '3' },
+            { id: 'b', text: '4' },
+          ],
+        },
+        serverConfig: { correctOptionId: 'b' },
+      },
+    });
+
+    // Create candidate
+    const candRes = await request.post(`${API_BASE}/api/v1/pipelines/${pipelineId}/candidates`, {
+      headers,
+      data: { name: 'Bug11 Candidate', email: 'bug11@test.com' },
+    });
+    const { candidate } = (await candRes.json()) as { candidate: { inviteToken: string } };
+    candidateInviteToken = candidate.inviteToken;
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (pipelineId) await teardown(request, authToken, pipelineId);
+  });
+
+  /**
+   * Scenario: Stage config should only include challenges with content
+   *   Given a stage has one empty MCQ and one valid MCQ
+   *   When a candidate resolves their token and fetches stage config
+   *   Then the stage config should list only 1 challenge (the valid one)
+   */
+  test('Scenario: empty challenges filtered from candidate stage config', async ({ request }) => {
+    // Resolve token
+    const resolveRes = await request.post(`${API_BASE}/rpc/resolve-token`, {
+      data: { inviteToken: candidateInviteToken },
+    });
+    expect(resolveRes.ok()).toBe(true);
+    const { sessionToken } = (await resolveRes.json()) as { sessionToken: string };
+
+    // Get stage config
+    const stageRes = await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
+      data: {},
+    });
+    expect(stageRes.ok()).toBe(true);
+    const stageConfig = (await stageRes.json()) as {
+      challenges: Array<{ type: string; order: number }>;
+    };
+
+    // Should only have 1 challenge (the valid one), not 2
+    expect(stageConfig.challenges.length).toBe(1);
+    expect(stageConfig.challenges[0].type).toBe('QUIZ_MCQ');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUG #12 (P1) — Duplicate challenges allowed in the same stage
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Bug #12: Duplicate sort_order challenges get unique ordering', () => {
+  let authToken: string;
+  let pipelineId: string;
+  let stageId: string;
+
+  test.beforeAll(async ({ browser, request }) => {
+    const ctx = await browser.newContext({
+      storageState: 'playwright/.auth/user.json',
+    });
+    const page = await ctx.newPage();
+    await page.goto(APP_BASE);
+    authToken = await getAuthToken(page);
+    await ctx.close();
+
+    const headers = recruiterHeaders(authToken);
+
+    const pipeRes = await request.post(`${API_BASE}/api/v1/pipelines`, {
+      headers,
+      data: { title: 'Duplicate Challenge Pipeline', status: 'ACTIVE', level: 'Senior' },
+    });
+    const { pipeline } = (await pipeRes.json()) as { pipeline: { id: string } };
+    pipelineId = pipeline.id;
+
+    const stageRes = await request.post(`${API_BASE}/api/v1/pipelines/${pipelineId}/stages`, {
+      headers,
+      data: { title: 'Bug12 Stage', order: 0 },
+    });
+    const { stage } = (await stageRes.json()) as { stage: { id: string } };
+    stageId = stage.id;
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (pipelineId) await teardown(request, authToken, pipelineId);
+  });
+
+  /**
+   * Scenario: Adding two challenges with the same order should not create duplicates
+   *   Given a stage exists
+   *   When two challenges are added both with order: 0
+   *   Then they should have distinct sort_order values (0 and 1)
+   */
+  test('Scenario: duplicate sort_order is resolved server-side', async ({ request }) => {
+    const headers = recruiterHeaders(authToken);
+
+    // Add first challenge with order 0
+    const res1 = await request.post(`${API_BASE}/api/v1/stages/${stageId}/challenges`, {
+      headers,
+      data: { type: 'QUIZ_MCQ', title: 'First MCQ', instructions: 'Q1', order: 0 },
+    });
+    expect(res1.status()).toBe(201);
+    const ch1 = (await res1.json()) as { order: number };
+
+    // Add second challenge also with order 0
+    const res2 = await request.post(`${API_BASE}/api/v1/stages/${stageId}/challenges`, {
+      headers,
+      data: { type: 'QUIZ_MCQ', title: 'Second MCQ', instructions: 'Q2', order: 0 },
+    });
+    expect(res2.status()).toBe(201);
+    const ch2 = (await res2.json()) as { order: number };
+
+    // The two challenges should have different sort orders
+    expect(ch1.order).not.toBe(ch2.order);
   });
 });

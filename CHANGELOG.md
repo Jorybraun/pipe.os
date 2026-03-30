@@ -11,7 +11,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **P1 — Bug #8**: Pipeline "..." menu buttons were empty (`onClick` only called `stopPropagation`). Added dropdown menu with Delete action.
 - **P1 — Bug #4**: MCQ answer option text lost when clicking "+ ADD_OPTION" (stale closure reading old options). Fixed with `useRef` to always read latest options.
 - **P3 — Bug #7**: Empty pipelines showed "0/1 STAGES" due to `stageCount || 1` fallback. Fixed to `stageCount ?? 0` with divide-by-zero guard.
-- `e2e/bug-regression.spec.ts` — BDD regression tests for all fixed bugs (5/7 green; Bug #5 + #6 intentionally unfixed)
+- **P2 — Bug #6**: No validation error on empty pipeline name — button was disabled but no feedback shown. Added visible error text "Pipeline name is required" on click.
+- **P2 — Bug #5**: Save confirmation indicator test — fixed E2E locator to use `data-testid="save-success"` with proper Playwright assertion timing.
+- **P1 — Bug #11**: Empty challenges (no config/content) were shown to candidates. Added server-side filtering in `/rpc/get-stage-config` to exclude challenges without meaningful content.
+- **P1 — Bug #12**: Duplicate sort_order allowed when adding challenges. Added conflict detection — if requested `sort_order` is already taken, auto-assigns next available slot.
+- `e2e/bug-regression.spec.ts` — BDD regression tests for all fixed bugs (9/9 green)
 
 #### Added (Phase 3 — Candidate assessment flow + candidate profile BDD)
 - `workers/api/src/routes/rpc.ts` — `/rpc/resolve-token`, `/rpc/get-stage-config`, `/rpc/get-challenge`, `/rpc/refresh-session` Worker routes

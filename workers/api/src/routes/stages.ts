@@ -536,15 +536,28 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
 
   const input = parsed.data;
 
-  // Auto-calculate sort_order if not provided.
+  // Always ensure sort_order is unique within the stage (Bug #12 fix).
+  // If an explicit order is provided, check for conflicts; otherwise auto-calculate.
+  const countRow = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS cnt FROM challenges WHERE stage_id = ?1',
+  )
+    .bind(stageId)
+    .first<{ cnt: number }>();
+  const existingCount = countRow?.cnt ?? 0;
+
   let sortOrder = input.order;
   if (sortOrder === undefined) {
-    const countRow = await c.env.DB.prepare(
-      'SELECT COUNT(*) AS cnt FROM challenges WHERE stage_id = ?1',
+    sortOrder = existingCount;
+  } else {
+    // Check if this sort_order already exists — if so, use the next available slot
+    const conflict = await c.env.DB.prepare(
+      'SELECT id FROM challenges WHERE stage_id = ?1 AND sort_order = ?2 LIMIT 1',
     )
-      .bind(stageId)
-      .first<{ cnt: number }>();
-    sortOrder = countRow?.cnt ?? 0;
+      .bind(stageId, sortOrder)
+      .first<{ id: string }>();
+    if (conflict) {
+      sortOrder = existingCount;
+    }
   }
 
   const challengeId = generateId();

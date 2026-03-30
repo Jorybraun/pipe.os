@@ -37,7 +37,13 @@ export default function PipelineCreatePage(): JSX.Element {
   const error = localError ?? apiError;
 
   const handleCreate = async (): Promise<void> => {
-    if (!isValid || isCreating) return;
+    if (!isValid) {
+      if (titleTrimmed.length === 0) {
+        setLocalError("Pipeline name is required");
+      }
+      return;
+    }
+    if (isCreating) return;
     setLocalError(null);
 
     try {
@@ -223,7 +229,7 @@ export default function PipelineCreatePage(): JSX.Element {
             </button>
             <button
               onClick={handleCreate}
-              disabled={!isValid || isCreating}
+              disabled={isCreating}
               style={{
                 padding: "12px 32px",
                 background:

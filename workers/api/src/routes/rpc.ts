@@ -180,6 +180,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
   }
 
   // Fetch all stages with challenges in a single JOIN query
+  // Include config so we can filter out empty/unconfigured challenges
   const rows = await c.env.DB.prepare(`
     SELECT
       s.id AS stage_id,
@@ -190,7 +191,9 @@ rpcAuth.post('/get-stage-config', async (c) => {
       s.video_config,
       ch.id AS challenge_id,
       ch.type AS challenge_type,
-      ch.sort_order AS challenge_order
+      ch.sort_order AS challenge_order,
+      ch.config AS challenge_config,
+      ch.instructions AS challenge_instructions
     FROM stages s
     LEFT JOIN challenges ch ON ch.stage_id = s.id
     WHERE s.pipeline_id = ?1
@@ -232,11 +235,30 @@ rpcAuth.post('/get-stage-config', async (c) => {
       });
     }
     if (r.challenge_id) {
-      stageMap.get(sid)!.challenges.push({
-        id: r.challenge_id as string,
-        type: r.challenge_type as string,
-        order: r.challenge_order as number,
-      });
+      // Filter out empty/unconfigured challenges — candidates should never see
+      // placeholder challenges that have no meaningful content (Bug #11 fix).
+      const rawConfig = r.challenge_config as string | null;
+      const instructions = r.challenge_instructions as string | null;
+      let hasContent = !!(instructions && instructions.trim().length > 0);
+      if (rawConfig) {
+        try {
+          const parsed = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+          // A challenge has content if config has any truthy values
+          if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+            hasContent = true;
+          }
+        } catch {
+          // Invalid JSON config — treat as empty
+        }
+      }
+
+      if (hasContent) {
+        stageMap.get(sid)!.challenges.push({
+          id: r.challenge_id as string,
+          type: r.challenge_type as string,
+          order: r.challenge_order as number,
+        });
+      }
     }
   }
 
