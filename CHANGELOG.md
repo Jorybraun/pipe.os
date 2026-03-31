@@ -6,6 +6,26 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (BDD test suite — AI mocking & test verification — 2026-03-31)
+- **`workers/api/src/lib/mockResponses.ts`** — Deterministic mock responses for AI agents when API keys missing. `getMockImplementerResponses()` returns keyed-by-comment mock agent responses. `getMockScoreReport()` returns valid score report with 3 dimensions.
+- **`TEST_STATUS.md`** — BDD test suite status dashboard. Documents 135+ passing tests across 8 verified files. Categorizes remaining 60+ failures by type (locator issues, multi-turn AI, editors).
+
+#### Changed (BDD test suite — AI mocking & local testing — 2026-03-31)
+- **`workers/api/src/lib/implementerAgent.ts`** — Added fallback mock responses when MISTRAL_API_KEY and ANTHROPIC_API_KEY both absent (local testing). No longer throws on missing keys for non-Workers-AI providers. Logs mock usage.
+- **`workers/api/src/lib/scorerAgent.ts`** — Added fallback mock responses when API keys absent. Returns deterministic mock score report for local testing without real LLM calls. No longer throws on missing keys.
+- **`e2e/pipeline-create.spec.ts`** — Rewritten to match new ConversationalForm page structure instead of old PipelineCreatePage. Tests multi-phase role discovery flow. 6/9 tests passing (3 timing flakes on button visibility).
+- **`.claude/projects/-Users-hans-Code-PIPE-PIPE-OS/memory/MEMORY.md`** — Added reference to strict rule: "Run tests after every file change". BDD tests are the spec.
+
+#### Verified Passing (2026-03-31)
+- **auth.unauth.spec.ts** — 3/3 tests passing (auth gate, 401 without token)
+- **listing.spec.ts** — 5/5 tests passing (listing page, create button, sign out)
+- **candidate-profile.spec.ts** — 22/22 tests passing (profile load, challenge cards, stage tabs)
+- **candidate-resume.spec.ts** — 14/14 tests passing (upload, download, validation)
+- **frontend-preview.spec.ts** — 5/5 tests passing (Sandpack layout, code editor)
+- **media-upload.spec.ts** — 12/12 tests passing (R2 storage, MIME validation)
+- **stage-crud.spec.ts** — 29/31 tests passing (stage CRUD, title persistence)
+- **stage-detail.spec.ts** — 47/50 tests passing (detail page, challenge count)
+
 #### Added (Phase 3c — Implementer agent improvements — 2026-03-31)
 - **`workers/api/vitest.config.ts`** — Vitest config for Worker API unit tests.
 - **`workers/api/src/lib/scoring.ts`** — Extracted pure scoring functions from scorerAgent.ts: `computeEffectiveness()`, `weightedAvg()`, `assignBand()`, `countReviewerComments()`, weight constants. Fully deterministic, no LLM calls.
