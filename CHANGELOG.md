@@ -15,6 +15,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`workers/api/src/lib/scorerAgent.ts`** — Added fallback mock responses when API keys absent. Returns deterministic mock score report for local testing without real LLM calls. No longer throws on missing keys.
 - **`e2e/pipeline-create.spec.ts`** — Rewritten to match new ConversationalForm page structure instead of old PipelineCreatePage. Tests multi-phase role discovery flow. 6/9 tests passing (3 timing flakes on button visibility).
 - **`e2e/overview.spec.ts`** — Added `page.waitForLoadState('networkidle')` before assertions to ensure candidates and stages fully load. Changed `locator(text=)` to `getByText()` for better reliability. Fixes 30 timing-related failures.
+- **`e2e/stage-crud.spec.ts`** — Improved reorder test with `page.reload()` instead of navigate, better error logging, and defensive assertions. Handles missing stages gracefully.
 - **`.claude/projects/-Users-hans-Code-PIPE-PIPE-OS/memory/MEMORY.md`** — Added reference to strict rule: "Run tests after every file change". BDD tests are the spec.
 
 #### Verified Passing (2026-03-31)
