@@ -14,6 +14,7 @@ import { OptionsPanel } from '../../components/Panels/OptionsPanel';
 import { TextareaPanel } from '../../components/Panels/TextareaPanel';
 import { PreviewPanel } from '../../components/Panels/PreviewPanel';
 import { VerdictPanel } from '../../components/Panels/VerdictPanel';
+import { ReviewConversationPanel } from '../../components/Panels/ReviewConversationPanel';
 import { DiffPanel, type Annotation } from '../../components/Assessment/DiffPanel';
 import { VoicePanel } from '../../components/Panels/VoicePanel';
 import { CodeEditorPanel } from '../../components/Panels/CodeEditorPanel';
@@ -130,6 +131,9 @@ const ConnectedVerdictPanel = connectInterview(VerdictPanel, (ctx) => ({
   onSummaryChange: (summary: string) => ctx.updateSubmission({ summary }),
 }));
 
+// ConnectedConversationPanel removed — replaced by ReviewConversationPanel
+// which uses useReviewSession() hook for real RPC calls instead of stubs.
+
 const ConnectedVoicePanel = connectInterview(VoicePanel, (ctx) => ({
   question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
   transcript: (ctx.submission.text as string) || '',
@@ -206,6 +210,7 @@ export const COMPONENT_MAP: Record<string, ComponentType<any>> = {
   'preview': ConnectedPreviewPanel,
   'diff': ConnectedDiffPanel,
   'verdict': ConnectedVerdictPanel,
+  'conversation': ReviewConversationPanel,
   'voice': ConnectedVoicePanel,
 
   // CODE_IMPLEMENTATION panels
