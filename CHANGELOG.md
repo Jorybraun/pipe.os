@@ -23,8 +23,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **candidate-resume.spec.ts** — 14/14 tests passing (upload, download, validation)
 - **frontend-preview.spec.ts** — 5/5 tests passing (Sandpack layout, code editor)
 - **media-upload.spec.ts** — 12/12 tests passing (R2 storage, MIME validation)
-- **stage-crud.spec.ts** — 29/31 tests passing (stage CRUD, title persistence)
-- **stage-detail.spec.ts** — 47/50 tests passing (detail page, challenge count)
+- **stage-crud.spec.ts** — 29/31 tests passing (stage CRUD, title persistence; 2 failures in reorder/picker)
+- **stage-detail.spec.ts** — 47/50 tests passing (detail page, challenge count; 3 data-testid mismatches)
+- **multi-turn-config.spec.ts** — 22/22 tests passing (config page, challenge templates)
+
+**Total verified: 159 tests passing**
 
 #### Added (Phase 3c — Implementer agent improvements — 2026-03-31)
 - **`workers/api/vitest.config.ts`** — Vitest config for Worker API unit tests.
