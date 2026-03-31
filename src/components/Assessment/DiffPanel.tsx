@@ -38,6 +38,11 @@ export interface Annotation {
   createdAt: string;
 }
 
+export interface ResolvedLine {
+  file: string;
+  line: number;
+}
+
 export interface DiffPanelProps {
   diff: DiffJson;
   annotations?: Annotation[];
@@ -48,6 +53,8 @@ export interface DiffPanelProps {
     comment: string;
   }) => void;
   readOnly?: boolean;
+  /** Lines that received a move=change response from the implementer */
+  resolvedLines?: ResolvedLine[];
 }
 
 // ============================================================================
@@ -87,6 +94,7 @@ interface FileDiffBodyProps {
   annotatingFilePath: string | null;
   annotationSeverity: 'critical' | 'major' | 'minor';
   annotationComment: string;
+  resolvedLines: ResolvedLine[];
   onLineClick: (filePath: string, lineNum: number) => void;
   onSeverityChange: (s: 'critical' | 'major' | 'minor') => void;
   onCommentChange: (c: string) => void;
@@ -102,6 +110,7 @@ function FileDiffBody({
   annotatingFilePath,
   annotationSeverity,
   annotationComment,
+  resolvedLines,
   onLineClick,
   onSeverityChange,
   onCommentChange,
@@ -110,6 +119,9 @@ function FileDiffBody({
 }: FileDiffBodyProps): JSX.Element {
   const getAnnotationsForLine = (lineNum: number): Annotation[] =>
     annotations.filter(a => a.file === file.path && a.line === lineNum);
+
+  const isResolved = (lineNum: number): boolean =>
+    resolvedLines.some(r => r.file === file.path && r.line === lineNum);
 
   const isAnnotatingThisFile = annotatingFilePath === file.path;
 
@@ -172,17 +184,37 @@ function FileDiffBody({
                   }}
                   data-testid={`diff-line-${line.num}`}
                 >
-                  {/* Line number */}
+                  {/* Line number + resolved indicator */}
                   <div style={{
                     width: 56,
                     padding: '4px 12px',
                     textAlign: 'right',
                     fontSize: 10,
-                    color: 'rgba(255,255,255,0.15)',
+                    color: isResolved(line.num) ? '#34d399' : 'rgba(255,255,255,0.15)',
                     userSelect: 'none',
                     flexShrink: 0,
                     fontFamily: '"Space Mono", monospace',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: 4,
                   }}>
+                    {isResolved(line.num) && (
+                      <span
+                        data-testid={`fixed-indicator-${line.num}`}
+                        style={{
+                          fontSize: 6,
+                          fontWeight: 700,
+                          letterSpacing: '0.05em',
+                          color: '#34d399',
+                          background: 'rgba(52,211,153,0.12)',
+                          padding: '1px 3px',
+                          borderRadius: 2,
+                        }}
+                      >
+                        FIXED
+                      </span>
+                    )}
                     {line.num}
                   </div>
 
@@ -413,6 +445,7 @@ export function DiffPanel({
   annotations = [],
   onAnnotationAdd,
   readOnly = false,
+  resolvedLines,
 }: DiffPanelProps): JSX.Element {
   const [viewMode, setViewMode] = useState<'TABBED' | 'LONG_FORM'>('TABBED');
   const [activeFileIdx, setActiveFileIdx] = useState(0);
@@ -482,6 +515,7 @@ export function DiffPanel({
     annotatingFilePath,
     annotationSeverity,
     annotationComment,
+    resolvedLines: resolvedLines ?? [],
     onLineClick: handleLineClick,
     onSeverityChange: setAnnotationSeverity,
     onCommentChange: setAnnotationComment,

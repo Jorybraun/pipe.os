@@ -83,14 +83,41 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
     };
   },
 
-  CODE_REVIEW: () => ({
-    layout: 'workspace',
-    panels: { left: ['problem'], center: ['diff'], right: ['verdict'] },
-    shells: [],
-    initialSubmission: { annotations: [], verdict: null, summary: '' },
-    isComplete: (s: Record<string, unknown>) =>
-      !!s.verdict && ((s.summary as string) ?? '').trim().length > 0,
-  }),
+  CODE_REVIEW: (config) => {
+    const isMultiTurn = !!(config as Record<string, unknown>).isMultiTurn;
+    const maxRounds = ((config as Record<string, unknown>).maxRounds as number) ?? 4;
+
+    if (isMultiTurn) {
+      return {
+        layout: 'workspace',
+        panels: { left: ['problem'], center: ['diff'], right: ['conversation'] },
+        shells: [],
+        initialSubmission: {
+          annotations: [],
+          rounds: [],
+          currentRound: 1,
+          maxRounds,
+          verdict: null,
+          summary: '',
+          sessionId: null,
+          isAwaitingResponse: false,
+          nextCommentId: 1,
+        },
+        isComplete: (s: Record<string, unknown>) =>
+          !!s.verdict && ((s.summary as string) ?? '').trim().length > 0,
+      };
+    }
+
+    // Legacy single-turn
+    return {
+      layout: 'workspace',
+      panels: { left: ['problem'], center: ['diff'], right: ['verdict'] },
+      shells: [],
+      initialSubmission: { annotations: [], verdict: null, summary: '' },
+      isComplete: (s: Record<string, unknown>) =>
+        !!s.verdict && ((s.summary as string) ?? '').trim().length > 0,
+    };
+  },
 
   QUIZ_MCQ: (config) => ({
     layout: 'fullbleed',

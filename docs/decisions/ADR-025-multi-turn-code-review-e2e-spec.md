@@ -5,8 +5,16 @@
 **Depends on:** [ADR-024 — Multi-Turn Agentic Code Review](ADR-024-multi-turn-agentic-code-review.md)
 **Migration:** [Phase 3 — Candidate Flow](../../migration/phase-3-candidate-flow.md)
 
-> **Source of truth:** [`research/code-review-arena/spec/system-spec.md`](../../../research/code-review-arena/spec/system-spec.md)
-> This ADR records the original E2E spec. The system spec has been updated with structured comment formats, implementer move types (comment/change/pushback), per-comment scoring, and the full agent contracts. When this ADR conflicts with the system spec, the system spec wins.
+> **Source of truth:** [`research/code-review-arena/src/types.ts`](../../../research/code-review-arena/src/types.ts) and [`src/types/conversation.ts`](../../src/types/conversation.ts)
+>
+> **Superseded sections (2026-03-30):** The DTO contracts (Section 3), Agent specs (Section 4), and scoring model in this ADR are superseded by the arena-aligned implementation. Key differences from what's written below:
+> - **Types:** `ConversationTurn`/`ConversationThread` → `ReviewComment` (numeric id) + `ImplementerResponse` (to_comment_id) + `ReviewRound[]` + `Thread[]`
+> - **Severity:** `critical/major/minor` → `blocking/major/suggestion/nit`
+> - **Moves:** `agree_fix/pushback/clarify/partial_agree` → `comment/change/pushback` (3 only)
+> - **Scoring:** 3 scorers (comms 25% + tech 40% + practice 35%) → 4 scorers (tech 30% + conversation 30% + practice 25% + effectiveness 15% deterministic)
+> - **Transcript:** Flat `ConversationTurn[]` → `ReviewRound[]` with `Thread[]` computed on read
+>
+> The UX journey (Section 1), component architecture (Section 2), and BDD scenarios (Section 5) remain accurate. When in doubt, check the implementation files.
 
 ---
 

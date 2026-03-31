@@ -79,6 +79,7 @@ export function VerdictPanel({
 
   return (
     <div
+      data-testid="verdict-panel"
       style={{
         height: '100%',
         display: 'flex',

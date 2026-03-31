@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, XCircle, MessageSquare, Clock, AlertTriangle, Info, ChevronRight, Loader2, GitMerge } from 'lucide-react';
+import { CheckCircle2, XCircle, MessageSquare, Clock, AlertTriangle, Info, ChevronRight, Loader2, GitMerge, Code2, ChevronDown } from 'lucide-react';
 import type {
   Thread,
   ThreadExchange,
@@ -232,9 +232,81 @@ function CommentCard({ comment }: { comment: ReviewComment }): JSX.Element {
   );
 }
 
+/** Renders an updated_code block with green left border (collapsible if >10 lines) */
+function CodeChangeBlock({ code }: { code: string }): JSX.Element {
+  const lines = code.split('\n');
+  const isLong = lines.length > 10;
+  const [expanded, setExpanded] = useState(!isLong);
+
+  return (
+    <div
+      data-testid="code-change-block"
+      style={{
+        borderLeft: '3px solid #34d399',
+        borderRadius: 4,
+        overflow: 'hidden',
+        background: 'rgba(52,211,153,0.04)',
+        border: '1px solid rgba(52,211,153,0.12)',
+        borderLeftWidth: 3,
+        borderLeftColor: '#34d399',
+      }}
+    >
+      {/* Header */}
+      <button
+        onClick={() => setExpanded((p) => !p)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 10px',
+          background: 'rgba(52,211,153,0.06)',
+          border: 'none',
+          borderBottom: expanded ? '1px solid rgba(52,211,153,0.1)' : 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <Code2 size={10} color="#34d399" />
+        <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', color: '#34d399', fontFamily: '"Space Mono", monospace' }}>
+          UPDATED_CODE
+        </span>
+        <span style={{ fontSize: 8, color: 'rgba(52,211,153,0.5)', fontFamily: '"Space Mono", monospace' }}>
+          {lines.length} lines
+        </span>
+        {isLong && (
+          <ChevronDown
+            size={10}
+            color="rgba(52,211,153,0.5)"
+            style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s', marginLeft: 'auto' }}
+          />
+        )}
+      </button>
+
+      {/* Code */}
+      {expanded && (
+        <pre
+          style={{
+            margin: 0,
+            padding: '10px 12px',
+            fontSize: 10,
+            lineHeight: 1.6,
+            color: 'rgba(255,255,255,0.8)',
+            fontFamily: '"Space Mono", monospace',
+            overflowX: 'auto',
+            whiteSpace: 'pre',
+          }}
+        >
+          {code}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 /** Renders a single exchange (implementer or reviewer follow-up) */
 function ExchangeCard({ exchange }: { exchange: ThreadExchange }): JSX.Element {
   const isReviewer = exchange.actor === 'reviewer';
+  const hasCodeChange = !isReviewer && exchange.move === 'change' && typeof exchange.updated_code === 'string';
 
   return (
     <div
@@ -278,6 +350,8 @@ function ExchangeCard({ exchange }: { exchange: ThreadExchange }): JSX.Element {
       >
         {exchange.content}
       </p>
+
+      {hasCodeChange && <CodeChangeBlock code={exchange.updated_code!} />}
     </div>
   );
 }

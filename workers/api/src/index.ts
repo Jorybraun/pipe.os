@@ -7,6 +7,7 @@ import { github } from './routes/github';
 import { overview } from './routes/overview';
 import { pipelineCandidates, candidateOps } from './routes/candidates';
 import { challengeSubmissions } from './routes/challengeSubmissions';
+import { reviewSessions } from './routes/reviewSessions';
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
@@ -63,6 +64,8 @@ app.route('/api/v1/pipelines', pipelineCandidates);
 app.route('/api/v1/candidates', candidateOps);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
+// Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
+app.route('/api/v1/review-sessions', reviewSessions);
 
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);
@@ -72,6 +75,38 @@ app.route('/rpc', rpcAuth);
 app.get('/health', (c) =>
   c.json({ status: 'ok', timestamp: new Date().toISOString() }),
 );
+
+// ─── AI test endpoint (dev only) ─────────────────────────────────────────────
+app.post('/dev/test-ai', async (c) => {
+  if (!c.env.AI) {
+    return c.json({ error: 'AI binding not available' }, 500);
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+
+  const prompt = typeof body.prompt === 'string' ? body.prompt : 'Review this code: function add(a, b) { return a - b; }';
+
+  const start = Date.now();
+  const response = await c.env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
+    messages: [
+      { role: 'system', content: 'You are a senior code reviewer. Be concise.' },
+      { role: 'user', content: prompt },
+    ],
+    max_tokens: 512,
+  });
+  const elapsed = Date.now() - start;
+
+  return c.json({
+    model: '@cf/qwen/qwen2.5-coder-32b-instruct',
+    elapsed_ms: elapsed,
+    response,
+  });
+});
 
 // ─── Error handling ───────────────────────────────────────────────────────────
 app.onError(globalErrorHandler);

@@ -22,5 +22,8 @@
       //   npx wrangler r2 bucket create pipe-assets
       "bucket_name": "pipe-assets"
     }
-  ]
+  ],
+  "ai": {
+    "binding": "AI"
+  }
 }

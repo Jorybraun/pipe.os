@@ -6,6 +6,36 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Phase 3c — Implementer agent improvements — 2026-03-31)
+- **`workers/api/vitest.config.ts`** — Vitest config for Worker API unit tests.
+- **`workers/api/src/lib/scoring.ts`** — Extracted pure scoring functions from scorerAgent.ts: `computeEffectiveness()`, `weightedAvg()`, `assignBand()`, `countReviewerComments()`, weight constants. Fully deterministic, no LLM calls.
+- **`workers/api/src/lib/implementerMetrics.ts`** — New `computeImplementerMetrics()` pure function. Computes move distribution, code change rate, cave rate, pushback quality (reasoning vs bare), round progression from ReviewRound[].
+- **`workers/api/src/__tests__/scoring.test.ts`** — 23 unit tests for scoring functions: effectiveness (RIS, efficiency, delta, composite), weightedAvg (all-10s, all-1s, missing defaults), band boundaries, countReviewerComments (normal, empty, malformed).
+- **`workers/api/src/__tests__/implementerAgent.test.ts`** — 7 unit tests with mock fetch: updated_code passthrough on change, soft warning on missing code, no code on pushback/comment, special characters, empty string stripping, fenced code block parsing.
+- **`workers/api/src/__tests__/implementerMetrics.test.ts`** — 9 unit tests: all-change distribution, mixed ratios, empty transcript, code change rate, pushback quality detection, cave rate (all-cave=1.0, all-pushback=0), round progression tracking.
+- **`src/types/__tests__/conversation.test.ts`** — 8 unit tests for buildThreadsFromRounds: single round, follow-up grouping, move=change resolution, empty rounds, updated_code propagation.
+- **`docs/decisions/ADR-026-implementer-agent-improvements.md`** — Architecture Decision Record for implementer improvements (5-phase TDD plan).
+- **`migration/phase-3c-implementer-agent.md`** — Full implementation spec with BDD scenarios.
+
+#### Changed (Phase 3c — Implementer agent improvements — 2026-03-31)
+- **`workers/api/src/lib/scorerAgent.ts`** — Imports pure functions from extracted `scoring.ts` instead of defining them inline. Uses `assignBand()` instead of inline ternary.
+- **`workers/api/src/lib/prompts.ts`** — Added `updated_code` field to implementer JSON response schema. Added rule: move=change MUST include updated_code with corrected code snippet.
+- **`workers/api/src/lib/implementerAgent.ts`** — Increased max_tokens 1024→2048 for code snippets. Added soft validation: warns when move=change but no updated_code. Strips empty updated_code strings.
+- **`workers/api/src/routes/review.ts`** — Verdict scoring block now computes implementer metrics via `computeImplementerMetrics()` and stores alongside scorer output. `buildThreadsForResponse()` propagates `updated_code` in exchange objects.
+- **`src/types/conversation.ts`** — Added `updated_code?: string` to `ThreadExchange`. `buildThreadsFromRounds()` propagates updated_code from implementer responses.
+- **`src/components/Panels/ConversationPanel.tsx`** — Added `CodeChangeBlock` inline component: renders syntax-highlighted code with green left border below exchange text when move=change and updated_code exists. Collapsible if >10 lines.
+- **`src/components/Assessment/DiffPanel.tsx`** — Added `resolvedLines` prop and FIXED badge indicator on diff lines that received a move=change response.
+- **`.claude/commands/calibrate.md`** — Step 5 (Analyze) now includes implementer metrics. Step 6 (Diagnose) adds 3 implementer failure modes: always-caves, no-code, generic-pushback.
+
+#### Added (Phase D — Scoring agent wired to Devstral — 2026-03-31)
+- **`workers/api/src/lib/scorerAgent.ts`** — New scoring agent module. Calls Devstral (Mistral) with the 3 scorer prompts (technical, conversation, practice) in parallel, computes effectiveness deterministically, synthesizes narrative via 4th LLM call. Same `callMistral`/`callAnthropic` pattern as `implementerAgent.ts`. Returns full `ScoreReport` with dimensional breakdowns, bug tracking, and overall band (strong/adequate/weak).
+- **`e2e/multi-turn-api.spec.ts`** — Added §C.7 test section: "Scoring agent triggers automatically after verdict submission". Two BDD scenarios: (1) verdict triggers async scoring → status transitions through scoring → scored; (2) recruiter can read full dimensional score report via GET /report endpoint.
+
+#### Changed (Phase D — Scoring agent wired to Devstral — 2026-03-31)
+- **`workers/api/src/routes/review.ts`** — Verdict endpoint now triggers async scoring via `c.executionCtx.waitUntil()`. After setting `verdict_submitted`, loads challenge ground truth, calls `scoreReviewSession()` (Devstral), writes score report to D1, propagates to challenge_submissions + assessments. Status transitions: `verdict_submitted` → `scoring` → `scored` (or `scoring_failed`).
+- **`workers/api/src/routes/reviewSessions.ts`** — Updated comments: PATCH /score is now for manual overrides; primary scoring is automatic via scorerAgent after verdict.
+- **`.claude/commands/calibrate.md`** — Removed Claude-Code-as-scorer flow. Step 3 now polls for Worker-side scoring results instead of scoring locally. Added explicit warning: Claude Code must NEVER act as scorer.
+
 #### Added (Phase E — E2E Integration: wire frontend to review endpoints — 2026-03-30)
 - **`e2e/multi-turn-e2e.spec.ts`** — New BDD spec (8 scenarios). Full candidate experience: §E.1 diff renders with code hunks/lines/file tabs; §E.2 click diff line + type comment + save annotation + annotation badge appears + SUBMIT_REVIEW enables; §E.3 submit review → agent responds → threads render with move badges → round advances; §E.4 select verdict (approve/request_changes/comment) + write summary + submit verdict; §E.5 follow-up reply → submit response → agent responds again → round advances; §E.6 full end-to-end journey (annotate → submit → reply → verdict).
 - **`src/hooks/useReviewSession.ts`** — New hook wrapping review RPC endpoints. `submitReview()` → POST /rpc/review/submit, `submitResponse()` → POST /rpc/review/:id/respond, `submitVerdict()` → POST /rpc/review/:id/verdict. Auth via `useSessionToken()`. Maps DiffPanel annotations to Worker format.
@@ -16,8 +46,8 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/lib/challenge/componentMap.ts`** — Replaced stub `ConnectedConversationPanel` (connectInterview HOC with no-op handlers) with `ReviewConversationPanel` (real RPC calls). Removed unused imports.
 
 #### Added (Phase D — Scoring infrastructure + /calibrate skill — 2026-03-30)
-- **`.claude/commands/calibrate.md`** — New Claude Code skill (`/calibrate`). Full Karpathy training loop with autonomous mode (`--auto`): plays reviewer personas (strong/adequate/weak) through Chrome, submits reviews against real implementer agent, scores transcripts (Claude Code IS the scorer — reads transcript via API, evaluates all 4 dimensions, computes effectiveness deterministically, writes score back via PATCH), logs structured JSONL experiment data, analyzes miscalibrations, auto-edits scorer/implementer/persona prompts, re-runs until calibration target hit (default 80%) or max iterations reached. Reverts on regression. Score-only mode (`--score-only`) for scoring existing sessions without Chrome. No separate API key needed.
-- **`workers/api/src/routes/reviewSessions.ts`** — New recruiter-facing Hono router (Clerk JWT auth). Three endpoints: GET `/:sessionId/report` (full transcript + score report for recruiter dashboard), GET `/:sessionId/transcript` (raw transcript + ground truth + PR context for the /calibrate skill to score), PATCH `/:sessionId/score` (write score_report JSON from skill, update status to 'scored', propagate overall score to challenge_submissions + re-aggregate assessment). All endpoints verify pipeline ownership.
+- **`.claude/commands/calibrate.md`** — New Claude Code skill (`/calibrate`). Full Karpathy training loop with autonomous mode (`--auto`): plays reviewer personas (strong/adequate/weak) through Chrome, submits reviews against real implementer agent, waits for Worker-side Devstral scoring, logs structured JSONL experiment data, analyzes miscalibrations, auto-edits scorer/implementer/persona prompts, re-runs until calibration target hit (default 80%) or max iterations reached. Reverts on regression. Score-only mode (`--score-only`) for re-scoring existing sessions.
+- **`workers/api/src/routes/reviewSessions.ts`** — New recruiter-facing Hono router (Clerk JWT auth). Three endpoints: GET `/:sessionId/report` (full transcript + score report for recruiter dashboard), GET `/:sessionId/transcript` (raw transcript + ground truth + PR context for analysis), PATCH `/:sessionId/score` (manual score override — primary scoring is automatic via scorerAgent). All endpoints verify pipeline ownership.
 - **`workers/api/src/lib/scorerPrompts.ts`** — Scorer prompt constants ported from `research/code-review-arena/prompts/scorer/`. Technical (7 dimensions, mandatory cross-checks), Conversation (8 dimensions, cave ratio constraint), Practice (7 dimensions, 4 mandatory cross-checks), Synthesizer (narrative for hiring managers). Includes structured tool schemas (`submit_technical_score`, `submit_conversation_score`, `submit_practice_score`) for Claude tool-use output.
 - **`workers/api/src/index.ts`** — Mounted `reviewSessions` router at `/api/v1/review-sessions`.
 

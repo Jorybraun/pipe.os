@@ -445,31 +445,22 @@ test.describe('§E.3 — Submit review triggers agent response', () => {
       await page.locator('[data-testid="annotation-input"]').fill('Null check missing — token could be undefined');
       await page.locator('[data-testid="save-annotation-btn"]').click();
 
-      // Intercept the review submit API call
+      // Click SUBMIT_REVIEW and assert agent API succeeds
+      const submitBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
+      await expect(submitBtn).toBeVisible({ timeout: 5000 });
+
       const reviewSubmitPromise = page.waitForResponse(
         (resp) => resp.url().includes('/rpc/review/submit'),
         { timeout: 30000 },
-      ).catch((e) => { consoleLogs.push(`[NO_RESPONSE] ${e.message}`); return null; });
-
-      // Click SUBMIT_REVIEW
-      const submitBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
-      await expect(submitBtn).toBeVisible({ timeout: 5000 });
+      );
       await submitBtn.click();
 
-      // Wait for the API call and log the result
       const apiResponse = await reviewSubmitPromise;
-      if (apiResponse) {
-        consoleLogs.push(`[API] ${apiResponse.status()} ${apiResponse.url()}`);
-        if (!apiResponse.ok()) {
-          const body = await apiResponse.text().catch(() => 'no body');
-          consoleLogs.push(`[API_ERROR] ${body}`);
-        }
-      }
+      expect(apiResponse.ok(), `Agent API failed: ${apiResponse.status()} — ${await apiResponse.text().catch(() => 'no body')}`).toBe(true);
 
       // Wait for agent response — threads should appear
-      // (Loading overlay may flash too briefly to observe reliably)
       const thread = page.locator('[data-testid="conversation-thread"]');
-      await expect(thread).toBeVisible({ timeout: 60000 });
+      await expect(thread).toBeVisible({ timeout: 30000 });
 
       // Thread shows AUTHOR response with a move badge
       await expect(page.getByText('AUTHOR')).toBeVisible({ timeout: 5000 });
@@ -531,10 +522,18 @@ test.describe('§E.4 — Approve/Request Changes verdict', () => {
 
       const submitReviewBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
       await expect(submitReviewBtn).toBeVisible({ timeout: 5000 });
+
+      const submitPromise = page.waitForResponse(
+        (resp) => resp.url().includes('/rpc/review/submit'),
+        { timeout: 30000 },
+      );
       await submitReviewBtn.click();
 
+      const submitResp = await submitPromise;
+      expect(submitResp.ok(), `Agent API failed: ${submitResp.status()} — ${await submitResp.text().catch(() => 'no body')}`).toBe(true);
+
       // Wait for agent response
-      await expect(page.locator('[data-testid="conversation-thread"]')).toBeVisible({ timeout: 60000 });
+      await expect(page.locator('[data-testid="conversation-thread"]')).toBeVisible({ timeout: 30000 });
 
       // REVIEW_VERDICT section should be visible after agent responds
       await expect(page.getByText('REVIEW_VERDICT')).toBeVisible({ timeout: 5000 });
@@ -604,10 +603,17 @@ test.describe('§E.5 — Follow-up reply flow', () => {
       await page.locator('[data-testid="annotation-input"]').fill('Missing null check on token parameter');
       await page.locator('[data-testid="save-annotation-btn"]').click();
 
+      const r1Promise = page.waitForResponse(
+        (resp) => resp.url().includes('/rpc/review/submit'),
+        { timeout: 30000 },
+      );
       await page.getByRole('button', { name: /SUBMIT_REVIEW/i }).click();
 
+      const r1Resp = await r1Promise;
+      expect(r1Resp.ok(), `Submit review failed: ${r1Resp.status()} — ${await r1Resp.text().catch(() => 'no body')}`).toBe(true);
+
       // Wait for agent response to round 1
-      await expect(page.locator('[data-testid="conversation-thread"]')).toBeVisible({ timeout: 60000 });
+      await expect(page.locator('[data-testid="conversation-thread"]')).toBeVisible({ timeout: 30000 });
       await expect(page.getByText('AUTHOR')).toBeVisible({ timeout: 5000 });
 
       // Reply textarea should appear (round 2+)
@@ -620,13 +626,18 @@ test.describe('§E.5 — Follow-up reply flow', () => {
       // SUBMIT_RESPONSE button should appear
       const submitResponseBtn = page.getByRole('button', { name: /SUBMIT_RESPONSE/i });
       await expect(submitResponseBtn).toBeVisible({ timeout: 5000 });
+
+      const r2Promise = page.waitForResponse(
+        (resp) => resp.url().includes('/respond'),
+        { timeout: 30000 },
+      );
       await submitResponseBtn.click();
 
-      // Loading overlay
-      // Loading overlay may flash too briefly to observe — skip assertion
+      const r2Resp = await r2Promise;
+      expect(r2Resp.ok(), `Submit response failed: ${r2Resp.status()} — ${await r2Resp.text().catch(() => 'no body')}`).toBe(true);
 
       // Agent responds again — round advances to 3
-      await expect(page.getByText(/ROUND 3/i)).toBeVisible({ timeout: 60000 });
+      await expect(page.getByText(/ROUND 3/i)).toBeVisible({ timeout: 30000 });
 
       // Thread should now have multiple exchanges
       const authorLabels = page.getByText('AUTHOR');
@@ -694,14 +705,19 @@ test.describe('§E.6 — Full end-to-end candidate journey', () => {
       // ── Step 4: Submit review → agent responds ──
       const submitReviewBtn = page.getByRole('button', { name: /SUBMIT_REVIEW/i });
       await expect(submitReviewBtn).toBeVisible({ timeout: 5000 });
+
+      const r1Promise = page.waitForResponse(
+        (resp) => resp.url().includes('/rpc/review/submit'),
+        { timeout: 30000 },
+      );
       await submitReviewBtn.click();
 
-      // Loading state
-      // Loading overlay may flash too briefly to observe — skip assertion
+      const r1Resp = await r1Promise;
+      expect(r1Resp.ok(), `Submit review failed: ${r1Resp.status()} — ${await r1Resp.text().catch(() => 'no body')}`).toBe(true);
 
       // Agent responds — threads appear
       const threads = page.locator('[data-testid="conversation-thread"]');
-      await expect(threads.first()).toBeVisible({ timeout: 60000 });
+      await expect(threads.first()).toBeVisible({ timeout: 30000 });
 
       // Should have 2 threads (one per annotation)
       const threadCount = await threads.count();
@@ -717,10 +733,18 @@ test.describe('§E.6 — Full end-to-end candidate journey', () => {
 
       const submitResponseBtn = page.getByRole('button', { name: /SUBMIT_RESPONSE/i });
       await expect(submitResponseBtn).toBeVisible();
+
+      const r2Promise = page.waitForResponse(
+        (resp) => resp.url().includes('/respond'),
+        { timeout: 30000 },
+      );
       await submitResponseBtn.click();
 
+      const r2Resp = await r2Promise;
+      expect(r2Resp.ok(), `Submit response failed: ${r2Resp.status()} — ${await r2Resp.text().catch(() => 'no body')}`).toBe(true);
+
       // Agent responds again — round 3
-      await expect(page.getByText(/ROUND 3/i)).toBeVisible({ timeout: 60000 });
+      await expect(page.getByText(/ROUND 3/i)).toBeVisible({ timeout: 30000 });
 
       // ── Step 6: Submit verdict ──
       // Verdict section should be visible
@@ -739,7 +763,15 @@ test.describe('§E.6 — Full end-to-end candidate journey', () => {
       // Submit verdict
       const submitVerdictBtn = page.getByRole('button', { name: /SUBMIT_VERDICT/i });
       await expect(submitVerdictBtn).toBeVisible({ timeout: 5000 });
+
+      const verdictPromise = page.waitForResponse(
+        (resp) => resp.url().includes('/verdict'),
+        { timeout: 30000 },
+      );
       await submitVerdictBtn.click();
+
+      const verdictResp = await verdictPromise;
+      expect(verdictResp.ok(), `Submit verdict failed: ${verdictResp.status()} — ${await verdictResp.text().catch(() => 'no body')}`).toBe(true);
 
       // ── Step 7: Verify session finalized ──
       // Submit verdict button should disappear after successful submission

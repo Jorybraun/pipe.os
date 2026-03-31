@@ -175,7 +175,7 @@ CREATE TABLE review_sessions (
   current_round   INTEGER NOT NULL DEFAULT 1,
   max_rounds      INTEGER NOT NULL DEFAULT 4,
   status          TEXT NOT NULL DEFAULT 'in_progress',  -- 'in_progress' | 'verdict_submitted' | 'scoring' | 'scored'
-  transcript_json TEXT,           -- full conversation history (ConversationTurn[])
+  transcript_json TEXT,           -- full conversation history ({rounds: ReviewRound[]})
   score_report_json TEXT,         -- final ScoringReport from panel
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))

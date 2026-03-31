@@ -14,6 +14,7 @@
 import { Hono } from 'hono';
 import { signJwt, verifyJwt } from '../lib/jwt';
 import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
+import { review } from './review';
 import type { Env } from '../types';
 
 // ─── Public routes (no auth) ────────────────────────────────────────────────
@@ -785,5 +786,9 @@ rpcAuth.post('/upload-media', async (c) => {
 
   return c.json({ r2Key, uploadUrl: null }, 201);
 });
+
+// ─── Mount multi-turn review sub-router ─────────────────────────────────────
+
+rpcAuth.route('/review', review);
 
 export { rpcPublic, rpcAuth };

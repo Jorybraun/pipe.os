@@ -359,6 +359,7 @@ export default function ChallengeEditorPage(): JSX.Element {
             </button>
           )}
           <button
+            data-testid="save-changes-button"
             onClick={() => void handleSave()}
             disabled={isSaving}
             style={{ ...headerBtnStyle, background: '#fff', color: '#000', border: 'none' }}
@@ -517,6 +518,148 @@ export default function ChallengeEditorPage(): JSX.Element {
               }}
             />
           </div>
+
+          {/* ── CODE_REVIEW-specific config ──────────────────────────────── */}
+          {challenge.type === 'CODE_REVIEW' && (
+            <>
+              {/* Divider */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 8 }} />
+
+              {/* MULTI_TURN */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <SubTitle>MULTI_TURN</SubTitle>
+                </div>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  <input
+                    data-testid="multi-turn-toggle"
+                    type="checkbox"
+                    checked={!!(challenge.config?.isMultiTurn)}
+                    onChange={(e) =>
+                      setChallenge({
+                        ...challenge,
+                        config: {
+                          ...challenge.config,
+                          isMultiTurn: e.target.checked,
+                          // Apply defaults when enabling for the first time
+                          implementerPersona:
+                            challenge.config?.implementerPersona ?? 'junior',
+                          maxRounds:
+                            challenge.config?.maxRounds ?? 4,
+                        },
+                      })
+                    }
+                    style={{
+                      width: 16,
+                      height: 16,
+                      accentColor: '#60a5fa',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: 'rgba(255,255,255,0.6)',
+                      fontFamily: 'Space Mono',
+                    }}
+                  >
+                    Enable multi-turn conversation
+                  </span>
+                </label>
+              </div>
+
+              {/* IMPLEMENTER_PERSONA */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <SubTitle>IMPLEMENTER_PERSONA</SubTitle>
+                </div>
+                <select
+                  data-testid="implementer-persona-select"
+                  disabled={!challenge.config?.isMultiTurn}
+                  value={(challenge.config?.implementerPersona as string | undefined) ?? 'junior'}
+                  onChange={(e) =>
+                    setChallenge({
+                      ...challenge,
+                      config: { ...challenge.config, implementerPersona: e.target.value },
+                    })
+                  }
+                  style={{
+                    width: 200,
+                    background: challenge.config?.isMultiTurn
+                      ? 'rgba(255,255,255,0.05)'
+                      : 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    color: challenge.config?.isMultiTurn
+                      ? '#fff'
+                      : 'rgba(255,255,255,0.25)',
+                    fontSize: 13,
+                    fontFamily: 'Space Mono',
+                    outline: 'none',
+                    cursor: challenge.config?.isMultiTurn ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  <option value="junior">junior</option>
+                  <option value="senior">senior</option>
+                </select>
+              </div>
+
+              {/* MAX_ROUNDS */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <SubTitle>MAX_ROUNDS</SubTitle>
+                </div>
+                <input
+                  data-testid="max-rounds-input"
+                  type="number"
+                  disabled={!challenge.config?.isMultiTurn}
+                  min={2}
+                  max={6}
+                  value={
+                    challenge.config?.isMultiTurn
+                      ? ((challenge.config?.maxRounds as number | undefined) ?? 4)
+                      : ''
+                  }
+                  placeholder={challenge.config?.isMultiTurn ? undefined : '4'}
+                  onChange={(e) => {
+                    const val = e.target.value ? parseInt(e.target.value, 10) : 4;
+                    setChallenge({
+                      ...challenge,
+                      config: { ...challenge.config, maxRounds: val },
+                    });
+                  }}
+                  style={{
+                    width: 120,
+                    background: challenge.config?.isMultiTurn
+                      ? 'rgba(255,255,255,0.05)'
+                      : 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    color: challenge.config?.isMultiTurn
+                      ? '#fff'
+                      : 'rgba(255,255,255,0.25)',
+                    fontSize: 13,
+                    fontFamily: 'Space Mono',
+                    outline: 'none',
+                    cursor: challenge.config?.isMultiTurn ? 'text' : 'not-allowed',
+                  }}
+                />
+              </div>
+            </>
+          )}
 
           {/* ── CODE_IMPLEMENTATION-specific config ──────────────────────── */}
           {challenge.type === 'CODE_IMPLEMENTATION' && (

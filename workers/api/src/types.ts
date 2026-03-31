@@ -7,6 +7,8 @@ export interface Env {
   DB: D1Database;
   /** R2 bucket binding for candidate documents (CVs, resumes). */
   STORAGE: R2Bucket;
+  /** Workers AI binding — Qwen, Nemotron, etc. No API key needed. */
+  AI: Ai;
   /** Clerk secret key for JWT verification. Set via .dev.vars in dev. */
   CLERK_SECRET_KEY: string;
   /** Session token secret for candidate JWT signing/verification. */
@@ -17,6 +19,22 @@ export interface Env {
    * Optional — unauthenticated requests are rate-limited at 60/hour.
    */
   GITHUB_TOKEN?: string;
+  /**
+   * Mistral API key for the implementer agent (Devstral model).
+   * Set via .dev.vars in dev, Worker secret in production.
+   * Optional — falls back to Workers AI when not set.
+   */
+  MISTRAL_API_KEY?: string;
+  /**
+   * Anthropic API key — alternative provider for the implementer agent.
+   * Only used if MISTRAL_API_KEY and Workers AI are not available.
+   */
+  ANTHROPIC_API_KEY?: string;
+  /**
+   * When set to "true", AI agents return deterministic canned responses.
+   * Used in E2E/integration tests to avoid real LLM calls.
+   */
+  MOCK_AI?: string;
 }
 
 /**

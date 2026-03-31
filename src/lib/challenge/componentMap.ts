@@ -100,15 +100,97 @@ const ConnectedPreviewPanel = connectInterview(PreviewPanel, (ctx) => ({
   hideHeader: true,
 }));
 
-const ConnectedDiffPanel = connectInterview(DiffPanel, (ctx) => {
-  // Parse cachedDiffJson if available
-  const raw = ctx.currentChallenge.data.cachedDiffJson;
-  const diff = (typeof raw === 'object' && raw !== null && 'files' in (raw as Record<string, unknown>))
-    ? raw as { files: unknown[]; stats: { filesChanged: number; additions: number; deletions: number } }
-    : { files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 } };
+/**
+ * Parses a unified diff patch string into DiffHunk[].
+ * Handles @@ headers and +/-/context lines.
+ */
+function parsePatchToHunks(patch: string): import('../../components/Assessment/DiffPanel').DiffHunk[] {
+  if (!patch) return [];
+  const lines = patch.split('\n');
+  const hunks: import('../../components/Assessment/DiffPanel').DiffHunk[] = [];
+  let currentHunk: import('../../components/Assessment/DiffPanel').DiffHunk | null = null;
+  let lineNum = 1;
+
+  for (const line of lines) {
+    if (line.startsWith('@@')) {
+      // Parse hunk header for starting line number
+      const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
+      lineNum = match?.[1] != null ? parseInt(match[1], 10) : 1;
+      currentHunk = { header: line, lines: [] };
+      hunks.push(currentHunk);
+      continue;
+    }
+    if (!currentHunk) continue;
+
+    if (line.startsWith('+')) {
+      currentHunk.lines.push({ type: 'addition', num: lineNum++, content: line.slice(1) });
+    } else if (line.startsWith('-')) {
+      currentHunk.lines.push({ type: 'deletion', num: lineNum, content: line.slice(1) });
+    } else {
+      currentHunk.lines.push({ type: 'context', num: lineNum++, content: line.startsWith(' ') ? line.slice(1) : line });
+    }
+  }
+  return hunks;
+}
+
+/**
+ * Transforms GitHub-format cachedDiffJson into DiffPanel's DiffJson format.
+ * GitHub format: { files: [{ filename, patch, additions, deletions }] }
+ * DiffPanel format: { files: [{ path, status, additions, deletions, hunks }], stats }
+ */
+function normalizeDiffJson(raw: unknown): import('../../components/Assessment/DiffPanel').DiffJson {
+  const empty: import('../../components/Assessment/DiffPanel').DiffJson = {
+    files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 },
+  };
+  if (typeof raw !== 'object' || raw === null || !('files' in (raw as Record<string, unknown>))) return empty;
+
+  const rawObj = raw as Record<string, unknown>;
+  const rawFiles = rawObj.files as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(rawFiles) || rawFiles.length === 0) return empty;
+
+  // Check if already in DiffPanel format (has 'path' and 'hunks')
+  const first = rawFiles[0] as Record<string, unknown> | undefined;
+  if (first && typeof first.path === 'string' && Array.isArray(first.hunks)) {
+    // Already correct format — pass through with stats
+    const stats = rawObj.stats as { filesChanged: number; additions: number; deletions: number } | undefined;
+    return {
+      files: rawFiles as unknown as import('../../components/Assessment/DiffPanel').DiffFile[],
+      stats: stats ?? {
+        filesChanged: rawFiles.length,
+        additions: rawFiles.reduce((s, f) => s + (Number(f.additions) || 0), 0),
+        deletions: rawFiles.reduce((s, f) => s + (Number(f.deletions) || 0), 0),
+      },
+    };
+  }
+
+  // GitHub format — transform
+  const files: import('../../components/Assessment/DiffPanel').DiffFile[] = rawFiles.map((f) => {
+    const filename = (f.filename as string) || (f.path as string) || '(unknown)';
+    const additions = Number(f.additions) || 0;
+    const deletions = Number(f.deletions) || 0;
+    const patch = typeof f.patch === 'string' ? f.patch : '';
+    const status: 'added' | 'modified' | 'deleted' =
+      deletions === 0 && additions > 0 ? 'added' : additions === 0 && deletions > 0 ? 'deleted' : 'modified';
+
+    return { path: filename, status, additions, deletions, hunks: parsePatchToHunks(patch) };
+  });
 
   return {
-    diff: diff as import('../../components/Assessment/DiffPanel').DiffJson,
+    files,
+    stats: {
+      filesChanged: files.length,
+      additions: files.reduce((s, f) => s + f.additions, 0),
+      deletions: files.reduce((s, f) => s + f.deletions, 0),
+    },
+  };
+}
+
+const ConnectedDiffPanel = connectInterview(DiffPanel, (ctx) => {
+  const raw = ctx.currentChallenge.data.cachedDiffJson;
+  const diff = normalizeDiffJson(raw);
+
+  return {
+    diff,
     annotations: (ctx.submission.annotations as Annotation[]) ?? [],
     onAnnotationAdd: (a: { file: string; line: number; severity: 'critical' | 'major' | 'minor'; comment: string }) => {
       const annotation: Annotation = {

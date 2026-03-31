@@ -29,7 +29,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps): JSX.Element {
   }
 
   return (
-    <div style={{
+    <div data-testid="workspace-layout" style={{
       display: 'grid',
       gridTemplateColumns: gridTemplate,
       gap: '1px',
