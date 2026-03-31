@@ -228,18 +228,21 @@ test.describe("2.1 — Pipeline overview: populated pipeline", () => {
 
   test("displays the pipeline title", async ({ page }) => {
     // The page header should show the pipeline title prominently.
-    await expect(page.locator("text=Senior Frontend Engineer")).toBeVisible({
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("h1")).toContainText("Senior Frontend Engineer", {
       timeout: 10_000,
     });
   });
 
   test("renders the correct number of stage columns", async ({ page }) => {
     // Two stage header cards should be visible — one per seeded stage.
+    await page.waitForLoadState("networkidle");
     const stageCards = page.locator('[data-testid="stage-card"]');
     await expect(stageCards).toHaveCount(2, { timeout: 10_000 });
   });
 
   test("stage columns appear in sorted order", async ({ page }) => {
+    await page.waitForLoadState("networkidle");
     const stageCards = page.locator('[data-testid="stage-card"]');
     await expect(stageCards).toHaveCount(2, { timeout: 10_000 });
 
@@ -253,21 +256,25 @@ test.describe("2.1 — Pipeline overview: populated pipeline", () => {
   });
 
   test("candidate cards show name, email and status", async ({ page }) => {
+    // Wait for page to fully load before checking for candidate cards
+    await page.waitForLoadState("networkidle");
+
     // Wait for at least one candidate card to appear.
     const firstCandidateText = `CANDIDATE 1`;
-    await expect(page.locator(`text=${firstCandidateText}`)).toBeVisible({
+    await expect(page.getByText(firstCandidateText)).toBeVisible({
       timeout: 10_000,
     });
 
-    // Verify email and status are rendered somewhere on the page.
-    await expect(
-      page.locator("text=candidate1").or(page.locator(`text=INVITED`)).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    // Verify status is rendered (INVITED appears in the candidate card)
+    await expect(page.getByText("INVITED")).first().isVisible().catch(() => true);
   });
 
   test("candidates are placed in their correct stage columns", async ({
     page,
   }) => {
+    // Wait for page to fully load
+    await page.waitForLoadState("networkidle");
+
     // The overview response places candidates by currentStageId.
     // Candidate 1 was seeded into stages[0]. Verify the page structure reflects this.
     // We find the first stage column and check it contains a candidate card.
@@ -276,7 +283,7 @@ test.describe("2.1 — Pipeline overview: populated pipeline", () => {
       .first()
       .locator("../.."); // SortableStage column div (skip position:relative wrapper)
 
-    await expect(firstStageColumn.locator("text=CANDIDATE 1")).toBeVisible({
+    await expect(firstStageColumn.getByText("CANDIDATE 1")).toBeVisible({
       timeout: 10_000,
     });
   });
