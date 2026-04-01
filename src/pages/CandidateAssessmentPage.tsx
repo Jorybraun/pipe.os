@@ -30,7 +30,7 @@ function buildRawStage(
     order: 0,
     timeLimit: stageConfig.timeLimit ?? null,
     challenges: [{
-      id: `challenge-${currentOrder}`,
+      id: content.id ?? `challenge-${currentOrder}`,
       type: content.type ?? stageConfig.challenges?.[currentOrder]?.type ?? 'QUIZ_MCQ',
       title: content.title ?? 'Challenge',
       instructions: content.instructions ?? null,

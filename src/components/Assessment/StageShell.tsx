@@ -1,4 +1,5 @@
 import { ChevronRight, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import Logo from '../ui/Logo';
 import { useTimer } from './TimerContext';
 
 interface StageShellProps {
@@ -63,6 +64,12 @@ export function StageShell({
         zIndex: 90
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <div style={{ width: 28, height: 28, opacity: 0.4 }}>
+            <Logo />
+          </div>
+
+          <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
+
           <div>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 4, fontFamily: 'Space Mono' }}>
               ASSESSMENT_STAGE

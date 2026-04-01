@@ -39,6 +39,7 @@ export interface StageConfigDTO {
 
 /** Challenge content returned by get-challenge Worker */
 export interface ChallengeContentDTO {
+  id?: string;
   type?: string;
   title?: string;
   instructions?: string;

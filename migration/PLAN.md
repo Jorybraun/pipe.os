@@ -42,6 +42,7 @@ CI/CD:     GitHub Actions + Cloudflare Wrangler + Terraform
 | 3b | Dev Containers (ECS → CF Containers) | `/container/:sessionId/*` | Container launch/proxy/destroy via Workers, zero AWS |
 | 4 | Real-time signaling + Scheduling | `/schedule` | WebSocket signaling works, BDD tests pass |
 | 5 | CI/CD + Terraform + Cleanup | N/A | Deterministic deploys, delete `amplify/` |
+| 6 | Challenge Experience — Real Repo Pipelines | Pipeline presets, PR import | One repo → review → follow-up → implement. 3 curated pipelines. |
 
 ## Pricing Model
 

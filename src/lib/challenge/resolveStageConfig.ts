@@ -85,12 +85,17 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
 
   CODE_REVIEW: (config) => {
     const isMultiTurn = !!(config as Record<string, unknown>).isMultiTurn;
-    const maxRounds = ((config as Record<string, unknown>).maxRounds as number) ?? 4;
 
+    // Multi-turn code review (with optional explainer + file browser)
     if (isMultiTurn) {
+      const maxRounds = ((config as Record<string, unknown>).maxRounds as number) ?? 4;
       return {
         layout: 'workspace',
-        panels: { left: ['problem'], center: ['diff'], right: ['conversation'] },
+        panels: {
+          left: ['review-left'],
+          center: ['review-center'],
+          right: ['conversation'],
+        },
         shells: [],
         initialSubmission: {
           annotations: [],
@@ -102,6 +107,7 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
           sessionId: null,
           isAwaitingResponse: false,
           nextCommentId: 1,
+          selectedFile: null,
         },
         isComplete: (s: Record<string, unknown>) =>
           !!s.verdict && ((s.summary as string) ?? '').trim().length > 0,
@@ -182,6 +188,7 @@ function resolveChallengeNode(raw: RawChallenge, stageTimeLimit?: number | null)
 
   // Merge all type-specific data into a flat bag
   const data: Record<string, unknown> = {
+    id: raw.id,
     ...config,
     ...(raw.codeArtifact ? { codeArtifact: raw.codeArtifact } : {}),
     ...(raw.cachedDiffJson != null ? { cachedDiffJson: raw.cachedDiffJson } : {}),

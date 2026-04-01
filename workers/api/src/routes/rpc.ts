@@ -15,6 +15,8 @@ import { Hono } from 'hono';
 import { signJwt, verifyJwt } from '../lib/jwt';
 import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
 import { review } from './review';
+import { repo } from './repo';
+import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import type { Env } from '../types';
 
 // ─── Public routes (no auth) ────────────────────────────────────────────────
@@ -412,8 +414,38 @@ rpcAuth.post('/get-challenge', async (c) => {
     }
   }
 
-  // SECURITY: Never expose internal IDs, server_config, ground truth
+  // Self-heal: if diff is missing but repo+PR exist, fetch and cache it now
+  if (!cachedDiffJson && ch.github_repo_url && ch.github_pr_number) {
+    try {
+      const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+      const result = await fetchGitHubDiff(
+        ch.github_repo_url as string,
+        ch.github_pr_number as number,
+        token,
+      );
+      if (result) {
+        cachedDiffJson = result.diff;
+        // Persist so we don't fetch again next time
+        await c.env.DB.prepare(
+          `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
+        )
+          .bind(
+            JSON.stringify(result.diff),
+            JSON.stringify(result.metadata),
+            new Date().toISOString(),
+            ch.id as string,
+          )
+          .run();
+      }
+    } catch (err) {
+      console.error('[rpc/get-challenge] Self-heal diff fetch failed:', err);
+    }
+  }
+
+  // SECURITY: Never expose server_config or ground truth.
+  // Challenge ID (UUID) is safe — needed for file browser + review session scoping.
   return c.json({
+    id: ch.id,
     type: ch.type,
     title: ch.title,
     instructions: ch.instructions,
@@ -790,5 +822,6 @@ rpcAuth.post('/upload-media', async (c) => {
 // ─── Mount multi-turn review sub-router ─────────────────────────────────────
 
 rpcAuth.route('/review', review);
+rpcAuth.route('/repo', repo);
 
 export { rpcPublic, rpcAuth };

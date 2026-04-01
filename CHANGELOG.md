@@ -6,6 +6,46 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Explainer merged into code review — 2026-04-01)
+- **Explainer is now a tab within code review, not a separate mode.** One experience: candidates review PRs for bugs AND can ask the PR author questions via an "Ask" tab in the right panel.
+- **`workers/api/src/routes/review.ts`** — Added `POST /rpc/review/ask` (lazy session creation) and `POST /rpc/review/:sessionId/ask` (explainer on existing session). Removed all `mode === 'comprehension'` branching. `StoredTranscript` now includes optional `explainer_exchanges[]`. Verdict handler runs supplementary comprehension scoring when explainer was used.
+- **`src/components/Panels/ReviewTabPanel.tsx`** — NEW: Tab wrapper using TabNav. Shows REVIEW + ASK tabs when `enableExplainer` is on; renders ReviewConversationPanel directly when off.
+- **`src/components/Panels/ExplainerPanel.tsx`** — NEW: "Ask" tab content. Q&A interface with markdown rendering. No verdict section (verdict belongs to Review tab).
+- **`src/hooks/useExplainerSession.ts`** — NEW: Hook for explainer questions. Calls `/ask` endpoints, manages exchanges state, writes sessionId back to InterviewContext on lazy session creation.
+- **`src/lib/challenge/componentMap.ts`** — `'conversation'` now maps to `ReviewTabPanel` (was `ReviewConversationPanel`). Removed `'comprehension-conversation'`.
+- **`src/lib/challenge/resolveStageConfig.ts`** — Removed separate comprehension blueprint. Multi-turn CODE_REVIEW is one path; explainer is a feature flag.
+- **`src/pages/ChallengeEditorPage.tsx`** — Replaced REVIEW_MODE toggle with `enableExplainer` checkbox + `maxExplainerQuestions` input. IMPLEMENTER_PERSONA and MAX_ROUNDS always visible.
+- **`src/components/Editor/CodeReviewEditor.tsx`** — Sidebar scoring text updated for combined review + optional explainer signal.
+
+#### Added (Candidate file browser — 2026-04-01)
+- **`workers/api/src/routes/repo.ts`** — NEW: `GET /rpc/repo/:challengeId/tree` (repo file tree via GitHub Trees API) and `GET /rpc/repo/:challengeId/file?path=` (individual file contents via GitHub Contents API). Both candidate-auth, server-side GitHub token proxy.
+- **`src/components/Panels/FileTreePanel.tsx`** — NEW: Collapsible directory tree with file type icons, color-coded by extension. Filters out node_modules/dist/.git.
+- **`src/components/Panels/FileViewerPanel.tsx`** — NEW: Read-only Monaco editor for viewing repo files. Auto-detects language from extension. "Back to changes" button returns to diff.
+- **`src/components/Panels/ReviewLeftPanel.tsx`** — NEW: Left panel wrapper with BRIEF/FILES tabs. Brief shows instructions, Files shows the repo tree.
+- **`src/components/Panels/ReviewCenterPanel.tsx`** — NEW: Center panel switcher. Shows diff when no file selected, Monaco file viewer when a file is clicked.
+- **`src/lib/challenge/componentMap.ts`** — Registered `review-left`, `review-center` panels. Added `ConnectedReviewCenterPanel` with diff/file switching.
+- **`src/lib/challenge/resolveStageConfig.ts`** — CODE_REVIEW blueprint uses `review-left`/`review-center` when challenge has a linked GitHub repo.
+
+#### Added (Auto-generated repo context — 2026-04-01)
+- **`workers/api/src/routes/github.ts`** — New `POST /api/v1/github/repo-context` endpoint. Fetches README, changed file contents, and package.json from GitHub, then uses Mistral/Workers AI to generate `RepoKnowledgeInput` for the explainer agent.
+- **`src/components/Editor/CodeReviewEditor.tsx`** — Auto-generates explainer context when a PR is fetched. Shows editable JSON preview with regenerate button. Auto-enables explainer on PR fetch.
+
+#### Added (Explainer agent infrastructure — 2026-04-01)
+- **`workers/api/src/lib/explainerAgent.ts`** — Agent that answers candidate questions as the PR author with markdown + mermaid diagrams.
+- **`workers/api/src/lib/explainerPrompts.ts`** — System prompt for the explainer persona.
+- **`workers/api/src/lib/comprehensionScorer.ts`** — 4-scorer pipeline for supplementary question quality signal.
+- **`workers/api/src/lib/comprehensionScorerPrompts.ts`** — Prompt constants for comprehension scorers.
+- **`src/types/conversation.ts`** — Comprehension types: `ComprehensionExchange`, `ExplainerResponse`, `KeyInsight`, `RepoKnowledge`, scoring report types.
+- **`workers/api/src/lib/mockResponses.ts`** — Mock explainer/scoring responses for testing.
+- **`workers/api/migrations/0005_comprehension_mode.sql`** — Adds `mode` column to `review_sessions`.
+
+#### Removed (deleted known-failing test files — 2026-03-31)
+- Deleted `e2e/challenge-editor.spec.ts`, `e2e/code-impl-editor.spec.ts`, `e2e/code-review-editor.spec.ts`, `e2e/short-answer-editor.spec.ts`, `e2e/overview.spec.ts`, `e2e/bug-regression.spec.ts`, `e2e/bug-regression-2.spec.ts`, `e2e/multi-turn-conversation-ui.spec.ts`, `e2e/multi-turn-e2e.spec.ts` — all had stale selectors from UI redesigns and were never green.
+
+#### Fixed (implementer agent crash — Workers AI response type — 2026-03-31)
+- **`workers/api/src/lib/implementerAgent.ts`** — Fixed `TypeError: response.response?.trim is not a function` when Workers AI binding returns a non-string `.response` field. Now safely coerces the value. Also changed all failure paths (API error, empty response, bad JSON, non-array) to fall back to mock responses instead of throwing 502.
+- **`workers/api/src/lib/scorerAgent.ts`** — Same fix for `response.response` type coercion in `callWorkersAI`.
+
 #### Added (BDD test suite — AI mocking & test verification — 2026-03-31)
 - **`workers/api/src/lib/mockResponses.ts`** — Deterministic mock responses for AI agents when API keys missing. `getMockImplementerResponses()` returns keyed-by-comment mock agent responses. `getMockScoreReport()` returns valid score report with 3 dimensions.
 - **`TEST_STATUS.md`** — BDD test suite status dashboard. Documents 135+ passing tests across 8 verified files. Categorizes remaining 60+ failures by type (locator issues, multi-turn AI, editors).

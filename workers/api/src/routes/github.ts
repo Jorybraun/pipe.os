@@ -14,6 +14,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
+import { fetchGitHubDiff, extractRepoPath } from '../lib/fetchGitHubDiff';
+import type { RepoKnowledgeInput } from '../lib/explainerPrompts';
 import type { Env, Variables } from '../types';
 
 // ─── Validation ────────────────────────────────────────────────────────────────
@@ -26,41 +28,9 @@ const fetchPrSchema = z.object({
     .number({ required_error: 'prNumber is required' })
     .int()
     .positive('prNumber must be a positive integer'),
+  /** When provided, store the fetched diff + metadata on this challenge in D1. */
+  challengeId: z.string().optional(),
 });
-
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-interface GitHubPRResponse {
-  number: number;
-  title: string;
-  body: string | null;
-  state: string;
-  user: { login: string };
-  created_at: string;
-  base: { ref: string };
-  head: { ref: string };
-}
-
-interface GitHubFilesResponse {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  patch?: string;
-}
-
-interface DiffHunk {
-  header: string;
-  lines: Array<{ type: 'context' | 'added' | 'removed'; content: string; lineNumber: number }>;
-}
-
-interface DiffFile {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-  hunks: DiffHunk[];
-}
 
 // ─── Router ────────────────────────────────────────────────────────────────────
 
@@ -188,18 +158,79 @@ github.post('/pr', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', message);
   }
 
-  const { repoUrl, prNumber } = parsed.data;
+  const { repoUrl, prNumber, challengeId } = parsed.data;
 
-  // Extract owner/repo from the URL.
+  const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+
+  const result = await fetchGitHubDiff(repoUrl, prNumber, token);
+  if (!result) {
+    return c.json({ success: false, error: 'Failed to fetch PR from GitHub.' }, 502);
+  }
+
+  const { diff, metadata } = result;
+
+  // When challengeId is provided, persist diff + metadata to D1 in the same request.
+  if (challengeId) {
+    try {
+      await c.env.DB.prepare(
+        `UPDATE challenges
+         SET cached_diff_json = ?1,
+             cached_metadata = ?2,
+             diff_cached_at = ?3
+         WHERE id = ?4`,
+      )
+        .bind(
+          JSON.stringify(diff),
+          JSON.stringify(metadata),
+          new Date().toISOString(),
+          challengeId,
+        )
+        .run();
+    } catch (err) {
+      console.error('[github/pr] Failed to cache diff on challenge:', err);
+    }
+  }
+
+  return c.json({
+    success: true,
+    data: { diff, metadata },
+  });
+});
+
+// ─── POST /api/v1/github/repo-context ──────────────────────────────────────
+
+const repoContextSchema = z.object({
+  repoUrl: z.string().url('repoUrl must be a valid URL'),
+  prNumber: z.number().int().positive('prNumber must be a positive integer'),
+});
+
+/**
+ * POST /api/v1/github/repo-context
+ *
+ * Fetches repo context (README, changed file contents, package.json) and uses
+ * AI to generate RepoKnowledgeInput for the explainer agent.
+ *
+ * Body: { repoUrl: string; prNumber: number }
+ * Returns: { success: true, data: { repoKnowledge: RepoKnowledgeInput } }
+ */
+github.post('/repo-context', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = repoContextSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { repoUrl, prNumber } = parsed.data;
   const repoPath = extractRepoPath(repoUrl);
   if (!repoPath) {
-    return c.json(
-      {
-        success: false,
-        error: 'Invalid GitHub repository URL',
-      },
-      400,
-    );
+    return apiError(c, 'VALIDATION_ERROR', 'Invalid GitHub repository URL.');
   }
 
   const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
@@ -211,142 +242,258 @@ github.post('/pr', async (c) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  // Fetch PR metadata.
-  const prRes = await fetch(
-    `https://api.github.com/repos/${repoPath}/pulls/${prNumber}`,
-    { headers },
-  );
+  // Fetch in parallel: README, PR files list, package.json
+  const [readmeRes, filesRes, pkgRes] = await Promise.all([
+    fetch(`https://api.github.com/repos/${repoPath}/readme`, {
+      headers: { ...headers, Accept: 'application/vnd.github.v3.raw' },
+    }),
+    fetch(`https://api.github.com/repos/${repoPath}/pulls/${prNumber}/files?per_page=100`, { headers }),
+    fetch(`https://api.github.com/repos/${repoPath}/contents/package.json`, {
+      headers: { ...headers, Accept: 'application/vnd.github.v3.raw' },
+    }),
+  ]);
 
-  if (prRes.status === 429) {
-    const retryAfter = prRes.headers.get('Retry-After') ?? '60';
-    return c.json(
-      {
-        success: false,
-        error: `GitHub rate limit exceeded. Try again in ${retryAfter} seconds.`,
-      },
-      429,
-    );
-  }
-
-  if (prRes.status === 404) {
-    return c.json({ success: false, error: 'Pull request not found.' }, 404);
-  }
-
-  if (!prRes.ok) {
-    return c.json(
-      { success: false, error: `GitHub API error: ${prRes.status} ${prRes.statusText}` },
-      502,
-    );
-  }
-
-  const prData = (await prRes.json()) as GitHubPRResponse;
-
-  // Fetch changed files with patches.
-  const filesRes = await fetch(
-    `https://api.github.com/repos/${repoPath}/pulls/${prNumber}/files?per_page=100`,
-    { headers },
-  );
-
-  if (filesRes.status === 429) {
-    const retryAfter = filesRes.headers.get('Retry-After') ?? '60';
-    return c.json(
-      {
-        success: false,
-        error: `GitHub rate limit exceeded. Try again in ${retryAfter} seconds.`,
-      },
-      429,
-    );
-  }
+  const readme = readmeRes.ok ? await readmeRes.text() : '';
+  const pkgJson = pkgRes.ok ? await pkgRes.text() : '';
 
   if (!filesRes.ok) {
-    return c.json(
-      { success: false, error: `GitHub API error fetching files: ${filesRes.status}` },
-      502,
-    );
+    return c.json({ success: false, error: 'Failed to fetch PR files from GitHub.' }, 502);
   }
 
-  const filesData = (await filesRes.json()) as GitHubFilesResponse[];
+  const files = (await filesRes.json()) as Array<{
+    filename: string;
+    status: string;
+    patch?: string;
+    raw_url?: string;
+    contents_url?: string;
+  }>;
 
-  // Parse each file's patch into structured hunks.
-  const diffFiles: DiffFile[] = filesData.map((file) => ({
-    filename: file.filename,
-    status: file.status,
-    additions: file.additions,
-    deletions: file.deletions,
-    hunks: file.patch ? parsePatch(file.patch) : [],
-  }));
+  // Fetch full contents of changed files (up to 8 files, skip binary/large)
+  const filesToFetch = files
+    .filter((f) => f.patch && f.status !== 'removed')
+    .slice(0, 8);
 
-  const metadata = {
-    title: prData.title,
-    author: prData.user.login,
-    created_at: prData.created_at,
-    state: prData.state,
-    base: prData.base.ref,
-    head: prData.head.ref,
-    description: prData.body ?? '',
-  };
-
-  return c.json({
-    success: true,
-    data: {
-      diff: { files: diffFiles },
-      metadata,
-    },
+  const fileContents: Record<string, string> = {};
+  const contentPromises = filesToFetch.map(async (f) => {
+    try {
+      // Use contents API to get the file at the PR's head
+      const contentsUrl = f.contents_url?.replace('{+path}', f.filename);
+      if (!contentsUrl) return;
+      const res = await fetch(contentsUrl, {
+        headers: { ...headers, Accept: 'application/vnd.github.v3.raw' },
+      });
+      if (res.ok) {
+        const text = await res.text();
+        // Skip files over 10KB to stay within context limits
+        if (text.length <= 10_000) {
+          fileContents[f.filename] = text;
+        }
+      }
+    } catch {
+      // Skip files that fail to fetch
+    }
   });
+  await Promise.all(contentPromises);
+
+  // Fetch the PR metadata for context
+  const prRes = await fetch(`https://api.github.com/repos/${repoPath}/pulls/${prNumber}`, { headers });
+  const prData = prRes.ok
+    ? (await prRes.json()) as { title: string; body: string | null }
+    : { title: '', body: null };
+
+  // Build the prompt for AI generation
+  const contextForAI = buildRepoContextPrompt({
+    readme: readme.slice(0, 5000),
+    pkgJson: pkgJson.slice(0, 2000),
+    prTitle: prData.title,
+    prDescription: prData.body ?? '',
+    changedFiles: files.map((f) => f.filename),
+    fileContents,
+  });
+
+  // Call AI to generate repoKnowledge
+  const apiKey = c.env.MISTRAL_API_KEY ?? '';
+  const provider = apiKey ? 'mistral' : 'workers-ai';
+
+  let repoKnowledge: RepoKnowledgeInput;
+  try {
+    if (provider === 'mistral') {
+      const mistralRes = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'devstral-small-latest',
+          messages: [
+            { role: 'system', content: 'You generate structured JSON about code repositories. Respond with ONLY the JSON object, no markdown fences.' },
+            { role: 'user', content: contextForAI },
+          ],
+          temperature: 0.3,
+          max_tokens: 4000,
+        }),
+      });
+      if (!mistralRes.ok) throw new Error(`Mistral ${mistralRes.status}`);
+      const mistralData = (await mistralRes.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      const raw = mistralData.choices[0]?.message?.content ?? '{}';
+      repoKnowledge = parseRepoKnowledge(raw);
+    } else {
+      // Workers AI fallback
+      const aiResult = await c.env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct' as Parameters<typeof c.env.AI.run>[0], {
+        messages: [
+          { role: 'system', content: 'You generate structured JSON about code repositories. Respond with ONLY the JSON object, no markdown fences.' },
+          { role: 'user', content: contextForAI },
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+      }) as { response?: string };
+      repoKnowledge = parseRepoKnowledge(aiResult.response ?? '{}');
+    }
+  } catch (err) {
+    console.error('[github/repo-context] AI generation failed:', err);
+    // Return a minimal fallback so the flow doesn't break
+    repoKnowledge = buildFallbackRepoKnowledge(prData.title, prData.body ?? '', files.map((f) => f.filename), fileContents);
+  }
+
+  return c.json({ success: true, data: { repoKnowledge } });
 });
 
-// ─── Utilities ─────────────────────────────────────────────────────────────────
+// ─── Helpers for repo-context ───────────────────────────────────────────────
 
-/**
- * Extract "owner/repo" from a full GitHub URL.
- * Accepts: https://github.com/owner/repo or https://github.com/owner/repo.git
- */
-function extractRepoPath(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.hostname !== 'github.com') return null;
-    // pathname: /owner/repo or /owner/repo.git
-    const parts = u.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/');
-    if (parts.length < 2 || !parts[0] || !parts[1]) return null;
-    return `${parts[0]}/${parts[1]}`;
-  } catch {
-    return null;
+function buildRepoContextPrompt(input: {
+  readme: string;
+  pkgJson: string;
+  prTitle: string;
+  prDescription: string;
+  changedFiles: string[];
+  fileContents: Record<string, string>;
+}): string {
+  const parts: string[] = [];
+
+  parts.push(`Generate a RepoKnowledgeInput JSON object for a code review challenge. This context will be used by an AI agent playing the PR author to answer questions about the codebase.
+
+## Repository README (excerpt)
+${input.readme || '(not available)'}
+
+## package.json (excerpt)
+${input.pkgJson || '(not available)'}
+
+## Pull Request
+Title: ${input.prTitle}
+Description: ${input.prDescription || '(no description)'}
+
+## Changed Files
+${input.changedFiles.join('\n')}
+
+## Full File Contents (for surrounding code context)
+`);
+
+  for (const [file, content] of Object.entries(input.fileContents)) {
+    parts.push(`### ${file}\n\`\`\`\n${content}\n\`\`\`\n`);
+  }
+
+  parts.push(`
+## Required Output Format
+
+Return a JSON object with this exact structure:
+{
+  "architecture": {
+    "overview": "2-3 sentence overview of the project architecture",
+    "components": [{ "name": "ComponentName", "description": "what it does", "file": "path/to/file.ts" }],
+    "dataFlow": "how data moves through the system"
+  },
+  "designDecisions": [
+    {
+      "id": 1,
+      "decision": "what was decided",
+      "reason": "why",
+      "alternatives": ["other options"],
+      "tradeoffs": "what was traded off"
+    }
+  ],
+  "surroundingCode": {
+    "path/to/file.ts": "relevant code snippet that helps understand the PR"
+  },
+  "prContext": {
+    "problemSolved": "what problem this PR addresses",
+    "approach": "how it solves it",
+    "keyFiles": ["list", "of", "key", "files"]
   }
 }
 
-/**
- * Parse a unified diff patch string into structured hunks.
- * Extracts line numbers from @@ headers (e.g., @@ -10,5 +12,7 @@).
- */
-function parsePatch(patch: string): DiffHunk[] {
-  const hunks: DiffHunk[] = [];
-  let currentHunk: DiffHunk | null = null;
-  let newLineNum = 0;
+Focus on what would help a code reviewer understand this PR. Include 2-4 design decisions and 2-5 architecture components. For surroundingCode, include only the most relevant snippets (not entire files).`);
 
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('@@')) {
-      if (currentHunk) hunks.push(currentHunk);
-      currentHunk = { header: line, lines: [] };
-      // Extract new-file start line from @@ -old,count +new,count @@
-      const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
-      newLineNum = match ? parseInt(match[1], 10) : 1;
-    } else if (currentHunk) {
-      if (line.startsWith('+') && !line.startsWith('+++')) {
-        currentHunk.lines.push({ type: 'added', content: line.slice(1), lineNumber: newLineNum });
-        newLineNum++;
-      } else if (line.startsWith('-') && !line.startsWith('---')) {
-        currentHunk.lines.push({ type: 'removed', content: line.slice(1), lineNumber: newLineNum });
-        // Deleted lines don't advance the new-file line counter
-      } else if (line.startsWith(' ')) {
-        currentHunk.lines.push({ type: 'context', content: line.slice(1), lineNumber: newLineNum });
-        newLineNum++;
-      }
-    }
-  }
+  return parts.join('\n');
+}
 
-  if (currentHunk) hunks.push(currentHunk);
+function parseRepoKnowledge(raw: string): RepoKnowledgeInput {
+  // Strip markdown fences if present
+  const cleaned = raw.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+  const parsed = JSON.parse(cleaned) as Record<string, unknown>;
 
-  return hunks;
+  // Validate and coerce to RepoKnowledgeInput
+  const arch = parsed.architecture as Record<string, unknown> | undefined;
+  const decisions = Array.isArray(parsed.designDecisions)
+    ? (parsed.designDecisions as Array<Record<string, unknown>>)
+    : [];
+  const surrounding = typeof parsed.surroundingCode === 'object' && parsed.surroundingCode !== null
+    ? (parsed.surroundingCode as Record<string, string>)
+    : {};
+  const ctx = parsed.prContext as Record<string, unknown> | undefined;
+
+  return {
+    architecture: {
+      overview: typeof arch?.overview === 'string' ? arch.overview : '',
+      components: Array.isArray(arch?.components)
+        ? (arch.components as Array<Record<string, string>>).map((c) => ({
+            name: c.name ?? '',
+            description: c.description ?? '',
+            ...(c.file ? { file: c.file } : {}),
+          }))
+        : [],
+      ...(typeof arch?.dataFlow === 'string' ? { dataFlow: arch.dataFlow } : {}),
+    },
+    designDecisions: decisions.map((d, i) => ({
+      id: typeof d.id === 'number' ? d.id : i + 1,
+      decision: typeof d.decision === 'string' ? d.decision : '',
+      reason: typeof d.reason === 'string' ? d.reason : '',
+      alternatives: Array.isArray(d.alternatives) ? d.alternatives.map(String) : [],
+      tradeoffs: typeof d.tradeoffs === 'string' ? d.tradeoffs : '',
+    })),
+    surroundingCode: surrounding,
+    prContext: {
+      problemSolved: typeof ctx?.problemSolved === 'string' ? ctx.problemSolved : '',
+      approach: typeof ctx?.approach === 'string' ? ctx.approach : '',
+      keyFiles: Array.isArray(ctx?.keyFiles) ? (ctx.keyFiles as string[]) : [],
+    },
+  };
+}
+
+function buildFallbackRepoKnowledge(
+  prTitle: string,
+  prDescription: string,
+  changedFiles: string[],
+  fileContents: Record<string, string>,
+): RepoKnowledgeInput {
+  return {
+    architecture: {
+      overview: 'Architecture details not available — generated from PR metadata only.',
+      components: changedFiles.slice(0, 5).map((f) => ({
+        name: f.split('/').pop() ?? f,
+        description: 'Modified in this PR',
+        file: f,
+      })),
+    },
+    designDecisions: [],
+    surroundingCode: Object.fromEntries(
+      Object.entries(fileContents).slice(0, 3).map(([k, v]) => [k, v.slice(0, 2000)]),
+    ),
+    prContext: {
+      problemSolved: prDescription.slice(0, 500) || prTitle,
+      approach: 'See PR description and diff for details.',
+      keyFiles: changedFiles.slice(0, 5),
+    },
+  };
 }
 
 export { github };

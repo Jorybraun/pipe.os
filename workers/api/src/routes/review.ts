@@ -3,12 +3,14 @@
  *
  * Mounts under /rpc/review (candidate JWT auth via rpcAuth).
  *
- * Transcript stored as ReviewRound[] (arena-aligned).
+ * Transcript stored as ReviewRound[] (arena-aligned) with optional explainer_exchanges.
  * Thread[] view computed from rounds on read for display.
  *
  * Routes:
- *   POST /rpc/review/submit          — create review session, call implementer agent
+ *   POST /rpc/review/submit              — create review session, call implementer agent
+ *   POST /rpc/review/ask                 — lazy-create session + ask explainer (pre-round-1)
  *   POST /rpc/review/:sessionId/respond  — candidate reply, agent responds, round++
+ *   POST /rpc/review/:sessionId/ask      — ask explainer question (alongside review)
  *   POST /rpc/review/:sessionId/verdict  — finalise session with approve/request_changes
  *   GET  /rpc/review/:sessionId/status   — return current session status
  */
@@ -22,7 +24,15 @@ import {
   type ImplementerResponse,
   type ReviewRound,
 } from '../lib/implementerAgent';
+import {
+  callExplainerAgent,
+  type ComprehensionQuestion,
+  type ExplainerResponse,
+  type ComprehensionExchange,
+} from '../lib/explainerAgent';
+import type { RepoKnowledgeInput } from '../lib/explainerPrompts';
 import { scoreReviewSession, type PlantedBug } from '../lib/scorerAgent';
+import { scoreComprehensionSession, type ComprehensionGroundTruth } from '../lib/comprehensionScorer';
 import { computeImplementerMetrics } from '../lib/implementerMetrics';
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -42,6 +52,7 @@ interface ReviewSessionRow {
   status: string;
   transcript: string;
   next_comment_id: number;
+  mode: string;
 }
 
 interface ChallengeConfigRow {
@@ -54,9 +65,10 @@ interface ChallengeConfigRow {
   github_pr_description: string | null;
 }
 
-/** Shape of transcript stored in D1 */
+/** Shape of transcript stored in D1 — review rounds + optional explainer exchanges */
 interface StoredTranscript {
   rounds: ReviewRound[];
+  explainer_exchanges?: ComprehensionExchange[];
   verdict?: {
     decision: string;
     summary: string;
@@ -106,9 +118,33 @@ function extractDiffText(cachedDiffJson: unknown): string {
 
   return files
     .map((f) => {
-      const filename = typeof f.filename === 'string' ? f.filename : '(unknown)';
-      const patch = typeof f.patch === 'string' ? f.patch : '';
-      return `--- ${filename}\n${patch}`;
+      const filename = typeof f.filename === 'string' ? f.filename
+        : typeof f.path === 'string' ? f.path : '(unknown)';
+
+      // Legacy format: raw patch string
+      if (typeof f.patch === 'string') {
+        return `--- ${filename}\n${f.patch}`;
+      }
+
+      // Current format: structured hunks from the Worker's parsePatch
+      const hunks = Array.isArray(f.hunks) ? f.hunks as Array<Record<string, unknown>> : [];
+      if (hunks.length === 0) return `--- ${filename}\n(no changes)`;
+
+      const patchLines = hunks.flatMap((h) => {
+        const header = typeof h.header === 'string' ? h.header : '';
+        const lines = Array.isArray(h.lines) ? h.lines as Array<Record<string, unknown>> : [];
+        return [
+          header,
+          ...lines.map((l) => {
+            const type = typeof l.type === 'string' ? l.type : '';
+            const content = typeof l.content === 'string' ? l.content : '';
+            if (type === 'added' || type === 'addition') return `+${content}`;
+            if (type === 'removed' || type === 'deletion') return `-${content}`;
+            return ` ${content}`;
+          }),
+        ];
+      });
+      return `--- ${filename}\n${patchLines.join('\n')}`;
     })
     .join('\n\n');
 }
@@ -224,24 +260,10 @@ review.post('/submit', async (c) => {
   }
 
   const challengeOrder = body.challengeOrder;
-  const annotations = body.annotations;
-  const summary = body.summary;
 
   if (typeof challengeOrder !== 'number' || !Number.isInteger(challengeOrder) || challengeOrder < 0) {
     return c.json(
       { error: { code: 'BAD_REQUEST', message: 'challengeOrder must be a non-negative integer.' } },
-      400,
-    );
-  }
-  if (!Array.isArray(annotations)) {
-    return c.json(
-      { error: { code: 'BAD_REQUEST', message: 'annotations must be an array.' } },
-      400,
-    );
-  }
-  if (typeof summary !== 'string' || summary.trim() === '') {
-    return c.json(
-      { error: { code: 'BAD_REQUEST', message: 'summary is required.' } },
       400,
     );
   }
@@ -285,9 +307,6 @@ review.post('/submit', async (c) => {
     );
   }
 
-  const persona = (config?.implementerPersona === 'senior' ? 'senior' : 'junior') as
-    | 'junior'
-    | 'senior';
   const maxRounds = typeof config?.maxRounds === 'number' ? config.maxRounds : 4;
 
   // Get assessment for this stage
@@ -304,26 +323,23 @@ review.post('/submit', async (c) => {
     );
   }
 
-  // Check for duplicate session (idempotency)
+  // Check for existing session — reuse if created by lazy /ask, otherwise conflict
   const existingSession = await c.env.DB.prepare(
-    `SELECT id FROM review_sessions
-     WHERE candidate_id = ?1 AND challenge_id = ?2 AND assessment_id = ?3 LIMIT 1`,
+    `SELECT id, current_round, transcript, next_comment_id FROM review_sessions
+     WHERE candidate_id = ?1 AND challenge_id = ?2 AND assessment_id = ?3 AND status = 'in_progress' LIMIT 1`,
   )
     .bind(candidateId, ch.id, assessment.id)
-    .first<{ id: string }>();
+    .first<{ id: string; current_round: number; transcript: string; next_comment_id: number }>();
 
-  if (existingSession) {
+  // If a session exists and already has review rounds, it's a duplicate
+  if (existingSession && existingSession.current_round > 0) {
     return c.json(
       { error: { code: 'CONFLICT', message: 'Review session already exists for this challenge.' } },
       409,
     );
   }
 
-  // Convert annotations to ReviewComment[] with numeric IDs
-  const typedAnnotations = annotations as Array<Record<string, unknown>>;
-  const [reviewerComments, nextCommentId] = annotationsToComments(typedAnnotations, 1);
-
-  // Call implementer agent
+  // Shared context
   const cachedDiffJson = parseJsonColumn<unknown>(ch.cached_diff_json);
   const prDiff = extractDiffText(cachedDiffJson);
   const prBrief =
@@ -331,12 +347,39 @@ review.post('/submit', async (c) => {
     ch.github_pr_title ??
     ch.instructions ??
     'Implement the described feature.';
+  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
+  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+
+  // ── Bug-finding mode ───────────────────────────────────────────────────
+  const annotations = body.annotations;
+  const summary = body.summary;
+
+  if (!Array.isArray(annotations)) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'annotations must be an array.' } },
+      400,
+    );
+  }
+  if (typeof summary !== 'string' || summary.trim() === '') {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'summary is required.' } },
+      400,
+    );
+  }
+
+  const persona = (config?.implementerPersona === 'senior' ? 'senior' : 'junior') as
+    | 'junior'
+    | 'senior';
+
+  // Convert annotations to ReviewComment[] with numeric IDs
+  const typedAnnotations = annotations as Array<Record<string, unknown>>;
+  const [reviewerComments, nextCommentId] = annotationsToComments(typedAnnotations, 1);
 
   let agentResponses: ImplementerResponse[];
   try {
     agentResponses = await callImplementerAgent({
-      apiKey: c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '',
-      provider: c.env.AI ? 'workers-ai' as const : c.env.MISTRAL_API_KEY ? 'mistral' as const : 'anthropic' as const,
+      apiKey,
+      provider: llmProvider,
       ai: c.env.AI,
       persona,
       prBrief,
@@ -358,17 +401,43 @@ review.post('/submit', async (c) => {
     implementer_responses: agentResponses,
   };
 
-  const transcript: StoredTranscript = { rounds: [round1] };
-
-  // Persist review session
-  const sessionId = crypto.randomUUID();
   const now = new Date().toISOString();
+
+  // Reuse existing lazy session (created by /ask) or create new
+  if (existingSession) {
+    const existingTranscript = parseJsonColumn<StoredTranscript>(existingSession.transcript)
+      ?? { rounds: [] };
+    existingTranscript.rounds.push(round1);
+
+    await c.env.DB.prepare(
+      `UPDATE review_sessions
+       SET transcript = ?1, current_round = 1, next_comment_id = ?2,
+           implementer_persona = ?3, max_rounds = ?4, updated_at = ?5
+       WHERE id = ?6`,
+    )
+      .bind(
+        JSON.stringify(existingTranscript), nextCommentId, persona,
+        maxRounds, now, existingSession.id,
+      )
+      .run();
+
+    const threads = buildThreadsForResponse(existingTranscript.rounds);
+    return c.json({
+      sessionId: existingSession.id,
+      round: 1,
+      rounds: existingTranscript.rounds,
+      threads,
+    });
+  }
+
+  const transcript: StoredTranscript = { rounds: [round1] };
+  const sessionId = crypto.randomUUID();
 
   await c.env.DB.prepare(`
     INSERT INTO review_sessions
       (id, challenge_id, assessment_id, candidate_id, implementer_persona,
-       current_round, max_rounds, status, transcript, next_comment_id, created_at, updated_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'in_progress', ?8, ?9, ?10, ?10)
+       current_round, max_rounds, status, transcript, next_comment_id, mode, created_at, updated_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'in_progress', ?8, ?9, 'bug_finding', ?10, ?10)
   `)
     .bind(
       sessionId, ch.id, assessment.id, candidateId, persona,
@@ -402,7 +471,7 @@ review.post('/:sessionId/respond', async (c) => {
   // Load and authorise session
   const session = await c.env.DB.prepare(
     `SELECT id, challenge_id, assessment_id, candidate_id, implementer_persona,
-            current_round, max_rounds, status, transcript, next_comment_id
+            current_round, max_rounds, status, transcript, next_comment_id, mode
      FROM review_sessions
      WHERE id = ?1`,
   )
@@ -432,6 +501,26 @@ review.post('/:sessionId/respond', async (c) => {
       400,
     );
   }
+
+  // Load challenge for context
+  const ch = await c.env.DB.prepare(
+    `SELECT config, server_config, cached_diff_json, instructions, github_pr_title, github_pr_description
+     FROM challenges WHERE id = ?1`,
+  )
+    .bind(session.challenge_id)
+    .first<ChallengeConfigRow>();
+
+  const cachedDiffJson = parseJsonColumn<unknown>(ch?.cached_diff_json ?? null);
+  const prDiff = extractDiffText(cachedDiffJson);
+  const prBrief =
+    ch?.github_pr_description ??
+    ch?.github_pr_title ??
+    ch?.instructions ??
+    'Implement the described feature.';
+  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
+  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+
+  // ── Bug-finding conversation ──────────────────────────────────────────
 
   // Parse existing transcript
   const transcript = parseJsonColumn<StoredTranscript>(session.transcript) ?? { rounds: [] };
@@ -478,22 +567,6 @@ review.post('/:sessionId/respond', async (c) => {
     );
   }
 
-  // Load challenge for context
-  const ch = await c.env.DB.prepare(
-    `SELECT config, cached_diff_json, instructions, github_pr_title, github_pr_description
-     FROM challenges WHERE id = ?1`,
-  )
-    .bind(session.challenge_id)
-    .first<ChallengeConfigRow>();
-
-  const cachedDiffJson = parseJsonColumn<unknown>(ch?.cached_diff_json ?? null);
-  const prDiff = extractDiffText(cachedDiffJson);
-  const prBrief =
-    ch?.github_pr_description ??
-    ch?.github_pr_title ??
-    ch?.instructions ??
-    'Implement the described feature.';
-
   const persona = (session.implementer_persona === 'senior' ? 'senior' : 'junior') as
     | 'junior'
     | 'senior';
@@ -502,8 +575,8 @@ review.post('/:sessionId/respond', async (c) => {
   let agentResponses: ImplementerResponse[];
   try {
     agentResponses = await callImplementerAgent({
-      apiKey: c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '',
-      provider: c.env.AI ? 'workers-ai' as const : c.env.MISTRAL_API_KEY ? 'mistral' as const : 'anthropic' as const,
+      apiKey,
+      provider: llmProvider,
       ai: c.env.AI,
       persona,
       prBrief,
@@ -542,6 +615,290 @@ review.post('/:sessionId/respond', async (c) => {
   return c.json({ round: newRoundNum, rounds: transcript.rounds, threads });
 });
 
+// ─── POST /rpc/review/ask (lazy session creation + explainer) ───────────────
+
+review.post('/ask', async (c) => {
+  const candidateId = c.get('candidateId');
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
+  }
+
+  const challengeOrder = body.challengeOrder;
+  if (typeof challengeOrder !== 'number' || !Number.isInteger(challengeOrder) || challengeOrder < 0) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'challengeOrder must be a non-negative integer.' } },
+      400,
+    );
+  }
+
+  const questionText = body.question;
+  if (typeof questionText !== 'string' || questionText.trim() === '') {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'question is required.' } },
+      400,
+    );
+  }
+
+  // Find candidate's current stage
+  const candidate = await c.env.DB.prepare(
+    `SELECT current_stage_id FROM candidates WHERE id = ?1`,
+  )
+    .bind(candidateId)
+    .first<{ current_stage_id: string | null }>();
+
+  if (!candidate?.current_stage_id) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'No active stage.' } }, 404);
+  }
+
+  // Fetch challenge
+  const challenges = await c.env.DB.prepare(`
+    SELECT id, config, server_config, cached_diff_json, instructions,
+           github_pr_title, github_pr_description
+    FROM challenges
+    WHERE stage_id = ?1
+    ORDER BY sort_order ASC
+  `)
+    .bind(candidate.current_stage_id)
+    .all();
+
+  const rows = challenges.results ?? [];
+  if (challengeOrder >= rows.length) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Challenge not found.' } }, 404);
+  }
+
+  const ch = rows[challengeOrder] as unknown as ChallengeConfigRow;
+  const config = parseJsonColumn<Record<string, unknown>>(ch.config);
+
+  if (!config?.enableExplainer) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'Explainer is not enabled for this challenge.' } },
+      400,
+    );
+  }
+
+  // Get assessment
+  const assessment = await c.env.DB.prepare(
+    `SELECT id FROM assessments WHERE candidate_id = ?1 AND stage_id = ?2 LIMIT 1`,
+  )
+    .bind(candidateId, candidate.current_stage_id)
+    .first<{ id: string }>();
+
+  if (!assessment) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'No assessment found.' } }, 404);
+  }
+
+  // Check for existing session
+  const existingSession = await c.env.DB.prepare(
+    `SELECT id, transcript FROM review_sessions
+     WHERE candidate_id = ?1 AND challenge_id = ?2 AND assessment_id = ?3 AND status = 'in_progress' LIMIT 1`,
+  )
+    .bind(candidateId, ch.id, assessment.id)
+    .first<{ id: string; transcript: string }>();
+
+  const maxExplainerQuestions = typeof config?.maxExplainerQuestions === 'number'
+    ? config.maxExplainerQuestions : 6;
+
+  const question: ComprehensionQuestion = {
+    text: questionText as string,
+    ...(typeof body.file === 'string' ? { file: body.file as string } : {}),
+    ...(typeof body.line === 'number' ? { line: body.line as number } : {}),
+  };
+
+  const cachedDiffJson = parseJsonColumn<unknown>(ch.cached_diff_json);
+  const prDiff = extractDiffText(cachedDiffJson);
+  const prBrief = ch.github_pr_description ?? ch.github_pr_title ?? ch.instructions ?? '';
+  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
+  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  const serverConfig = parseJsonColumn<Record<string, unknown>>(ch.server_config);
+  const repoKnowledge = (serverConfig?.repoKnowledge as RepoKnowledgeInput | undefined) ?? null;
+
+  if (existingSession) {
+    // Append to existing session
+    const transcript = parseJsonColumn<StoredTranscript>(existingSession.transcript)
+      ?? { rounds: [] };
+    const exchanges = transcript.explainer_exchanges ?? [];
+
+    if (exchanges.length >= maxExplainerQuestions) {
+      return c.json(
+        { error: { code: 'MAX_QUESTIONS_REACHED', message: `Maximum questions (${maxExplainerQuestions}) reached.` } },
+        400,
+      );
+    }
+
+    let answer: ExplainerResponse;
+    try {
+      answer = await callExplainerAgent({
+        apiKey, provider: llmProvider, ai: c.env.AI,
+        prBrief, prDiff, repoKnowledge,
+        previousExchanges: exchanges,
+        newQuestion: question,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[review/ask] explainer agent failed:', msg);
+      return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
+    }
+
+    const exchange: ComprehensionExchange = { round: exchanges.length + 1, question, answer };
+    exchanges.push(exchange);
+    transcript.explainer_exchanges = exchanges;
+
+    await c.env.DB.prepare(
+      `UPDATE review_sessions SET transcript = ?1, updated_at = ?2 WHERE id = ?3`,
+    )
+      .bind(JSON.stringify(transcript), new Date().toISOString(), existingSession.id)
+      .run();
+
+    return c.json({ sessionId: existingSession.id, exchanges });
+  }
+
+  // No session yet — create a lazy session (current_round=0, empty rounds)
+  let answer: ExplainerResponse;
+  try {
+    answer = await callExplainerAgent({
+      apiKey, provider: llmProvider, ai: c.env.AI,
+      prBrief, prDiff, repoKnowledge,
+      previousExchanges: [],
+      newQuestion: question,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[review/ask] explainer agent failed:', msg);
+    return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
+  }
+
+  const exchange: ComprehensionExchange = { round: 1, question, answer };
+  const transcript: StoredTranscript = { rounds: [], explainer_exchanges: [exchange] };
+  const sessionId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  await c.env.DB.prepare(`
+    INSERT INTO review_sessions
+      (id, challenge_id, assessment_id, candidate_id, implementer_persona,
+       current_round, max_rounds, status, transcript, next_comment_id, mode, created_at, updated_at)
+    VALUES (?1, ?2, ?3, ?4, 'pending', 0, ?5, 'in_progress', ?6, 1, 'bug_finding', ?7, ?7)
+  `)
+    .bind(sessionId, ch.id, assessment.id, candidateId,
+      typeof config?.maxRounds === 'number' ? config.maxRounds : 4,
+      JSON.stringify(transcript), now)
+    .run();
+
+  return c.json({ sessionId, exchanges: transcript.explainer_exchanges });
+});
+
+// ─── POST /rpc/review/:sessionId/ask (explainer question on existing session) ─
+
+review.post('/:sessionId/ask', async (c) => {
+  const candidateId = c.get('candidateId');
+  const sessionId = c.req.param('sessionId');
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
+  }
+
+  const questionText = body.question;
+  if (typeof questionText !== 'string' || questionText.trim() === '') {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'question is required.' } },
+      400,
+    );
+  }
+
+  // Load and authorise session
+  const session = await c.env.DB.prepare(
+    `SELECT id, challenge_id, candidate_id, status, transcript
+     FROM review_sessions WHERE id = ?1`,
+  )
+    .bind(sessionId)
+    .first<{ id: string; challenge_id: string; candidate_id: string; status: string; transcript: string }>();
+
+  if (!session) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Review session not found.' } }, 404);
+  }
+  if (session.candidate_id !== candidateId) {
+    return c.json({ error: { code: 'FORBIDDEN', message: 'Access denied.' } }, 403);
+  }
+  if (session.status !== 'in_progress') {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Session is not in progress.' } }, 400);
+  }
+
+  // Load challenge config
+  const ch = await c.env.DB.prepare(
+    `SELECT config, server_config, cached_diff_json, instructions, github_pr_title, github_pr_description
+     FROM challenges WHERE id = ?1`,
+  )
+    .bind(session.challenge_id)
+    .first<ChallengeConfigRow>();
+
+  const config = parseJsonColumn<Record<string, unknown>>(ch?.config ?? null);
+  if (!config?.enableExplainer) {
+    return c.json(
+      { error: { code: 'BAD_REQUEST', message: 'Explainer is not enabled for this challenge.' } },
+      400,
+    );
+  }
+
+  const maxExplainerQuestions = typeof config?.maxExplainerQuestions === 'number'
+    ? config.maxExplainerQuestions : 6;
+
+  const transcript = parseJsonColumn<StoredTranscript>(session.transcript) ?? { rounds: [] };
+  const exchanges = transcript.explainer_exchanges ?? [];
+
+  if (exchanges.length >= maxExplainerQuestions) {
+    return c.json(
+      { error: { code: 'MAX_QUESTIONS_REACHED', message: `Maximum questions (${maxExplainerQuestions}) reached.` } },
+      400,
+    );
+  }
+
+  const question: ComprehensionQuestion = {
+    text: questionText as string,
+    ...(typeof body.file === 'string' ? { file: body.file as string } : {}),
+    ...(typeof body.line === 'number' ? { line: body.line as number } : {}),
+  };
+
+  const cachedDiffJson = parseJsonColumn<unknown>(ch?.cached_diff_json ?? null);
+  const prDiff = extractDiffText(cachedDiffJson);
+  const prBrief = ch?.github_pr_description ?? ch?.github_pr_title ?? ch?.instructions ?? '';
+  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
+  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  const serverConfig = parseJsonColumn<Record<string, unknown>>(ch?.server_config ?? null);
+  const repoKnowledge = (serverConfig?.repoKnowledge as RepoKnowledgeInput | undefined) ?? null;
+
+  let answer: ExplainerResponse;
+  try {
+    answer = await callExplainerAgent({
+      apiKey, provider: llmProvider, ai: c.env.AI,
+      prBrief, prDiff, repoKnowledge,
+      previousExchanges: exchanges,
+      newQuestion: question,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[review/ask] explainer agent failed:', msg);
+    return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
+  }
+
+  const exchange: ComprehensionExchange = { round: exchanges.length + 1, question, answer };
+  exchanges.push(exchange);
+  transcript.explainer_exchanges = exchanges;
+
+  await c.env.DB.prepare(
+    `UPDATE review_sessions SET transcript = ?1, updated_at = ?2 WHERE id = ?3`,
+  )
+    .bind(JSON.stringify(transcript), new Date().toISOString(), sessionId)
+    .run();
+
+  return c.json({ sessionId, exchanges });
+});
+
 // ─── POST /rpc/review/:sessionId/verdict ────────────────────────────────────
 
 review.post('/:sessionId/verdict', async (c) => {
@@ -556,6 +913,29 @@ review.post('/:sessionId/verdict', async (c) => {
   }
 
   const verdict = body.verdict;
+
+  // Load and authorise session
+  const session = await c.env.DB.prepare(
+    `SELECT id, candidate_id, challenge_id, assessment_id, status, transcript, mode
+     FROM review_sessions WHERE id = ?1`,
+  )
+    .bind(sessionId)
+    .first<{ id: string; candidate_id: string; challenge_id: string; assessment_id: string; status: string; transcript: string; mode: string }>();
+
+  if (!session) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Review session not found.' } }, 404);
+  }
+  if (session.candidate_id !== candidateId) {
+    return c.json({ error: { code: 'FORBIDDEN', message: 'Access denied.' } }, 403);
+  }
+  if (session.status !== 'in_progress') {
+    return c.json(
+      { error: { code: 'CONFLICT', message: 'Session is not in progress.' } },
+      409,
+    );
+  }
+
+  // ── Review verdict ──────────────────────────────────────────────────────
   const verdictSummary = body.summary;
 
   if (verdict !== 'approve' && verdict !== 'request_changes' && verdict !== 'comment_only') {
@@ -573,27 +953,6 @@ review.post('/:sessionId/verdict', async (c) => {
     return c.json(
       { error: { code: 'BAD_REQUEST', message: 'summary is required.' } },
       400,
-    );
-  }
-
-  // Load and authorise session
-  const session = await c.env.DB.prepare(
-    `SELECT id, candidate_id, challenge_id, assessment_id, status, transcript
-     FROM review_sessions WHERE id = ?1`,
-  )
-    .bind(sessionId)
-    .first<{ id: string; candidate_id: string; challenge_id: string; assessment_id: string; status: string; transcript: string }>();
-
-  if (!session) {
-    return c.json({ error: { code: 'NOT_FOUND', message: 'Review session not found.' } }, 404);
-  }
-  if (session.candidate_id !== candidateId) {
-    return c.json({ error: { code: 'FORBIDDEN', message: 'Access denied.' } }, 403);
-  }
-  if (session.status !== 'in_progress') {
-    return c.json(
-      { error: { code: 'CONFLICT', message: 'Session is not in progress.' } },
-      409,
     );
   }
 
@@ -616,7 +975,6 @@ review.post('/:sessionId/verdict', async (c) => {
     .run();
 
   // Trigger async scoring (fire-and-forget via waitUntil)
-  // Workers AI doesn't need an API key — the AI binding is enough
   const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
   const hasAI = !!c.env.AI;
   if (hasAI || apiKey) {
@@ -655,7 +1013,7 @@ review.post('/:sessionId/verdict', async (c) => {
           .bind(new Date().toISOString(), sessionId)
           .run();
 
-        const provider = c.env.AI ? 'workers-ai' as const : c.env.MISTRAL_API_KEY ? 'mistral' as const : 'anthropic' as const;
+        const provider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
 
         const scoreReport = await scoreReviewSession({
           apiKey,
@@ -672,8 +1030,37 @@ review.post('/:sessionId/verdict', async (c) => {
         // Compute implementer metrics (deterministic, no LLM)
         const implementerMetrics = computeImplementerMetrics(transcript.rounds);
 
-        // Write score report + implementer metrics + update status to 'scored'
-        const fullReport = { ...scoreReport, implementer_metrics: implementerMetrics };
+        // Run supplementary comprehension scoring if explainer was used
+        let comprehensionSupplement: Record<string, unknown> | undefined;
+        if (transcript.explainer_exchanges && transcript.explainer_exchanges.length > 0) {
+          try {
+            const groundTruthRaw = parseJsonColumn<ComprehensionGroundTruth>(ch.ground_truth);
+            const comprehensionGroundTruth: ComprehensionGroundTruth = groundTruthRaw?.mode === 'comprehension'
+              ? groundTruthRaw
+              : { mode: 'comprehension', keyInsights: [], idealVerdict: 'approve', idealRationale: '' };
+
+            const compReport = await scoreComprehensionSession({
+              apiKey,
+              provider,
+              ai: c.env.AI,
+              transcript: { mode: 'comprehension', exchanges: transcript.explainer_exchanges },
+              groundTruth: comprehensionGroundTruth,
+              prTitle: ch.github_pr_title,
+              prDescription: ch.github_pr_description,
+              instructions: ch.instructions,
+            });
+            comprehensionSupplement = compReport as unknown as Record<string, unknown>;
+          } catch (compErr) {
+            console.error('[review/verdict] Supplementary comprehension scoring failed:', compErr);
+          }
+        }
+
+        // Write score report + implementer metrics + optional comprehension supplement
+        const fullReport = {
+          ...scoreReport,
+          implementer_metrics: implementerMetrics,
+          ...(comprehensionSupplement ? { comprehension_supplement: comprehensionSupplement } : {}),
+        };
         const scoredAt = new Date().toISOString();
         await c.env.DB.prepare(
           `UPDATE review_sessions SET score_report = ?1, status = 'scored', updated_at = ?2 WHERE id = ?3`,

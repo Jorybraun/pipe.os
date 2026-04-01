@@ -577,6 +577,74 @@ export default function ChallengeEditorPage(): JSX.Element {
                 </label>
               </div>
 
+              {/* ENABLE_EXPLAINER */}
+              {!!(challenge.config?.isMultiTurn) && (
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      data-testid="enable-explainer-toggle"
+                      checked={!!challenge.config?.enableExplainer}
+                      onChange={(e) =>
+                        setChallenge({
+                          ...challenge,
+                          config: { ...challenge.config, enableExplainer: e.target.checked },
+                        })
+                      }
+                      style={{ accentColor: '#60a5fa' }}
+                    />
+                    <span style={{
+                      fontSize: 11,
+                      color: 'rgba(255,255,255,0.6)',
+                      fontFamily: 'Space Mono',
+                    }}>
+                      Enable "Ask" tab (explainer agent)
+                    </span>
+                  </label>
+                  <div style={{ marginTop: 6, fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', lineHeight: 1.5, marginLeft: 24 }}>
+                    Candidate can ask the PR author questions about architecture & design decisions.
+                  </div>
+                </div>
+              )}
+
+              {/* MAX_EXPLAINER_QUESTIONS (when explainer enabled) */}
+              {!!(challenge.config?.enableExplainer) && (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                    <SubTitle>MAX_EXPLAINER_QUESTIONS</SubTitle>
+                  </div>
+                  <input
+                    data-testid="max-explainer-questions-input"
+                    type="number"
+                    min={3}
+                    max={10}
+                    value={(challenge.config?.maxExplainerQuestions as number | undefined) ?? 6}
+                    onChange={(e) => {
+                      const val = e.target.value ? parseInt(e.target.value, 10) : 6;
+                      setChallenge({
+                        ...challenge,
+                        config: { ...challenge.config, maxExplainerQuestions: val },
+                      });
+                    }}
+                    style={{
+                      width: 120,
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 8,
+                      padding: '10px 14px',
+                      color: '#fff',
+                      fontSize: 13,
+                      fontFamily: 'Space Mono',
+                      outline: 'none',
+                    }}
+                  />
+                  <div style={{ marginTop: 8, fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+                    How many questions the candidate can ask the PR author.
+                  </div>
+                </div>
+              )}
+
               {/* IMPLEMENTER_PERSONA */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
