@@ -10,6 +10,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`workers/api/src/lib/mockResponses.ts`** — Deterministic mock responses for AI agents when API keys missing. `getMockImplementerResponses()` returns keyed-by-comment mock agent responses. `getMockScoreReport()` returns valid score report with 3 dimensions.
 - **`TEST_STATUS.md`** — BDD test suite status dashboard. Documents 135+ passing tests across 8 verified files. Categorizes remaining 60+ failures by type (locator issues, multi-turn AI, editors).
 
+#### Changed (BDD test suite — template selector attributes — 2026-03-31)
+- **`src/components/Pipeline/ChallengeCard.tsx`** — Added `data-template-id` attribute to template challenge cards when `isTemplate=true`. Unblocks challenge-picker.spec.ts Bug #10 and #11 tests which require selecting multiple templates via `[data-template-id]` locator.
+
 #### Changed (BDD test suite — AI mocking & local testing — 2026-03-31)
 - **`workers/api/src/lib/implementerAgent.ts`** — Added fallback mock responses when MISTRAL_API_KEY and ANTHROPIC_API_KEY both absent (local testing). No longer throws on missing keys for non-Workers-AI providers. Logs mock usage.
 - **`workers/api/src/lib/scorerAgent.ts`** — Added fallback mock responses when API keys absent. Returns deterministic mock score report for local testing without real LLM calls. No longer throws on missing keys.
