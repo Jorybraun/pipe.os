@@ -12,6 +12,7 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 #### Changed (BDD test suite — template selector attributes — 2026-03-31)
 - **`src/components/Pipeline/ChallengeCard.tsx`** — Added `data-template-id` attribute to template challenge cards when `isTemplate=true`. Unblocks challenge-picker.spec.ts Bug #10 and #11 tests which require selecting multiple templates via `[data-template-id]` locator.
+- **`TEST_ANALYSIS.md`** — Created static test analysis documenting all failing tests, root causes, and fix strategies. Maps 210+ tests to 5 fix categories: fixed (1), ready to pass with selector updates (15), API diagnosis needed (10), UI fixes required (185).
 
 #### Changed (BDD test suite — AI mocking & local testing — 2026-03-31)
 - **`workers/api/src/lib/implementerAgent.ts`** — Added fallback mock responses when MISTRAL_API_KEY and ANTHROPIC_API_KEY both absent (local testing). No longer throws on missing keys for non-Workers-AI providers. Logs mock usage.
