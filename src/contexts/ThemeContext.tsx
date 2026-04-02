@@ -4,7 +4,7 @@
  * Persisted to localStorage so preferences survive page reloads.
  */
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
 
 // ── Background shader settings ──────────────────────────────────────────────
 
@@ -40,11 +40,15 @@ const DEFAULTS: ThemeSettings = {
   },
 };
 
-const STORAGE_KEY = 'pipe-theme';
+const STORAGE_PREFIX = 'pipe-theme';
 
-function loadTheme(): ThemeSettings {
+function storageKey(userId?: string): string {
+  return userId ? `${STORAGE_PREFIX}:${userId}` : STORAGE_PREFIX;
+}
+
+function loadTheme(userId?: string): ThemeSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey(userId));
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<ThemeSettings>;
     return {
@@ -55,8 +59,8 @@ function loadTheme(): ThemeSettings {
   }
 }
 
-function saveTheme(theme: ThemeSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
+function saveTheme(theme: ThemeSettings, userId?: string): void {
+  localStorage.setItem(storageKey(userId), JSON.stringify(theme));
 }
 
 // ── Context ─────────────────────────────────────────────────────────────────
@@ -65,28 +69,36 @@ interface ThemeContextValue {
   theme: ThemeSettings;
   updateBackground: (partial: Partial<BackgroundSettings>) => void;
   resetTheme: () => void;
+  bindUser: (userId: string) => void;
 }
 
 const Ctx = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }): JSX.Element {
-  const [theme, setTheme] = useState<ThemeSettings>(loadTheme);
+  const userIdRef = useRef<string | undefined>(undefined);
+  const [theme, setTheme] = useState<ThemeSettings>(() => loadTheme());
+
+  const bindUser = useCallback((uid: string) => {
+    if (userIdRef.current === uid) return;
+    userIdRef.current = uid;
+    setTheme(loadTheme(uid));
+  }, []);
 
   const updateBackground = useCallback((partial: Partial<BackgroundSettings>) => {
     setTheme((prev) => {
       const next = { ...prev, background: { ...prev.background, ...partial } };
-      saveTheme(next);
+      saveTheme(next, userIdRef.current);
       return next;
     });
   }, []);
 
   const resetTheme = useCallback(() => {
     setTheme(DEFAULTS);
-    saveTheme(DEFAULTS);
+    saveTheme(DEFAULTS, userIdRef.current);
   }, []);
 
   return (
-    <Ctx.Provider value={{ theme, updateBackground, resetTheme }}>
+    <Ctx.Provider value={{ theme, updateBackground, resetTheme, bindUser }}>
       {children}
     </Ctx.Provider>
   );

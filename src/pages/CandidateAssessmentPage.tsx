@@ -215,8 +215,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
     return (
       <WelcomeScreen
         pipelineName={candidate?.name ? `Welcome, ${candidate.name}` : 'Technical Assessment'}
-        stageName="Interview"
-        challengeType={'QUIZ_SHORT_ANSWER' as ChallengeType}
+        stageName={stageConfig?.stageTitle ?? 'Interview'}
+        challengeType={(stageConfig?.challenges?.[currentOrder]?.type ?? challengeContent?.type ?? 'QUIZ_SHORT_ANSWER') as ChallengeType}
         onStart={onStart}
       />
     );

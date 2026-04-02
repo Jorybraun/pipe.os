@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (User-scoped theme + candidate welcome — 2026-04-02)
+- **`src/contexts/ThemeContext.tsx`** — Theme settings now scoped per recruiter via Clerk userId in localStorage key.
+- **`src/App.tsx`** — `RecruiterThemeSync` binds theme storage to signed-in user; candidate route wrapped in ThemeProvider.
+- **`src/components/Assessment/WelcomeScreen.tsx`** — Uses `AppBackground` instead of hardcoded LiquidMetal shader.
+- **`src/pages/CandidateAssessmentPage.tsx`** — Welcome screen now shows actual challenge type and stage name instead of hardcoded QUIZ_SHORT_ANSWER.
+
 #### Added (Heatmap color themes — 2026-04-02)
 - **`src/contexts/ThemeContext.tsx`** — Added `heatmapTheme` setting with aurora/neon/calm options.
 - **`src/components/ui/shaders/PipeHeatmap.tsx`** — Color theme support: aurora (purple/warm), neon (blue/cyan), calm (slate/mist).

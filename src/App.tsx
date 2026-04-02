@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FEATURE_FLAGS } from "./config/featureFlags";
 import {
@@ -27,7 +27,8 @@ import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
+import { useAuth as useClerkAuth } from "@clerk/react";
 import { DisplaySettingsPanel } from "./components/DisplaySettingsPanel";
 
 /**
@@ -229,6 +230,16 @@ function AppLayout(): JSX.Element {
   );
 }
 
+/** Binds the theme storage to the signed-in recruiter's Clerk userId. */
+function RecruiterThemeSync(): null {
+  const { userId } = useClerkAuth();
+  const { bindUser } = useTheme();
+  useEffect(() => {
+    if (userId) bindUser(userId);
+  }, [userId, bindUser]);
+  return null;
+}
+
 /**
  * App - Main application component with routing configuration
  */
@@ -240,9 +251,11 @@ function App(): JSX.Element {
         <Route
           path="/assess/:token"
           element={
-            <ErrorBoundary>
-              <CandidateAssessmentPage />
-            </ErrorBoundary>
+            <ThemeProvider>
+              <ErrorBoundary>
+                <CandidateAssessmentPage />
+              </ErrorBoundary>
+            </ThemeProvider>
           }
         />
 
@@ -253,6 +266,7 @@ function App(): JSX.Element {
             <ThemeProvider>
             <ClerkAuthGate>
               <ClerkAuthWrapper>
+                <RecruiterThemeSync />
                 <Routes>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />

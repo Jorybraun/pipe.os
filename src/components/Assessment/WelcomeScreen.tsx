@@ -1,7 +1,6 @@
 import { ArrowRight, Code2, FileSearch, HelpCircle, MessageSquare } from 'lucide-react';
-import { LiquidMetal } from '@paper-design/shaders-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
-import { ChromeMeshGrid } from '../ChromeMeshGrid';
+import { AppBackground } from '../ui/AppBackground';
 
 // ============================================================================
 // Types
@@ -94,39 +93,7 @@ export function WelcomeScreen({
         padding: 24,
       }}
     >
-      {/* Animated liquid metal pipe background */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 0,
-          pointerEvents: 'none',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: 0.4,
-        }}
-      >
-        <LiquidMetal
-          width={1920}
-          height={1080}
-          image="/mario-pipe.svg"
-          colorBack="#aaaaac"
-          colorTint="#ffffff"
-          shape="diamond"
-          repetition={2}
-          softness={0.1}
-          shiftRed={0.3}
-          shiftBlue={0.3}
-          distortion={0.07}
-          contour={0.4}
-          angle={70}
-          speed={0.3}
-          scale={0.6}
-          fit="cover"
-        />
-      </div>
-      <ChromeMeshGrid />
+      <AppBackground />
       <LiquidMetalCard
         variant="chrome"
         style={{ maxWidth: 560, width: '100%', padding: 56, zIndex: 1 }}
