@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
-import { ArrowLeft, Loader } from 'lucide-react';
+import { ArrowLeft, GitBranch, Loader } from 'lucide-react';
 import { useSessionToken } from '../../contexts/SessionTokenContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
@@ -37,11 +37,15 @@ interface FileViewerPanelProps {
   challengeId: string;
   filePath: string;
   onBack: () => void;
+  /** Whether this file has changes in the diff */
+  isChanged?: boolean;
+  /** Navigate to the diff view for this file */
+  onViewDiff?: (path: string) => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function FileViewerPanel({ challengeId, filePath, onBack }: FileViewerPanelProps): JSX.Element {
+export function FileViewerPanel({ challengeId, filePath, onBack, isChanged, onViewDiff }: FileViewerPanelProps): JSX.Element {
   const sessionToken = useSessionToken();
   const [content, setContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -117,9 +121,42 @@ export function FileViewerPanel({ challengeId, filePath, onBack }: FileViewerPan
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          flex: 1,
         }}>
           {filePath}
         </span>
+        {isChanged && onViewDiff && (
+          <button
+            onClick={() => onViewDiff(filePath)}
+            title="View diff for this file"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 10px',
+              background: 'rgba(74,222,128,0.06)',
+              border: '1px solid rgba(74,222,128,0.15)',
+              borderRadius: 4,
+              color: '#4ade80',
+              fontSize: 10,
+              fontFamily: "'Space Mono', monospace",
+              letterSpacing: '0.06em',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(74,222,128,0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(74,222,128,0.06)';
+            }}
+            data-testid="view-diff-btn"
+          >
+            <GitBranch size={11} />
+            VIEW DIFF
+          </button>
+        )}
       </div>
 
       {/* Content */}

@@ -321,11 +321,15 @@ const ConnectedReviewCenterPanel = connectInterview(
     const onBack = props._onBack as () => void;
 
     if (selectedFile) {
-      return createElement(FileViewerPanel, { challengeId, filePath: selectedFile, onBack });
+      const changedFiles = props._changedFiles as Set<string>;
+      const isChanged = changedFiles.has(selectedFile);
+      const onViewDiff = props._onViewDiff as (path: string) => void;
+      return createElement(FileViewerPanel, { challengeId, filePath: selectedFile, onBack, isChanged, onViewDiff });
     }
     // Render the DiffPanel with all its props (strip our internal props)
-    const { _selectedFile: _sf, _challengeId: _ci, _onBack: _ob, ...diffProps } = props;
-    return createElement(DiffPanel, diffProps as Record<string, unknown>);
+    const { _selectedFile: _sf, _challengeId: _ci, _onBack: _ob, _changedFiles: _cf, _onViewDiff: _vd, ...diffProps } = props;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return createElement(DiffPanel, diffProps as any);
   },
   (ctx) => {
     const raw = ctx.currentChallenge.data.cachedDiffJson;
@@ -363,10 +367,16 @@ const ConnectedReviewCenterPanel = connectInterview(
         const current = (ctx.submission.inlineReplies as Record<string, string>) ?? {};
         ctx.updateSubmission({ inlineReplies: { ...current, [`${file}:${line}`]: value } });
       },
+      // View file from diff
+      onViewFile: (path: string) => ctx.updateSubmission({ selectedFile: path }),
       // File viewer props
       _selectedFile: (ctx.submission.selectedFile as string | null) ?? null,
       _challengeId: (ctx.currentChallenge.data.id as string) ?? '',
       _onBack: () => ctx.updateSubmission({ selectedFile: null }),
+      _changedFiles: new Set(diff.files.map((f: { path: string }) => f.path)),
+      _onViewDiff: (_path: string) => {
+        ctx.updateSubmission({ selectedFile: null });
+      },
     };
   },
 );

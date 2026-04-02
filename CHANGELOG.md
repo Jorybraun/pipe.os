@@ -6,6 +6,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Diff ↔ file navigation — 2026-04-02)
+- **`src/components/Assessment/DiffPanel.tsx`** — "VIEW FILE" button in file headers (tabbed + long-form). Opens full file in Monaco viewer via new `onViewFile` prop.
+- **`src/components/Panels/FileViewerPanel.tsx`** — "VIEW DIFF" button (green, shown only for changed files). Returns to diff view via new `onViewDiff` prop.
+- **`src/lib/challenge/componentMap.ts`** — Wired `onViewFile`, `_changedFiles`, `_onViewDiff` through `ConnectedReviewCenterPanel`.
+
 #### Changed (Explainer merged into code review — 2026-04-01)
 - **Explainer is now a tab within code review, not a separate mode.** One experience: candidates review PRs for bugs AND can ask the PR author questions via an "Ask" tab in the right panel.
 - **`workers/api/src/routes/review.ts`** — Added `POST /rpc/review/ask` (lazy session creation) and `POST /rpc/review/:sessionId/ask` (explainer on existing session). Removed all `mode === 'comprehension'` branching. `StoredTranscript` now includes optional `explainer_exchanges[]`. Verdict handler runs supplementary comprehension scoring when explainer was used.
