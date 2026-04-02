@@ -74,6 +74,8 @@ export interface StageRow {
   sort_order: number;
   time_limit: number | null;
   mode: string | null;
+  stage_type: string | null;
+  is_scheduled: number;
   created_at: string;
   updated_at: string;
 }

@@ -20,6 +20,8 @@ import type { Env, Variables, ChallengeRow } from '../types';
 
 // ─── Validation schemas ───────────────────────────────────────────────────────
 
+const STAGE_TYPES = ['SCREENING', 'CULTURAL', 'TECHNICAL', 'CODE_REVIEW', 'PANEL'] as const;
+
 const createStageSchema = z.object({
   title: z
     .string({ required_error: 'title is required' })
@@ -28,6 +30,8 @@ const createStageSchema = z.object({
   order: z.number().int().min(0).optional(),
   sortOrder: z.number().int().min(0).optional(),
   description: z.string().optional(),
+  stageType: z.enum(STAGE_TYPES).nullable().optional(),
+  isScheduled: z.boolean().optional(),
 });
 
 const reorderStagesSchema = z.object({
@@ -54,6 +58,8 @@ const updateStageSchema = z.object({
     )
     .optional(),
   schedulingEventTypeId: z.string().nullable().optional(),
+  stageType: z.enum(STAGE_TYPES).nullable().optional(),
+  isScheduled: z.boolean().optional(),
 });
 
 const createChallengeSchema = z.object({
@@ -147,10 +153,18 @@ pipelineStages.post('/:pipelineId/stages', async (c) => {
   // Insert without owner_id — it is an optional Phase 2 column (added via ALTER TABLE
   // in migration 0002). Ownership is enforced via the pipeline JOIN in auth checks.
   await c.env.DB.prepare(
-    `INSERT INTO stages (id, pipeline_id, title, description, sort_order)
-     VALUES (?1, ?2, ?3, ?4, ?5)`,
+    `INSERT INTO stages (id, pipeline_id, title, description, sort_order, stage_type, is_scheduled)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   )
-    .bind(stageId, pipelineId, input.title, input.description ?? null, sortOrder)
+    .bind(
+      stageId,
+      pipelineId,
+      input.title,
+      input.description ?? null,
+      sortOrder,
+      input.stageType ?? null,
+      input.isScheduled ? 1 : 0,
+    )
     .run();
 
   const stagePayload = {
@@ -164,6 +178,8 @@ pipelineStages.post('/:pipelineId/stages', async (c) => {
     mode: 'ASYNC',
     notificationTemplates: [],
     schedulingEventTypeId: null,
+    stageType: input.stageType ?? null,
+    isScheduled: input.isScheduled ?? false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -248,7 +264,8 @@ stageOps.get('/:stageId', async (c) => {
   const stageRow = await c.env.DB.prepare(
     `SELECT s.id, s.pipeline_id, s.title, s.description, s.sort_order,
             s.time_limit, s.mode, s.notification_templates,
-            s.scheduling_event_type_id, s.created_at, s.updated_at,
+            s.scheduling_event_type_id, s.stage_type, s.is_scheduled,
+            s.created_at, s.updated_at,
             p.owner_id AS pipeline_owner_id
      FROM stages s
      JOIN pipelines p ON p.id = s.pipeline_id
@@ -265,6 +282,8 @@ stageOps.get('/:stageId', async (c) => {
       mode: string | null;
       notification_templates: string | null;
       scheduling_event_type_id: string | null;
+      stage_type: string | null;
+      is_scheduled: number;
       created_at: string;
       updated_at: string;
       pipeline_owner_id: string;
@@ -346,6 +365,8 @@ stageOps.get('/:stageId', async (c) => {
     notificationTemplates: notificationTemplatesParsed,
     notification_templates: stageRow.notification_templates,
     schedulingEventTypeId: stageRow.scheduling_event_type_id ?? null,
+    stageType: stageRow.stage_type ?? null,
+    isScheduled: !!stageRow.is_scheduled,
     createdAt: stageRow.created_at,
     updatedAt: stageRow.updated_at,
     challenges,
@@ -405,6 +426,8 @@ stageOps.patch('/:stageId', async (c) => {
     addField('notification_templates', JSON.stringify(input.notificationTemplates));
   if ('schedulingEventTypeId' in input)
     addField('scheduling_event_type_id', input.schedulingEventTypeId ?? null);
+  if ('stageType' in input) addField('stage_type', input.stageType ?? null);
+  if ('isScheduled' in input) addField('is_scheduled', input.isScheduled ? 1 : 0);
 
   if (setClauses.length === 0)
     return apiError(c, 'VALIDATION_ERROR', 'No updatable fields provided.');
@@ -422,7 +445,8 @@ stageOps.patch('/:stageId', async (c) => {
 
   const updated = await c.env.DB.prepare(
     `SELECT id, pipeline_id, title, description, sort_order, time_limit, mode,
-            notification_templates, scheduling_event_type_id, created_at, updated_at
+            notification_templates, scheduling_event_type_id,
+            stage_type, is_scheduled, created_at, updated_at
      FROM stages WHERE id = ?1`,
   )
     .bind(stageId)
@@ -436,6 +460,8 @@ stageOps.patch('/:stageId', async (c) => {
       mode: string | null;
       notification_templates: string | null;
       scheduling_event_type_id: string | null;
+      stage_type: string | null;
+      is_scheduled: number;
       created_at: string;
       updated_at: string;
     }>();
@@ -452,6 +478,8 @@ stageOps.patch('/:stageId', async (c) => {
     mode: updated.mode ?? 'ASYNC',
     notificationTemplates: parseJsonArr(updated.notification_templates),
     schedulingEventTypeId: updated.scheduling_event_type_id ?? null,
+    stageType: updated.stage_type ?? null,
+    isScheduled: !!updated.is_scheduled,
     createdAt: updated.created_at,
     updatedAt: updated.updated_at,
   });

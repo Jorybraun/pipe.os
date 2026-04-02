@@ -38,7 +38,8 @@ overview.get('/:pipelineId/overview', async (c) => {
   const stagesResult = await db
     .prepare(
       `SELECT s.id, s.title, s.pipeline_id, s.sort_order, s.description,
-              s.time_limit, s.mode, s.created_at, s.updated_at,
+              s.time_limit, s.mode, s.stage_type, s.is_scheduled,
+              s.created_at, s.updated_at,
               (SELECT COUNT(*) FROM challenges ch WHERE ch.stage_id = s.id) AS challenge_count
        FROM stages s
        WHERE s.pipeline_id = ?
@@ -92,6 +93,8 @@ overview.get('/:pipelineId/overview', async (c) => {
       timeLimit: s.time_limit as number | null,
       mode: s.mode as string | null,
       challengeCount: s.challenge_count as number,
+      stageType: (s.stage_type as string | null) ?? null,
+      isScheduled: !!(s.is_scheduled as number),
       createdAt: s.created_at as string,
       updatedAt: s.updated_at as string,
     })),

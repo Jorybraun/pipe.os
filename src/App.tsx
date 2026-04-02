@@ -10,6 +10,7 @@ import {
   useNavigate,
   useParams,
   useLocation,
+  useSearchParams,
 } from "react-router-dom";
 import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
 import { useAuth } from "./providers";
@@ -30,6 +31,7 @@ import Logo from "./components/ui/Logo";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { useAuth as useClerkAuth } from "@clerk/react";
 import { DisplaySettingsPanel } from "./components/DisplaySettingsPanel";
+import { StageConfigPanel } from "./components/StageConfigPanel";
 
 /**
  * SubHeader - Main interactive UI for navigation and context
@@ -185,6 +187,21 @@ function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
   const [showSettings, setShowSettings] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const configStageId = searchParams.get('config');
+
+  const closeConfig = (): void => {
+    setSearchParams((prev) => { prev.delete('config'); return prev; }, { replace: true });
+  };
+
+  // Determine which panel to show (stage config takes priority)
+  const panelContent = configStageId
+    ? <StageConfigPanel stageId={configStageId} onClose={closeConfig} />
+    : showSettings
+      ? <DisplaySettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} />
+      : undefined;
+
+  const isPanelOpen = !!configStageId || showSettings;
 
   return (
     <Layout
@@ -195,6 +212,7 @@ function AppLayout(): JSX.Element {
           onRolesClick={() => {
             setActiveSection("roles");
             setShowSettings(false);
+            closeConfig();
             navigate("/");
           }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
@@ -216,14 +234,15 @@ function AppLayout(): JSX.Element {
               }
             : {})}
           onSettingsClick={() => {
+            if (configStageId) closeConfig();
             setShowSettings((prev) => !prev);
             if (!showSettings) setActiveSection("settings");
             else setActiveSection("roles");
           }}
         />
       }
-      agentPanel={showSettings ? <DisplaySettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} /> : undefined}
-      isAgentOpen={showSettings}
+      agentPanel={panelContent}
+      isAgentOpen={isPanelOpen}
     >
       <Outlet />
     </Layout>

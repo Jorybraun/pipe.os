@@ -98,6 +98,8 @@ export interface StageDetail {
   mode: 'ASYNC' | 'LIVE_VIDEO';
   notificationTemplates: NotificationTemplate[];
   schedulingEventTypeId: string | null;
+  stageType: string | null;
+  isScheduled: boolean;
   createdAt: string;
   updatedAt: string;
   challenges: ChallengeItem[];
@@ -133,6 +135,8 @@ export interface UpdateStageRequest {
   mode?: 'ASYNC' | 'LIVE_VIDEO';
   notificationTemplates?: NotificationTemplate[];
   schedulingEventTypeId?: string | null;
+  stageType?: string | null;
+  isScheduled?: boolean;
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -170,6 +174,8 @@ export interface OverviewStage {
   challengeCount: number;
   mode: string | null;
   description: string | null;
+  stageType: string | null;
+  isScheduled: boolean;
   createdAt: string;
   updatedAt: string;
 }

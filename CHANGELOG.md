@@ -6,6 +6,20 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Stage config panel — 2026-04-02)
+- **`workers/api/migrations/0006_stage_config.sql`** — D1 migration adding `stage_type` and `is_scheduled` columns to stages.
+- **`src/lib/stageTemplates.ts`** — Stage type definitions (SCREENING, CULTURAL, TECHNICAL, CODE_REVIEW, PANEL) with template questions.
+- **`src/components/StageConfigPanel.tsx`** — Slide-out config panel for stage type, scheduling, and video meeting settings. Renders in Layout agentPanel slot.
+
+#### Changed (Stage config + inline ADD_STAGE — 2026-04-02)
+- **`src/App.tsx`** — Route-based stage config panel via `?config=stageId` search param in Layout agentPanel slot.
+- **`src/pages/OverviewPage.tsx`** — Replaced `window.prompt()` ADD_STAGE with inline form; added gear icon for stage config; config state driven by URL search params.
+- **`workers/api/src/routes/stages.ts`** — GET/PATCH/POST handlers return `stageType` and `isScheduled` fields.
+- **`workers/api/src/routes/overview.ts`** — Overview endpoint returns `stageType` and `isScheduled` per stage.
+- **`workers/api/src/validation/stages.ts`** — Zod schemas accept `stageType` enum and `isScheduled` boolean.
+- **`workers/api/src/types.ts`** — Added `stage_type` and `is_scheduled` to `StageRow`.
+- **`src/lib/api/types.ts`** — Added `stageType` and `isScheduled` to `StageDetail`, `OverviewStage`, `UpdateStageRequest`.
+
 #### Added (Comprehension mode + CV parser — 2026-04-02)
 - **`workers/api/src/lib/explainerAgent.ts`** — Explainer agent for blind comprehension reviews (Devstral via OpenAI-compat API).
 - **`workers/api/src/lib/comprehensionScorer.ts`** — Comprehension scorer across 4 dimensions (question quality, comprehension, decision quality, efficiency).

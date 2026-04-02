@@ -3,6 +3,17 @@ import { z } from 'zod';
 /**
  * Valid challenge types — matches the D1 CHECK constraint.
  */
+/**
+ * Valid stage types — validated at API layer, not DB constraint.
+ */
+export const STAGE_TYPES = [
+  'SCREENING',
+  'CULTURAL',
+  'TECHNICAL',
+  'CODE_REVIEW',
+  'PANEL',
+] as const;
+
 export const CHALLENGE_TYPES = [
   'CODE_REVIEW',
   'CODE_IMPLEMENTATION',
@@ -21,6 +32,8 @@ export const createStageSchema = z.object({
     .max(200, 'title must be 200 characters or fewer'),
   description: z.string().optional(),
   order: z.number().int().min(0).optional(),
+  stageType: z.enum(STAGE_TYPES).nullable().optional(),
+  isScheduled: z.boolean().optional(),
 });
 
 export type CreateStageInput = z.infer<typeof createStageSchema>;
@@ -43,6 +56,8 @@ export const updateStageSchema = z.object({
     )
     .optional(),
   schedulingEventTypeId: z.string().optional().nullable(),
+  stageType: z.enum(STAGE_TYPES).nullable().optional(),
+  isScheduled: z.boolean().optional(),
 });
 
 export type UpdateStageInput = z.infer<typeof updateStageSchema>;

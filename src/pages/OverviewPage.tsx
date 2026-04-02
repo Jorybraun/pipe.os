@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   CheckCircle,
   Activity,
@@ -20,6 +20,7 @@ import {
   Trash2,
   Rocket,
   RefreshCw,
+  Settings,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -560,6 +561,17 @@ export default function OverviewPage(): JSX.Element {
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeCandidate, setActiveCandidate] = useState<OverviewCandidate | null>(null);
   const [activeStage, setActiveStage] = useState<OverviewStage | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const configStageId = searchParams.get('config');
+  const setConfigStageId = useCallback((stageId: string | null) => {
+    setSearchParams((prev) => {
+      if (stageId) prev.set('config', stageId);
+      else prev.delete('config');
+      return prev;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const [isAddingStage, setIsAddingStage] = useState(false);
+  const [newStageTitle, setNewStageTitle] = useState('');
 
   // Use locally-optimistic stage order if available, otherwise fall back to fetched.
   const displayStages = localStages ?? stages;
@@ -584,15 +596,16 @@ export default function OverviewPage(): JSX.Element {
   );
 
   const handleAddStage = async (): Promise<void> => {
-    if (!id) return;
-
-    const title = window.prompt("Enter new stage name:");
-    if (!title || title.trim() === "") return;
+    if (!id || !newStageTitle.trim()) return;
 
     try {
-      await createStage(id, title.trim());
-      setLocalStages(null); // reset optimistic state
+      const created = await createStage(id, newStageTitle.trim());
+      setNewStageTitle('');
+      setIsAddingStage(false);
+      setLocalStages(null);
       await refetch();
+      // Auto-open config panel for the new stage
+      if (created?.id) setConfigStageId(created.id);
     } catch (err) {
       console.error("[OverviewPage] Failed to add stage:", err);
     }
@@ -957,30 +970,56 @@ export default function OverviewPage(): JSX.Element {
                       onClick={() => navigate(`/pipeline/${id}/stages/${s.id}`)}
                     />
                     {isDraft && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleDeleteStage(s.id, s.title ?? "Stage");
-                        }}
-                        title="Delete this stage"
-                        style={{
-                          position: "absolute",
-                          top: 10,
-                          right: 10,
-                          width: 28,
-                          height: 28,
-                          background: "rgba(255,80,80,0.08)",
-                          border: "1px solid rgba(255,80,80,0.2)",
-                          borderRadius: 6,
-                          color: "rgba(255,100,100,0.5)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      <div style={{
+                        position: "absolute",
+                        top: 10,
+                        right: 10,
+                        display: "flex",
+                        gap: 4,
+                      }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfigStageId(s.id);
+                          }}
+                          title="Configure stage"
+                          style={{
+                            width: 28,
+                            height: 28,
+                            background: "rgba(167,139,250,0.08)",
+                            border: "1px solid rgba(167,139,250,0.2)",
+                            borderRadius: 6,
+                            color: "rgba(167,139,250,0.5)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Settings size={12} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleDeleteStage(s.id, s.title ?? "Stage");
+                          }}
+                          title="Delete this stage"
+                          style={{
+                            width: 28,
+                            height: 28,
+                            background: "rgba(255,80,80,0.08)",
+                            border: "1px solid rgba(255,80,80,0.2)",
+                            borderRadius: 6,
+                            color: "rgba(255,100,100,0.5)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -1034,36 +1073,137 @@ export default function OverviewPage(): JSX.Element {
           {/* Add Stage Column — only visible on DRAFT pipelines */}
           {isDraft && (
             <div style={{ flex: "0 0 320px" }}>
-              <button
-                onClick={() => void handleAddStage()}
-                style={{
-                  width: "100%",
-                  height: 180,
-                  background: "var(--pipe-surface)",
-                  border: "1px dashed rgba(255,255,255,0.1)",
-                  borderRadius: 12,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 12,
-                  color: "var(--pipe-text-dim)",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
-              >
-                <Plus size={20} />
-                <span
+              {isAddingStage ? (
+                <div
                   style={{
-                    fontSize: 10,
-                    letterSpacing: "0.2em",
-                    fontWeight: 700,
-                    fontFamily: "Space Mono",
+                    width: "100%",
+                    padding: 20,
+                    background: "var(--pipe-surface)",
+                    border: "1px solid var(--pipe-border)",
+                    borderRadius: 12,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
                   }}
                 >
-                  ADD_STAGE
-                </span>
-              </button>
+                  <label
+                    style={{
+                      fontSize: 8,
+                      fontWeight: 700,
+                      letterSpacing: "0.15em",
+                      color: "var(--pipe-text-dim)",
+                      fontFamily: '"Space Mono", monospace',
+                    }}
+                  >
+                    STAGE_NAME
+                  </label>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={newStageTitle}
+                    onChange={(e) => setNewStageTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleAddStage();
+                      if (e.key === "Escape") {
+                        setIsAddingStage(false);
+                        setNewStageTitle("");
+                      }
+                    }}
+                    placeholder="e.g. Screening"
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      fontSize: 11,
+                      fontFamily: '"Space Mono", monospace',
+                      background: "rgba(0,0,0,0.2)",
+                      border: "1px solid var(--pipe-border)",
+                      borderRadius: 4,
+                      color: "var(--pipe-text)",
+                      outline: "none",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => {
+                        setIsAddingStage(false);
+                        setNewStageTitle("");
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: "0.1em",
+                        fontFamily: '"Space Mono", monospace',
+                        background: "var(--pipe-surface)",
+                        border: "1px solid var(--pipe-border)",
+                        borderRadius: 4,
+                        color: "var(--pipe-text-dim)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      onClick={() => void handleAddStage()}
+                      disabled={!newStageTitle.trim()}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: "0.1em",
+                        fontFamily: '"Space Mono", monospace',
+                        background: newStageTitle.trim()
+                          ? "rgba(167,139,250,0.15)"
+                          : "var(--pipe-surface)",
+                        border: newStageTitle.trim()
+                          ? "1px solid rgba(167,139,250,0.3)"
+                          : "1px solid var(--pipe-border)",
+                        borderRadius: 4,
+                        color: newStageTitle.trim()
+                          ? "#a78bfa"
+                          : "var(--pipe-text-dim)",
+                        cursor: newStageTitle.trim() ? "pointer" : "default",
+                        opacity: newStageTitle.trim() ? 1 : 0.5,
+                      }}
+                    >
+                      CREATE
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsAddingStage(true)}
+                  style={{
+                    width: "100%",
+                    height: 180,
+                    background: "var(--pipe-surface)",
+                    border: "1px dashed rgba(255,255,255,0.1)",
+                    borderRadius: 12,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 12,
+                    color: "var(--pipe-text-dim)",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  <Plus size={20} />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      letterSpacing: "0.2em",
+                      fontWeight: 700,
+                      fontFamily: "Space Mono",
+                    }}
+                  >
+                    ADD_STAGE
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1093,6 +1233,7 @@ export default function OverviewPage(): JSX.Element {
           </div>
         ) : null}
       </DragOverlay>
+
     </DndContext>
   );
 }
