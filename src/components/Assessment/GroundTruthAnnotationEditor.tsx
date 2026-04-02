@@ -130,7 +130,7 @@ export function GroundTruthAnnotationEditor({
             key={level}
             style={{
               background: 'rgba(12, 12, 14, 0.5)',
-              border: '1px solid rgba(255,255,255,0.06)',
+              border: '1px solid var(--pipe-border)',
               borderRadius: 8,
               overflow: 'hidden',
             }}
@@ -153,9 +153,9 @@ export function GroundTruthAnnotationEditor({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {isExpanded ? (
-                  <ChevronUp size={14} color="rgba(255,255,255,0.3)" />
+                  <ChevronUp size={14} color="var(--pipe-text-dim)" />
                 ) : (
-                  <ChevronDown size={14} color="rgba(255,255,255,0.3)" />
+                  <ChevronDown size={14} color="var(--pipe-text-dim)" />
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, fontFamily: 'Space Mono', color: 'var(--pipe-text, #fff)' }}>
@@ -167,7 +167,7 @@ export function GroundTruthAnnotationEditor({
                       fontWeight: 700,
                       fontFamily: 'Space Mono',
                       color: 'var(--pipe-text-dim)',
-                      background: 'rgba(255,255,255,0.05)',
+                      background: 'var(--pipe-surface)',
                       padding: '4px 8px',
                       borderRadius: 3,
                     }}
@@ -188,7 +188,7 @@ export function GroundTruthAnnotationEditor({
                       textAlign: 'center',
                       background: 'rgba(0, 0, 0, 0.2)',
                       borderRadius: 4,
-                      border: '1px dashed rgba(255,255,255,0.1)',
+                      border: '1px dashed var(--pipe-border)',
                       marginBottom: 16,
                     }}
                   >
@@ -210,7 +210,7 @@ export function GroundTruthAnnotationEditor({
                         style={{
                           padding: 16,
                           background: 'rgba(0, 0, 0, 0.2)',
-                          border: '1px solid rgba(255,255,255,0.06)',
+                          border: '1px solid var(--pipe-border)',
                           borderRadius: 4,
                           display: 'flex',
                           flexDirection: 'column',
@@ -242,7 +242,7 @@ export function GroundTruthAnnotationEditor({
                                 width: '100%',
                                 padding: '8px 12px',
                                 background: 'rgba(0, 0, 0, 0.3)',
-                                border: '1px solid rgba(255,255,255,0.1)',
+                                border: '1px solid var(--pipe-border)',
                                 borderRadius: 3,
                                 color: 'var(--pipe-text, #fff)',
                                 fontSize: 11,
@@ -274,7 +274,7 @@ export function GroundTruthAnnotationEditor({
                                 width: '100%',
                                 padding: '8px 12px',
                                 background: 'rgba(0, 0, 0, 0.3)',
-                                border: '1px solid rgba(255,255,255,0.1)',
+                                border: '1px solid var(--pipe-border)',
                                 borderRadius: 3,
                                 color: 'var(--pipe-text, #fff)',
                                 fontSize: 11,
@@ -369,7 +369,7 @@ export function GroundTruthAnnotationEditor({
                               minHeight: 60,
                               padding: '8px 12px',
                               background: 'rgba(0, 0, 0, 0.3)',
-                              border: '1px solid rgba(255,255,255,0.1)',
+                              border: '1px solid var(--pipe-border)',
                               borderRadius: 3,
                               color: 'var(--pipe-text, #fff)',
                               fontSize: 11,

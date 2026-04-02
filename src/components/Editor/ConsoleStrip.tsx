@@ -35,7 +35,7 @@ export function ConsoleStrip({ result, isRunning, onClear }: ConsoleStripProps):
 
   const smallBtn: React.CSSProperties = {
     background: 'transparent',
-    border: '1px solid rgba(255,255,255,0.1)',
+    border: '1px solid var(--pipe-border)',
     color: 'rgba(255,255,255,0.55)',
     padding: '6px 10px',
     borderRadius: 6,
@@ -58,10 +58,10 @@ export function ConsoleStrip({ result, isRunning, onClear }: ConsoleStripProps):
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor }} />
-            <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.7)', fontFamily: 'Space Mono', letterSpacing: '0.12em' }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', letterSpacing: '0.12em' }}>
               CONSOLE
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', letterSpacing: '0.12em' }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.12em' }}>
               {statusLabel}
               {typeof result?.durationMs === 'number' ? ` / ${result.durationMs}ms` : ''}
             </div>
@@ -79,7 +79,7 @@ export function ConsoleStrip({ result, isRunning, onClear }: ConsoleStripProps):
             </button>
             <button
               onClick={() => setVisible(false)}
-              style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               title="Hide"
             >
               <X size={16} />
@@ -96,7 +96,7 @@ export function ConsoleStrip({ result, isRunning, onClear }: ConsoleStripProps):
             )}
             <div style={{
               height: 180, overflow: 'auto', background: 'rgba(0,0,0,0.25)',
-              border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 12,
+              border: '1px solid var(--pipe-border)', borderRadius: 8, padding: 12,
               fontFamily: 'Space Mono', fontSize: 11, color: 'rgba(255,255,255,0.75)', whiteSpace: 'pre-wrap',
             }}>
               {(result?.logs?.length ?? 0) > 0

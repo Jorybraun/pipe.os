@@ -279,7 +279,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   />
                 </FieldGroup>
 
-                <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+                <div style={{ height: '1px', background: 'var(--pipe-surface)' }} />
 
                 {/* Pipeline Presets Config */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -296,10 +296,10 @@ export default function RoleDiscoveryPage(): JSX.Element {
                           padding: '16px',
                           background: formData.selectedPresetId === preset.id 
                             ? 'rgba(139, 92, 246, 0.1)' 
-                            : 'rgba(255,255,255,0.02)',
+                            : 'var(--pipe-surface)',
                           border: `1px solid ${formData.selectedPresetId === preset.id 
                             ? 'rgba(139, 92, 246, 0.3)' 
-                            : 'rgba(255,255,255,0.05)'}`,
+                            : 'var(--pipe-surface)'}`,
                           display: 'flex',
                           flexDirection: 'column',
                           gap: 4,
@@ -318,7 +318,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                           </span>
                           {formData.selectedPresetId === preset.id && <Check size={12} color="#a78bfa" />}
                         </div>
-                        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', lineHeight: 1.4 }}>
+                        <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', lineHeight: 1.4 }}>
                           {preset.description}
                         </span>
                       </div>
@@ -326,7 +326,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   </div>
                 </div>
 
-                <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+                <div style={{ height: '1px', background: 'var(--pipe-surface)' }} />
 
                 {/* Question Config */}
                 <FieldGroup label="AI PROBE LIMIT" hint="Max follow-up questions asked by the agent.">
@@ -349,7 +349,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em' }}>SESSION_COST</span>
                     <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>${costTracking.sessionCost.toFixed(4)}</span>
                   </div>
-                  <div style={{ height: 2, background: 'rgba(255,255,255,0.05)', borderRadius: 1 }}>
+                  <div style={{ height: 2, background: 'var(--pipe-surface)', borderRadius: 1 }}>
                     <div style={{ 
                       height: '100%', 
                       width: `${(costTracking.sessionCost / 0.50) * 100}%`, 

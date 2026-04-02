@@ -41,7 +41,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
         
         {/* Question Input */}
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-          <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <MessageSquare size={16} color="#fbbf24" />
               <SubTitle>CHALLENGE_PROMPT</SubTitle>
@@ -64,7 +64,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
 
         {/* Video Instructions */}
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-          <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <VideoIcon size={16} color="#a78bfa" />
               <SubTitle>VIDEO_INSTRUCTIONS</SubTitle>
@@ -121,7 +121,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
                 placeholder="Describe a 10/10 answer..."
                 style={{
                   width: '100%', minHeight: 140, padding: '16px', background: 'rgba(0,0,0,0.2)',
-                  border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', fontSize: 12, 
+                  border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)', fontSize: 12, 
                   fontFamily: 'inherit', lineHeight: 1.6, outline: 'none', resize: 'vertical',
                 }}
               />

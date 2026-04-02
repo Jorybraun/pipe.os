@@ -160,7 +160,7 @@ export function CodeReviewEditor({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
         
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-            <div style={{ padding: '32px 40px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ padding: '32px 40px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', alignItems: 'center', gap: 16 }}>
                <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fbbf24' }}>
                   <Github size={20} />
                </div>
@@ -199,13 +199,13 @@ export function CodeReviewEditor({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
             {/* Instructions */}
             <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-              <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <FileText size={16} color="#fbbf24" />
                   <SubTitle>CHALLENGE_INSTRUCTIONS</SubTitle>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Github size={12} color="rgba(255,255,255,0.2)" />
+                  <Github size={12} color="var(--pipe-text-dim)" />
                   <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>SOURCE_SYNCED</span>
                 </div>
               </div>
@@ -216,7 +216,7 @@ export function CodeReviewEditor({
                   placeholder="Markdown instructions for the candidate..."
                   style={{
                     width: '100%', minHeight: 200, padding: '24px', background: 'rgba(0,0,0,0.2)',
-                    border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: 'var(--pipe-text, #fff)', fontSize: 15, fontFamily: 'inherit',
+                    border: '1px solid var(--pipe-border)', borderRadius: 8, color: 'var(--pipe-text, #fff)', fontSize: 15, fontFamily: 'inherit',
                     lineHeight: 1.7, outline: 'none', resize: 'vertical',
                   }}
                 />
@@ -226,7 +226,7 @@ export function CodeReviewEditor({
             {/* Diff preview */}
             {parsedDiff && (
               <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-                <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
                   <GitBranch size={16} color="#60a5fa" />
                   <SubTitle>DIFF_PREVIEW</SubTitle>
                   <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
@@ -241,7 +241,7 @@ export function CodeReviewEditor({
 
             {/* Annotations / Questions */}
             <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-              <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <MessageSquare size={16} color="#4ade80" />
                   <SubTitle>EXPECTED_FINDINGS_&_QUESTIONS</SubTitle>
@@ -258,7 +258,7 @@ export function CodeReviewEditor({
             {/* Explainer Context */}
             {!!challenge.config?.enableExplainer && (
               <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-                <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <HelpCircle size={16} color="#60a5fa" />
                     <SubTitle>EXPLAINER_CONTEXT</SubTitle>
@@ -274,7 +274,7 @@ export function CodeReviewEditor({
                         onClick={() => generateRepoContext(challenge.githubRepoUrl as string, challenge.githubPrNumber as number)}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 6,
-                          background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+                          background: 'transparent', border: '1px solid var(--pipe-border)',
                           color: 'var(--pipe-text-muted)', padding: '4px 10px', borderRadius: 4,
                           fontSize: 9, fontFamily: 'Space Mono', cursor: 'pointer',
                         }}
@@ -313,14 +313,14 @@ export function CodeReviewEditor({
                         }}
                         style={{
                           width: '100%', minHeight: 300, padding: 16,
-                          background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)',
+                          background: 'rgba(0,0,0,0.3)', border: '1px solid var(--pipe-border)',
                           borderRadius: 8, color: '#94a3b8', fontSize: 12,
                           fontFamily: 'monospace', lineHeight: 1.5, outline: 'none', resize: 'vertical',
                         }}
                       />
                     );
                   })()}
-                  <div style={{ marginTop: 8, fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Mono' }}>
+                  <div style={{ marginTop: 8, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
                     This context powers the "Ask" tab — the AI PR author uses it to answer candidate questions about the codebase.
                   </div>
                 </div>
@@ -335,12 +335,12 @@ export function CodeReviewEditor({
         <LiquidMetalCard variant="chrome" style={{ padding: 32, borderRadius: 16 }}>
           
           {prFetched && (
-            <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid var(--pipe-border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <Github size={14} color="rgba(255,255,255,0.4)" />
+                <Github size={14} color="var(--pipe-text-dim)" />
                 <SubTitle>SOURCE_PR</SubTitle>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '16px' }}>
+              <div style={{ background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 8, padding: '16px' }}>
                 <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 12 }}>
                   PR #{challenge.githubPrNumber}
                 </div>
@@ -351,7 +351,7 @@ export function CodeReviewEditor({
                     rel="noopener noreferrer"
                     style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
+                      background: 'var(--pipe-surface-hover)', border: '1px solid var(--pipe-border)',
                       color: 'var(--pipe-text, #fff)', padding: '8px', borderRadius: 4, fontSize: 9,
                       fontFamily: 'Space Mono', cursor: 'pointer', textDecoration: 'none'
                     }}
@@ -362,8 +362,8 @@ export function CodeReviewEditor({
                     onClick={() => onPrFetchedChange(false)}
                     style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
-                      color: 'rgba(255,255,255,0.6)', padding: '8px', borderRadius: 4, fontSize: 9,
+                      background: 'transparent', border: '1px solid var(--pipe-border)',
+                      color: 'var(--pipe-text-muted)', padding: '8px', borderRadius: 4, fontSize: 9,
                       fontFamily: 'Space Mono', cursor: 'pointer'
                     }}
                   >
@@ -383,7 +383,7 @@ export function CodeReviewEditor({
           ))}
 
           {sidebarSection('SCORING_LOGIC', <Shield size={14} />, (
-            <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }}>
+            <div style={{ padding: '16px', background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 8 }}>
               <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
                 Candidates are scored on findings and conversation quality.
                 {(challenge.config as Record<string, unknown> | undefined)?.enableExplainer

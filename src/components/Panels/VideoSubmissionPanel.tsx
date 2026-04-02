@@ -238,7 +238,7 @@ export function VideoSubmissionPanel({
         style={{
           fontSize: 20,
           fontWeight: 700,
-          color: 'rgba(255,255,255,0.9)',
+          color: 'var(--pipe-text, #fff)',
           lineHeight: 1.4,
           maxWidth: 700,
         }}
@@ -253,7 +253,7 @@ export function VideoSubmissionPanel({
           width: '100%',
           maxHeight: 300,
           borderRadius: 6,
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid var(--pipe-border)',
           background: '#000',
           objectFit: 'cover',
           display:
@@ -285,9 +285,9 @@ export function VideoSubmissionPanel({
           style={{
             ...mono,
             fontSize: 12,
-            color: 'rgba(255,255,255,0.7)',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            color: 'var(--pipe-text-muted)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 6,
             padding: '12px 16px',
             lineHeight: 1.7,
@@ -295,12 +295,12 @@ export function VideoSubmissionPanel({
             overflowY: 'auto',
           }}
         >
-          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginBottom: 6, letterSpacing: '0.1em' }}>
+          <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginBottom: 6, letterSpacing: '0.1em' }}>
             TRANSCRIPT
           </div>
           {speech.transcript}
           {speech.interimText && (
-            <span style={{ color: 'rgba(255,255,255,0.35)', fontStyle: 'italic' }}>
+            <span style={{ color: 'var(--pipe-text-dim)', fontStyle: 'italic' }}>
               {speech.interimText}
             </span>
           )}
@@ -361,7 +361,7 @@ export function VideoSubmissionPanel({
               onClick={reset}
               style={{
                 ...btnBase,
-                background: 'rgba(255,255,255,0.04)',
+                background: 'var(--pipe-surface)',
                 borderColor: 'rgba(255,255,255,0.12)',
                 color: 'var(--pipe-text-muted)',
               }}
@@ -387,7 +387,7 @@ export function VideoSubmissionPanel({
               style={{
                 ...btnBase,
                 fontSize: 10,
-                background: 'rgba(255,255,255,0.04)',
+                background: 'var(--pipe-surface)',
                 borderColor: 'rgba(255,255,255,0.12)',
                 color: 'var(--pipe-text-dim)',
               }}
@@ -402,7 +402,7 @@ export function VideoSubmissionPanel({
             onClick={reset}
             style={{
               ...btnBase,
-              background: 'rgba(255,255,255,0.04)',
+              background: 'var(--pipe-surface)',
               borderColor: 'rgba(255,255,255,0.12)',
               color: 'var(--pipe-text-muted)',
             }}

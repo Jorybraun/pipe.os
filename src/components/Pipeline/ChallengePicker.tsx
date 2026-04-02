@@ -375,7 +375,7 @@ export function ChallengePicker({
         <div
           style={{
             padding: "24px 32px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid var(--pipe-border)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -410,7 +410,7 @@ export function ChallengePicker({
                 onClick={handleConfirm}
                 style={{
                   padding: "10px 24px",
-                  background: "#fff",
+                  background: "var(--pipe-text, #fff)",
                   border: "none",
                   borderRadius: 4,
                   color: "#000",
@@ -446,8 +446,8 @@ export function ChallengePicker({
         <div
           style={{
             padding: "16px 32px",
-            background: "rgba(255,255,255,0.02)",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            background: "var(--pipe-surface)",
+            borderBottom: "1px solid var(--pipe-border)",
             display: "flex",
             gap: 24,
             alignItems: "center",
@@ -473,7 +473,7 @@ export function ChallengePicker({
                 style={{
                   width: "100%",
                   background: "rgba(0,0,0,0.2)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  border: "1px solid var(--pipe-border)",
                   borderRadius: 4,
                   padding: "10px 16px 10px 36px",
                   color: "var(--pipe-text, #fff)",
@@ -522,7 +522,7 @@ export function ChallengePicker({
                         border: "1px solid rgba(96,165,250,0.3)",
                         borderRadius: 4,
                         padding: "8px 12px",
-                        color: repoUrl ? "#fff" : "rgba(255,255,255,0.4)",
+                        color: repoUrl ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                         fontSize: 11,
                         outline: "none",
                         fontFamily: "Space Mono",
@@ -585,7 +585,7 @@ export function ChallengePicker({
                     borderRadius: 4,
                     color: showAddRepoInput
                       ? "#60a5fa"
-                      : "rgba(255,255,255,0.5)",
+                      : "var(--pipe-text-muted)",
                     fontSize: 10,
                     fontWeight: 700,
                     fontFamily: "Space Mono",
@@ -640,7 +640,7 @@ export function ChallengePicker({
                       borderRadius: 4,
                       color: isValidGitHubUrl(newRepoUrl)
                         ? "#60a5fa"
-                        : "rgba(255,255,255,0.2)",
+                        : "var(--pipe-text-dim)",
                       fontSize: 10,
                       fontWeight: 700,
                       fontFamily: "Space Mono",
@@ -697,7 +697,7 @@ export function ChallengePicker({
                       : "transparent",
                     border: `1px solid ${isActive ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.05)"}`,
                     borderRadius: 4,
-                    color: isActive ? "#fff" : "rgba(255,255,255,0.4)",
+                    color: isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                     fontSize: 9,
                     fontWeight: 700,
                     letterSpacing: "0.05em",
@@ -711,7 +711,7 @@ export function ChallengePicker({
                 >
                   <t.icon
                     size={12}
-                    color={isActive ? t.color : "rgba(255,255,255,0.2)"}
+                    color={isActive ? t.color : "var(--pipe-text-dim)"}
                   />
                   {t.label.toUpperCase()}
                 </button>
@@ -752,7 +752,7 @@ export function ChallengePicker({
               <div
                 style={{
                   height: 1,
-                  background: "rgba(255,255,255,0.06)",
+                  background: "var(--pipe-surface)",
                   margin: "8px 0",
                 }}
               />
@@ -783,7 +783,7 @@ export function ChallengePicker({
         <div
           style={{
             padding: "16px 32px",
-            borderTop: "1px solid rgba(255,255,255,0.06)",
+            borderTop: "1px solid var(--pipe-border)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -890,7 +890,7 @@ function TemplateGrid({
       <div
         style={{
           height: 1,
-          background: "rgba(255,255,255,0.06)",
+          background: "var(--pipe-surface)",
           margin: "8px 0",
         }}
       />
@@ -1068,7 +1068,7 @@ function GitHubPRPanel({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  color: isSelected ? "#60a5fa" : "rgba(255,255,255,0.2)",
+                  color: isSelected ? "#60a5fa" : "var(--pipe-text-dim)",
                   marginTop: 2,
                 }}
               >
@@ -1104,8 +1104,8 @@ function GitHubPRPanel({
                       style={{
                         fontSize: 8,
                         padding: "2px 6px",
-                        background: "rgba(255,255,255,0.06)",
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        background: "var(--pipe-surface)",
+                        border: "1px solid var(--pipe-border)",
                         borderRadius: 2,
                         color: "var(--pipe-text-dim)",
                         fontFamily: "Space Mono",
@@ -1149,7 +1149,7 @@ function GitHubPRPanel({
                 <div
                   style={{
                     fontSize: 10,
-                    color: "rgba(255,255,255,0.35)",
+                    color: "var(--pipe-text-dim)",
                     fontFamily: "Space Mono",
                     display: "flex",
                     alignItems: "center",

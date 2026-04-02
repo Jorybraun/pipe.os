@@ -44,11 +44,11 @@ const BlockContainer = ({ config, children, icon, accentColor = '#fff' }: BlockC
   >
     <div style={{ 
       padding: '20px 24px', 
-      borderBottom: '1px solid rgba(255,255,255,0.06)', 
+      borderBottom: '1px solid var(--pipe-border)', 
       display: 'flex', 
       alignItems: 'center', 
       justifyContent: 'space-between',
-      background: 'rgba(255,255,255,0.01)'
+      background: 'var(--pipe-surface)'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {icon && <div style={{ color: accentColor, opacity: 0.8 }}>{icon}</div>}
@@ -220,7 +220,7 @@ function IntelligenceBlock({ config }: { config: IntelligenceBlockConfig }): JSX
         <BlockContainer config={config} icon={<Search size={16} />} accentColor="#fbbf24">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {config.data.findings.map((f: any, i: number) => (
-              <div key={i} style={{ display: 'flex', gap: 12, padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div key={i} style={{ display: 'flex', gap: 12, padding: '12px', background: 'var(--pipe-surface)', borderRadius: 8, border: '1px solid var(--pipe-border-light)' }}>
                 <div style={{ marginTop: 2 }}>{f.icon === 'alert' ? <Shield size={14} color="#f87171" /> : <TrendingUp size={14} color="#fbbf24" />}</div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 4 }}>{f.title}</div>

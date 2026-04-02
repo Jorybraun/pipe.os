@@ -133,9 +133,9 @@ export function DiffReviewCanvas({
       widgetList[`+${a.line}`] = (
         <div key={`view-${a.line}`} style={{
           padding: '16px 24px',
-          background: 'rgba(255,255,255,0.03)',
+          background: 'var(--pipe-surface)',
           borderTop: '1px solid rgba(255,255,255,0.05)',
-          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          borderBottom: '1px solid var(--pipe-border-light)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
@@ -167,8 +167,8 @@ export function DiffReviewCanvas({
         <div key="editor" style={{
           padding: 24,
           background: '#161618',
-          borderTop: '1px solid rgba(255,255,255,0.1)',
-          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          borderTop: '1px solid var(--pipe-border)',
+          borderBottom: '1px solid var(--pipe-border)',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pipe-text, #fff)', fontFamily: '"Space Mono", monospace' }}>
@@ -211,7 +211,7 @@ export function DiffReviewCanvas({
               width: '100%',
               height: 100,
               background: 'rgba(0,0,0,0.2)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              border: '1px solid var(--pipe-border)',
               color: 'var(--pipe-text, #fff)',
               padding: 12,
               fontSize: 13,
@@ -248,13 +248,13 @@ export function DiffReviewCanvas({
   return (
     <div className="diff-review-container">
       <LiquidMetalCard variant="dark" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--pipe-surface)' }}>
           <div>
             <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>CODE_REVIEW_DIFF_VIEW</div>
             <div style={{ color: 'var(--pipe-text, #fff)', fontSize: 14, fontWeight: 700 }}>{currentSnippet.title || 'Untitled Snippet'}</div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>SNIPPET {currentSnippetIndex + 1} OF {snippets.length}</div>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>SNIPPET {currentSnippetIndex + 1} OF {snippets.length}</div>
             <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>{currentSnippet.language?.toUpperCase() || 'TYPESCRIPT'}</div>
           </div>
         </div>
@@ -291,13 +291,13 @@ export function DiffReviewCanvas({
           )}
         </div>
 
-        <div style={{ padding: '20px 24px', borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.01)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '20px 24px', borderTop: '1px solid var(--pipe-border)', background: 'var(--pipe-surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             CLICK_LINE_NUMBER_TO_ANNOTATE
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handlePrev} disabled={currentSnippetIndex === 0} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: currentSnippetIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: '"Space Mono", monospace', cursor: currentSnippetIndex === 0 ? 'not-allowed' : 'pointer' }}>PREVIOUS</button>
-            <button onClick={handleNext} disabled={currentSnippetIndex === snippets.length - 1} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: currentSnippetIndex === snippets.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: '"Space Mono", monospace', cursor: currentSnippetIndex === snippets.length - 1 ? 'not-allowed' : 'pointer' }}>NEXT</button>
+            <button onClick={handlePrev} disabled={currentSnippetIndex === 0} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--pipe-border)', color: currentSnippetIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: '"Space Mono", monospace', cursor: currentSnippetIndex === 0 ? 'not-allowed' : 'pointer' }}>PREVIOUS</button>
+            <button onClick={handleNext} disabled={currentSnippetIndex === snippets.length - 1} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid var(--pipe-border)', color: currentSnippetIndex === snippets.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: '"Space Mono", monospace', cursor: currentSnippetIndex === snippets.length - 1 ? 'not-allowed' : 'pointer' }}>NEXT</button>
           </div>
         </div>
       </LiquidMetalCard>

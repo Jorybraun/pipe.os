@@ -169,7 +169,7 @@ export function CodeReviewChallenge({
         }}
       >
         {/* Instructions */}
-        <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
           <div
             style={{
               fontSize: 9,
@@ -210,7 +210,7 @@ export function CodeReviewChallenge({
             <p
               style={{
                 fontSize: 11,
-                color: 'rgba(255,255,255,0.35)',
+                color: 'var(--pipe-text-dim)',
                 lineHeight: 1.7,
                 margin: 0,
                 marginTop: 12,
@@ -277,7 +277,7 @@ export function CodeReviewChallenge({
               <p
                 style={{
                   fontSize: 11,
-                  color: 'rgba(255,255,255,0.7)',
+                  color: 'var(--pipe-text-muted)',
                   lineHeight: 1.5,
                   margin: 0,
                   marginBottom: 10,
@@ -288,10 +288,10 @@ export function CodeReviewChallenge({
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <GitBranch size={10} color="rgba(255,255,255,0.2)" />
+              <GitBranch size={10} color="var(--pipe-text-dim)" />
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{branch}</span>
-              <ChevronRight size={10} color="rgba(255,255,255,0.15)" />
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>{base}</span>
+              <ChevronRight size={10} color="var(--pipe-text-dim)" />
+              <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>{base}</span>
             </div>
 
             <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
@@ -374,7 +374,7 @@ export function CodeReviewChallenge({
       >
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Verdict */}
-          <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
             <div
               style={{
                 fontSize: 9,
@@ -396,7 +396,7 @@ export function CodeReviewChallenge({
                     onClick={() => handleVerdictChange(opt.key)}
                     style={{
                       padding: '14px 16px',
-                      background: isActive ? opt.bg : 'rgba(255,255,255,0.02)',
+                      background: isActive ? opt.bg : 'var(--pipe-surface)',
                       border: `1px solid ${isActive ? opt.border : 'rgba(255,255,255,0.06)'}`,
                       borderRadius: 4,
                       display: 'flex',
@@ -434,7 +434,7 @@ export function CodeReviewChallenge({
                       <span
                         style={{
                           fontSize: 9,
-                          color: isActive ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.25)',
+                          color: isActive ? 'rgba(255,255,255,0.5)' : 'var(--pipe-text-dim)',
                           marginLeft: 22,
                           marginTop: 4,
                         }}
@@ -452,7 +452,7 @@ export function CodeReviewChallenge({
           <div
             style={{
               padding: 24,
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              borderBottom: '1px solid var(--pipe-border)',
               display: 'flex',
               flexDirection: 'column',
             }}
@@ -474,8 +474,8 @@ export function CodeReviewChallenge({
               placeholder="Summarize your code review findings..."
               style={{
                 minHeight: 120,
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 4,
                 color: 'var(--pipe-text, #fff)',
                 fontSize: 11,
@@ -522,13 +522,13 @@ export function CodeReviewChallenge({
                 flexDirection: 'column',
                 gap: 8,
                 padding: 12,
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.06)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 4,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Annotations</span>
+                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Annotations</span>
                 <span
                   style={{
                     fontSize: 10,
@@ -541,7 +541,7 @@ export function CodeReviewChallenge({
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Verdict</span>
+                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Verdict</span>
                 <span
                   style={{
                     fontSize: 10,
@@ -555,7 +555,7 @@ export function CodeReviewChallenge({
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Summary</span>
+                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Summary</span>
                 <span
                   style={{
                     fontSize: 10,
@@ -574,7 +574,7 @@ export function CodeReviewChallenge({
         <div
           style={{
             padding: '16px 24px',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
+            borderTop: '1px solid var(--pipe-border)',
           }}
         >
           {isReady ? (

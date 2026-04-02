@@ -124,7 +124,7 @@ export function AgentPanel({
         <div
           style={{
             padding: 24,
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid var(--pipe-border)",
             display: "flex",
             alignItems: "center",
             gap: 20,
@@ -165,7 +165,7 @@ export function AgentPanel({
 
           {/* Divider */}
           <div
-            style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }}
+            style={{ flex: 1, height: 1, background: "var(--pipe-surface)" }}
           />
 
           {/* Gaps indicator */}
@@ -196,7 +196,7 @@ export function AgentPanel({
           <div
             style={{
               display: "inline-flex",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
+              borderBottom: "1px solid var(--pipe-border)",
             }}
           >
             {tabs.map((t) => {
@@ -216,7 +216,7 @@ export function AgentPanel({
                     color:
                       tab === t.id
                         ? "rgba(255,255,255,0.85)"
-                        : "rgba(255,255,255,0.3)",
+                        : "var(--pipe-text-dim)",
                     fontSize: 9,
                     letterSpacing: "0.12em",
                     cursor: "pointer",
@@ -288,7 +288,7 @@ export function AgentPanel({
                     flex: 1,
                     padding: "12px 16px",
                     background: "rgba(0,0,0,0.2)",
-                    border: "1px solid rgba(255,255,255,0.06)",
+                    border: "1px solid var(--pipe-border)",
                     color: "var(--pipe-text, #fff)",
                     fontSize: 11,
                     fontFamily: '"Space Mono", monospace',
@@ -326,7 +326,7 @@ export function AgentPanel({
                     style={{
                       fontSize: 8,
                       letterSpacing: "0.1em",
-                      color: "rgba(255,255,255,0.25)",
+                      color: "var(--pipe-text-dim)",
                       marginBottom: 12,
                     }}
                   >
@@ -360,7 +360,7 @@ export function AgentPanel({
                     style={{
                       fontSize: 8,
                       letterSpacing: "0.1em",
-                      color: "rgba(255,255,255,0.25)",
+                      color: "var(--pipe-text-dim)",
                       marginBottom: 12,
                     }}
                   >
@@ -397,7 +397,7 @@ export function AgentPanel({
                     style={{
                       fontSize: 8,
                       letterSpacing: "0.1em",
-                      color: "rgba(255,255,255,0.25)",
+                      color: "var(--pipe-text-dim)",
                       marginBottom: 12,
                     }}
                   >
@@ -431,7 +431,7 @@ export function AgentPanel({
                     style={{
                       fontSize: 8,
                       letterSpacing: "0.1em",
-                      color: "rgba(255,255,255,0.25)",
+                      color: "var(--pipe-text-dim)",
                       marginBottom: 12,
                     }}
                   >
@@ -475,7 +475,7 @@ export function AgentPanel({
                   style={{
                     fontSize: 9,
                     letterSpacing: "0.12em",
-                    color: "rgba(255,255,255,0.25)",
+                    color: "var(--pipe-text-dim)",
                   }}
                 >
                   ROLE_MODEL
@@ -490,7 +490,7 @@ export function AgentPanel({
                   style={{
                     fontSize: 8,
                     letterSpacing: "0.1em",
-                    color: "rgba(255,255,255,0.25)",
+                    color: "var(--pipe-text-dim)",
                     marginBottom: 14,
                   }}
                 >
@@ -529,7 +529,7 @@ export function AgentPanel({
                   style={{
                     fontSize: 9,
                     letterSpacing: "0.12em",
-                    color: "rgba(255,255,255,0.25)",
+                    color: "var(--pipe-text-dim)",
                   }}
                 >
                   MISSING_SECTIONS

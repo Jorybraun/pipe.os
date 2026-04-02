@@ -31,9 +31,9 @@ export function EditorHeader({
     alignItems: 'center',
     gap: 10,
     padding: '10px 18px',
-    background: 'rgba(255,255,255,0.05)',
+    background: 'var(--pipe-surface)',
     color: 'var(--pipe-text, #fff)',
-    border: '1px solid rgba(255,255,255,0.1)',
+    border: '1px solid var(--pipe-border)',
     borderRadius: 4,
     fontSize: 10,
     fontWeight: 800,
@@ -78,7 +78,7 @@ export function EditorHeader({
                 }}
                 placeholder="MINS"
                 style={{
-                  width: 60, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                  width: 60, background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)',
                   borderRadius: 4, padding: '6px 10px', color: 'var(--pipe-text, #fff)', fontSize: 12,
                   fontFamily: 'Space Mono', textAlign: 'center', outline: 'none',
                 }}

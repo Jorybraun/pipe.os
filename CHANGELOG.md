@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Light mode contrast — 2026-04-02)
+- **80+ components** — Second pass replacing hardcoded `rgba(255,255,255,...)` borders, backgrounds, surfaces with CSS variable tokens.
+- **`src/contexts/ThemeContext.tsx`** — Increased light mode contrast values for text-dim (0.35→0.45), borders (0.1→0.15), surfaces.
+
 #### Added (Light/dark mode — 2026-04-02)
 - **`src/contexts/ThemeContext.tsx`** — Added `mode: 'dark' | 'light'` with CSS custom properties (`--pipe-text`, `--pipe-text-muted`, `--pipe-text-dim`, `--pipe-bg`, `--pipe-border`, `--pipe-surface`).
 - **`src/components/DisplaySettingsPanel.tsx`** — DARK/LIGHT toggle buttons; all controls use CSS variables.

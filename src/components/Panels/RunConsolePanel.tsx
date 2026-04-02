@@ -35,7 +35,7 @@ function TestRow({ test }: { test: TestCaseResult }): JSX.Element {
       <span style={{ fontSize: 9, fontWeight: 800, fontFamily: 'Space Mono', color, width: 32, letterSpacing: '0.05em' }}>
         {label}
       </span>
-      <span style={{ fontSize: 11, fontFamily: 'Space Mono', color: 'rgba(255,255,255,0.7)', flex: 1 }}>
+      <span style={{ fontSize: 11, fontFamily: 'Space Mono', color: 'var(--pipe-text-muted)', flex: 1 }}>
         {test.name}
       </span>
       {test.error && (
@@ -76,7 +76,7 @@ export function RunConsolePanel({
   return (
     <div style={{
       background: '#0a0a0c',
-      borderTop: '1px solid rgba(255,255,255,0.08)',
+      borderTop: '1px solid var(--pipe-border)',
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
@@ -104,7 +104,7 @@ export function RunConsolePanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 4 }}
+            style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 4 }}
           >
             {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>

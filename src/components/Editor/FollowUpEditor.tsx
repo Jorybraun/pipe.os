@@ -49,7 +49,7 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
         
         {/* Question Types */}
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-          <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Layers size={16} color="#a78bfa" />
               <SubTitle>ALLOWED_RESPONSE_FORMATS</SubTitle>
@@ -80,7 +80,7 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
 
         {/* Categories */}
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-          <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <Settings size={16} color="#4ade80" />
               <SubTitle>ACTIVE_PROBING_STRATEGIES</SubTitle>
@@ -116,9 +116,9 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
 
       {/* CONFIGURATION SIDEBAR */}
       <aside style={{ position: "sticky", top: 0, height: "calc(100vh - 100px)" }}>
-        <LiquidMetalCard variant="chrome" style={{ padding: '40px 32px', borderRadius: '32px 0 0 0', height: '100%', borderLeft: '1px solid rgba(255,255,255,0.1)', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        <LiquidMetalCard variant="chrome" style={{ padding: '40px 32px', borderRadius: '32px 0 0 0', height: '100%', borderLeft: '1px solid var(--pipe-border)', borderTop: '1px solid var(--pipe-border)' }}>
           
-          <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid var(--pipe-border)' }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 8 }}>
               Follow-Up
             </div>

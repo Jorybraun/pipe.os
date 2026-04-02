@@ -214,7 +214,7 @@ export default function ChallengeEditorPage(): JSX.Element {
           style={{
             marginTop: 24,
             padding: '40px',
-            border: '1px dashed rgba(255,255,255,0.1)',
+            border: '1px dashed var(--pipe-border)',
             borderRadius: 12,
             textAlign: 'center',
           }}
@@ -240,9 +240,9 @@ export default function ChallengeEditorPage(): JSX.Element {
     alignItems: 'center',
     gap: 10,
     padding: '10px 18px',
-    background: 'rgba(255,255,255,0.05)',
+    background: 'var(--pipe-surface)',
     color: 'var(--pipe-text, #fff)',
-    border: '1px solid rgba(255,255,255,0.1)',
+    border: '1px solid var(--pipe-border)',
     borderRadius: 4,
     fontSize: 10,
     fontWeight: 800,
@@ -253,10 +253,10 @@ export default function ChallengeEditorPage(): JSX.Element {
 
   const tabBtnStyle = (active: boolean): React.CSSProperties => ({
     padding: '8px 16px',
-    background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+    background: active ? 'var(--pipe-surface-hover)' : 'transparent',
     border: 'none',
     borderBottom: active ? '2px solid #fbbf24' : '2px solid transparent',
-    color: active ? '#fff' : 'rgba(255,255,255,0.4)',
+    color: active ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-dim)',
     fontSize: 10,
     fontWeight: 700,
     fontFamily: 'Space Mono',
@@ -280,7 +280,7 @@ export default function ChallengeEditorPage(): JSX.Element {
           marginBottom: 24,
           paddingTop: 24,
           paddingBottom: 20,
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--pipe-border)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
@@ -376,7 +376,7 @@ export default function ChallengeEditorPage(): JSX.Element {
           display: 'flex',
           gap: 0,
           marginBottom: 24,
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--pipe-border)',
         }}
       >
         <button
@@ -430,8 +430,8 @@ export default function ChallengeEditorPage(): JSX.Element {
               placeholder="Challenge title..."
               style={{
                 width: '100%',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 8,
                 padding: '14px 18px',
                 color: 'var(--pipe-text, #fff)',
@@ -466,8 +466,8 @@ export default function ChallengeEditorPage(): JSX.Element {
               rows={10}
               style={{
                 width: '100%',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 8,
                 padding: '14px 18px',
                 color: 'var(--pipe-text, #fff)',
@@ -507,8 +507,8 @@ export default function ChallengeEditorPage(): JSX.Element {
               placeholder="Leave empty for untimed"
               style={{
                 width: 200,
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 8,
                 padding: '12px 16px',
                 color: 'var(--pipe-text, #fff)',
@@ -523,12 +523,12 @@ export default function ChallengeEditorPage(): JSX.Element {
           {challenge.type === 'CODE_REVIEW' && (
             <>
               {/* Divider */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 8 }} />
+              <div style={{ borderTop: '1px solid var(--pipe-border)', paddingTop: 8 }} />
 
               {/* MULTI_TURN */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
                   <SubTitle>MULTI_TURN</SubTitle>
                 </div>
                 <label
@@ -568,7 +568,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                   <span
                     style={{
                       fontSize: 11,
-                      color: 'rgba(255,255,255,0.6)',
+                      color: 'var(--pipe-text-muted)',
                       fontFamily: 'Space Mono',
                     }}
                   >
@@ -595,7 +595,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                     />
                     <span style={{
                       fontSize: 11,
-                      color: 'rgba(255,255,255,0.6)',
+                      color: 'var(--pipe-text-muted)',
                       fontFamily: 'Space Mono',
                     }}>
                       Enable "Ask" tab (explainer agent)
@@ -611,7 +611,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               {!!(challenge.config?.enableExplainer) && (
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                    <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                    <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
                     <SubTitle>MAX_EXPLAINER_QUESTIONS</SubTitle>
                   </div>
                   <input
@@ -629,8 +629,8 @@ export default function ChallengeEditorPage(): JSX.Element {
                     }}
                     style={{
                       width: 120,
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.12)',
+                      background: 'var(--pipe-surface)',
+                      border: '1px solid var(--pipe-border)',
                       borderRadius: 8,
                       padding: '10px 14px',
                       color: 'var(--pipe-text, #fff)',
@@ -648,7 +648,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               {/* IMPLEMENTER_PERSONA */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
                   <SubTitle>IMPLEMENTER_PERSONA</SubTitle>
                 </div>
                 <select
@@ -665,13 +665,13 @@ export default function ChallengeEditorPage(): JSX.Element {
                     width: 200,
                     background: challenge.config?.isMultiTurn
                       ? 'rgba(255,255,255,0.05)'
-                      : 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.12)',
+                      : 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 8,
                     padding: '10px 14px',
                     color: challenge.config?.isMultiTurn
                       ? '#fff'
-                      : 'rgba(255,255,255,0.25)',
+                      : 'var(--pipe-text-dim)',
                     fontSize: 13,
                     fontFamily: 'Space Mono',
                     outline: 'none',
@@ -686,7 +686,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               {/* MAX_ROUNDS */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
                   <SubTitle>MAX_ROUNDS</SubTitle>
                 </div>
                 <input
@@ -712,13 +712,13 @@ export default function ChallengeEditorPage(): JSX.Element {
                     width: 120,
                     background: challenge.config?.isMultiTurn
                       ? 'rgba(255,255,255,0.05)'
-                      : 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.12)',
+                      : 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 8,
                     padding: '10px 14px',
                     color: challenge.config?.isMultiTurn
                       ? '#fff'
-                      : 'rgba(255,255,255,0.25)',
+                      : 'var(--pipe-text-dim)',
                     fontSize: 13,
                     fontFamily: 'Space Mono',
                     outline: 'none',
@@ -733,12 +733,12 @@ export default function ChallengeEditorPage(): JSX.Element {
           {challenge.type === 'CODE_IMPLEMENTATION' && (
             <>
               {/* Divider */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 8 }} />
+              <div style={{ borderTop: '1px solid var(--pipe-border)', paddingTop: 8 }} />
 
               {/* MODE */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Terminal size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <Terminal size={14} style={{ color: 'var(--pipe-text-dim)' }} />
                   <SubTitle>MODE</SubTitle>
                 </div>
                 <ModeSelector
@@ -750,17 +750,17 @@ export default function ChallengeEditorPage(): JSX.Element {
               {/* ENGINE */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
                   <SubTitle>ENGINE</SubTitle>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{
                     padding: 12,
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.06)',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 4,
                   }}>
-                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                    <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 4 }}>
                       RUNTIME
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--pipe-text, #fff)', fontWeight: 700 }}>
@@ -771,11 +771,11 @@ export default function ChallengeEditorPage(): JSX.Element {
                   </div>
                   <div style={{
                     padding: 12,
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.06)',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 4,
                   }}>
-                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                    <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 4 }}>
                       SCORING
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
@@ -788,7 +788,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               {/* FOLLOW_UP */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
                   <SubTitle>FOLLOW_UP</SubTitle>
                 </div>
                 <FollowUpConfiguration
@@ -817,7 +817,7 @@ export default function ChallengeEditorPage(): JSX.Element {
           <div
             style={{
               padding: '32px 40px',
-              border: '1px dashed rgba(255,255,255,0.1)',
+              border: '1px dashed var(--pipe-border)',
               borderRadius: 12,
             }}
           >
@@ -843,8 +843,8 @@ export default function ChallengeEditorPage(): JSX.Element {
               rows={8}
               style={{
                 width: '100%',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 8,
                 padding: '14px 18px',
                 color: 'var(--pipe-text, #fff)',
@@ -881,7 +881,7 @@ export default function ChallengeEditorPage(): JSX.Element {
           </div>
           <div
             style={{
-              border: '1px solid rgba(255,255,255,0.1)',
+              border: '1px solid var(--pipe-border)',
               borderRadius: 12,
               overflow: 'hidden',
               minHeight: 400,
@@ -917,8 +917,8 @@ export default function ChallengeEditorPage(): JSX.Element {
               <div
                 style={{
                   padding: '20px 24px',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
                   borderRadius: 8,
                   fontSize: 16,
                   fontWeight: 600,

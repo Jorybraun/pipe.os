@@ -191,7 +191,7 @@ export function FollowUpQuestionsPanel({
           <div
             style={{
               fontSize: 10,
-              color: 'rgba(255,255,255,0.25)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: '"Space Mono", monospace',
             }}
           >
@@ -210,7 +210,7 @@ export function FollowUpQuestionsPanel({
         style={{
           flexShrink: 0,
           padding: '16px 20px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderTop: '1px solid var(--pipe-border)',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -225,7 +225,7 @@ export function FollowUpQuestionsPanel({
             gap: 6,
             padding: '10px 16px',
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.1)',
+            border: '1px solid var(--pipe-border)',
             color: currentIndex === 0 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.45)',
             fontSize: 10,
             fontWeight: 700,

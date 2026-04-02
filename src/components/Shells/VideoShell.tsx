@@ -34,7 +34,7 @@ const WIDGET_STYLE: React.CSSProperties = {
   width: 280,
   zIndex: 9000,
   background: "#0c0c0e",
-  border: "1px solid rgba(255,255,255,0.12)",
+  border: "1px solid var(--pipe-border)",
   borderRadius: 8,
   boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
   fontFamily: '"Space Mono", monospace',
@@ -56,7 +56,7 @@ const PILL_STYLE: React.CSSProperties = {
   fontFamily: '"Space Mono", monospace',
   fontSize: 9,
   letterSpacing: "0.12em",
-  color: "rgba(255,255,255,0.4)",
+  color: "var(--pipe-text-dim)",
 };
 
 // ============================================================================
@@ -368,7 +368,7 @@ function VideoWidget({
         <div
           style={{
             padding: "16px 20px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid var(--pipe-border)",
           }}
         >
           <div
@@ -381,7 +381,7 @@ function VideoWidget({
           >
             ⦿ INCOMING_VIDEO_CALL
           </div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
+          <div style={{ fontSize: 11, color: "var(--pipe-text-muted)" }}>
             Recruiter is calling
           </div>
         </div>
@@ -394,7 +394,7 @@ function VideoWidget({
               background: "rgba(239,68,68,0.08)",
               border: "none",
               borderTop: "none",
-              borderRight: "1px solid rgba(255,255,255,0.06)",
+              borderRight: "1px solid var(--pipe-border)",
               color: "rgba(248,113,113,0.8)",
               fontSize: 9,
               letterSpacing: "0.12em",
@@ -479,7 +479,7 @@ function VideoWidget({
               style={{
                 background: "none",
                 border: "none",
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
                 cursor: "pointer",
                 padding: 0,
               }}
@@ -524,7 +524,7 @@ function VideoWidget({
                   bottom: 6,
                   left: 8,
                   fontSize: 8,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--pipe-text-dim)",
                   fontFamily: '"Space Mono", monospace',
                   letterSpacing: "0.1em",
                 }}
@@ -536,7 +536,7 @@ function VideoWidget({
           <div
             style={{
               padding: "14px 16px",
-              borderBottom: "1px solid rgba(255,255,255,0.05)",
+              borderBottom: "1px solid var(--pipe-border-light)",
             }}
           >
             <div
@@ -549,7 +549,7 @@ function VideoWidget({
             >
               LIVE_VIDEO_STAGE
             </div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+            <div style={{ fontSize: 10, color: "var(--pipe-text-dim)" }}>
               Ready to start call
             </div>
           </div>
@@ -561,8 +561,8 @@ function VideoWidget({
                 padding: "10px 0",
                 background: "transparent",
                 border: "none",
-                borderRight: "1px solid rgba(255,255,255,0.06)",
-                color: "rgba(255,255,255,0.3)",
+                borderRight: "1px solid var(--pipe-border)",
+                color: "var(--pipe-text-dim)",
                 fontSize: 9,
                 letterSpacing: "0.1em",
                 fontFamily: '"Space Mono", monospace',
@@ -603,7 +603,7 @@ function VideoWidget({
           <div
             style={{
               padding: "14px 16px",
-              borderBottom: "1px solid rgba(255,255,255,0.05)",
+              borderBottom: "1px solid var(--pipe-border-light)",
               display: "flex",
               alignItems: "center",
               gap: 10,
@@ -631,7 +631,7 @@ function VideoWidget({
               >
                 CALLING...
               </div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)" }}>
+              <div style={{ fontSize: 10, color: "var(--pipe-text-dim)" }}>
                 Waiting for candidate
               </div>
             </div>

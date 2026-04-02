@@ -99,7 +99,7 @@ export function CandidateCard({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: 'rgba(255,255,255,0.02)',
+              background: 'var(--pipe-surface)',
               borderRight: '1px solid rgba(255,255,255,0.05)'
             }}
           >

@@ -54,7 +54,7 @@ export function VideoWaitingRoom({
         padding: 48,
         minHeight: 400,
         background: 'rgba(12,12,14,0.95)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: '1px solid var(--pipe-border)',
       }}
     >
       {/* Camera preview */}
@@ -70,7 +70,7 @@ export function VideoWaitingRoom({
               height: 210,
               borderRadius: 4,
               objectFit: 'cover',
-              border: '1px solid rgba(255,255,255,0.1)',
+              border: '1px solid var(--pipe-border)',
               background: '#000',
               transform: 'scaleX(-1)', // Mirror for self-view
             }}
@@ -81,14 +81,14 @@ export function VideoWaitingRoom({
               width: 280,
               height: 210,
               borderRadius: 4,
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <VideoOff size={32} color="rgba(255,255,255,0.2)" />
+            <VideoOff size={32} color="var(--pipe-text-dim)" />
           </div>
         )}
       </div>
@@ -101,7 +101,7 @@ export function VideoWaitingRoom({
               style={{
                 fontSize: 10,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 marginBottom: 24,
               }}
@@ -115,13 +115,13 @@ export function VideoWaitingRoom({
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
                 <Loader2
                   size={14}
-                  color="rgba(255,255,255,0.3)"
+                  color="var(--pipe-text-dim)"
                   className="animate-spin"
                 />
                 <span
                   style={{
                     fontSize: 10,
-                    color: 'rgba(255,255,255,0.3)',
+                    color: 'var(--pipe-text-dim)',
                     fontFamily: '"Space Mono", monospace',
                   }}
                 >
@@ -168,7 +168,7 @@ export function VideoWaitingRoom({
               style={{
                 fontSize: 10,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 marginBottom: 16,
               }}
@@ -180,13 +180,13 @@ export function VideoWaitingRoom({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
               <Loader2
                 size={14}
-                color="rgba(255,255,255,0.3)"
+                color="var(--pipe-text-dim)"
                 className="animate-spin"
               />
               <span
                 style={{
                   fontSize: 10,
-                  color: 'rgba(255,255,255,0.3)',
+                  color: 'var(--pipe-text-dim)',
                   fontFamily: '"Space Mono", monospace',
                 }}
               >

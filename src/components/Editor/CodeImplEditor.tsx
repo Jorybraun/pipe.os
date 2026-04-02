@@ -158,9 +158,9 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
       value={language}
       onChange={(e) => setConfig({ language: e.target.value })}
       style={{
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        color: 'rgba(255,255,255,0.7)',
+        background: 'var(--pipe-surface)',
+        border: '1px solid var(--pipe-border)',
+        color: 'var(--pipe-text-muted)',
         fontFamily: 'Space Mono',
         fontSize: 10,
         padding: '4px 8px',
@@ -229,8 +229,8 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
               <button
                 onClick={() => addFile('sample')}
                 style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
                   color: 'var(--pipe-text, #fff)',
                   padding: '8px 20px',
                   fontSize: 10,
@@ -313,7 +313,7 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
         flexDirection: 'column',
         height: '100%',
         background: '#0c0c0e',
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: '1px solid var(--pipe-border)',
         overflow: 'hidden',
       }}>
         <EditorTabBar
@@ -338,7 +338,7 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
         {/* Run bar */}
         <div style={{
           padding: '8px 16px',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
+          borderTop: '1px solid var(--pipe-border)',
           display: 'flex',
           justifyContent: 'flex-end',
           gap: 10,

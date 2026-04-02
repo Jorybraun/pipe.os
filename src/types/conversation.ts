@@ -355,6 +355,173 @@ export interface ScoringReport {
 }
 
 // ---------------------------------------------------------------------------
+// Comprehension Review types (blind comprehension mode)
+// ---------------------------------------------------------------------------
+
+/** Challenge review mode */
+export type ReviewMode = 'bug_finding' | 'comprehension';
+
+/** Verdict options for comprehension mode */
+export type ComprehensionVerdict = 'approve' | 'request_changes' | 'needs_more_context';
+
+/** Tags describing what context the explainer provided */
+export type ContextTag = 'architecture' | 'data_flow' | 'surrounding_code' | 'trade_off' | 'problem_context' | 'integration';
+
+/** Depth level of an explainer response */
+export type DepthLevel = 'surface' | 'moderate' | 'deep';
+
+/** A candidate's question in a comprehension session */
+export interface ComprehensionQuestion {
+  text: string;
+  file?: string;
+  line?: number;
+}
+
+/** The explainer agent's response to a question */
+export interface ExplainerResponse {
+  /** Markdown content, may contain ```mermaid code blocks */
+  content: string;
+  /** Tags for what context was provided (used by scorer) */
+  context_provided: ContextTag[];
+  /** Depth level of the answer (used by scorer) */
+  depth_level: DepthLevel;
+}
+
+/** A single Q&A exchange in a comprehension session */
+export interface ComprehensionExchange {
+  round: number;
+  question: ComprehensionQuestion;
+  answer: ExplainerResponse;
+}
+
+/** Transcript format for comprehension sessions (stored in review_sessions.transcript) */
+export interface ComprehensionTranscript {
+  mode: 'comprehension';
+  exchanges: ComprehensionExchange[];
+  verdict?: {
+    decision: ComprehensionVerdict;
+    rationale: string;
+    submittedAt: string;
+  };
+}
+
+/** Ground truth insight categories */
+export type InsightCategory = 'purpose' | 'tradeoff' | 'architecture' | 'risk' | 'integration';
+
+/** Importance level for a key insight */
+export type InsightImportance = 'critical' | 'major' | 'minor';
+
+/** A single key insight in the comprehension ground truth */
+export interface KeyInsight {
+  id: number;
+  category: InsightCategory;
+  insight: string;
+  depth: DepthLevel;
+  importance: InsightImportance;
+}
+
+/** Ground truth for comprehension challenges (stored in challenges.ground_truth) */
+export interface ComprehensionGroundTruth {
+  mode: 'comprehension';
+  keyInsights: KeyInsight[];
+  idealVerdict: ComprehensionVerdict;
+  idealRationale: string;
+}
+
+/** Repo knowledge document (stored in challenges.server_config.repoKnowledge) */
+export interface RepoKnowledge {
+  architecture: {
+    overview: string;
+    components: Array<{ name: string; description: string; file?: string }>;
+    dataFlow?: string;
+  };
+  designDecisions: Array<{
+    id: number;
+    decision: string;
+    reason: string;
+    alternatives: string[];
+    tradeoffs: string;
+  }>;
+  surroundingCode: Record<string, string>;
+  prContext: {
+    problemSolved: string;
+    approach: string;
+    keyFiles: string[];
+  };
+}
+
+/** Session state for comprehension mode (frontend) */
+export interface ComprehensionSession {
+  sessionId: string | null;
+  exchanges: ComprehensionExchange[];
+  currentRound: number;
+  maxRounds: number;
+  verdict: ComprehensionVerdict | null;
+  rationale: string;
+  isAwaitingResponse: boolean;
+}
+
+// ── Comprehension scoring report types ──
+
+export interface QuestionQualityScore {
+  score: number;
+  strategic_questioning: number;
+  depth_progression: number;
+  specificity: number;
+  coverage: number;
+  efficiency: number;
+  probing_skill: number;
+  summary: string;
+}
+
+export interface ComprehensionScore {
+  score: number;
+  insight_coverage: number;
+  mental_model_accuracy: number;
+  context_synthesis: number;
+  misconception_avoidance: number;
+  depth_of_understanding: number;
+  insights_discovered: number[];
+  insights_missed: number[];
+  summary: string;
+}
+
+export interface DecisionQualityScore {
+  score: number;
+  verdict_alignment: number;
+  rationale_quality: number;
+  tradeoff_awareness: number;
+  risk_identification: number;
+  proportionality: number;
+  summary: string;
+}
+
+export interface ComprehensionEfficiencyScore {
+  /** Key insights discovered / total questions asked */
+  questions_to_insight_ratio: number;
+  /** How early core insights were reached (0-100) */
+  round_efficiency: number;
+  /** Deduction for redundant questions (0-100, higher = less redundancy) */
+  redundancy_score: number;
+  /** Weighted composite (0-100) */
+  score: number;
+}
+
+export interface ComprehensionScoringReport {
+  question_quality: { score: number; dimensions: QuestionQualityScore; summary: string };
+  comprehension: { score: number; dimensions: ComprehensionScore; insights_discovered: number[]; insights_missed: number[]; summary: string };
+  decision_quality: { score: number; dimensions: DecisionQualityScore; summary: string };
+  efficiency: ComprehensionEfficiencyScore;
+  overall: {
+    score: number;
+    band: ScoreBand;
+    narrative: string;
+    strengths: string[];
+    growth_areas: string[];
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

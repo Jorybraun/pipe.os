@@ -28,8 +28,8 @@ export function FileTabBar({
       display: 'flex',
       alignItems: 'stretch',
       gap: 0,
-      background: 'rgba(255,255,255,0.02)',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      background: 'var(--pipe-surface)',
+      borderBottom: '1px solid var(--pipe-border)',
       overflow: 'auto',
       minHeight: 36,
     }}>
@@ -59,14 +59,14 @@ export function FileTabBar({
             <span style={{
               fontSize: 11,
               fontFamily: 'Space Mono',
-              color: isActive ? '#fff' : 'rgba(255,255,255,0.45)',
+              color: isActive ? 'var(--pipe-text, #fff)' : 'rgba(255,255,255,0.45)',
               fontWeight: isActive ? 700 : 400,
               whiteSpace: 'nowrap',
             }}>
               {fileName}
             </span>
             {isReadOnly && (
-              <Lock size={10} style={{ color: 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
+              <Lock size={10} style={{ color: 'var(--pipe-text-dim)', flexShrink: 0 }} />
             )}
             {onRemove && !isReadOnly && paths.length > 1 && (
               <button
@@ -74,7 +74,7 @@ export function FileTabBar({
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: 'rgba(255,255,255,0.2)',
+                  color: 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   padding: 2,
                   display: 'flex',
@@ -95,7 +95,7 @@ export function FileTabBar({
           style={{
             background: 'none',
             border: 'none',
-            color: 'rgba(255,255,255,0.25)',
+            color: 'var(--pipe-text-dim)',
             cursor: 'pointer',
             padding: '0 12px',
             display: 'flex',

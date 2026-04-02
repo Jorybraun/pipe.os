@@ -12,7 +12,7 @@ export function FieldLabel({ children, required = false }: FieldLabelProps): JSX
       style={{
         fontSize: 8,
         letterSpacing: '0.2em',
-        color: 'rgba(255,255,255,0.3)',
+        color: 'var(--pipe-text-dim)',
         marginBottom: 10,
         textTransform: 'uppercase',
       }}

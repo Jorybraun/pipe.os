@@ -92,7 +92,7 @@ export function FileViewerPanel({ challengeId, filePath, onBack, isChanged, onVi
         alignItems: 'center',
         gap: 12,
         padding: '10px 16px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--pipe-border)',
         background: 'rgba(12,12,14,0.95)',
       }}>
         <button
@@ -102,8 +102,8 @@ export function FileViewerPanel({ challengeId, filePath, onBack, isChanged, onVi
             alignItems: 'center',
             gap: 6,
             padding: '4px 10px',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 4,
             color: '#94a3b8',
             fontSize: 10,

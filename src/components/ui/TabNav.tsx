@@ -150,7 +150,7 @@ export function TabNav({ tabs, activeTab, onTabChange }: TabNavProps): JSX.Eleme
               borderBottom: isActive
                 ? '2px solid rgba(255,255,255,0.4)'
                 : '1px solid rgba(255,255,255,0.06)',
-              color: isActive ? '#fff' : 'rgba(255,255,255,0.4)',
+              color: isActive ? 'var(--pipe-text, #fff)' : 'rgba(255,255,255,0.4)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',

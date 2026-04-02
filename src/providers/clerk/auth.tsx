@@ -84,7 +84,7 @@ function ClerkSignInScreen(): JSX.Element {
         minHeight: '100vh',
         background: '#0c0c0e',
         fontFamily: '"Space Mono", monospace',
-        color: '#fff',
+        color: 'var(--pipe-text, #fff)',
         gap: 32,
       }}
     >
@@ -93,7 +93,7 @@ function ClerkSignInScreen(): JSX.Element {
           style={{
             fontSize: 11,
             letterSpacing: '0.3em',
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             marginBottom: 16,
           }}
         >
@@ -113,7 +113,7 @@ function ClerkSignInScreen(): JSX.Element {
           style={{
             fontSize: 11,
             letterSpacing: '0.1em',
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
           }}
         >
           Sign in to access your pipeline dashboard
@@ -126,8 +126,8 @@ function ClerkSignInScreen(): JSX.Element {
             padding: '16px 40px',
             background:
               'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: '#fff',
+            border: '1px solid var(--pipe-border)',
+            color: 'var(--pipe-text, #fff)',
             fontSize: 11,
             letterSpacing: '0.2em',
             fontWeight: 700,

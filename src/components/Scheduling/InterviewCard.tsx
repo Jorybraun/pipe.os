@@ -61,24 +61,24 @@ export function InterviewCard({
           alignItems: 'center',
           gap: 16,
           padding: '16px 20px',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(255,255,255,0.06)',
+          background: 'var(--pipe-surface)',
+          border: '1px solid var(--pipe-border)',
           borderRadius: 8,
           transition: 'border-color 0.2s',
         }}
       >
         {/* Candidate + pipeline info */}
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 4 }}>
             {candidateName}
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.05em', fontFamily: '"Space Mono", monospace' }}>
+          <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em', fontFamily: '"Space Mono", monospace' }}>
             {pipelineTitle} / {stageTitle}
           </div>
         </div>
 
         {/* Scheduled date */}
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: '"Space Mono", monospace' }}>
+        <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>
           {formattedDate}
         </div>
 
@@ -151,8 +151,8 @@ export function InterviewCard({
             gap: 6,
             padding: '8px 12px',
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: 'rgba(255,255,255,0.4)',
+            border: '1px solid var(--pipe-border)',
+            color: 'var(--pipe-text-dim)',
             fontSize: 10,
             letterSpacing: '0.1em',
             fontFamily: '"Space Mono", monospace',

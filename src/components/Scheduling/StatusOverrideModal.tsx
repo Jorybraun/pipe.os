@@ -62,8 +62,8 @@ export function StatusOverrideModal({
   const inputStyle: React.CSSProperties = {
     width: '100%',
     padding: '10px 12px',
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.1)',
+    background: 'var(--pipe-surface)',
+    border: '1px solid var(--pipe-border)',
     borderRadius: 4,
     color: 'var(--pipe-text, #fff)',
     fontSize: 12,
@@ -95,7 +95,7 @@ export function StatusOverrideModal({
           width: '100%',
           maxWidth: 480,
           background: '#13131a',
-          border: '1px solid rgba(255,255,255,0.12)',
+          border: '1px solid var(--pipe-border)',
           borderRadius: 12,
           padding: 32,
         }}
@@ -197,7 +197,7 @@ export function StatusOverrideModal({
             style={{
               padding: '10px 20px',
               background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.1)',
+              border: '1px solid var(--pipe-border)',
               color: 'var(--pipe-text-muted)',
               fontSize: 10,
               letterSpacing: '0.1em',

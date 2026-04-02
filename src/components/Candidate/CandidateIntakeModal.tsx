@@ -192,7 +192,7 @@ export function CandidateIntakeModal({
         {/* Header */}
         <div style={{
           padding: "24px 32px",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
+          borderBottom: "1px solid var(--pipe-border-light)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center"
@@ -297,7 +297,7 @@ export function CandidateIntakeModal({
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-                      <Upload size={32} color="rgba(255,255,255,0.2)" />
+                      <Upload size={32} color="var(--pipe-text-dim)" />
                       <div style={{ fontSize: 12, color: "var(--pipe-text-dim)", fontFamily: "Space Mono" }}>
                         DRAG_&_DROP_OR_CLICK_TO_UPLOAD
                       </div>
@@ -326,7 +326,7 @@ export function CandidateIntakeModal({
                 style={{
                   width: "100%",
                   padding: "16px",
-                  background: "#fff",
+                  background: "var(--pipe-text, #fff)",
                   color: "#000",
                   border: "none",
                   borderRadius: 4,
@@ -429,9 +429,9 @@ export function CandidateIntakeModal({
                   gridTemplateColumns: "1fr", 
                   gap: 24,
                   padding: 24,
-                  background: "rgba(255,255,255,0.03)",
+                  background: "var(--pipe-surface)",
                   borderRadius: 8,
-                  border: "1px solid rgba(255,255,255,0.05)"
+                  border: "1px solid var(--pipe-border-light)"
                 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
                     <div>
@@ -460,8 +460,8 @@ export function CandidateIntakeModal({
                       {parsedData.skills?.map((skill: string) => (
                         <span key={skill} style={{
                           padding: "4px 10px",
-                          background: "rgba(255,255,255,0.05)",
-                          border: "1px solid rgba(255,255,255,0.1)",
+                          background: "var(--pipe-surface)",
+                          border: "1px solid var(--pipe-border)",
                           borderRadius: 4,
                           fontSize: 10,
                           color: "var(--pipe-text-muted)",
@@ -489,7 +489,7 @@ export function CandidateIntakeModal({
                 style={{
                   width: "100%",
                   padding: "16px",
-                  background: "#fff",
+                  background: "var(--pipe-text, #fff)",
                   color: "#000",
                   border: "none",
                   borderRadius: 4,

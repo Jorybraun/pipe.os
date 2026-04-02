@@ -64,8 +64,8 @@ export default function QuestionCard({
               style={{
                 width: 36,
                 height: 36,
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                background: "var(--pipe-surface)",
+                border: "1px solid var(--pipe-border)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -194,7 +194,7 @@ export default function QuestionCard({
 
               {/* Rubric status */}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <BarChart3 size={12} color="rgba(255,255,255,0.4)" />
+                <BarChart3 size={12} color="var(--pipe-text-dim)" />
                 <span
                   style={{
                     fontSize: 9,

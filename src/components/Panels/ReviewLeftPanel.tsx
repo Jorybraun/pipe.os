@@ -30,7 +30,7 @@ function ConnectedBrief(): JSX.Element {
   const prDescription = (data?.githubPrDescription as string) ?? '';
 
   return (
-    <div style={{ padding: 24, color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 1.7, overflowY: 'auto' }}>
+    <div style={{ padding: 24, color: 'var(--pipe-text-muted)', fontSize: 14, lineHeight: 1.7, overflowY: 'auto', flex: 1 }}>
       {prDescription && (
         <div style={{
           marginBottom: 24,
@@ -110,7 +110,7 @@ export function ReviewLeftPanel(): JSX.Element {
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {activeTab === 'brief' && <ConnectedBrief />}
         {activeTab === 'files' && (
           <FileTreePanel

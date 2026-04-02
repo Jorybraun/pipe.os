@@ -233,42 +233,46 @@ export function FileTreePanel({ challengeId, selectedFile, changedFiles, onFileS
   }
 
   return (
-    <div style={{ overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
-      {/* See diff button */}
-      <button
-        onClick={onShowDiff}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          width: 'calc(100% - 16px)',
-          margin: '0 8px 8px',
-          padding: '8px 12px',
-          background: 'rgba(96,165,250,0.08)',
-          border: '1px solid rgba(96,165,250,0.2)',
-          borderRadius: 6,
-          color: '#60a5fa',
-          fontSize: 11,
-          fontFamily: "'Space Mono', monospace",
-          cursor: 'pointer',
-          letterSpacing: '0.05em',
-        }}
-      >
-        <GitBranch size={12} />
-        VIEW CHANGES ({changedFiles?.size ?? 0} files)
-      </button>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Fixed: See diff button */}
+      <div style={{ flexShrink: 0, padding: '8px 8px 0' }}>
+        <button
+          onClick={onShowDiff}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            padding: '8px 12px',
+            background: 'rgba(96,165,250,0.08)',
+            border: '1px solid rgba(96,165,250,0.2)',
+            borderRadius: 6,
+            color: '#60a5fa',
+            fontSize: 11,
+            fontFamily: "'Space Mono', monospace",
+            cursor: 'pointer',
+            letterSpacing: '0.05em',
+          }}
+        >
+          <GitBranch size={12} />
+          VIEW CHANGES ({changedFiles?.size ?? 0} files)
+        </button>
+      </div>
 
-      {tree.map((node) => (
-        <TreeNodeItem
-          key={node.path}
-          node={node}
-          depth={0}
-          selectedFile={selectedFile}
-          changedFiles={changedFiles}
-          onFileSelect={onFileSelect}
-          defaultOpen
-        />
-      ))}
+      {/* Scrollable: File tree */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 0' }}>
+        {tree.map((node) => (
+          <TreeNodeItem
+            key={node.path}
+            node={node}
+            depth={0}
+            selectedFile={selectedFile}
+            changedFiles={changedFiles}
+            onFileSelect={onFileSelect}
+            defaultOpen
+          />
+        ))}
+      </div>
     </div>
   );
 }

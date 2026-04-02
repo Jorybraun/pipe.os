@@ -237,9 +237,9 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
             <button
               onClick={prevPhase}
               style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.6)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                color: 'var(--pipe-text-muted)',
                 padding: '14px 24px',
                 borderRadius: 0,
                 cursor: 'pointer',

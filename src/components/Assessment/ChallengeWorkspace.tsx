@@ -65,7 +65,7 @@ function PanelHeader({
           background: 'none',
           border: 'none',
           borderRight: '1px solid rgba(255,255,255,0.07)',
-          color: 'rgba(255,255,255,0.25)',
+          color: 'var(--pipe-text-dim)',
           fontSize: 18,
           cursor: 'pointer',
           display: 'flex',
@@ -125,7 +125,7 @@ function PanelHeader({
             style={{
               background: 'none',
               border: 'none',
-              color: 'rgba(255,255,255,0.25)',
+              color: 'var(--pipe-text-dim)',
               fontSize: 16,
               cursor: 'pointer',
               letterSpacing: 1,
@@ -235,8 +235,8 @@ function ConsoleStrip({
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               borderRadius: 6,
               color:
                 onRun && state.status !== 'running'
@@ -330,7 +330,7 @@ function BrowserWorkspace({
         height: 'calc(100vh - 146px)',
         minHeight: 500,
         gap: '1px',
-        background: 'rgba(255,255,255,0.06)',
+        background: 'var(--pipe-surface)',
         border: '1px solid rgba(255,255,255,0.07)',
         borderRadius: 6,
         overflow: 'hidden',
@@ -389,7 +389,7 @@ function BrowserWorkspace({
               padding: 16,
               fontFamily: 'Space Mono, monospace',
               fontSize: 11,
-              color: 'rgba(255,255,255,0.25)',
+              color: 'var(--pipe-text-dim)',
               overflowY: 'auto',
             }}
           >
@@ -442,7 +442,7 @@ function AlgorithmWorkspace({
           display: 'grid',
           gridTemplateColumns: '47% 1fr',
           gap: '1px',
-          background: 'rgba(255,255,255,0.06)',
+          background: 'var(--pipe-surface)',
         }}
       >
         {/* Left: Description */}

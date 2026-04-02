@@ -125,7 +125,7 @@ export function RoleCard({
               alignItems: "center",
               justifyContent: "center",
               background: isSelected ? "rgba(139, 92, 246, 0.1)" : "rgba(255,255,255,0.01)",
-              borderRight: "1px solid rgba(255,255,255,0.05)",
+              borderRight: "1px solid var(--pipe-border-light)",
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
@@ -201,7 +201,7 @@ export function RoleCard({
 
               <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Building size={12} color="rgba(255,255,255,0.2)" />
+                  <Building size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
@@ -213,7 +213,7 @@ export function RoleCard({
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <MapPin size={12} color="rgba(255,255,255,0.2)" />
+                  <MapPin size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
@@ -230,7 +230,7 @@ export function RoleCard({
             {/* Quick Stats Row */}
             <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Users size={14} color="rgba(255,255,255,0.2)" />
+                <Users size={14} color="var(--pipe-text-dim)" />
                 <div>
                   <div
                     style={{
@@ -255,13 +255,13 @@ export function RoleCard({
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Trophy size={14} color="rgba(255,255,255,0.2)" />
+                <Trophy size={14} color="var(--pipe-text-dim)" />
                 <div>
                   <div
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: avgScore ? "#fff" : "rgba(255,255,255,0.2)",
+                      color: avgScore ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -280,13 +280,13 @@ export function RoleCard({
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Target size={14} color="rgba(255,255,255,0.2)" />
+                <Target size={14} color="var(--pipe-text-dim)" />
                 <div>
                   <div
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: isComplete ? "#34d399" : "#fff",
+                      color: isComplete ? "#34d399" : "var(--pipe-text, #fff)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -313,7 +313,7 @@ export function RoleCard({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Calendar size={12} color="rgba(255,255,255,0.2)" />
+                  <Calendar size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 9,
@@ -324,7 +324,7 @@ export function RoleCard({
                     {formattedDate}
                   </span>
                 </div>
-                <ChevronRight size={16} color="rgba(255,255,255,0.2)" />
+                <ChevronRight size={16} color="var(--pipe-text-dim)" />
               </div>
             </div>
           </div>
@@ -346,7 +346,7 @@ export function RoleCard({
               style={{
                 background: menuOpen ? "rgba(255,255,255,0.05)" : "transparent",
                 border: "none",
-                color: menuOpen ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)",
+                color: menuOpen ? "rgba(255,255,255,0.6)" : "var(--pipe-text-dim)",
                 cursor: "pointer",
                 padding: 8,
                 borderRadius: 4,
@@ -369,7 +369,7 @@ export function RoleCard({
                   zIndex: 50,
                   minWidth: 160,
                   background: "#1a1a1e",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  border: "1px solid var(--pipe-border)",
                   borderRadius: 8,
                   boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                   overflow: "hidden",
@@ -413,12 +413,12 @@ export function RoleCard({
         </div>
 
         {/* Mini progress bar at the very bottom */}
-        <div style={{ height: 1, background: "rgba(255,255,255,0.03)" }}>
+        <div style={{ height: 1, background: "var(--pipe-surface)" }}>
           <div
             style={{
               width: `${progressPercent}%`,
               height: "100%",
-              background: isComplete ? "#34d399" : "rgba(255,255,255,0.2)",
+              background: isComplete ? "#34d399" : "var(--pipe-text-dim)",
               transition: "width 0.6s ease-out",
             }}
           />

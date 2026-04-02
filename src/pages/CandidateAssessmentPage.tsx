@@ -114,7 +114,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
         <ChromeMeshGrid />
         <div style={{ textAlign: 'center', zIndex: 1 }}>
-          <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
+          <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
           <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             INITIALIZING_SECURE_SESSION...
           </div>
@@ -158,8 +158,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
           <button onClick={() => reset()} style={{
-            padding: '12px 24px', background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)', color: 'var(--pipe-text, #fff)',
+            padding: '12px 24px', background: 'var(--pipe-surface-hover)',
+            border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
             fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
           }}>RETRY_CONNECTION</button>
         </LiquidMetalCard>
@@ -179,8 +179,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
             There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.
           </p>
           <button onClick={() => reset()} style={{
-            padding: '12px 24px', background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)', color: 'var(--pipe-text, #fff)',
+            padding: '12px 24px', background: 'var(--pipe-surface-hover)',
+            border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
             fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
           }}>RETRY_CONNECTION</button>
         </LiquidMetalCard>
@@ -231,7 +231,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
         <ChromeMeshGrid />
         <div style={{ textAlign: 'center', zIndex: 1 }}>
-          <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
+          <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
           <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             LOADING_CHALLENGE...
           </div>
@@ -313,7 +313,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
           >
             {followUpWaiting ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-                <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.3)" />
+                <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
               </div>
             ) : followUpReady ? (
               <FollowUpQuestionsPanel

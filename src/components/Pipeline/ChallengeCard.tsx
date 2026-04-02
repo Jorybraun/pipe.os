@@ -120,7 +120,7 @@ export function ChallengeCard({
               background: isSelected
                 ? "rgba(255,255,255,0.1)"
                 : "rgba(255,255,255,0.02)",
-              borderRight: "1px solid rgba(255,255,255,0.05)",
+              borderRight: "1px solid var(--pipe-border-light)",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -134,11 +134,11 @@ export function ChallengeCard({
             {isTemplate ? (
               <TypeIcon
                 size={18}
-                color={isSelected ? "#fff" : "rgba(255,255,255,0.2)"}
+                color={isSelected ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)"}
               />
             ) : (
               <>
-                <GripVertical size={14} color="rgba(255,255,255,0.2)" />
+                <GripVertical size={14} color="var(--pipe-text-dim)" />
                 <div
                   style={{
                     fontSize: 10,
@@ -214,7 +214,7 @@ export function ChallengeCard({
                 fontSize: 11,
                 color: isSelected
                   ? "rgba(255,255,255,0.7)"
-                  : "rgba(255,255,255,0.4)",
+                  : "var(--pipe-text-dim)",
                 lineHeight: 1.6,
                 margin: 0,
                 display: "-webkit-box",

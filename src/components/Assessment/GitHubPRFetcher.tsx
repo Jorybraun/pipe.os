@@ -205,7 +205,7 @@ export function GitHubPRFetcher({
           style={{
             padding: 24,
             background: 'rgba(12, 12, 14, 0.5)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 8,
           }}
         >
@@ -318,9 +318,9 @@ export function GitHubPRFetcher({
                   alignItems: 'center',
                   gap: 8,
                   padding: '12px 24px',
-                  background: 'rgba(255,255,255,0.05)',
+                  background: 'var(--pipe-surface)',
                   color: 'var(--pipe-text-dim)',
-                  border: '1px solid rgba(255,255,255,0.1)',
+                  border: '1px solid var(--pipe-border)',
                   borderRadius: 4,
                   fontSize: 10,
                   fontWeight: 800,
@@ -343,7 +343,7 @@ export function GitHubPRFetcher({
           style={{
             padding: 40,
             background: 'rgba(12, 12, 14, 0.5)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 8,
             textAlign: 'center',
             display: 'flex',
@@ -354,7 +354,7 @@ export function GitHubPRFetcher({
         >
           <Loader size={24} style={{ animation: 'spin 1s linear infinite', color: 'rgba(255,255,255,0.3)' }} />
           <div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: 'Space Mono' }}>
+            <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono' }}>
               Fetching PR metadata from GitHub...
             </div>
             <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginTop: 8 }}>
@@ -380,7 +380,7 @@ export function GitHubPRFetcher({
               <div style={{ fontSize: 11, fontWeight: 800, color: '#f87171', fontFamily: 'Space Mono', marginBottom: 8 }}>
                 {error.code}
               </div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', lineHeight: 1.6, marginBottom: 12 }}>
                 {getErrorMessage(error.code, error.message)}
               </div>
               {error.details && (
@@ -419,9 +419,9 @@ export function GitHubPRFetcher({
                     alignItems: 'center',
                     gap: 6,
                     padding: '8px 16px',
-                    background: 'rgba(255,255,255,0.05)',
+                    background: 'var(--pipe-surface)',
                     color: 'var(--pipe-text-dim)',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 4,
                     fontSize: 10,
                     fontWeight: 700,
@@ -445,7 +445,7 @@ export function GitHubPRFetcher({
           style={{
             padding: 24,
             background: 'rgba(12, 12, 14, 0.5)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 8,
           }}
         >
@@ -472,7 +472,7 @@ export function GitHubPRFetcher({
             >
               {prData.state.toUpperCase()}
             </div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: 'rgba(255,255,255,0.6)', fontFamily: 'Space Mono' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono' }}>
               #{prData.prNumber}
             </div>
           </div>
@@ -484,7 +484,7 @@ export function GitHubPRFetcher({
 
           {/* PR Description (first 2 lines) */}
           {prData.description && (
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6, marginBottom: 16, margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--pipe-text-muted)', lineHeight: 1.6, marginBottom: 16, margin: 0 }}>
               {prData.description.split('\n').slice(0, 2).join('\n')}
             </p>
           )}
@@ -526,7 +526,7 @@ export function GitHubPRFetcher({
             <div
               style={{
                 background: 'rgba(0, 0, 0, 0.3)',
-                border: '1px solid rgba(255,255,255,0.06)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 4,
                 overflow: 'hidden',
                 marginBottom: 20,
@@ -537,7 +537,7 @@ export function GitHubPRFetcher({
                 style={{
                   padding: '12px 16px',
                   background: 'rgba(0, 0, 0, 0.5)',
-                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  borderBottom: '1px solid var(--pipe-border)',
                   fontSize: 10,
                   fontFamily: 'Space Mono',
                   color: 'var(--pipe-text-dim)',

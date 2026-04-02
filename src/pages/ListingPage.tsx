@@ -189,8 +189,8 @@ export default function ListingPage(): JSX.Element {
             gap: 12, 
             marginBottom: 20,
             padding: '12px 16px',
-            background: 'rgba(255,255,255,0.02)',
-            border: '1px solid rgba(255,255,255,0.05)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border-light)',
             borderRadius: 8
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -203,8 +203,8 @@ export default function ListingPage(): JSX.Element {
                   alignItems: 'center',
                   gap: 8,
                   borderRadius: 4,
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid rgba(255,255,255,0.05)',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border-light)',
                   transition: 'all 0.2s'
                 }}
                 onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
@@ -214,7 +214,7 @@ export default function ListingPage(): JSX.Element {
                   width: 14,
                   height: 14,
                   borderRadius: 3,
-                  border: `1.5px solid ${selectedIds.size > 0 ? "#8b5cf6" : "rgba(255,255,255,0.2)"}`,
+                  border: `1.5px solid ${selectedIds.size > 0 ? "#8b5cf6" : "var(--pipe-text-dim)"}`,
                   background: selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 ? "#8b5cf6" : "transparent",
                   display: 'flex',
                   alignItems: 'center',
@@ -231,8 +231,8 @@ export default function ListingPage(): JSX.Element {
                   {selectedIds.size > 0 ? `${selectedIds.size}_SELECTED` : 'SELECT_ALL'}
                 </span>
               </div>
-              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.05)' }} />
-              <Search size={14} color="rgba(255,255,255,0.2)" />
+              <div style={{ width: 1, height: 16, background: 'var(--pipe-surface)' }} />
+              <Search size={14} color="var(--pipe-text-dim)" />
               <input
                 type="text"
                 placeholder="SEARCH_BY_TITLE..."
@@ -275,7 +275,7 @@ export default function ListingPage(): JSX.Element {
                 DELETE_SELECTED ({selectedIds.size})
               </button>
             )}
-            <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)' }} />
+            <div style={{ width: 1, height: 20, background: 'var(--pipe-surface-hover)' }} />
             <button 
               onClick={() => navigate("/pipeline/new")}
               style={{
@@ -305,11 +305,11 @@ export default function ListingPage(): JSX.Element {
             <div style={{ 
               padding: 64, 
               textAlign: 'center', 
-              border: '1px dashed rgba(255,255,255,0.08)',
+              border: '1px dashed var(--pipe-border)',
               borderRadius: 12,
-              background: 'rgba(255,255,255,0.01)'
+              background: 'var(--pipe-surface)'
             }}>
-              <Briefcase size={40} color="rgba(255,255,255,0.12)" style={{ marginBottom: 16 }} />
+              <Briefcase size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
               <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
                 NO_ROLES_FOUND
               </p>
@@ -380,8 +380,8 @@ export default function ListingPage(): JSX.Element {
                     onClick={() => setFilter(f)}
                     style={{
                       padding: '12px 16px',
-                      background: filter === f ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.02)',
-                      border: `1px solid ${filter === f ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255,255,255,0.05)'}`,
+                      background: filter === f ? 'rgba(139, 92, 246, 0.1)' : 'var(--pipe-surface)',
+                      border: `1px solid ${filter === f ? 'rgba(139, 92, 246, 0.3)' : 'var(--pipe-surface)'}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -404,7 +404,7 @@ export default function ListingPage(): JSX.Element {
                 ))}
              </div>
 
-             <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+             <div style={{ height: '1px', background: 'var(--pipe-surface)' }} />
 
              {/* Sidebar Info/Stats */}
              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -428,7 +428,7 @@ export default function ListingPage(): JSX.Element {
                     <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Draft Pipelines</span>
                     <span style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.draft}</span>
                   </div>
-                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
+                  <div style={{ height: 1, background: 'var(--pipe-surface)' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Conversion Rate</span>
                     <span style={{ fontSize: 10, color: '#34d399', fontWeight: 700, fontFamily: 'Space Mono' }}>24.2%</span>

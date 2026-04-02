@@ -125,9 +125,9 @@ function StageHeaderCard({
           marginBottom: 20,
         }}
       >
-        <FileText size={20} color={isActive ? "#fff" : "rgba(255,255,255,0.4)"} />
+        <FileText size={20} color={isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)"} />
         {isActive && (
-          <Activity size={16} color="rgba(255,255,255,0.8)" />
+          <Activity size={16} color="var(--pipe-text-dim)" />
         )}
       </div>
 
@@ -135,7 +135,7 @@ function StageHeaderCard({
         style={{
           fontSize: 10,
           letterSpacing: "0.2em",
-          color: isActive ? "#fff" : "rgba(255,255,255,0.5)",
+          color: isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
           marginBottom: 12,
         }}
       >
@@ -173,7 +173,7 @@ function StageHeaderCard({
         style={{
           marginTop: 16,
           height: 2,
-          background: "rgba(255,255,255,0.06)",
+          background: "var(--pipe-surface)",
         }}
       >
         {avgScore !== null && (
@@ -370,7 +370,7 @@ function CandidateKanbanCard({
                 style={{ cursor: "grab", padding: "4px 0" }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <GripVertical size={12} color="rgba(255,255,255,0.15)" />
+                <GripVertical size={12} color="var(--pipe-text-dim)" />
               </div>
 
               {/* Initials Circle */}
@@ -379,8 +379,8 @@ function CandidateKanbanCard({
                   width: 24,
                   height: 24,
                   borderRadius: "50%",
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "var(--pipe-surface)",
+                  border: "1px solid var(--pipe-border)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -406,7 +406,7 @@ function CandidateKanbanCard({
 
               <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <Mail size={10} color="rgba(255,255,255,0.2)" />
+                  <Mail size={10} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 8,
@@ -469,7 +469,7 @@ function CandidateKanbanCard({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Target size={12} color="rgba(255,255,255,0.2)" />
+                  <Target size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 11,
@@ -481,7 +481,7 @@ function CandidateKanbanCard({
                     {String(candidate.score ?? 0).padStart(2, "0")}
                   </span>
                 </div>
-                <ChevronRight size={14} color="rgba(255,255,255,0.15)" />
+                <ChevronRight size={14} color="var(--pipe-text-dim)" />
               </div>
             </div>
           </div>
@@ -505,7 +505,7 @@ function CandidateKanbanCard({
               style={{
                 background: "transparent",
                 border: "none",
-                color: copied ? "#10b981" : "rgba(255,255,255,0.3)",
+                color: copied ? "#10b981" : "var(--pipe-text-dim)",
                 cursor: "pointer",
                 padding: 4,
                 transition: "all 0.2s ease",
@@ -522,7 +522,7 @@ function CandidateKanbanCard({
               style={{
                 background: "transparent",
                 border: "none",
-                color: refreshing ? "#8b5cf6" : "rgba(255,255,255,0.3)",
+                color: refreshing ? "#8b5cf6" : "var(--pipe-text-dim)",
                 cursor: refreshing ? "wait" : "pointer",
                 padding: 4,
                 transition: "all 0.2s ease",
@@ -744,8 +744,8 @@ export default function OverviewPage(): JSX.Element {
             onClick={() => void refetch()}
             style={{
               padding: "12px 24px",
-              background: "rgba(255,255,255,0.1)",
-              border: "1px solid rgba(255,255,255,0.2)",
+              background: "var(--pipe-surface-hover)",
+              border: "1px solid var(--pipe-border)",
               color: "var(--pipe-text, #fff)",
               fontSize: 10,
               letterSpacing: "0.1em",
@@ -768,8 +768,8 @@ export default function OverviewPage(): JSX.Element {
           onClick={() => navigate("/")}
           style={{
             color: "var(--pipe-text, #fff)",
-            background: "rgba(255,255,255,0.1)",
-            border: "1px solid rgba(255,255,255,0.2)",
+            background: "var(--pipe-surface-hover)",
+            border: "1px solid var(--pipe-border)",
             padding: "10px 20px",
             cursor: "pointer",
           }}
@@ -895,8 +895,8 @@ export default function OverviewPage(): JSX.Element {
                     alignItems: "center",
                     gap: 8,
                     padding: "10px 20px",
-                    background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "var(--pipe-surface)",
+                    border: "1px solid var(--pipe-border)",
                     color: "var(--pipe-text, #fff)",
                     fontSize: 10,
                     letterSpacing: "0.1em",
@@ -1010,7 +1010,7 @@ export default function OverviewPage(): JSX.Element {
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          border: "1px dashed rgba(255,255,255,0.08)",
+                          border: "1px dashed var(--pipe-border)",
                           borderRadius: 12,
                         }}
                       >
@@ -1039,7 +1039,7 @@ export default function OverviewPage(): JSX.Element {
                 style={{
                   width: "100%",
                   height: 180,
-                  background: "rgba(255,255,255,0.03)",
+                  background: "var(--pipe-surface)",
                   border: "1px dashed rgba(255,255,255,0.1)",
                   borderRadius: 12,
                   display: "flex",

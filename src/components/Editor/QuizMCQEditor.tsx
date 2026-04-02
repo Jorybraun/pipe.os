@@ -81,7 +81,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
         
         {/* Question Input */}
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-          <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <MessageSquare size={16} color="#fbbf24" />
               <SubTitle>QUESTION_PROMPT</SubTitle>
@@ -101,7 +101,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
 
         {/* Options Editor */}
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-          <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <List size={16} color="#4ade80" />
               <SubTitle>ANSWER_OPTIONS</SubTitle>
@@ -167,8 +167,8 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                   }}
                   placeholder={`Option ${String.fromCharCode(65 + idx)} text...`}
                   style={{
-                    flex: 1, padding: '16px 20px', background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--pipe-text, #fff)', fontSize: 14,
+                    flex: 1, padding: '16px 20px', background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)', borderRadius: 8, color: 'var(--pipe-text, #fff)', fontSize: 14,
                     outline: 'none', transition: 'border-color 0.2s',
                   }}
                 />
@@ -194,7 +194,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
       <aside>
         <LiquidMetalCard variant="chrome" style={{ padding: 32, borderRadius: 16 }}>
           
-          <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid var(--pipe-border)' }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 8 }}>
               Multiple Choice
             </div>
@@ -205,7 +205,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
             </div>
 
             {/* SELECTION_MODE toggle */}
-            <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--pipe-border)' }}>
               <button
                 onClick={() => setSelectionMode('single')}
                 style={{
@@ -213,7 +213,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                   padding: '8px 12px',
                   background: selectionMode === 'single' ? 'rgba(255,255,255,0.1)' : 'transparent',
                   border: 'none',
-                  borderRight: '1px solid rgba(255,255,255,0.1)',
+                  borderRight: '1px solid var(--pipe-border)',
                   color: selectionMode === 'single' ? '#fff' : 'rgba(255,255,255,0.4)',
                   fontSize: 10,
                   fontFamily: 'Space Mono, monospace',
@@ -262,7 +262,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                 placeholder="Why is the answer correct?"
                 style={{
                   width: '100%', minHeight: 120, padding: '16px', background: 'rgba(0,0,0,0.2)',
-                  border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', fontSize: 12, 
+                  border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)', fontSize: 12, 
                   fontFamily: 'inherit', lineHeight: 1.6, outline: 'none', resize: 'vertical',
                 }}
               />

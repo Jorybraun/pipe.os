@@ -17,7 +17,8 @@ import type { Annotation } from '../Assessment/DiffPanel';
 
 export function ReviewConversationPanel(): JSX.Element {
   const ctx = useInterview();
-  const { submitReview, submitResponse, submitVerdict, isLoading } = useReviewSession();
+  const existingSession = (ctx.submission.sessionId as string | null) ?? null;
+  const { submitReview, submitResponse, submitVerdict, isLoading } = useReviewSession(existingSession);
   const submittingRef = useRef(false);
 
   // Read state from interview context
@@ -48,7 +49,8 @@ export function ReviewConversationPanel(): JSX.Element {
     try {
       ctx.updateSubmission({ isAwaitingResponse: true });
 
-      if (currentRound === 1) {
+      const existingSessionId = ctx.submission.sessionId as string | null;
+      if (currentRound === 1 && !existingSessionId) {
         // First round: submit initial review with annotations
         const annotations = (ctx.submission.annotations as Annotation[]) ?? [];
         const reviewSummary = (ctx.submission.summary as string) ?? 'Review submitted.';
@@ -61,14 +63,19 @@ export function ReviewConversationPanel(): JSX.Element {
           reviewSummary || 'Review submitted.',
         );
 
+        // Mark all annotations as submitted after round 1
+        const allAnnotations = (ctx.submission.annotations as Annotation[]) ?? [];
+        const allIds = allAnnotations.map((a) => a.id);
+
         ctx.updateSubmission({
           rounds: result.rounds,
           currentRound: result.round + 1,
           sessionId: result.sessionId,
+          submittedAnnotationIds: allIds,
           isAwaitingResponse: false,
         });
       } else {
-        // Follow-up rounds: send replies from thread textareas
+        // Follow-up rounds: send replies + any new annotations added since last round
         const threadReplies = (ctx.submission.threadReplies as Record<number, string>) ?? {};
         const replies = Object.entries(threadReplies)
           .filter(([, content]) => content.trim() !== '')
@@ -77,17 +84,26 @@ export function ReviewConversationPanel(): JSX.Element {
             content,
           }));
 
-        if (replies.length === 0) {
+        // Collect new annotations not yet submitted
+        const allAnnotations = (ctx.submission.annotations as Annotation[]) ?? [];
+        const submittedIds = new Set((ctx.submission.submittedAnnotationIds as string[]) ?? []);
+        const newAnnotations = allAnnotations.filter((a) => !submittedIds.has(a.id));
+
+        if (replies.length === 0 && newAnnotations.length === 0) {
           ctx.updateSubmission({ isAwaitingResponse: false });
           return;
         }
 
-        const result = await submitResponse(replies);
+        const result = await submitResponse(replies, newAnnotations.length > 0 ? newAnnotations : undefined);
+
+        // Mark all annotations as submitted
+        const allIds = allAnnotations.map((a) => a.id);
 
         ctx.updateSubmission({
           rounds: result.rounds,
           currentRound: result.round + 1,
           threadReplies: {},
+          submittedAnnotationIds: allIds,
           isAwaitingResponse: false,
         });
       }

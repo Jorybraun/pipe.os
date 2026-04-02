@@ -103,7 +103,7 @@ const SubHeader = () => {
               style={{
                 width: 1,
                 height: 40,
-                background: "rgba(255,255,255,0.08)",
+                background: "var(--pipe-surface-hover)",
               }}
             />
 
@@ -140,7 +140,7 @@ const SubHeader = () => {
             padding: "14px 28px",
             background:
               "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
-            border: "1px solid rgba(255,255,255,0.2)",
+            border: "1px solid var(--pipe-border)",
             color: "var(--pipe-text, #fff)",
             fontSize: 11,
             letterSpacing: "0.15em",
@@ -159,7 +159,7 @@ const SubHeader = () => {
           style={{
             padding: "14px 18px",
             background: "transparent",
-            border: "1px solid rgba(255,255,255,0.1)",
+            border: "1px solid var(--pipe-border)",
             color: "var(--pipe-text-muted)",
             fontSize: 11,
             letterSpacing: "0.15em",

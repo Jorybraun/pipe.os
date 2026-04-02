@@ -34,10 +34,10 @@ const ALL_STATUSES: Array<{ value: InterviewStatus; label: string }> = [
 
 const selectStyle: React.CSSProperties = {
   padding: '8px 12px',
-  background: 'rgba(255,255,255,0.05)',
-  border: '1px solid rgba(255,255,255,0.1)',
+  background: 'var(--pipe-surface)',
+  border: '1px solid var(--pipe-border)',
   borderRadius: 4,
-  color: 'rgba(255,255,255,0.7)',
+  color: 'var(--pipe-text-muted)',
   fontSize: 11,
   fontFamily: '"Space Mono", monospace',
   letterSpacing: '0.05em',

@@ -76,7 +76,7 @@ export default function PipelineCreatePage(): JSX.Element {
           style={{
             fontSize: 9,
             letterSpacing: "0.2em",
-            color: "rgba(255,255,255,0.3)",
+            color: "var(--pipe-text-dim)",
             marginBottom: 12,
             fontFamily: "Space Mono",
           }}
@@ -87,7 +87,7 @@ export default function PipelineCreatePage(): JSX.Element {
           style={{
             fontSize: 28,
             fontWeight: 800,
-            color: "#fff",
+            color: "var(--pipe-text, #fff)",
             margin: 0,
             letterSpacing: "-0.02em",
           }}
@@ -133,7 +133,7 @@ export default function PipelineCreatePage(): JSX.Element {
                   color:
                     titleTrimmed.length > 100
                       ? "#f87171"
-                      : "rgba(255,255,255,0.3)",
+                      : "var(--pipe-text-dim)",
                   fontFamily: "Space Mono",
                   marginLeft: "auto",
                 }}
@@ -175,7 +175,7 @@ export default function PipelineCreatePage(): JSX.Element {
                   color:
                     description.length > 500
                       ? "#f87171"
-                      : "rgba(255,255,255,0.3)",
+                      : "var(--pipe-text-dim)",
                   fontFamily: "Space Mono",
                 }}
               >
@@ -216,8 +216,8 @@ export default function PipelineCreatePage(): JSX.Element {
               style={{
                 padding: "12px 24px",
                 background: "transparent",
-                border: "1px solid rgba(255,255,255,0.1)",
-                color: "rgba(255,255,255,0.5)",
+                border: "1px solid var(--pipe-border)",
+                color: "var(--pipe-text-muted)",
                 fontSize: 10,
                 letterSpacing: "0.12em",
                 fontWeight: 700,
@@ -236,9 +236,9 @@ export default function PipelineCreatePage(): JSX.Element {
                   isValid && !isCreating
                     ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
                     : "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.2)",
+                border: "1px solid var(--pipe-border)",
                 color:
-                  isValid && !isCreating ? "#fff" : "rgba(255,255,255,0.3)",
+                  isValid && !isCreating ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                 fontSize: 10,
                 letterSpacing: "0.12em",
                 fontWeight: 700,

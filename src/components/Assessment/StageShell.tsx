@@ -40,7 +40,7 @@ export function StageShell({
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top Progress Bar */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 2, background: 'rgba(255,255,255,0.05)', zIndex: 100 }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 2, background: 'var(--pipe-surface)', zIndex: 100 }}>
         <div style={{ 
           height: '100%', 
           width: `${progressPercent}%`, 
@@ -58,7 +58,7 @@ export function StageShell({
         alignItems: 'center',
         background: 'rgba(12, 12, 14, 0.8)',
         backdropFilter: 'blur(20px)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--pipe-border)',
         position: 'sticky',
         top: 2,
         zIndex: 90
@@ -68,7 +68,7 @@ export function StageShell({
             <Logo />
           </div>
 
-          <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ width: 1, height: 32, background: 'var(--pipe-surface-hover)' }} />
 
           <div>
             <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 4, fontFamily: 'Space Mono' }}>
@@ -79,7 +79,7 @@ export function StageShell({
             </h2>
           </div>
           
-          <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ width: 1, height: 32, background: 'var(--pipe-surface-hover)' }} />
           
           <div style={{ display: 'flex', gap: 8 }}>
             {Array.from({ length: totalChallenges }).map((_, i) => (
@@ -108,7 +108,7 @@ export function StageShell({
             borderRadius: 4,
             transition: 'all 0.3s'
           }}>
-            <Clock size={14} color={isCritical ? '#f87171' : isWarning ? '#fbbf24' : 'rgba(255,255,255,0.4)'} />
+            <Clock size={14} color={isCritical ? '#f87171' : isWarning ? '#fbbf24' : 'var(--pipe-text-dim)'} />
             <span style={{ 
               fontSize: 14, 
               fontWeight: 700, 
@@ -136,7 +136,7 @@ export function StageShell({
       <footer style={{ 
         padding: '24px 40px', 
         background: 'rgba(12, 12, 14, 0.9)',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid var(--pipe-border)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -166,7 +166,7 @@ export function StageShell({
             alignItems: 'center',
             gap: 12,
             padding: '14px 32px',
-            background: canAdvance ? '#fff' : 'rgba(255,255,255,0.05)',
+            background: canAdvance ? '#fff' : 'var(--pipe-surface)',
             color: canAdvance ? '#000' : 'rgba(255,255,255,0.2)',
             border: 'none',
             borderRadius: 4,

@@ -49,12 +49,12 @@ export function StageCard({
           marginBottom: 16,
         }}
       >
-        <Icon size={16} color={isActive ? "#fff" : "rgba(255,255,255,0.4)"} />
+        <Icon size={16} color={isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)"} />
         {isComplete && <CheckCircle size={12} color="rgba(150,255,150,0.8)" />}
         {isActive && (
           <Activity
             size={12}
-            color="rgba(255,255,255,0.8)"
+            color="var(--pipe-text-dim)"
             style={{
               animation: "pulse 1.5s ease-in-out infinite",
             }}
@@ -67,7 +67,7 @@ export function StageCard({
         style={{
           fontSize: 9,
           letterSpacing: "0.2em",
-          color: isActive ? "#fff" : "rgba(255,255,255,0.5)",
+          color: isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
           marginBottom: 8,
         }}
       >
@@ -139,12 +139,12 @@ export function StageCardLarge({
           marginBottom: 20,
         }}
       >
-        <Icon size={20} color={isActive ? "#fff" : "rgba(255,255,255,0.4)"} />
+        <Icon size={20} color={isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)"} />
         {isComplete && <CheckCircle size={16} color="rgba(150,255,150,0.8)" />}
         {isActive && !isComplete && (
           <Activity
             size={16}
-            color="rgba(255,255,255,0.8)"
+            color="var(--pipe-text-dim)"
             style={{
               animation: "pulse 1.5s ease-in-out infinite",
             }}
@@ -157,7 +157,7 @@ export function StageCardLarge({
         style={{
           fontSize: 10,
           letterSpacing: "0.2em",
-          color: isActive ? "#fff" : "rgba(255,255,255,0.5)",
+          color: isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
           marginBottom: 12,
         }}
       >
@@ -199,7 +199,7 @@ export function StageCardLarge({
           style={{
             marginTop: 16,
             height: 2,
-            background: "rgba(255,255,255,0.06)",
+            background: "var(--pipe-surface)",
           }}
         >
           {(progressValue !== undefined || isComplete) && (

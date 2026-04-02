@@ -74,7 +74,7 @@ export function CodeEditorPanel({
             alignItems: 'center',
             justifyContent: 'center',
             height: '100%',
-            color: 'rgba(255,255,255,0.2)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: 'Space Mono',
             fontSize: 11,
           }}>

@@ -1,79 +1,56 @@
 /**
- * useReviewSession — manages the multi-turn review session lifecycle.
+ * useComprehensionSession — manages the blind comprehension review session lifecycle.
  *
- * Wraps the review RPC endpoints:
- *   POST /rpc/review/submit        → create session + get first agent response
- *   POST /rpc/review/:id/respond   → follow-up reply + agent response
- *   POST /rpc/review/:id/verdict   → finalize session with verdict
+ * Wraps the review RPC endpoints in comprehension mode:
+ *   POST /rpc/review/submit        → create session + get first explainer response
+ *   POST /rpc/review/:id/respond   → follow-up question + explainer response
+ *   POST /rpc/review/:id/verdict   → finalize session with verdict + rationale
  *
  * Auth via useSessionToken() (candidate JWT).
  */
 
 import { useState, useCallback, useRef } from 'react';
 import { useSessionToken } from '../contexts/SessionTokenContext';
-import type { ReviewRound } from '../types/conversation';
+import type {
+  ComprehensionExchange,
+  ComprehensionVerdict,
+} from '../types/conversation';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-interface ThreadResponse {
-  comment_id: number;
-  comment: {
-    id: number;
-    what: string;
-    severity?: string | null;
-    file?: string;
-    line?: number;
-  };
-  exchanges: Array<{
-    round: number;
-    actor: 'implementer' | 'reviewer';
-    move?: string;
-    content: string;
-  }>;
-}
-
-interface SubmitReviewResponse {
+interface SubmitQuestionResponse {
   sessionId: string;
   round: number;
-  rounds: ReviewRound[];
-  threads: ThreadResponse[];
+  mode: 'comprehension';
+  exchanges: ComprehensionExchange[];
 }
 
 interface RespondResponse {
   round: number;
-  rounds: ReviewRound[];
-  threads: ThreadResponse[];
+  mode: 'comprehension';
+  exchanges: ComprehensionExchange[];
 }
 
-interface AnnotationInput {
-  id: string;
-  file: string;
-  line: number;
-  severity: 'critical' | 'major' | 'minor';
-  comment: string;
-}
-
-interface ReplyInput {
-  toCommentId: number;
-  content: string;
-}
-
-export interface UseReviewSessionReturn {
+export interface UseComprehensionSessionReturn {
   sessionId: string | null;
   isLoading: boolean;
   error: string | null;
-  submitReview: (
+  exchanges: ComprehensionExchange[];
+  currentQuestion: number;
+  submitQuestion: (
     challengeOrder: number,
-    annotations: AnnotationInput[],
-    summary: string,
-  ) => Promise<SubmitReviewResponse>;
-  submitResponse: (
-    replies: ReplyInput[],
-    newAnnotations?: AnnotationInput[],
-  ) => Promise<RespondResponse>;
+    question: string,
+    file?: string,
+    line?: number,
+  ) => Promise<void>;
+  submitFollowUp: (
+    question: string,
+    file?: string,
+    line?: number,
+  ) => Promise<void>;
   submitVerdict: (
-    verdict: 'approve' | 'request_changes' | 'comment_only',
-    summary: string,
+    verdict: ComprehensionVerdict,
+    rationale: string,
   ) => Promise<void>;
 }
 
@@ -108,42 +85,40 @@ async function rpcPost<T>(
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
-export function useReviewSession(initialSessionId?: string | null): UseReviewSessionReturn {
+export function useComprehensionSession(): UseComprehensionSessionReturn {
   const sessionToken = useSessionToken();
-  const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sessionIdRef = useRef<string | null>(initialSessionId ?? null);
+  const [exchanges, setExchanges] = useState<ComprehensionExchange[]>([]);
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const sessionIdRef = useRef<string | null>(null);
 
-  const submitReview = useCallback(
+  const submitQuestion = useCallback(
     async (
       challengeOrder: number,
-      annotations: AnnotationInput[],
-      summary: string,
-    ): Promise<SubmitReviewResponse> => {
+      question: string,
+      file?: string,
+      line?: number,
+    ): Promise<void> => {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await rpcPost<SubmitReviewResponse>(
+        const body: Record<string, unknown> = { challengeOrder, question };
+        if (file !== undefined) body.file = file;
+        if (line !== undefined) body.line = line;
+
+        const result = await rpcPost<SubmitQuestionResponse>(
           '/rpc/review/submit',
-          {
-            challengeOrder,
-            annotations: annotations.map((a) => ({
-              threadId: a.id,
-              file: a.file,
-              line: a.line,
-              severity: a.severity,
-              content: a.comment,
-            })),
-            summary,
-          },
+          body,
           sessionToken,
         );
         setSessionId(result.sessionId);
         sessionIdRef.current = result.sessionId;
-        return result;
+        setExchanges(result.exchanges);
+        setCurrentQuestion(result.round);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Submit review failed';
+        const msg = err instanceof Error ? err.message : 'Submit question failed';
         setError(msg);
         throw err;
       } finally {
@@ -153,37 +128,27 @@ export function useReviewSession(initialSessionId?: string | null): UseReviewSes
     [sessionToken],
   );
 
-  const submitResponse = useCallback(
-    async (replies: ReplyInput[], newAnnotations?: AnnotationInput[]): Promise<RespondResponse> => {
+  const submitFollowUp = useCallback(
+    async (question: string, file?: string, line?: number): Promise<void> => {
       const sid = sessionIdRef.current;
-      if (!sid) throw new Error('No active review session');
+      if (!sid) throw new Error('No active comprehension session');
 
       setIsLoading(true);
       setError(null);
       try {
-        const body: Record<string, unknown> = {
-          replies: replies.map((r) => ({
-            toCommentId: r.toCommentId,
-            content: r.content,
-          })),
-        };
-        if (newAnnotations && newAnnotations.length > 0) {
-          body.newAnnotations = newAnnotations.map((a) => ({
-            threadId: a.id,
-            file: a.file,
-            line: a.line,
-            severity: a.severity,
-            content: a.comment,
-          }));
-        }
+        const body: Record<string, unknown> = { question };
+        if (file !== undefined) body.file = file;
+        if (line !== undefined) body.line = line;
+
         const result = await rpcPost<RespondResponse>(
           `/rpc/review/${sid}/respond`,
           body,
           sessionToken,
         );
-        return result;
+        setExchanges(result.exchanges);
+        setCurrentQuestion(result.round);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Submit response failed';
+        const msg = err instanceof Error ? err.message : 'Submit follow-up failed';
         setError(msg);
         throw err;
       } finally {
@@ -194,19 +159,16 @@ export function useReviewSession(initialSessionId?: string | null): UseReviewSes
   );
 
   const submitVerdict = useCallback(
-    async (
-      verdict: 'approve' | 'request_changes' | 'comment_only',
-      summary: string,
-    ): Promise<void> => {
+    async (verdict: ComprehensionVerdict, rationale: string): Promise<void> => {
       const sid = sessionIdRef.current;
-      if (!sid) throw new Error('No active review session');
+      if (!sid) throw new Error('No active comprehension session');
 
       setIsLoading(true);
       setError(null);
       try {
         await rpcPost<{ status: string }>(
           `/rpc/review/${sid}/verdict`,
-          { verdict, summary },
+          { verdict, rationale },
           sessionToken,
         );
       } catch (err) {
@@ -224,8 +186,10 @@ export function useReviewSession(initialSessionId?: string | null): UseReviewSes
     sessionId,
     isLoading,
     error,
-    submitReview,
-    submitResponse,
+    exchanges,
+    currentQuestion,
+    submitQuestion,
+    submitFollowUp,
     submitVerdict,
   };
 }

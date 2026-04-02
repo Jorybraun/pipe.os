@@ -28,22 +28,22 @@ export function MonacoPanel({
       {!hideHeader && (
         <header style={{
           padding: '12px 20px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--pipe-border)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          background: 'rgba(255,255,255,0.02)'
+          background: 'var(--pipe-surface)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa' }} />
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
               {label || `${(language ?? 'javascript').toUpperCase()}_EDITOR`}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {headerRight}
             {readOnly && (
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>READ_ONLY</span>
+              <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>READ_ONLY</span>
             )}
           </div>
         </header>

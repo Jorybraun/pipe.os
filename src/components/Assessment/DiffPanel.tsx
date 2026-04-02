@@ -297,7 +297,7 @@ function InlineCodeChange(props: {
             style={{
               width: '100%',
               boxSizing: 'border-box',
-              background: 'rgba(255,255,255,0.02)',
+              background: 'var(--pipe-surface)',
               border: '1px solid rgba(248,113,113,0.15)',
               borderRadius: 4,
               color: 'var(--pipe-text, #fff)',
@@ -315,7 +315,7 @@ function InlineCodeChange(props: {
               onClick={() => { setDeclining(false); setDeclineReason(''); }}
               style={{
                 padding: '5px 12px', background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4,
+                border: '1px solid var(--pipe-border)', borderRadius: 4,
                 fontSize: 9, color: 'var(--pipe-text-dim)', cursor: 'pointer',
                 fontFamily: '"Space Mono", monospace',
               }}
@@ -327,7 +327,7 @@ function InlineCodeChange(props: {
               disabled={!declineReason.trim()}
               style={{
                 padding: '5px 14px',
-                background: declineReason.trim() ? 'rgba(248,113,113,0.12)' : 'rgba(255,255,255,0.02)',
+                background: declineReason.trim() ? 'rgba(248,113,113,0.12)' : 'var(--pipe-surface)',
                 border: `1px solid ${declineReason.trim() ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.06)'}`,
                 borderRadius: 4,
                 fontSize: 9,
@@ -612,7 +612,7 @@ function FileDiffBody({
                                 border: `1px solid ${isActive ? sevCfg.border : 'rgba(255,255,255,0.06)'}`,
                                 borderRadius: 3,
                                 background: isActive ? sevCfg.bg : 'transparent',
-                                color: isActive ? sevCfg.text : 'rgba(255,255,255,0.25)',
+                                color: isActive ? sevCfg.text : 'var(--pipe-text-dim)',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s',
                               }}
@@ -635,8 +635,8 @@ function FileDiffBody({
                         style={{
                           width: '100%',
                           boxSizing: 'border-box',
-                          background: 'rgba(255,255,255,0.02)',
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          background: 'var(--pipe-surface)',
+                          border: '1px solid var(--pipe-border)',
                           borderRadius: 4,
                           color: 'var(--pipe-text, #fff)',
                           fontSize: 12,
@@ -667,7 +667,7 @@ function FileDiffBody({
                     }}>
                       <span style={{
                         fontSize: 8,
-                        color: 'rgba(255,255,255,0.15)',
+                        color: 'var(--pipe-text-dim)',
                         fontFamily: '"Space Mono", monospace',
                         marginRight: 'auto',
                       }}>
@@ -678,7 +678,7 @@ function FileDiffBody({
                         style={{
                           padding: '7px 16px',
                           background: 'transparent',
-                          border: '1px solid rgba(255,255,255,0.1)',
+                          border: '1px solid var(--pipe-border)',
                           borderRadius: 4,
                           color: 'var(--pipe-text-dim)',
                           fontSize: 10,
@@ -696,7 +696,7 @@ function FileDiffBody({
                         disabled={!annotationComment.trim()}
                         style={{
                           padding: '7px 20px',
-                          background: annotationComment.trim() ? 'rgba(167,139,250,0.15)' : 'rgba(255,255,255,0.02)',
+                          background: annotationComment.trim() ? 'rgba(167,139,250,0.15)' : 'var(--pipe-surface)',
                           border: `1px solid ${annotationComment.trim() ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.06)'}`,
                           borderRadius: 4,
                           color: annotationComment.trim() ? '#a78bfa' : 'rgba(255,255,255,0.15)',
@@ -807,7 +807,7 @@ function FileDiffBody({
                             </div>
                             <p style={{
                               fontSize: 11,
-                              color: 'rgba(255,255,255,0.6)',
+                              color: 'var(--pipe-text-muted)',
                               lineHeight: 1.6,
                               margin: 0,
                               fontFamily: '"Space Mono", monospace',
@@ -839,7 +839,7 @@ function FileDiffBody({
                             marginLeft: 78,
                             borderLeft: '3px solid rgba(255,255,255,0.06)',
                             padding: '8px 14px',
-                            background: 'rgba(255,255,255,0.01)',
+                            background: 'var(--pipe-surface)',
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 8,
@@ -852,8 +852,8 @@ function FileDiffBody({
                               style={{
                                 width: '100%',
                                 boxSizing: 'border-box',
-                                background: 'rgba(255,255,255,0.02)',
-                                border: '1px solid rgba(255,255,255,0.08)',
+                                background: 'var(--pipe-surface)',
+                                border: '1px solid var(--pipe-border)',
                                 borderRadius: 4,
                                 color: 'var(--pipe-text, #fff)',
                                 fontSize: 11,
@@ -871,8 +871,8 @@ function FileDiffBody({
                                 style={{
                                   alignSelf: 'flex-start',
                                   padding: '5px 12px',
-                                  background: 'rgba(255,255,255,0.03)',
-                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  background: 'var(--pipe-surface)',
+                                  border: '1px solid var(--pipe-border)',
                                   borderRadius: 4,
                                   fontSize: 9,
                                   fontWeight: 600,
@@ -1072,7 +1072,7 @@ export function DiffPanel({
         {/* File tabs + view toggle */}
         <div style={{
           display: 'flex',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--pipe-border)',
           background: 'rgba(12, 12, 14, 0.6)',
           alignItems: 'center',
           flexShrink: 0,
@@ -1131,7 +1131,7 @@ export function DiffPanel({
         {/* Active file header */}
         <div style={{
           padding: '12px 24px',
-          background: 'rgba(255,255,255,0.02)',
+          background: 'var(--pipe-surface)',
           borderBottom: '1px solid rgba(255,255,255,0.04)',
           display: 'flex',
           alignItems: 'center',
@@ -1141,7 +1141,7 @@ export function DiffPanel({
           <span style={{ fontSize: 11, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>
             {activeFile.path}
           </span>
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace' }}>
+          <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             <span style={{ color: '#4ade80' }}>+{activeFile.additions}</span>
             {' / '}
             <span style={{ color: '#f87171' }}>-{activeFile.deletions}</span>
@@ -1155,8 +1155,8 @@ export function DiffPanel({
                 alignItems: 'center',
                 gap: 5,
                 padding: '3px 8px',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 3,
                 color: 'var(--pipe-text-dim)',
                 fontSize: 9,
@@ -1200,7 +1200,7 @@ export function DiffPanel({
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--pipe-border)',
         background: 'rgba(12, 12, 14, 0.6)',
         padding: '0 12px',
         flexShrink: 0,
@@ -1233,7 +1233,7 @@ export function DiffPanel({
               zIndex: 10,
               padding: '10px 24px',
               background: 'rgba(18, 18, 22, 0.95)',
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              borderBottom: '1px solid var(--pipe-border)',
               borderTop: '1px solid rgba(255,255,255,0.04)',
               display: 'flex',
               alignItems: 'center',
@@ -1244,7 +1244,7 @@ export function DiffPanel({
               <span style={{
                 flex: 1,
                 fontSize: 11,
-                color: 'rgba(255,255,255,0.7)',
+                color: 'var(--pipe-text-muted)',
                 fontFamily: '"Space Mono", monospace',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -1274,7 +1274,7 @@ export function DiffPanel({
               </span>
               <span style={{
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.25)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 flexShrink: 0,
               }}>
@@ -1291,8 +1291,8 @@ export function DiffPanel({
                     alignItems: 'center',
                     gap: 5,
                     padding: '3px 8px',
-                    background: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 3,
                     color: 'var(--pipe-text-dim)',
                     fontSize: 9,

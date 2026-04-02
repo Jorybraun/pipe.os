@@ -20,7 +20,7 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
     <div
       style={{
         padding: "24px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        borderBottom: "1px solid var(--pipe-border)",
         display: "flex",
         gap: 16,
         alignItems: "center",
@@ -72,7 +72,7 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                     ? "#10b981"
                     : isActive
                     ? "#fff"
-                    : "rgba(255,255,255,0.3)",
+                    : "var(--pipe-text-dim)",
                   fontSize: 10,
                   fontWeight: 700,
                   fontFamily: '"Space Mono", monospace',
@@ -86,7 +86,7 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                 style={{
                   fontSize: 9,
                   letterSpacing: "0.3em",
-                  color: isActive ? "#fff" : isComplete ? "rgba(16, 185, 129, 0.7)" : "rgba(255,255,255,0.3)",
+                  color: isActive ? "var(--pipe-text, #fff)" : isComplete ? "rgba(16, 185, 129, 0.7)" : "var(--pipe-text-dim)",
                   fontWeight: isActive ? 700 : 400,
                   textTransform: 'uppercase',
                   fontFamily: '"Space Mono", monospace',

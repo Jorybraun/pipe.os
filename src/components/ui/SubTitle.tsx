@@ -29,7 +29,7 @@ export function SubTitle({ children }: SubTitleProps): JSX.Element {
         style={{
           fontSize: 9,
           letterSpacing: '0.3em',
-          color: 'rgba(255,255,255,0.4)',
+          color: 'var(--pipe-text-dim)',
           textTransform: 'uppercase',
         }}
       >

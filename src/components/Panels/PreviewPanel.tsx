@@ -62,15 +62,15 @@ export function PreviewPanel({
       {!hideHeader && (
         <header style={{
           padding: '10px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--pipe-border)',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          background: 'rgba(255,255,255,0.02)',
+          background: 'var(--pipe-surface)',
           flexShrink: 0,
         }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
             PREVIEW
           </span>
         </header>

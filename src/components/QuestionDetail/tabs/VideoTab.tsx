@@ -36,7 +36,7 @@ export function VideoTab({ question }: VideoTabProps): JSX.Element {
             <div style={{ fontSize: 48, fontWeight: 800, color: 'rgba(150,255,150,0.8)', marginBottom: 16 }}>
               {formatDuration(question.videoDuration)}
             </div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 24 }}>
+            <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', marginBottom: 24 }}>
               Video recorded successfully
             </div>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
@@ -44,9 +44,9 @@ export function VideoTab({ question }: VideoTabProps): JSX.Element {
                 type="button"
                 style={{
                   padding: '12px 24px',
-                  background: 'rgba(255,255,255,0.1)',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  color: '#fff',
+                  background: 'var(--pipe-surface-hover)',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 10,
                   letterSpacing: '0.1em',
                   cursor: 'pointer',
@@ -58,9 +58,9 @@ export function VideoTab({ question }: VideoTabProps): JSX.Element {
                 type="button"
                 style={{
                   padding: '12px 24px',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: 'rgba(255,255,255,0.6)',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text-muted)',
                   fontSize: 10,
                   letterSpacing: '0.1em',
                   cursor: 'pointer',
@@ -79,9 +79,9 @@ export function VideoTab({ question }: VideoTabProps): JSX.Element {
               type="button"
               style={{
                 padding: '12px 24px',
-                background: 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.15)',
-                color: '#fff',
+                background: 'var(--pipe-surface-hover)',
+                border: '1px solid var(--pipe-border)',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 10,
                 letterSpacing: '0.1em',
                 cursor: 'pointer',

@@ -15,7 +15,7 @@ export default function CandidateScreeningPage(): JSX.Element {
       <ChromeMeshGrid />
 
       {/* Progress bar */}
-      <div style={{ height: 4, background: 'rgba(255,255,255,0.05)' }}>
+      <div style={{ height: 4, background: 'var(--pipe-surface)' }}>
         <div style={{ width: '33%', height: '100%', background: 'linear-gradient(90deg, rgba(150,255,150,0.6), rgba(150,255,150,0.8))' }} />
       </div>
 
@@ -49,8 +49,8 @@ export default function CandidateScreeningPage(): JSX.Element {
             style={{
               width: '100%',
               height: 300,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -58,7 +58,7 @@ export default function CandidateScreeningPage(): JSX.Element {
             }}
           >
             <div>
-              <Play size={48} color="rgba(255,255,255,0.3)" />
+              <Play size={48} color="var(--pipe-text-dim)" />
               <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginTop: 16 }}>CLICK TO RECORD</div>
             </div>
           </div>
@@ -69,8 +69,8 @@ export default function CandidateScreeningPage(): JSX.Element {
               style={{
                 padding: '12px 24px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.15)',
-                color: 'rgba(255,255,255,0.6)',
+                border: '1px solid var(--pipe-border)',
+                color: 'var(--pipe-text-muted)',
                 fontSize: 10,
                 letterSpacing: '0.15em',
                 cursor: 'pointer',
@@ -84,7 +84,7 @@ export default function CandidateScreeningPage(): JSX.Element {
               style={{
                 padding: '12px 32px',
                 background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))',
-                border: '1px solid rgba(255,255,255,0.2)',
+                border: '1px solid var(--pipe-border)',
                 color: 'var(--pipe-text, #fff)',
                 fontSize: 10,
                 letterSpacing: '0.15em',

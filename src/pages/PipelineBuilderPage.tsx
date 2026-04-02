@@ -124,7 +124,7 @@ function StageCard({
           marginBottom: 16,
         }}
       >
-        <Icon size={18} color={isSelected ? "#fff" : "rgba(255,255,255,0.4)"} />
+        <Icon size={18} color={isSelected ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)"} />
         {stage.configured && (
           <CheckCircle size={14} color="rgba(150,255,150,0.8)" />
         )}
@@ -134,7 +134,7 @@ function StageCard({
         style={{
           fontSize: 9,
           letterSpacing: "0.2em",
-          color: isSelected ? "#fff" : "rgba(255,255,255,0.5)",
+          color: isSelected ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
           marginBottom: 8,
         }}
       >
@@ -145,7 +145,7 @@ function StageCard({
         style={{
           fontSize: 24,
           fontWeight: 800,
-          color: stage.configured ? "#fff" : "rgba(255,255,255,0.3)",
+          color: stage.configured ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
         }}
       >
         {stage.configured ? "✓" : stage.order}
@@ -563,11 +563,11 @@ export default function PipelineBuilderPage(): JSX.Element {
                 display: "flex",
                 gap: 8,
                 padding: "12px 16px",
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.08)",
+                background: "var(--pipe-surface)",
+                border: "1px solid var(--pipe-border)",
               }}
             >
-              <MessageSquare size={16} color="rgba(255,255,255,0.3)" />
+              <MessageSquare size={16} color="var(--pipe-text-dim)" />
               <input
                 type="text"
                 placeholder="Ask about rubrics, criteria..."
@@ -595,7 +595,7 @@ export default function PipelineBuilderPage(): JSX.Element {
                   padding: 0,
                 }}
               >
-                <Send size={16} color="rgba(255,255,255,0.5)" />
+                <Send size={16} color="var(--pipe-text-dim)" />
               </button>
             </div>
           </div>
@@ -641,7 +641,7 @@ export default function PipelineBuilderPage(): JSX.Element {
             style={{
               width: 1,
               height: 40,
-              background: "rgba(255,255,255,0.08)",
+              background: "var(--pipe-surface-hover)",
             }}
           />
 

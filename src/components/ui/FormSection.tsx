@@ -48,8 +48,8 @@ export function FormSection({
           style={{
             width: 36,
             height: 36,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
+            background: "var(--pipe-surface)",
+            border: "1px solid var(--pipe-border)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -64,7 +64,7 @@ export function FormSection({
             textAlign: "left",
             fontSize: 10,
             letterSpacing: "0.15em",
-            color: isOpen ? "#fff" : "rgba(255,255,255,0.5)",
+            color: isOpen ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
           }}
         >
           {title}

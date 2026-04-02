@@ -42,13 +42,13 @@ function TestRow({ test }: { test: TestCaseResult }): JSX.Element {
       <span style={{
         fontSize: 11,
         fontFamily: 'Space Mono',
-        color: 'rgba(255,255,255,0.7)',
+        color: 'var(--pipe-text-muted)',
         flex: 1,
       }}>
         {test.name}
       </span>
       {test.durationMs !== undefined && (
-        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', fontFamily: 'Space Mono' }}>
+        <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
           {test.durationMs}ms
         </span>
       )}
@@ -104,7 +104,7 @@ export function ConsolePanel({ result, isRunning, onClear }: ConsolePanelProps):
 
   const smallBtn: React.CSSProperties = {
     background: 'transparent',
-    border: '1px solid rgba(255,255,255,0.08)',
+    border: '1px solid var(--pipe-border)',
     color: 'rgba(255,255,255,0.45)',
     padding: '4px 8px',
     fontSize: 9,
@@ -118,7 +118,7 @@ export function ConsolePanel({ result, isRunning, onClear }: ConsolePanelProps):
   return (
     <div style={{
       background: '#0a0a0c',
-      borderTop: '1px solid rgba(255,255,255,0.08)',
+      borderTop: '1px solid var(--pipe-border)',
       display: 'flex',
       flexDirection: 'column',
       minHeight: 36,
@@ -147,7 +147,7 @@ export function ConsolePanel({ result, isRunning, onClear }: ConsolePanelProps):
           <button onClick={onClear} style={smallBtn}><Trash2 size={10} /> CLEAR</button>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.35)', cursor: 'pointer', padding: 4 }}
+            style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 4 }}
           >
             {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>

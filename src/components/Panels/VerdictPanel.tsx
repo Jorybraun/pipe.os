@@ -90,7 +90,7 @@ export function VerdictPanel({
     >
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {/* Verdict */}
-        <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
           <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
             REVIEW_VERDICT
           </div>
@@ -104,7 +104,7 @@ export function VerdictPanel({
                   onClick={() => onVerdictChange(opt.key)}
                   style={{
                     padding: '14px 16px',
-                    background: isActive ? opt.bg : 'rgba(255,255,255,0.02)',
+                    background: isActive ? opt.bg : 'var(--pipe-surface)',
                     border: `1px solid ${isActive ? opt.border : 'rgba(255,255,255,0.06)'}`,
                     borderRadius: 4,
                     display: 'flex',
@@ -122,7 +122,7 @@ export function VerdictPanel({
                         {opt.label}
                       </span>
                     </div>
-                    <span style={{ fontSize: 9, color: isActive ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.25)', marginLeft: 22, marginTop: 4 }}>
+                    <span style={{ fontSize: 9, color: isActive ? 'rgba(255,255,255,0.5)' : 'var(--pipe-text-dim)', marginLeft: 22, marginTop: 4 }}>
                       {opt.description}
                     </span>
                   </div>
@@ -133,7 +133,7 @@ export function VerdictPanel({
         </div>
 
         {/* Summary */}
-        <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
             REVIEW_SUMMARY
           </div>
@@ -143,8 +143,8 @@ export function VerdictPanel({
             placeholder="Summarize your code review findings..."
             style={{
               minHeight: 120,
-              background: 'rgba(255,255,255,0.02)',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               borderRadius: 4,
               color: 'var(--pipe-text, #fff)',
               fontSize: 11,
@@ -166,21 +166,21 @@ export function VerdictPanel({
           <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
             SUBMISSION_STATS
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 4 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Annotations</span>
+              <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Annotations</span>
               <span style={{ fontSize: 10, color: annotations.length > 0 ? '#a78bfa' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
                 {annotations.length}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Verdict</span>
+              <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Verdict</span>
               <span style={{ fontSize: 10, fontWeight: 700, color: verdict ? '#34d399' : 'rgba(255,255,255,0.15)' }}>
                 {verdict ? verdict.replace('_', ' ').toUpperCase() : '—'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Summary</span>
+              <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Summary</span>
               <span style={{ fontSize: 10, fontWeight: 700, color: localSummary.trim() ? '#34d399' : 'rgba(255,255,255,0.15)' }}>
                 {localSummary.trim() ? 'PROVIDED' : '—'}
               </span>
@@ -190,7 +190,7 @@ export function VerdictPanel({
       </div>
 
       {/* Status bar */}
-      <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ padding: '16px 24px', borderTop: '1px solid var(--pipe-border)' }}>
         {isReady ? (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,

@@ -19,8 +19,8 @@ export function EditorTabBar({ tabs, activeKey, onSelect }: EditorTabBarProps): 
     <div style={{
       display: 'flex',
       gap: 0,
-      borderBottom: '1px solid rgba(255,255,255,0.08)',
-      background: 'rgba(255,255,255,0.02)',
+      borderBottom: '1px solid var(--pipe-border)',
+      background: 'var(--pipe-surface)',
     }}>
       {tabs.map((tab) => {
         const isActive = tab.key === activeKey;
@@ -33,7 +33,7 @@ export function EditorTabBar({ tabs, activeKey, onSelect }: EditorTabBarProps): 
               background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
               border: 'none',
               borderBottom: isActive ? '2px solid #a78bfa' : '2px solid transparent',
-              color: isActive ? '#fff' : 'rgba(255,255,255,0.4)',
+              color: isActive ? 'var(--pipe-text, #fff)' : 'rgba(255,255,255,0.4)',
               fontSize: 10,
               fontWeight: 800,
               fontFamily: 'Space Mono',

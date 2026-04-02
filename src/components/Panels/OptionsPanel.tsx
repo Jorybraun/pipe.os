@@ -30,7 +30,7 @@ export function OptionsPanel({
       <h2 style={{
         fontSize: 24,
         fontWeight: 700,
-        color: '#fff',
+        color: 'var(--pipe-text, #fff)',
         marginBottom: 40,
         lineHeight: 1.4,
         letterSpacing: '-0.01em'

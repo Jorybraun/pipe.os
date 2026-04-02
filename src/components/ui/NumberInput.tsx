@@ -96,8 +96,8 @@ export function NumberInput({
         style={{
           width: 36,
           height: 36,
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'var(--pipe-surface)',
+          border: '1px solid var(--pipe-border)',
           color: 'var(--pipe-text-muted)',
           cursor: canDecrement ? 'pointer' : 'not-allowed',
           display: 'flex',
@@ -113,8 +113,8 @@ export function NumberInput({
         style={{
           flex: 1,
           height: 48,
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.15)',
+          background: 'var(--pipe-surface)',
+          border: '1px solid var(--pipe-border)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -137,8 +137,8 @@ export function NumberInput({
         style={{
           width: 36,
           height: 36,
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'var(--pipe-surface)',
+          border: '1px solid var(--pipe-border)',
           color: 'var(--pipe-text-muted)',
           cursor: canIncrement ? 'pointer' : 'not-allowed',
           display: 'flex',

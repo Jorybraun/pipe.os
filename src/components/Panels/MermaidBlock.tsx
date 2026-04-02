@@ -62,8 +62,8 @@ export function MermaidBlock({ code }: MermaidBlockProps): JSX.Element {
   if (error) {
     return (
       <div style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: 'var(--pipe-surface)',
+        border: '1px solid var(--pipe-border)',
         borderRadius: 8,
         padding: 16,
         margin: '12px 0',
@@ -88,8 +88,8 @@ export function MermaidBlock({ code }: MermaidBlockProps): JSX.Element {
     <div
       ref={containerRef}
       style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        background: 'var(--pipe-surface)',
+        border: '1px solid var(--pipe-border)',
         borderRadius: 8,
         padding: 16,
         margin: '12px 0',

@@ -145,7 +145,7 @@ export function QuestionVideoRecorder({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {existingS3Key && state === 'idle' && (
-        <div style={{ ...mono, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>
+        <div style={{ ...mono, color: 'var(--pipe-text-dim)', lineHeight: 1.5 }}>
           CURRENT: {existingS3Key}
         </div>
       )}
@@ -156,7 +156,7 @@ export function QuestionVideoRecorder({
           width: '100%',
           maxHeight: 200,
           borderRadius: 6,
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid var(--pipe-border)',
           background: '#000',
           objectFit: 'cover',
           display: state === 'idle' && !previewUrl ? 'none' : 'block',

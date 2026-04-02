@@ -45,9 +45,9 @@ export function QuestionDetailHeader({
         aria-label="Back to questions list"
         style={{
           padding: 12,
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          color: 'rgba(255,255,255,0.6)',
+          background: 'var(--pipe-surface)',
+          border: '1px solid var(--pipe-border)',
+          color: 'var(--pipe-text-muted)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
@@ -70,7 +70,7 @@ export function QuestionDetailHeader({
         <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)' }}>
           QUESTION DETAIL
         </div>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', marginTop: 4 }}>
           {questionId}
         </div>
       </div>

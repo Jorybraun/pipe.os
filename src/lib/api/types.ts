@@ -252,6 +252,7 @@ export interface CandidateProfileRecord {
   skills: string[] | null;
   yearsOfExperience: number | null;
   currentRole: string | null;
+  education: string[] | null;
   score: number | null;
   createdAt: string;
   updatedAt: string;

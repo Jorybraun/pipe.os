@@ -97,8 +97,8 @@ export function GitHubPRFetcherV2({
   const inputStyle: React.CSSProperties = {
     width: '100%',
     padding: '12px 16px',
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.12)',
+    background: 'var(--pipe-surface)',
+    border: '1px solid var(--pipe-border)',
     borderRadius: 6,
     color: 'var(--pipe-text, #fff)',
     fontSize: 13,
@@ -148,7 +148,7 @@ export function GitHubPRFetcherV2({
   if (showCached && (cachedTitle || cachedAuthor)) {
     return (
       <div>
-        <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <div style={{ background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 6 }}>
             {[
               cachedTitle,
@@ -163,8 +163,8 @@ export function GitHubPRFetcherV2({
             onClick={onCleared}
             style={{
               ...btnStyle,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               color: 'var(--pipe-text-dim)',
             }}
           >
@@ -248,7 +248,7 @@ export function GitHubPRFetcherV2({
                   title={url}
                   style={{
                     padding: '4px 10px',
-                    background: repoUrl === url ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.05)',
+                    background: repoUrl === url ? 'rgba(251,191,36,0.15)' : 'var(--pipe-surface)',
                     border: repoUrl === url ? '1px solid rgba(251,191,36,0.35)' : '1px solid rgba(255,255,255,0.1)',
                     borderRadius: 4,
                     color: repoUrl === url ? '#fbbf24' : 'rgba(255,255,255,0.55)',
@@ -314,7 +314,7 @@ export function GitHubPRFetcherV2({
             <AlertCircle size={14} color="#f87171" />
             <span style={{ fontSize: 11, fontWeight: 700, color: '#f87171', fontFamily: 'Space Mono' }}>FETCH_ERROR</span>
           </div>
-          <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5 }}>{error}</p>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--pipe-text-muted)', lineHeight: 1.5 }}>{error}</p>
         </div>
       )}
     </div>

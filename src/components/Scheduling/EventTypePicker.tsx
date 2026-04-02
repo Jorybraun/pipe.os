@@ -60,7 +60,7 @@ export function EventTypePicker({
     return (
       <div style={containerStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} color="rgba(255,255,255,0.3)" />
+          <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} color="var(--pipe-text-dim)" />
           <span style={labelStyle}>Loading connection…</span>
         </div>
       </div>
@@ -103,7 +103,7 @@ export function EventTypePicker({
     return (
       <div style={containerStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} color="rgba(255,255,255,0.3)" />
+          <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} color="var(--pipe-text-dim)" />
           <span style={labelStyle}>Fetching event types…</span>
         </div>
       </div>
@@ -129,7 +129,7 @@ export function EventTypePicker({
   return (
     <div style={containerStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <Calendar size={12} color="rgba(255,255,255,0.4)" />
+        <Calendar size={12} color="var(--pipe-text-dim)" />
         <span style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
           EVENT_TYPE
         </span>
@@ -154,7 +154,7 @@ export function EventTypePicker({
         </select>
         <ChevronDown
           size={12}
-          color="rgba(255,255,255,0.3)"
+          color="var(--pipe-text-dim)"
           style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
         />
       </div>
@@ -168,8 +168,8 @@ export function EventTypePicker({
 
 const containerStyle: React.CSSProperties = {
   padding: '12px 16px',
-  background: 'rgba(255,255,255,0.03)',
-  border: '1px solid rgba(255,255,255,0.06)',
+  background: 'var(--pipe-surface)',
+  border: '1px solid var(--pipe-border)',
   borderRadius: 8,
 };
 
@@ -182,8 +182,8 @@ const labelStyle: React.CSSProperties = {
 const selectStyle: React.CSSProperties = {
   width: '100%',
   padding: '8px 28px 8px 10px',
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.08)',
+  background: 'var(--pipe-surface)',
+  border: '1px solid var(--pipe-border)',
   borderRadius: 4,
   color: 'var(--pipe-text, #fff)',
   fontSize: 12,
@@ -196,8 +196,8 @@ const selectStyle: React.CSSProperties = {
 const retryButtonStyle: React.CSSProperties = {
   marginLeft: 8,
   padding: '4px 10px',
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.1)',
+  background: 'var(--pipe-surface)',
+  border: '1px solid var(--pipe-border)',
   color: 'var(--pipe-text, #fff)',
   fontSize: 9,
   letterSpacing: '0.1em',

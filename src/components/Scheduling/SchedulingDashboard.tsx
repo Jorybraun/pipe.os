@@ -209,11 +209,11 @@ export function SchedulingDashboard(): JSX.Element {
           style={{
             padding: 64,
             textAlign: 'center',
-            border: '1px dashed rgba(255,255,255,0.08)',
+            border: '1px dashed var(--pipe-border)',
             borderRadius: 12,
           }}
         >
-          <Calendar size={40} color="rgba(255,255,255,0.12)" style={{ marginBottom: 16 }} />
+          <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
           <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
             {interviews.length === 0
               ? 'No interviews yet. Invite candidates to LIVE_VIDEO stages to get started.'

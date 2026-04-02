@@ -171,8 +171,8 @@ export function PreviewOverlay({ challenge, onClose, stageMode }: PreviewOverlay
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#0c0c0e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <Loader2 size={32} color="rgba(255,255,255,0.4)" className="animate-spin" />
-          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
+          <Loader2 size={32} color="var(--pipe-text-dim)" className="animate-spin" />
+          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
             LOADING_STAGE_PREVIEW...
           </div>
         </div>

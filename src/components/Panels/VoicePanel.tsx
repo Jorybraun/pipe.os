@@ -121,7 +121,7 @@ export function VoicePanel({
         style={{
           fontSize: 20,
           fontWeight: 700,
-          color: 'rgba(255,255,255,0.9)',
+          color: 'var(--pipe-text, #fff)',
           lineHeight: 1.4,
           maxWidth: 700,
         }}
@@ -202,7 +202,7 @@ export function VoicePanel({
                 style={{
                   ...btnBase,
                   fontSize: 10,
-                  background: 'rgba(255,255,255,0.04)',
+                  background: 'var(--pipe-surface)',
                   borderColor: 'rgba(255,255,255,0.12)',
                   color: 'var(--pipe-text-muted)',
                 }}
@@ -221,7 +221,7 @@ export function VoicePanel({
             style={{
               ...mono,
               fontSize: 12,
-              color: 'rgba(255,255,255,0.35)',
+              color: 'var(--pipe-text-dim)',
               fontStyle: 'italic',
               lineHeight: 1.6,
             }}
@@ -244,8 +244,8 @@ export function VoicePanel({
             ...mono,
             flex: 1,
             minHeight: 160,
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 6,
             color: 'rgba(255,255,255,0.85)',
             fontSize: 14,

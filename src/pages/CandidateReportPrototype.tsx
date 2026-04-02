@@ -122,7 +122,7 @@ const ANNOTATION_COLORS: Record<string, { border: string; bg: string; icon: stri
   match: { border: "rgba(16,185,129,0.4)", bg: "rgba(16,185,129,0.06)", icon: "#10b981" },
   mismatch: { border: "rgba(245,158,11,0.4)", bg: "rgba(245,158,11,0.06)", icon: "#f59e0b" },
   "false-positive": { border: "rgba(239,68,68,0.4)", bg: "rgba(239,68,68,0.06)", icon: "#ef4444" },
-  missed: { border: "rgba(255,255,255,0.1)", bg: "rgba(255,255,255,0.02)", icon: "rgba(255,255,255,0.3)" },
+  missed: { border: "rgba(255,255,255,0.1)", bg: "rgba(255,255,255,0.02)", icon: "var(--pipe-text-dim)" },
 };
 
 const sectionGap = SPACING_NUM["3xl"];
@@ -342,7 +342,7 @@ export default function CandidateReportPrototype(): JSX.Element {
                     {bug.found ? (
                       <Check size={12} style={{ color: "#10b981" }} />
                     ) : (
-                      <X size={12} style={{ color: "rgba(255,255,255,0.2)" }} />
+                      <X size={12} style={{ color: "var(--pipe-text-dim)" }} />
                     )}
                   </div>
                   <span style={{ ...mono, fontSize: TYPOGRAPHY.SIZES.TINY, color: COLORS.TEXT.TERTIARY, width: 36 }}>

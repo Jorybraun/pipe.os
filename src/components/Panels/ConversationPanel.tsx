@@ -290,7 +290,7 @@ function CodeChangeBlock({ code }: { code: string }): JSX.Element {
             padding: '10px 12px',
             fontSize: 10,
             lineHeight: 1.6,
-            color: 'rgba(255,255,255,0.8)',
+            color: 'var(--pipe-text, #fff)',
             fontFamily: '"Space Mono", monospace',
             overflowX: 'auto',
             whiteSpace: 'pre',
@@ -378,7 +378,7 @@ function ThreadCard({
         borderRadius: 6,
         border: '1px solid rgba(255,255,255,0.07)',
         overflow: 'hidden',
-        background: 'rgba(255,255,255,0.01)',
+        background: 'var(--pipe-surface)',
       }}
     >
       {/* Thread header */}
@@ -390,7 +390,7 @@ function ThreadCard({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '10px 14px',
-          background: 'rgba(255,255,255,0.03)',
+          background: 'var(--pipe-surface)',
           border: 'none',
           borderBottom: expanded ? '1px solid rgba(255,255,255,0.06)' : 'none',
           cursor: 'pointer',
@@ -413,7 +413,7 @@ function ThreadCard({
             </span>
           )}
           {!thread.comment.file && (
-            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em' }}>
               GENERAL COMMENT
             </span>
           )}
@@ -459,7 +459,7 @@ function ThreadCard({
         </div>
         <ChevronRight
           size={12}
-          color="rgba(255,255,255,0.3)"
+          color="var(--pipe-text-dim)"
           style={{
             transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
             transition: 'transform 0.2s',
@@ -481,7 +481,7 @@ function ThreadCard({
           {/* Reply textarea for rounds 2+ when implementer has responded */}
           {isReplyRound && (
             <div style={{ marginTop: 4 }}>
-              <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.1em', marginBottom: 6 }}>
+              <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em', marginBottom: 6 }}>
                 YOUR REPLY
               </div>
               <textarea
@@ -492,8 +492,8 @@ function ThreadCard({
                 style={{
                   width: '100%',
                   boxSizing: 'border-box',
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
                   borderRadius: 4,
                   color: 'var(--pipe-text, #fff)',
                   fontSize: 11,
@@ -550,7 +550,7 @@ function EmptyState(): JSX.Element {
             fontSize: 12,
             fontWeight: 700,
             letterSpacing: '0.08em',
-            color: 'rgba(255,255,255,0.6)',
+            color: 'var(--pipe-text-muted)',
             fontFamily: '"Space Mono", monospace',
           }}
         >
@@ -688,7 +688,7 @@ export function ConversationPanel({
       <div
         style={{
           padding: '14px 20px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid var(--pipe-border)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -758,7 +758,7 @@ export function ConversationPanel({
             <div
               style={{
                 padding: '12px 14px',
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--pipe-surface)',
                 border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: 6,
               }}
@@ -776,7 +776,7 @@ export function ConversationPanel({
                       onClick={() => onVerdictChange(opt.key)}
                       style={{
                         padding: '10px 12px',
-                        background: isActive ? opt.bg : 'rgba(255,255,255,0.02)',
+                        background: isActive ? opt.bg : 'var(--pipe-surface)',
                         border: `1px solid ${isActive ? opt.border : 'rgba(255,255,255,0.06)'}`,
                         borderRadius: 4,
                         display: 'flex',
@@ -806,7 +806,7 @@ export function ConversationPanel({
             <div
               style={{
                 padding: '12px 14px',
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--pipe-surface)',
                 border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: 6,
               }}
@@ -822,8 +822,8 @@ export function ConversationPanel({
                 style={{
                   width: '100%',
                   boxSizing: 'border-box',
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
                   borderRadius: 4,
                   color: 'var(--pipe-text, #fff)',
                   fontSize: 11,
@@ -834,7 +834,7 @@ export function ConversationPanel({
                   lineHeight: 1.6,
                 }}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6, fontSize: 8, color: 'rgba(255,255,255,0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6, fontSize: 8, color: 'var(--pipe-text-dim)' }}>
                 {localSummary.length} / 1000
               </div>
             </div>
@@ -843,7 +843,7 @@ export function ConversationPanel({
       </div>
 
       {/* Footer: round progress + submit button */}
-      <div style={{ padding: '14px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+      <div style={{ padding: '14px 16px', borderTop: '1px solid var(--pipe-border)', flexShrink: 0 }}>
         {/* Round progress dots */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, justifyContent: 'center' }}>
           {Array.from({ length: maxRounds }).map((_, i) => {
@@ -922,7 +922,7 @@ export function ConversationPanel({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-              <Clock size={10} color="rgba(255,255,255,0.2)" />
+              <Clock size={10} color="var(--pipe-text-dim)" />
               ADD INLINE COMMENTS ON THE DIFF TO ENABLE SUBMIT
             </div>
           </div>

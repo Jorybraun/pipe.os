@@ -121,11 +121,11 @@ export function ReviewCanvas({
         <div
           style={{
             padding: '16px 24px',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            borderBottom: '1px solid var(--pipe-border)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            background: 'rgba(255,255,255,0.02)',
+            background: 'var(--pipe-surface)',
           }}
         >
           <div>
@@ -148,7 +148,7 @@ export function ReviewCanvas({
             <div
               style={{
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.25)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 marginBottom: 4
               }}
@@ -199,7 +199,7 @@ export function ReviewCanvas({
             lineNumberStyle={{
               minWidth: '3em',
               paddingRight: '1em',
-              color: 'rgba(255,255,255,0.15)',
+              color: 'var(--pipe-text-dim)',
               textAlign: 'right',
               userSelect: 'none',
             }}
@@ -219,7 +219,7 @@ export function ReviewCanvas({
                 width: 'calc(100% - 48px)',
                 maxWidth: 400,
                 background: '#161618',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 8,
                 boxShadow: '0 24px 48px rgba(0,0,0,0.8)',
                 padding: 24,
@@ -278,7 +278,7 @@ export function ReviewCanvas({
                     width: '100%',
                     height: 100,
                     background: 'rgba(0,0,0,0.2)',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 4,
                     color: 'var(--pipe-text, #fff)',
                     padding: 12,
@@ -317,8 +317,8 @@ export function ReviewCanvas({
         <div
           style={{
             padding: '20px 24px',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            background: 'rgba(255,255,255,0.01)',
+            borderTop: '1px solid var(--pipe-border)',
+            background: 'var(--pipe-surface)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
@@ -346,7 +346,7 @@ export function ReviewCanvas({
               style={{
                 padding: '8px 16px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--pipe-border)',
                 color: currentSnippetIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)',
                 fontSize: 9,
                 letterSpacing: '0.1em',
@@ -362,7 +362,7 @@ export function ReviewCanvas({
               style={{
                 padding: '8px 16px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--pipe-border)',
                 color: currentSnippetIndex === snippets.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)',
                 fontSize: 9,
                 letterSpacing: '0.1em',

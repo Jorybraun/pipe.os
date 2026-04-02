@@ -169,7 +169,7 @@ function FollowUpReadOnly({
     <div
       style={{
         marginTop: 24,
-        borderTop: "1px solid rgba(255,255,255,0.06)",
+        borderTop: "1px solid var(--pipe-border)",
         paddingTop: 24,
       }}
     >
@@ -205,7 +205,7 @@ function FollowUpReadOnly({
                 <div
                   style={{
                     padding: "12px 16px",
-                    background: "rgba(255,255,255,0.03)",
+                    background: "var(--pipe-surface)",
                     borderLeft: "2px solid rgba(255,255,255,0.1)",
                     fontSize: 13,
                     color: "var(--pipe-text, #fff)",
@@ -284,7 +284,7 @@ function QuizMcqView({
               <div
                 style={{
                   fontSize: 13,
-                  color: isSelected ? "#fff" : "rgba(255,255,255,0.5)",
+                  color: isSelected ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
                 }}
               >
                 {opt.text ?? opt.label ?? opt.id}
@@ -338,7 +338,7 @@ function ChallengeCard({
           justifyContent: "space-between",
           alignItems: "center",
           padding: "24px 32px",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          borderBottom: "1px solid var(--pipe-border)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -374,7 +374,7 @@ function ChallengeCard({
           <div
             style={{
               padding: 40,
-              border: "1px dashed rgba(255,255,255,0.08)",
+              border: "1px dashed var(--pipe-border)",
               borderRadius: 8,
               textAlign: "center",
               color: "var(--pipe-text-dim)",
@@ -402,10 +402,10 @@ function ChallengeCard({
                   {(Boolean(response.verdict) || Boolean(response.summary)) && (
                     <div
                       style={{
-                        background: "rgba(255,255,255,0.02)",
+                        background: "var(--pipe-surface)",
                         padding: 24,
                         borderRadius: 8,
-                        border: "1px solid rgba(255,255,255,0.05)",
+                        border: "1px solid var(--pipe-border-light)",
                       }}
                     >
                       {Boolean(response.verdict) && (
@@ -467,7 +467,7 @@ function ChallengeCard({
                               key={idx}
                               style={{
                                 padding: "16px 20px",
-                                background: "rgba(255,255,255,0.03)",
+                                background: "var(--pipe-surface)",
                                 borderLeft: `3px solid ${borderColor}`,
                                 borderRadius: "0 4px 4px 0",
                               }}
@@ -562,7 +562,7 @@ function ChallengeCard({
                             textAlign: "center",
                             background: "rgba(0,0,0,0.2)",
                             borderRadius: 12,
-                            border: "1px dashed rgba(255,255,255,0.05)",
+                            border: "1px dashed var(--pipe-border-light)",
                           }}
                         >
                           <span
@@ -592,7 +592,7 @@ function ChallengeCard({
                             background: "rgba(0,0,0,0.2)",
                             padding: 24,
                             borderRadius: 8,
-                            border: "1px solid rgba(255,255,255,0.05)",
+                            border: "1px solid var(--pipe-border-light)",
                           }}
                         >
                           {(response.text as string) || (
@@ -618,7 +618,7 @@ function ChallengeCard({
                         background: "rgba(0,0,0,0.2)",
                         padding: 24,
                         borderRadius: 8,
-                        border: "1px solid rgba(255,255,255,0.05)",
+                        border: "1px solid var(--pipe-border-light)",
                       }}
                     >
                       {(response.text as string) || (
@@ -641,7 +641,7 @@ function ChallengeCard({
                     background: "#000",
                     padding: 24,
                     borderRadius: 8,
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    border: "1px solid var(--pipe-border)",
                   }}
                 >
                   <pre
@@ -740,7 +740,7 @@ function ChallengeCard({
                         width: "100%",
                         height: 200,
                         background: "rgba(0,0,0,0.3)",
-                        border: "1px solid rgba(255,255,255,0.1)",
+                        border: "1px solid var(--pipe-border)",
                         padding: 16,
                         color: "var(--pipe-text, #fff)",
                         fontSize: 13,
@@ -882,15 +882,15 @@ export default function CandidateProfilePage(): JSX.Element {
           <div
             style={{
               height: 400,
-              background: "rgba(255,255,255,0.02)",
+              background: "var(--pipe-surface)",
               borderRadius: 16,
             }}
           />
         </div>
         <div
           style={{
-            background: "rgba(255,255,255,0.02)",
-            borderLeft: "1px solid rgba(255,255,255,0.06)",
+            background: "var(--pipe-surface)",
+            borderLeft: "1px solid var(--pipe-border)",
           }}
         />
       </div>
@@ -1007,7 +1007,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 <Mail size={11} /> {candidate.email}
                 {candidate.currentRole && (
                   <>
-                    <span style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
+                    <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
                     <Briefcase size={11} /> {candidate.currentRole}
                   </>
                 )}
@@ -1023,7 +1023,7 @@ export default function CandidateProfilePage(): JSX.Element {
             display: "flex",
             gap: 4,
             marginBottom: 24,
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid var(--pipe-border)",
             paddingBottom: 0,
           }}
         >
@@ -1051,7 +1051,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   style={{
                     fontSize: 10,
                     fontWeight: 800,
-                    color: isActive ? "#fff" : "rgba(255,255,255,0.35)",
+                    color: isActive ? "var(--pipe-text, #fff)" : "rgba(255,255,255,0.35)",
                     fontFamily: '"Space Mono", monospace',
                     letterSpacing: "0.05em",
                   }}
@@ -1063,7 +1063,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     style={{
                       fontSize: 10,
                       fontWeight: 900,
-                      color: isActive ? "#fff" : "rgba(255,255,255,0.25)",
+                      color: isActive ? "var(--pipe-text, #fff)" : "rgba(255,255,255,0.25)",
                       background: isActive
                         ? "rgba(255,255,255,0.1)"
                         : "rgba(255,255,255,0.04)",
@@ -1083,7 +1083,7 @@ export default function CandidateProfilePage(): JSX.Element {
             style={{
               width: 1,
               height: 20,
-              background: "rgba(255,255,255,0.08)",
+              background: "var(--pipe-surface-hover)",
               alignSelf: "center",
               margin: "0 8px",
             }}
@@ -1241,7 +1241,7 @@ export default function CandidateProfilePage(): JSX.Element {
           style={{
             padding: "32px 24px 24px",
             height: "100%",
-            borderLeft: "1px solid rgba(255,255,255,0.08)",
+            borderLeft: "1px solid var(--pipe-border)",
             borderRadius: 0,
             display: "flex",
             flexDirection: "column",
@@ -1281,7 +1281,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 style={{
                   marginTop: 20,
                   paddingTop: 16,
-                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  borderTop: "1px solid var(--pipe-border)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 8,
@@ -1311,7 +1311,7 @@ export default function CandidateProfilePage(): JSX.Element {
                         style={{
                           fontSize: 12,
                           fontWeight: 900,
-                          color: s.score != null ? "#fff" : "rgba(255,255,255,0.15)",
+                          color: s.score != null ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                           fontFamily: '"Space Mono", monospace',
                         }}
                       >
@@ -1330,7 +1330,7 @@ export default function CandidateProfilePage(): JSX.Element {
               style={{
                 marginBottom: 28,
                 paddingTop: 24,
-                borderTop: "1px solid rgba(255,255,255,0.06)",
+                borderTop: "1px solid var(--pipe-border)",
               }}
             >
               <div
@@ -1341,7 +1341,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   marginBottom: 14,
                 }}
               >
-                <Briefcase size={12} color="rgba(255,255,255,0.3)" />
+                <Briefcase size={12} color="var(--pipe-text-dim)" />
                 <span
                   style={{
                     fontSize: 9,
@@ -1357,7 +1357,7 @@ export default function CandidateProfilePage(): JSX.Element {
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {candidate.currentRole && (
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--pipe-text, #fff)" }}>
                       {candidate.currentRole}
                     </div>
                     {candidate.yearsOfExperience != null && candidate.yearsOfExperience > 0 && (
@@ -1399,7 +1399,7 @@ export default function CandidateProfilePage(): JSX.Element {
 
                 {candidate.education && candidate.education.length > 0 && (
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 2 }}>
-                    <GraduationCap size={11} color="rgba(255,255,255,0.2)" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <GraduationCap size={11} color="var(--pipe-text-dim)" style={{ marginTop: 2, flexShrink: 0 }} />
                     <div style={{ fontSize: 10, color: "var(--pipe-text-dim)", lineHeight: 1.5 }}>
                       {candidate.education.join(" · ")}
                     </div>
@@ -1413,7 +1413,7 @@ export default function CandidateProfilePage(): JSX.Element {
           <div
             style={{
               paddingTop: 24,
-              borderTop: "1px solid rgba(255,255,255,0.06)",
+              borderTop: "1px solid var(--pipe-border)",
             }}
           >
             <div
@@ -1424,7 +1424,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 marginBottom: 14,
               }}
             >
-              <Clock size={12} color="rgba(255,255,255,0.3)" />
+              <Clock size={12} color="var(--pipe-text-dim)" />
               <span
                 style={{
                   fontSize: 9,
@@ -1485,8 +1485,8 @@ export default function CandidateProfilePage(): JSX.Element {
                 justifyContent: "center",
                 gap: 8,
                 padding: "12px",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.08)",
+                background: "var(--pipe-surface)",
+                border: "1px solid var(--pipe-border)",
                 borderRadius: 8,
                 color: "var(--pipe-text, #fff)",
                 fontSize: 10,

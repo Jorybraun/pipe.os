@@ -28,7 +28,7 @@ export function QuestionVideoPlayer({ src, label = 'RECRUITER_QUESTION' }: Quest
         style={{
           fontSize: 9,
           letterSpacing: '0.15em',
-          color: 'rgba(255,255,255,0.3)',
+          color: 'var(--pipe-text-dim)',
           fontFamily: '"Space Mono", monospace',
           textTransform: 'uppercase',
         }}
@@ -44,7 +44,7 @@ export function QuestionVideoPlayer({ src, label = 'RECRUITER_QUESTION' }: Quest
           width: '100%',
           maxHeight: 240,
           borderRadius: 6,
-          border: '1px solid rgba(255,255,255,0.08)',
+          border: '1px solid var(--pipe-border)',
           background: '#000',
           objectFit: 'contain',
         }}

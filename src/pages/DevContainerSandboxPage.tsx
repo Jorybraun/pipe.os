@@ -65,7 +65,7 @@ function BootProgressBar(): JSX.Element {
       style={{
         width: '100%',
         height: 2,
-        background: 'rgba(255,255,255,0.08)',
+        background: 'var(--pipe-surface-hover)',
         borderRadius: 1,
         overflow: 'hidden',
         marginTop: 8,
@@ -184,8 +184,8 @@ export default function DevContainerSandboxPage(): JSX.Element {
       {/* ── Status card ─────────────────────────────────────────────── */}
       <div
         style={{
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'var(--pipe-surface)',
+          border: '1px solid var(--pipe-border)',
           borderRadius: 2,
           padding: '20px 24px',
           marginBottom: 24,
@@ -316,7 +316,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
             style={{
               padding: '14px 28px',
               background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--pipe-border)',
               color: 'var(--pipe-text-dim)',
               fontSize: 11,
               letterSpacing: '0.15em',
@@ -372,7 +372,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
         <div
           style={{
             marginTop: 32,
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 2,
             overflow: 'hidden',
             maxWidth: '100%',
@@ -380,12 +380,12 @@ export default function DevContainerSandboxPage(): JSX.Element {
         >
           <div
             style={{
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--pipe-surface)',
               padding: '12px 16px',
               fontSize: 9,
               letterSpacing: '0.2em',
               color: 'var(--pipe-text-dim)',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              borderBottom: '1px solid var(--pipe-border)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',

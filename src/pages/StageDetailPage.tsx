@@ -430,7 +430,7 @@ export default function StageDetailPage(): JSX.Element {
                 onClick={() => setPickerOpen(true)}
                 style={{
                   padding: "10px 20px",
-                  background: "#fff",
+                  background: "var(--pipe-text, #fff)",
                   color: "#000",
                   border: "none",
                   borderRadius: 4,
@@ -611,7 +611,7 @@ export default function StageDetailPage(): JSX.Element {
                               justifyContent: "center",
                               gap: 6,
                               padding: "8px",
-                              background: "#fff",
+                              background: "var(--pipe-text, #fff)",
                               color: "#000",
                               border: "none",
                               borderRadius: 4,

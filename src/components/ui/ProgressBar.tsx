@@ -196,7 +196,7 @@ export function ProgressBar({
     position: 'relative',
     width: '100%',
     height: `${height}px`,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'var(--pipe-surface)',
     border: `1px solid rgba(255,255,255,0.1)`,
     borderRadius: '4px',
     overflow: 'hidden',
@@ -234,7 +234,7 @@ export function ProgressBar({
           style={{
             marginTop: '4px',
             fontSize: TYPOGRAPHY.SIZES.SMALL,
-            color: 'rgba(255,255,255,0.6)',
+            color: 'var(--pipe-text-muted)',
             textAlign: 'right',
           }}
           data-testid="progressbar-label"
