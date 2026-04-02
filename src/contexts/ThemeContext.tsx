@@ -8,11 +8,17 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 
 // ── Background shader settings ──────────────────────────────────────────────
 
+export type HeatmapColorTheme = 'aurora' | 'neon' | 'calm';
+
 export interface BackgroundSettings {
+  enabled: boolean;
   shader: 'liquid-metal' | 'heatmap';
+  heatmapTheme: HeatmapColorTheme;
   opacity: number;
   speed: number;
   scale: number;
+  overlay: number;
+  animateForever: boolean;
 }
 
 // ── Full theme ──────────────────────────────────────────────────────────────
@@ -23,10 +29,14 @@ export interface ThemeSettings {
 
 const DEFAULTS: ThemeSettings = {
   background: {
+    enabled: true,
     shader: 'liquid-metal',
+    heatmapTheme: 'aurora',
     opacity: 0.4,
     speed: 0.3,
     scale: 0.6,
+    overlay: 0.93,
+    animateForever: false,
   },
 };
 

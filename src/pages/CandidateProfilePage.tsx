@@ -932,7 +932,7 @@ export default function CandidateProfilePage(): JSX.Element {
         gridTemplateColumns: "1fr 340px",
         gap: 0,
         height: "calc(100vh - 100px)",
-        margin: "-24px -20px -24px 0",
+        margin: "-24px 0 -24px 0",
         alignItems: "stretch",
         overflow: "hidden",
       }}

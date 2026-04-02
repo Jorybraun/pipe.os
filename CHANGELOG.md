@@ -6,8 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Heatmap color themes — 2026-04-02)
+- **`src/contexts/ThemeContext.tsx`** — Added `heatmapTheme` setting with aurora/neon/calm options.
+- **`src/components/ui/shaders/PipeHeatmap.tsx`** — Color theme support: aurora (purple/warm), neon (blue/cyan), calm (slate/mist).
+- **`src/components/DisplaySettingsPanel.tsx`** — Color theme picker shown when heatmap shader is active.
+- **`src/components/ui/AppBackground.tsx`** — Passes heatmap color theme to shader.
+
 #### Fixed (Candidate profile sidebar — 2026-04-02)
-- **`src/pages/CandidateProfilePage.tsx`** — Adjusted right sidebar padding to match left panel spacing.
+- **`src/pages/CandidateProfilePage.tsx`** — Adjusted right sidebar padding/margin to match left panel spacing.
 
 #### Added (Theme system + loading splash — 2026-04-02)
 - **`src/contexts/ThemeContext.tsx`** — NEW: Theme provider with localStorage persistence. Stores background shader type, opacity, speed, scale.

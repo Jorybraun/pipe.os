@@ -3,7 +3,7 @@
  */
 
 import { X, RotateCcw } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme, type HeatmapColorTheme } from '../contexts/ThemeContext';
 
 interface DisplaySettingsPanelProps {
   onClose: () => void;
@@ -53,6 +53,35 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
+        {/* Background toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label style={{ ...labelStyle, marginBottom: 0 }}>BACKGROUND</label>
+          <button
+            onClick={() => updateBackground({ enabled: !bg.enabled })}
+            style={{
+              width: 36,
+              height: 20,
+              borderRadius: 10,
+              border: 'none',
+              background: bg.enabled ? '#a78bfa' : 'rgba(255,255,255,0.1)',
+              cursor: 'pointer',
+              position: 'relative',
+              transition: 'background 0.2s',
+            }}
+          >
+            <div style={{
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              background: '#fff',
+              position: 'absolute',
+              top: 2,
+              left: bg.enabled ? 18 : 2,
+              transition: 'left 0.2s',
+            }} />
+          </button>
+        </div>
+
         {/* Shader picker */}
         <div>
           <label style={labelStyle}>BACKGROUND_SHADER</label>
@@ -82,6 +111,61 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
           </div>
         </div>
 
+        {/* Color theme picker (heatmap only) */}
+        {bg.shader === 'heatmap' && (
+          <div>
+            <label style={labelStyle}>COLOR_THEME</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {([
+                { key: 'aurora' as HeatmapColorTheme, label: 'AURORA', colors: ['#c4a8ff', '#ff9999'] },
+                { key: 'neon' as HeatmapColorTheme, label: 'NEON', colors: ['#00d4ff', '#0066ff'] },
+                { key: 'calm' as HeatmapColorTheme, label: 'CALM', colors: ['#9db4c0', '#c2dfe3'] },
+              ]).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => updateBackground({ heatmapTheme: t.key })}
+                  style={{
+                    flex: 1,
+                    padding: '10px 6px',
+                    fontSize: 8,
+                    fontWeight: 700,
+                    letterSpacing: '0.08em',
+                    fontFamily: '"Space Mono", monospace',
+                    background: bg.heatmapTheme === t.key ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.03)',
+                    border: bg.heatmapTheme === t.key ? '1px solid rgba(167,139,250,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 4,
+                    color: bg.heatmapTheme === t.key ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    {t.colors.map((c) => (
+                      <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
+                    ))}
+                  </div>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Overlay slider */}
+        <SliderControl
+          label="DARK_OVERLAY"
+          value={bg.overlay}
+          min={0}
+          max={1}
+          step={0.05}
+          displayValue={`${Math.round(bg.overlay * 100)}%`}
+          onChange={(v) => updateBackground({ overlay: v })}
+        />
+
         {/* Opacity slider */}
         <SliderControl
           label="OPACITY"
@@ -103,6 +187,35 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
           displayValue={bg.speed === 0 ? 'STATIC' : `${bg.speed.toFixed(2)}`}
           onChange={(v) => updateBackground({ speed: v })}
         />
+
+        {/* Animate forever toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label style={{ ...labelStyle, marginBottom: 0 }}>KEEP_PLAYING</label>
+          <button
+            onClick={() => updateBackground({ animateForever: !bg.animateForever })}
+            style={{
+              width: 36,
+              height: 20,
+              borderRadius: 10,
+              border: 'none',
+              background: bg.animateForever ? '#a78bfa' : 'rgba(255,255,255,0.1)',
+              cursor: 'pointer',
+              position: 'relative',
+              transition: 'background 0.2s',
+            }}
+          >
+            <div style={{
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              background: '#fff',
+              position: 'absolute',
+              top: 2,
+              left: bg.animateForever ? 18 : 2,
+              transition: 'left 0.2s',
+            }} />
+          </button>
+        </div>
 
         {/* Scale slider */}
         <SliderControl

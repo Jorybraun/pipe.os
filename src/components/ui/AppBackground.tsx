@@ -14,12 +14,16 @@ export function AppBackground(): JSX.Element {
   const { theme } = useTheme();
   const bg = theme.background;
 
-  // Animate speed: start at bg.speed, ease down to 0 over ~8s
+  // Animate speed: start at bg.speed, ease down to 0 over ~8s (unless animateForever)
   const [speed, setSpeed] = useState(bg.speed);
   const rafRef = useRef<number>(0);
   const startRef = useRef<number>(0);
 
   const animate = useCallback((ts: number) => {
+    if (bg.animateForever) {
+      setSpeed(bg.speed);
+      return;
+    }
     if (!startRef.current) startRef.current = ts;
     const elapsed = ts - startRef.current;
     const duration = 8000;
@@ -29,34 +33,44 @@ export function AppBackground(): JSX.Element {
     if (progress < 1) {
       rafRef.current = requestAnimationFrame(animate);
     }
-  }, [bg.speed]);
+  }, [bg.speed, bg.animateForever]);
 
   useEffect(() => {
+    if (bg.animateForever) {
+      setSpeed(bg.speed);
+      return;
+    }
     startRef.current = 0;
     rafRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [animate]);
+  }, [animate, bg.animateForever, bg.speed]);
 
-  const ShaderComponent = bg.shader === 'heatmap' ? PipeHeatmap : PipeLiquidMetal;
+  const shader = bg.shader === 'heatmap'
+    ? <PipeHeatmap speed={speed} scale={bg.scale} colorTheme={bg.heatmapTheme} />
+    : <PipeLiquidMetal speed={speed} scale={bg.scale} />;
 
   return (
     <>
       <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: '#0c0c0e' }} />
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 0,
-          pointerEvents: 'none',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: bg.opacity,
-        }}
-      >
-        <ShaderComponent speed={speed} scale={bg.scale} />
-      </div>
-      <ChromeMeshGrid />
+      {bg.enabled && (
+        <>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 0,
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: bg.opacity,
+            }}
+          >
+            {shader}
+          </div>
+          <ChromeMeshGrid />
+        </>
+      )}
     </>
   );
 }
