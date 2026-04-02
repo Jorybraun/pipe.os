@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Welcome screen pipe background — 2026-04-02)
+- **`src/components/Assessment/WelcomeScreen.tsx`** — Added animated LiquidMetal pipe background behind the welcome card, matching the recruiter app aesthetic.
+
 #### Fixed (Candidate profile layout — 2026-04-02)
 - **`src/pages/CandidateProfilePage.tsx`** — Fixed sidebar extending beyond viewport. Outer grid now uses fixed `height` instead of `minHeight`, main content scrolls independently, sidebar fills its grid cell without overflow.
 
