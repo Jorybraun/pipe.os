@@ -11,6 +11,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/lib/stageTemplates.ts`** — Stage type definitions (SCREENING, CULTURAL, TECHNICAL, CODE_REVIEW, PANEL) with template questions.
 - **`src/components/StageConfigPanel.tsx`** — Slide-out config panel for stage type, scheduling, and video meeting settings. Renders in Layout agentPanel slot.
 
+#### Changed (Stage config button on StageDetailPage — 2026-04-02)
+- **`src/pages/StageDetailPage.tsx`** — Added STAGE_CONFIG button next to ADD_CHALLENGE that opens the config panel via `?config=` search param.
+
 #### Changed (Stage config + inline ADD_STAGE — 2026-04-02)
 - **`src/App.tsx`** — Route-based stage config panel via `?config=stageId` search param in Layout agentPanel slot.
 - **`src/pages/OverviewPage.tsx`** — Replaced `window.prompt()` ADD_STAGE with inline form; added gear icon for stage config; config state driven by URL search params.

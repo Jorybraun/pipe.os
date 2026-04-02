@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { FEATURE_FLAGS } from "../config/featureFlags";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Settings, Video, Mail, ChevronRight, Save } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -363,6 +363,31 @@ export default function StageDetailPage(): JSX.Element {
           >
             <Plus size={14} />
             ADD_CHALLENGE
+          </button>
+          <button
+            onClick={() => {
+              const params = new URLSearchParams(window.location.search);
+              params.set('config', stageId ?? '');
+              navigate(`?${params.toString()}`, { replace: true });
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 24px",
+              background: "rgba(167,139,250,0.08)",
+              border: "1px solid rgba(167,139,250,0.2)",
+              borderRadius: 4,
+              color: "rgba(167,139,250,0.7)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.1em",
+              fontFamily: "Space Mono",
+              cursor: "pointer",
+            }}
+          >
+            <Settings size={14} />
+            STAGE_CONFIG
           </button>
         </div>
       </div>
