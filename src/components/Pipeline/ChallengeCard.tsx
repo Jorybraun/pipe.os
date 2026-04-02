@@ -143,7 +143,7 @@ export function ChallengeCard({
                   style={{
                     fontSize: 10,
                     fontWeight: 800,
-                    color: "rgba(255,255,255,0.15)",
+                    color: "var(--pipe-text-dim)",
                     fontFamily: "Space Mono",
                   }}
                 >
@@ -184,7 +184,7 @@ export function ChallengeCard({
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   margin: 0,
                   lineHeight: 1.3,
                 }}
@@ -198,7 +198,7 @@ export function ChallengeCard({
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    color: "rgba(255,255,255,0.3)",
+                    color: "var(--pipe-text-dim)",
                     fontFamily: "Space Mono",
                     fontSize: 10,
                   }}
@@ -251,7 +251,7 @@ export function ChallengeCard({
                   style={{
                     background: "none",
                     border: "none",
-                    color: "rgba(255,255,255,0.3)",
+                    color: "var(--pipe-text-dim)",
                     cursor: "pointer",
                     padding: 8,
                     transition: "color 0.2s",

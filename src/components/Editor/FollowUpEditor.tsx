@@ -54,7 +54,7 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
               <Layers size={16} color="#a78bfa" />
               <SubTitle>ALLOWED_RESPONSE_FORMATS</SubTitle>
             </div>
-            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>{selectedTypes.length} SELECTED</span>
+            <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>{selectedTypes.length} SELECTED</span>
           </div>
           <div style={{ padding: '32px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
             {QUESTION_TYPES.map(({ id, label, icon: Icon, desc }) => {
@@ -85,7 +85,7 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
               <Settings size={16} color="#4ade80" />
               <SubTitle>ACTIVE_PROBING_STRATEGIES</SubTitle>
             </div>
-            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>{selectedCategories.length} ACTIVE</span>
+            <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>{selectedCategories.length} ACTIVE</span>
           </div>
           <div style={{ padding: '32px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
             {CATEGORIES.map(({ id, label, color, desc }) => {
@@ -119,10 +119,10 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
         <LiquidMetalCard variant="chrome" style={{ padding: '40px 32px', borderRadius: '32px 0 0 0', height: '100%', borderLeft: '1px solid rgba(255,255,255,0.1)', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
           
           <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 8 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 8 }}>
               Follow-Up
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', lineHeight: 1.6 }}>
               AI analyzes candidate responses in real-time to generate probing questions based on your configured strategies.
             </div>
           </div>
@@ -139,7 +139,7 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
                   }}>{n}</button>
                 ))}
               </div>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontStyle: 'italic' }}>
                 Total questions to generate per session.
               </div>
             </div>

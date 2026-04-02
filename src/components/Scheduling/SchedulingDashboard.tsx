@@ -157,15 +157,15 @@ export function SchedulingDashboard(): JSX.Element {
       {/* Page header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             INTERVIEW_SCHEDULE
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em' }}>
             Schedule
           </h1>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+          <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             {interviews.length} total
           </span>
           {connection?.lastSyncAt && (
@@ -214,7 +214,7 @@ export function SchedulingDashboard(): JSX.Element {
           }}
         >
           <Calendar size={40} color="rgba(255,255,255,0.12)" style={{ marginBottom: 16 }} />
-          <p style={{ color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
+          <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
             {interviews.length === 0
               ? 'No interviews yet. Invite candidates to LIVE_VIDEO stages to get started.'
               : 'No interviews match the current filters.'}

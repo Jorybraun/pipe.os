@@ -144,7 +144,7 @@ export default function ChallengeEditorPage(): JSX.Element {
 
   if (!challenge) {
     return (
-      <div style={{ padding: 40, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono' }}>
+      <div style={{ padding: 40, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono' }}>
         Challenge not found.
       </div>
     );
@@ -222,7 +222,7 @@ export default function ChallengeEditorPage(): JSX.Element {
           <div
             style={{
               fontSize: 12,
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: 'Space Mono',
             }}
           >
@@ -241,7 +241,7 @@ export default function ChallengeEditorPage(): JSX.Element {
     gap: 10,
     padding: '10px 18px',
     background: 'rgba(255,255,255,0.05)',
-    color: '#fff',
+    color: 'var(--pipe-text, #fff)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 4,
     fontSize: 10,
@@ -290,7 +290,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               marginTop: 4,
               background: 'none',
               border: 'none',
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--pipe-text-dim)',
               cursor: 'pointer',
             }}
           >
@@ -302,7 +302,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 marginBottom: 8,
                 fontFamily: 'Space Mono',
               }}
@@ -315,7 +315,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 margin: 0,
                 fontSize: 28,
                 fontWeight: 800,
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 lineHeight: 1.2,
               }}
             >
@@ -416,7 +416,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 display: 'block',
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
                 marginBottom: 10,
               }}
@@ -434,7 +434,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: 8,
                 padding: '14px 18px',
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 16,
                 fontWeight: 700,
                 fontFamily: 'inherit',
@@ -451,7 +451,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 display: 'block',
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
                 marginBottom: 10,
               }}
@@ -470,7 +470,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: 8,
                 padding: '14px 18px',
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 14,
                 fontFamily: 'inherit',
                 outline: 'none',
@@ -487,7 +487,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 display: 'block',
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
                 marginBottom: 10,
               }}
@@ -511,7 +511,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: 8,
                 padding: '12px 16px',
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 14,
                 fontFamily: 'Space Mono',
                 outline: 'none',
@@ -601,7 +601,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                       Enable "Ask" tab (explainer agent)
                     </span>
                   </label>
-                  <div style={{ marginTop: 6, fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', lineHeight: 1.5, marginLeft: 24 }}>
+                  <div style={{ marginTop: 6, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', lineHeight: 1.5, marginLeft: 24 }}>
                     Candidate can ask the PR author questions about architecture & design decisions.
                   </div>
                 </div>
@@ -633,13 +633,13 @@ export default function ChallengeEditorPage(): JSX.Element {
                       border: '1px solid rgba(255,255,255,0.12)',
                       borderRadius: 8,
                       padding: '10px 14px',
-                      color: '#fff',
+                      color: 'var(--pipe-text, #fff)',
                       fontSize: 13,
                       fontFamily: 'Space Mono',
                       outline: 'none',
                     }}
                   />
-                  <div style={{ marginTop: 8, fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+                  <div style={{ marginTop: 8, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
                     How many questions the candidate can ask the PR author.
                   </div>
                 </div>
@@ -763,7 +763,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                     <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
                       RUNTIME
                     </div>
-                    <div style={{ fontSize: 11, color: '#fff', fontWeight: 700 }}>
+                    <div style={{ fontSize: 11, color: 'var(--pipe-text, #fff)', fontWeight: 700 }}>
                       {(challenge.config?.mode as string | undefined) === 'frontend'
                         ? 'Browser (Sandpack)'
                         : 'Node.js / V8'}
@@ -778,7 +778,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                     <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'Space Mono', marginBottom: 4 }}>
                       SCORING
                     </div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
                       Sample 30% + Hidden 70%
                     </div>
                   </div>
@@ -824,7 +824,7 @@ export default function ChallengeEditorPage(): JSX.Element {
             <div
               style={{
                 fontSize: 12,
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
                 marginBottom: 16,
               }}
@@ -847,7 +847,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: 8,
                 padding: '14px 18px',
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 14,
                 fontFamily: 'inherit',
                 outline: 'none',
@@ -892,7 +892,7 @@ export default function ChallengeEditorPage(): JSX.Element {
             <div
               style={{
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
                 marginBottom: 16,
                 letterSpacing: '0.15em',
@@ -904,7 +904,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               <div
                 style={{
                   fontSize: 15,
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   lineHeight: 1.7,
                   whiteSpace: 'pre-wrap',
                   marginBottom: 24,
@@ -922,7 +922,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                   borderRadius: 8,
                   fontSize: 16,
                   fontWeight: 600,
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   marginBottom: 16,
                 }}
               >
@@ -935,7 +935,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                   style={{
                     fontSize: 16,
                     fontWeight: 600,
-                    color: '#fff',
+                    color: 'var(--pipe-text, #fff)',
                     marginBottom: 16,
                   }}
                 >
@@ -947,7 +947,7 @@ export default function ChallengeEditorPage(): JSX.Element {
               style={{
                 marginTop: 8,
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.2)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
               }}
             >

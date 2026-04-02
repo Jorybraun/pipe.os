@@ -46,7 +46,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
               <MessageSquare size={16} color="#fbbf24" />
               <SubTitle>CHALLENGE_PROMPT</SubTitle>
             </div>
-            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>
+            <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
               {((challenge.config?.question as string) || '').length} CHARS
             </span>
           </div>
@@ -56,7 +56,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
             placeholder="What should the candidate answer?"
             style={{
               width: '100%', minHeight: 320, padding: '32px', background: 'transparent',
-              border: 'none', color: '#fff', fontSize: 18, fontFamily: 'inherit',
+              border: 'none', color: 'var(--pipe-text, #fff)', fontSize: 18, fontFamily: 'inherit',
               lineHeight: 1.6, outline: 'none', resize: 'none',
             }}
           />
@@ -74,7 +74,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
             )}
           </div>
           <div style={{ padding: '32px' }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', marginBottom: 24, lineHeight: 1.6, maxWidth: 500 }}>
+            <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 24, lineHeight: 1.6, maxWidth: 500 }}>
               Optional: Record a short video to introduce yourself or provide extra context for this question.
             </div>
             <QuestionVideoRecorder
@@ -107,7 +107,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
                 max={60} 
                 unit="MIN" 
               />
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', paddingLeft: 2 }}>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontStyle: 'italic', paddingLeft: 2 }}>
                 Set to 0 for unlimited time.
               </div>
             </div>
@@ -127,7 +127,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.6 }}>
                 <HelpCircle size={10} color="#fff" />
-                <span style={{ fontSize: 9, fontFamily: 'Space Mono', color: '#fff' }}>INTERNAL_ONLY</span>
+                <span style={{ fontSize: 9, fontFamily: 'Space Mono', color: 'var(--pipe-text, #fff)' }}>INTERNAL_ONLY</span>
               </div>
             </div>
           ))}

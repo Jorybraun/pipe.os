@@ -222,7 +222,7 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
               gap: 16,
             }}>
               <Eye size={24} style={{ color: 'rgba(255,255,255,0.15)' }} />
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', textAlign: 'center' }}>
                 Sample tests are visible to candidates.<br />
                 They run in-browser for instant feedback.
               </div>
@@ -231,7 +231,7 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
                 style={{
                   background: 'rgba(255,255,255,0.06)',
                   border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   padding: '8px 20px',
                   fontSize: 10,
                   fontWeight: 800,

@@ -54,7 +54,7 @@ export default function QuestionCard({
                 padding: 4,
                 background: "transparent",
                 border: "none",
-                color: "rgba(255,255,255,0.2)",
+                color: "var(--pipe-text-dim)",
                 cursor: "grab",
               }}
             >
@@ -75,7 +75,7 @@ export default function QuestionCard({
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--pipe-text-dim)",
                 }}
               >
                 {index + 1}
@@ -111,7 +111,7 @@ export default function QuestionCard({
                 style={{
                   fontSize: 9,
                   letterSpacing: "0.1em",
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--pipe-text-dim)",
                 }}
               >
                 {question.timeLimit} MIN
@@ -133,7 +133,7 @@ export default function QuestionCard({
             <p
               style={{
                 fontSize: 14,
-                color: "#fff",
+                color: "var(--pipe-text, #fff)",
                 lineHeight: 1.6,
                 margin: "0 0 16px",
               }}
@@ -199,7 +199,7 @@ export default function QuestionCard({
                   style={{
                     fontSize: 9,
                     letterSpacing: "0.1em",
-                    color: "rgba(255,255,255,0.4)",
+                    color: "var(--pipe-text-dim)",
                   }}
                 >
                   {question.rubric.length} CRITERIA
@@ -213,7 +213,7 @@ export default function QuestionCard({
             style={{
               display: "flex",
               alignItems: "center",
-              color: "rgba(255,255,255,0.3)",
+              color: "var(--pipe-text-dim)",
             }}
           >
             <ChevronRight size={20} />

@@ -71,7 +71,7 @@ export function RoleCard({
         };
       case "closed":
         return {
-          color: "rgba(255,255,255,0.4)",
+          color: "var(--pipe-text-dim)",
           bg: "rgba(255,255,255,0.05)",
           border: "rgba(255,255,255,0.1)",
           label: "CLOSED",
@@ -191,7 +191,7 @@ export function RoleCard({
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   margin: 0,
                   letterSpacing: "0.01em",
                 }}
@@ -205,7 +205,7 @@ export function RoleCard({
                   <span
                     style={{
                       fontSize: 10,
-                      color: "rgba(255,255,255,0.4)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -217,7 +217,7 @@ export function RoleCard({
                   <span
                     style={{
                       fontSize: 10,
-                      color: "rgba(255,255,255,0.4)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -236,7 +236,7 @@ export function RoleCard({
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: "#fff",
+                      color: "var(--pipe-text, #fff)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -245,7 +245,7 @@ export function RoleCard({
                   <div
                     style={{
                       fontSize: 7,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       letterSpacing: "0.1em",
                     }}
                   >
@@ -270,7 +270,7 @@ export function RoleCard({
                   <div
                     style={{
                       fontSize: 7,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       letterSpacing: "0.1em",
                     }}
                   >
@@ -295,7 +295,7 @@ export function RoleCard({
                   <div
                     style={{
                       fontSize: 7,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       letterSpacing: "0.1em",
                     }}
                   >
@@ -317,7 +317,7 @@ export function RoleCard({
                   <span
                     style={{
                       fontSize: 9,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >

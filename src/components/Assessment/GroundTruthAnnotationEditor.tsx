@@ -113,10 +113,10 @@ export function GroundTruthAnnotationEditor({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', fontWeight: 700, letterSpacing: '0.2em', marginBottom: 20 }}>
+        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', fontWeight: 700, letterSpacing: '0.2em', marginBottom: 20 }}>
           EXPECTED_ANNOTATIONS
         </div>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>
+        <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', lineHeight: 1.6 }}>
           Define what annotations each reviewer level should find. These will be used to score candidate reviews.
         </div>
       </div>
@@ -158,7 +158,7 @@ export function GroundTruthAnnotationEditor({
                   <ChevronDown size={14} color="rgba(255,255,255,0.3)" />
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, fontFamily: 'Space Mono', color: '#fff' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, fontFamily: 'Space Mono', color: 'var(--pipe-text, #fff)' }}>
                     {levelLabels[level]}
                   </div>
                   <div
@@ -166,7 +166,7 @@ export function GroundTruthAnnotationEditor({
                       fontSize: 9,
                       fontWeight: 700,
                       fontFamily: 'Space Mono',
-                      color: 'rgba(255,255,255,0.3)',
+                      color: 'var(--pipe-text-dim)',
                       background: 'rgba(255,255,255,0.05)',
                       padding: '4px 8px',
                       borderRadius: 3,
@@ -195,7 +195,7 @@ export function GroundTruthAnnotationEditor({
                     <div
                       style={{
                         fontSize: 12,
-                        color: 'rgba(255,255,255,0.3)',
+                        color: 'var(--pipe-text-dim)',
                         fontFamily: 'Space Mono',
                       }}
                     >
@@ -223,7 +223,7 @@ export function GroundTruthAnnotationEditor({
                             <label
                               style={{
                                 fontSize: 9,
-                                color: 'rgba(255,255,255,0.3)',
+                                color: 'var(--pipe-text-dim)',
                                 fontFamily: 'Space Mono',
                                 display: 'block',
                                 marginBottom: 4,
@@ -244,7 +244,7 @@ export function GroundTruthAnnotationEditor({
                                 background: 'rgba(0, 0, 0, 0.3)',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: 3,
-                                color: '#fff',
+                                color: 'var(--pipe-text, #fff)',
                                 fontSize: 11,
                                 fontFamily: 'Space Mono',
                                 outline: 'none',
@@ -255,7 +255,7 @@ export function GroundTruthAnnotationEditor({
                             <label
                               style={{
                                 fontSize: 9,
-                                color: 'rgba(255,255,255,0.3)',
+                                color: 'var(--pipe-text-dim)',
                                 fontFamily: 'Space Mono',
                                 display: 'block',
                                 marginBottom: 4,
@@ -276,7 +276,7 @@ export function GroundTruthAnnotationEditor({
                                 background: 'rgba(0, 0, 0, 0.3)',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: 3,
-                                color: '#fff',
+                                color: 'var(--pipe-text, #fff)',
                                 fontSize: 11,
                                 fontFamily: 'Space Mono',
                                 outline: 'none',
@@ -305,7 +305,7 @@ export function GroundTruthAnnotationEditor({
                           <label
                             style={{
                               fontSize: 9,
-                              color: 'rgba(255,255,255,0.3)',
+                              color: 'var(--pipe-text-dim)',
                               fontFamily: 'Space Mono',
                               display: 'block',
                               marginBottom: 4,
@@ -350,7 +350,7 @@ export function GroundTruthAnnotationEditor({
                           <label
                             style={{
                               fontSize: 9,
-                              color: 'rgba(255,255,255,0.3)',
+                              color: 'var(--pipe-text-dim)',
                               fontFamily: 'Space Mono',
                               display: 'block',
                               marginBottom: 4,
@@ -371,7 +371,7 @@ export function GroundTruthAnnotationEditor({
                               background: 'rgba(0, 0, 0, 0.3)',
                               border: '1px solid rgba(255,255,255,0.1)',
                               borderRadius: 3,
-                              color: '#fff',
+                              color: 'var(--pipe-text, #fff)',
                               fontSize: 11,
                               fontFamily: 'Space Mono',
                               outline: 'none',

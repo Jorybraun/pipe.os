@@ -2,15 +2,15 @@
  * DisplaySettingsPanel — Slide-out panel for user theme/display preferences.
  */
 
-import { X, RotateCcw } from 'lucide-react';
-import { useTheme, type HeatmapColorTheme } from '../contexts/ThemeContext';
+import { X, RotateCcw, Sun, Moon } from 'lucide-react';
+import { useTheme, type HeatmapColorTheme, type ThemeMode } from '../contexts/ThemeContext';
 
 interface DisplaySettingsPanelProps {
   onClose: () => void;
 }
 
 export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JSX.Element {
-  const { theme, updateBackground, resetTheme } = useTheme();
+  const { theme, updateBackground, setMode, resetTheme } = useTheme();
   const bg = theme.background;
 
   return (
@@ -26,13 +26,13 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '20px 20px 16px',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--pipe-border, rgba(255,255,255,0.06))',
       }}>
         <span style={{
           fontSize: 9,
           fontWeight: 700,
           letterSpacing: '0.2em',
-          color: 'rgba(255,255,255,0.4)',
+          color: 'var(--pipe-text-dim)',
         }}>
           DISPLAY_SETTINGS
         </span>
@@ -41,7 +41,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
           style={{
             background: 'none',
             border: 'none',
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             cursor: 'pointer',
             padding: 4,
           }}
@@ -53,6 +53,43 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
+        {/* Mode toggle */}
+        <div>
+          <label style={labelStyle}>MODE</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {([
+              { key: 'dark' as ThemeMode, label: 'DARK', icon: <Moon size={12} /> },
+              { key: 'light' as ThemeMode, label: 'LIGHT', icon: <Sun size={12} /> },
+            ]).map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setMode(m.key)}
+                style={{
+                  flex: 1,
+                  padding: '10px 12px',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  fontFamily: '"Space Mono", monospace',
+                  background: theme.mode === m.key ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
+                  border: theme.mode === m.key ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                  borderRadius: 4,
+                  color: theme.mode === m.key ? '#a78bfa' : 'var(--pipe-text-dim)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                {m.icon}
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Background toggle */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <label style={{ ...labelStyle, marginBottom: 0 }}>BACKGROUND</label>
@@ -63,7 +100,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
               height: 20,
               borderRadius: 10,
               border: 'none',
-              background: bg.enabled ? '#a78bfa' : 'rgba(255,255,255,0.1)',
+              background: bg.enabled ? '#a78bfa' : 'var(--pipe-surface)',
               cursor: 'pointer',
               position: 'relative',
               transition: 'background 0.2s',
@@ -97,10 +134,10 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
                   fontWeight: 700,
                   letterSpacing: '0.08em',
                   fontFamily: '"Space Mono", monospace',
-                  background: bg.shader === s ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.03)',
-                  border: bg.shader === s ? '1px solid rgba(167,139,250,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                  background: bg.shader === s ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
+                  border: bg.shader === s ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
                   borderRadius: 4,
-                  color: bg.shader === s ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                  color: bg.shader === s ? '#a78bfa' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                 }}
@@ -131,10 +168,10 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
                     fontWeight: 700,
                     letterSpacing: '0.08em',
                     fontFamily: '"Space Mono", monospace',
-                    background: bg.heatmapTheme === t.key ? 'rgba(167,139,250,0.12)' : 'rgba(255,255,255,0.03)',
-                    border: bg.heatmapTheme === t.key ? '1px solid rgba(167,139,250,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                    background: bg.heatmapTheme === t.key ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
+                    border: bg.heatmapTheme === t.key ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
                     borderRadius: 4,
-                    color: bg.heatmapTheme === t.key ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+                    color: bg.heatmapTheme === t.key ? '#a78bfa' : 'var(--pipe-text-dim)',
                     cursor: 'pointer',
                     transition: 'all 0.15s',
                     display: 'flex',
@@ -198,7 +235,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
               height: 20,
               borderRadius: 10,
               border: 'none',
-              background: bg.animateForever ? '#a78bfa' : 'rgba(255,255,255,0.1)',
+              background: bg.animateForever ? '#a78bfa' : 'var(--pipe-surface)',
               cursor: 'pointer',
               position: 'relative',
               transition: 'background 0.2s',
@@ -230,7 +267,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
       </div>
 
       {/* Reset button */}
-      <div style={{ padding: 20, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div style={{ padding: 20, borderTop: '1px solid var(--pipe-border)' }}>
         <button
           onClick={resetTheme}
           style={{
@@ -240,10 +277,10 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
             justifyContent: 'center',
             gap: 8,
             padding: '10px 16px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 4,
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             fontSize: 9,
             fontWeight: 700,
             letterSpacing: '0.1em',
@@ -266,7 +303,7 @@ const labelStyle: React.CSSProperties = {
   fontSize: 8,
   fontWeight: 700,
   letterSpacing: '0.15em',
-  color: 'rgba(255,255,255,0.3)',
+  color: 'var(--pipe-text-dim)',
   fontFamily: '"Space Mono", monospace',
   marginBottom: 10,
 };

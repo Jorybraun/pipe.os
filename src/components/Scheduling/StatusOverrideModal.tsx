@@ -65,7 +65,7 @@ export function StatusOverrideModal({
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 4,
-    color: '#fff',
+    color: 'var(--pipe-text, #fff)',
     fontSize: 12,
     fontFamily: '"Space Mono", monospace',
     outline: 'none',
@@ -103,18 +103,18 @@ export function StatusOverrideModal({
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
-            <div style={{ fontSize: 11, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
+            <div style={{ fontSize: 11, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
               UPDATE_STATUS
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <InterviewStatusBadge status={currentStatus} />
-              <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>→</span>
+              <span style={{ color: 'var(--pipe-text-dim)', fontSize: 12 }}>→</span>
               {canSave && <InterviewStatusBadge status={selectedStatus} />}
             </div>
           </div>
           <button
             onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}
           >
             <X size={18} />
           </button>
@@ -122,7 +122,7 @@ export function StatusOverrideModal({
 
         {/* Status selector */}
         <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             NEW STATUS
           </label>
           <select
@@ -140,7 +140,7 @@ export function StatusOverrideModal({
 
         {/* Scheduled date */}
         <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             SCHEDULED DATE/TIME
           </label>
           <input
@@ -153,7 +153,7 @@ export function StatusOverrideModal({
 
         {/* Meeting URL */}
         <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             MEETING URL
           </label>
           <input
@@ -167,7 +167,7 @@ export function StatusOverrideModal({
 
         {/* Recruiter notes */}
         <div style={{ marginBottom: 28 }}>
-          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+          <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             NOTES (INTERNAL)
           </label>
           <textarea
@@ -198,7 +198,7 @@ export function StatusOverrideModal({
               padding: '10px 20px',
               background: 'transparent',
               border: '1px solid rgba(255,255,255,0.1)',
-              color: 'rgba(255,255,255,0.5)',
+              color: 'var(--pipe-text-muted)',
               fontSize: 10,
               letterSpacing: '0.1em',
               fontFamily: '"Space Mono", monospace',

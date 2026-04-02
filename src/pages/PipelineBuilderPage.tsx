@@ -162,7 +162,7 @@ function RubricCard({ title, points }: { title: string; points: string[] }) {
         style={{
           fontSize: 9,
           letterSpacing: "0.2em",
-          color: "rgba(255,255,255,0.3)",
+          color: "var(--pipe-text-dim)",
           marginBottom: 12,
         }}
       >
@@ -175,7 +175,7 @@ function RubricCard({ title, points }: { title: string; points: string[] }) {
             style={{
               fontSize: 11,
               lineHeight: 1.6,
-              color: "rgba(255,255,255,0.6)",
+              color: "var(--pipe-text-muted)",
               marginBottom: 8,
               paddingLeft: 16,
               position: "relative",
@@ -185,7 +185,7 @@ function RubricCard({ title, points }: { title: string; points: string[] }) {
               style={{
                 position: "absolute",
                 left: 0,
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
               }}
             >
               •
@@ -205,7 +205,7 @@ function TimeCard({ duration, label }: { duration: string; label: string }) {
         style={{
           fontSize: 9,
           letterSpacing: "0.2em",
-          color: "rgba(255,255,255,0.3)",
+          color: "var(--pipe-text-dim)",
           marginBottom: 8,
         }}
       >
@@ -515,7 +515,7 @@ export default function PipelineBuilderPage(): JSX.Element {
             style={{
               fontSize: 24,
               fontWeight: 700,
-              color: "#fff",
+              color: "var(--pipe-text, #fff)",
               margin: "0 0 24px 0",
             }}
           >
@@ -537,7 +537,7 @@ export default function PipelineBuilderPage(): JSX.Element {
                 style={{
                   fontSize: 10,
                   letterSpacing: "0.05em",
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--pipe-text-dim)",
                   marginBottom: 8,
                 }}
               >
@@ -547,7 +547,7 @@ export default function PipelineBuilderPage(): JSX.Element {
                 style={{
                   fontSize: 13,
                   lineHeight: 1.6,
-                  color: "rgba(255,255,255,0.7)",
+                  color: "var(--pipe-text-muted)",
                   margin: 0,
                 }}
               >
@@ -578,7 +578,7 @@ export default function PipelineBuilderPage(): JSX.Element {
                   background: "transparent",
                   border: "none",
                   outline: "none",
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   fontSize: 12,
                   fontFamily: '"Space Mono", monospace',
                 }}
@@ -619,7 +619,7 @@ export default function PipelineBuilderPage(): JSX.Element {
               style={{
                 fontSize: 9,
                 letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
                 marginBottom: 6,
               }}
             >
@@ -629,7 +629,7 @@ export default function PipelineBuilderPage(): JSX.Element {
               style={{
                 fontSize: 14,
                 fontWeight: 700,
-                color: "#fff",
+                color: "var(--pipe-text, #fff)",
                 letterSpacing: "0.05em",
               }}
             >
@@ -650,7 +650,7 @@ export default function PipelineBuilderPage(): JSX.Element {
               style={{
                 fontSize: 9,
                 letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
                 marginBottom: 6,
               }}
             >

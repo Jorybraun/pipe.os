@@ -112,7 +112,7 @@ export function LiquidMetalCard({
         position: 'relative',
         overflow: 'hidden',
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)',
+        boxShadow: 'inset 0 1px 0 var(--pipe-border, rgba(255,255,255,0.1))',
         cursor: onClick ? 'pointer' : 'default',
         ...style,
       }}

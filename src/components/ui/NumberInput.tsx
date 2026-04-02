@@ -98,7 +98,7 @@ export function NumberInput({
           height: 36,
           background: 'rgba(255,255,255,0.05)',
           border: '1px solid rgba(255,255,255,0.1)',
-          color: 'rgba(255,255,255,0.5)',
+          color: 'var(--pipe-text-muted)',
           cursor: canDecrement ? 'pointer' : 'not-allowed',
           display: 'flex',
           alignItems: 'center',
@@ -121,9 +121,9 @@ export function NumberInput({
           gap: 8,
         }}
       >
-        <span style={{ fontSize: 28, fontWeight: 800, color: '#fff' }}>{value}</span>
+        <span style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)' }}>{value}</span>
         {unit && (
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em' }}>
+          <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em' }}>
             {unit}
           </span>
         )}
@@ -139,7 +139,7 @@ export function NumberInput({
           height: 36,
           background: 'rgba(255,255,255,0.05)',
           border: '1px solid rgba(255,255,255,0.1)',
-          color: 'rgba(255,255,255,0.5)',
+          color: 'var(--pipe-text-muted)',
           cursor: canIncrement ? 'pointer' : 'not-allowed',
           display: 'flex',
           alignItems: 'center',

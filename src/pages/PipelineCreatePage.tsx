@@ -189,7 +189,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 gap: 20
               }}>
                 <Loader2 size={40} className="animate-spin" color="#8b5cf6" />
-                <div style={{ fontSize: 12, letterSpacing: '0.2em', color: '#fff' }}>
+                <div style={{ fontSize: 12, letterSpacing: '0.2em', color: 'var(--pipe-text, #fff)' }}>
                   {isCreating ? 'BUILDING_PIPELINE...' : 'AGENT_THINKING...'}
                 </div>
               </div>
@@ -256,7 +256,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 <h3 style={{ 
                   fontSize: 11, 
                   letterSpacing: '0.3em', 
-                  color: '#fff', 
+                  color: 'var(--pipe-text, #fff)', 
                   textTransform: 'uppercase',
                   fontFamily: '"Space Mono", monospace',
                   fontWeight: 700
@@ -283,7 +283,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
                 {/* Pipeline Presets Config */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
                     PIPELINE_PRESETS
                   </span>
                   
@@ -346,7 +346,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   borderRadius: 8
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.1em' }}>SESSION_COST</span>
+                    <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em' }}>SESSION_COST</span>
                     <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>${costTracking.sessionCost.toFixed(4)}</span>
                   </div>
                   <div style={{ height: 2, background: 'rgba(255,255,255,0.05)', borderRadius: 1 }}>

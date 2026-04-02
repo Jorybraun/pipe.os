@@ -174,7 +174,7 @@ export function CodeReviewChallenge({
             style={{
               fontSize: 9,
               letterSpacing: '0.2em',
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
               marginBottom: 12,
             }}
           >
@@ -184,7 +184,7 @@ export function CodeReviewChallenge({
             style={{
               fontSize: 14,
               fontWeight: 700,
-              color: '#fff',
+              color: 'var(--pipe-text, #fff)',
               margin: 0,
               marginBottom: 12,
               lineHeight: 1.5,
@@ -197,7 +197,7 @@ export function CodeReviewChallenge({
             <p
               style={{
                 fontSize: 11,
-                color: 'rgba(255,255,255,0.5)',
+                color: 'var(--pipe-text-muted)',
                 lineHeight: 1.7,
                 margin: 0,
                 whiteSpace: 'pre-wrap',
@@ -237,7 +237,7 @@ export function CodeReviewChallenge({
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
               }}
             >
               PULL_REQUEST
@@ -264,7 +264,7 @@ export function CodeReviewChallenge({
                 <span
                   style={{
                     fontSize: 11,
-                    color: 'rgba(255,255,255,0.5)',
+                    color: 'var(--pipe-text-muted)',
                     fontWeight: 700,
                   }}
                 >
@@ -327,7 +327,7 @@ export function CodeReviewChallenge({
               alignItems: 'center',
               justifyContent: 'center',
               gap: 12,
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
             }}
           >
             <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
@@ -352,7 +352,7 @@ export function CodeReviewChallenge({
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
             }}
           >
             <div style={{ fontSize: 10, letterSpacing: '0.1em' }}>DIFF_UNAVAILABLE</div>
@@ -379,7 +379,7 @@ export function CodeReviewChallenge({
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 marginBottom: 16,
               }}
             >
@@ -461,7 +461,7 @@ export function CodeReviewChallenge({
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 marginBottom: 12,
               }}
             >
@@ -477,7 +477,7 @@ export function CodeReviewChallenge({
                 background: 'rgba(255,255,255,0.02)',
                 border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 4,
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 11,
                 padding: 12,
                 fontFamily: '"Space Mono", monospace',
@@ -493,7 +493,7 @@ export function CodeReviewChallenge({
                 justifyContent: 'space-between',
                 marginTop: 8,
                 fontSize: 9,
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
               }}
             >
               <span>MAX 1000 CHARACTERS</span>
@@ -509,7 +509,7 @@ export function CodeReviewChallenge({
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 marginBottom: 12,
               }}
             >
@@ -603,7 +603,7 @@ export function CodeReviewChallenge({
               style={{
                 padding: '10px 16px',
                 fontSize: 9,
-                color: 'rgba(255,255,255,0.2)',
+                color: 'var(--pipe-text-dim)',
                 textAlign: 'center',
                 letterSpacing: '0.08em',
                 fontFamily: '"Space Mono", monospace',

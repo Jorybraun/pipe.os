@@ -386,7 +386,7 @@ export function ChallengePicker({
               style={{
                 fontSize: 9,
                 letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
                 marginBottom: 8,
                 fontFamily: "Space Mono",
               }}
@@ -397,7 +397,7 @@ export function ChallengePicker({
               style={{
                 fontSize: 20,
                 fontWeight: 800,
-                color: "#fff",
+                color: "var(--pipe-text, #fff)",
                 margin: 0,
               }}
             >
@@ -433,7 +433,7 @@ export function ChallengePicker({
               style={{
                 background: "none",
                 border: "none",
-                color: "rgba(255,255,255,0.4)",
+                color: "var(--pipe-text-dim)",
                 cursor: "pointer",
               }}
             >
@@ -463,7 +463,7 @@ export function ChallengePicker({
                   left: 12,
                   top: "50%",
                   transform: "translateY(-50%)",
-                  color: "rgba(255,255,255,0.3)",
+                  color: "var(--pipe-text-dim)",
                 }}
               />
               <input
@@ -476,7 +476,7 @@ export function ChallengePicker({
                   border: "1px solid rgba(255,255,255,0.1)",
                   borderRadius: 4,
                   padding: "10px 16px 10px 36px",
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   fontSize: 12,
                   outline: "none",
                   fontFamily: "Space Mono",
@@ -565,7 +565,7 @@ export function ChallengePicker({
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       fontSize: 11,
                       fontFamily: "Space Mono",
                     }}
@@ -622,7 +622,7 @@ export function ChallengePicker({
                       border: `1px solid ${isValidGitHubUrl(newRepoUrl) ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.1)"}`,
                       borderRadius: 4,
                       padding: "8px 14px",
-                      color: "#fff",
+                      color: "var(--pipe-text, #fff)",
                       fontSize: 11,
                       outline: "none",
                       fontFamily: "Space Mono",
@@ -793,7 +793,7 @@ export function ChallengePicker({
           <div
             style={{
               fontSize: 9,
-              color: "rgba(255,255,255,0.2)",
+              color: "var(--pipe-text-dim)",
               fontFamily: "Space Mono",
             }}
           >
@@ -806,7 +806,7 @@ export function ChallengePicker({
               display: "flex",
               alignItems: "center",
               gap: 8,
-              color: "rgba(255,255,255,0.4)",
+              color: "var(--pipe-text-dim)",
               fontSize: 10,
             }}
           >
@@ -993,7 +993,7 @@ function GitHubPRPanel({
           <div
             style={{
               fontSize: 12,
-              color: "rgba(255,255,255,0.5)",
+              color: "var(--pipe-text-muted)",
               lineHeight: 1.6,
             }}
           >
@@ -1031,7 +1031,7 @@ function GitHubPRPanel({
           <div
             style={{
               fontSize: 10,
-              color: "rgba(255,255,255,0.5)",
+              color: "var(--pipe-text-muted)",
               fontFamily: "Space Mono",
             }}
           >
@@ -1093,7 +1093,7 @@ function GitHubPRPanel({
                   <span
                     style={{
                       fontSize: 10,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -1107,7 +1107,7 @@ function GitHubPRPanel({
                         background: "rgba(255,255,255,0.06)",
                         border: "1px solid rgba(255,255,255,0.1)",
                         borderRadius: 2,
-                        color: "rgba(255,255,255,0.3)",
+                        color: "var(--pipe-text-dim)",
                         fontFamily: "Space Mono",
                       }}
                     >
@@ -1136,7 +1136,7 @@ function GitHubPRPanel({
                   style={{
                     fontSize: 13,
                     fontWeight: 700,
-                    color: "#fff",
+                    color: "var(--pipe-text, #fff)",
                     marginBottom: 4,
                     overflow: "hidden",
                     textOverflow: "ellipsis",

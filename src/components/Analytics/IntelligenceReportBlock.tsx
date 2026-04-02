@@ -54,7 +54,7 @@ const BlockContainer = ({ config, children, icon, accentColor = '#fff' }: BlockC
         {icon && <div style={{ color: accentColor, opacity: 0.8 }}>{icon}</div>}
         <SubTitle>{config.title.toUpperCase()}</SubTitle>
       </div>
-      <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>
+      <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
         AI_BLOCK_{config.type}
       </div>
     </div>
@@ -128,7 +128,7 @@ function RadialGauge({ value, color, label }: { value: number, color: string, la
         <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="8" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 50 50)" style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
         <text x="50" y="55" textAnchor="middle" fill="#fff" fontSize="20" fontWeight="900" fontFamily="Space Mono">{value}</text>
       </svg>
-      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', marginTop: 8 }}>{label.toUpperCase()}</div>
+      <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginTop: 8 }}>{label.toUpperCase()}</div>
     </div>
   );
 }
@@ -163,10 +163,10 @@ function IntelligenceBlock({ config }: { config: IntelligenceBlockConfig }): JSX
       return (
         <BlockContainer config={config} icon={<Target size={16} />} accentColor="#10b981">
           <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-            <div style={{ fontSize: 64, fontWeight: 900, color: '#fff', lineHeight: 1 }}>{config.data.score}</div>
+            <div style={{ fontSize: 64, fontWeight: 900, color: 'var(--pipe-text, #fff)', lineHeight: 1 }}>{config.data.score}</div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 800, color: '#10b981', marginBottom: 4 }}>{config.data.signal}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>Based on cross-stage calibration</div>
+              <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>Based on cross-stage calibration</div>
             </div>
           </div>
         </BlockContainer>
@@ -199,7 +199,7 @@ function IntelligenceBlock({ config }: { config: IntelligenceBlockConfig }): JSX
             {config.data.points.map((p: any, i: number) => (
               <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                 <div style={{ width: '100%', height: `${p.value}%`, background: 'linear-gradient(180deg, #a78bfa 0%, rgba(167,139,250,0.2) 100%)', borderRadius: '4px 4px 2px 2px' }} />
-                <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>{p.label}</div>
+                <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>{p.label}</div>
               </div>
             ))}
           </div>
@@ -223,8 +223,8 @@ function IntelligenceBlock({ config }: { config: IntelligenceBlockConfig }): JSX
               <div key={i} style={{ display: 'flex', gap: 12, padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ marginTop: 2 }}>{f.icon === 'alert' ? <Shield size={14} color="#f87171" /> : <TrendingUp size={14} color="#fbbf24" />}</div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', marginBottom: 4 }}>{f.title}</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.5 }}>{f.detail}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 4 }}>{f.title}</div>
+                  <div style={{ fontSize: 11, color: 'var(--pipe-text-muted)', lineHeight: 1.5 }}>{f.detail}</div>
                 </div>
               </div>
             ))}

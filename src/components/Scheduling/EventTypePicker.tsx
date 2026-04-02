@@ -130,7 +130,7 @@ export function EventTypePicker({
     <div style={containerStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <Calendar size={12} color="rgba(255,255,255,0.4)" />
-        <span style={{ fontSize: 9, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+        <span style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
           EVENT_TYPE
         </span>
         {selected && <Check size={10} color="#4ade80" />}
@@ -176,7 +176,7 @@ const containerStyle: React.CSSProperties = {
 const labelStyle: React.CSSProperties = {
   fontSize: 11,
   fontFamily: '"Space Mono", monospace',
-  color: 'rgba(255,255,255,0.5)',
+  color: 'var(--pipe-text-muted)',
 };
 
 const selectStyle: React.CSSProperties = {
@@ -185,7 +185,7 @@ const selectStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,0.04)',
   border: '1px solid rgba(255,255,255,0.08)',
   borderRadius: 4,
-  color: '#fff',
+  color: 'var(--pipe-text, #fff)',
   fontSize: 12,
   fontFamily: '"Space Mono", monospace',
   appearance: 'none',
@@ -198,7 +198,7 @@ const retryButtonStyle: React.CSSProperties = {
   padding: '4px 10px',
   background: 'rgba(255,255,255,0.06)',
   border: '1px solid rgba(255,255,255,0.1)',
-  color: '#fff',
+  color: 'var(--pipe-text, #fff)',
   fontSize: 9,
   letterSpacing: '0.1em',
   fontFamily: '"Space Mono", monospace',

@@ -4,7 +4,7 @@
  * Persisted to localStorage so preferences survive page reloads.
  */
 
-import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 
 // ── Background shader settings ──────────────────────────────────────────────
 
@@ -23,11 +23,15 @@ export interface BackgroundSettings {
 
 // ── Full theme ──────────────────────────────────────────────────────────────
 
+export type ThemeMode = 'dark' | 'light';
+
 export interface ThemeSettings {
+  mode: ThemeMode;
   background: BackgroundSettings;
 }
 
 const DEFAULTS: ThemeSettings = {
+  mode: 'dark',
   background: {
     enabled: true,
     shader: 'liquid-metal',
@@ -52,6 +56,7 @@ function loadTheme(userId?: string): ThemeSettings {
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<ThemeSettings>;
     return {
+      mode: parsed.mode ?? DEFAULTS.mode,
       background: { ...DEFAULTS.background, ...parsed.background },
     };
   } catch {
@@ -65,9 +70,48 @@ function saveTheme(theme: ThemeSettings, userId?: string): void {
 
 // ── Context ─────────────────────────────────────────────────────────────────
 
+// ── CSS custom properties per mode ─────────────────────────────────────────
+
+const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
+  dark: {
+    '--pipe-bg': '#0c0c0e',
+    '--pipe-text': '#ffffff',
+    '--pipe-text-muted': 'rgba(255,255,255,0.5)',
+    '--pipe-text-dim': 'rgba(255,255,255,0.3)',
+    '--pipe-border': 'rgba(255,255,255,0.08)',
+    '--pipe-border-light': 'rgba(255,255,255,0.04)',
+    '--pipe-surface': 'rgba(255,255,255,0.05)',
+    '--pipe-surface-hover': 'rgba(255,255,255,0.08)',
+    '--pipe-overlay': 'rgba(12, 12, 14, 0.93)',
+    '--pipe-shadow': 'rgba(0,0,0,0.3)',
+  },
+  light: {
+    '--pipe-bg': '#f5f5f7',
+    '--pipe-text': '#1a1a1a',
+    '--pipe-text-muted': 'rgba(0,0,0,0.5)',
+    '--pipe-text-dim': 'rgba(0,0,0,0.35)',
+    '--pipe-border': 'rgba(0,0,0,0.1)',
+    '--pipe-border-light': 'rgba(0,0,0,0.06)',
+    '--pipe-surface': 'rgba(0,0,0,0.04)',
+    '--pipe-surface-hover': 'rgba(0,0,0,0.07)',
+    '--pipe-overlay': 'rgba(245, 245, 247, 0.88)',
+    '--pipe-shadow': 'rgba(0,0,0,0.08)',
+  },
+};
+
+function applyModeTokens(mode: ThemeMode): void {
+  const root = document.documentElement;
+  const tokens = MODE_TOKENS[mode];
+  for (const [key, value] of Object.entries(tokens)) {
+    root.style.setProperty(key, value);
+  }
+  root.setAttribute('data-theme', mode);
+}
+
 interface ThemeContextValue {
   theme: ThemeSettings;
   updateBackground: (partial: Partial<BackgroundSettings>) => void;
+  setMode: (mode: ThemeMode) => void;
   resetTheme: () => void;
   bindUser: (userId: string) => void;
 }
@@ -84,6 +128,19 @@ export function ThemeProvider({ children }: { children: ReactNode }): JSX.Elemen
     setTheme(loadTheme(uid));
   }, []);
 
+  // Apply CSS tokens whenever mode changes
+  useEffect(() => {
+    applyModeTokens(theme.mode);
+  }, [theme.mode]);
+
+  const setMode = useCallback((mode: ThemeMode) => {
+    setTheme((prev) => {
+      const next = { ...prev, mode };
+      saveTheme(next, userIdRef.current);
+      return next;
+    });
+  }, []);
+
   const updateBackground = useCallback((partial: Partial<BackgroundSettings>) => {
     setTheme((prev) => {
       const next = { ...prev, background: { ...prev.background, ...partial } };
@@ -98,7 +155,7 @@ export function ThemeProvider({ children }: { children: ReactNode }): JSX.Elemen
   }, []);
 
   return (
-    <Ctx.Provider value={{ theme, updateBackground, resetTheme, bindUser }}>
+    <Ctx.Provider value={{ theme, updateBackground, setMode, resetTheme, bindUser }}>
       {children}
     </Ctx.Provider>
   );

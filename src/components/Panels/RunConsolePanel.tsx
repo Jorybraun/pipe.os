@@ -91,11 +91,11 @@ export function RunConsolePanel({
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor }} />
-          <span style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
             OUTPUT
           </span>
           {result && result.total > 0 && (
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+            <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
               {result.passed}/{result.total} passed
               {typeof result.durationMs === 'number' ? ` / ${result.durationMs}ms` : ''}
             </span>
@@ -148,13 +148,13 @@ export function RunConsolePanel({
           )}
 
           {result && result.logs.length > 0 && (
-            <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'rgba(255,255,255,0.5)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+            <div style={{ fontFamily: 'Space Mono', fontSize: 11, color: 'var(--pipe-text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
               {result.logs.join('\n')}
             </div>
           )}
 
           {!result && !isRunning && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono', fontStyle: 'italic' }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', fontStyle: 'italic' }}>
               Click RUN to execute sample tests.
             </div>
           )}

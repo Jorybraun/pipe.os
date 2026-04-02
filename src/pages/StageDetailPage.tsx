@@ -102,28 +102,15 @@ export default function StageDetailPage(): JSX.Element {
               order,
             });
 
-            // Fire-and-forget: cache the full diff on the challenge record
+            // Fire-and-forget: fetch + store the diff on the challenge in one call
             void (async () => {
               try {
                 const api = createApiClient({ getToken });
-                const result = await api.post<{
-                  success: boolean;
-                  data?: {
-                    diff?: Record<string, unknown>;
-                    metadata?: Record<string, unknown>;
-                  };
-                }>("/api/v1/github/pr", {
-                  challengeId: created.id,
+                await api.post("/api/v1/github/pr", {
                   repoUrl: sel.repoUrl,
                   prNumber: sel.prNumber,
+                  challengeId: created.id,
                 });
-
-                if (result?.success) {
-                  console.log(
-                    "[StageDetailPage] Diff cached for challenge",
-                    created.id,
-                  );
-                }
               } catch (cacheErr) {
                 console.error(
                   "[StageDetailPage] Failed to cache diff for challenge",
@@ -276,7 +263,7 @@ export default function StageDetailPage(): JSX.Element {
   }
 
   if (!stage) {
-    return <div style={{ padding: 40, color: "#fff" }}>Stage not found.</div>;
+    return <div style={{ padding: 40, color: "var(--pipe-text, #fff)" }}>Stage not found.</div>;
   }
 
   const challenges = [...(stage.challenges ?? [])]
@@ -306,7 +293,7 @@ export default function StageDetailPage(): JSX.Element {
               style={{
                 fontSize: 9,
                 letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
                 marginBottom: 8,
                 fontFamily: "Space Mono",
               }}
@@ -340,10 +327,10 @@ export default function StageDetailPage(): JSX.Element {
                 style={{
                   background: "transparent",
                   border: "none",
-                  borderBottom: "1px solid rgba(255,255,255,0.1)",
+                  borderBottom: "1px solid var(--pipe-border)",
                   fontSize: 24,
                   fontWeight: 800,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   margin: 0,
                   padding: "4px 0",
                   outline: "none",
@@ -363,10 +350,10 @@ export default function StageDetailPage(): JSX.Element {
               alignItems: "center",
               gap: 10,
               padding: "12px 24px",
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.1)",
+              background: "var(--pipe-surface)",
+              border: "1px solid var(--pipe-border)",
               borderRadius: 4,
-              color: "#fff",
+              color: "var(--pipe-text, #fff)",
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: "0.1em",
@@ -426,13 +413,13 @@ export default function StageDetailPage(): JSX.Element {
                 marginTop: 20,
                 padding: "60px 24px",
                 textAlign: "center",
-                border: "1px dashed rgba(255,255,255,0.05)",
+                border: "1px dashed var(--pipe-border-light)",
                 borderRadius: 12,
               }}
             >
               <div
                 style={{
-                  color: "rgba(255,255,255,0.2)",
+                  color: "var(--pipe-text-dim)",
                   fontSize: 12,
                   marginBottom: 24,
                 }}
@@ -470,13 +457,13 @@ export default function StageDetailPage(): JSX.Element {
                 marginBottom: 20,
               }}
             >
-              <Mail size={14} color="rgba(255,255,255,0.4)" />
+              <Mail size={14} color="var(--pipe-text-dim)" />
               <div
                 style={{
                   fontSize: 10,
                   letterSpacing: "0.1em",
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   fontFamily: "Space Mono",
                 }}
               >
@@ -495,7 +482,7 @@ export default function StageDetailPage(): JSX.Element {
                   <div
                     key={trigger}
                     style={{
-                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                      borderBottom: "1px solid var(--pipe-border-light)",
                       paddingBottom: 12,
                     }}
                   >
@@ -515,7 +502,7 @@ export default function StageDetailPage(): JSX.Element {
                         justifyContent: "space-between",
                         background: "transparent",
                         border: "none",
-                        color: isEditing ? "#fff" : "rgba(255,255,255,0.5)",
+                        color: isEditing ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
                         fontSize: 9,
                         fontWeight: 700,
                         fontFamily: "Space Mono",
@@ -553,7 +540,7 @@ export default function StageDetailPage(): JSX.Element {
                           <label
                             style={{
                               fontSize: 8,
-                              color: "rgba(255,255,255,0.3)",
+                              color: "var(--pipe-text-dim)",
                               display: "block",
                               marginBottom: 4,
                             }}
@@ -572,8 +559,8 @@ export default function StageDetailPage(): JSX.Element {
                             style={{
                               width: "100%",
                               background: "rgba(0,0,0,0.2)",
-                              border: "1px solid rgba(255,255,255,0.1)",
-                              color: "#fff",
+                              border: "1px solid var(--pipe-border)",
+                              color: "var(--pipe-text, #fff)",
                               padding: "6px 8px",
                               fontSize: 11,
                               fontFamily: "Space Mono",
@@ -584,7 +571,7 @@ export default function StageDetailPage(): JSX.Element {
                           <label
                             style={{
                               fontSize: 8,
-                              color: "rgba(255,255,255,0.3)",
+                              color: "var(--pipe-text-dim)",
                               display: "block",
                               marginBottom: 4,
                             }}
@@ -604,8 +591,8 @@ export default function StageDetailPage(): JSX.Element {
                               width: "100%",
                               minHeight: 100,
                               background: "rgba(0,0,0,0.2)",
-                              border: "1px solid rgba(255,255,255,0.1)",
-                              color: "#fff",
+                              border: "1px solid var(--pipe-border)",
+                              color: "var(--pipe-text, #fff)",
                               padding: "6px 8px",
                               fontSize: 11,
                               fontFamily: "Space Mono",
@@ -641,9 +628,9 @@ export default function StageDetailPage(): JSX.Element {
                             onClick={() => setEditingTemplate(null)}
                             style={{
                               padding: "8px 12px",
-                              background: "rgba(255,255,255,0.05)",
-                              border: "1px solid rgba(255,255,255,0.1)",
-                              color: "rgba(255,255,255,0.5)",
+                              background: "var(--pipe-surface)",
+                              border: "1px solid var(--pipe-border)",
+                              color: "var(--pipe-text-muted)",
                               fontSize: 9,
                               fontFamily: "Space Mono",
                               cursor: "pointer",
@@ -655,7 +642,7 @@ export default function StageDetailPage(): JSX.Element {
                         <p
                           style={{
                             fontSize: 8,
-                            color: "rgba(255,255,255,0.2)",
+                            color: "var(--pipe-text-dim)",
                             lineHeight: 1.4,
                           }}
                         >
@@ -681,13 +668,13 @@ export default function StageDetailPage(): JSX.Element {
                 marginBottom: 20,
               }}
             >
-              <Settings size={14} color="rgba(255,255,255,0.4)" />
+              <Settings size={14} color="var(--pipe-text-dim)" />
               <div
                 style={{
                   fontSize: 10,
                   letterSpacing: "0.1em",
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   fontFamily: "Space Mono",
                 }}
               >
@@ -701,7 +688,7 @@ export default function StageDetailPage(): JSX.Element {
                   style={{
                     display: "block",
                     fontSize: 9,
-                    color: "rgba(255,255,255,0.3)",
+                    color: "var(--pipe-text-dim)",
                     marginBottom: 8,
                     fontFamily: "Space Mono",
                   }}
@@ -721,9 +708,9 @@ export default function StageDetailPage(): JSX.Element {
                     style={{
                       flex: 1,
                       background: "rgba(0,0,0,0.2)",
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      border: "1px solid var(--pipe-border)",
                       padding: "8px 12px",
-                      color: "#fff",
+                      color: "var(--pipe-text, #fff)",
                       fontSize: 13,
                       outline: "none",
                       fontFamily: "Space Mono",
@@ -736,7 +723,7 @@ export default function StageDetailPage(): JSX.Element {
               {FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO && (
                 <div
                   style={{
-                    borderTop: "1px solid rgba(255,255,255,0.05)",
+                    borderTop: "1px solid var(--pipe-border-light)",
                     paddingTop: 20,
                   }}
                 >
@@ -746,7 +733,7 @@ export default function StageDetailPage(): JSX.Element {
                       alignItems: "center",
                       gap: 8,
                       fontSize: 9,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       marginBottom: 12,
                       fontFamily: "Space Mono",
                     }}
@@ -758,7 +745,7 @@ export default function StageDetailPage(): JSX.Element {
                     style={{
                       display: "flex",
                       gap: 0,
-                      border: "1px solid rgba(255,255,255,0.1)",
+                      border: "1px solid var(--pipe-border)",
                       borderRadius: 4,
                       overflow: "hidden",
                     }}
@@ -773,10 +760,10 @@ export default function StageDetailPage(): JSX.Element {
                             flex: 1,
                             padding: "8px 0",
                             background: isActive
-                              ? "rgba(255,255,255,0.12)"
+                              ? "var(--pipe-surface-hover)"
                               : "transparent",
                             border: "none",
-                            color: isActive ? "#fff" : "rgba(255,255,255,0.3)",
+                            color: isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                             fontSize: 9,
                             fontWeight: 700,
                             letterSpacing: "0.12em",

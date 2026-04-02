@@ -194,7 +194,7 @@ function CommentCard({ comment }: { comment: ReviewComment }): JSX.Element {
           >
             YOU
           </span>
-          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.05em' }}>
+          <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em' }}>
             #{comment.id}
           </span>
         </div>
@@ -332,7 +332,7 @@ function ExchangeCard({ exchange }: { exchange: ThreadExchange }): JSX.Element {
         >
           {isReviewer ? 'YOU' : 'AUTHOR'}
         </span>
-        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.05em' }}>
+        <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em' }}>
           ROUND {exchange.round}
         </span>
       </div>
@@ -495,7 +495,7 @@ function ThreadCard({
                   background: 'rgba(255,255,255,0.02)',
                   border: '1px solid rgba(255,255,255,0.08)',
                   borderRadius: 4,
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 11,
                   padding: '10px 12px',
                   fontFamily: '"Space Mono", monospace',
@@ -560,7 +560,7 @@ function EmptyState(): JSX.Element {
           style={{
             margin: 0,
             fontSize: 10,
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             lineHeight: 1.6,
             maxWidth: 200,
             fontFamily: '"Space Mono", monospace',
@@ -676,7 +676,7 @@ export function ConversationPanel({
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: '0.12em',
-              color: 'rgba(255,255,255,0.5)',
+              color: 'var(--pipe-text-muted)',
             }}
           >
             AUTHOR IS REVIEWING...
@@ -695,7 +695,7 @@ export function ConversationPanel({
           flexShrink: 0,
         }}
       >
-        <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
+        <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontWeight: 700 }}>
           REVIEW_CONVERSATION
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -763,7 +763,7 @@ export function ConversationPanel({
                 borderRadius: 6,
               }}
             >
-              <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontWeight: 700 }}>
+              <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12, fontWeight: 700 }}>
                 REVIEW_VERDICT
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -811,7 +811,7 @@ export function ConversationPanel({
                 borderRadius: 6,
               }}
             >
-              <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 10, fontWeight: 700 }}>
+              <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 10, fontWeight: 700 }}>
                 REVIEW_SUMMARY
               </div>
               <textarea
@@ -825,7 +825,7 @@ export function ConversationPanel({
                   background: 'rgba(255,255,255,0.02)',
                   border: '1px solid rgba(255,255,255,0.08)',
                   borderRadius: 4,
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 11,
                   padding: '10px 12px',
                   fontFamily: '"Space Mono", monospace',
@@ -916,7 +916,7 @@ export function ConversationPanel({
             style={{
               padding: '10px 16px',
               fontSize: 9,
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               textAlign: 'center',
               letterSpacing: '0.08em',
             }}

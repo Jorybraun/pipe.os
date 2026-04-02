@@ -50,7 +50,7 @@ export function ReviewCanvas({
   if (!snippets || snippets.length === 0) {
     return (
       <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
-        <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+        <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
           NO_SNIPPETS_AVAILABLE_FOR_REVIEW
         </div>
       </LiquidMetalCard>
@@ -133,14 +133,14 @@ export function ReviewCanvas({
               style={{
                 fontSize: 10,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 marginBottom: 4
               }}
             >
               CODE_REVIEW_CANVAS
             </div>
-            <div style={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>
+            <div style={{ color: 'var(--pipe-text, #fff)', fontSize: 14, fontWeight: 700 }}>
               {currentSnippet.title || 'Untitled Snippet'}
             </div>
           </div>
@@ -155,7 +155,7 @@ export function ReviewCanvas({
             >
               SNIPPET {currentSnippetIndex + 1} OF {snippets.length}
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               {currentSnippet.language?.toUpperCase() || 'TYPESCRIPT'}
             </div>
           </div>
@@ -226,19 +226,19 @@ export function ReviewCanvas({
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text, #fff)' }}>
                   ANNOTATION: LINE {activeLine.line}
                 </div>
                 <button 
                   onClick={() => setActiveLine(null)}
-                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}
                 >
                   <X size={16} />
                 </button>
               </div>
 
               <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
+                <label style={{ display: 'block', fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
                   SEVERITY
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -266,7 +266,7 @@ export function ReviewCanvas({
               </div>
 
               <div style={{ marginBottom: 24 }}>
-                <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
+                <label style={{ display: 'block', fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
                   OBSERVATION / FIX
                 </label>
                 <textarea
@@ -280,7 +280,7 @@ export function ReviewCanvas({
                     background: 'rgba(0,0,0,0.2)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: 4,
-                    color: '#fff',
+                    color: 'var(--pipe-text, #fff)',
                     padding: 12,
                     fontSize: 13,
                     fontFamily: 'inherit',
@@ -327,13 +327,13 @@ export function ReviewCanvas({
           <div style={{ display: 'flex', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <AlertCircle size={10} color="#f87171" />
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+              <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 {(annotations[currentSnippet.id] || []).filter(a => a.severity === 'critical').length} CRITICAL
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <AlertTriangle size={10} color="#fbbf24" />
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+              <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 {(annotations[currentSnippet.id] || []).filter(a => a.severity === 'major').length} MAJOR
               </span>
             </div>

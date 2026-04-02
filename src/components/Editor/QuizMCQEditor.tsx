@@ -93,7 +93,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
             placeholder="What is the question?"
             style={{
               width: '100%', minHeight: 160, padding: '32px', background: 'transparent',
-              border: 'none', color: '#fff', fontSize: 18, fontFamily: 'inherit',
+              border: 'none', color: 'var(--pipe-text, #fff)', fontSize: 18, fontFamily: 'inherit',
               lineHeight: 1.6, outline: 'none', resize: 'none',
             }}
           />
@@ -168,14 +168,14 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                   placeholder={`Option ${String.fromCharCode(65 + idx)} text...`}
                   style={{
                     flex: 1, padding: '16px 20px', background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', fontSize: 14,
+                    border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'var(--pipe-text, #fff)', fontSize: 14,
                     outline: 'none', transition: 'border-color 0.2s',
                   }}
                 />
                 <button
                   onClick={() => removeOption(opt.id)}
                   style={{
-                    background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.2)',
+                    background: 'transparent', border: 'none', color: 'var(--pipe-text-dim)',
                     cursor: 'pointer', padding: 8, transition: 'color 0.2s'
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.color = '#f87171'}
@@ -195,10 +195,10 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
         <LiquidMetalCard variant="chrome" style={{ padding: 32, borderRadius: 16 }}>
           
           <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 8 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 8 }}>
               Multiple Choice
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 20 }}>
+            <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 20 }}>
               {selectionMode === 'multi'
                 ? 'Select all that apply. Candidates must pick every correct answer.'
                 : 'A single-choice question for quick assessment. Use the radio buttons on the left to mark the correct answer.'}
@@ -266,7 +266,7 @@ export function QuizMCQEditor({ challenge, onChange }: EditorFormProps): JSX.Ele
                   fontFamily: 'inherit', lineHeight: 1.6, outline: 'none', resize: 'vertical',
                 }}
               />
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', paddingLeft: 2 }}>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontStyle: 'italic', paddingLeft: 2 }}>
                 Shown to candidates after they submit.
               </div>
             </div>

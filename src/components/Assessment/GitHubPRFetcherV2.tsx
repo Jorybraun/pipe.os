@@ -100,7 +100,7 @@ export function GitHubPRFetcherV2({
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid rgba(255,255,255,0.12)',
     borderRadius: 6,
-    color: '#fff',
+    color: 'var(--pipe-text, #fff)',
     fontSize: 13,
     fontFamily: 'Space Mono, monospace',
     outline: 'none',
@@ -149,7 +149,7 @@ export function GitHubPRFetcherV2({
     return (
       <div>
         <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 6 }}>
             {[
               cachedTitle,
               cachedAuthor && `by ${cachedAuthor}`,
@@ -165,7 +165,7 @@ export function GitHubPRFetcherV2({
               ...btnStyle,
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid rgba(255,255,255,0.1)',
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--pipe-text-dim)',
             }}
           >
             CLEAR &amp; RE-FETCH
@@ -175,7 +175,7 @@ export function GitHubPRFetcherV2({
         <div style={{ marginTop: 16 }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
+              <label style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
                 REPO_URL
               </label>
               <input
@@ -186,7 +186,7 @@ export function GitHubPRFetcherV2({
               />
             </div>
             <div style={{ width: 100 }}>
-              <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
+              <label style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
                 PR_NUMBER
               </label>
               <input
@@ -220,8 +220,8 @@ export function GitHubPRFetcherV2({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 8, marginBottom: 12 }}>
           <CheckCircle2 size={16} color="#34d399" />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{successData.metadata.title}</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text, #fff)' }}>{successData.metadata.title}</div>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
               {successData.metadata.author} · {successData.diff.files.length} file(s) changed
             </div>
           </div>
@@ -237,7 +237,7 @@ export function GitHubPRFetcherV2({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {savedRepos.length > 0 && (
           <div data-testid="saved-repos">
-            <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 8, display: 'block' }}>
+            <label style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 8, display: 'block' }}>
               SAVED_REPOS
             </label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -267,7 +267,7 @@ export function GitHubPRFetcherV2({
         )}
 
         <div>
-          <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
+          <label style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
             REPO_URL
           </label>
           <input
@@ -279,7 +279,7 @@ export function GitHubPRFetcherV2({
         </div>
 
         <div>
-          <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
+          <label style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6, display: 'block' }}>
             PR_NUMBER
           </label>
           <input

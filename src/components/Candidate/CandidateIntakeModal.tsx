@@ -36,9 +36,7 @@ export function CandidateIntakeModal({
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
-  // parsedData is populated by AI CV parsing (post-MVP). It is null until then
-  // but the CONFIRM step renders it when present, so the read is intentional.
-  const [parsedData] = useState<{
+  const [parsedData, setParsedData] = useState<{
     name?: string;
     skills?: string[];
     yearsOfExperience?: number;
@@ -140,10 +138,23 @@ export function CandidateIntakeModal({
         throw new Error(errMsg);
       }
 
-      // R2 key is now stored server-side; we don't need to do anything extra.
-      // The candidate record already has resume_s3_key set by the Worker.
+      // Worker parses the CV inline and returns structured data
+      const uploadResult = (await uploadResponse.json()) as {
+        success: boolean;
+        r2Key: string;
+        parsed?: {
+          name?: string;
+          skills?: string[];
+          yearsOfExperience?: number;
+          currentRole?: string;
+          education?: string[];
+        } | null;
+      };
 
-      // AI parsing is post-MVP — always advance to CONFIRM after successful upload.
+      if (uploadResult.parsed) {
+        setParsedData(uploadResult.parsed);
+      }
+
       setStep("CONFIRM");
 
     } catch (err) {
@@ -190,13 +201,13 @@ export function CandidateIntakeModal({
             <div style={{ 
               fontSize: 9, 
               letterSpacing: "0.2em", 
-              color: "rgba(255,255,255,0.3)", 
+              color: "var(--pipe-text-dim)", 
               fontFamily: "Space Mono",
               marginBottom: 4
             }}>
               CANDIDATE_INTAKE_PROTOCOL
             </div>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: "#fff", margin: 0 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--pipe-text, #fff)", margin: 0 }}>
               {step === "CONFIRM" ? "INTAKE_COMPLETE" : "CREATE_NEW_CANDIDATE"}
             </h2>
           </div>
@@ -205,7 +216,7 @@ export function CandidateIntakeModal({
             style={{ 
               background: "none", 
               border: "none", 
-              color: "rgba(255,255,255,0.3)", 
+              color: "var(--pipe-text-dim)", 
               cursor: "pointer" 
             }}
           >
@@ -239,7 +250,7 @@ export function CandidateIntakeModal({
                 <label style={{ 
                   display: "block", 
                   fontSize: 10, 
-                  color: "rgba(255,255,255,0.3)", 
+                  color: "var(--pipe-text-dim)", 
                   marginBottom: 12,
                   fontFamily: "Space Mono"
                 }}>
@@ -277,17 +288,17 @@ export function CandidateIntakeModal({
                       }}>
                         <FileText size={24} color="#60a5fa" />
                       </div>
-                      <div style={{ fontSize: 13, color: "#fff", fontWeight: 700 }}>
+                      <div style={{ fontSize: 13, color: "var(--pipe-text, #fff)", fontWeight: 700 }}>
                         {file.name}
                       </div>
-                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: "Space Mono" }}>
+                      <div style={{ fontSize: 10, color: "var(--pipe-text-dim)", fontFamily: "Space Mono" }}>
                         {(file.size / 1024 / 1024).toFixed(2)} MB • CLICK_TO_REPLACE
                       </div>
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
                       <Upload size={32} color="rgba(255,255,255,0.2)" />
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", fontFamily: "Space Mono" }}>
+                      <div style={{ fontSize: 12, color: "var(--pipe-text-dim)", fontFamily: "Space Mono" }}>
                         DRAG_&_DROP_OR_CLICK_TO_UPLOAD
                       </div>
                     </div>
@@ -370,7 +381,7 @@ export function CandidateIntakeModal({
                 <div style={{ 
                   fontSize: 12, 
                   fontWeight: 800, 
-                  color: "#fff", 
+                  color: "var(--pipe-text, #fff)", 
                   fontFamily: "Space Mono",
                   marginBottom: 8
                 }}>
@@ -378,7 +389,7 @@ export function CandidateIntakeModal({
                 </div>
                 <div style={{ 
                   fontSize: 10, 
-                  color: "rgba(255,255,255,0.4)", 
+                  color: "var(--pipe-text-dim)", 
                   fontFamily: "Space Mono",
                   maxWidth: 300
                 }}>
@@ -403,10 +414,10 @@ export function CandidateIntakeModal({
                   <CheckCircle size={24} color="#34d399" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--pipe-text, #fff)" }}>
                     {name}
                   </div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", fontFamily: "Space Mono" }}>
+                  <div style={{ fontSize: 12, color: "var(--pipe-text-muted)", fontFamily: "Space Mono" }}>
                     {email}
                   </div>
                 </div>
@@ -424,25 +435,25 @@ export function CandidateIntakeModal({
                 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
                     <div>
-                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "Space Mono", marginBottom: 8 }}>
+                      <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 8 }}>
                         <Briefcase size={10} style={{ marginRight: 6 }} /> CURRENT_ROLE
                       </div>
-                      <div style={{ fontSize: 13, color: "#fff", fontWeight: 700 }}>
+                      <div style={{ fontSize: 13, color: "var(--pipe-text, #fff)", fontWeight: 700 }}>
                         {parsedData.currentRole || "Not specified"}
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "Space Mono", marginBottom: 8 }}>
+                      <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 8 }}>
                         <Activity size={10} style={{ marginRight: 6 }} /> EXPERIENCE
                       </div>
-                      <div style={{ fontSize: 13, color: "#fff", fontWeight: 700 }}>
+                      <div style={{ fontSize: 13, color: "var(--pipe-text, #fff)", fontWeight: 700 }}>
                         {parsedData.yearsOfExperience || 0} Years
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "Space Mono", marginBottom: 12 }}>
+                    <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 12 }}>
                       <Shield size={10} style={{ marginRight: 6 }} /> SKILLS_EXTRACTED
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -453,7 +464,7 @@ export function CandidateIntakeModal({
                           border: "1px solid rgba(255,255,255,0.1)",
                           borderRadius: 4,
                           fontSize: 10,
-                          color: "rgba(255,255,255,0.7)",
+                          color: "var(--pipe-text-muted)",
                           fontFamily: "Space Mono"
                         }}>
                           {skill.toUpperCase()}
@@ -463,10 +474,10 @@ export function CandidateIntakeModal({
                   </div>
 
                   <div>
-                    <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "Space Mono", marginBottom: 8 }}>
+                    <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 8 }}>
                       <GraduationCap size={10} style={{ marginRight: 6 }} /> EDUCATION
                     </div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", lineHeight: 1.6 }}>
+                    <div style={{ fontSize: 11, color: "var(--pipe-text-muted)", lineHeight: 1.6 }}>
                       {parsedData.education?.join(", ") || "No education history found."}
                     </div>
                   </div>

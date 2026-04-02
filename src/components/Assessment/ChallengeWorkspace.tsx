@@ -202,7 +202,7 @@ function ConsoleStrip({
             background: 'none',
             border: 'none',
             cursor: 'pointer',
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             fontSize: 12,
             fontFamily: 'inherit',
             padding: 0,
@@ -548,7 +548,7 @@ export function ChallengeWorkspace({
               justifyContent: 'center',
               fontFamily: 'Space Mono',
               fontSize: 10,
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               letterSpacing: '0.1em',
             }}
           >

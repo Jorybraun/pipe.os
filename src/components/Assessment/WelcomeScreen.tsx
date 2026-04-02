@@ -103,7 +103,7 @@ export function WelcomeScreen({
           style={{
             fontSize: 9,
             letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
             marginBottom: 32,
           }}
@@ -138,7 +138,7 @@ export function WelcomeScreen({
           style={{
             fontSize: 28,
             fontWeight: 800,
-            color: '#fff',
+            color: 'var(--pipe-text, #fff)',
             marginBottom: 16,
             letterSpacing: '-0.02em',
             lineHeight: 1.2,
@@ -151,7 +151,7 @@ export function WelcomeScreen({
         <p
           style={{
             fontSize: 13,
-            color: 'rgba(255,255,255,0.5)',
+            color: 'var(--pipe-text-muted)',
             lineHeight: 1.7,
             fontFamily: '"Space Mono", monospace',
             marginBottom: 40,

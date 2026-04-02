@@ -85,7 +85,7 @@ const SubHeader = () => {
                 gap: 8,
                 background: "transparent",
                 border: "none",
-                color: "rgba(255,255,255,0.6)",
+                color: "var(--pipe-text-muted)",
                 cursor: "pointer",
                 fontSize: 10,
                 letterSpacing: "0.15em",
@@ -112,7 +112,7 @@ const SubHeader = () => {
                 style={{
                   fontSize: 9,
                   letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
+                  color: "var(--pipe-text-dim)",
                   marginBottom: 6,
                 }}
               >
@@ -122,7 +122,7 @@ const SubHeader = () => {
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   letterSpacing: "0.05em",
                 }}
               >
@@ -141,7 +141,7 @@ const SubHeader = () => {
             background:
               "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
             border: "1px solid rgba(255,255,255,0.2)",
-            color: "#fff",
+            color: "var(--pipe-text, #fff)",
             fontSize: 11,
             letterSpacing: "0.15em",
             fontWeight: 700,
@@ -160,7 +160,7 @@ const SubHeader = () => {
             padding: "14px 18px",
             background: "transparent",
             border: "1px solid rgba(255,255,255,0.1)",
-            color: "rgba(255,255,255,0.5)",
+            color: "var(--pipe-text-muted)",
             fontSize: 11,
             letterSpacing: "0.15em",
             cursor: "pointer",

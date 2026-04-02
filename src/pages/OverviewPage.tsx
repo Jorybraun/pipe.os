@@ -162,7 +162,7 @@ function StageHeaderCard({
           style={{
             fontSize: 42,
             fontWeight: 800,
-            color: "rgba(255,255,255,0.15)",
+            color: "var(--pipe-text-dim)",
           }}
         >
           —
@@ -386,7 +386,7 @@ function CandidateKanbanCard({
                   justifyContent: "center",
                   fontSize: 10,
                   fontWeight: 800,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                 }}
               >
                 {initials}
@@ -396,7 +396,7 @@ function CandidateKanbanCard({
                 style={{
                   fontSize: 13,
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   margin: 0,
                   letterSpacing: "0.01em",
                 }}
@@ -410,7 +410,7 @@ function CandidateKanbanCard({
                   <span
                     style={{
                       fontSize: 8,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -474,7 +474,7 @@ function CandidateKanbanCard({
                     style={{
                       fontSize: 11,
                       fontWeight: 800,
-                      color: "#fff",
+                      color: "var(--pipe-text, #fff)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -732,7 +732,7 @@ export default function OverviewPage(): JSX.Element {
           </div>
           <p
             style={{
-              color: "rgba(255,255,255,0.5)",
+              color: "var(--pipe-text-muted)",
               fontSize: 13,
               marginBottom: 24,
               lineHeight: 1.6,
@@ -746,7 +746,7 @@ export default function OverviewPage(): JSX.Element {
               padding: "12px 24px",
               background: "rgba(255,255,255,0.1)",
               border: "1px solid rgba(255,255,255,0.2)",
-              color: "#fff",
+              color: "var(--pipe-text, #fff)",
               fontSize: 10,
               letterSpacing: "0.1em",
               fontFamily: '"Space Mono", monospace',
@@ -763,11 +763,11 @@ export default function OverviewPage(): JSX.Element {
   if (!pipeline && !isLoading) {
     return (
       <div style={{ padding: 60, textAlign: "center" }}>
-        <h2 style={{ color: "#fff", marginBottom: 20 }}>Pipeline Not Found</h2>
+        <h2 style={{ color: "var(--pipe-text, #fff)", marginBottom: 20 }}>Pipeline Not Found</h2>
         <button
           onClick={() => navigate("/")}
           style={{
-            color: "#fff",
+            color: "var(--pipe-text, #fff)",
             background: "rgba(255,255,255,0.1)",
             border: "1px solid rgba(255,255,255,0.2)",
             padding: "10px 20px",
@@ -813,7 +813,7 @@ export default function OverviewPage(): JSX.Element {
                 style={{
                   fontSize: 10,
                   letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
+                  color: "var(--pipe-text-dim)",
                 }}
               >
                 PIPELINE_OVERVIEW
@@ -840,7 +840,7 @@ export default function OverviewPage(): JSX.Element {
               style={{
                 fontSize: 24,
                 fontWeight: 700,
-                color: "#fff",
+                color: "var(--pipe-text, #fff)",
                 margin: 0,
               }}
             >
@@ -897,7 +897,7 @@ export default function OverviewPage(): JSX.Element {
                     padding: "10px 20px",
                     background: "rgba(255,255,255,0.05)",
                     border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#fff",
+                    color: "var(--pipe-text, #fff)",
                     fontSize: 10,
                     letterSpacing: "0.1em",
                     fontFamily: "Space Mono",
@@ -1018,7 +1018,7 @@ export default function OverviewPage(): JSX.Element {
                           style={{
                             fontSize: 8,
                             letterSpacing: "0.2em",
-                            color: "rgba(255,255,255,0.2)",
+                            color: "var(--pipe-text-dim)",
                           }}
                         >
                           NO CANDIDATES
@@ -1047,7 +1047,7 @@ export default function OverviewPage(): JSX.Element {
                   alignItems: "center",
                   justifyContent: "center",
                   gap: 12,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--pipe-text-dim)",
                   cursor: "pointer",
                   transition: "all 0.2s",
                 }}

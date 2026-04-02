@@ -133,10 +133,10 @@ export function ConsolePanel({ result, isRunning, onClear }: ConsolePanelProps):
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor }} />
-          <span style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
             CONSOLE
           </span>
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+          <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
             {statusLabel}
             {enhanced && enhanced.total > 0 && ` / ${enhanced.passed}/${enhanced.total}`}
             {result && 'durationMs' in result && typeof result.durationMs === 'number' ? ` / ${result.durationMs}ms` : ''}
@@ -199,7 +199,7 @@ export function ConsolePanel({ result, isRunning, onClear }: ConsolePanelProps):
           {!isRunning && !result && (
             <div style={{
               fontSize: 10,
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: 'Space Mono',
               fontStyle: 'italic',
             }}>

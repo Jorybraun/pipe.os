@@ -32,7 +32,7 @@ export function EditorHeader({
     gap: 10,
     padding: '10px 18px',
     background: 'rgba(255,255,255,0.05)',
-    color: '#fff',
+    color: 'var(--pipe-text, #fff)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 4,
     fontSize: 10,
@@ -44,11 +44,11 @@ export function EditorHeader({
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}>
           <ArrowLeft size={20} />
         </button>
         <div>
-          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: 'Space Mono' }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 8, fontFamily: 'Space Mono' }}>
             CHALLENGE_EDITOR / {challenge.type}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
@@ -58,7 +58,7 @@ export function EditorHeader({
               placeholder="Challenge Title"
               style={{
                 background: 'transparent', border: 'none', borderBottom: '2px solid rgba(255,255,255,0.15)',
-                fontSize: 28, fontWeight: 800, color: '#fff', margin: 0, padding: '8px 0',
+                fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', margin: 0, padding: '8px 0',
                 outline: 'none', width: 'auto', minWidth: 400, fontFamily: 'inherit',
                 transition: 'border-bottom 0.2s ease',
               }}
@@ -66,7 +66,7 @@ export function EditorHeader({
               onBlur={(e) => (e.currentTarget.style.borderBottomColor = 'rgba(255,255,255,0.15)')}
             />
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
                 TIME_LIMIT
               </div>
               <input
@@ -79,7 +79,7 @@ export function EditorHeader({
                 placeholder="MINS"
                 style={{
                   width: 60, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 4, padding: '6px 10px', color: '#fff', fontSize: 12,
+                  borderRadius: 4, padding: '6px 10px', color: 'var(--pipe-text, #fff)', fontSize: 12,
                   fontFamily: 'Space Mono', textAlign: 'center', outline: 'none',
                 }}
               />

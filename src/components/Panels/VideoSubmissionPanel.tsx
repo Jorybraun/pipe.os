@@ -363,7 +363,7 @@ export function VideoSubmissionPanel({
                 ...btnBase,
                 background: 'rgba(255,255,255,0.04)',
                 borderColor: 'rgba(255,255,255,0.12)',
-                color: 'rgba(255,255,255,0.5)',
+                color: 'var(--pipe-text-muted)',
               }}
             >
               RE-RECORD
@@ -372,7 +372,7 @@ export function VideoSubmissionPanel({
         )}
 
         {panelState === 'uploading' && (
-          <span style={{ ...mono, fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em' }}>
+          <span style={{ ...mono, fontSize: 10, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em' }}>
             UPLOADING...
           </span>
         )}
@@ -389,7 +389,7 @@ export function VideoSubmissionPanel({
                 fontSize: 10,
                 background: 'rgba(255,255,255,0.04)',
                 borderColor: 'rgba(255,255,255,0.12)',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
               }}
             >
               RE-RECORD
@@ -404,7 +404,7 @@ export function VideoSubmissionPanel({
               ...btnBase,
               background: 'rgba(255,255,255,0.04)',
               borderColor: 'rgba(255,255,255,0.12)',
-              color: 'rgba(255,255,255,0.5)',
+              color: 'var(--pipe-text-muted)',
             }}
           >
             TRY_AGAIN

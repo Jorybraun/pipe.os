@@ -186,7 +186,7 @@ export function StageCardLarge({
           style={{
             fontSize: 42,
             fontWeight: 800,
-            color: "rgba(255,255,255,0.15)",
+            color: "var(--pipe-text-dim)",
           }}
         >
           —

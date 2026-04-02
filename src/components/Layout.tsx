@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { useTheme } from "../contexts/ThemeContext";
 
 interface ProfileLayoutProps {
   header: ReactNode;
@@ -17,25 +18,41 @@ export function Layout({
   agentPanel,
   isAgentOpen = false,
 }: ProfileLayoutProps) {
+  const { theme } = useTheme();
+  const isDark = theme.mode === 'dark';
+  const overlayAlpha = theme.background.overlay;
+
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "rgba(12, 12, 14, 0.93)",
+        background: isDark ? `rgba(12, 12, 14, ${overlayAlpha})` : `rgba(245, 245, 247, ${overlayAlpha})`,
         fontFamily: '"Space Mono", monospace',
-        color: "#fff",
+        color: "var(--pipe-text, #fff)",
         position: "relative",
         overflow: "hidden",
       }}
     >
-      {/* Header */}
-      <div style={{ position: "relative", zIndex: 1 }}>{header}</div>
+      {/* Header — fixed to top */}
+      <div style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 20,
+        background: isDark ? `rgba(12, 12, 14, ${overlayAlpha})` : `rgba(245, 245, 247, ${overlayAlpha})`,
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid var(--pipe-border-light, rgba(255,255,255,0.04))",
+      }}>
+        {header}
+      </div>
       {/* Layout with sidebar and agent panel */}
       <div
         style={{
           display: "flex",
           position: "relative",
           zIndex: 1,
+          paddingTop: 100,
         }}
       >
         {/* Sidebar */}
@@ -45,8 +62,8 @@ export function Layout({
               width: "80px",
               position: "fixed",
               left: 0,
-              top: "100px",
-              height: "calc(100vh - 100px)",
+              top: 100,
+              height: "calc(100vh - 120px)",
               padding: "0 16px",
               zIndex: 10,
               flexShrink: 0,
@@ -63,13 +80,12 @@ export function Layout({
               width: "400px",
               position: "fixed",
               left: "80px",
-              top: "100px",
-              height: "calc(100vh - 100px)",
-              background:
-                "linear-gradient(135deg, rgba(20,20,30,0.95), rgba(15,15,25,0.98))",
-              backdropFilter: "blur(40px) saturate(150%)",
-              borderRight: "1px solid rgba(139, 92, 246, 0.2)",
-              boxShadow: "4px 0 24px rgba(0,0,0,0.3)",
+              top: 100,
+              height: "calc(100vh - 120px)",
+              background: isDark ? `rgba(12, 12, 14, ${overlayAlpha})` : `rgba(245, 245, 247, ${overlayAlpha})`,
+              backdropFilter: "blur(12px)",
+              borderRight: "1px solid var(--pipe-border, rgba(255,255,255,0.06))",
+              boxShadow: `4px 0 24px var(--pipe-shadow, rgba(0,0,0,0.3))`,
               zIndex: 9,
               transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             }}
@@ -95,19 +111,20 @@ export function Layout({
       </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-        
+
         * {
           box-sizing: border-box;
         }
-        
+
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.6; transform: scale(0.95); }
         }
-        
+
         button:hover {
           filter: brightness(1.1);
         }
+
       `}</style>
     </div>
   );

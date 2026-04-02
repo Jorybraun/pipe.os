@@ -53,7 +53,7 @@ export function FormSection({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "rgba(255,255,255,0.4)",
+            color: "var(--pipe-text-dim)",
           }}
         >
           <Icon size={16} />
@@ -81,7 +81,7 @@ export function FormSection({
         )}
         <div
           style={{
-            color: "rgba(255,255,255,0.3)",
+            color: "var(--pipe-text-dim)",
             transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
             transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}

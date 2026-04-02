@@ -71,10 +71,10 @@ export function StageShell({
           <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
 
           <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 4, fontFamily: 'Space Mono' }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 4, fontFamily: 'Space Mono' }}>
               ASSESSMENT_STAGE
             </div>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.01em' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', margin: 0, letterSpacing: '-0.01em' }}>
               {title}
             </h2>
           </div>

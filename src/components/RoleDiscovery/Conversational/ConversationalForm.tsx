@@ -72,7 +72,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 ROLE IDENTITY
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               Let's start with the basics. What is the role you're hiring for?
             </p>
             
@@ -120,7 +120,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 TEAM CONTEXT
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               Who will this person be working with?
             </p>
 
@@ -149,7 +149,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 TECHNICAL ENVIRONMENT
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What tools and technologies are core to this role?
             </p>
 
@@ -170,7 +170,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 SUCCESS CRITERIA
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What does success look like for this role?
             </p>
 
@@ -191,7 +191,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 CHALLENGES
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What are the main difficulties of this role?
             </p>
 
@@ -212,7 +212,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 CULTURE
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What is the team culture like?
             </p>
 

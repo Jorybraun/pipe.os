@@ -413,7 +413,7 @@ function FollowUpTranscript({ raw }: { raw: unknown }): JSX.Element | null {
                 <div style={{
                   marginLeft: 24,
                   fontSize: 10,
-                  color: 'rgba(255,255,255,0.2)',
+                  color: 'var(--pipe-text-dim)',
                   fontFamily: '"Space Mono", monospace',
                   fontStyle: 'italic',
                 }}>
@@ -564,7 +564,7 @@ function SkillsMatrix({ skillProfile, color }: {
             }}>
               <span style={{
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.5)',
+                color: 'var(--pipe-text-muted)',
                 fontFamily: '"Space Mono", monospace',
                 letterSpacing: '0.05em',
               }}>
@@ -665,13 +665,13 @@ function CodeReviewDeepDive({
               <span style={{
                 fontSize: 8,
                 letterSpacing: '0.15em',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
               }}>VERDICT</span>
               <span style={{
                 fontSize: 10,
                 fontWeight: 700,
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 textTransform: 'uppercase',
                 fontFamily: '"Space Mono", monospace',
                 letterSpacing: '0.1em',
@@ -806,7 +806,7 @@ function QuizShortAnswerDeepDive({ assessment }: { assessment: AssessmentRow }):
       ) : (
         <div style={{
           fontSize: 11,
-          color: 'rgba(255,255,255,0.2)',
+          color: 'var(--pipe-text-dim)',
           fontFamily: '"Space Mono", monospace',
           fontStyle: 'italic',
         }}>
@@ -818,7 +818,7 @@ function QuizShortAnswerDeepDive({ assessment }: { assessment: AssessmentRow }):
           <div style={{
             fontSize: 8,
             letterSpacing: '0.15em',
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
             marginBottom: 6,
           }}>
@@ -862,7 +862,7 @@ function CodeImplDeepDive({ assessment }: { assessment: AssessmentRow }): JSX.El
       ) : (
         <div style={{
           fontSize: 11,
-          color: 'rgba(255,255,255,0.2)',
+          color: 'var(--pipe-text-dim)',
           fontFamily: '"Space Mono", monospace',
           fontStyle: 'italic',
         }}>
@@ -874,7 +874,7 @@ function CodeImplDeepDive({ assessment }: { assessment: AssessmentRow }): JSX.El
           <div style={{
             fontSize: 8,
             letterSpacing: '0.15em',
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
             marginBottom: 6,
           }}>
@@ -920,7 +920,7 @@ function StagePerformanceChart({
             }}>
               <span style={{
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.5)',
+                color: 'var(--pipe-text-muted)',
                 fontFamily: '"Space Mono", monospace',
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
@@ -1070,7 +1070,7 @@ export function IntelligenceReport({
           <div style={{
             fontSize: 8,
             letterSpacing: '0.25em',
-            color: 'rgba(255,255,255,0.2)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
             marginBottom: 4,
           }}>
@@ -1078,7 +1078,7 @@ export function IntelligenceReport({
           </div>
           <div style={{
             fontSize: 10,
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
           }}>
             {candidate.name ?? candidate.email ?? 'Candidate'}
@@ -1087,7 +1087,7 @@ export function IntelligenceReport({
         {generatedAt && (
           <div style={{
             fontSize: 9,
-            color: 'rgba(255,255,255,0.2)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
           }}>
             {new Date(generatedAt).toLocaleDateString()}
@@ -1128,7 +1128,7 @@ export function IntelligenceReport({
             ) : (
               <p style={{
                 fontSize: 13,
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 lineHeight: 1.7,
                 fontStyle: 'italic',
                 margin: '0 0 20px 0',
@@ -1247,7 +1247,7 @@ export function IntelligenceReport({
                 <div style={{
                   fontSize: 8,
                   letterSpacing: '0.2em',
-                  color: 'rgba(255,255,255,0.2)',
+                  color: 'var(--pipe-text-dim)',
                   fontFamily: '"Space Mono", monospace',
                   marginBottom: 12,
                   paddingBottom: 8,
@@ -1300,7 +1300,7 @@ export function IntelligenceReport({
                           <h4 style={{
                             fontSize: 15,
                             fontWeight: 700,
-                            color: '#fff',
+                            color: 'var(--pipe-text, #fff)',
                             margin: 0,
                             lineHeight: 1.3,
                           }}>
@@ -1338,7 +1338,7 @@ export function IntelligenceReport({
                           padding: 20,
                           border: '1px dashed rgba(255,255,255,0.06)',
                           textAlign: 'center',
-                          color: 'rgba(255,255,255,0.2)',
+                          color: 'var(--pipe-text-dim)',
                           fontSize: 11,
                           fontFamily: '"Space Mono", monospace',
                           letterSpacing: '0.1em',

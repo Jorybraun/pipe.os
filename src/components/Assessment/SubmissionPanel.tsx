@@ -157,7 +157,7 @@ export function SubmissionPanel({
           </h3>
           <p style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.5)',
+            color: 'var(--pipe-text-muted)',
             textAlign: 'center',
             margin: 0,
             lineHeight: 1.5,
@@ -226,7 +226,7 @@ export function SubmissionPanel({
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {/* Verdict */}
           <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
               REVIEW_VERDICT
             </div>
 
@@ -282,7 +282,7 @@ export function SubmissionPanel({
 
           {/* Summary */}
           <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
               REVIEW_SUMMARY
             </div>
 
@@ -300,7 +300,7 @@ export function SubmissionPanel({
                 background: 'rgba(255,255,255,0.02)',
                 border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 4,
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 11,
                 padding: 12,
                 fontFamily: '"Space Mono", monospace',
@@ -318,7 +318,7 @@ export function SubmissionPanel({
               alignItems: 'center',
               marginTop: 8,
               fontSize: 9,
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
             }}>
               <span>MAX {maxCharacters} CHARACTERS</span>
               <span data-testid="char-count">{characterCount} / {maxCharacters}</span>
@@ -327,7 +327,7 @@ export function SubmissionPanel({
 
           {/* Stats */}
           <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
               SUBMISSION_STATS
             </div>
 

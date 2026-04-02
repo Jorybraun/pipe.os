@@ -48,7 +48,7 @@ export function SidebarNav({
             : "transparent",
           border: "none",
           borderRadius: "12px",
-          color: activeSection === "roles" ? "#fff" : "rgba(255,255,255,0.4)",
+          color: activeSection === "roles" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
           cursor: "pointer",
           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           position: "relative",
@@ -59,15 +59,15 @@ export function SidebarNav({
         }}
         onMouseEnter={(e) => {
           if (activeSection !== "roles") {
-            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-            e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+            e.currentTarget.style.background = "var(--pipe-surface-hover)";
+            e.currentTarget.style.color = "var(--pipe-text-muted)";
             e.currentTarget.style.transform = "translateX(4px)";
           }
         }}
         onMouseLeave={(e) => {
           if (activeSection !== "roles") {
             e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+            e.currentTarget.style.color = "var(--pipe-text-dim)";
             e.currentTarget.style.transform = "translateX(0)";
           }
         }}
@@ -105,7 +105,7 @@ export function SidebarNav({
               : "transparent",
             border: "none",
             borderRadius: "12px",
-            color: activeSection === "schedule" ? "#fff" : "rgba(255,255,255,0.4)",
+            color: activeSection === "schedule" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
             cursor: "pointer",
             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             position: "relative",
@@ -116,15 +116,15 @@ export function SidebarNav({
           }}
           onMouseEnter={(e) => {
             if (activeSection !== "schedule") {
-              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-              e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+              e.currentTarget.style.background = "var(--pipe-surface-hover)";
+              e.currentTarget.style.color = "var(--pipe-text-muted)";
               e.currentTarget.style.transform = "translateX(4px)";
             }
           }}
           onMouseLeave={(e) => {
             if (activeSection !== "schedule") {
               e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+              e.currentTarget.style.color = "var(--pipe-text-dim)";
               e.currentTarget.style.transform = "translateX(0)";
             }
           }}
@@ -163,7 +163,7 @@ export function SidebarNav({
               : "transparent",
             border: activeSection === "sandbox" ? "1px solid rgba(167,139,250,0.4)" : "none",
             borderRadius: "12px",
-            color: activeSection === "sandbox" ? "#a78bfa" : "rgba(255,255,255,0.4)",
+            color: activeSection === "sandbox" ? "#a78bfa" : "var(--pipe-text-dim)",
             cursor: "pointer",
             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             position: "relative",
@@ -182,7 +182,7 @@ export function SidebarNav({
           onMouseLeave={(e) => {
             if (activeSection !== "sandbox") {
               e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+              e.currentTarget.style.color = "var(--pipe-text-dim)";
               e.currentTarget.style.transform = "translateX(0)";
             }
           }}
@@ -221,21 +221,21 @@ export function SidebarNav({
               : "transparent",
             border: "none",
             borderRadius: "12px",
-            color: activeSection === "settings" ? "#fff" : "rgba(255,255,255,0.4)",
+            color: activeSection === "settings" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
             cursor: "pointer",
             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             position: "relative",
           }}
           onMouseEnter={(e) => {
             if (activeSection !== "settings") {
-              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
-              e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+              e.currentTarget.style.background = "var(--pipe-surface-hover)";
+              e.currentTarget.style.color = "var(--pipe-text-muted)";
             }
           }}
           onMouseLeave={(e) => {
             if (activeSection !== "settings") {
               e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+              e.currentTarget.style.color = "var(--pipe-text-dim)";
             }
           }}
         >
@@ -276,7 +276,7 @@ export function SidebarNav({
         <div
           style={{
             fontSize: 7,
-            color: "rgba(255,255,255,0.4)",
+            color: "var(--pipe-text-dim)",
             letterSpacing: "0.1em",
           }}
         >

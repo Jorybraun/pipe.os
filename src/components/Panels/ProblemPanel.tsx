@@ -59,22 +59,22 @@ export function ProblemPanel({
       {/* Examples Section */}
       {examples && examples.length > 0 && (
         <div style={{ marginTop: 40 }}>
-          <h3 style={{ fontSize: 11, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginBottom: 16, fontFamily: 'Space Mono' }}>
+          <h3 style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--pipe-text-dim)', marginBottom: 16, fontFamily: 'Space Mono' }}>
             EXAMPLES
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {examples.map((ex, i) => (
               <div key={i} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 4, padding: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 12, marginBottom: 8 }}>
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>INPUT</span>
+                  <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>INPUT</span>
                   <code style={{ fontSize: 13, color: '#60a5fa', fontFamily: 'Space Mono' }}>{ex.input}</code>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 12 }}>
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>OUTPUT</span>
+                  <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>OUTPUT</span>
                   <code style={{ fontSize: 13, color: '#34d399', fontFamily: 'Space Mono' }}>{ex.output}</code>
                 </div>
                 {ex.explanation && (
-                  <p style={{ marginTop: 12, fontSize: 12, color: 'rgba(255,255,255,0.4)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 12 }}>
+                  <p style={{ marginTop: 12, fontSize: 12, color: 'var(--pipe-text-dim)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 12 }}>
                     {ex.explanation}
                   </p>
                 )}
@@ -87,7 +87,7 @@ export function ProblemPanel({
       {/* Constraints Section */}
       {constraints && constraints.length > 0 && (
         <div style={{ marginTop: 40 }}>
-          <h3 style={{ fontSize: 11, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)', marginBottom: 16, fontFamily: 'Space Mono' }}>
+          <h3 style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--pipe-text-dim)', marginBottom: 16, fontFamily: 'Space Mono' }}>
             CONSTRAINTS
           </h3>
           <ul style={{ paddingLeft: 16, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -111,7 +111,7 @@ export function ProblemPanel({
               gap: 12, 
               background: 'none', 
               border: 'none', 
-              color: '#fff', 
+              color: 'var(--pipe-text, #fff)', 
               fontSize: 12, 
               fontWeight: 700, 
               cursor: 'pointer',

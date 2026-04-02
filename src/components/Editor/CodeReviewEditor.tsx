@@ -165,8 +165,8 @@ export function CodeReviewEditor({
                   <Github size={20} />
                </div>
                <div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginBottom: 4 }}>Connect Source Pull Request</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>STEP_1:_FETCH_GITHUB_PR</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 4 }}>Connect Source Pull Request</div>
+                  <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>STEP_1:_FETCH_GITHUB_PR</div>
                </div>
             </div>
             <div style={{ padding: '40px' }}>
@@ -206,7 +206,7 @@ export function CodeReviewEditor({
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Github size={12} color="rgba(255,255,255,0.2)" />
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>SOURCE_SYNCED</span>
+                  <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>SOURCE_SYNCED</span>
                 </div>
               </div>
               <div style={{ padding: '32px' }}>
@@ -216,7 +216,7 @@ export function CodeReviewEditor({
                   placeholder="Markdown instructions for the candidate..."
                   style={{
                     width: '100%', minHeight: 200, padding: '24px', background: 'rgba(0,0,0,0.2)',
-                    border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: '#fff', fontSize: 15, fontFamily: 'inherit',
+                    border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: 'var(--pipe-text, #fff)', fontSize: 15, fontFamily: 'inherit',
                     lineHeight: 1.7, outline: 'none', resize: 'vertical',
                   }}
                 />
@@ -229,7 +229,7 @@ export function CodeReviewEditor({
                 <div style={{ padding: '24px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
                   <GitBranch size={16} color="#60a5fa" />
                   <SubTitle>DIFF_PREVIEW</SubTitle>
-                  <span style={{ marginLeft: 'auto', fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+                  <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
                     {parsedDiff.stats.filesChanged} file(s) · +{parsedDiff.stats.additions} -{parsedDiff.stats.deletions}
                   </span>
                 </div>
@@ -275,7 +275,7 @@ export function CodeReviewEditor({
                         style={{
                           display: 'flex', alignItems: 'center', gap: 6,
                           background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
-                          color: 'rgba(255,255,255,0.5)', padding: '4px 10px', borderRadius: 4,
+                          color: 'var(--pipe-text-muted)', padding: '4px 10px', borderRadius: 4,
                           fontSize: 9, fontFamily: 'Space Mono', cursor: 'pointer',
                         }}
                       >
@@ -295,7 +295,7 @@ export function CodeReviewEditor({
                     const rk = sc?.repoKnowledge as Record<string, unknown> | undefined;
                     if (!rk) {
                       return (
-                        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, fontFamily: 'Space Mono', textAlign: 'center', padding: 20 }}>
+                        <div style={{ color: 'var(--pipe-text-dim)', fontSize: 12, fontFamily: 'Space Mono', textAlign: 'center', padding: 20 }}>
                           {isGeneratingContext ? 'Analyzing repository...' : 'No context yet — fetch a PR to auto-generate.'}
                         </div>
                       );
@@ -341,7 +341,7 @@ export function CodeReviewEditor({
                 <SubTitle>SOURCE_PR</SubTitle>
               </div>
               <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '16px' }}>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', marginBottom: 12 }}>
+                <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 12 }}>
                   PR #{challenge.githubPrNumber}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -352,7 +352,7 @@ export function CodeReviewEditor({
                     style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                       background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)',
-                      color: '#fff', padding: '8px', borderRadius: 4, fontSize: 9,
+                      color: 'var(--pipe-text, #fff)', padding: '8px', borderRadius: 4, fontSize: 9,
                       fontFamily: 'Space Mono', cursor: 'pointer', textDecoration: 'none'
                     }}
                   >
@@ -384,7 +384,7 @@ export function CodeReviewEditor({
 
           {sidebarSection('SCORING_LOGIC', <Shield size={14} />, (
             <div style={{ padding: '16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
                 Candidates are scored on findings and conversation quality.
                 {(challenge.config as Record<string, unknown> | undefined)?.enableExplainer
                   ? ' When explainer is enabled, question quality provides supplementary signal.'

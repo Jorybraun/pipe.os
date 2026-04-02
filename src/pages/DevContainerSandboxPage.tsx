@@ -137,7 +137,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
       style={{
         minHeight: '100%',
         background: '#0c0c0e',
-        color: '#fff',
+        color: 'var(--pipe-text, #fff)',
         fontFamily: '"Space Mono", monospace',
         padding: '40px 48px',
       }}
@@ -148,7 +148,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
           style={{
             fontSize: 9,
             letterSpacing: '0.25em',
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             marginBottom: 8,
           }}
         >
@@ -168,7 +168,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
         <p
           style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             lineHeight: 1.7,
             margin: 0,
             maxWidth: 600,
@@ -219,7 +219,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
             style={{
               marginTop: 12,
               fontSize: 10,
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
               letterSpacing: '0.05em',
               wordBreak: 'break-all',
             }}
@@ -317,7 +317,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
               padding: '14px 28px',
               background: 'transparent',
               border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               fontSize: 11,
               letterSpacing: '0.15em',
               fontWeight: 700,
@@ -384,7 +384,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
               padding: '12px 16px',
               fontSize: 9,
               letterSpacing: '0.2em',
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--pipe-text-dim)',
               borderBottom: '1px solid rgba(255,255,255,0.08)',
               display: 'flex',
               justifyContent: 'space-between',
@@ -440,7 +440,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
           style={{
             fontSize: 9,
             letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.2)',
+            color: 'var(--pipe-text-dim)',
             marginBottom: 16,
           }}
         >
@@ -449,7 +449,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
         <div
           style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             lineHeight: 1.8,
           }}
         >

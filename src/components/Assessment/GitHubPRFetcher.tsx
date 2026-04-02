@@ -209,7 +209,7 @@ export function GitHubPRFetcher({
             borderRadius: 8,
           }}
         >
-          <div style={{ marginBottom: 20, fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', fontWeight: 700, letterSpacing: '0.2em' }}>
+          <div style={{ marginBottom: 20, fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', fontWeight: 700, letterSpacing: '0.2em' }}>
             GITHUB_PR_DETAILS
           </div>
 
@@ -217,7 +217,7 @@ export function GitHubPRFetcher({
             {/* Repository URL */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+                <label style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
                   REPOSITORY_URL *
                 </label>
                 {isValidUrl(repoUrl) && (
@@ -235,13 +235,13 @@ export function GitHubPRFetcher({
                   background: 'rgba(0, 0, 0, 0.3)',
                   border: `1px solid ${isValidUrl(repoUrl) ? 'rgba(74, 222, 128, 0.3)' : 'rgba(255,255,255,0.1)'}`,
                   borderRadius: 4,
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 13,
                   fontFamily: 'Space Mono',
                   outline: 'none',
                 }}
               />
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 6, fontFamily: 'Space Mono' }}>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginTop: 6, fontFamily: 'Space Mono' }}>
                 Format: https://github.com/{'{owner}'}/{'{repo}'}
               </div>
             </div>
@@ -249,7 +249,7 @@ export function GitHubPRFetcher({
             {/* PR Number */}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>
+                <label style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
                   PR_NUMBER *
                 </label>
                 {isValidPrNumber(prNumber) && (
@@ -268,13 +268,13 @@ export function GitHubPRFetcher({
                   background: 'rgba(0, 0, 0, 0.3)',
                   border: `1px solid ${isValidPrNumber(prNumber) ? 'rgba(74, 222, 128, 0.3)' : 'rgba(255,255,255,0.1)'}`,
                   borderRadius: 4,
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 13,
                   fontFamily: 'Space Mono',
                   outline: 'none',
                 }}
               />
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', marginTop: 6, fontFamily: 'Space Mono' }}>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginTop: 6, fontFamily: 'Space Mono' }}>
                 Positive integer only
               </div>
             </div>
@@ -319,7 +319,7 @@ export function GitHubPRFetcher({
                   gap: 8,
                   padding: '12px 24px',
                   background: 'rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.4)',
+                  color: 'var(--pipe-text-dim)',
                   border: '1px solid rgba(255,255,255,0.1)',
                   borderRadius: 4,
                   fontSize: 10,
@@ -357,7 +357,7 @@ export function GitHubPRFetcher({
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontFamily: 'Space Mono' }}>
               Fetching PR metadata from GitHub...
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginTop: 8 }}>
               (may take 1-2 seconds)
             </div>
           </div>
@@ -384,7 +384,7 @@ export function GitHubPRFetcher({
                 {getErrorMessage(error.code, error.message)}
               </div>
               {error.details && (
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', marginBottom: 12, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 4, maxHeight: 100, overflow: 'auto' }}>
+                <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 12, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 4, maxHeight: 100, overflow: 'auto' }}>
                   {error.details}
                 </div>
               )}
@@ -420,7 +420,7 @@ export function GitHubPRFetcher({
                     gap: 6,
                     padding: '8px 16px',
                     background: 'rgba(255,255,255,0.05)',
-                    color: 'rgba(255,255,255,0.4)',
+                    color: 'var(--pipe-text-dim)',
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: 4,
                     fontSize: 10,
@@ -449,7 +449,7 @@ export function GitHubPRFetcher({
             borderRadius: 8,
           }}
         >
-          <div style={{ marginBottom: 20, fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono', fontWeight: 700, letterSpacing: '0.2em' }}>
+          <div style={{ marginBottom: 20, fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', fontWeight: 700, letterSpacing: '0.2em' }}>
             PR_PREVIEW
           </div>
 
@@ -478,7 +478,7 @@ export function GitHubPRFetcher({
           </div>
 
           {/* PR Title */}
-          <h3 style={{ fontSize: 14, fontWeight: 800, color: '#fff', marginBottom: 8, margin: 0 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 8, margin: 0 }}>
             {prData.title}
           </h3>
 
@@ -496,7 +496,7 @@ export function GitHubPRFetcher({
               alignItems: 'center',
               gap: 12,
               fontSize: 11,
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: 'Space Mono',
               marginBottom: 16,
             }}
@@ -540,7 +540,7 @@ export function GitHubPRFetcher({
                   borderBottom: '1px solid rgba(255,255,255,0.06)',
                   fontSize: 10,
                   fontFamily: 'Space Mono',
-                  color: 'rgba(255,255,255,0.4)',
+                  color: 'var(--pipe-text-dim)',
                 }}
               >
                 {prData.diff.files[0].path} (

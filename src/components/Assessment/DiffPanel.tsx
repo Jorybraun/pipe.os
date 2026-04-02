@@ -198,7 +198,7 @@ function InlineCodeChange(props: {
           onClick={() => setExpanded(false)}
           style={{
             background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-            color: 'rgba(255,255,255,0.3)', fontSize: 10,
+            color: 'var(--pipe-text-dim)', fontSize: 10,
           }}
         >
           collapse
@@ -300,7 +300,7 @@ function InlineCodeChange(props: {
               background: 'rgba(255,255,255,0.02)',
               border: '1px solid rgba(248,113,113,0.15)',
               borderRadius: 4,
-              color: '#fff',
+              color: 'var(--pipe-text, #fff)',
               fontSize: 11,
               padding: '8px 10px',
               fontFamily: '"Space Mono", monospace',
@@ -316,7 +316,7 @@ function InlineCodeChange(props: {
               style={{
                 padding: '5px 12px', background: 'transparent',
                 border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4,
-                fontSize: 9, color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+                fontSize: 9, color: 'var(--pipe-text-dim)', cursor: 'pointer',
                 fontFamily: '"Space Mono", monospace',
               }}
             >
@@ -587,7 +587,7 @@ function FileDiffBody({
                       <MessageSquare size={12} color="#a78bfa" />
                       <span style={{
                         fontSize: 10,
-                        color: 'rgba(255,255,255,0.5)',
+                        color: 'var(--pipe-text-muted)',
                         fontFamily: '"Space Mono", monospace',
                       }}>
                         Add a comment on line {line.num}
@@ -638,7 +638,7 @@ function FileDiffBody({
                           background: 'rgba(255,255,255,0.02)',
                           border: '1px solid rgba(255,255,255,0.08)',
                           borderRadius: 4,
-                          color: '#fff',
+                          color: 'var(--pipe-text, #fff)',
                           fontSize: 12,
                           padding: '12px 14px',
                           fontFamily: '"Space Mono", monospace',
@@ -680,7 +680,7 @@ function FileDiffBody({
                           background: 'transparent',
                           border: '1px solid rgba(255,255,255,0.1)',
                           borderRadius: 4,
-                          color: 'rgba(255,255,255,0.4)',
+                          color: 'var(--pipe-text-dim)',
                           fontSize: 10,
                           fontWeight: 600,
                           cursor: 'pointer',
@@ -744,7 +744,7 @@ function FileDiffBody({
                           }}>
                             {annotation.severity}
                           </span>
-                          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.05em' }}>YOU</span>
+                          <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em' }}>YOU</span>
                         </div>
                         <p style={{
                           fontSize: 11,
@@ -855,7 +855,7 @@ function FileDiffBody({
                                 background: 'rgba(255,255,255,0.02)',
                                 border: '1px solid rgba(255,255,255,0.08)',
                                 borderRadius: 4,
-                                color: '#fff',
+                                color: 'var(--pipe-text, #fff)',
                                 fontSize: 11,
                                 padding: '8px 12px',
                                 fontFamily: '"Space Mono", monospace',
@@ -876,7 +876,7 @@ function FileDiffBody({
                                   borderRadius: 4,
                                   fontSize: 9,
                                   fontWeight: 600,
-                                  color: 'rgba(255,255,255,0.4)',
+                                  color: 'var(--pipe-text-dim)',
                                   cursor: 'pointer',
                                   fontFamily: '"Space Mono", monospace',
                                 }}
@@ -943,7 +943,7 @@ export function DiffPanel({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'rgba(255,255,255,0.3)',
+          color: 'var(--pipe-text-dim)',
           fontSize: 12,
         }}>
           No diff files available
@@ -1138,7 +1138,7 @@ export function DiffPanel({
           justifyContent: 'space-between',
           flexShrink: 0,
         }}>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', fontFamily: '"Space Mono", monospace' }}>
+          <span style={{ fontSize: 11, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>
             {activeFile.path}
           </span>
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace' }}>
@@ -1158,7 +1158,7 @@ export function DiffPanel({
                 background: 'rgba(255,255,255,0.04)',
                 border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 3,
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontSize: 9,
                 fontFamily: '"Space Mono", monospace',
                 letterSpacing: '0.06em',
@@ -1209,7 +1209,7 @@ export function DiffPanel({
         <span style={{
           fontSize: 9,
           fontFamily: '"Space Mono", monospace',
-          color: 'rgba(255,255,255,0.3)',
+          color: 'var(--pipe-text-dim)',
           letterSpacing: '0.12em',
           padding: '0 8px',
         }}>
@@ -1294,7 +1294,7 @@ export function DiffPanel({
                     background: 'rgba(255,255,255,0.04)',
                     border: '1px solid rgba(255,255,255,0.08)',
                     borderRadius: 3,
-                    color: 'rgba(255,255,255,0.4)',
+                    color: 'var(--pipe-text-dim)',
                     fontSize: 9,
                     fontFamily: '"Space Mono", monospace',
                     letterSpacing: '0.06em',

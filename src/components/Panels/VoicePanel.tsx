@@ -204,7 +204,7 @@ export function VoicePanel({
                   fontSize: 10,
                   background: 'rgba(255,255,255,0.04)',
                   borderColor: 'rgba(255,255,255,0.12)',
-                  color: 'rgba(255,255,255,0.5)',
+                  color: 'var(--pipe-text-muted)',
                 }}
               >
                 RE-RECORD
@@ -259,7 +259,7 @@ export function VoicePanel({
           style={{
             ...mono,
             fontSize: 9,
-            color: 'rgba(255,255,255,0.2)',
+            color: 'var(--pipe-text-dim)',
             textAlign: 'right',
           }}
         >

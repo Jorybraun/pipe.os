@@ -147,7 +147,7 @@ export function AgentPanel({
           <span
             style={{
               fontSize: 9,
-              color: "rgba(255,255,255,0.4)",
+              color: "var(--pipe-text-dim)",
               letterSpacing: "0.1em",
             }}
           >
@@ -182,7 +182,7 @@ export function AgentPanel({
             <span
               style={{
                 fontSize: 9,
-                color: "rgba(255,255,255,0.4)",
+                color: "var(--pipe-text-dim)",
                 letterSpacing: "0.1em",
               }}
             >
@@ -289,7 +289,7 @@ export function AgentPanel({
                     padding: "12px 16px",
                     background: "rgba(0,0,0,0.2)",
                     border: "1px solid rgba(255,255,255,0.06)",
-                    color: "#fff",
+                    color: "var(--pipe-text, #fff)",
                     fontSize: 11,
                     fontFamily: '"Space Mono", monospace',
                     outline: "none",
@@ -301,7 +301,7 @@ export function AgentPanel({
                     padding: "12px 14px",
                     background: "rgba(139, 92, 246, 0.15)",
                     border: "1px solid rgba(139, 92, 246, 0.25)",
-                    color: "#fff",
+                    color: "var(--pipe-text, #fff)",
                     cursor: "pointer",
                   }}
                 >
@@ -499,7 +499,7 @@ export function AgentPanel({
                 <p
                   style={{
                     fontSize: 13,
-                    color: "rgba(255,255,255,0.6)",
+                    color: "var(--pipe-text-muted)",
                     margin: 0,
                     lineHeight: 1.7,
                   }}

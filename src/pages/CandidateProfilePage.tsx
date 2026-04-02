@@ -184,14 +184,14 @@ function FollowUpReadOnly({
               <div
                 style={{
                   fontSize: 12,
-                  color: "rgba(255,255,255,0.6)",
+                  color: "var(--pipe-text-muted)",
                   marginBottom: 8,
                   lineHeight: 1.5,
                 }}
               >
                 <span
                   style={{
-                    color: "rgba(255,255,255,0.3)",
+                    color: "var(--pipe-text-dim)",
                     fontFamily: '"Space Mono", monospace',
                     fontSize: 9,
                     marginRight: 8,
@@ -208,7 +208,7 @@ function FollowUpReadOnly({
                     background: "rgba(255,255,255,0.03)",
                     borderLeft: "2px solid rgba(255,255,255,0.1)",
                     fontSize: 13,
-                    color: "rgba(255,255,255,0.8)",
+                    color: "var(--pipe-text, #fff)",
                     lineHeight: 1.6,
                     whiteSpace: "pre-wrap",
                   }}
@@ -219,7 +219,7 @@ function FollowUpReadOnly({
                 <div
                   style={{
                     fontSize: 11,
-                    color: "rgba(255,255,255,0.2)",
+                    color: "var(--pipe-text-dim)",
                     fontFamily: '"Space Mono", monospace',
                     fontStyle: "italic",
                   }}
@@ -255,7 +255,7 @@ function QuizMcqView({
       <div
         style={{
           fontSize: 14,
-          color: "#fff",
+          color: "var(--pipe-text, #fff)",
           fontWeight: 500,
           lineHeight: 1.5,
         }}
@@ -343,7 +343,7 @@ function ChallengeCard({
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {challenge.type && <TypeBadge type={challenge.type} />}
-          <h4 style={{ fontSize: 16, fontWeight: 800, color: "#fff", margin: 0 }}>
+          <h4 style={{ fontSize: 16, fontWeight: 800, color: "var(--pipe-text, #fff)", margin: 0 }}>
             {challenge.title ?? "Untitled Challenge"}
           </h4>
         </div>
@@ -353,14 +353,14 @@ function ChallengeCard({
               style={{
                 fontSize: 9,
                 letterSpacing: "0.1em",
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
                 fontFamily: '"Space Mono", monospace',
               }}
             >
               SCORE
             </div>
             <div
-              style={{ fontSize: 24, fontWeight: 900, color: "#fff", lineHeight: 1 }}
+              style={{ fontSize: 24, fontWeight: 900, color: "var(--pipe-text, #fff)", lineHeight: 1 }}
             >
               {sub.score}
             </div>
@@ -377,7 +377,7 @@ function ChallengeCard({
               border: "1px dashed rgba(255,255,255,0.08)",
               borderRadius: 8,
               textAlign: "center",
-              color: "rgba(255,255,255,0.2)",
+              color: "var(--pipe-text-dim)",
               fontSize: 11,
               fontFamily: '"Space Mono", monospace',
               letterSpacing: "0.1em",
@@ -422,7 +422,7 @@ function ChallengeCard({
                             style={{
                               fontSize: 11,
                               fontWeight: 800,
-                              color: "#fff",
+                              color: "var(--pipe-text, #fff)",
                               textTransform: "uppercase",
                               fontFamily: '"Space Mono", monospace',
                               letterSpacing: "0.05em",
@@ -436,7 +436,7 @@ function ChallengeCard({
                         <div
                           style={{
                             fontSize: 14,
-                            color: "rgba(255,255,255,0.7)",
+                            color: "var(--pipe-text-muted)",
                             lineHeight: 1.6,
                           }}
                         >
@@ -484,7 +484,7 @@ function ChallengeCard({
                                   <span
                                     style={{
                                       fontSize: 10,
-                                      color: "rgba(255,255,255,0.4)",
+                                      color: "var(--pipe-text-dim)",
                                       fontFamily: '"Space Mono", monospace',
                                     }}
                                   >
@@ -508,7 +508,7 @@ function ChallengeCard({
                               <div
                                 style={{
                                   fontSize: 13,
-                                  color: "rgba(255,255,255,0.8)",
+                                  color: "var(--pipe-text, #fff)",
                                   lineHeight: 1.6,
                                 }}
                               >
@@ -522,7 +522,7 @@ function ChallengeCard({
                       <div
                         style={{
                           fontSize: 12,
-                          color: "rgba(255,255,255,0.2)",
+                          color: "var(--pipe-text-dim)",
                           fontStyle: "italic",
                           fontFamily: '"Space Mono", monospace',
                         }}
@@ -569,7 +569,7 @@ function ChallengeCard({
                             style={{
                               fontFamily: '"Space Mono", monospace',
                               fontSize: 10,
-                              color: "rgba(255,255,255,0.2)",
+                              color: "var(--pipe-text-dim)",
                             }}
                           >
                             VIDEO_SUBMISSION
@@ -586,7 +586,7 @@ function ChallengeCard({
                         <div
                           style={{
                             fontSize: 15,
-                            color: "rgba(255,255,255,0.9)",
+                            color: "var(--pipe-text, #fff)",
                             lineHeight: 1.7,
                             whiteSpace: "pre-wrap",
                             background: "rgba(0,0,0,0.2)",
@@ -598,7 +598,7 @@ function ChallengeCard({
                           {(response.text as string) || (
                             <span
                               style={{
-                                color: "rgba(255,255,255,0.2)",
+                                color: "var(--pipe-text-dim)",
                                 fontStyle: "italic",
                               }}
                             >
@@ -612,7 +612,7 @@ function ChallengeCard({
                     <div
                       style={{
                         fontSize: 15,
-                        color: "rgba(255,255,255,0.9)",
+                        color: "var(--pipe-text, #fff)",
                         lineHeight: 1.7,
                         whiteSpace: "pre-wrap",
                         background: "rgba(0,0,0,0.2)",
@@ -624,7 +624,7 @@ function ChallengeCard({
                       {(response.text as string) || (
                         <span
                           style={{
-                            color: "rgba(255,255,255,0.2)",
+                            color: "var(--pipe-text-dim)",
                             fontStyle: "italic",
                           }}
                         >
@@ -684,7 +684,7 @@ function ChallengeCard({
                       <label
                         style={{
                           fontSize: 9,
-                          color: "rgba(255,255,255,0.4)",
+                          color: "var(--pipe-text-dim)",
                           fontFamily: '"Space Mono", monospace',
                           letterSpacing: "0.1em",
                         }}
@@ -695,7 +695,7 @@ function ChallengeCard({
                         style={{
                           fontSize: 16,
                           fontWeight: 900,
-                          color: "#fff",
+                          color: "var(--pipe-text, #fff)",
                           fontFamily: '"Space Mono", monospace',
                         }}
                       >
@@ -722,7 +722,7 @@ function ChallengeCard({
                       style={{
                         display: "block",
                         fontSize: 9,
-                        color: "rgba(255,255,255,0.4)",
+                        color: "var(--pipe-text-dim)",
                         marginBottom: 12,
                         fontFamily: '"Space Mono", monospace',
                         letterSpacing: "0.1em",
@@ -742,7 +742,7 @@ function ChallengeCard({
                         background: "rgba(0,0,0,0.3)",
                         border: "1px solid rgba(255,255,255,0.1)",
                         padding: 16,
-                        color: "#fff",
+                        color: "var(--pipe-text, #fff)",
                         fontSize: 13,
                         fontFamily: "inherit",
                         outline: "none",
@@ -954,7 +954,7 @@ export default function CandidateProfilePage(): JSX.Element {
             style={{
               fontSize: 10,
               letterSpacing: "0.15em",
-              color: "rgba(255,255,255,0.3)",
+              color: "var(--pipe-text-dim)",
               fontFamily: '"Space Mono", monospace',
               marginBottom: 8,
             }}
@@ -986,7 +986,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 style={{
                   fontSize: 24,
                   fontWeight: 900,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   margin: 0,
                   lineHeight: 1.2,
                 }}
@@ -1000,7 +1000,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   gap: 8,
                   marginTop: 4,
                   fontSize: 12,
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--pipe-text-dim)",
                   fontFamily: '"Space Mono", monospace',
                 }}
               >
@@ -1208,7 +1208,7 @@ export default function CandidateProfilePage(): JSX.Element {
                       <div
                         style={{
                           fontSize: 12,
-                          color: "rgba(255,255,255,0.4)",
+                          color: "var(--pipe-text-dim)",
                           fontFamily: '"Space Mono", monospace',
                         }}
                       >
@@ -1253,7 +1253,7 @@ export default function CandidateProfilePage(): JSX.Element {
               style={{
                 fontSize: 9,
                 letterSpacing: "0.2em",
-                color: "rgba(255,255,255,0.3)",
+                color: "var(--pipe-text-dim)",
                 fontFamily: '"Space Mono", monospace',
                 marginBottom: 16,
               }}
@@ -1299,7 +1299,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     <span
                       style={{
                         fontSize: 9,
-                        color: "rgba(255,255,255,0.35)",
+                        color: "var(--pipe-text-dim)",
                         fontFamily: '"Space Mono", monospace',
                       }}
                     >
@@ -1346,7 +1346,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   style={{
                     fontSize: 9,
                     letterSpacing: "0.2em",
-                    color: "rgba(255,255,255,0.3)",
+                    color: "var(--pipe-text-dim)",
                     fontFamily: '"Space Mono", monospace',
                   }}
                 >
@@ -1364,7 +1364,7 @@ export default function CandidateProfilePage(): JSX.Element {
                       <div
                         style={{
                           fontSize: 10,
-                          color: "rgba(255,255,255,0.35)",
+                          color: "var(--pipe-text-dim)",
                           fontFamily: '"Space Mono", monospace',
                           marginTop: 4,
                         }}
@@ -1400,7 +1400,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 {candidate.education && candidate.education.length > 0 && (
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 2 }}>
                     <GraduationCap size={11} color="rgba(255,255,255,0.2)" style={{ marginTop: 2, flexShrink: 0 }} />
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 10, color: "var(--pipe-text-dim)", lineHeight: 1.5 }}>
                       {candidate.education.join(" · ")}
                     </div>
                   </div>
@@ -1429,7 +1429,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 style={{
                   fontSize: 9,
                   letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
+                  color: "var(--pipe-text-dim)",
                   fontFamily: '"Space Mono", monospace',
                 }}
               >
@@ -1452,7 +1452,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   <span
                     style={{
                       fontSize: 9,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: '"Space Mono", monospace',
                     }}
                   >
@@ -1461,7 +1461,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   <span
                     style={{
                       fontSize: 11,
-                      color: "#fff",
+                      color: "var(--pipe-text, #fff)",
                       fontFamily: '"Space Mono", monospace',
                       fontWeight: 700,
                     }}
@@ -1488,7 +1488,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 background: "rgba(255,255,255,0.05)",
                 border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: 8,
-                color: "#fff",
+                color: "var(--pipe-text, #fff)",
                 fontSize: 10,
                 fontWeight: 800,
                 fontFamily: '"Space Mono", monospace',

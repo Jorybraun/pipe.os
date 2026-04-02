@@ -115,7 +115,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
         <ChromeMeshGrid />
         <div style={{ textAlign: 'center', zIndex: 1 }}>
           <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
-          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             INITIALIZING_SECURE_SESSION...
           </div>
         </div>
@@ -145,13 +145,13 @@ export default function CandidateAssessmentPage(): JSX.Element {
         <ChromeMeshGrid />
         <LiquidMetalCard variant="mercury" style={{ maxWidth: 480, padding: 48, textAlign: 'center', zIndex: 1 }}>
           <AlertCircle size={48} color="rgba(255,100,100,0.5)" style={{ marginBottom: 24 }} />
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 16 }}>
             {isInvalid ? 'Invalid Invite Link'
               : isCompleted ? 'Assessment Completed'
               : isSessionExpired ? 'Session Expired'
               : 'Connection Error'}
           </h2>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
+          <p style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
             {isInvalid ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
               : isCompleted ? 'You have already submitted this assessment. Thank you for your time!'
               : isSessionExpired ? 'Your session has expired. Please contact your recruiter for a new invite link.'
@@ -159,7 +159,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
           </p>
           <button onClick={() => reset()} style={{
             padding: '12px 24px', background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)', color: '#fff',
+            border: '1px solid rgba(255,255,255,0.2)', color: 'var(--pipe-text, #fff)',
             fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
           }}>RETRY_CONNECTION</button>
         </LiquidMetalCard>
@@ -174,13 +174,13 @@ export default function CandidateAssessmentPage(): JSX.Element {
         <ChromeMeshGrid />
         <LiquidMetalCard variant="mercury" style={{ maxWidth: 480, padding: 48, textAlign: 'center', zIndex: 1 }}>
           <AlertCircle size={48} color="rgba(255,100,100,0.5)" style={{ marginBottom: 24 }} />
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 16 }}>Connection Error</h2>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 16 }}>Connection Error</h2>
+          <p style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
             There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.
           </p>
           <button onClick={() => reset()} style={{
             padding: '12px 24px', background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)', color: '#fff',
+            border: '1px solid rgba(255,255,255,0.2)', color: 'var(--pipe-text, #fff)',
             fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
           }}>RETRY_CONNECTION</button>
         </LiquidMetalCard>
@@ -198,8 +198,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
         <ChromeMeshGrid />
         <LiquidMetalCard variant="chrome" style={{ maxWidth: 480, padding: 60, textAlign: 'center', zIndex: 1 }}>
           <CheckCircle size={64} color="#10b981" style={{ marginBottom: 32 }} />
-          <h2 style={{ fontSize: 32, fontWeight: 800, color: '#fff', marginBottom: 16, letterSpacing: '-0.02em' }}>Submitted.</h2>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace' }}>
+          <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 16, letterSpacing: '-0.02em' }}>Submitted.</h2>
+          <p style={{ fontSize: 14, color: 'var(--pipe-text-muted)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace' }}>
             Your assessment has been securely delivered. The team will review your submission and get back to you soon.
           </p>
         </LiquidMetalCard>
@@ -232,7 +232,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
         <ChromeMeshGrid />
         <div style={{ textAlign: 'center', zIndex: 1 }}>
           <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
-          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             LOADING_CHALLENGE...
           </div>
         </div>

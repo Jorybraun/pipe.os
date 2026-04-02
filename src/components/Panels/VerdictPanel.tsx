@@ -91,7 +91,7 @@ export function VerdictPanel({
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {/* Verdict */}
         <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
             REVIEW_VERDICT
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -134,7 +134,7 @@ export function VerdictPanel({
 
         {/* Summary */}
         <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
             REVIEW_SUMMARY
           </div>
           <textarea
@@ -146,7 +146,7 @@ export function VerdictPanel({
               background: 'rgba(255,255,255,0.02)',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: 4,
-              color: '#fff',
+              color: 'var(--pipe-text, #fff)',
               fontSize: 11,
               padding: 12,
               fontFamily: '"Space Mono", monospace',
@@ -163,7 +163,7 @@ export function VerdictPanel({
 
         {/* Stats */}
         <div style={{ padding: 24 }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
             SUBMISSION_STATS
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 4 }}>
@@ -201,7 +201,7 @@ export function VerdictPanel({
             REVIEW_READY — click SUBMIT below
           </div>
         ) : (
-          <div style={{ padding: '10px 16px', fontSize: 9, color: 'rgba(255,255,255,0.2)', textAlign: 'center', letterSpacing: '0.08em' }}>
+          <div style={{ padding: '10px 16px', fontSize: 9, color: 'var(--pipe-text-dim)', textAlign: 'center', letterSpacing: '0.08em' }}>
             SELECT VERDICT + ADD SUMMARY TO ENABLE SUBMIT
           </div>
         )}

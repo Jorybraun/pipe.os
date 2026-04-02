@@ -51,7 +51,7 @@ export function AppBackground(): JSX.Element {
 
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: '#0c0c0e' }} />
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: 'var(--pipe-bg, #0c0c0e)' }} />
       {bg.enabled && (
         <>
           <div

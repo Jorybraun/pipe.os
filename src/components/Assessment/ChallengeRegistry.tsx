@@ -125,10 +125,8 @@ export function ChallengeRegistry({
   const sessionToken = useSessionToken();
   const dataFactory = useData();
   const storage = useStorage();
-  // diffClient is used for CODE_REVIEW on-demand PR fetching (Amplify — to be migrated separately)
-  const diffClient = sessionToken
-    ? dataFactory.createSessionClient(sessionToken)
-    : dataFactory.createPublicClient();
+  // Diff is now fetched server-side by the RPC endpoint (self-healing).
+  void sessionToken; void dataFactory; // suppress unused — retained for other challenge types
   const layout = useMemo(() => resolveLayout(challenge), [challenge]);
   const shells = useMemo(() => resolveShells(challenge, stageTimeLimit), [challenge, stageTimeLimit]);
 
@@ -160,7 +158,7 @@ export function ChallengeRegistry({
 
   // Diff state (CODE_REVIEW only)
   const [localDiff, setLocalDiff] = useState<DiffJson | null>(null);
-  const [isFetchingDiff, setIsFetchingDiff] = useState(false);
+  const isFetchingDiff = false; // Diff is fetched server-side by RPC
 
   // Submission State — QUIZ_SHORT_ANSWER branches on inputMode
   const [submission, setSubmission] = useState<Record<string, unknown>>(() => {
@@ -203,32 +201,9 @@ export function ChallengeRegistry({
       }
     }
 
-    // Fall back to on-demand fetch if repo/PR info available
-    if (!challenge.githubRepoUrl || !challenge.githubPrNumber) return;
-
-    setIsFetchingDiff(true);
-    void (async () => {
-      try {
-        const { data: raw } = await diffClient.mutations.fetchGitHubPR!({
-          repoUrl: challenge.githubRepoUrl!,
-          prNumber: challenge.githubPrNumber!,
-          skipCache: false,
-        });
-        // AppSync returns a.json() as a serialized string — must parse
-        const payload = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
-          success?: boolean;
-          data?: { diff?: unknown };
-        } | null;
-        if (payload?.success && payload.data?.diff) {
-          const parsed = parseDiffJson(payload.data.diff);
-          if (parsed) setLocalDiff(parsed);
-        }
-      } catch (err) {
-        console.error('[ChallengeRegistry] fetchGitHubPR failed:', err);
-      } finally {
-        setIsFetchingDiff(false);
-      }
-    })();
+    // Diff is fetched server-side by the RPC endpoint (self-healing).
+    // If cachedDiffJson was null, the RPC already fetched and stored it.
+    // No client-side fallback needed.
     // Run once per challenge id
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challenge.id]);
@@ -296,7 +271,7 @@ export function ChallengeRegistry({
             style={{
               fontSize: 10,
               letterSpacing: '0.2em',
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: '"Space Mono", monospace',
             }}
           >
@@ -445,7 +420,7 @@ export function ChallengeRegistry({
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 12,
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
               }}
             >
@@ -494,7 +469,7 @@ export function ChallengeRegistry({
             style={{
               padding: 40,
               textAlign: 'center',
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: 'Space Mono',
               fontSize: 10,
             }}

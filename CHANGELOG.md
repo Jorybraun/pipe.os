@@ -6,6 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Light/dark mode — 2026-04-02)
+- **`src/contexts/ThemeContext.tsx`** — Added `mode: 'dark' | 'light'` with CSS custom properties (`--pipe-text`, `--pipe-text-muted`, `--pipe-text-dim`, `--pipe-bg`, `--pipe-border`, `--pipe-surface`).
+- **`src/components/DisplaySettingsPanel.tsx`** — DARK/LIGHT toggle buttons; all controls use CSS variables.
+- **`src/components/Layout.tsx`** — Mode-aware overlay, header, sidebar backgrounds.
+- **`src/components/ui/AppBackground.tsx`** — Base background uses `var(--pipe-bg)`.
+- **`src/components/ui/Logo.tsx`** — Logo stroke/fill adapts to mode.
+- **50+ components** — Replaced hardcoded white text/border/surface colors with CSS variable tokens.
+
 #### Added (User-scoped theme + candidate welcome — 2026-04-02)
 - **`src/contexts/ThemeContext.tsx`** — Theme settings now scoped per recruiter via Clerk userId in localStorage key.
 - **`src/App.tsx`** — `RecruiterThemeSync` binds theme storage to signed-in user; candidate route wrapped in ThemeProvider.

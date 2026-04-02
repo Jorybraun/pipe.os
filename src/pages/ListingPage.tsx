@@ -156,15 +156,15 @@ export default function ListingPage(): JSX.Element {
       {/* Page Header (Meetings Page style) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             RECRUITMENT_PIPELINES
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', margin: 0 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em', margin: 0 }}>
             Active Roles
           </h1>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+          <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             {pipelines.length} roles total
           </span>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -172,7 +172,7 @@ export default function ListingPage(): JSX.Element {
                 <Activity size={12} />
                 {stats.active} ACTIVE
              </div>
-             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 <Users size={12} />
                 {stats.totalCandidates} CANDIDATES
              </div>
@@ -227,7 +227,7 @@ export default function ListingPage(): JSX.Element {
                     <Check size={10} color="#fff" strokeWidth={4} />
                   )}
                 </div>
-                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
                   {selectedIds.size > 0 ? `${selectedIds.size}_SELECTED` : 'SELECT_ALL'}
                 </span>
               </div>
@@ -242,7 +242,7 @@ export default function ListingPage(): JSX.Element {
                   background: 'transparent',
                   border: 'none',
                   outline: 'none',
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 11,
                   letterSpacing: '0.05em',
                   fontFamily: '"Space Mono", monospace',
@@ -310,7 +310,7 @@ export default function ListingPage(): JSX.Element {
               background: 'rgba(255,255,255,0.01)'
             }}>
               <Briefcase size={40} color="rgba(255,255,255,0.12)" style={{ marginBottom: 16 }} />
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+              <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
                 NO_ROLES_FOUND
               </p>
             </div>
@@ -364,7 +364,7 @@ export default function ListingPage(): JSX.Element {
                 <h3 style={{ 
                   fontSize: 10, 
                   letterSpacing: '0.2em', 
-                  color: '#fff', 
+                  color: 'var(--pipe-text, #fff)', 
                   textTransform: 'uppercase',
                   fontFamily: '"Space Mono", monospace',
                   fontWeight: 700
@@ -408,7 +408,7 @@ export default function ListingPage(): JSX.Element {
 
              {/* Sidebar Info/Stats */}
              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
                   PIPELINE_INSIGHTS
                 </span>
                 <div style={{ 
@@ -421,16 +421,16 @@ export default function ListingPage(): JSX.Element {
                   gap: 12
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Total Active Roles</span>
-                    <span style={{ fontSize: 10, color: '#fff', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.active}</span>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Total Active Roles</span>
+                    <span style={{ fontSize: 10, color: 'var(--pipe-text, #fff)', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.active}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Draft Pipelines</span>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Draft Pipelines</span>
                     <span style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.draft}</span>
                   </div>
                   <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Conversion Rate</span>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Conversion Rate</span>
                     <span style={{ fontSize: 10, color: '#34d399', fontWeight: 700, fontFamily: 'Space Mono' }}>24.2%</span>
                   </div>
                 </div>
