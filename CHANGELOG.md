@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Candidate profile sidebar — 2026-04-02)
+- **`src/pages/CandidateProfilePage.tsx`** — Adjusted right sidebar padding to match left panel spacing.
+
 #### Added (Theme system + loading splash — 2026-04-02)
 - **`src/contexts/ThemeContext.tsx`** — NEW: Theme provider with localStorage persistence. Stores background shader type, opacity, speed, scale.
 - **`src/components/ui/AppBackground.tsx`** — NEW: Root-level background renderer. Reads from ThemeContext, supports liquid-metal and heatmap shaders with speed easing animation.

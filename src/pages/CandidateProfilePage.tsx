@@ -1235,11 +1235,11 @@ export default function CandidateProfilePage(): JSX.Element {
       </div>
 
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
-      <aside style={{ height: "100%", overflowY: "auto" }}>
+      <aside style={{ overflowY: "auto", marginBottom: 24 }}>
         <LiquidMetalCard
           variant="chrome"
           style={{
-            padding: "32px 24px",
+            padding: "32px 24px 24px",
             height: "100%",
             borderLeft: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 0,
