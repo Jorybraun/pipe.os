@@ -16,13 +16,11 @@ import {
   Briefcase,
   Mail,
   Clock,
-  ExternalLink,
-  ChevronRight,
   Brain,
+  GraduationCap,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { calculateSignal } from "../lib/utils";
-import { FEATURES } from "../lib/features";
 import {
   IntelligenceReportRenderer,
   IntelligenceBlockConfig,
@@ -775,13 +773,8 @@ export default function CandidateProfilePage(): JSX.Element {
   const { candidate, stages, isLoading, error, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
 
-  const [selectedTab, setSelectedTab] = useState<string>("OVERVIEW");
+  const [selectedTab, setSelectedTab] = useState<string | null>(null);
 
-  /**
-   * Opens the candidate's resume in a new browser tab by streaming it from R2
-   * via the Worker API. Uses a blob URL so the file opens inline rather than
-   * triggering a download via a signed redirect.
-   */
   const handleViewResume = useCallback(async (): Promise<void> => {
     if (!id) return;
     try {
@@ -803,7 +796,6 @@ export default function CandidateProfilePage(): JSX.Element {
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const win = window.open(objectUrl, "_blank");
-      // Revoke after a short delay to free memory once the new tab has the data.
       setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
       if (!win) {
         console.warn("[CandidateProfilePage] Popup blocked — falling back to download.");
@@ -816,13 +808,11 @@ export default function CandidateProfilePage(): JSX.Element {
       console.error("[CandidateProfilePage] Error opening resume:", err);
     }
   }, [id, getToken]);
-  // aiBlocks will be populated by the AI report generator (post-MVP feature)
+
   const [aiBlocks] = useState<IntelligenceBlockConfig[]>([]);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
 
-  // Auto-select the first stage tab on initial load so challenge content is
-  // immediately visible without requiring a tab click.
-  // Only fires once when stages first become available (not on subsequent renders).
+  // Auto-select first stage on load
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
   useEffect(() => {
     const firstStage = stages[0];
@@ -832,7 +822,7 @@ export default function CandidateProfilePage(): JSX.Element {
     }
   }, [stages, hasAutoSelected]);
 
-  // Compute per-stage stats for the tab bar and journey map
+  // Compute per-stage stats
   const stageStats = stages.map((stage) => {
     const scoredChallenges = stage.challenges.filter(
       (ch) => ch.submission?.score != null,
@@ -852,6 +842,9 @@ export default function CandidateProfilePage(): JSX.Element {
     return { id: stage.id, title: stage.title, score, isComplete };
   });
 
+  const pipelineComplete =
+    stageStats.length > 0 && stageStats.every((s) => s.isComplete);
+
   const avgScore =
     stageStats.filter((s) => s.score !== null).length > 0
       ? Math.round(
@@ -868,7 +861,6 @@ export default function CandidateProfilePage(): JSX.Element {
   useEffect(() => {
     if (selectedTab === "INTELLIGENCE" && aiBlocks.length === 0 && !isAiGenerating) {
       setIsAiGenerating(true);
-      // AI report generation is a post-MVP feature — placeholder for now
       setTimeout(() => setIsAiGenerating(false), 1000);
     }
   }, [selectedTab, aiBlocks.length, isAiGenerating]);
@@ -879,10 +871,11 @@ export default function CandidateProfilePage(): JSX.Element {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 400px",
+          gridTemplateColumns: "1fr 340px",
           gap: 0,
-          minHeight: "calc(100vh - 100px)",
+          height: "calc(100vh - 100px)",
           margin: "-24px -20px",
+          overflow: "hidden",
         }}
       >
         <div style={{ padding: 40 }}>
@@ -897,7 +890,7 @@ export default function CandidateProfilePage(): JSX.Element {
         <div
           style={{
             background: "rgba(255,255,255,0.02)",
-            borderLeft: "1px solid rgba(255,255,255,0.08)",
+            borderLeft: "1px solid rgba(255,255,255,0.06)",
           }}
         />
       </div>
@@ -930,16 +923,18 @@ export default function CandidateProfilePage(): JSX.Element {
     candidate.updatedAt && candidate.status === "COMPLETED"
       ? new Date(candidate.updatedAt)
       : null;
+  const hasParsedProfile = !!(candidate.currentRole || candidate.skills?.length || candidate.yearsOfExperience);
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 400px",
+        gridTemplateColumns: "1fr 340px",
         gap: 0,
-        minHeight: "calc(100vh - 100px)",
+        height: "calc(100vh - 100px)",
         margin: "-24px -20px -24px 0",
         alignItems: "stretch",
+        overflow: "hidden",
       }}
     >
       {/* ── Main content ───────────────────────────────────────────────────── */}
@@ -947,268 +942,196 @@ export default function CandidateProfilePage(): JSX.Element {
         style={{
           display: "flex",
           flexDirection: "column",
-          gap: 32,
-          padding: "40px 60px",
+          gap: 0,
+          padding: "32px 48px",
           minWidth: 0,
+          overflowY: "auto",
         }}
       >
-        {/* Tab bar */}
+        {/* Header */}
+        <div style={{ marginBottom: 32 }}>
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.15em",
+              color: "rgba(255,255,255,0.3)",
+              fontFamily: '"Space Mono", monospace',
+              marginBottom: 8,
+            }}
+          >
+            CANDIDATE_PROFILE / {candidate.status}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                background: signalColors.bg,
+                border: `2px solid ${signalColors.border}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+                fontWeight: 900,
+                color: signalColors.text,
+                fontFamily: '"Space Mono", monospace',
+                flexShrink: 0,
+              }}
+            >
+              {initials}
+            </div>
+            <div>
+              <h1
+                style={{
+                  fontSize: 24,
+                  fontWeight: 900,
+                  color: "#fff",
+                  margin: 0,
+                  lineHeight: 1.2,
+                }}
+              >
+                {candidateLabel}
+              </h1>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.4)",
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                <Mail size={11} /> {candidate.email}
+                {candidate.currentRole && (
+                  <>
+                    <span style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
+                    <Briefcase size={11} /> {candidate.currentRole}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Stage tabs */}
         <div
           style={{
             display: "flex",
-            gap: 8,
-            overflowX: "auto",
-            paddingBottom: 4,
+            gap: 4,
+            marginBottom: 24,
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            paddingBottom: 0,
           }}
         >
-          <button
-            onClick={() => setSelectedTab("OVERVIEW")}
-            style={{
-              padding: "12px 24px",
-              borderRadius: 8,
-              cursor: "pointer",
-              background:
-                selectedTab === "OVERVIEW" ? "rgba(255,255,255,0.1)" : "transparent",
-              border:
-                selectedTab === "OVERVIEW"
-                  ? "1px solid rgba(255,255,255,0.2)"
-                  : "1px solid transparent",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 800,
-                color:
-                  selectedTab === "OVERVIEW" ? "#fff" : "rgba(255,255,255,0.4)",
-                fontFamily: "Space Mono",
-              }}
-            >
-              OVERVIEW
-            </span>
-          </button>
-
-          {FEATURES.INTELLIGENCE_REPORT && (
-            <button
-              onClick={() => setSelectedTab("INTELLIGENCE")}
-              style={{
-                padding: "12px 24px",
-                borderRadius: 8,
-                cursor: "pointer",
-                background:
-                  selectedTab === "INTELLIGENCE"
-                    ? "rgba(167,139,250,0.1)"
-                    : "transparent",
-                border:
-                  selectedTab === "INTELLIGENCE"
-                    ? "1px solid rgba(167,139,250,0.3)"
-                    : "1px solid transparent",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
-              <Brain
-                size={14}
-                color={
-                  selectedTab === "INTELLIGENCE" ? "#a78bfa" : "rgba(255,255,255,0.3)"
-                }
-              />
-              <span
+          {stageStats.map((stat) => {
+            const isActive = selectedTab === stat.id;
+            return (
+              <button
+                key={stat.id}
+                onClick={() => setSelectedTab(stat.id)}
                 style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color:
-                    selectedTab === "INTELLIGENCE"
-                      ? "#a78bfa"
-                      : "rgba(255,255,255,0.4)",
-                  fontFamily: "Space Mono",
+                  padding: "10px 20px",
+                  cursor: "pointer",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: isActive
+                    ? "2px solid #fff"
+                    : "2px solid transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: -1,
                 }}
               >
-                INTELLIGENCE
-              </span>
-            </button>
-          )}
-
-          {/* Always show INTELLIGENCE tab even when feature flag is off, for test coverage */}
-          {!FEATURES.INTELLIGENCE_REPORT && (
-            <button
-              onClick={() => setSelectedTab("INTELLIGENCE")}
-              style={{
-                padding: "12px 24px",
-                borderRadius: 8,
-                cursor: "pointer",
-                background:
-                  selectedTab === "INTELLIGENCE"
-                    ? "rgba(167,139,250,0.1)"
-                    : "transparent",
-                border:
-                  selectedTab === "INTELLIGENCE"
-                    ? "1px solid rgba(167,139,250,0.3)"
-                    : "1px solid transparent",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
-              <Brain
-                size={14}
-                color={
-                  selectedTab === "INTELLIGENCE" ? "#a78bfa" : "rgba(255,255,255,0.3)"
-                }
-              />
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color:
-                    selectedTab === "INTELLIGENCE"
-                      ? "#a78bfa"
-                      : "rgba(255,255,255,0.4)",
-                  fontFamily: "Space Mono",
-                }}
-              >
-                INTELLIGENCE
-              </span>
-            </button>
-          )}
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: isActive ? "#fff" : "rgba(255,255,255,0.35)",
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  {stat.title?.toUpperCase() ?? "STAGE"}
+                </span>
+                {stat.score !== null && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      color: isActive ? "#fff" : "rgba(255,255,255,0.25)",
+                      background: isActive
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(255,255,255,0.04)",
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                    }}
+                  >
+                    {stat.score}
+                  </span>
+                )}
+                {stat.isComplete && <CheckCircle size={11} color="#4ade80" />}
+              </button>
+            );
+          })}
 
           <div
             style={{
               width: 1,
-              height: 24,
-              background: "rgba(255,255,255,0.1)",
+              height: 20,
+              background: "rgba(255,255,255,0.08)",
+              alignSelf: "center",
               margin: "0 8px",
             }}
           />
-
-          {stageStats.map((stat) => (
-            <button
-              key={stat.id}
-              onClick={() => setSelectedTab(stat.id)}
+          <button
+            disabled={!pipelineComplete}
+            onClick={() => pipelineComplete && setSelectedTab("INTELLIGENCE")}
+            title={pipelineComplete ? undefined : "Complete all stages to unlock"}
+            style={{
+              padding: "10px 20px",
+              cursor: pipelineComplete ? "pointer" : "default",
+              background: "transparent",
+              border: "none",
+              borderBottom:
+                selectedTab === "INTELLIGENCE"
+                  ? "2px solid #a78bfa"
+                  : "2px solid transparent",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: -1,
+              opacity: pipelineComplete ? 1 : 0.3,
+            }}
+          >
+            <Brain
+              size={12}
+              color={
+                selectedTab === "INTELLIGENCE"
+                  ? "#a78bfa"
+                  : "rgba(255,255,255,0.25)"
+              }
+            />
+            <span
               style={{
-                padding: "12px 24px",
-                borderRadius: 8,
-                cursor: "pointer",
-                background:
-                  selectedTab === stat.id
-                    ? "rgba(255,255,255,0.1)"
-                    : "transparent",
-                border:
-                  selectedTab === stat.id
-                    ? "1px solid rgba(255,255,255,0.2)"
-                    : "1px solid transparent",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
+                fontSize: 10,
+                fontWeight: 800,
+                color:
+                  selectedTab === "INTELLIGENCE"
+                    ? "#a78bfa"
+                    : "rgba(255,255,255,0.35)",
+                fontFamily: '"Space Mono", monospace',
+                letterSpacing: "0.05em",
               }}
             >
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color:
-                    selectedTab === stat.id ? "#fff" : "rgba(255,255,255,0.4)",
-                  fontFamily: "Space Mono",
-                }}
-              >
-                {stat.title?.toUpperCase() ?? "STAGE"}
-              </span>
-              {stat.score !== null && (
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 900,
-                    color:
-                      selectedTab === stat.id ? "#fff" : "rgba(255,255,255,0.3)",
-                    background: "rgba(255,255,255,0.05)",
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                  }}
-                >
-                  {stat.score}
-                </span>
-              )}
-              {stat.isComplete && <CheckCircle size={12} color="#4ade80" />}
-            </button>
-          ))}
+              INTELLIGENCE
+            </span>
+          </button>
         </div>
-
-        {/* OVERVIEW tab */}
-        {selectedTab === "OVERVIEW" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            <LiquidMetalCard variant="default" style={{ padding: 32, borderRadius: 16 }}>
-              <SubTitle>CANDIDATE_JOURNEY_MAP</SubTitle>
-              <div
-                style={{
-                  marginTop: 24,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                }}
-              >
-                {stageStats.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => setSelectedTab(s.id)}
-                    style={{
-                      padding: "16px 20px",
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid rgba(255,255,255,0.05)",
-                      borderRadius: 12,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                      }}
-                    >
-                      {s.isComplete ? (
-                        <CheckCircle size={14} color="#4ade80" />
-                      ) : (
-                        <Clock size={14} color="rgba(255,255,255,0.2)" />
-                      )}
-                      <span
-                        style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}
-                      >
-                        {s.title}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 16,
-                      }}
-                    >
-                      {s.score !== null && (
-                        <div
-                          style={{
-                            fontSize: 18,
-                            fontWeight: 900,
-                            color: "#fff",
-                          }}
-                        >
-                          {s.score}
-                        </div>
-                      )}
-                      <ChevronRight size={14} color="rgba(255,255,255,0.2)" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </LiquidMetalCard>
-          </div>
-        )}
 
         {/* INTELLIGENCE tab */}
         {selectedTab === "INTELLIGENCE" && (
@@ -1219,7 +1142,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   style={{
                     fontSize: 11,
                     color: "#a78bfa",
-                    fontFamily: "Space Mono",
+                    fontFamily: '"Space Mono", monospace',
                     letterSpacing: "0.2em",
                     marginBottom: 16,
                   }}
@@ -1252,8 +1175,8 @@ export default function CandidateProfilePage(): JSX.Element {
           </div>
         )}
 
-        {/* Stage tabs */}
-        {selectedTab !== "OVERVIEW" && selectedTab !== "INTELLIGENCE" &&
+        {/* Stage content */}
+        {selectedTab !== "INTELLIGENCE" &&
           (() => {
             const activeStage = stages.find((s) => s.id === selectedTab);
             if (!activeStage) return null;
@@ -1312,92 +1235,35 @@ export default function CandidateProfilePage(): JSX.Element {
       </div>
 
       {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
-      <aside style={{ position: "sticky", top: 0, height: "100vh" }}>
+      <aside style={{ height: "100%", overflowY: "auto" }}>
         <LiquidMetalCard
           variant="chrome"
           style={{
-            padding: "40px 32px",
-            borderRadius: "32px 0 0 0",
+            padding: "32px 24px",
             height: "100%",
-            borderLeft: "1px solid rgba(255,255,255,0.1)",
-            borderTop: "1px solid rgba(255,255,255,0.1)",
+            borderLeft: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 0,
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          {/* Avatar + signal */}
-          <div
-            style={{
-              textAlign: "center",
-              marginBottom: 40,
-              paddingBottom: 40,
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
-            }}
-          >
+          {/* Signal score */}
+          <div style={{ marginBottom: 28 }}>
             <div
               style={{
-                width: 80,
-                height: 80,
-                borderRadius: "50%",
-                background: signalColors.bg,
-                border: `2px solid ${signalColors.border}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 28,
-                fontWeight: 900,
-                color: signalColors.text,
+                fontSize: 9,
+                letterSpacing: "0.2em",
+                color: "rgba(255,255,255,0.3)",
                 fontFamily: '"Space Mono", monospace',
-                margin: "0 auto 20px",
-                boxShadow: `0 0 30px ${signalColors.border}22`,
+                marginBottom: 16,
               }}
             >
-              {initials}
+              OVERALL_SIGNAL
             </div>
-            <h2
-              style={{
-                fontSize: 24,
-                fontWeight: 900,
-                color: "#fff",
-                margin: "0 0 8px",
-              }}
-            >
-              {candidateLabel}
-            </h2>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                fontSize: 12,
-                color: "rgba(255,255,255,0.4)",
-                fontFamily: "Space Mono",
-              }}
-            >
-              <Mail size={12} /> {candidate.email}
-            </div>
-            <div
-              style={{
-                marginTop: 32,
-                padding: 24,
-                background: "rgba(255,255,255,0.03)",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.06)",
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
               <div
                 style={{
-                  fontSize: 9,
-                  letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
-                  fontFamily: "Space Mono",
-                  marginBottom: 16,
-                }}
-              >
-                OVERALL_SIGNAL
-              </div>
-              <div
-                style={{
-                  fontSize: 56,
+                  fontSize: 48,
                   fontWeight: 900,
                   color: signalColors.text,
                   lineHeight: 1,
@@ -1406,104 +1272,188 @@ export default function CandidateProfilePage(): JSX.Element {
               >
                 {avgScore ?? "—"}
               </div>
-              <div style={{ marginTop: 16 }}>
-                <SignalBadge signal={signal} />
-              </div>
+              <SignalBadge signal={signal} />
             </div>
-          </div>
 
-          {/* Professional background */}
-          <div style={{ marginBottom: 40 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                marginBottom: 20,
-              }}
-            >
-              <Briefcase size={14} color="rgba(255,255,255,0.4)" />
-              <SubTitle>PROFESSIONAL_BACKGROUND</SubTitle>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <div>
-                <div
-                  style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}
-                >
-                  {candidate.currentRole ?? "—"}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "rgba(255,255,255,0.4)",
-                    fontFamily: "Space Mono",
-                    marginTop: 4,
-                  }}
-                >
-                  {candidate.yearsOfExperience ?? 0} YEARS_EXPERIENCE
-                </div>
-              </div>
-              {candidate.skills && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {candidate.skills.slice(0, 8).map((skill) => (
+            {/* Per-stage breakdown */}
+            {stageStats.length > 0 && (
+              <div
+                style={{
+                  marginTop: 20,
+                  paddingTop: 16,
+                  borderTop: "1px solid rgba(255,255,255,0.06)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                {stageStats.map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
                     <span
-                      key={skill}
                       style={{
-                        padding: "4px 10px",
-                        background: "rgba(255,255,255,0.05)",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 6,
-                        fontSize: 10,
-                        color: "rgba(255,255,255,0.6)",
+                        fontSize: 9,
+                        color: "rgba(255,255,255,0.35)",
                         fontFamily: '"Space Mono", monospace',
                       }}
                     >
-                      {skill?.toUpperCase()}
+                      {s.title?.toUpperCase()}
                     </span>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {s.isComplete && <CheckCircle size={10} color="#4ade80" />}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 900,
+                          color: s.score != null ? "#fff" : "rgba(255,255,255,0.15)",
+                          fontFamily: '"Space Mono", monospace',
+                        }}
+                      >
+                        {s.score ?? "—"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* Background — only when parsed data exists */}
+          {hasParsedProfile && (
+            <div
+              style={{
+                marginBottom: 28,
+                paddingTop: 24,
+                borderTop: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 14,
+                }}
+              >
+                <Briefcase size={12} color="rgba(255,255,255,0.3)" />
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.2em",
+                    color: "rgba(255,255,255,0.3)",
+                    fontFamily: '"Space Mono", monospace',
+                  }}
+                >
+                  BACKGROUND
+                </span>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {candidate.currentRole && (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>
+                      {candidate.currentRole}
+                    </div>
+                    {candidate.yearsOfExperience != null && candidate.yearsOfExperience > 0 && (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.35)",
+                          fontFamily: '"Space Mono", monospace',
+                          marginTop: 4,
+                        }}
+                      >
+                        {candidate.yearsOfExperience} YRS
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {candidate.skills && candidate.skills.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {candidate.skills.slice(0, 10).map((skill) => (
+                      <span
+                        key={skill}
+                        style={{
+                          padding: "3px 8px",
+                          background: "rgba(96,165,250,0.06)",
+                          border: "1px solid rgba(96,165,250,0.12)",
+                          borderRadius: 4,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: "rgba(96,165,250,0.7)",
+                          fontFamily: '"Space Mono", monospace',
+                        }}
+                      >
+                        {skill.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {candidate.education && candidate.education.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 2 }}>
+                    <GraduationCap size={11} color="rgba(255,255,255,0.2)" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", lineHeight: 1.5 }}>
+                      {candidate.education.join(" · ")}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Timeline */}
-          <div style={{ marginBottom: 40 }}>
+          <div
+            style={{
+              paddingTop: 24,
+              borderTop: "1px solid rgba(255,255,255,0.06)",
+            }}
+          >
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
-                marginBottom: 20,
+                gap: 8,
+                marginBottom: 14,
               }}
             >
-              <Clock size={14} color="rgba(255,255,255,0.4)" />
-              <SubTitle>TIMELINE</SubTitle>
+              <Clock size={12} color="rgba(255,255,255,0.3)" />
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.2em",
+                  color: "rgba(255,255,255,0.3)",
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                TIMELINE
+              </span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[
-                {
-                  label: "INVITED",
-                  value: invitedDate?.toLocaleDateString(),
-                },
-                {
-                  label: "SUBMITTED",
-                  value: completedDate?.toLocaleDateString() ?? "PENDING",
-                },
+                { label: "INVITED", value: invitedDate?.toLocaleDateString() },
+                { label: "SUBMITTED", value: completedDate?.toLocaleDateString() ?? "PENDING" },
               ].map((item) => (
                 <div
                   key={item.label}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
-                    padding: "10px 0",
-                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    padding: "6px 0",
                   }}
                 >
                   <span
                     style={{
                       fontSize: 9,
                       color: "rgba(255,255,255,0.3)",
-                      fontFamily: "Space Mono",
+                      fontFamily: '"Space Mono", monospace',
                     }}
                   >
                     {item.label}
@@ -1512,7 +1462,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     style={{
                       fontSize: 11,
                       color: "#fff",
-                      fontFamily: "Space Mono",
+                      fontFamily: '"Space Mono", monospace',
                       fontWeight: 700,
                     }}
                   >
@@ -1523,8 +1473,8 @@ export default function CandidateProfilePage(): JSX.Element {
             </div>
           </div>
 
-          {/* Actions */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Actions — pushed to bottom */}
+          <div style={{ marginTop: "auto", paddingTop: 24 }}>
             <button
               disabled={!candidate.resumeS3Key}
               onClick={() => void handleViewResume()}
@@ -1533,47 +1483,21 @@ export default function CandidateProfilePage(): JSX.Element {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: 10,
-                padding: "14px",
+                gap: 8,
+                padding: "12px",
                 background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.08)",
                 borderRadius: 8,
                 color: "#fff",
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: 800,
-                fontFamily: "Space Mono",
+                fontFamily: '"Space Mono", monospace',
                 cursor: candidate.resumeS3Key ? "pointer" : "default",
                 opacity: candidate.resumeS3Key ? 1 : 0.4,
               }}
             >
-              <FileDown size={14} /> VIEW_RESUME
+              <FileDown size={13} /> VIEW_RESUME
             </button>
-            <button
-              onClick={() => setSelectedTab("INTELLIGENCE")}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                padding: "14px",
-                background: "#fff",
-                color: "#000",
-                border: "none",
-                borderRadius: 8,
-                fontSize: 11,
-                fontWeight: 800,
-                fontFamily: "Space Mono",
-                cursor: "pointer",
-              }}
-            >
-              GENERATE_REPORT
-            </button>
-          </div>
-
-          {/* External links placeholder */}
-          <div style={{ marginTop: 20, display: "none" }}>
-            <ExternalLink size={12} />
           </div>
         </LiquidMetalCard>
       </aside>

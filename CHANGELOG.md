@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Candidate profile layout — 2026-04-02)
+- **`src/pages/CandidateProfilePage.tsx`** — Fixed sidebar extending beyond viewport. Outer grid now uses fixed `height` instead of `minHeight`, main content scrolls independently, sidebar fills its grid cell without overflow.
+
 #### Added (Diff ↔ file navigation — 2026-04-02)
 - **`src/components/Assessment/DiffPanel.tsx`** — "VIEW FILE" button in file headers (tabbed + long-form). Opens full file in Monaco viewer via new `onViewFile` prop.
 - **`src/components/Panels/FileViewerPanel.tsx`** — "VIEW DIFF" button (green, shown only for changed files). Returns to diff view via new `onViewDiff` prop.
