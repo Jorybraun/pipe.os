@@ -281,6 +281,11 @@ challenges.delete('/:challengeId', async (c) => {
   if (ownerRow.owner_id !== userId)
     return apiError(c, 'FORBIDDEN', 'You do not own this challenge.');
 
+  // Delete child review_sessions first (no ON DELETE CASCADE in schema)
+  await c.env.DB.prepare('DELETE FROM review_sessions WHERE challenge_id = ?1')
+    .bind(challengeId)
+    .run();
+
   await c.env.DB.prepare('DELETE FROM challenges WHERE id = ?1')
     .bind(challengeId)
     .run();

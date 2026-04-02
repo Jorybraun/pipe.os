@@ -104,7 +104,14 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string):
     return chunks.join('').trim();
   }
 
-  return (response as { response?: string }).response?.trim() ?? '';
+  const raw = (response as { response?: unknown }).response;
+  if (typeof raw === 'string') return raw.trim();
+  if (raw != null) {
+    // Some Workers AI models return nested objects — coerce to string
+    console.warn('[implementerAgent] Workers AI response.response is not a string:', typeof raw, JSON.stringify(raw).slice(0, 200));
+    return String(raw).trim();
+  }
+  return '';
 }
 
 // ─── Prompt builder for user message ────────────────────────────────────────
@@ -258,11 +265,13 @@ export async function callImplementerAgent(
     }
   } catch (err) {
     console.error(`[implementerAgent] ${provider} call failed:`, err);
-    throw new Error(`[implementerAgent] ${provider} failed to produce valid responses`);
+    console.log('[implementerAgent] Falling back to mock responses.');
+    return getMockImplementerResponses(newComments, persona);
   }
 
   if (!raw) {
-    throw new Error(`[implementerAgent] ${provider} failed to produce valid responses`);
+    console.warn(`[implementerAgent] ${provider} returned empty response. Falling back to mocks.`);
+    return getMockImplementerResponses(newComments, persona);
   }
 
   // Parse JSON array from response — handle fenced code blocks
@@ -272,12 +281,14 @@ export async function callImplementerAgent(
     parsed = JSON.parse(jsonText);
   } catch {
     console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
-    throw new Error(`[implementerAgent] ${provider} failed to produce valid responses`);
+    console.log('[implementerAgent] Falling back to mock responses.');
+    return getMockImplementerResponses(newComments, persona);
   }
 
   if (!Array.isArray(parsed)) {
     console.error('[implementerAgent] Response is not an array:', typeof parsed);
-    throw new Error(`[implementerAgent] ${provider} failed to produce valid responses`);
+    console.log('[implementerAgent] Falling back to mock responses.');
+    return getMockImplementerResponses(newComments, persona);
   }
 
   // Validate and normalise each item

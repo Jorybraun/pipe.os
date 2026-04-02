@@ -6,6 +6,23 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Comprehension mode + CV parser — 2026-04-02)
+- **`workers/api/src/lib/explainerAgent.ts`** — Explainer agent for blind comprehension reviews (Devstral via OpenAI-compat API).
+- **`workers/api/src/lib/comprehensionScorer.ts`** — Comprehension scorer across 4 dimensions (question quality, comprehension, decision quality, efficiency).
+- **`workers/api/src/lib/comprehensionScorerPrompts.ts`** — Prompt templates for comprehension scoring pipeline.
+- **`workers/api/src/lib/cvParser.ts`** — CV/resume parser extracting structured candidate data (skills, role, experience, education).
+- **`workers/api/src/lib/fetchGitHubDiff.ts`** — Shared GitHub PR diff fetcher for recruiter and candidate routes.
+- **`workers/api/migrations/0005_comprehension_mode.sql`** — D1 migration adding `mode` column to `review_sessions`.
+- **`public/pipe-filled.svg`** — Filled variant of Pipe logo.
+
+#### Changed (Robustness + resume parsing — 2026-04-02)
+- **`workers/api/src/lib/implementerAgent.ts`** — Graceful fallback to mock responses instead of throwing on AI failures; safer Workers AI response coercion.
+- **`workers/api/src/lib/scorerAgent.ts`** — Safer Workers AI response coercion matching implementer pattern.
+- **`workers/api/src/lib/mockResponses.ts`** — Added mock explainer and comprehension score report generators.
+- **`workers/api/src/routes/candidates.ts`** — Resume upload now auto-parses CV; re-invite wipes previous attempt data; education field added to listing query.
+- **`workers/api/src/routes/challenges.ts`** — Delete cascade for review_sessions on challenge deletion.
+- **`src/components/Assessment/DiffPanel.tsx`** — Solid `#0c0c0e` backgrounds replacing translucent rgba overlays.
+
 #### Changed (Theme defaults — 2026-04-02)
 - **`src/contexts/ThemeContext.tsx`** — Default dark overlay changed from 93% to 0%.
 

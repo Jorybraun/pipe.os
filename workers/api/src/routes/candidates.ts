@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
+import { parseResume, persistParsedCV } from '../lib/cvParser';
 import type { Env, Variables } from '../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -114,7 +115,7 @@ candidateOps.get('/:candidateId', async (c) => {
     .prepare(
       `SELECT c.id, c.name, c.email, c.status, c.pipeline_id,
               c.current_stage_id, c.resume_s3_key,
-              c.skills, c.years_of_experience, c.current_role,
+              c.skills, c.years_of_experience, c.current_role, c.education,
               c.created_at, c.updated_at
        FROM candidates c
        JOIN pipelines p ON p.id = c.pipeline_id
@@ -132,6 +133,7 @@ candidateOps.get('/:candidateId', async (c) => {
       skills: string | null;
       years_of_experience: number | null;
       current_role: string | null;
+      education: string | null;
       created_at: string;
       updated_at: string;
     }>();
@@ -267,6 +269,7 @@ candidateOps.get('/:candidateId', async (c) => {
       skills: candidate.skills ? (JSON.parse(candidate.skills) as string[]) : null,
       yearsOfExperience: candidate.years_of_experience,
       currentRole: candidate.current_role,
+      education: candidate.education ? (JSON.parse(candidate.education) as string[]) : null,
       score: avgScore,
       createdAt: candidate.created_at,
       updatedAt: candidate.updated_at,
@@ -331,7 +334,20 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     .bind(r2Key, now, candidateId)
     .run();
 
-  return c.json({ success: true, r2Key }, 201);
+  // Parse the resume for structured data (skills, role, experience)
+  const isMock = c.env.MOCK_AI === 'true';
+  const parsed = await parseResume({
+    fileBuffer: arrayBuffer,
+    contentType: fileEntry.type,
+    ...(c.env.MISTRAL_API_KEY ? { apiKey: c.env.MISTRAL_API_KEY } : {}),
+    mock: isMock,
+  });
+
+  if (parsed) {
+    await persistParsedCV(db, candidateId, parsed);
+  }
+
+  return c.json({ success: true, r2Key, parsed }, 201);
 });
 
 // GET /:candidateId/resume — stream CV/resume from R2 to the recruiter
@@ -455,12 +471,15 @@ candidateOps.post('/:candidateId/refresh-link', async (c) => {
   const newToken = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  await db
-    .prepare(
+  // Wipe previous attempt data so the candidate starts fresh
+  await db.batch([
+    db.prepare(`DELETE FROM review_sessions WHERE candidate_id = ?`).bind(candidateId),
+    db.prepare(`DELETE FROM challenge_submissions WHERE candidate_id = ?`).bind(candidateId),
+    db.prepare(`DELETE FROM assessments WHERE candidate_id = ?`).bind(candidateId),
+    db.prepare(
       `UPDATE candidates SET invite_token = ?, status = 'INVITED', updated_at = ? WHERE id = ?`
-    )
-    .bind(newToken, now, candidateId)
-    .run();
+    ).bind(newToken, now, candidateId),
+  ]);
 
   return c.json({ inviteToken: newToken });
 });

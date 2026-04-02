@@ -5,6 +5,7 @@
 
 import type { ImplementerResponse, ReviewComment } from './implementerAgent';
 import type { ScoreReport } from './scorerAgent';
+import type { ComprehensionQuestion, ExplainerResponse } from './explainerAgent';
 
 /**
  * Generate deterministic mock implementer responses based on comment count
@@ -29,6 +30,65 @@ export function getMockImplementerResponses(
       ...(move === 'change' ? { updated_code: '// Updated code here\nfunction example() { return true; }' } : {}),
     };
   });
+}
+
+/**
+ * Generate deterministic mock explainer response for comprehension mode
+ * Includes a sample mermaid diagram to exercise frontend rendering
+ */
+export function getMockExplainerResponse(
+  question: ComprehensionQuestion,
+): ExplainerResponse {
+  const location = question.file
+    ? ` about ${question.file}${question.line ? `:${question.line}` : ''}`
+    : '';
+
+  return {
+    content: `Good question${location}. This PR adds a caching layer to the status endpoint to reduce database load during peak traffic.\n\nThe approach uses an in-memory LRU cache with a 5-second TTL. When a request comes in, we check the cache first — if we have a fresh result, we return it immediately without hitting the database.\n\nHere's the data flow:\n\n\`\`\`mermaid\nsequenceDiagram\n    participant Client\n    participant API\n    participant Cache\n    participant DB\n    Client->>API: GET /status\n    API->>Cache: lookup(key)\n    alt Cache hit\n        Cache-->>API: cached result\n    else Cache miss\n        API->>DB: SELECT status\n        DB-->>API: result\n        API->>Cache: store(key, result, ttl=5s)\n    end\n    API-->>Client: status response\n\`\`\`\n\nThe key trade-off is freshness vs. load — a 5-second TTL means data can be slightly stale, but it reduces DB queries by ~95% under load.`,
+    context_provided: ['architecture', 'data_flow', 'trade_off'],
+    depth_level: 'moderate',
+  };
+}
+
+/**
+ * Generate deterministic mock comprehension score report
+ */
+export function getMockComprehensionScoreReport(): {
+  question_quality: { score: number; summary: string };
+  comprehension: { score: number; insights_discovered: number[]; insights_missed: number[]; summary: string };
+  decision_quality: { score: number; summary: string };
+  efficiency: { score: number; questions_to_insight_ratio: number; round_efficiency: number; redundancy_score: number };
+  overall: { score: number; band: string; narrative: string; strengths: string[]; growth_areas: string[] };
+} {
+  return {
+    question_quality: {
+      score: 72,
+      summary: 'Candidate asked strategic questions that built progressively toward understanding.',
+    },
+    comprehension: {
+      score: 68,
+      insights_discovered: [1, 2],
+      insights_missed: [3, 4],
+      summary: 'Identified the core purpose and main trade-off but missed deeper architectural implications.',
+    },
+    decision_quality: {
+      score: 75,
+      summary: 'Verdict aligned with ideal outcome with reasonable rationale.',
+    },
+    efficiency: {
+      score: 70,
+      questions_to_insight_ratio: 0.5,
+      round_efficiency: 65,
+      redundancy_score: 80,
+    },
+    overall: {
+      score: 71,
+      band: 'adequate',
+      narrative: 'The candidate demonstrates solid comprehension skills, asking purposeful questions that reveal understanding of the system. They identified the core caching trade-off but could probe deeper into architectural risks.',
+      strengths: ['Strategic questioning', 'Trade-off identification'],
+      growth_areas: ['Deeper architectural probing', 'Risk assessment'],
+    },
+  };
 }
 
 /**

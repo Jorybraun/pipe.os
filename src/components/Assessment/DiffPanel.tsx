@@ -937,7 +937,7 @@ export function DiffPanel({
 
   if (!activeFile || diff.files.length === 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(12, 12, 14, 0.5)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0c0c0e' }}>
         <div style={{
           flex: 1,
           display: 'flex',
@@ -1068,12 +1068,12 @@ export function DiffPanel({
 
   if (viewMode === 'TABBED') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(12, 12, 14, 0.5)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0c0c0e' }}>
         {/* File tabs + view toggle */}
         <div style={{
           display: 'flex',
           borderBottom: '1px solid var(--pipe-border)',
-          background: 'rgba(12, 12, 14, 0.6)',
+          background: '#0c0c0e',
           alignItems: 'center',
           flexShrink: 0,
         }}>
@@ -1195,13 +1195,13 @@ export function DiffPanel({
   // ---------------------------------------------------------------------------
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(12, 12, 14, 0.5)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0c0c0e' }}>
       {/* Header bar with stats + view toggle */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         borderBottom: '1px solid var(--pipe-border)',
-        background: 'rgba(12, 12, 14, 0.6)',
+        background: '#0c0c0e',
         padding: '0 12px',
         flexShrink: 0,
         minHeight: 44,

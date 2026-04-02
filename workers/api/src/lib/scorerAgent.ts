@@ -187,7 +187,13 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, 
     return chunks.join('').trim();
   }
 
-  return (response as { response?: string }).response?.trim() ?? '';
+  const raw = (response as { response?: unknown }).response;
+  if (typeof raw === 'string') return raw.trim();
+  if (raw != null) {
+    console.warn('[scorerAgent] Workers AI response.response is not a string:', typeof raw);
+    return String(raw).trim();
+  }
+  return '';
 }
 
 /** Stored reference to AI binding, set by scoreReviewSession */
