@@ -27,6 +27,8 @@ import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { DisplaySettingsPanel } from "./components/DisplaySettingsPanel";
 
 /**
  * SubHeader - Main interactive UI for navigation and context
@@ -72,10 +74,8 @@ const SubHeader = () => {
                   navigate(`/pipeline/${id}/${stage}`);
                 } else if (stage) {
                   navigate(`/pipeline/${id}`);
-                } else if (isCandidateContext) {
-                  navigate(-1);
                 } else {
-                  navigate("/");
+                  navigate(-1);
                 }
               }}
               style={{
@@ -95,9 +95,7 @@ const SubHeader = () => {
                 ? `BACK TO ${currentStage.title.toUpperCase()}`
                 : stage
                   ? "BACK TO OVERVIEW"
-                  : isCandidateContext
-                    ? "BACK"
-                    : "BACK TO ROLES"}
+                  : "BACK"}
             </button>
 
             <div
@@ -185,6 +183,7 @@ const SubHeader = () => {
 function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <Layout
@@ -194,12 +193,14 @@ function AppLayout(): JSX.Element {
           activeSection={activeSection}
           onRolesClick={() => {
             setActiveSection("roles");
+            setShowSettings(false);
             navigate("/");
           }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
             ? {
                 onScheduleClick: () => {
                   setActiveSection("schedule");
+                  setShowSettings(false);
                   navigate("/schedule");
                 },
               }
@@ -208,12 +209,20 @@ function AppLayout(): JSX.Element {
             ? {
                 onSandboxClick: () => {
                   setActiveSection("sandbox");
+                  setShowSettings(false);
                   navigate("/sandbox/dev-container");
                 },
               }
             : {})}
+          onSettingsClick={() => {
+            setShowSettings((prev) => !prev);
+            if (!showSettings) setActiveSection("settings");
+            else setActiveSection("roles");
+          }}
         />
       }
+      agentPanel={showSettings ? <DisplaySettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} /> : undefined}
+      isAgentOpen={showSettings}
     >
       <Outlet />
     </Layout>
@@ -241,6 +250,7 @@ function App(): JSX.Element {
         <Route
           path="*"
           element={
+            <ThemeProvider>
             <ClerkAuthGate>
               <ClerkAuthWrapper>
                 <Routes>
@@ -284,6 +294,7 @@ function App(): JSX.Element {
                 </Routes>
               </ClerkAuthWrapper>
             </ClerkAuthGate>
+            </ThemeProvider>
           }
         />
       </Routes>

@@ -2,6 +2,7 @@ import {
   Calendar,
   Box,
   LayoutDashboard,
+  Settings,
 } from "lucide-react";
 
 interface SidebarNavProps {
@@ -12,12 +13,15 @@ interface SidebarNavProps {
   onSandboxClick?: () => void;
   /** Called when the user clicks the Roles nav item */
   onRolesClick?: () => void;
+  /** Called when the user clicks the Settings nav item */
+  onSettingsClick?: () => void;
 }
 
 export function SidebarNav({
   activeSection = "roles",
   onScheduleClick,
   onSandboxClick,
+  onSettingsClick,
   onRolesClick,
 }: SidebarNavProps) {
   return (
@@ -198,6 +202,44 @@ export function SidebarNav({
               }}
             />
           )}
+        </button>
+      )}
+
+      {/* Settings */}
+      {onSettingsClick && (
+        <button
+          onClick={onSettingsClick}
+          title="Display Settings"
+          style={{
+            width: 48,
+            height: 48,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: activeSection === "settings"
+              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
+              : "transparent",
+            border: "none",
+            borderRadius: "12px",
+            color: activeSection === "settings" ? "#fff" : "rgba(255,255,255,0.4)",
+            cursor: "pointer",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            position: "relative",
+          }}
+          onMouseEnter={(e) => {
+            if (activeSection !== "settings") {
+              e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+              e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeSection !== "settings") {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+            }
+          }}
+        >
+          <Settings size={20} />
         </button>
       )}
 

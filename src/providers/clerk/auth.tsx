@@ -16,7 +16,7 @@
  * Consumer code accesses auth state via useAuth() from 'providers', not here.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Show,
   SignInButton,
@@ -26,6 +26,8 @@ import {
 } from '@clerk/react';
 import { useSetAuth } from '../DataContext';
 import type { AuthProvider } from '../types';
+import { AppBackground } from '../../components/ui/AppBackground';
+import { LoadingSplash } from '../../components/ui/LoadingSplash';
 
 // ─── ClerkAuthGate ────────────────────────────────────────────────────────────
 
@@ -38,12 +40,29 @@ import type { AuthProvider } from '../types';
  * Drop-in replacement for <AmplifyAuthGate> in App.tsx.
  */
 export function ClerkAuthGate({ children }: { children: React.ReactNode }): JSX.Element {
+  const { isLoaded } = useClerkAuthHook();
+  const [showSplash, setShowSplash] = useState(true);
+  const [fadingOut, setFadingOut] = useState(false);
+
+  useEffect(() => {
+    if (!isLoaded || fadingOut) return;
+    setFadingOut(true);
+    const timer = setTimeout(() => setShowSplash(false), 600);
+    return () => clearTimeout(timer);
+  }, [isLoaded, fadingOut]);
+
   return (
     <>
-      <Show when="signed-out">
-        <ClerkSignInScreen />
-      </Show>
-      <Show when="signed-in">{children}</Show>
+      <AppBackground />
+      {showSplash && <LoadingSplash fadingOut={fadingOut} />}
+      {isLoaded && (
+        <>
+          <Show when="signed-out">
+            <ClerkSignInScreen />
+          </Show>
+          <Show when="signed-in">{children}</Show>
+        </>
+      )}
     </>
   );
 }

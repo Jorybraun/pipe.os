@@ -1,5 +1,4 @@
 import { ReactNode } from "react";
-import { LiquidMetal } from "@paper-design/shaders-react";
 
 interface ProfileLayoutProps {
   header: ReactNode;
@@ -22,59 +21,13 @@ export function Layout({
     <div
       style={{
         minHeight: "100vh",
-        background: "#0c0c0e",
+        background: "rgba(12, 12, 14, 0.93)",
         fontFamily: '"Space Mono", monospace',
         color: "#fff",
         position: "relative",
         overflow: "hidden",
       }}
     >
-      {/* Animated liquid metal background */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 0,
-          pointerEvents: "none",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: 0.4,
-        }}
-      >
-        <LiquidMetal
-          width={1920}
-          height={1080}
-          image="/mario-pipe.svg"
-          colorBack="#aaaaac"
-          colorTint="#ffffff"
-          shape="diamond"
-          repetition={2}
-          softness={0.1}
-          shiftRed={0.3}
-          shiftBlue={0.3}
-          distortion={0.07}
-          contour={0.4}
-          angle={70}
-          //speed={0.3}
-          speed={0.0}
-          scale={0.6}
-          fit="cover"
-        />
-      </div>
-      {/* Chrome mesh grid */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)
-        `,
-          backgroundSize: "80px 80px",
-          pointerEvents: "none",
-        }}
-      />
       {/* Header */}
       <div style={{ position: "relative", zIndex: 1 }}>{header}</div>
       {/* Layout with sidebar and agent panel */}

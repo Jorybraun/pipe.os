@@ -6,6 +6,18 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Theme system + loading splash — 2026-04-02)
+- **`src/contexts/ThemeContext.tsx`** — NEW: Theme provider with localStorage persistence. Stores background shader type, opacity, speed, scale.
+- **`src/components/ui/AppBackground.tsx`** — NEW: Root-level background renderer. Reads from ThemeContext, supports liquid-metal and heatmap shaders with speed easing animation.
+- **`src/components/ui/LoadingSplash.tsx`** — NEW: Branded loading screen with pulsing Pipe logo. Shown during Clerk auth init, fades out over 600ms.
+- **`src/components/ui/shaders/PipeLiquidMetal.tsx`** — NEW: LiquidMetal shader component for the pipe SVG.
+- **`src/components/ui/shaders/PipeHeatmap.tsx`** — NEW: Heatmap shader component for the pipe SVG.
+- **`src/components/DisplaySettingsPanel.tsx`** — NEW: Settings panel for background shader, opacity, speed, scale. Accessible from sidebar.
+- **`src/components/SidebarNav.tsx`** — Added Settings button.
+- **`src/components/Layout.tsx`** — Background moved to AppBackground; Layout uses semi-transparent dark overlay.
+- **`src/providers/clerk/auth.tsx`** — Loading splash + fade-out during Clerk init.
+- **`src/App.tsx`** — Wrapped recruiter routes in ThemeProvider; wired DisplaySettingsPanel to sidebar.
+
 #### Added (Welcome screen pipe background — 2026-04-02)
 - **`src/components/Assessment/WelcomeScreen.tsx`** — Added animated LiquidMetal pipe background behind the welcome card, matching the recruiter app aesthetic.
 
