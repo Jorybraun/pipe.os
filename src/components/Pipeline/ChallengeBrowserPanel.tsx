@@ -14,10 +14,14 @@ import {
   type ChallengeTemplate,
   type ChallengeType,
 } from '../../content/challengeLibrary';
-import { useChallengeDndState } from '../../contexts/ChallengeDndContext';
+import type { ChallengeItem, CreateChallengeRequest } from '../../lib/api/types';
 
 interface ChallengeBrowserPanelProps {
   onClose: () => void;
+  stageId: string;
+  challengeCount: number;
+  createChallenge: (stageId: string, payload: CreateChallengeRequest) => Promise<ChallengeItem>;
+  refetch: () => Promise<void>;
 }
 
 const TYPE_FILTERS: { key: ChallengeType | 'ALL'; label: string; icon: typeof Code }[] = [
@@ -28,24 +32,10 @@ const TYPE_FILTERS: { key: ChallengeType | 'ALL'; label: string; icon: typeof Co
   { key: 'CODE_REVIEW', label: 'CODE_REVIEW', icon: Code },
 ];
 
-const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'var(--pipe-text-dim)',
-  intermediate: 'var(--pipe-text-dim)',
-  advanced: 'rgba(255,100,100,0.6)',
-};
 
-const TYPE_BADGE_COLORS: Record<string, string> = {
-  CODE_REVIEW: 'var(--pipe-text-dim)',
-  CODE_IMPLEMENTATION: 'var(--pipe-text-dim)',
-  QUIZ_MCQ: 'var(--pipe-text-dim)',
-  QUIZ_SHORT_ANSWER: 'var(--pipe-text-dim)',
-};
-
-export function ChallengeBrowserPanel({ onClose }: ChallengeBrowserPanelProps): JSX.Element {
+export function ChallengeBrowserPanel({ onClose, stageId, challengeCount, createChallenge, refetch }: ChallengeBrowserPanelProps): JSX.Element {
   const [typeFilter, setTypeFilter] = useState<ChallengeType | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
-  const getState = useChallengeDndState();
-
   const filtered = useMemo(() => {
     let templates = ALL_CHALLENGE_TEMPLATES;
     if (typeFilter !== 'ALL') {
@@ -64,34 +54,20 @@ export function ChallengeBrowserPanel({ onClose }: ChallengeBrowserPanelProps): 
   }, [typeFilter, search]);
 
   const handleClickAdd = async (template: ChallengeTemplate): Promise<void> => {
-    const state = getState();
-    if (!state) return;
-    await state.createChallenge(state.stageId, {
+    await createChallenge(stageId, {
       type: template.type,
       title: template.title,
       instructions: template.instructions,
       config: template.config as Record<string, unknown>,
-      order: state.challenges.length,
+      order: challengeCount,
     });
-    await state.refetch();
+    await refetch();
   };
 
   return (
-    <aside
+    <div
       style={{
-        width: 400,
-        flexShrink: 0,
-        height: 'calc(100vh - 124px)',
-        position: 'sticky',
-        top: 0,
-        marginTop: -24,
-        marginBottom: -24,
-        marginLeft: -20,
-        marginRight: 20,
-        background: 'rgba(12, 12, 14, 0.95)',
-        backdropFilter: 'blur(12px)',
-        borderRight: '1px solid var(--pipe-border, rgba(255,255,255,0.06))',
-        boxShadow: '4px 0 24px rgba(0,0,0,0.3)',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: '"Space Mono", monospace',
@@ -154,7 +130,7 @@ export function ChallengeBrowserPanel({ onClose }: ChallengeBrowserPanelProps): 
               padding: '8px 10px 8px 30px',
               fontSize: 10,
               fontFamily: '"Space Mono", monospace',
-              background: 'rgba(0,0,0,0.2)',
+              background: 'transparent',
               border: '1px solid var(--pipe-border)',
               borderRadius: 4,
               color: 'var(--pipe-text)',
@@ -231,7 +207,7 @@ export function ChallengeBrowserPanel({ onClose }: ChallengeBrowserPanelProps): 
       >
         {filtered.length} TEMPLATES — DRAG TO ADD
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -255,9 +231,6 @@ function DraggableTemplateCard({
     transition: isDragging ? undefined : 'opacity 0.15s',
   };
 
-  const badgeColor = TYPE_BADGE_COLORS[template.type] ?? '#888';
-  const diffColor = DIFFICULTY_COLORS[template.difficulty] ?? '#888';
-
   return (
     <div
       ref={setNodeRef}
@@ -267,9 +240,9 @@ function DraggableTemplateCard({
         alignItems: 'center',
         gap: 8,
         padding: '10px 12px',
-        background: 'var(--pipe-surface)',
+        background: 'transparent',
         border: '1px solid var(--pipe-border)',
-        borderRadius: 6,
+        borderRadius: 4,
         cursor: 'grab',
       }}
       {...attributes}

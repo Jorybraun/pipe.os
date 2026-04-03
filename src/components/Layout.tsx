@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { useTheme } from "../contexts/ThemeContext";
+import { useSidebarPortal } from "../contexts/SidebarPortalContext";
 
 interface ProfileLayoutProps {
   header: ReactNode;
@@ -21,6 +22,10 @@ export function Layout({
   const { theme } = useTheme();
   const isDark = theme.mode === 'dark';
   const overlayAlpha = theme.background.overlay;
+  const { portalRef, isPortalOpen } = useSidebarPortal();
+
+  // The aside is open if either the agentPanel has content OR a portal is active
+  const asideOpen = isAgentOpen || isPortalOpen;
 
   return (
     <div
@@ -73,8 +78,8 @@ export function Layout({
           </aside>
         )}
 
-        {/* Agent Panel */}
-        {isAgentOpen && (
+        {/* Agent Panel / Portal Target */}
+        {asideOpen && (
           <aside
             style={{
               width: "400px",
@@ -91,6 +96,7 @@ export function Layout({
             }}
           >
             {agentPanel}
+            <div ref={portalRef as React.RefObject<HTMLDivElement>} style={{ height: agentPanel ? 0 : '100%' }} />
           </aside>
         )}
 
@@ -100,7 +106,7 @@ export function Layout({
             flex: 1,
             maxWidth: 1400,
             margin: "0 auto",
-            marginLeft: showSidebar ? (isAgentOpen ? "480px" : "80px") : "auto",
+            marginLeft: showSidebar ? (asideOpen ? "480px" : "80px") : "auto",
             padding: "24px 20px",
             position: "relative",
             transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",

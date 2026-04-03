@@ -1,19 +1,36 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { FEATURE_FLAGS } from "../config/featureFlags";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Plus, Settings, Video, Mail, ChevronRight, Save } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
+import { ChallengeBrowserPanel } from "../components/Pipeline/ChallengeBrowserPanel";
 import { useStageDetail } from "../hooks/useStageDetail";
 import { useStageMutations } from "../hooks/useStageMutations";
 import { useChallengeMutations } from "../hooks/useChallengeMutations";
 import type { NotificationTemplate, ChallengeItem } from "../lib/api/types";
-import { useRegisterChallengeList } from "../contexts/ChallengeDndContext";
+import { useSidebarPortal } from "../contexts/SidebarPortalContext";
 import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
   SortableContext,
+  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import type { ChallengeTemplate } from "../content/challengeLibrary";
 
 /**
  * StageDetailPage — manages challenges and settings for a pipeline stage.
@@ -51,15 +68,88 @@ export default function StageDetailPage(): JSX.Element {
   const displayTitle =
     localTitle !== null ? localTitle : (stage?.title ?? "");
 
-  // ─── Register challenge state with DndContext wrapper ──────────────────────
+  // ─── Sidebar portal for challenge browser ──────────────────────────────────
 
-  useRegisterChallengeList({
-    challenges: stage?.challenges ?? [],
-    stageId: stageId ?? '',
-    createChallenge,
-    reorderChallenges,
-    refetch,
-  });
+  const { portalRef, openPortal, closePortal, isPortalOpen } = useSidebarPortal();
+  const challengePanelOpen = location.pathname.endsWith('/challenges');
+
+  // Sync portal open/close with route
+  useEffect(() => {
+    if (challengePanelOpen && !isPortalOpen) openPortal();
+    if (!challengePanelOpen && isPortalOpen) closePortal();
+  }, [challengePanelOpen, isPortalOpen, openPortal, closePortal]);
+
+  // Clean up portal on unmount
+  useEffect(() => {
+    return () => closePortal();
+  }, [closePortal]);
+
+  // ─── DnD sensors and handlers ─────────────────────────────────────────────
+
+  const [activeDrag, setActiveDrag] = useState<{ title: string } | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent): void => {
+    const data = event.active.data.current;
+    if (data?.type === 'template') {
+      setActiveDrag({ title: (data.template as ChallengeTemplate).title });
+    } else {
+      setActiveDrag({ title: String(data?.title ?? 'Challenge') });
+    }
+  }, []);
+
+  const handleDragEnd = useCallback(
+    async (event: DragEndEvent): Promise<void> => {
+      setActiveDrag(null);
+      const { active, over } = event;
+      if (!over || !stage || !stageId) return;
+
+      const activeType = active.data.current?.type as string;
+
+      if (activeType === 'template') {
+        // Add new challenge from sidebar
+        const template = active.data.current?.template as ChallengeTemplate;
+        const challenges = stage.challenges;
+        let insertIndex = challenges.length;
+        const overIndex = challenges.findIndex((c) => c.id === over.id);
+        if (overIndex >= 0) insertIndex = overIndex + 1;
+
+        await createChallenge(stageId, {
+          type: template.type,
+          title: template.title,
+          instructions: template.instructions,
+          config: template.config as Record<string, unknown>,
+          order: insertIndex,
+        });
+        await refetch();
+      } else {
+        // Reorder existing challenges
+        if (active.id === over.id) return;
+        const oldIndex = stage.challenges.findIndex((c) => c.id === active.id);
+        const newIndex = stage.challenges.findIndex((c) => c.id === over.id);
+        if (oldIndex === -1 || newIndex === -1) return;
+
+        const reordered = arrayMove(stage.challenges, oldIndex, newIndex).map(
+          (c, i) => ({ ...c, order: i }),
+        );
+        try {
+          await reorderChallenges(
+            stageId,
+            reordered.map((c) => ({ id: c.id, order: c.order })),
+          );
+          await refetch();
+        } catch (err) {
+          console.error("[StageDetailPage] Failed to reorder:", err);
+          await refetch();
+        }
+      }
+    },
+    [stage, stageId, createChallenge, reorderChallenges, refetch],
+  );
 
   // ─── Challenge delete handler ─────────────────────────────────────────────
 
@@ -307,6 +397,24 @@ export default function StageDetailPage(): JSX.Element {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <SubTitle>CHALLENGES ({challenges.length})</SubTitle>
 
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={(e) => void handleDragEnd(e)}
+          >
+            {/* Portal: render ChallengeBrowserPanel into Layout's aside */}
+            {challengePanelOpen && portalRef.current && createPortal(
+              <ChallengeBrowserPanel
+                onClose={toggleChallengePanel}
+                stageId={stageId!}
+                challengeCount={challenges.length}
+                createChallenge={createChallenge}
+                refetch={refetch}
+              />,
+              portalRef.current,
+            )}
+
           {challenges.length > 0 ? (
             <SortableContext
               items={challenges.map((c) => c.id)}
@@ -367,6 +475,33 @@ export default function StageDetailPage(): JSX.Element {
               </button>
             </div>
           )}
+
+            <DragOverlay
+              dropAnimation={{
+                sideEffects: defaultDropAnimationSideEffects({
+                  styles: { active: { opacity: "0.5" } },
+                }),
+              }}
+            >
+              {activeDrag && (
+                <div style={{
+                  padding: '12px 16px',
+                  background: 'rgba(12, 12, 14, 0.95)',
+                  border: '1px solid rgba(167,139,250,0.3)',
+                  borderRadius: 8,
+                  color: '#a78bfa',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: '0.08em',
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                }}>
+                  {activeDrag.title}
+                </div>
+              )}
+            </DragOverlay>
+          </DndContext>
         </div>
 
         <aside style={{ display: "flex", flexDirection: "column", gap: 20 }}>

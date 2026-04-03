@@ -11,6 +11,18 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).
 - **`src/contexts/ChallengeDndContext.tsx`** — Shared context bridging challenge state between DndContext wrapper and StageDetailPage.
 
+#### Changed (Portal-based challenge browser — 2026-04-02)
+- **`src/components/Layout.tsx`** — Added portal target ref in aside for child pages to render into.
+- **`src/contexts/SidebarPortalContext.tsx`** — New context exposing Layout aside portal ref + open/close controls.
+- **`src/pages/StageDetailPage.tsx`** — Restored local DndContext; uses `createPortal()` to render ChallengeBrowserPanel into Layout's aside; handles both template drag-to-add and challenge reorder.
+- **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Simplified to render inside Layout aside (no position:fixed); props for stageId, createChallenge, refetch.
+- **`src/App.tsx`** — Wrapped in SidebarPortalProvider; removed ChallengeDndLayout; direct routes for /stages/:stageId and /stages/:stageId/challenges.
+- Deleted `src/pages/ChallengeDndLayout.tsx` and `src/contexts/ChallengeDndContext.tsx` (replaced by portal approach).
+
+#### Fixed (Challenge browser panel matching Layout aside — 2026-04-02)
+- **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Theme-aware transparent background with backdrop blur; position: fixed matching Layout aside.
+- **`src/pages/ChallengeDndLayout.tsx`** — Page content shifts via margin-left when panel is open.
+
 #### Fixed (Challenge browser styling — 2026-04-02)
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Removed coloured type/difficulty badges; muted card styling; fixed height and spacing to match Layout aside.
 
