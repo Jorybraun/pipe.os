@@ -11,6 +11,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).
 - **`src/contexts/ChallengeDndContext.tsx`** — Shared context bridging challenge state between DndContext wrapper and StageDetailPage.
 
+#### Fixed (Stage data sync between config panel and page — 2026-04-03)
+- **`src/contexts/StageRefetchContext.tsx`** — New context for cross-component refetch coordination.
+- **`src/components/StageConfigPanel.tsx`** — Triggers page refetch after mutations via StageRefetchContext.
+- **`src/pages/StageDetailPage.tsx`** — Registers its refetch function with StageRefetchContext.
+- **`src/App.tsx`** — Wrapped in StageRefetchProvider.
+
 #### Changed (Config toggles on type selector page — 2026-04-03)
 - **`src/components/StageConfigPanel.tsx`** — Scheduling/video toggles moved to the type selector page (step 1) instead of step 2.
 

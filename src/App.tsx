@@ -33,6 +33,7 @@ import { useAuth as useClerkAuth } from "@clerk/react";
 import { DisplaySettingsPanel } from "./components/DisplaySettingsPanel";
 import { StageConfigPanel } from "./components/StageConfigPanel";
 import { SidebarPortalProvider } from "./contexts/SidebarPortalContext";
+import { StageRefetchProvider } from "./contexts/StageRefetchContext";
 
 /**
  * SubHeader - Main interactive UI for navigation and context
@@ -206,6 +207,7 @@ function AppLayout(): JSX.Element {
 
   return (
     <SidebarPortalProvider>
+    <StageRefetchProvider>
     <Layout
       header={<SubHeader />}
       sidebar={
@@ -248,6 +250,7 @@ function AppLayout(): JSX.Element {
     >
       <Outlet />
     </Layout>
+    </StageRefetchProvider>
     </SidebarPortalProvider>
   );
 }

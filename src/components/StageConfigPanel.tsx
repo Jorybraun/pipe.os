@@ -22,6 +22,7 @@ import {
 import { useChallengeMutations } from '../hooks/useChallengeMutations';
 import { useAuth as useClerkAuth } from '@clerk/react';
 import { createApiClient } from '../lib/api/client';
+import { useStageRefetch } from '../contexts/StageRefetchContext';
 
 interface StageConfigPanelProps {
   stageId: string;
@@ -49,6 +50,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
   const { stage, isLoading, refetch } = useStageDetail(stageId);
   const { updateStage } = useStageMutations();
   const { createChallenge } = useChallengeMutations();
+  const { triggerRefetch } = useStageRefetch();
 
   const [selectedType, setSelectedType] = useState<StageType | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -71,6 +73,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
         title: config.label,
       });
       await refetch();
+      await triggerRefetch();
     } catch (err) {
       console.error('[StageConfigPanel] Failed to update stage type:', err);
     }
@@ -91,6 +94,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
         order: count,
       });
       await refetch();
+      await triggerRefetch();
     } catch (err) {
       console.error('[StageConfigPanel] Failed to add challenge:', err);
     }
@@ -185,7 +189,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
             key={stageId}
             stageId={stageId}
             existingCount={stage?.challenges?.length ?? 0}
-            onAdded={refetch}
+            onAdded={async () => { await refetch(); await triggerRefetch(); }}
           />
         ) : (
           <TypeChallengePicker

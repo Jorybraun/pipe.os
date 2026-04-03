@@ -12,6 +12,7 @@ import { useStageMutations } from "../hooks/useStageMutations";
 import { useChallengeMutations } from "../hooks/useChallengeMutations";
 import type { NotificationTemplate, ChallengeItem } from "../lib/api/types";
 import { useSidebarPortal } from "../contexts/SidebarPortalContext";
+import { useStageRefetch } from "../contexts/StageRefetchContext";
 import {
   DndContext,
   closestCenter,
@@ -55,6 +56,12 @@ export default function StageDetailPage(): JSX.Element {
   const { updateStage } = useStageMutations();
   const { createChallenge, deleteChallenge, reorderChallenges } =
     useChallengeMutations();
+
+  // Register refetch so StageConfigPanel (in Layout aside) can trigger it
+  const { registerRefetch } = useStageRefetch();
+  useEffect(() => {
+    registerRefetch(refetch);
+  }, [registerRefetch, refetch]);
 
   // Local title state for the inline editable input (mirrors stage.title)
   const [localTitle, setLocalTitle] = useState<string | null>(null);
