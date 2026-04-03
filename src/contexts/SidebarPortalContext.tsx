@@ -1,16 +1,20 @@
 /**
  * SidebarPortalContext — Lets child pages render content into Layout's aside panel.
  *
- * Layout provides a ref to a portal target div inside the aside.
+ * Layout provides a callback ref for the portal target div inside the aside.
  * Pages use createPortal() to render into it, while keeping their
  * React tree (and DndContext) intact.
+ *
+ * Uses state (not useRef) so components re-render when the portal target mounts/unmounts.
  */
 
-import { createContext, useContext, useRef, useState, useCallback, type RefObject, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 
 interface SidebarPortalContextValue {
-  /** Ref to the portal target div inside Layout's aside */
-  portalRef: RefObject<HTMLDivElement | null>;
+  /** The portal target DOM node (null when aside is hidden) */
+  portalNode: HTMLDivElement | null;
+  /** Callback ref — Layout attaches this to the portal target div */
+  setPortalNode: (node: HTMLDivElement | null) => void;
   /** Tell Layout to show the aside (portal target) */
   openPortal: () => void;
   /** Tell Layout to hide the aside */
@@ -22,14 +26,14 @@ interface SidebarPortalContextValue {
 const Context = createContext<SidebarPortalContextValue | null>(null);
 
 export function SidebarPortalProvider({ children }: { children: ReactNode }): JSX.Element {
-  const portalRef = useRef<HTMLDivElement | null>(null);
+  const [portalNode, setPortalNode] = useState<HTMLDivElement | null>(null);
   const [isPortalOpen, setIsPortalOpen] = useState(false);
 
   const openPortal = useCallback(() => setIsPortalOpen(true), []);
   const closePortal = useCallback(() => setIsPortalOpen(false), []);
 
   return (
-    <Context.Provider value={{ portalRef, openPortal, closePortal, isPortalOpen }}>
+    <Context.Provider value={{ portalNode, setPortalNode, openPortal, closePortal, isPortalOpen }}>
       {children}
     </Context.Provider>
   );

@@ -70,7 +70,7 @@ export default function StageDetailPage(): JSX.Element {
 
   // ─── Sidebar portal for challenge browser ──────────────────────────────────
 
-  const { portalRef, openPortal, closePortal, isPortalOpen } = useSidebarPortal();
+  const { portalNode, openPortal, closePortal, isPortalOpen } = useSidebarPortal();
   const challengePanelOpen = location.pathname.endsWith('/challenges');
 
   // Sync portal open/close with route
@@ -404,7 +404,7 @@ export default function StageDetailPage(): JSX.Element {
             onDragEnd={(e) => void handleDragEnd(e)}
           >
             {/* Portal: render ChallengeBrowserPanel into Layout's aside */}
-            {challengePanelOpen && portalRef.current && createPortal(
+            {challengePanelOpen && portalNode && createPortal(
               <ChallengeBrowserPanel
                 onClose={toggleChallengePanel}
                 stageId={stageId!}
@@ -412,7 +412,7 @@ export default function StageDetailPage(): JSX.Element {
                 createChallenge={createChallenge}
                 refetch={refetch}
               />,
-              portalRef.current,
+              portalNode,
             )}
 
           {challenges.length > 0 ? (

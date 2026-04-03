@@ -22,7 +22,7 @@ export function Layout({
   const { theme } = useTheme();
   const isDark = theme.mode === 'dark';
   const overlayAlpha = theme.background.overlay;
-  const { portalRef, isPortalOpen } = useSidebarPortal();
+  const { setPortalNode, isPortalOpen } = useSidebarPortal();
 
   // The aside is open if either the agentPanel has content OR a portal is active
   const asideOpen = isAgentOpen || isPortalOpen;
@@ -96,7 +96,7 @@ export function Layout({
             }}
           >
             {agentPanel}
-            <div ref={portalRef as React.RefObject<HTMLDivElement>} style={{ height: agentPanel ? 0 : '100%' }} />
+            <div ref={setPortalNode} style={{ height: agentPanel ? 0 : '100%' }} />
           </aside>
         )}
 
