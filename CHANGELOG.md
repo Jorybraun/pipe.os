@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (SchedulingDashboard Amplify dependency — 2026-04-03)
+- **`src/components/Scheduling/SchedulingDashboard.tsx`** — Replaced Amplify `useData().createClient()` with Worker API `useApiClient()` for enrichment fetches (pipeline/candidate/stage names).
+
 #### Added (Recruiter call drawer — video UX — 2026-04-03)
 - **`src/components/Video/RecruiterCallDrawer.tsx`** — Sidebar panel for managing video calls: CallListView (today's scheduled interviews), CallDetailView (pre-call info + START button), ActiveCallView (live video with camera/mic toggles, self-view PiP, hang up).
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Calendar, RefreshCw } from 'lucide-react';
-import { useData } from '../../providers';
+import { useApiClient } from '../../hooks/useApiClient';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import { InterviewCard } from './InterviewCard';
@@ -51,7 +51,7 @@ interface StageRef {
  * pattern on first load.
  */
 export function SchedulingDashboard(): JSX.Element {
-  const client = useData().createClient();
+  const api = useApiClient();
   const { interviews, isLoading, error, updateStatus } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
 
@@ -75,31 +75,34 @@ export function SchedulingDashboard(): JSX.Element {
     const enrich = async () => {
       setEnriching(true);
       try {
-        // Fetch only the records referenced by current interviews (avoids full table scans)
-        const [pipGetResults, candGetResults, stageGetResults] = await Promise.all([
-          Promise.all(pipelineIds.map((pid) => client.models.Pipeline.get({ id: pid }))),
-          Promise.all(candidateIds.map((cid) => client.models.Candidate.get({ id: cid }))),
-          Promise.all(stageIds.map((sid) => client.models.Stage.get({ id: sid }))),
+        // Fetch enrichment data from Worker API
+        const [pipResults, candResults, stageResults] = await Promise.all([
+          Promise.all(pipelineIds.map((pid) =>
+            api.get<{ pipeline: { id: string; title: string } }>(`/api/v1/pipelines/${pid}`).catch(() => null)
+          )),
+          Promise.all(candidateIds.map((cid) =>
+            api.get<{ candidate: { id: string; name: string | null; email: string | null } }>(`/api/v1/candidates/${cid}`).catch(() => null)
+          )),
+          Promise.all(stageIds.map((sid) =>
+            api.get<{ stage: { id: string; title: string } }>(`/api/v1/stages/${sid}`).catch(() => null)
+          )),
         ]);
 
         if (cancelled) return;
 
         const pm: Record<string, PipelineRef> = {};
-        pipGetResults.forEach(({ data: p }) => {
-          const pipeline = p as { id: string; title: string } | null;
-          if (pipeline) pm[pipeline.id] = { id: pipeline.id, title: pipeline.title };
+        pipResults.forEach((r) => {
+          if (r?.pipeline) pm[r.pipeline.id] = { id: r.pipeline.id, title: r.pipeline.title };
         });
 
         const cm: Record<string, CandidateRef> = {};
-        candGetResults.forEach(({ data: c }) => {
-          const candidate = c as { id: string; name: string | null; email: string | null } | null;
-          if (candidate) cm[candidate.id] = { id: candidate.id, name: candidate.name ?? null, email: candidate.email ?? null };
+        candResults.forEach((r) => {
+          if (r?.candidate) cm[r.candidate.id] = { id: r.candidate.id, name: r.candidate.name, email: r.candidate.email };
         });
 
         const sm: Record<string, StageRef> = {};
-        stageGetResults.forEach(({ data: s }) => {
-          const stage = s as { id: string; title: string } | null;
-          if (stage) sm[stage.id] = { id: stage.id, title: stage.title };
+        stageResults.forEach((r) => {
+          if (r?.stage) sm[r.stage.id] = { id: r.stage.id, title: r.stage.title };
         });
 
         setPipelinesMap(pm);
