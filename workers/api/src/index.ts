@@ -67,10 +67,10 @@ app.route('/api/v1/pipelines', pipelineCandidates);
 app.route('/api/v1/candidates', candidateOps);
 // Email: POST /api/v1/candidates/:candidateId/send-invite, /send-result
 app.route('/api/v1/candidates', emailRoutes);
+// Scheduling: webhook receiver (public, no auth) — must mount before auth routes
+app.route('/api/v1/scheduling', schedulingPublic);
 // Scheduling: OAuth, event types, interviews (authenticated)
 app.route('/api/v1/scheduling', schedulingAuth);
-// Scheduling: webhook receiver (public, no auth)
-app.route('/api/v1/scheduling', schedulingPublic);
 // Video: session creation, TURN credentials (recruiter auth)
 app.route('/api/v1/video', videoAuth);
 // Video: candidate WebSocket connection (candidate JWT auth)

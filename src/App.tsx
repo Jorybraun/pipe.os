@@ -30,7 +30,8 @@ import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { useAuth as useClerkAuth } from "@clerk/react";
-import { DisplaySettingsPanel } from "./components/DisplaySettingsPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { RecruiterCallDrawer } from "./components/Video/RecruiterCallDrawer";
 import { StageConfigPanel } from "./components/StageConfigPanel";
 import { SidebarPortalProvider } from "./contexts/SidebarPortalContext";
 import { StageRefetchProvider } from "./contexts/StageRefetchContext";
@@ -75,12 +76,16 @@ const SubHeader = () => {
           <>
             <button
               onClick={() => {
-                if (questionId && stage) {
+                if (isCandidateContext) {
+                  navigate(-1);
+                } else if (questionId && stage) {
                   navigate(`/pipeline/${id}/${stage}`);
                 } else if (stage) {
                   navigate(`/pipeline/${id}`);
+                } else if (id) {
+                  navigate(`/pipeline/${id}`);
                 } else {
-                  navigate(-1);
+                  navigate('/');
                 }
               }}
               style={{
@@ -189,6 +194,7 @@ function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
   const [showSettings, setShowSettings] = useState(false);
+  const [showCalls, setShowCalls] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const configStageId = searchParams.get('config');
 
@@ -200,10 +206,12 @@ function AppLayout(): JSX.Element {
   const panelContent = configStageId
     ? <StageConfigPanel stageId={configStageId} onClose={closeConfig} />
     : showSettings
-      ? <DisplaySettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} />
-      : undefined;
+      ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} />
+      : showCalls
+        ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
+        : undefined;
 
-  const isPanelOpen = !!configStageId || showSettings;
+  const isPanelOpen = !!configStageId || showSettings || showCalls;
 
   return (
     <SidebarPortalProvider>
@@ -216,6 +224,7 @@ function AppLayout(): JSX.Element {
           onRolesClick={() => {
             setActiveSection("roles");
             setShowSettings(false);
+            setShowCalls(false);
             closeConfig();
             navigate("/");
           }}
@@ -224,6 +233,7 @@ function AppLayout(): JSX.Element {
                 onScheduleClick: () => {
                   setActiveSection("schedule");
                   setShowSettings(false);
+                  setShowCalls(false);
                   navigate("/schedule");
                 },
               }
@@ -237,8 +247,20 @@ function AppLayout(): JSX.Element {
                 },
               }
             : {})}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO
+            ? {
+                onCallsClick: () => {
+                  if (configStageId) closeConfig();
+                  setShowSettings(false);
+                  setShowCalls((prev) => !prev);
+                  if (!showCalls) setActiveSection("calls");
+                  else setActiveSection("roles");
+                },
+              }
+            : {})}
           onSettingsClick={() => {
             if (configStageId) closeConfig();
+            setShowCalls(false);
             setShowSettings((prev) => !prev);
             if (!showSettings) setActiveSection("settings");
             else setActiveSection("roles");

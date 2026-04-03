@@ -18,6 +18,7 @@ import {
   Clock,
   Brain,
   GraduationCap,
+  Send,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { calculateSignal } from "../lib/utils";
@@ -26,6 +27,7 @@ import {
   IntelligenceBlockConfig,
 } from "../components/Analytics/IntelligenceReportBlock";
 import { useCandidateProfile } from "../hooks/useCandidateProfile";
+import { useApiClient } from "../hooks/useApiClient";
 import type { ProfileChallenge } from "../lib/api/types";
 
 // ============================================================================
@@ -770,10 +772,29 @@ function ChallengeCard({
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { getToken } = useClerkAuth();
+  const api = useApiClient();
   const { candidate, stages, isLoading, error, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
 
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const [resendingInvite, setResendingInvite] = useState(false);
+  const [resendResult, setResendResult] = useState<'sent' | 'error' | null>(null);
+
+  const handleResendInvite = useCallback(async (): Promise<void> => {
+    if (!id) return;
+    setResendingInvite(true);
+    setResendResult(null);
+    try {
+      await api.post(`/api/v1/candidates/${id}/send-invite`, {});
+      setResendResult('sent');
+      setTimeout(() => setResendResult(null), 3000);
+    } catch (err) {
+      console.error('[CandidateProfilePage] Resend invite failed:', err);
+      setResendResult('error');
+    } finally {
+      setResendingInvite(false);
+    }
+  }, [id, api]);
 
   const handleViewResume = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -1195,26 +1216,105 @@ export default function CandidateProfilePage(): JSX.Element {
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 12,
+                        justifyContent: "space-between",
                         marginBottom: 24,
                       }}
                     >
-                      <Calendar size={18} color="#60a5fa" />
-                      <SubTitle>LIVE_INTERVIEW_SESSION</SubTitle>
-                    </div>
-                    <div
-                      style={{ display: "flex", gap: 12, alignItems: "flex-end" }}
-                    >
-                      <div
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <Calendar size={18} color="#60a5fa" />
+                        <SubTitle>LIVE_INTERVIEW_SESSION</SubTitle>
+                      </div>
+                      <button
+                        onClick={() => void handleResendInvite()}
+                        disabled={resendingInvite}
                         style={{
-                          fontSize: 12,
-                          color: "var(--pipe-text-dim)",
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '6px 14px',
+                          background: resendResult === 'sent'
+                            ? 'rgba(74,222,128,0.1)'
+                            : resendResult === 'error'
+                              ? 'rgba(248,113,113,0.1)'
+                              : 'rgba(96,165,250,0.1)',
+                          border: resendResult === 'sent'
+                            ? '1px solid rgba(74,222,128,0.25)'
+                            : resendResult === 'error'
+                              ? '1px solid rgba(248,113,113,0.25)'
+                              : '1px solid rgba(96,165,250,0.25)',
+                          borderRadius: 4,
+                          color: resendResult === 'sent'
+                            ? '#4ade80'
+                            : resendResult === 'error'
+                              ? '#f87171'
+                              : '#60a5fa',
+                          fontSize: 9,
+                          fontWeight: 700,
+                          letterSpacing: '0.08em',
                           fontFamily: '"Space Mono", monospace',
+                          cursor: resendingInvite ? 'wait' : 'pointer',
+                          opacity: resendingInvite ? 0.5 : 1,
+                          transition: 'all 0.2s',
                         }}
                       >
-                        No interview scheduled yet.
-                      </div>
+                        <Send size={10} />
+                        {resendingInvite ? 'SENDING...' : resendResult === 'sent' ? 'SENT' : resendResult === 'error' ? 'FAILED' : 'RESEND_INVITE'}
+                      </button>
                     </div>
+                    {activeStage.scheduledInterview?.scheduledAt ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
+                            fontFamily: '"Space Mono", monospace',
+                            padding: '3px 8px', borderRadius: 3,
+                            background: 'rgba(74,222,128,0.1)', color: '#4ade80',
+                          }}>
+                            {activeStage.scheduledInterview.status}
+                          </span>
+                        </div>
+                        <div style={{
+                          fontSize: 14, fontWeight: 600,
+                          color: 'var(--pipe-text, #fff)',
+                          fontFamily: '"Space Mono", monospace',
+                        }}>
+                          {new Date(activeStage.scheduledInterview.scheduledAt).toLocaleString(undefined, {
+                            weekday: 'long', month: 'long', day: 'numeric',
+                            hour: 'numeric', minute: '2-digit',
+                          })}
+                        </div>
+                        {activeStage.scheduledInterview.meetingUrl && (
+                          <a
+                            href={activeStage.scheduledInterview.meetingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '8px 16px', width: 'fit-content',
+                              background: 'rgba(96,165,250,0.1)',
+                              border: '1px solid rgba(96,165,250,0.25)',
+                              borderRadius: 4,
+                              color: '#60a5fa',
+                              fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+                              fontFamily: '"Space Mono", monospace',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            JOIN MEETING →
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{
+                        fontSize: 12,
+                        color: "var(--pipe-text-dim)",
+                        fontFamily: '"Space Mono", monospace',
+                      }}>
+                        {activeStage.scheduledInterview
+                          ? 'Awaiting candidate booking.'
+                          : 'No interview scheduled yet.'}
+                      </div>
+                    )}
                   </LiquidMetalCard>
                 )}
                 {activeStage.challenges.map((challenge) => (

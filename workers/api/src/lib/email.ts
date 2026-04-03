@@ -45,6 +45,19 @@ const DEFAULT_TEMPLATES: Record<EmailTrigger, { subject: string; body: string }>
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
     You've been invited to complete an assessment for <strong>{{pipelineName}}</strong>.
   </p>
+  {{#bookingUrl}}
+  <p style="font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
+    Please schedule your interview by clicking below.
+  </p>
+  <a href="{{bookingUrl}}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
+    SCHEDULE INTERVIEW →
+  </a>
+  <p style="font-size: 12px; color: #666; margin-top: 40px;">
+    If the button doesn't work, copy this link:<br/>
+    <a href="{{bookingUrl}}" style="color: #888;">{{bookingUrl}}</a>
+  </p>
+  {{/bookingUrl}}
+  {{#assessUrl}}
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
     Click the button below to begin. No account or sign-in required.
   </p>
@@ -55,6 +68,7 @@ const DEFAULT_TEMPLATES: Record<EmailTrigger, { subject: string; body: string }>
     If the button doesn't work, copy this link:<br/>
     <a href="{{assessUrl}}" style="color: #888;">{{assessUrl}}</a>
   </p>
+  {{/assessUrl}}
 </div>`,
   },
   SCHEDULED: {
@@ -62,15 +76,18 @@ const DEFAULT_TEMPLATES: Record<EmailTrigger, { subject: string; body: string }>
     body: `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
   <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Interview Confirmed</h1>
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-    Hi {{name}}, your interview for <strong>{{pipelineName}}</strong> is scheduled.
+    Hi {{name}}, your interview for <strong>{{pipelineName}}</strong> is confirmed.
   </p>
-  <p style="font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
-    <strong>Stage:</strong> {{stageName}}<br/>
-    <strong>Time:</strong> {{scheduledTime}}
-  </p>
+  <div style="padding: 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 32px;">
+    {{#stageName}}<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Stage:</strong> {{stageName}}</p>{{/stageName}}
+    {{#scheduledTime}}<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Time:</strong> {{scheduledTime}}</p>{{/scheduledTime}}
+    {{#bookingUrl}}<p style="font-size: 14px; margin: 0;"><strong style="color: #888;">Link:</strong> <a href="{{bookingUrl}}" style="color: #60a5fa;">Join Meeting</a></p>{{/bookingUrl}}
+  </div>
+  {{#bookingUrl}}
   <a href="{{bookingUrl}}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
-    VIEW DETAILS →
+    JOIN INTERVIEW →
   </a>
+  {{/bookingUrl}}
 </div>`,
   },
   SUCCESS: {
@@ -103,7 +120,16 @@ const DEFAULT_TEMPLATES: Record<EmailTrigger, { subject: string; body: string }>
 // ─── Variable substitution ──────────────────────────────────────────────────
 
 function substituteVariables(template: string, vars: EmailVariables): string {
-  return template
+  // Process conditional blocks: {{#var}}...{{/var}} — keep block if var is truthy, remove if not
+  let result = template;
+  const conditionalKeys = ['bookingUrl', 'assessUrl', 'stageName', 'scheduledTime'] as const;
+  for (const key of conditionalKeys) {
+    const re = new RegExp(`\\{\\{#${key}\\}\\}([\\s\\S]*?)\\{\\{/${key}\\}\\}`, 'g');
+    result = result.replace(re, vars[key] ? '$1' : '');
+  }
+
+  // Simple variable substitution
+  return result
     .replace(/\{\{name\}\}/g, vars.name)
     .replace(/\{\{email\}\}/g, vars.email)
     .replace(/\{\{pipelineName\}\}/g, vars.pipelineName)
@@ -143,7 +169,7 @@ async function sendEmail(
   resend: Resend,
   params: SendEmailParams,
 ): Promise<{ id: string } | null> {
-  const from = params.from ?? 'Pipe <invites@pipe-os.com>';
+  const from = params.from ?? 'Pipe <onboarding@resend.dev>';
 
   try {
     const result = await resend.emails.send({

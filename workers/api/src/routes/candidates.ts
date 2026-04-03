@@ -88,19 +88,90 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     .bind(id, pipelineId, userId, name, email, inviteToken, stageId, now, now)
     .run();
 
+  // Create scheduled_interviews row for scheduled/LIVE_VIDEO stages
+  if (stageId) {
+    const stageCheck = await db
+      .prepare('SELECT mode, is_scheduled FROM stages WHERE id = ?')
+      .bind(stageId)
+      .first<{ mode: string | null; is_scheduled: number | null }>();
+
+    if (stageCheck?.is_scheduled || stageCheck?.mode === 'LIVE_VIDEO') {
+      const interviewId = crypto.randomUUID();
+      await db
+        .prepare(
+          `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?)`
+        )
+        .bind(interviewId, id, pipelineId, stageId, userId, now, now)
+        .run();
+    }
+  }
+
   // Fire-and-forget invitation email via Resend
   if (c.env.RESEND_API_KEY) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
     const assessUrl = `${baseUrl}/assess/${inviteToken}`;
 
-    // Fetch stage notification templates if a stage was assigned
+    // Fetch stage info (mode, templates) and scheduling connection for booking URL
     let stageTemplatesJson: string | null = null;
+    let bookingUrl: string | undefined;
+    let stageName: string | undefined;
+
     if (stageId) {
       const stageRow = await db
-        .prepare('SELECT notification_templates FROM stages WHERE id = ?')
+        .prepare('SELECT title, mode, notification_templates, is_scheduled, scheduling_event_type_id FROM stages WHERE id = ?')
         .bind(stageId)
-        .first<{ notification_templates: string | null }>();
+        .first<{ title: string; mode: string | null; notification_templates: string | null; is_scheduled: number | null; scheduling_event_type_id: string | null }>();
       stageTemplatesJson = stageRow?.notification_templates ?? null;
+      stageName = stageRow?.title;
+
+      // If stage is scheduled (LIVE_VIDEO or is_scheduled flag), look up booking URL
+      if (stageRow?.is_scheduled || stageRow?.mode === 'LIVE_VIDEO') {
+        const conn = await db
+          .prepare(
+            `SELECT access_token, provider_id FROM scheduling_connections
+             WHERE owner_id = ? AND status = 'ACTIVE' LIMIT 1`
+          )
+          .bind(userId)
+          .first<{ access_token: string; provider_id: string }>();
+
+        if (conn && conn.provider_id === 'CALENDLY') {
+          try {
+            // Use stage-specific event type or fetch the first available one
+            const eventTypeUri = stageRow.scheduling_event_type_id;
+            if (eventTypeUri) {
+              const etRes = await fetch(eventTypeUri, {
+                headers: { Authorization: `Bearer ${conn.access_token}` },
+              });
+              if (etRes.ok) {
+                const etData = await etRes.json() as { resource?: { scheduling_url?: string } };
+                bookingUrl = etData.resource?.scheduling_url;
+              }
+            } else {
+              // No event type configured — use first available from the account
+              const userRes = await fetch('https://api.calendly.com/users/me', {
+                headers: { Authorization: `Bearer ${conn.access_token}` },
+              });
+              if (userRes.ok) {
+                const userData = await userRes.json() as { resource?: { uri?: string } };
+                const userUri = userData.resource?.uri;
+                if (userUri) {
+                  const etListRes = await fetch(
+                    `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true&count=1`,
+                    { headers: { Authorization: `Bearer ${conn.access_token}` } },
+                  );
+                  if (etListRes.ok) {
+                    const etList = await etListRes.json() as { collection?: { scheduling_url?: string }[] };
+                    bookingUrl = etList.collection?.[0]?.scheduling_url;
+                  }
+                }
+              }
+            }
+          } catch {
+            // Failed to fetch — skip booking URL
+          }
+        }
+      }
     }
 
     c.executionCtx.waitUntil(
@@ -112,7 +183,9 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
           name,
           email,
           pipelineName: pipeline.title,
+          ...(stageName ? { stageName } : {}),
           assessUrl,
+          ...(bookingUrl ? { bookingUrl } : {}),
         },
         stageTemplatesJson,
       }),
@@ -234,6 +307,27 @@ candidateOps.get('/:candidateId', async (c) => {
     submissions.map((s) => [s.challenge_id, s])
   );
 
+  // Fetch scheduled interviews for this candidate
+  const interviewsResult = await db
+    .prepare(
+      `SELECT id, stage_id, status, scheduled_at, meeting_url, scheduling_provider
+       FROM scheduled_interviews
+       WHERE candidate_id = ?`
+    )
+    .bind(candidateId)
+    .all<{
+      id: string;
+      stage_id: string;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+    }>();
+
+  const interviewsByStage = new Map(
+    (interviewsResult.results ?? []).map((iv) => [iv.stage_id, iv])
+  );
+
   // Build stages with nested challenges + submissions
   const stagesWithChallenges = stages.map((stage) => {
     const stageChallenges = challenges
@@ -270,12 +364,22 @@ candidateOps.get('/:candidateId', async (c) => {
             : null,
         };
       });
+    const interview = interviewsByStage.get(stage.id);
     return {
       id: stage.id,
       title: stage.title,
       order: stage.sort_order,
       mode: stage.mode,
       challenges: stageChallenges,
+      ...(interview ? {
+        scheduledInterview: {
+          id: interview.id,
+          status: interview.status,
+          scheduledAt: interview.scheduled_at,
+          meetingUrl: interview.meeting_url,
+          provider: interview.scheduling_provider,
+        },
+      } : {}),
     };
   });
 

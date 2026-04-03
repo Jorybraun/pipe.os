@@ -49,12 +49,62 @@ emailRoutes.post('/:candidateId/send-invite', async (c) => {
   const assessUrl = `${baseUrl}/assess/${candidate.invite_token}`;
 
   let stageTemplatesJson: string | null = null;
+  let bookingUrl: string | undefined;
+  let stageName: string | undefined;
+
   if (candidate.current_stage_id) {
     const stageRow = await db
-      .prepare('SELECT notification_templates FROM stages WHERE id = ?')
+      .prepare('SELECT title, mode, notification_templates, is_scheduled, scheduling_event_type_id FROM stages WHERE id = ?')
       .bind(candidate.current_stage_id)
-      .first<{ notification_templates: string | null }>();
+      .first<{ title: string; mode: string | null; notification_templates: string | null; is_scheduled: number | null; scheduling_event_type_id: string | null }>();
     stageTemplatesJson = stageRow?.notification_templates ?? null;
+    stageName = stageRow?.title;
+
+    // Look up Calendly booking URL for scheduled stages
+    if (stageRow?.is_scheduled || stageRow?.mode === 'LIVE_VIDEO') {
+      const conn = await db
+        .prepare(
+          `SELECT access_token, provider_id FROM scheduling_connections
+           WHERE owner_id = ? AND status = 'ACTIVE' LIMIT 1`
+        )
+        .bind(userId)
+        .first<{ access_token: string; provider_id: string }>();
+
+      if (conn && conn.provider_id === 'CALENDLY') {
+        try {
+          if (stageRow.scheduling_event_type_id) {
+            const etRes = await fetch(stageRow.scheduling_event_type_id, {
+              headers: { Authorization: `Bearer ${conn.access_token}` },
+            });
+            if (etRes.ok) {
+              const etData = await etRes.json() as { resource?: { scheduling_url?: string } };
+              bookingUrl = etData.resource?.scheduling_url;
+            }
+          } else {
+            // Fallback: first active event type
+            const userRes = await fetch('https://api.calendly.com/users/me', {
+              headers: { Authorization: `Bearer ${conn.access_token}` },
+            });
+            if (userRes.ok) {
+              const userData = await userRes.json() as { resource?: { uri?: string } };
+              const userUri = userData.resource?.uri;
+              if (userUri) {
+                const etListRes = await fetch(
+                  `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true&count=1`,
+                  { headers: { Authorization: `Bearer ${conn.access_token}` } },
+                );
+                if (etListRes.ok) {
+                  const etList = await etListRes.json() as { collection?: { scheduling_url?: string }[] };
+                  bookingUrl = etList.collection?.[0]?.scheduling_url;
+                }
+              }
+            }
+          }
+        } catch {
+          // Skip booking URL on error
+        }
+      }
+    }
   }
 
   const result = await sendNotificationEmail({
@@ -65,7 +115,9 @@ emailRoutes.post('/:candidateId/send-invite', async (c) => {
       name: candidate.name,
       email: candidate.email,
       pipelineName: candidate.pipeline_title,
+      ...(stageName ? { stageName } : {}),
       assessUrl,
+      ...(bookingUrl ? { bookingUrl } : {}),
     },
     stageTemplatesJson,
   });

@@ -780,6 +780,15 @@ schedulingPublic.post('/webhook', async (c) => {
       }>();
 
     if (interviewData) {
+      const scheduledTime = normalized.scheduledAt
+        ? new Date(normalized.scheduledAt).toLocaleString('en-US', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+            hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+          })
+        : '';
+      const meetingUrl = normalized.meetingUrl ?? '';
+
+      // Email the candidate
       c.executionCtx.waitUntil(
         sendNotificationEmail({
           apiKey: c.env.RESEND_API_KEY,
@@ -790,11 +799,45 @@ schedulingPublic.post('/webhook', async (c) => {
             email: interviewData.email,
             pipelineName: interviewData.pipeline_title,
             stageName: interviewData.stage_title,
-            scheduledTime: normalized.scheduledAt ?? '',
+            scheduledTime,
+            bookingUrl: meetingUrl,
           },
           stageTemplatesJson: interviewData.notification_templates,
         }),
       );
+
+      // Email the recruiter
+      const recruiter = await db
+        .prepare('SELECT email FROM users WHERE id = ?')
+        .bind(connection.owner_id)
+        .first<{ email: string }>();
+
+      // Fallback: try Clerk user metadata or scheduling connection account email
+      const recruiterEmail = recruiter?.email
+        ?? (await db
+            .prepare('SELECT account_email FROM scheduling_connections WHERE id = ?')
+            .bind(connection.id)
+            .first<{ account_email: string | null }>()
+          )?.account_email;
+
+      if (recruiterEmail) {
+        c.executionCtx.waitUntil(
+          sendNotificationEmail({
+            apiKey: c.env.RESEND_API_KEY,
+            trigger: 'SCHEDULED',
+            to: recruiterEmail,
+            variables: {
+              name: interviewData.name,
+              email: interviewData.email,
+              pipelineName: interviewData.pipeline_title,
+              stageName: interviewData.stage_title,
+              scheduledTime,
+              bookingUrl: meetingUrl,
+            },
+            stageTemplatesJson: interviewData.notification_templates,
+          }),
+        );
+      }
     }
   }
 

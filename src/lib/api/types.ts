@@ -239,12 +239,21 @@ export interface ProfileChallenge {
   submission: ChallengeSubmissionDetail | null;
 }
 
+export interface ScheduledInterviewInfo {
+  id: string;
+  status: string;
+  scheduledAt: string | null;
+  meetingUrl: string | null;
+  provider: string | null;
+}
+
 export interface ProfileStage {
   id: string;
   title: string;
   order: number;
   mode: string | null;
   challenges: ProfileChallenge[];
+  scheduledInterview?: ScheduledInterviewInfo;
 }
 
 export interface CandidateProfileRecord {

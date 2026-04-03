@@ -6,6 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Settings panel + video call drawer wiring — 2026-04-03)
+- **`src/components/SettingsPanel.tsx`** — Tabbed settings panel replacing DisplaySettingsPanel. Two tabs: DISPLAY (theme controls) and INTEGRATIONS (scheduling provider OAuth connection).
+- **`src/components/settings/DisplaySettings.tsx`** — Display/theme tab extracted from old DisplaySettingsPanel.
+- **`src/components/settings/IntegrationsSettings.tsx`** — Integrations tab: scheduling provider connection (Calendly/Cal.com OAuth), event type listing, disconnect flow.
+- **`src/components/SidebarNav.tsx`** — Added Calls nav item (phone icon) for video call drawer, renamed Settings tooltip.
+- **`src/App.tsx`** — Wired SettingsPanel (replaces DisplaySettingsPanel), RecruiterCallDrawer in agentPanel slot via Calls nav button.
+- **`workers/api/src/index.ts`** — Fixed webhook route ordering: public scheduling webhook mounted before auth middleware.
+
 #### Fixed (SchedulingDashboard Amplify dependency — 2026-04-03)
 - **`src/components/Scheduling/SchedulingDashboard.tsx`** — Replaced Amplify `useData().createClient()` with Worker API `useApiClient()` for enrichment fetches (pipeline/candidate/stage names).
 

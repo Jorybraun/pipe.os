@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { FEATURE_FLAGS } from "../config/featureFlags";
+
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Plus, Settings, Video, Mail, ChevronRight, Save } from "lucide-react";
+import { Plus, Settings, Mail, ChevronRight, Save, Trash2, CheckSquare, Square, X } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
@@ -65,6 +65,23 @@ export default function StageDetailPage(): JSX.Element {
 
   // Local title state for the inline editable input (mirrors stage.title)
   const [localTitle, setLocalTitle] = useState<string | null>(null);
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const toggleSelect = useCallback((id: string): void => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback((): void => {
+    setSelectedIds(new Set());
+  }, []);
 
   // Email Template State
   const [editingTemplate, setEditingTemplate] =
@@ -173,6 +190,27 @@ export default function StageDetailPage(): JSX.Element {
     [deleteChallenge, refetch],
   );
 
+  // ─── Batch delete handler ──────────────────────────────────────────────────
+
+  const handleBatchDelete = useCallback(async (): Promise<void> => {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!window.confirm(`Delete ${count} challenge${count > 1 ? 's' : ''}?`)) return;
+    setIsDeleting(true);
+    try {
+      for (const cid of selectedIds) {
+        await deleteChallenge(cid);
+      }
+      setSelectedIds(new Set());
+      await refetch();
+    } catch (err) {
+      console.error("[StageDetailPage] Batch delete failed:", err);
+      await refetch();
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [selectedIds, deleteChallenge, refetch]);
+
   // ─── Stage title save (onBlur) ────────────────────────────────────────────
 
   const handleTitleBlur = useCallback(async (): Promise<void> => {
@@ -213,21 +251,6 @@ export default function StageDetailPage(): JSX.Element {
       setIsSavingTemplate(false);
     }
   }, [stageId, editingTemplate, stage, updateStage, refetch]);
-
-  // ─── Stage mode toggle ────────────────────────────────────────────────────
-
-  const handleModeToggle = useCallback(
-    async (mode: "ASYNC" | "LIVE_VIDEO"): Promise<void> => {
-      if (!stageId) return;
-      try {
-        await updateStage(stageId, { mode });
-        await refetch();
-      } catch (err) {
-        console.error("[StageDetailPage] Failed to update mode:", err);
-      }
-    },
-    [stageId, updateStage, refetch],
-  );
 
   // ─── Time limit change ────────────────────────────────────────────────────
 
@@ -402,7 +425,78 @@ export default function StageDetailPage(): JSX.Element {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <SubTitle>CHALLENGES ({challenges.length})</SubTitle>
+          {/* Selection toolbar */}
+          {selectedIds.size > 0 ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 12px',
+              background: 'rgba(248,113,113,0.06)',
+              border: '1px solid rgba(248,113,113,0.15)',
+              borderRadius: 6,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button
+                  onClick={() => {
+                    if (selectedIds.size === challenges.length) clearSelection();
+                    else setSelectedIds(new Set(challenges.map((c) => c.id)));
+                  }}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--pipe-text-muted)', padding: 4,
+                    display: 'flex', alignItems: 'center',
+                  }}
+                  title={selectedIds.size === challenges.length ? 'Deselect all' : 'Select all'}
+                >
+                  {selectedIds.size === challenges.length
+                    ? <CheckSquare size={14} />
+                    : <Square size={14} />}
+                </button>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+                  fontFamily: '"Space Mono", monospace',
+                  color: '#f87171',
+                }}>
+                  {selectedIds.size} SELECTED
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => void handleBatchDelete()}
+                  disabled={isDeleting}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 14px',
+                    background: 'rgba(248,113,113,0.12)',
+                    border: '1px solid rgba(248,113,113,0.25)',
+                    borderRadius: 4,
+                    color: '#f87171',
+                    fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
+                    fontFamily: '"Space Mono", monospace',
+                    cursor: isDeleting ? 'wait' : 'pointer',
+                    opacity: isDeleting ? 0.5 : 1,
+                  }}
+                >
+                  <Trash2 size={11} />
+                  {isDeleting ? 'DELETING...' : 'DELETE'}
+                </button>
+                <button
+                  onClick={clearSelection}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--pipe-text-dim)', padding: 4,
+                    display: 'flex', alignItems: 'center',
+                  }}
+                  title="Clear selection"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <SubTitle>CHALLENGES ({challenges.length})</SubTitle>
+          )}
 
           <DndContext
             sensors={sensors}
@@ -433,6 +527,8 @@ export default function StageDetailPage(): JSX.Element {
                     key={c.id}
                     challenge={c}
                     index={i}
+                    isSelected={selectedIds.has(c.id)}
+                    onClick={() => toggleSelect(c.id)}
                     onEdit={(challenge) =>
                       navigate(
                         `/pipeline/${id}/challenges/${challenge.id}`,
@@ -784,66 +880,6 @@ export default function StageDetailPage(): JSX.Element {
                 </div>
               </div>
 
-              {/* STAGE_MODE — ASYNC (default) or LIVE_VIDEO — gated behind FEATURE_FLAG_LIVE_VIDEO */}
-              {FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO && (
-                <div
-                  style={{
-                    borderTop: "1px solid var(--pipe-border-light)",
-                    paddingTop: 20,
-                  }}
-                >
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontSize: 9,
-                      color: "var(--pipe-text-dim)",
-                      marginBottom: 12,
-                      fontFamily: "Space Mono",
-                    }}
-                  >
-                    <Video size={12} />
-                    STAGE_MODE
-                  </label>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 0,
-                      border: "1px solid var(--pipe-border)",
-                      borderRadius: 4,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {(["ASYNC", "LIVE_VIDEO"] as const).map((m) => {
-                      const isActive = (stage.mode ?? "ASYNC") === m;
-                      return (
-                        <button
-                          key={m}
-                          onClick={() => void handleModeToggle(m)}
-                          style={{
-                            flex: 1,
-                            padding: "8px 0",
-                            background: isActive
-                              ? "var(--pipe-surface-hover)"
-                              : "transparent",
-                            border: "none",
-                            color: isActive ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-                            fontSize: 9,
-                            fontWeight: 700,
-                            letterSpacing: "0.12em",
-                            fontFamily: "Space Mono",
-                            cursor: isActive ? "default" : "pointer",
-                            transition: "background 0.15s, color 0.15s",
-                          }}
-                        >
-                          {m}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           </LiquidMetalCard>
         </aside>
