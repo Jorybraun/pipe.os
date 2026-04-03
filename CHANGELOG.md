@@ -11,6 +11,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).
 - **`src/contexts/ChallengeDndContext.tsx`** — Shared context bridging challenge state between DndContext wrapper and StageDetailPage.
 
+#### Fixed (Stage config toggles + repo deselect — 2026-04-03)
+- **`src/components/StageConfigPanel.tsx`** — Restored scheduling/video toggles in wizard step 2; fixed repo deselection on PR add via stable component key.
+
 #### Added (GitHub PR picker in stage config — 2026-04-02)
 - **`src/components/StageConfigPanel.tsx`** — CODE_REVIEW type shows real GitHub repo/PR picker instead of mock templates. Saved repos from localStorage, PR fetch from API, click-to-add with diff caching.
 

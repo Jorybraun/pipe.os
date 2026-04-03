@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -178,19 +178,33 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
         </button>
       </div>
 
-      {/* Content — type picker → challenge picker (CODE_REVIEW gets special PR browser) */}
-      {selectedType === 'CODE_REVIEW' ? (
-        <CodeReviewPicker
-          stageId={stageId}
-          existingCount={stage?.challenges?.length ?? 0}
-          onAdded={refetch}
-        />
-      ) : selectedType ? (
-        <TypeChallengePicker
-          stageType={selectedType}
-          onAdd={handleAddChallenge}
-          existingCount={stage?.challenges?.length ?? 0}
-        />
+      {/* Content */}
+      {selectedType ? (
+        <>
+          {/* Stage config toggles (always visible in step 2) */}
+          <StageConfigToggles
+            stageId={stageId}
+            stage={stage}
+            updateStage={updateStage}
+            refetch={refetch}
+          />
+
+          {/* Challenge picker (type-specific) */}
+          {selectedType === 'CODE_REVIEW' ? (
+            <CodeReviewPicker
+              key={stageId}
+              stageId={stageId}
+              existingCount={stage?.challenges?.length ?? 0}
+              onAdded={refetch}
+            />
+          ) : (
+            <TypeChallengePicker
+              stageType={selectedType}
+              onAdd={handleAddChallenge}
+              existingCount={stage?.challenges?.length ?? 0}
+            />
+          )}
+        </>
       ) : (
         <TypeSelector onSelect={(t) => void handleSelectType(t)} currentType={(stage?.stageType as StageType | null) ?? null} />
       )}
@@ -388,6 +402,98 @@ function TypeChallengePicker({ stageType, onAdd, existingCount }: {
         {filtered.length} CHALLENGES — {existingCount} ADDED
       </div>
     </>
+  );
+}
+
+// ── Stage config toggles (scheduling + video) ──────────────────────────────
+
+function StageConfigToggles({ stageId, stage, updateStage, refetch }: {
+  stageId: string;
+  stage: ReturnType<typeof useStageDetail>['stage'];
+  updateStage: ReturnType<typeof useStageMutations>['updateStage'];
+  refetch: () => Promise<void>;
+}): JSX.Element {
+  const [isScheduled, setIsScheduled] = useState(stage?.isScheduled ?? false);
+  const [isVideoMeeting, setIsVideoMeeting] = useState(stage?.mode === 'LIVE_VIDEO');
+
+  const handleToggleScheduling = async (value: boolean): Promise<void> => {
+    setIsScheduled(value);
+    try {
+      await updateStage(stageId, { isScheduled: value });
+      await refetch();
+    } catch (err) {
+      console.error('[StageConfigToggles] Failed to update scheduling:', err);
+      setIsScheduled(!value);
+    }
+  };
+
+  const handleToggleVideo = async (value: boolean): Promise<void> => {
+    setIsVideoMeeting(value);
+    try {
+      await updateStage(stageId, { mode: value ? 'LIVE_VIDEO' : 'ASYNC' });
+      await refetch();
+    } catch (err) {
+      console.error('[StageConfigToggles] Failed to update video:', err);
+      setIsVideoMeeting(!value);
+    }
+  };
+
+  return (
+    <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 16, borderBottom: '1px solid var(--pipe-border)' }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Calendar size={12} style={{ color: 'var(--pipe-text-dim)' }} />
+            <span style={{ ...labelStyle, marginBottom: 0 }}>SCHEDULING_LINK</span>
+          </div>
+          <ToggleSwitch value={isScheduled} onChange={(v) => void handleToggleScheduling(v)} />
+        </div>
+        <div style={{ marginTop: 4, fontSize: 8, color: 'var(--pipe-text-dim)', opacity: 0.6, letterSpacing: '0.05em' }}>
+          Candidates receive a scheduling link
+        </div>
+      </div>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Video size={12} style={{ color: 'var(--pipe-text-dim)' }} />
+            <span style={{ ...labelStyle, marginBottom: 0 }}>VIDEO_MEETING</span>
+          </div>
+          <ToggleSwitch value={isVideoMeeting} onChange={(v) => void handleToggleVideo(v)} />
+        </div>
+        <div style={{ marginTop: 4, fontSize: 8, color: 'var(--pipe-text-dim)', opacity: 0.6, letterSpacing: '0.05em' }}>
+          This stage includes a live video meeting
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }): JSX.Element {
+  return (
+    <button
+      onClick={() => onChange(!value)}
+      style={{
+        width: 36,
+        height: 20,
+        borderRadius: 10,
+        border: 'none',
+        background: value ? '#a78bfa' : 'var(--pipe-surface)',
+        cursor: 'pointer',
+        position: 'relative',
+        transition: 'background 0.2s',
+      }}
+    >
+      <div style={{
+        width: 16,
+        height: 16,
+        borderRadius: '50%',
+        background: '#fff',
+        position: 'absolute',
+        top: 2,
+        left: value ? 18 : 2,
+        transition: 'left 0.2s',
+      }} />
+    </button>
   );
 }
 
