@@ -180,33 +180,30 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
 
       {/* Content */}
       {selectedType ? (
-        <>
-          {/* Stage config toggles (always visible in step 2) */}
+        selectedType === 'CODE_REVIEW' ? (
+          <CodeReviewPicker
+            key={stageId}
+            stageId={stageId}
+            existingCount={stage?.challenges?.length ?? 0}
+            onAdded={refetch}
+          />
+        ) : (
+          <TypeChallengePicker
+            stageType={selectedType}
+            onAdd={handleAddChallenge}
+            existingCount={stage?.challenges?.length ?? 0}
+          />
+        )
+      ) : (
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <TypeSelector onSelect={(t) => void handleSelectType(t)} currentType={(stage?.stageType as StageType | null) ?? null} />
           <StageConfigToggles
             stageId={stageId}
             stage={stage}
             updateStage={updateStage}
             refetch={refetch}
           />
-
-          {/* Challenge picker (type-specific) */}
-          {selectedType === 'CODE_REVIEW' ? (
-            <CodeReviewPicker
-              key={stageId}
-              stageId={stageId}
-              existingCount={stage?.challenges?.length ?? 0}
-              onAdded={refetch}
-            />
-          ) : (
-            <TypeChallengePicker
-              stageType={selectedType}
-              onAdd={handleAddChallenge}
-              existingCount={stage?.challenges?.length ?? 0}
-            />
-          )}
-        </>
-      ) : (
-        <TypeSelector onSelect={(t) => void handleSelectType(t)} currentType={(stage?.stageType as StageType | null) ?? null} />
+        </div>
       )}
     </div>
   );

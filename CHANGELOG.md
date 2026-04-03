@@ -11,6 +11,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).
 - **`src/contexts/ChallengeDndContext.tsx`** — Shared context bridging challenge state between DndContext wrapper and StageDetailPage.
 
+#### Changed (Config toggles on type selector page — 2026-04-03)
+- **`src/components/StageConfigPanel.tsx`** — Scheduling/video toggles moved to the type selector page (step 1) instead of step 2.
+
 #### Fixed (Stage config toggles + repo deselect — 2026-04-03)
 - **`src/components/StageConfigPanel.tsx`** — Restored scheduling/video toggles in wizard step 2; fixed repo deselection on PR add via stable component key.
 
