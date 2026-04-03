@@ -35,6 +35,17 @@ export interface Env {
    * Used in E2E/integration tests to avoid real LLM calls.
    */
   MOCK_AI?: string;
+  /**
+   * Resend API key for transactional emails (invitations, notifications).
+   * Set via .dev.vars in dev, Worker secret in production.
+   * Optional — emails are silently skipped when not set.
+   */
+  RESEND_API_KEY?: string;
+  /**
+   * Base URL for candidate-facing assessment links.
+   * Defaults to 'https://pipe.build' in production.
+   */
+  APP_BASE_URL?: string;
 }
 
 /**

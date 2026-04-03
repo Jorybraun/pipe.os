@@ -6,6 +6,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Email system via Resend — 2026-04-03)
+- **`workers/api/src/lib/email.ts`** — Resend client wrapper with 4 default HTML templates (INVITATION, SCHEDULED, SUCCESS, FAILURE), variable substitution (`{{name}}`, `{{pipelineName}}`, `{{assessUrl}}`, etc.), stage notification_templates override.
+- **`workers/api/src/routes/email.ts`** — Recruiter-triggered email routes: `send-invite` (resend invitation) and `send-result` (stage SUCCESS/FAILURE notification).
+- **`workers/api/src/routes/candidates.ts`** — Auto-sends invitation email via `waitUntil` on candidate creation when `RESEND_API_KEY` is set.
+- **`workers/api/src/types.ts`** — Added `RESEND_API_KEY` and `APP_BASE_URL` to Env interface.
+- **`workers/api/wrangler.jsonc`** — Added `APP_BASE_URL` var; `RESEND_API_KEY` as Worker secret.
+
 #### Added (Challenge browser sidebar with DnD — 2026-04-02)
 - **`src/pages/ChallengeDndLayout.tsx`** — Nested layout route wrapping StageDetailPage with DndContext for cross-panel drag-and-drop.
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).

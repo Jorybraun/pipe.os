@@ -6,6 +6,7 @@ import { challenges } from './routes/challenges';
 import { github } from './routes/github';
 import { overview } from './routes/overview';
 import { pipelineCandidates, candidateOps } from './routes/candidates';
+import { emailRoutes } from './routes/email';
 import { challengeSubmissions } from './routes/challengeSubmissions';
 import { reviewSessions } from './routes/reviewSessions';
 import { rpcPublic, rpcAuth } from './routes/rpc';
@@ -62,6 +63,8 @@ app.route('/api/v1/pipelines', overview);
 app.route('/api/v1/pipelines', pipelineCandidates);
 // Candidate ops: GET/PATCH /api/v1/candidates/:candidateId
 app.route('/api/v1/candidates', candidateOps);
+// Email: POST /api/v1/candidates/:candidateId/send-invite, /send-result
+app.route('/api/v1/candidates', emailRoutes);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}

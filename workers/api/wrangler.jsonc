@@ -25,5 +25,11 @@
   ],
   "ai": {
     "binding": "AI"
+  },
+  // Environment variables — secrets go in .dev.vars for local dev
+  // RESEND_API_KEY: set via `wrangler secret put RESEND_API_KEY` in production
+  // APP_BASE_URL: defaults to https://pipe.build if not set
+  "vars": {
+    "APP_BASE_URL": "http://localhost:5173"
   }
 }

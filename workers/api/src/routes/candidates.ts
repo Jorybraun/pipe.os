@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
 import { parseResume, persistParsedCV } from '../lib/cvParser';
+import { sendNotificationEmail } from '../lib/email';
 import type { Env, Variables } from '../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -49,11 +50,11 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   const { pipelineId } = c.req.param();
   const db = c.env.DB;
 
-  // Ownership check
+  // Ownership check — fetch title for email
   const pipeline = await db
-    .prepare('SELECT id FROM pipelines WHERE id = ? AND owner_id = ?')
+    .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
     .bind(pipelineId, userId)
-    .first();
+    .first<{ id: string; title: string }>();
   if (!pipeline) return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
 
   const body = await c.req.json();
@@ -86,6 +87,37 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     )
     .bind(id, pipelineId, userId, name, email, inviteToken, stageId, now, now)
     .run();
+
+  // Fire-and-forget invitation email via Resend
+  if (c.env.RESEND_API_KEY) {
+    const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
+    const assessUrl = `${baseUrl}/assess/${inviteToken}`;
+
+    // Fetch stage notification templates if a stage was assigned
+    let stageTemplatesJson: string | null = null;
+    if (stageId) {
+      const stageRow = await db
+        .prepare('SELECT notification_templates FROM stages WHERE id = ?')
+        .bind(stageId)
+        .first<{ notification_templates: string | null }>();
+      stageTemplatesJson = stageRow?.notification_templates ?? null;
+    }
+
+    c.executionCtx.waitUntil(
+      sendNotificationEmail({
+        apiKey: c.env.RESEND_API_KEY,
+        trigger: 'INVITATION',
+        to: email,
+        variables: {
+          name,
+          email,
+          pipelineName: pipeline.title,
+          assessUrl,
+        },
+        stageTemplatesJson,
+      }),
+    );
+  }
 
   return c.json({
     candidate: {
