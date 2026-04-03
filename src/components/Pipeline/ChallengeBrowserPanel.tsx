@@ -29,16 +29,16 @@ const TYPE_FILTERS: { key: ChallengeType | 'ALL'; label: string; icon: typeof Co
 ];
 
 const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: '#4ade80',
-  intermediate: '#fbbf24',
-  advanced: '#f87171',
+  beginner: 'var(--pipe-text-dim)',
+  intermediate: 'var(--pipe-text-dim)',
+  advanced: 'rgba(255,100,100,0.6)',
 };
 
 const TYPE_BADGE_COLORS: Record<string, string> = {
-  CODE_REVIEW: '#60a5fa',
-  CODE_IMPLEMENTATION: '#a78bfa',
-  QUIZ_MCQ: '#4ade80',
-  QUIZ_SHORT_ANSWER: '#fbbf24',
+  CODE_REVIEW: 'var(--pipe-text-dim)',
+  CODE_IMPLEMENTATION: 'var(--pipe-text-dim)',
+  QUIZ_MCQ: 'var(--pipe-text-dim)',
+  QUIZ_SHORT_ANSWER: 'var(--pipe-text-dim)',
 };
 
 export function ChallengeBrowserPanel({ onClose }: ChallengeBrowserPanelProps): JSX.Element {
@@ -81,12 +81,13 @@ export function ChallengeBrowserPanel({ onClose }: ChallengeBrowserPanelProps): 
       style={{
         width: 400,
         flexShrink: 0,
-        height: 'calc(100vh - 100px)',
+        height: 'calc(100vh - 124px)',
         position: 'sticky',
         top: 0,
         marginTop: -24,
         marginBottom: -24,
         marginLeft: -20,
+        marginRight: 20,
         background: 'rgba(12, 12, 14, 0.95)',
         backdropFilter: 'blur(12px)',
         borderRight: '1px solid var(--pipe-border, rgba(255,255,255,0.06))',
@@ -276,33 +277,9 @@ function DraggableTemplateCard({
     >
       <GripVertical
         size={12}
-        style={{ color: 'var(--pipe-text-dim)', opacity: 0.4, flexShrink: 0 }}
+        style={{ color: 'var(--pipe-text-dim)', opacity: 0.3, flexShrink: 0 }}
       />
       <div style={{ flex: 1, minWidth: 0 }} onClick={onClickAdd}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-          <span
-            style={{
-              fontSize: 7,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              color: badgeColor,
-              fontFamily: '"Space Mono", monospace',
-            }}
-          >
-            {template.type.replace('_', ' ')}
-          </span>
-          <span
-            style={{
-              fontSize: 7,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              color: diffColor,
-              fontFamily: '"Space Mono", monospace',
-            }}
-          >
-            {template.difficulty.toUpperCase()}
-          </span>
-        </div>
         <div
           style={{
             fontSize: 10,
@@ -320,10 +297,11 @@ function DraggableTemplateCard({
           style={{
             fontSize: 8,
             color: 'var(--pipe-text-dim)',
-            marginTop: 2,
+            marginTop: 3,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
+            opacity: 0.6,
           }}
         >
           {template.description}
