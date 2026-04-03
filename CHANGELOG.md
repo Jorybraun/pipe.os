@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Recruiter call drawer — video UX — 2026-04-03)
+- **`src/components/Video/RecruiterCallDrawer.tsx`** — Sidebar panel for managing video calls: CallListView (today's scheduled interviews), CallDetailView (pre-call info + START button), ActiveCallView (live video with camera/mic toggles, self-view PiP, hang up).
+
 #### Added (Video infrastructure — Durable Objects + WebRTC signaling — 2026-04-03)
 - **`workers/api/src/durable-objects/VideoRoom.ts`** — Durable Object for WebSocket-based WebRTC signaling. Manages session lifecycle (WAITING→CALLING→ACTIVE→ENDED), routes signals between peers, auto-cleanup on session end.
 - **`workers/api/src/routes/video.ts`** — Video Worker routes: session creation, WebSocket upgrade (recruiter + candidate), TURN credential proxy via Metered.ca.
