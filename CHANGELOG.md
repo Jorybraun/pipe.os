@@ -11,6 +11,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).
 - **`src/contexts/ChallengeDndContext.tsx`** — Shared context bridging challenge state between DndContext wrapper and StageDetailPage.
 
+#### Changed (Stage config wizard — 2026-04-02)
+- **`src/components/StageConfigPanel.tsx`** — Multi-step wizard: clicking a stage type renames the stage and swaps to a type-specific challenge picker with search and click-to-add.
+
 #### Changed (Portal-based challenge browser — 2026-04-02)
 - **`src/components/Layout.tsx`** — Added portal target ref in aside for child pages to render into.
 - **`src/contexts/SidebarPortalContext.tsx`** — New context exposing Layout aside portal ref + open/close controls.
