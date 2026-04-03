@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useAuth as useClerkAuth } from '@clerk/react';
-import { Shield, ChevronDown, Github, ExternalLink, RefreshCw, FileText, MessageSquare, GitBranch, HelpCircle, Loader } from 'lucide-react';
+import { Shield, ChevronDown, Github, ExternalLink, RefreshCw, FileText, MessageSquare, GitBranch, HelpCircle, Loader, Settings } from 'lucide-react';
 import { GitHubPRFetcherV2 } from '../Assessment/GitHubPRFetcherV2';
 import { GroundTruthAnnotationEditor } from '../Assessment/GroundTruthAnnotationEditor';
 import { DiffPanel, type DiffJson } from '../Assessment/DiffPanel';
@@ -332,7 +332,7 @@ export function CodeReviewEditor({
 
       {/* CONFIGURATION SIDEBAR */}
       <aside>
-        <LiquidMetalCard variant="chrome" style={{ padding: 32, borderRadius: 16 }}>
+        <LiquidMetalCard variant="chrome" style={{ padding: 32, borderRadius: 0 }}>
           
           {prFetched && (
             <div style={{ marginBottom: 40, paddingBottom: 32, borderBottom: '1px solid var(--pipe-border)' }}>
@@ -373,6 +373,126 @@ export function CodeReviewEditor({
               </div>
             </div>
           )}
+
+          {sidebarSection('MULTI_TURN', <Settings size={14} />, (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={!!(challenge.config?.isMultiTurn)}
+                  onChange={(e) => onChange({
+                    ...challenge,
+                    config: {
+                      ...challenge.config,
+                      isMultiTurn: e.target.checked,
+                      implementerPersona: challenge.config?.implementerPersona ?? 'junior',
+                      maxRounds: challenge.config?.maxRounds ?? 4,
+                    },
+                  })}
+                  style={{ accentColor: '#60a5fa' }}
+                />
+                <span style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono' }}>
+                  Enable multi-turn
+                </span>
+              </label>
+
+              {!!(challenge.config?.isMultiTurn) && (
+                <>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!challenge.config?.enableExplainer}
+                      onChange={(e) => onChange({
+                        ...challenge,
+                        config: { ...challenge.config, enableExplainer: e.target.checked },
+                      })}
+                      style={{ accentColor: '#60a5fa' }}
+                    />
+                    <span style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono' }}>
+                      Enable "Ask" tab
+                    </span>
+                  </label>
+
+                  <div>
+                    <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6 }}>PERSONA</div>
+                    <select
+                      value={(challenge.config?.implementerPersona as string) ?? 'junior'}
+                      onChange={(e) => onChange({
+                        ...challenge,
+                        config: { ...challenge.config, implementerPersona: e.target.value },
+                      })}
+                      style={{
+                        width: '100%',
+                        background: 'var(--pipe-surface)',
+                        border: '1px solid var(--pipe-border)',
+                        borderRadius: 4,
+                        padding: '8px 10px',
+                        color: 'var(--pipe-text)',
+                        fontSize: 10,
+                        fontFamily: 'Space Mono',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="junior">junior</option>
+                      <option value="senior">senior</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6 }}>MAX_ROUNDS</div>
+                    <input
+                      type="number"
+                      min={2}
+                      max={6}
+                      value={(challenge.config?.maxRounds as number) ?? 4}
+                      onChange={(e) => onChange({
+                        ...challenge,
+                        config: { ...challenge.config, maxRounds: parseInt(e.target.value, 10) || 4 },
+                      })}
+                      style={{
+                        width: 80,
+                        background: 'var(--pipe-surface)',
+                        border: '1px solid var(--pipe-border)',
+                        borderRadius: 4,
+                        padding: '8px 10px',
+                        color: 'var(--pipe-text)',
+                        fontSize: 10,
+                        fontFamily: 'Space Mono',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+
+                  {!!challenge.config?.enableExplainer && (
+                    <div>
+                      <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em', marginBottom: 6 }}>MAX_QUESTIONS</div>
+                      <input
+                        type="number"
+                        min={3}
+                        max={10}
+                        value={(challenge.config?.maxExplainerQuestions as number) ?? 6}
+                        onChange={(e) => onChange({
+                          ...challenge,
+                          config: { ...challenge.config, maxExplainerQuestions: parseInt(e.target.value, 10) || 6 },
+                        })}
+                        style={{
+                          width: 80,
+                          background: 'var(--pipe-surface)',
+                          border: '1px solid var(--pipe-border)',
+                          borderRadius: 4,
+                          padding: '8px 10px',
+                          color: 'var(--pipe-text)',
+                          fontSize: 10,
+                          fontFamily: 'Space Mono',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
 
           {sidebarSection('AI_FOLLOW_UP', <ChevronDown size={14} />, (
             <FollowUpConfiguration

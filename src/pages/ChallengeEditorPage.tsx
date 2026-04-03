@@ -46,7 +46,7 @@ const EDITOR_FORM_MAP: Record<string, ComponentType<EditorFormProps>> = {
 
 // ─── Tab type ──────────────────────────────────────────────────────────────────
 
-type EditorTab = 'DETAILS' | 'CONTENT_EDITOR' | 'SCORING_RUBRIC' | 'CANDIDATE_PREVIEW';
+type EditorTab = 'DETAILS' | 'CONTENT_EDITOR' | 'SCORING_RUBRIC';
 
 // ─── Page ──────────────────────────────────────────────────────────────────────
 
@@ -270,9 +270,8 @@ export default function ChallengeEditorPage(): JSX.Element {
   return (
     <div style={{ paddingBottom: 100, maxWidth: 1400, margin: '0 auto', padding: '0 32px 100px' }}>
 
-      {/* ─── PAGE HEADER (unmounted in CANDIDATE_PREVIEW so h1 doesn't create duplicate
-               text matches that violate Playwright strict mode locator assertions) */}
-      {activeTab !== 'CANDIDATE_PREVIEW' && <div
+      {/* ─── PAGE HEADER ──────────────────────────────────────────────────── */}
+      <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -368,7 +367,7 @@ export default function ChallengeEditorPage(): JSX.Element {
             {isSaving ? 'SAVING...' : 'SAVE_CHANGES'}
           </button>
         </div>
-      </div>}
+      </div>
 
       {/* ─── TAB BAR ──────────────────────────────────────────────────────────── */}
       <div
@@ -396,12 +395,6 @@ export default function ChallengeEditorPage(): JSX.Element {
           style={tabBtnStyle(activeTab === 'SCORING_RUBRIC')}
         >
           SCORING_RUBRIC
-        </button>
-        <button
-          onClick={() => setActiveTab('CANDIDATE_PREVIEW')}
-          style={tabBtnStyle(activeTab === 'CANDIDATE_PREVIEW')}
-        >
-          CANDIDATE_PREVIEW
         </button>
       </div>
 
@@ -519,215 +512,6 @@ export default function ChallengeEditorPage(): JSX.Element {
             />
           </div>
 
-          {/* ── CODE_REVIEW-specific config ──────────────────────────────── */}
-          {challenge.type === 'CODE_REVIEW' && (
-            <>
-              {/* Divider */}
-              <div style={{ borderTop: '1px solid var(--pipe-border)', paddingTop: 8 }} />
-
-              {/* MULTI_TURN */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
-                  <SubTitle>MULTI_TURN</SubTitle>
-                </div>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                  }}
-                >
-                  <input
-                    data-testid="multi-turn-toggle"
-                    type="checkbox"
-                    checked={!!(challenge.config?.isMultiTurn)}
-                    onChange={(e) =>
-                      setChallenge({
-                        ...challenge,
-                        config: {
-                          ...challenge.config,
-                          isMultiTurn: e.target.checked,
-                          // Apply defaults when enabling for the first time
-                          implementerPersona:
-                            challenge.config?.implementerPersona ?? 'junior',
-                          maxRounds:
-                            challenge.config?.maxRounds ?? 4,
-                        },
-                      })
-                    }
-                    style={{
-                      width: 16,
-                      height: 16,
-                      accentColor: '#60a5fa',
-                      cursor: 'pointer',
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: 'var(--pipe-text-muted)',
-                      fontFamily: 'Space Mono',
-                    }}
-                  >
-                    Enable multi-turn conversation
-                  </span>
-                </label>
-              </div>
-
-              {/* ENABLE_EXPLAINER */}
-              {!!(challenge.config?.isMultiTurn) && (
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      data-testid="enable-explainer-toggle"
-                      checked={!!challenge.config?.enableExplainer}
-                      onChange={(e) =>
-                        setChallenge({
-                          ...challenge,
-                          config: { ...challenge.config, enableExplainer: e.target.checked },
-                        })
-                      }
-                      style={{ accentColor: '#60a5fa' }}
-                    />
-                    <span style={{
-                      fontSize: 11,
-                      color: 'var(--pipe-text-muted)',
-                      fontFamily: 'Space Mono',
-                    }}>
-                      Enable "Ask" tab (explainer agent)
-                    </span>
-                  </label>
-                  <div style={{ marginTop: 6, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', lineHeight: 1.5, marginLeft: 24 }}>
-                    Candidate can ask the PR author questions about architecture & design decisions.
-                  </div>
-                </div>
-              )}
-
-              {/* MAX_EXPLAINER_QUESTIONS (when explainer enabled) */}
-              {!!(challenge.config?.enableExplainer) && (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                    <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
-                    <SubTitle>MAX_EXPLAINER_QUESTIONS</SubTitle>
-                  </div>
-                  <input
-                    data-testid="max-explainer-questions-input"
-                    type="number"
-                    min={3}
-                    max={10}
-                    value={(challenge.config?.maxExplainerQuestions as number | undefined) ?? 6}
-                    onChange={(e) => {
-                      const val = e.target.value ? parseInt(e.target.value, 10) : 6;
-                      setChallenge({
-                        ...challenge,
-                        config: { ...challenge.config, maxExplainerQuestions: val },
-                      });
-                    }}
-                    style={{
-                      width: 120,
-                      background: 'var(--pipe-surface)',
-                      border: '1px solid var(--pipe-border)',
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      color: 'var(--pipe-text, #fff)',
-                      fontSize: 13,
-                      fontFamily: 'Space Mono',
-                      outline: 'none',
-                    }}
-                  />
-                  <div style={{ marginTop: 8, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
-                    How many questions the candidate can ask the PR author.
-                  </div>
-                </div>
-              )}
-
-              {/* IMPLEMENTER_PERSONA */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
-                  <SubTitle>IMPLEMENTER_PERSONA</SubTitle>
-                </div>
-                <select
-                  data-testid="implementer-persona-select"
-                  disabled={!challenge.config?.isMultiTurn}
-                  value={(challenge.config?.implementerPersona as string | undefined) ?? 'junior'}
-                  onChange={(e) =>
-                    setChallenge({
-                      ...challenge,
-                      config: { ...challenge.config, implementerPersona: e.target.value },
-                    })
-                  }
-                  style={{
-                    width: 200,
-                    background: challenge.config?.isMultiTurn
-                      ? 'rgba(255,255,255,0.05)'
-                      : 'var(--pipe-surface)',
-                    border: '1px solid var(--pipe-border)',
-                    borderRadius: 8,
-                    padding: '10px 14px',
-                    color: challenge.config?.isMultiTurn
-                      ? '#fff'
-                      : 'var(--pipe-text-dim)',
-                    fontSize: 13,
-                    fontFamily: 'Space Mono',
-                    outline: 'none',
-                    cursor: challenge.config?.isMultiTurn ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  <option value="junior">junior</option>
-                  <option value="senior">senior</option>
-                </select>
-              </div>
-
-              {/* MAX_ROUNDS */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
-                  <SubTitle>MAX_ROUNDS</SubTitle>
-                </div>
-                <input
-                  data-testid="max-rounds-input"
-                  type="number"
-                  disabled={!challenge.config?.isMultiTurn}
-                  min={2}
-                  max={6}
-                  value={
-                    challenge.config?.isMultiTurn
-                      ? ((challenge.config?.maxRounds as number | undefined) ?? 4)
-                      : ''
-                  }
-                  placeholder={challenge.config?.isMultiTurn ? undefined : '4'}
-                  onChange={(e) => {
-                    const val = e.target.value ? parseInt(e.target.value, 10) : 4;
-                    setChallenge({
-                      ...challenge,
-                      config: { ...challenge.config, maxRounds: val },
-                    });
-                  }}
-                  style={{
-                    width: 120,
-                    background: challenge.config?.isMultiTurn
-                      ? 'rgba(255,255,255,0.05)'
-                      : 'var(--pipe-surface)',
-                    border: '1px solid var(--pipe-border)',
-                    borderRadius: 8,
-                    padding: '10px 14px',
-                    color: challenge.config?.isMultiTurn
-                      ? '#fff'
-                      : 'var(--pipe-text-dim)',
-                    fontSize: 13,
-                    fontFamily: 'Space Mono',
-                    outline: 'none',
-                    cursor: challenge.config?.isMultiTurn ? 'text' : 'not-allowed',
-                  }}
-                />
-              </div>
-            </>
-          )}
 
           {/* ── CODE_IMPLEMENTATION-specific config ──────────────────────── */}
           {challenge.type === 'CODE_IMPLEMENTATION' && (
@@ -858,104 +642,6 @@ export default function ChallengeEditorPage(): JSX.Element {
         </div>
       )}
 
-      {/* ─── CANDIDATE_PREVIEW TAB ───────────────────────────────────────────── */}
-      {activeTab === 'CANDIDATE_PREVIEW' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              gap: 12,
-            }}
-          >
-            <button
-              style={{
-                ...headerBtnStyle,
-                fontSize: 9,
-                letterSpacing: '0.1em',
-              }}
-            >
-              FULL_SCREEN
-            </button>
-          </div>
-          <div
-            style={{
-              border: '1px solid var(--pipe-border)',
-              borderRadius: 12,
-              overflow: 'hidden',
-              minHeight: 400,
-              background: 'rgba(0,0,0,0.3)',
-              padding: 32,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 10,
-                color: 'var(--pipe-text-dim)',
-                fontFamily: 'Space Mono',
-                marginBottom: 16,
-                letterSpacing: '0.15em',
-              }}
-            >
-              CANDIDATE_VIEW
-            </div>
-            {challenge.instructions && !challenge.config?.question && (
-              <div
-                style={{
-                  fontSize: 15,
-                  color: 'var(--pipe-text, #fff)',
-                  lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap',
-                  marginBottom: 24,
-                }}
-              >
-                {challenge.instructions}
-              </div>
-            )}
-            {challenge.type === 'QUIZ_SHORT_ANSWER' && !!challenge.config?.question && (
-              <div
-                style={{
-                  padding: '20px 24px',
-                  background: 'var(--pipe-surface)',
-                  border: '1px solid var(--pipe-border)',
-                  borderRadius: 8,
-                  fontSize: 16,
-                  fontWeight: 600,
-                  color: 'var(--pipe-text, #fff)',
-                  marginBottom: 16,
-                }}
-              >
-                {String(challenge.config.question)}
-              </div>
-            )}
-            {challenge.type === 'QUIZ_MCQ' && !!challenge.config?.question && (
-              <div>
-                <div
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 600,
-                    color: 'var(--pipe-text, #fff)',
-                    marginBottom: 16,
-                  }}
-                >
-                  {String(challenge.config.question)}
-                </div>
-              </div>
-            )}
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 10,
-                color: 'var(--pipe-text-dim)',
-                fontFamily: 'Space Mono',
-              }}
-            >
-              TYPE: {challenge.type}
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

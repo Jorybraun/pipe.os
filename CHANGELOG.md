@@ -11,6 +11,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 - **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).
 - **`src/contexts/ChallengeDndContext.tsx`** — Shared context bridging challenge state between DndContext wrapper and StageDetailPage.
 
+#### Changed (Challenge editor cleanup — 2026-04-03)
+- **`src/pages/ChallengeEditorPage.tsx`** — Removed CANDIDATE_PREVIEW tab; removed MULTI_TURN config from main content (moved to sidebar).
+- **`src/components/Editor/CodeReviewEditor.tsx`** — Removed rounded border radius on sidebar; added MULTI_TURN config section (enable multi-turn, Ask tab, persona, max rounds, max questions) to right column sidebar.
+
 #### Fixed (Stage data sync between config panel and page — 2026-04-03)
 - **`src/contexts/StageRefetchContext.tsx`** — New context for cross-component refetch coordination.
 - **`src/components/StageConfigPanel.tsx`** — Triggers page refetch after mutations via StageRefetchContext.
