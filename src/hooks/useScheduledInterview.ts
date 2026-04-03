@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useData } from '../providers';
-import type { DataProviderFactory } from '../providers';
 import type { ScheduledInterview } from '../lib/scheduling/types';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
 
 interface UseScheduledInterviewResult {
   interview: ScheduledInterview | null;
@@ -13,25 +13,16 @@ interface UseScheduledInterviewResult {
  * useScheduledInterview — loads the ScheduledInterview record for a specific
  * candidate + stage combination.
  *
- * Used by the candidate-facing SchedulingStep. Calls the public API key endpoint
- * so no Cognito auth is required.
- *
- * TODO: The publicApiKey authorization on ScheduledInterview allows read-only
- * access, so candidates cannot tamper with status. However, any candidate who
- * knows another candidateId could read their interview record. Before production,
- * either:
- *   a) Add a Lambda resolver that validates candidateId matches the inviteToken, or
- *   b) Add a separate `inviteToken` field to ScheduledInterview and filter by that.
+ * Used by the candidate-facing SchedulingStep. Calls the RPC endpoint
+ * with the candidate session JWT. No Clerk auth required.
  */
 export function useScheduledInterview(
   candidateId: string,
-  stageId: string
+  stageId: string,
 ): UseScheduledInterviewResult {
-  const factory: DataProviderFactory = useData();
-
   const [interview, setInterview] = useState<ScheduledInterview | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError]         = useState<Error | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     if (!candidateId || !stageId) {
@@ -41,22 +32,25 @@ export function useScheduledInterview(
 
     let cancelled = false;
 
-    const load = async () => {
+    const load = async (): Promise<void> => {
       try {
-        const client = factory.createPublicClient();
-        const { data, errors } = await client.models.ScheduledInterview.list({
-          filter: {
-            candidateId: { eq: candidateId },
-            stageId:     { eq: stageId },
+        const sessionToken = sessionStorage.getItem('pipe_session_token');
+        const res = await fetch(`${API_BASE}/rpc/get-scheduled-interview`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
           },
+          body: JSON.stringify({ stageId }),
         });
 
-        if (errors) throw new Error(errors[0]?.message ?? 'List failed');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+
+        const data = await res.json() as { interview: ScheduledInterview | null };
         if (!cancelled) {
-          // Take the most recent record if multiple exist (shouldn't happen in practice)
-          // TODO: enforce a unique constraint on (candidateId, stageId) at the schema level
-          const items = data as ScheduledInterview[];
-          setInterview(items[0] ?? null);
+          setInterview(data.interview);
           setIsLoading(false);
         }
       } catch (err) {
@@ -68,9 +62,9 @@ export function useScheduledInterview(
       }
     };
 
-    load();
+    void load();
     return () => { cancelled = true; };
-  }, [candidateId, stageId, factory]);
+  }, [candidateId, stageId]);
 
   return { interview, isLoading, error };
 }

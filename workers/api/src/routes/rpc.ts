@@ -819,6 +819,69 @@ rpcAuth.post('/upload-media', async (c) => {
   return c.json({ r2Key, uploadUrl: null }, 201);
 });
 
+// ── POST /rpc/get-scheduled-interview ──────────────────────────────────────
+
+rpcAuth.post('/get-scheduled-interview', async (c) => {
+  const candidateId = c.get('candidateId');
+  const db = c.env.DB;
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
+  }
+
+  const stageId = body['stageId'];
+  if (!stageId || typeof stageId !== 'string') {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'stageId is required.' } }, 400);
+  }
+
+  const interview = await db
+    .prepare(
+      `SELECT id, candidate_id, pipeline_id, stage_id, status,
+              scheduled_at, meeting_url, scheduling_provider, scheduling_url,
+              created_at, updated_at
+       FROM scheduled_interviews
+       WHERE candidate_id = ? AND stage_id = ?
+       ORDER BY created_at DESC LIMIT 1`
+    )
+    .bind(candidateId, stageId)
+    .first<{
+      id: string;
+      candidate_id: string;
+      pipeline_id: string;
+      stage_id: string;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
+      created_at: string;
+      updated_at: string;
+    }>();
+
+  if (!interview) {
+    return c.json({ interview: null });
+  }
+
+  return c.json({
+    interview: {
+      id: interview.id,
+      candidateId: interview.candidate_id,
+      pipelineId: interview.pipeline_id,
+      stageId: interview.stage_id,
+      status: interview.status,
+      scheduledAt: interview.scheduled_at,
+      meetingUrl: interview.meeting_url,
+      schedulingProvider: interview.scheduling_provider,
+      schedulingUrl: interview.scheduling_url,
+      createdAt: interview.created_at,
+      updatedAt: interview.updated_at,
+    },
+  });
+});
+
 // ─── Mount multi-turn review sub-router ─────────────────────────────────────
 
 rpcAuth.route('/review', review);

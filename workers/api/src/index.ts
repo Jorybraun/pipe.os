@@ -7,6 +7,7 @@ import { github } from './routes/github';
 import { overview } from './routes/overview';
 import { pipelineCandidates, candidateOps } from './routes/candidates';
 import { emailRoutes } from './routes/email';
+import { schedulingAuth, schedulingPublic } from './routes/scheduling';
 import { challengeSubmissions } from './routes/challengeSubmissions';
 import { reviewSessions } from './routes/reviewSessions';
 import { rpcPublic, rpcAuth } from './routes/rpc';
@@ -65,6 +66,10 @@ app.route('/api/v1/pipelines', pipelineCandidates);
 app.route('/api/v1/candidates', candidateOps);
 // Email: POST /api/v1/candidates/:candidateId/send-invite, /send-result
 app.route('/api/v1/candidates', emailRoutes);
+// Scheduling: OAuth, event types, interviews (authenticated)
+app.route('/api/v1/scheduling', schedulingAuth);
+// Scheduling: webhook receiver (public, no auth)
+app.route('/api/v1/scheduling', schedulingPublic);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}

@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Scheduling system — Workers + D1 + Calendly/Cal.com OAuth — 2026-04-03)
+- **`workers/api/migrations/0007_scheduling.sql`** — D1 tables: `scheduling_connections` (OAuth tokens, webhook secrets) and `scheduled_interviews` (status, provider, meeting URL).
+- **`workers/api/src/routes/scheduling.ts`** — Full scheduling Worker routes: OAuth connect/callback, connection management, event type discovery, interview CRUD, webhook receiver with HMAC verification, auto-token-refresh, email notification on booking.
+- **`workers/api/src/routes/rpc.ts`** — Added `POST /rpc/get-scheduled-interview` for candidate-facing interview lookup.
+- **`src/hooks/useSchedulingConnection.ts`** — Rewritten to call Worker API instead of Amplify/AppSync.
+- **`src/hooks/useScheduledInterviews.ts`** — Rewritten to call Worker API instead of Amplify/AppSync.
+- **`src/hooks/useScheduledInterview.ts`** — Rewritten to call Worker RPC endpoint instead of Amplify public client.
+- **`src/config/featureFlags.ts`** — Enabled `FEATURE_FLAG_SCHEDULE_ROUTE`.
+- **`workers/api/src/types.ts`** — Added `CALENDLY_CLIENT_ID`, `CALENDLY_CLIENT_SECRET`, `CALCOM_CLIENT_ID`, `CALCOM_CLIENT_SECRET` to Env.
+
 #### Added (Email system via Resend — 2026-04-03)
 - **`workers/api/src/lib/email.ts`** — Resend client wrapper with 4 default HTML templates (INVITATION, SCHEDULED, SUCCESS, FAILURE), variable substitution (`{{name}}`, `{{pipelineName}}`, `{{assessUrl}}`, etc.), stage notification_templates override.
 - **`workers/api/src/routes/email.ts`** — Recruiter-triggered email routes: `send-invite` (resend invitation) and `send-result` (stage SUCCESS/FAILURE notification).

@@ -35,6 +35,14 @@ export interface Env {
    * Used in E2E/integration tests to avoid real LLM calls.
    */
   MOCK_AI?: string;
+  /** Calendly OAuth client ID. */
+  CALENDLY_CLIENT_ID?: string;
+  /** Calendly OAuth client secret. */
+  CALENDLY_CLIENT_SECRET?: string;
+  /** Cal.com OAuth client ID. */
+  CALCOM_CLIENT_ID?: string;
+  /** Cal.com OAuth client secret. */
+  CALCOM_CLIENT_SECRET?: string;
   /**
    * Resend API key for transactional emails (invitations, notifications).
    * Set via .dev.vars in dev, Worker secret in production.
