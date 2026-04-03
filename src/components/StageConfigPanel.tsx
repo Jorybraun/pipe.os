@@ -9,8 +9,8 @@
  * Renders in the Layout agentPanel slot via AppLayout.
  */
 
-import { useState, useEffect, useMemo } from 'react';
-import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -20,6 +20,8 @@ import {
   type ChallengeType,
 } from '../content/challengeLibrary';
 import { useChallengeMutations } from '../hooks/useChallengeMutations';
+import { useAuth as useClerkAuth } from '@clerk/react';
+import { createApiClient } from '../lib/api/client';
 
 interface StageConfigPanelProps {
   stageId: string;
@@ -176,8 +178,14 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
         </button>
       </div>
 
-      {/* Content — either type picker or challenge picker */}
-      {selectedType ? (
+      {/* Content — type picker → challenge picker (CODE_REVIEW gets special PR browser) */}
+      {selectedType === 'CODE_REVIEW' ? (
+        <CodeReviewPicker
+          stageId={stageId}
+          existingCount={stage?.challenges?.length ?? 0}
+          onAdded={refetch}
+        />
+      ) : selectedType ? (
         <TypeChallengePicker
           stageType={selectedType}
           onAdd={handleAddChallenge}
@@ -378,6 +386,372 @@ function TypeChallengePicker({ stageType, onAdd, existingCount }: {
         textAlign: 'center',
       }}>
         {filtered.length} CHALLENGES — {existingCount} ADDED
+      </div>
+    </>
+  );
+}
+
+// ── Step 2 (CODE_REVIEW): GitHub PR picker ──────────────────────────────────
+
+interface PRSummary {
+  number: number;
+  title: string;
+  description: string;
+  author: string;
+  avatar: string;
+  state: 'open' | 'closed' | 'merged';
+  draft: boolean;
+  createdAt: string;
+  updatedAt: string;
+  htmlUrl: string;
+  labels: string[];
+  baseBranch: string;
+  featureBranch: string;
+}
+
+function isValidGitHubUrl(url: string): boolean {
+  return url.startsWith('https://github.com/') && url.split('/').filter(Boolean).length >= 4;
+}
+
+const DEFAULT_REPOS = [
+  'https://github.com/el-pipe-o/interview-monorepo',
+  'https://github.com/el-pipe-o/slopify',
+];
+const SAVED_REPOS_KEY = 'pipe_saved_repos';
+
+function CodeReviewPicker({ stageId, existingCount, onAdded }: {
+  stageId: string;
+  existingCount: number;
+  onAdded: () => Promise<void>;
+}): JSX.Element {
+  const { getToken } = useClerkAuth();
+  const { createChallenge } = useChallengeMutations();
+
+  const [repoUrl, setRepoUrl] = useState('');
+  const [prs, setPrs] = useState<PRSummary[]>([]);
+  const [isFetching, setIsFetching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showAddRepo, setShowAddRepo] = useState(false);
+  const [newRepoUrl, setNewRepoUrl] = useState('');
+
+  const [savedRepos, setSavedRepos] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_REPOS_KEY);
+      const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+      const merged = [...DEFAULT_REPOS];
+      for (const r of parsed) {
+        if (!merged.includes(r)) merged.push(r);
+      }
+      return merged;
+    } catch {
+      return [...DEFAULT_REPOS];
+    }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(SAVED_REPOS_KEY, JSON.stringify(savedRepos)); } catch { /* */ }
+  }, [savedRepos]);
+
+  const fetchPRs = useCallback(async (url: string): Promise<void> => {
+    if (!isValidGitHubUrl(url)) return;
+    setRepoUrl(url);
+    setIsFetching(true);
+    setError(null);
+    setPrs([]);
+    try {
+      const api = createApiClient({ getToken });
+      const result = await api.get<{
+        success: boolean;
+        error?: string;
+        data?: { prs: PRSummary[] };
+      }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=open`);
+      if (!result.success) {
+        setError(result.error ?? 'Failed to fetch pull requests.');
+        return;
+      }
+      const fetched = result.data?.prs ?? [];
+      setPrs(fetched);
+      if (fetched.length === 0) setError('No open pull requests found.');
+    } catch (err) {
+      console.error('[CodeReviewPicker] Failed to list PRs:', err);
+      setError('Failed to fetch pull requests.');
+    } finally {
+      setIsFetching(false);
+    }
+  }, [getToken]);
+
+  const handleAddPR = async (pr: PRSummary): Promise<void> => {
+    try {
+      const created = await createChallenge(stageId, {
+        type: 'CODE_REVIEW',
+        title: pr.title,
+        instructions: pr.description,
+        githubRepoUrl: repoUrl,
+        githubPrNumber: pr.number,
+        githubPrTitle: pr.title,
+        githubPrDescription: pr.description,
+        order: existingCount,
+      });
+      // Fire-and-forget: cache the diff
+      void (async () => {
+        try {
+          const api = createApiClient({ getToken });
+          await api.post('/api/v1/github/pr', {
+            repoUrl,
+            prNumber: pr.number,
+            challengeId: created.id,
+          });
+        } catch { /* best effort */ }
+      })();
+      await onAdded();
+    } catch (err) {
+      console.error('[CodeReviewPicker] Failed to add PR:', err);
+    }
+  };
+
+  const handleAddRepo = (): void => {
+    const trimmed = newRepoUrl.trim();
+    if (!isValidGitHubUrl(trimmed) || savedRepos.includes(trimmed)) return;
+    setSavedRepos((prev) => [...prev, trimmed]);
+    setNewRepoUrl('');
+    setShowAddRepo(false);
+    void fetchPRs(trimmed);
+  };
+
+  return (
+    <>
+      {/* Repo selector */}
+      <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <label style={labelStyle}>SELECT_REPOSITORY</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {savedRepos.map((repo) => {
+            const shortName = repo.replace('https://github.com/', '');
+            const isActive = repoUrl === repo;
+            return (
+              <div key={repo} style={{ display: 'flex', gap: 4 }}>
+                <button
+                  onClick={() => void fetchPRs(repo)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.05em',
+                    fontFamily: '"Space Mono", monospace',
+                    background: isActive ? 'rgba(96,165,250,0.12)' : 'transparent',
+                    border: isActive ? '1px solid rgba(96,165,250,0.3)' : '1px solid var(--pipe-border)',
+                    borderRadius: 4,
+                    color: isActive ? '#60a5fa' : 'var(--pipe-text-dim)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {shortName}
+                </button>
+                {!DEFAULT_REPOS.includes(repo) && (
+                  <button
+                    onClick={() => setSavedRepos((prev) => prev.filter((r) => r !== repo))}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--pipe-border)',
+                      borderRadius: 4,
+                      color: 'var(--pipe-text-dim)',
+                      cursor: 'pointer',
+                      padding: '0 6px',
+                      opacity: 0.5,
+                    }}
+                  >
+                    <Trash2 size={10} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {showAddRepo ? (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input
+              autoFocus
+              type="text"
+              value={newRepoUrl}
+              onChange={(e) => setNewRepoUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddRepo(); if (e.key === 'Escape') setShowAddRepo(false); }}
+              placeholder="https://github.com/owner/repo"
+              style={{
+                flex: 1,
+                padding: '8px 10px',
+                fontSize: 9,
+                fontFamily: '"Space Mono", monospace',
+                background: 'transparent',
+                border: `1px solid ${isValidGitHubUrl(newRepoUrl) ? 'rgba(96,165,250,0.5)' : 'var(--pipe-border)'}`,
+                borderRadius: 4,
+                color: 'var(--pipe-text)',
+                outline: 'none',
+              }}
+            />
+            <button
+              onClick={handleAddRepo}
+              disabled={!isValidGitHubUrl(newRepoUrl)}
+              style={{
+                padding: '8px 12px',
+                fontSize: 8,
+                fontWeight: 700,
+                fontFamily: '"Space Mono", monospace',
+                background: isValidGitHubUrl(newRepoUrl) ? 'rgba(96,165,250,0.12)' : 'transparent',
+                border: `1px solid ${isValidGitHubUrl(newRepoUrl) ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
+                borderRadius: 4,
+                color: isValidGitHubUrl(newRepoUrl) ? '#60a5fa' : 'var(--pipe-text-dim)',
+                cursor: isValidGitHubUrl(newRepoUrl) ? 'pointer' : 'default',
+                letterSpacing: '0.08em',
+              }}
+            >
+              SAVE
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddRepo(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 10px',
+              fontSize: 8,
+              fontWeight: 700,
+              fontFamily: '"Space Mono", monospace',
+              background: 'transparent',
+              border: '1px dashed var(--pipe-border)',
+              borderRadius: 4,
+              color: 'var(--pipe-text-dim)',
+              cursor: 'pointer',
+              letterSpacing: '0.08em',
+            }}
+          >
+            <Plus size={10} /> ADD_REPO
+          </button>
+        )}
+      </div>
+
+      {/* PR list */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px' }}>
+        {isFetching ? (
+          <div style={{
+            padding: 40,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12,
+            opacity: 0.6,
+          }}>
+            <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 9, fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+              FETCHING_PRS...
+            </span>
+          </div>
+        ) : error ? (
+          <div style={{
+            padding: 16,
+            display: 'flex',
+            gap: 10,
+            background: 'rgba(248,113,113,0.04)',
+            border: '1px solid rgba(248,113,113,0.15)',
+            borderRadius: 6,
+          }}>
+            <AlertCircle size={14} color="#f87171" style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 9, color: '#f87171', fontFamily: '"Space Mono", monospace' }}>{error}</span>
+          </div>
+        ) : !repoUrl ? (
+          <div style={{
+            padding: 40,
+            textAlign: 'center',
+            opacity: 0.3,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <GitPullRequest size={32} />
+            <span style={{ fontSize: 9, fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+              SELECT_A_REPOSITORY
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {prs.map((pr) => (
+              <button
+                key={pr.number}
+                onClick={() => void handleAddPR(pr)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  padding: '10px 12px',
+                  background: 'transparent',
+                  border: '1px solid var(--pipe-border)',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.15s',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                <GitPullRequest size={12} style={{ color: '#60a5fa', flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)' }}>#{pr.number}</span>
+                    {pr.draft && (
+                      <span style={{
+                        fontSize: 7,
+                        padding: '1px 4px',
+                        background: 'var(--pipe-surface)',
+                        border: '1px solid var(--pipe-border)',
+                        borderRadius: 2,
+                        color: 'var(--pipe-text-dim)',
+                      }}>
+                        DRAFT
+                      </span>
+                    )}
+                  </div>
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: 'var(--pipe-text)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {pr.title}
+                  </div>
+                  <div style={{
+                    fontSize: 8,
+                    color: 'var(--pipe-text-dim)',
+                    marginTop: 3,
+                    opacity: 0.6,
+                  }}>
+                    {pr.author} · {pr.featureBranch} → {pr.baseBranch}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        padding: '12px 20px',
+        borderTop: '1px solid var(--pipe-border)',
+        fontSize: 8,
+        color: 'var(--pipe-text-dim)',
+        letterSpacing: '0.1em',
+        textAlign: 'center',
+      }}>
+        {prs.length} PRS — {existingCount} ADDED
       </div>
     </>
   );
