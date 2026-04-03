@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useData } from '../providers';
-import type { DataProvider, DataProviderFactory } from '../providers';
 import type {
   VideoRole,
   VideoSessionStatus,
@@ -12,7 +10,7 @@ import type {
 // Types
 // ============================================================================
 
-export type VideoSession = Record<string, unknown> & {
+export type VideoSession = {
   id: string;
   stageId: string;
   candidateId: string;
@@ -21,62 +19,43 @@ export type VideoSession = Record<string, unknown> & {
   createdAt?: string;
 };
 
-export type VideoSignal = Record<string, unknown> & {
-  id: string;
-  sessionId: string;
-  senderRole: string;
-  type: string;
-  payload?: string | unknown;
-};
-
 interface UseVideoSignalingOptions {
-  /** ID of the Stage this video session belongs to */
   stageId: string;
-  /** ID of the Candidate in this session */
   candidateId: string;
-  /** Role of the local user */
   role: VideoRole;
-  /**
-   * Called every time a new signal arrives from the remote peer.
-   * The hook filters out signals sent by the local role, so all
-   * signals delivered here are from the remote party.
-   */
   onSignal: (type: VideoSignalType, payload: VideoSignalPayload) => void;
-  /** JWT session token for lambda-authorized candidate calls (optional, falls back to apiKey) */
   sessionToken?: string | null;
 }
 
 interface UseVideoSignalingReturn {
-  /** Current session record, or null before one is established */
   session: VideoSession | null;
-  /** Derived status from session.status */
   status: VideoSessionStatus | null;
-  /** True while the initial session lookup/create is in progress */
   isLoading: boolean;
-  /** Any fatal error */
   error: Error | null;
-  /** Recruiter only: creates the VideoSession in WAITING state */
   createSession: () => Promise<VideoSession | null>;
-  /** Recruiter only: transitions to CALLING, call after sending SDP offer */
   markCalling: () => Promise<void>;
-  /** Recruiter/Candidate: transitions to ACTIVE */
   markActive: () => Promise<void>;
-  /** Either party: transitions to ENDED */
   markEnded: () => Promise<void>;
-  /** Send a signaling message (SDP offer/answer or ICE candidate) */
   sendSignal: (type: VideoSignalType, payload: VideoSignalPayload) => Promise<void>;
 }
+
+// ============================================================================
+// Config
+// ============================================================================
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+const WS_BASE = API_BASE.replace(/^http/, 'ws');
 
 // ============================================================================
 // Hook
 // ============================================================================
 
 /**
- * useVideoSignaling — Manages the AppSync VideoSession record and
- * VideoSignal messages that drive WebRTC signaling between peers.
+ * useVideoSignaling — Manages WebSocket connection to the VideoRoom
+ * Durable Object for WebRTC signaling between peers.
  *
- * - Recruiter uses userPool auth (owns the session record).
- * - Candidate uses apiKey auth (publicApiKey read/update/create).
+ * Replaces the previous AppSync-based signaling with a direct WebSocket
+ * connection to a Cloudflare Durable Object.
  */
 export function useVideoSignaling({
   stageId,
@@ -85,124 +64,83 @@ export function useVideoSignaling({
   onSignal,
   sessionToken,
 }: UseVideoSignalingOptions): UseVideoSignalingReturn {
-  const factory: DataProviderFactory = useData();
-
-  function getCandidateVideoClient() {
-    if (sessionToken) {
-      return factory.createSessionClient(sessionToken);
-    }
-    return factory.createPublicClient();
-  }
-
-  const client: DataProvider = role === 'RECRUITER'
-    ? factory.createClient()
-    : getCandidateVideoClient();
-
   const [session, setSession] = useState<VideoSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // Track the session ID for use inside subscriptions
-  const sessionIdRef = useRef<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const onSignalRef = useRef(onSignal);
+  onSignalRef.current = onSignal;
 
-  // Deduplication: observeQuery replays the full list on every update,
-  // so we track which signal IDs we've already dispatched to avoid
-  // re-processing OFFER and ICE_CANDIDATE signals on subsequent updates.
-  const processedSignalIds = useRef<Set<string>>(new Set());
-
-  // ---- Continuously watch for the session ---------------------------------
-  //
-  // Use observeQuery instead of a one-time list() so the CANDIDATE picks up
-  // sessions created by the RECRUITER *after* the candidate has loaded the page.
-  // This also handles real-time status changes (WAITING → CALLING → ACTIVE).
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const sub = client.models.VideoSession.observeQuery({
-      filter: {
-        stageId: { eq: stageId },
-        candidateId: { eq: candidateId },
-      },
-    }).subscribe({
-      next: ({ items }) => {
-        if (!isMounted) return;
-        setIsLoading(false);
-
-        const typedItems = items as VideoSession[];
-
-        // Pick the most recently created non-ended session
-        const active = [...typedItems]
-          .filter((s) => s.status !== 'ENDED')
-          .sort((a, b) =>
-            ((b.createdAt as string) ?? '').localeCompare((a.createdAt as string) ?? '')
-          )[0] ?? null;
-
-        if (active) {
-          setSession(active);
-          sessionIdRef.current = active.id;
-        } else if (!active && typedItems.every((s) => s.status === 'ENDED')) {
-          // All sessions ended — clear local state
-          setSession(null);
-          sessionIdRef.current = null;
-        }
-      },
-      error: (err: unknown) => {
-        if (isMounted) {
-          console.error('[useVideoSignaling] Session watch error:', err);
-          setError(
-            err instanceof Error ? err : new Error('Failed to watch video session')
-          );
-          setIsLoading(false);
-        }
-      },
-    });
-
-    return () => {
-      isMounted = false;
-      sub.unsubscribe();
-    };
-  }, [stageId, candidateId, role, sessionToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---- Subscribe to incoming signals from the remote peer -----------------
-
+  // Connect WebSocket to Durable Object when session exists
   useEffect(() => {
     if (!session) return;
 
-    // Reset deduplication set when session changes (new call)
-    processedSignalIds.current = new Set();
+    const wsPath = role === 'RECRUITER'
+      ? `${WS_BASE}/api/v1/video/sessions/${session.id}/ws`
+      : `${WS_BASE}/rpc/video/sessions/${session.id}/ws`;
 
-    const remoteRole: VideoRole = role === 'RECRUITER' ? 'CANDIDATE' : 'RECRUITER';
+    const ws = new WebSocket(wsPath);
+    wsRef.current = ws;
 
-    const sub = client.models.VideoSignal.observeQuery({
-      filter: {
-        sessionId: { eq: session.id },
-        senderRole: { eq: remoteRole },
-      },
-    }).subscribe({
-      next: ({ items }) => {
-        // observeQuery replays the full list on every new item. Guard
-        // against re-processing signals we've already dispatched (e.g.
-        // the SDP OFFER or earlier ICE candidates).
-        const typedItems = items as VideoSignal[];
-        typedItems.forEach((sig) => {
-          if (!sig.payload) return;
-          if (processedSignalIds.current.has(sig.id)) return;
-          processedSignalIds.current.add(sig.id);
-          const payload =
-            typeof sig.payload === 'string'
-              ? (JSON.parse(sig.payload) as VideoSignalPayload)
-              : (sig.payload as VideoSignalPayload);
-          onSignal(sig.type as VideoSignalType, payload);
-        });
-      },
-      error: (err: unknown) => {
-        console.error('[useVideoSignaling] Signal subscription error:', err);
-      },
-    });
+    ws.onopen = () => {
+      console.log(`[useVideoSignaling] WebSocket connected as ${role}`);
+    };
 
-    return () => sub.unsubscribe();
-  }, [session?.id, role, onSignal]); // eslint-disable-line react-hooks/exhaustive-deps
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data as string) as {
+          type: string;
+          role?: string;
+          status?: string;
+          payload?: unknown;
+        };
+
+        // Handle status updates
+        if (message.type === 'STATUS_UPDATE' && message.status) {
+          setSession((prev) =>
+            prev ? { ...prev, status: message.status as string } : prev,
+          );
+          return;
+        }
+
+        // Handle peer disconnection
+        if (message.type === 'PEER_DISCONNECTED') {
+          onSignalRef.current('HANGUP', { reason: 'peer_disconnected' });
+          return;
+        }
+
+        // Route signaling messages (only from remote peer)
+        if (message.role !== role && message.payload) {
+          onSignalRef.current(
+            message.type as VideoSignalType,
+            message.payload as VideoSignalPayload,
+          );
+        }
+      } catch (err) {
+        console.error('[useVideoSignaling] Failed to parse message:', err);
+      }
+    };
+
+    ws.onclose = (event) => {
+      console.log('[useVideoSignaling] WebSocket closed:', event.code);
+      wsRef.current = null;
+    };
+
+    ws.onerror = (event) => {
+      console.error('[useVideoSignaling] WebSocket error:', event);
+    };
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [session?.id, role]);
+
+  // Initial loading state
+  useEffect(() => {
+    setIsLoading(false);
+  }, []);
 
   // ---- Mutations ----------------------------------------------------------
 
@@ -211,75 +149,69 @@ export function useVideoSignaling({
       console.error('[useVideoSignaling] Only RECRUITER can create sessions');
       return null;
     }
+
     try {
-      const recruiterClient = factory.createClient();
-      const { data: newSession, errors } =
-        await recruiterClient.models.VideoSession.create({
-          stageId,
-          candidateId,
-          recruiterId: 'self', // Amplify owner field is set automatically
-          status: 'WAITING',
-        });
-      if (errors) throw new Error(errors[0]?.message ?? 'Operation failed');
-      // Optimistic local update (observeQuery will confirm shortly)
-      if (newSession) {
-        const typedSession = newSession as VideoSession;
-        setSession(typedSession);
-        sessionIdRef.current = typedSession.id;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const clerkToken = await getClerkToken();
+      if (clerkToken) {
+        headers['Authorization'] = `Bearer ${clerkToken}`;
       }
-      return (newSession as VideoSession) ?? null;
+
+      const response = await fetch(`${API_BASE}/api/v1/video/sessions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ stageId, candidateId }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create session: ${response.status}`);
+      }
+
+      const data = await response.json() as {
+        session: VideoSession;
+      };
+
+      setSession(data.session);
+      return data.session;
     } catch (err) {
       const e = err instanceof Error ? err : new Error('Failed to create session');
       console.error('[useVideoSignaling] createSession error:', e);
       setError(e);
       return null;
     }
-  }, [role, stageId, candidateId, factory]);
+  }, [role, stageId, candidateId, sessionToken]);
 
-  const updateStatus = useCallback(
-    async (status: VideoSessionStatus): Promise<void> => {
-      const id = sessionIdRef.current;
-      if (!id) return;
-      try {
-        const { errors } = await client.models.VideoSession.update({
-          id,
-          status,
-        });
-        if (errors) throw new Error(errors[0]?.message ?? 'Operation failed');
-      } catch (err) {
-        console.error(`[useVideoSignaling] updateStatus(${status}) error:`, err);
-      }
-    },
-    [role, sessionToken] // eslint-disable-line react-hooks/exhaustive-deps
-  );
+  const sendStatusUpdate = useCallback(async (status: VideoSessionStatus): Promise<void> => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error('[useVideoSignaling] WebSocket not connected');
+      return;
+    }
 
-  const markCalling = useCallback(() => updateStatus('CALLING'), [updateStatus]);
-  const markActive = useCallback(() => updateStatus('ACTIVE'), [updateStatus]);
-  const markEnded = useCallback(() => updateStatus('ENDED'), [updateStatus]);
+    ws.send(JSON.stringify({
+      type: 'STATUS_UPDATE',
+      status,
+    }));
+
+    // Optimistic local update
+    setSession((prev) => prev ? { ...prev, status } : prev);
+  }, []);
+
+  const markCalling = useCallback(() => sendStatusUpdate('CALLING'), [sendStatusUpdate]);
+  const markActive = useCallback(() => sendStatusUpdate('ACTIVE'), [sendStatusUpdate]);
+  const markEnded = useCallback(() => sendStatusUpdate('ENDED'), [sendStatusUpdate]);
 
   const sendSignal = useCallback(
     async (type: VideoSignalType, payload: VideoSignalPayload): Promise<void> => {
-      const id = sessionIdRef.current;
-      if (!id) {
-        console.error('[useVideoSignaling] sendSignal: no active session');
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error('[useVideoSignaling] sendSignal: WebSocket not connected');
         return;
       }
-      try {
-        // Serialize payload to a JSON string. AppSync's a.json() field rejects
-        // objects with null-valued properties (e.g. sdpMLineIndex: null on some
-        // ICE candidates). A string value sidesteps schema validation entirely.
-        const { errors } = await client.models.VideoSignal.create({
-          sessionId: id,
-          senderRole: role,
-          type,
-          payload: JSON.stringify(payload),
-        });
-        if (errors) throw new Error(errors[0]?.message ?? 'Operation failed');
-      } catch (err) {
-        console.error('[useVideoSignaling] sendSignal error:', err);
-      }
+
+      ws.send(JSON.stringify({ type, payload }));
     },
-    [role, sessionToken] // eslint-disable-line react-hooks/exhaustive-deps
+    [],
   );
 
   return {
@@ -293,4 +225,19 @@ export function useVideoSignaling({
     markEnded,
     sendSignal,
   };
+}
+
+// ─── Helper: Get Clerk token ────────────────────────────────────────────────
+
+async function getClerkToken(): Promise<string | null> {
+  try {
+    // Access Clerk from the window — avoid importing @clerk/react in this hook
+    const clerk = (window as unknown as { Clerk?: { session?: { getToken: () => Promise<string> } } }).Clerk;
+    if (clerk?.session) {
+      return await clerk.session.getToken();
+    }
+  } catch {
+    // Clerk not available
+  }
+  return null;
 }

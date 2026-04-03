@@ -8,6 +8,7 @@ import { overview } from './routes/overview';
 import { pipelineCandidates, candidateOps } from './routes/candidates';
 import { emailRoutes } from './routes/email';
 import { schedulingAuth, schedulingPublic } from './routes/scheduling';
+import { videoAuth, videoCandidate } from './routes/video';
 import { challengeSubmissions } from './routes/challengeSubmissions';
 import { reviewSessions } from './routes/reviewSessions';
 import { rpcPublic, rpcAuth } from './routes/rpc';
@@ -70,6 +71,10 @@ app.route('/api/v1/candidates', emailRoutes);
 app.route('/api/v1/scheduling', schedulingAuth);
 // Scheduling: webhook receiver (public, no auth)
 app.route('/api/v1/scheduling', schedulingPublic);
+// Video: session creation, TURN credentials (recruiter auth)
+app.route('/api/v1/video', videoAuth);
+// Video: candidate WebSocket connection (candidate JWT auth)
+app.route('/rpc/video', videoCandidate);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
@@ -124,4 +129,5 @@ app.notFound((c) =>
   c.json({ error: { code: 'NOT_FOUND', message: 'Route not found.' } }, 404),
 );
 
+export { VideoRoom } from './durable-objects/VideoRoom';
 export default app;

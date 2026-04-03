@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Video infrastructure — Durable Objects + WebRTC signaling — 2026-04-03)
+- **`workers/api/src/durable-objects/VideoRoom.ts`** — Durable Object for WebSocket-based WebRTC signaling. Manages session lifecycle (WAITING→CALLING→ACTIVE→ENDED), routes signals between peers, auto-cleanup on session end.
+- **`workers/api/src/routes/video.ts`** — Video Worker routes: session creation, WebSocket upgrade (recruiter + candidate), TURN credential proxy via Metered.ca.
+- **`workers/api/wrangler.jsonc`** — Added VIDEO_ROOM Durable Object binding and migration.
+- **`src/hooks/useVideoSignaling.ts`** — Rewritten to use WebSocket connection to Durable Object instead of AppSync subscriptions.
+- **`src/hooks/useVideoSession.ts`** — Updated to use Worker API for TURN credentials instead of AppSync query.
+- **`src/lib/video/webrtcConfig.ts`** — Rewritten to fetch TURN credentials from Worker API instead of AppSync.
+- **`src/config/featureFlags.ts`** — Enabled `FEATURE_FLAG_LIVE_VIDEO`.
+
 #### Added (Scheduling system — Workers + D1 + Calendly/Cal.com OAuth — 2026-04-03)
 - **`workers/api/migrations/0007_scheduling.sql`** — D1 tables: `scheduling_connections` (OAuth tokens, webhook secrets) and `scheduled_interviews` (status, provider, meeting URL).
 - **`workers/api/src/routes/scheduling.ts`** — Full scheduling Worker routes: OAuth connect/callback, connection management, event type discovery, interview CRUD, webhook receiver with HMAC verification, auto-token-refresh, email notification on booking.

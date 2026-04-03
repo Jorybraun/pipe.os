@@ -8,7 +8,7 @@ export const FEATURE_FLAGS = {
   /** /schedule route and Schedule nav item */
   FEATURE_FLAG_SCHEDULE_ROUTE: true,
   /** Live video stage mode toggle in stage settings */
-  FEATURE_FLAG_LIVE_VIDEO: false,
+  FEATURE_FLAG_LIVE_VIDEO: true,
   /** Dev container sandbox route and Sandbox nav item */
   FEATURE_FLAG_CODE_SANDBOX: false,
   /** Show QUIZ_MCQ and QUIZ_SHORT_ANSWER challenge types in ChallengePicker */

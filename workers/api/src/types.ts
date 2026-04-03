@@ -35,6 +35,10 @@ export interface Env {
    * Used in E2E/integration tests to avoid real LLM calls.
    */
   MOCK_AI?: string;
+  /** Durable Object binding for video call signaling rooms. */
+  VIDEO_ROOM: DurableObjectNamespace;
+  /** Metered.ca API key for TURN credential fetching. */
+  METERED_API_KEY?: string;
   /** Calendly OAuth client ID. */
   CALENDLY_CLIENT_ID?: string;
   /** Calendly OAuth client secret. */

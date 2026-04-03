@@ -1,15 +1,15 @@
-import type { DataProvider } from '../../providers/types';
-
 // ============================================================================
 // WebRTC Configuration
 // ============================================================================
 //
 // Uses Metered.ca for TURN relay (free tier: 50GB/month).
-// METERED_API_KEY is stored in the Lambda environment (never exposed to client).
+// METERED_API_KEY is stored in the Worker environment (never exposed to client).
 // Falls back to STUN-only if credentials unavailable.
 //
 // NOTE: Only called by authenticated recruiters. Candidates receive ICE servers
 // via the OFFER payload — they never call this API directly.
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
 
 /** Cached TURN credentials to avoid re-fetching during a session */
 let cachedIceServers: RTCIceServer[] | null = null;
@@ -23,53 +23,50 @@ const STUN_FALLBACK: RTCIceServer[] = [
 ];
 
 /**
- * Fetches temporary TURN credentials from Metered.ca REST API.
+ * Fetches temporary TURN credentials from the Worker API.
  * Returns combined STUN + TURN servers on success, STUN-only on failure.
  *
  * Credentials are cached for 1 hour to avoid excessive API calls.
  *
- * @param client - Authenticated DataProvider (recruiter userPool client).
+ * @param getToken - Function to get the current Clerk JWT for authentication.
  */
-export async function getIceServers(client: DataProvider): Promise<RTCIceServer[]> {
+export async function getIceServers(
+  getToken: () => Promise<string | null>,
+): Promise<RTCIceServer[]> {
   // Return cached if still fresh
   if (cachedIceServers && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
     return cachedIceServers;
   }
 
   try {
-    console.log('[webrtcConfig] Fetching TURN credentials from API...');
-    const response = await client.queries.getTurnCredentials!({});
+    console.log('[webrtcConfig] Fetching TURN credentials from Worker API...');
 
-    if (response.errors) {
-      console.error('[webrtcConfig] getTurnCredentials GraphQL errors:', JSON.stringify(response.errors, null, 2));
+    const token = await getToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/api/v1/video/turn-credentials`, {
+      headers,
+    });
+
+    if (!response.ok) {
+      console.error('[webrtcConfig] TURN credentials fetch failed:', response.status);
       return STUN_FALLBACK;
     }
 
-    // a.json() (AWSJSON scalar) may return a JSON string or a parsed object
-    // depending on the AppSync/Amplify client version. Handle both.
-    let servers: unknown = response.data;
-    if (typeof servers === 'string') {
-      try {
-        servers = JSON.parse(servers);
-      } catch {
-        console.error('[webrtcConfig] Failed to parse TURN response as JSON:', servers);
-        return STUN_FALLBACK;
-      }
-    }
+    const data = await response.json() as { iceServers: RTCIceServer[] };
 
-    if (!servers || !Array.isArray(servers)) {
-      console.warn('[webrtcConfig] getTurnCredentials returned unexpected format:', typeof servers, servers);
-      console.warn('This usually means the METERED_API_KEY secret is not set or the user is not authenticated.');
+    if (!data.iceServers || !Array.isArray(data.iceServers)) {
+      console.warn('[webrtcConfig] Unexpected response format:', data);
       return STUN_FALLBACK;
     }
 
-    const iceServers = servers as RTCIceServer[];
-
-    // Metered returns an array of ICE servers (STUN + TURN with temp credentials)
-    cachedIceServers = iceServers;
+    cachedIceServers = data.iceServers;
     cacheTimestamp = Date.now();
-    console.log('[webrtcConfig] Successfully fetched', iceServers.length, 'TURN/STUN servers');
-    return iceServers;
+    console.log('[webrtcConfig] Successfully fetched', data.iceServers.length, 'TURN/STUN servers');
+    return data.iceServers;
   } catch (err) {
     console.error('[webrtcConfig] Unexpected error fetching TURN credentials:', err);
     return STUN_FALLBACK;
@@ -80,7 +77,7 @@ export async function getIceServers(client: DataProvider): Promise<RTCIceServer[
  * Builds a fully configured RTCPeerConnection.
  *
  * @param iceServers - ICE servers to use. Recruiters obtain these by calling
- *   getIceServers(client) first. Candidates receive them via the OFFER payload.
+ *   getIceServers(getToken) first. Candidates receive them via the OFFER payload.
  *   Falls back to STUN-only if not provided.
  */
 export function createPeerConnection(iceServers?: RTCIceServer[]): RTCPeerConnection {

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useData } from '../providers';
 import { createPeerConnection } from '../lib/video/webrtcConfig';
 import {
   requestMediaPermissions,
@@ -84,7 +83,14 @@ export function useVideoSession({
   sendSignal,
   onEnded,
 }: UseVideoSessionOptions): UseVideoSessionReturn {
-  const dataFactory = useData();
+  // getToken helper for TURN credential fetching
+  const getTokenRef = useRef<() => Promise<string | null>>(async () => {
+    try {
+      const clerk = (window as unknown as { Clerk?: { session?: { getToken: () => Promise<string> } } }).Clerk;
+      if (clerk?.session) return await clerk.session.getToken();
+    } catch { /* Clerk not available */ }
+    return null;
+  });
 
   const [connectionState, setConnectionState] =
     useState<VideoConnectionState>('idle');
@@ -213,7 +219,7 @@ export function useVideoSession({
       // They are embedded in the OFFER payload so the candidate never needs
       // to call getTurnCredentials — preventing unauthenticated API abuse.
       const { getIceServers } = await import('../lib/video/webrtcConfig');
-      const iceServers = await getIceServers(dataFactory.createClient());
+      const iceServers = await getIceServers(getTokenRef.current);
 
       const pc = await initPeerConnection(iceServers);
       const offer = await pc.createOffer();
@@ -226,7 +232,7 @@ export function useVideoSession({
       console.error('[useVideoSession] startCall error:', err);
       setConnectionState('error');
     }
-  }, [role, dataFactory, initPeerConnection, sendSignal]);
+  }, [role, initPeerConnection, sendSignal]);
 
   const acceptCall = useCallback(
     async (offer: SdpPayload): Promise<void> => {
