@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Challenge browser sidebar with DnD — 2026-04-02)
+- **`src/pages/ChallengeDndLayout.tsx`** — Nested layout route wrapping StageDetailPage with DndContext for cross-panel drag-and-drop.
+- **`src/components/Pipeline/ChallengeBrowserPanel.tsx`** — Sidebar panel for browsing and adding challenge templates (click-to-add + drag-to-position).
+- **`src/contexts/ChallengeDndContext.tsx`** — Shared context bridging challenge state between DndContext wrapper and StageDetailPage.
+
+#### Changed (Challenge browser integration — 2026-04-02)
+- **`src/pages/StageDetailPage.tsx`** — Replaced ChallengePicker modal with route-based sidebar (`/challenges` sub-route); removed local DndContext (now provided by wrapper); ADD_CHALLENGE toggles sidebar.
+- **`src/App.tsx`** — Added ChallengeDndLayout as nested route wrapping StageDetailPage.
+
 #### Added (Stage config panel — 2026-04-02)
 - **`workers/api/migrations/0006_stage_config.sql`** — D1 migration adding `stage_type` and `is_scheduled` columns to stages.
 - **`src/lib/stageTemplates.ts`** — Stage type definitions (SCREENING, CULTURAL, TECHNICAL, CODE_REVIEW, PANEL) with template questions.

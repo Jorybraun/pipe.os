@@ -1,31 +1,17 @@
 import { useState, useCallback } from "react";
 import { FEATURE_FLAGS } from "../config/featureFlags";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Plus, Settings, Video, Mail, ChevronRight, Save } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
-import { ChallengePicker } from "../components/Pipeline/ChallengePicker";
-import type { ChallengeSelection } from "../types/challengeSelection";
 import { useStageDetail } from "../hooks/useStageDetail";
 import { useStageMutations } from "../hooks/useStageMutations";
 import { useChallengeMutations } from "../hooks/useChallengeMutations";
-import { useAuth as useClerkAuth } from "@clerk/react";
-import { createApiClient } from "../lib/api/client";
 import type { NotificationTemplate, ChallengeItem } from "../lib/api/types";
+import { useRegisterChallengeList } from "../contexts/ChallengeDndContext";
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
@@ -37,7 +23,16 @@ import {
 export default function StageDetailPage(): JSX.Element {
   const { id, stageId } = useParams<{ id: string; stageId: string }>();
   const navigate = useNavigate();
-  const { getToken } = useClerkAuth();
+  const location = useLocation();
+
+  const toggleChallengePanel = useCallback((): void => {
+    const loc = location.pathname;
+    if (loc.endsWith('/challenges')) {
+      navigate(loc.replace(/\/challenges$/, ''), { replace: true });
+    } else {
+      navigate(`${loc}/challenges`, { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   const { stage, isLoading, refetch } = useStageDetail(stageId);
   const { updateStage } = useStageMutations();
@@ -46,8 +41,6 @@ export default function StageDetailPage(): JSX.Element {
 
   // Local title state for the inline editable input (mirrors stage.title)
   const [localTitle, setLocalTitle] = useState<string | null>(null);
-
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Email Template State
   const [editingTemplate, setEditingTemplate] =
@@ -58,77 +51,15 @@ export default function StageDetailPage(): JSX.Element {
   const displayTitle =
     localTitle !== null ? localTitle : (stage?.title ?? "");
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
+  // ─── Register challenge state with DndContext wrapper ──────────────────────
 
-  // ─── Challenge select handler ────────────────────────────────────────────────
-
-  const handleChallengeSelect = useCallback(
-    async (selections: ChallengeSelection[]): Promise<void> => {
-      if (!stageId) return;
-      setPickerOpen(false);
-
-      const currentCount = stage?.challenges?.length ?? 0;
-      let orderOffset = 0;
-
-      for (const sel of selections) {
-        const order = currentCount + orderOffset;
-        orderOffset++;
-
-        try {
-          if (sel.source === "library") {
-            const { template } = sel;
-            await createChallenge(stageId, {
-              type: template.type,
-              title: template.title,
-              instructions: template.instructions,
-              config: template.config as Record<string, unknown>,
-              order,
-            });
-          } else {
-            // GitHub PR — create challenge then fire-and-forget diff cache
-            const created = await createChallenge(stageId, {
-              type: "CODE_REVIEW",
-              title: sel.prTitle,
-              instructions: sel.prDescription,
-              githubRepoUrl: sel.repoUrl,
-              githubPrNumber: sel.prNumber,
-              githubPrTitle: sel.prTitle,
-              githubPrDescription: sel.prDescription,
-              order,
-            });
-
-            // Fire-and-forget: fetch + store the diff on the challenge in one call
-            void (async () => {
-              try {
-                const api = createApiClient({ getToken });
-                await api.post("/api/v1/github/pr", {
-                  repoUrl: sel.repoUrl,
-                  prNumber: sel.prNumber,
-                  challengeId: created.id,
-                });
-              } catch (cacheErr) {
-                console.error(
-                  "[StageDetailPage] Failed to cache diff for challenge",
-                  created.id,
-                  cacheErr,
-                );
-              }
-            })();
-          }
-        } catch (err) {
-          console.error("[StageDetailPage] Failed to add challenge:", err);
-        }
-      }
-
-      await refetch();
-    },
-    [stageId, stage?.challenges?.length, createChallenge, getToken, refetch],
-  );
+  useRegisterChallengeList({
+    challenges: stage?.challenges ?? [],
+    stageId: stageId ?? '',
+    createChallenge,
+    reorderChallenges,
+    refetch,
+  });
 
   // ─── Challenge delete handler ─────────────────────────────────────────────
 
@@ -219,33 +150,6 @@ export default function StageDetailPage(): JSX.Element {
 
   // ─── Drag-and-drop reorder ────────────────────────────────────────────────
 
-  const handleDragEnd = useCallback(
-    async (event: DragEndEvent): Promise<void> => {
-      const { active, over } = event;
-      if (!over || active.id === over.id || !stage) return;
-
-      const oldIndex = stage.challenges.findIndex((c) => c.id === active.id);
-      const newIndex = stage.challenges.findIndex((c) => c.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const reordered = arrayMove(stage.challenges, oldIndex, newIndex).map(
-        (c, i) => ({ ...c, order: i }),
-      );
-
-      // Optimistically update local state via refetch after API call
-      try {
-        await reorderChallenges(
-          stageId!,
-          reordered.map((c) => ({ id: c.id, order: c.order })),
-        );
-        await refetch();
-      } catch (err) {
-        console.error("[StageDetailPage] Failed to reorder challenges:", err);
-        await refetch(); // Revert to server state
-      }
-    },
-    [stage, stageId, reorderChallenges, refetch],
-  );
 
   // ─── Loading state ────────────────────────────────────────────────────────
 
@@ -344,7 +248,7 @@ export default function StageDetailPage(): JSX.Element {
 
         <div style={{ display: "flex", gap: 12 }}>
           <button
-            onClick={() => setPickerOpen(true)}
+            onClick={() => toggleChallengePanel()}
             style={{
               display: "flex",
               alignItems: "center",
@@ -404,34 +308,28 @@ export default function StageDetailPage(): JSX.Element {
           <SubTitle>CHALLENGES ({challenges.length})</SubTitle>
 
           {challenges.length > 0 ? (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={(e) => void handleDragEnd(e)}
+            <SortableContext
+              items={challenges.map((c) => c.id)}
+              strategy={verticalListSortingStrategy}
             >
-              <SortableContext
-                items={challenges.map((c) => c.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div style={{ marginTop: 20 }}>
-                  {challenges.map((c, i) => (
-                    <ChallengeCard
-                      key={c.id}
-                      challenge={c}
-                      index={i}
-                      onEdit={(challenge) =>
-                        navigate(
-                          `/pipeline/${id}/challenges/${challenge.id}`,
-                        )
-                      }
-                      onDelete={(challenge) =>
-                        void handleChallengeDelete(challenge as ChallengeItem)
-                      }
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
+              <div style={{ marginTop: 20 }}>
+                {challenges.map((c, i) => (
+                  <ChallengeCard
+                    key={c.id}
+                    challenge={c}
+                    index={i}
+                    onEdit={(challenge) =>
+                      navigate(
+                        `/pipeline/${id}/challenges/${challenge.id}`,
+                      )
+                    }
+                    onDelete={(challenge) =>
+                      void handleChallengeDelete(challenge as ChallengeItem)
+                    }
+                  />
+                ))}
+              </div>
+            </SortableContext>
           ) : (
             <div
               style={{
@@ -452,7 +350,7 @@ export default function StageDetailPage(): JSX.Element {
                 No challenges added to this stage yet.
               </div>
               <button
-                onClick={() => setPickerOpen(true)}
+                onClick={() => toggleChallengePanel()}
                 style={{
                   padding: "10px 20px",
                   background: "var(--pipe-text, #fff)",
@@ -809,11 +707,6 @@ export default function StageDetailPage(): JSX.Element {
         </aside>
       </div>
 
-      <ChallengePicker
-        isOpen={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={(selections) => void handleChallengeSelect(selections)}
-      />
     </div>
   );
 }

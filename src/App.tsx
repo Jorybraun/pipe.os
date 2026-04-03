@@ -18,6 +18,7 @@ import { Layout, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
 import OverviewPage from "./pages/OverviewPage";
 import StageDetailPage from "./pages/StageDetailPage";
+import ChallengeDndLayout from "./pages/ChallengeDndLayout";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import PipelineCreatePage from "./pages/archived/PipelineCreatePage";
@@ -290,10 +291,16 @@ function App(): JSX.Element {
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />
                     <Route path="/pipeline/:id" element={<OverviewPage />} />
-                    <Route
-                      path="/pipeline/:id/stages/:stageId"
-                      element={<StageDetailPage />}
-                    />
+                    <Route element={<ChallengeDndLayout />}>
+                      <Route
+                        path="/pipeline/:id/stages/:stageId"
+                        element={<StageDetailPage />}
+                      />
+                      <Route
+                        path="/pipeline/:id/stages/:stageId/challenges"
+                        element={<StageDetailPage />}
+                      />
+                    </Route>
                     {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
                       <Route
                         path="/pipeline/:id/challenges/:challengeId"
