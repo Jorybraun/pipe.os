@@ -8,6 +8,7 @@ import { overview } from './routes/overview';
 import { pipelineCandidates, candidateOps } from './routes/candidates';
 import { emailRoutes } from './routes/email';
 import { schedulingAuth, schedulingPublic } from './routes/scheduling';
+import { phonePublic, phoneAuth } from './routes/phone';
 import { videoAuth, videoCandidate } from './routes/video';
 import { challengeSubmissions } from './routes/challengeSubmissions';
 import { reviewSessions } from './routes/reviewSessions';
@@ -71,6 +72,10 @@ app.route('/api/v1/candidates', emailRoutes);
 app.route('/api/v1/scheduling', schedulingPublic);
 // Scheduling: OAuth, event types, interviews (authenticated)
 app.route('/api/v1/scheduling', schedulingAuth);
+// Phone: Twilio webhooks (public, signature validation)
+app.route('/api/v1/phone', phonePublic);
+// Phone: token generation, call CRUD (authenticated)
+app.route('/api/v1/phone', phoneAuth);
 // Video: session creation, TURN credentials (recruiter auth)
 app.route('/api/v1/video', videoAuth);
 // Video: candidate WebSocket connection (candidate JWT auth)

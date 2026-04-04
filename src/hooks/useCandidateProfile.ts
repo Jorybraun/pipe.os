@@ -12,12 +12,14 @@ import type {
   CandidateProfileResponse,
   CandidateProfileRecord,
   ProfileStage,
+  PhoneCallRecord,
 } from '../lib/api/types';
 import { ApiError } from '../lib/api/types';
 
 export interface UseCandidateProfileResult {
   candidate: CandidateProfileRecord | null;
   stages: ProfileStage[];
+  phoneCalls: PhoneCallRecord[];
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
@@ -38,6 +40,7 @@ export function useCandidateProfile(
 
   const [candidate, setCandidate] = useState<CandidateProfileRecord | null>(null);
   const [stages, setStages] = useState<ProfileStage[]>([]);
+  const [phoneCalls, setPhoneCalls] = useState<PhoneCallRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -55,6 +58,7 @@ export function useCandidateProfile(
       );
       setCandidate(data.candidate);
       setStages(data.stages);
+      setPhoneCalls(data.phoneCalls ?? []);
     } catch (err) {
       if (err instanceof ApiError) {
         console.error('[useCandidateProfile] API error:', err.code, err.message);
@@ -131,6 +135,7 @@ export function useCandidateProfile(
   return {
     candidate,
     stages,
+    phoneCalls,
     isLoading,
     error,
     refetch: fetchProfile,

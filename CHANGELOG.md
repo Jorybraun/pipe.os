@@ -6,6 +6,18 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Phone screening via Twilio — 2026-04-04)
+- **`workers/api/migrations/0008_phone_screening.sql`** — D1 migration: `phone_number` column on candidates, `phone_calls` table with status tracking, recording keys, transcription state.
+- **`workers/api/src/routes/phone.ts`** — Full phone CRUD: Twilio webhook handlers (TwiML, recording-status, call-status), access token generation, call creation, recording stream from R2.
+- **`workers/api/src/lib/twilioAuth.ts`** — Twilio signature validation (HMAC-SHA1 via Web Crypto) and Access Token JWT generation for Voice SDK.
+- **`workers/api/src/lib/transcribe.ts`** — Deepgram Nova-2 transcription with speaker diarization.
+- **`src/hooks/useTwilioDevice.ts`** — React hook managing Twilio Voice SDK Device lifecycle (dynamic import, connect/disconnect/mute).
+- **`src/components/Phone/PhoneCallDrawer.tsx`** — Three-view drawer: pre-call (dial), active call (timer + controls), post-call (notes). Fixed overlay on candidate profile.
+- **`src/pages/CandidateProfilePage.tsx`** — Inline editable phone number field, CALL button, call log section with audio playback, transcript viewer, recruiter notes.
+- **`src/components/settings/IntegrationsSettings.tsx`** — PHONE_SCREENING section showing Twilio connection status and platform phone number.
+- **`src/lib/phone/pluginRegistry.ts`** + **`src/components/Phone/provider/`** — Phone provider plugin pattern (mirrors scheduling plugin registry).
+- **`workers/api/src/routes/candidates.ts`** — Added `phone_number` to GET/PATCH, `phoneCalls` array in profile response.
+
 #### Added (Short answer sub-type picker — 2026-04-04)
 - **`src/components/StageConfigPanel.tsx`** — Short answer challenges now show a RESPONSE_FORMAT picker (Text, Video, Voice) before the template list. Selected mode is injected into the challenge config as `inputMode`. Back navigation returns to format picker.
 

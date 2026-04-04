@@ -28,6 +28,7 @@ const updateCandidateSchema = z.object({
   name: z.string().optional(),
   email: z.string().email().optional(),
   resumeS3Key: z.string().optional(),
+  phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, 'Phone number must be E.164 format').optional().nullable(),
 });
 
 /** Maximum file size for CV uploads: 10 MB. */
@@ -126,6 +127,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
       stageName = stageRow?.title;
 
       // If stage is scheduled (LIVE_VIDEO or is_scheduled flag), look up booking URL
+      console.log('[candidates] Stage check:', { is_scheduled: stageRow?.is_scheduled, mode: stageRow?.mode, scheduling_event_type_id: stageRow?.scheduling_event_type_id });
       if (stageRow?.is_scheduled || stageRow?.mode === 'LIVE_VIDEO') {
         const conn = await db
           .prepare(
@@ -135,44 +137,61 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
           .bind(userId)
           .first<{ access_token: string; provider_id: string }>();
 
+        console.log('[candidates] Scheduling connection:', { found: !!conn, provider: conn?.provider_id });
         if (conn && conn.provider_id === 'CALENDLY') {
           try {
             // Use stage-specific event type or fetch the first available one
             const eventTypeUri = stageRow.scheduling_event_type_id;
             if (eventTypeUri) {
+              console.log('[candidates] Fetching event type:', eventTypeUri);
               const etRes = await fetch(eventTypeUri, {
                 headers: { Authorization: `Bearer ${conn.access_token}` },
               });
+              console.log('[candidates] Event type response:', { status: etRes.status });
               if (etRes.ok) {
                 const etData = await etRes.json() as { resource?: { scheduling_url?: string } };
+                console.log('[candidates] Event type scheduling_url:', etData.resource?.scheduling_url);
                 bookingUrl = etData.resource?.scheduling_url;
+              } else {
+                const errText = await etRes.text();
+                console.error('[candidates] Event type fetch failed:', errText);
               }
             } else {
               // No event type configured — use first available from the account
+              console.log('[candidates] No event type configured, using fallback');
               const userRes = await fetch('https://api.calendly.com/users/me', {
                 headers: { Authorization: `Bearer ${conn.access_token}` },
               });
+              console.log('[candidates] /users/me response:', { status: userRes.status });
               if (userRes.ok) {
                 const userData = await userRes.json() as { resource?: { uri?: string } };
                 const userUri = userData.resource?.uri;
+                console.log('[candidates] User URI:', userUri);
                 if (userUri) {
                   const etListRes = await fetch(
                     `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true&count=1`,
                     { headers: { Authorization: `Bearer ${conn.access_token}` } },
                   );
+                  console.log('[candidates] Event types list response:', { status: etListRes.status });
                   if (etListRes.ok) {
                     const etList = await etListRes.json() as { collection?: { scheduling_url?: string }[] };
+                    console.log('[candidates] Event types collection:', JSON.stringify(etList.collection?.map(e => e.scheduling_url)));
                     bookingUrl = etList.collection?.[0]?.scheduling_url;
                   }
                 }
+              } else {
+                const errText = await userRes.text();
+                console.error('[candidates] /users/me failed:', errText);
               }
             }
-          } catch {
-            // Failed to fetch — skip booking URL
+          } catch (err) {
+            console.error('[candidates] Calendly fetch error:', err instanceof Error ? err.message : String(err));
           }
         }
       }
     }
+
+    console.log('[candidates] Final bookingUrl:', bookingUrl ?? 'NONE');
 
     c.executionCtx.waitUntil(
       sendNotificationEmail({
@@ -393,11 +412,57 @@ candidateOps.get('/:candidateId', async (c) => {
         )
       : null;
 
+  // Fetch phone calls for this candidate (table may not exist if migration 0008 not applied)
+  let phoneCallsResults: Array<{
+    id: string; candidate_id: string; pipeline_id: string;
+    direction: string; status: string; from_number: string; to_number: string;
+    twilio_call_sid: string | null; duration_seconds: number | null;
+    recording_s3_key: string | null; transcription: string | null;
+    transcription_status: string | null; recruiter_notes: string | null;
+    started_at: string | null; ended_at: string | null; created_at: string;
+  }> = [];
+  try {
+    const phoneCallsResult = await db
+      .prepare(
+        `SELECT id, candidate_id, pipeline_id, direction, status, from_number, to_number,
+                twilio_call_sid, duration_seconds, recording_s3_key, transcription,
+                transcription_status, recruiter_notes, started_at, ended_at, created_at
+         FROM phone_calls
+         WHERE candidate_id = ?
+         ORDER BY created_at DESC`
+      )
+      .bind(candidateId)
+      .all();
+    phoneCallsResults = (phoneCallsResult.results ?? []) as typeof phoneCallsResults;
+  } catch {
+    // phone_calls table may not exist yet
+  }
+
+  const phoneCalls = phoneCallsResults.map((pc) => ({
+    id: pc.id,
+    candidateId: pc.candidate_id,
+    pipelineId: pc.pipeline_id,
+    direction: pc.direction,
+    status: pc.status,
+    fromNumber: pc.from_number,
+    toNumber: pc.to_number,
+    twilioCallSid: pc.twilio_call_sid,
+    durationSeconds: pc.duration_seconds,
+    recordingS3Key: pc.recording_s3_key,
+    transcription: pc.transcription,
+    transcriptionStatus: pc.transcription_status,
+    recruiterNotes: pc.recruiter_notes,
+    startedAt: pc.started_at,
+    endedAt: pc.ended_at,
+    createdAt: pc.created_at,
+  }));
+
   return c.json({
     candidate: {
       id: candidate.id,
       name: candidate.name,
       email: candidate.email,
+      phoneNumber: (candidate as Record<string, unknown>).phone_number as string | null ?? null,
       status: candidate.status,
       pipelineId: candidate.pipeline_id,
       currentStageId: candidate.current_stage_id,
@@ -411,6 +476,7 @@ candidateOps.get('/:candidateId', async (c) => {
       updatedAt: candidate.updated_at,
     },
     stages: stagesWithChallenges,
+    phoneCalls,
   });
 });
 
@@ -569,6 +635,10 @@ candidateOps.patch('/:candidateId', async (c) => {
     updates.push('resume_s3_key = ?');
     values.push(parsed.data.resumeS3Key);
   }
+  if (parsed.data.phoneNumber !== undefined) {
+    updates.push('phone_number = ?');
+    values.push(parsed.data.phoneNumber);
+  }
 
   if (updates.length === 0) {
     return apiError(c, 'VALIDATION_ERROR', 'No fields to update.');
@@ -618,6 +688,30 @@ candidateOps.post('/:candidateId/refresh-link', async (c) => {
   ]);
 
   return c.json({ inviteToken: newToken });
+});
+
+// DELETE /:candidateId — archive a candidate (soft delete)
+candidateOps.delete('/:candidateId', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db
+    .prepare(
+      `SELECT c.id FROM candidates c
+       JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND p.owner_id = ?`
+    )
+    .bind(candidateId, userId)
+    .first<{ id: string }>();
+
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  await db.prepare(
+    `UPDATE candidates SET status = 'ARCHIVED', updated_at = ? WHERE id = ?`
+  ).bind(new Date().toISOString(), candidateId).run();
+
+  return c.json({ success: true });
 });
 
 export { pipelineCandidates, candidateOps };

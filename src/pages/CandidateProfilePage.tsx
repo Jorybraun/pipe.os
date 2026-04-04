@@ -19,8 +19,15 @@ import {
   Brain,
   GraduationCap,
   Send,
+  Phone,
+  PhoneCall,
+  Play,
+  Edit3,
+  Check,
+  X as XIcon,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
+import { PhoneCallDrawer } from "../components/Phone/PhoneCallDrawer";
 import { calculateSignal } from "../lib/utils";
 import {
   IntelligenceReportRenderer,
@@ -773,12 +780,16 @@ export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { getToken } = useClerkAuth();
   const api = useApiClient();
-  const { candidate, stages, isLoading, error, updateSubmissionScore, updateSubmissionFeedback } =
+  const { candidate, stages, phoneCalls, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
 
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const [showPhoneDrawer, setShowPhoneDrawer] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
   const [resendingInvite, setResendingInvite] = useState(false);
   const [resendResult, setResendResult] = useState<'sent' | 'error' | null>(null);
+  const [assessLink, setAssessLink] = useState<string | null>(null);
 
   const handleResendInvite = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -795,6 +806,20 @@ export default function CandidateProfilePage(): JSX.Element {
       setResendingInvite(false);
     }
   }, [id, api]);
+
+  const handleSavePhone = useCallback(async (): Promise<void> => {
+    if (!id) return;
+    const trimmed = phoneInput.trim();
+    try {
+      await api.patch(`/api/v1/candidates/${id}`, {
+        phoneNumber: trimmed || null,
+      });
+      setEditingPhone(false);
+      void refetch();
+    } catch (err) {
+      console.error('[CandidateProfilePage] Save phone failed:', err);
+    }
+  }, [id, phoneInput, api, refetch]);
 
   const handleViewResume = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -1032,6 +1057,53 @@ export default function CandidateProfilePage(): JSX.Element {
                     <Briefcase size={11} /> {candidate.currentRole}
                   </>
                 )}
+                <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
+                {editingPhone ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <Phone size={11} />
+                    <input
+                      autoFocus
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void handleSavePhone();
+                        if (e.key === 'Escape') setEditingPhone(false);
+                      }}
+                      placeholder="+1234567890"
+                      style={{
+                        width: 120,
+                        padding: "2px 4px",
+                        fontSize: 11,
+                        fontFamily: '"Space Mono", monospace',
+                        background: "transparent",
+                        border: "1px solid var(--pipe-border)",
+                        borderRadius: 3,
+                        color: "var(--pipe-text)",
+                        outline: "none",
+                      }}
+                    />
+                    <button onClick={() => void handleSavePhone()} style={{ background: "none", border: "none", color: "#4ade80", cursor: "pointer", padding: 2 }}>
+                      <Check size={11} />
+                    </button>
+                    <button onClick={() => setEditingPhone(false)} style={{ background: "none", border: "none", color: "var(--pipe-text-dim)", cursor: "pointer", padding: 2 }}>
+                      <XIcon size={11} />
+                    </button>
+                  </span>
+                ) : (
+                  <span
+                    onClick={() => { setPhoneInput(candidate.phoneNumber ?? ''); setEditingPhone(true); }}
+                    style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                    title="Click to edit phone number"
+                  >
+                    <Phone size={11} />
+                    {candidate.phoneNumber ? (
+                      <>{candidate.phoneNumber}</>
+                    ) : (
+                      <span style={{ opacity: 0.4, fontStyle: "italic" }}>add phone</span>
+                    )}
+                    <Edit3 size={9} style={{ opacity: 0.4 }} />
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1224,42 +1296,86 @@ export default function CandidateProfilePage(): JSX.Element {
                         <Calendar size={18} color="#60a5fa" />
                         <SubTitle>LIVE_INTERVIEW_SESSION</SubTitle>
                       </div>
-                      <button
-                        onClick={() => void handleResendInvite()}
-                        disabled={resendingInvite}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '6px 14px',
-                          background: resendResult === 'sent'
-                            ? 'rgba(74,222,128,0.1)'
-                            : resendResult === 'error'
-                              ? 'rgba(248,113,113,0.1)'
-                              : 'rgba(96,165,250,0.1)',
-                          border: resendResult === 'sent'
-                            ? '1px solid rgba(74,222,128,0.25)'
-                            : resendResult === 'error'
-                              ? '1px solid rgba(248,113,113,0.25)'
-                              : '1px solid rgba(96,165,250,0.25)',
-                          borderRadius: 4,
-                          color: resendResult === 'sent'
-                            ? '#4ade80'
-                            : resendResult === 'error'
-                              ? '#f87171'
-                              : '#60a5fa',
-                          fontSize: 9,
-                          fontWeight: 700,
-                          letterSpacing: '0.08em',
-                          fontFamily: '"Space Mono", monospace',
-                          cursor: resendingInvite ? 'wait' : 'pointer',
-                          opacity: resendingInvite ? 0.5 : 1,
-                          transition: 'all 0.2s',
-                        }}
-                      >
-                        <Send size={10} />
-                        {resendingInvite ? 'SENDING...' : resendResult === 'sent' ? 'SENT' : resendResult === 'error' ? 'FAILED' : 'RESEND_INVITE'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => {
+                            // Reset the interview back to INVITED and resend booking link
+                            const interviewId = activeStage.scheduledInterview?.id;
+                            if (interviewId) {
+                              void api.patch(`/api/v1/scheduling/interviews/${interviewId}`, {
+                                status: 'INVITED',
+                                scheduledAt: null,
+                                meetingUrl: null,
+                              }).then(() => void handleResendInvite());
+                            } else {
+                              void handleResendInvite();
+                            }
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '6px 14px',
+                            background: 'rgba(251,191,36,0.1)',
+                            border: '1px solid rgba(251,191,36,0.25)',
+                            borderRadius: 4,
+                            color: '#fbbf24',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <Calendar size={10} />
+                          RESCHEDULE
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Reset invite token, show new link, and resend email
+                            void api.post<{ inviteToken: string }>(`/api/v1/candidates/${id}/refresh-link`, {})
+                              .then((res) => {
+                                const baseUrl = window.location.origin;
+                                setAssessLink(`${baseUrl}/assess/${res.inviteToken}`);
+                                void handleResendInvite();
+                              });
+                          }}
+                          disabled={resendingInvite}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '6px 14px',
+                            background: resendResult === 'sent'
+                              ? 'rgba(74,222,128,0.1)'
+                              : resendResult === 'error'
+                                ? 'rgba(248,113,113,0.1)'
+                                : 'rgba(96,165,250,0.1)',
+                            border: resendResult === 'sent'
+                              ? '1px solid rgba(74,222,128,0.25)'
+                              : resendResult === 'error'
+                                ? '1px solid rgba(248,113,113,0.25)'
+                                : '1px solid rgba(96,165,250,0.25)',
+                            borderRadius: 4,
+                            color: resendResult === 'sent'
+                              ? '#4ade80'
+                              : resendResult === 'error'
+                                ? '#f87171'
+                                : '#60a5fa',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: resendingInvite ? 'wait' : 'pointer',
+                            opacity: resendingInvite ? 0.5 : 1,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <Send size={10} />
+                          {resendingInvite ? 'SENDING...' : resendResult === 'sent' ? 'SENT' : resendResult === 'error' ? 'FAILED' : 'SEND_LINK'}
+                        </button>
+                      </div>
                     </div>
                     {activeStage.scheduledInterview?.scheduledAt ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1313,6 +1429,52 @@ export default function CandidateProfilePage(): JSX.Element {
                         {activeStage.scheduledInterview
                           ? 'Awaiting candidate booking.'
                           : 'No interview scheduled yet.'}
+                      </div>
+                    )}
+                    {assessLink && (
+                      <div style={{
+                        marginTop: 16,
+                        padding: '10px 14px',
+                        background: 'rgba(96,165,250,0.06)',
+                        border: '1px solid rgba(96,165,250,0.15)',
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                      }}>
+                        <input
+                          readOnly
+                          value={assessLink}
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                          style={{
+                            flex: 1,
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#60a5fa',
+                            fontSize: 11,
+                            fontFamily: '"Space Mono", monospace',
+                            outline: 'none',
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            void navigator.clipboard.writeText(assessLink);
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            background: 'rgba(96,165,250,0.1)',
+                            border: '1px solid rgba(96,165,250,0.25)',
+                            borderRadius: 3,
+                            color: '#60a5fa',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          COPY
+                        </button>
                       </div>
                     )}
                   </LiquidMetalCard>
@@ -1573,8 +1735,117 @@ export default function CandidateProfilePage(): JSX.Element {
             </div>
           </div>
 
+          {/* Call Log */}
+          {phoneCalls.length > 0 && (
+            <div style={{ paddingTop: 20, borderTop: "1px solid var(--pipe-border)", marginTop: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <PhoneCall size={12} color="var(--pipe-text-dim)" />
+                <span style={{ fontSize: 9, letterSpacing: "0.2em", color: "var(--pipe-text-dim)", fontFamily: '"Space Mono", monospace' }}>
+                  CALL_LOG
+                </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {phoneCalls.map((call) => {
+                  const date = new Date(call.createdAt);
+                  const dur = call.durationSeconds ?? 0;
+                  const durStr = dur > 0 ? `${Math.floor(dur / 60)}m ${dur % 60}s` : '—';
+                  const statusColor = call.status === 'COMPLETED' ? '#4ade80' : call.status === 'FAILED' ? '#f87171' : '#fbbf24';
+                  return (
+                    <div key={call.id} style={{
+                      padding: "8px 10px",
+                      background: "rgba(255,255,255,0.02)",
+                      border: "1px solid var(--pipe-border)",
+                      borderRadius: 6,
+                      fontFamily: '"Space Mono", monospace',
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={{ fontSize: 9, color: "var(--pipe-text-dim)" }}>
+                          {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span style={{ fontSize: 8, color: statusColor, letterSpacing: "0.1em" }}>
+                          {call.status}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--pipe-text)" }}>
+                          {durStr}
+                        </span>
+                        {call.recordingS3Key && (
+                          <button
+                            onClick={() => {
+                              const audio = new Audio(`${import.meta.env['VITE_API_URL'] ?? 'http://localhost:8787'}/api/v1/phone/calls/${call.id}/recording`);
+                              void audio.play();
+                            }}
+                            style={{
+                              background: "none",
+                              border: "1px solid var(--pipe-border)",
+                              borderRadius: 4,
+                              color: "var(--pipe-text-dim)",
+                              cursor: "pointer",
+                              padding: "3px 6px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              fontSize: 8,
+                              fontFamily: '"Space Mono", monospace',
+                            }}
+                          >
+                            <Play size={9} /> PLAY
+                          </button>
+                        )}
+                      </div>
+                      {call.recruiterNotes && (
+                        <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", marginTop: 6, lineHeight: 1.4, opacity: 0.8 }}>
+                          {call.recruiterNotes}
+                        </div>
+                      )}
+                      {call.transcription && call.transcriptionStatus === 'COMPLETED' && (
+                        <details style={{ marginTop: 6 }}>
+                          <summary style={{ fontSize: 8, color: "var(--pipe-text-dim)", cursor: "pointer", letterSpacing: "0.1em" }}>
+                            TRANSCRIPT
+                          </summary>
+                          <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>
+                            {call.transcription}
+                          </div>
+                        </details>
+                      )}
+                      {call.transcriptionStatus === 'PROCESSING' && (
+                        <div style={{ fontSize: 8, color: "#fbbf24", marginTop: 4, letterSpacing: "0.1em" }}>
+                          TRANSCRIBING...
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Actions — pushed to bottom */}
-          <div style={{ marginTop: "auto", paddingTop: 24 }}>
+          <div style={{ marginTop: "auto", paddingTop: 24, display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              disabled={!candidate.phoneNumber}
+              onClick={() => setShowPhoneDrawer(true)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px",
+                background: candidate.phoneNumber ? "rgba(74,222,128,0.08)" : "var(--pipe-surface)",
+                border: candidate.phoneNumber ? "1px solid rgba(74,222,128,0.2)" : "1px solid var(--pipe-border)",
+                borderRadius: 8,
+                color: candidate.phoneNumber ? "#4ade80" : "var(--pipe-text, #fff)",
+                fontSize: 10,
+                fontWeight: 800,
+                fontFamily: '"Space Mono", monospace',
+                cursor: candidate.phoneNumber ? "pointer" : "default",
+                opacity: candidate.phoneNumber ? 1 : 0.4,
+              }}
+            >
+              <Phone size={13} /> CALL
+            </button>
             <button
               disabled={!candidate.resumeS3Key}
               onClick={() => void handleViewResume()}
@@ -1601,6 +1872,30 @@ export default function CandidateProfilePage(): JSX.Element {
           </div>
         </LiquidMetalCard>
       </aside>
+
+      {/* Phone Call Drawer — fixed overlay */}
+      {showPhoneDrawer && candidate.phoneNumber && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          right: 0,
+          width: 360,
+          height: "100vh",
+          background: "var(--pipe-bg, #0c0c0e)",
+          borderLeft: "1px solid var(--pipe-border)",
+          zIndex: 50,
+          boxShadow: "-4px 0 24px rgba(0,0,0,0.4)",
+        }}>
+          <PhoneCallDrawer
+            candidateId={candidate.id}
+            candidateName={candidateLabel}
+            phoneNumber={candidate.phoneNumber}
+            pipelineId={candidate.pipelineId}
+            onClose={() => setShowPhoneDrawer(false)}
+            onCallComplete={() => void refetch()}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -185,7 +185,7 @@ export interface OverviewCandidate {
   name: string | null;
   email: string | null;
   inviteToken: string;
-  status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED';
+  status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED' | 'ARCHIVED';
   currentStageId: string | null;
   score: number | null;
   createdAt: string;
@@ -260,6 +260,7 @@ export interface CandidateProfileRecord {
   id: string;
   name: string | null;
   email: string | null;
+  phoneNumber: string | null;
   status: string;
   pipelineId: string;
   currentStageId: string | null;
@@ -273,7 +274,29 @@ export interface CandidateProfileRecord {
   updatedAt: string;
 }
 
+// ─── Phone Calls ─────────────────────────────────────────────────────────────
+
+export interface PhoneCallRecord {
+  id: string;
+  candidateId: string;
+  pipelineId: string;
+  direction: 'OUTBOUND' | 'INBOUND';
+  status: string;
+  fromNumber: string;
+  toNumber: string;
+  twilioCallSid: string | null;
+  durationSeconds: number | null;
+  recordingS3Key: string | null;
+  transcription: string | null;
+  transcriptionStatus: string | null;
+  recruiterNotes: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+}
+
 export interface CandidateProfileResponse {
   candidate: CandidateProfileRecord;
   stages: ProfileStage[];
+  phoneCalls: PhoneCallRecord[];
 }

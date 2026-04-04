@@ -18,7 +18,10 @@ import {
   Calendar,
   ExternalLink,
   RefreshCw,
+  Phone,
 } from 'lucide-react';
+import { useAuth as useClerkAuth } from '@clerk/react';
+import { createApiClient } from '../../lib/api/client';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import type { SchedulingConnectionInfo, ProviderEventType } from '../../hooks/useSchedulingConnection';
 import { getAllPlugins } from '../../lib/scheduling/pluginRegistry';
@@ -52,13 +55,20 @@ export function IntegrationsSettings(): JSX.Element {
     refetch,
   } = useSchedulingConnection();
 
+  const { getToken } = useClerkAuth();
+
   const [flow, setFlow] = useState<FlowState>({ step: 'idle' });
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [eventTypes, setEventTypes] = useState<ProviderEventType[]>([]);
+
+  // Twilio phone connection state
+  const [twilioConnected, setTwilioConnected] = useState(false);
+  const [twilioPhone, setTwilioPhone] = useState<string | null>(null);
+  const [twilioLoading, setTwilioLoading] = useState(true);
   const [loadingEventTypes, setLoadingEventTypes] = useState(false);
 
   const plugins = getAllPlugins();
-  const redirectUri = `${window.location.origin}${window.location.pathname}`;
+  const redirectUri = `${window.location.origin}/schedule`;
 
   // ── Handle OAuth callback ─────────────────────────────────────────────
   useEffect(() => {
@@ -112,6 +122,20 @@ export function IntegrationsSettings(): JSX.Element {
       .finally(() => setLoadingEventTypes(false));
   }, [connection?.id, connection?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Check Twilio connection ────────────────────────────────────────────
+  useEffect(() => {
+    const api = createApiClient({ getToken });
+    api.get<{ connected: boolean; phoneNumber: string | null }>('/api/v1/phone/connection')
+      .then((data) => {
+        setTwilioConnected(data.connected);
+        setTwilioPhone(data.phoneNumber);
+      })
+      .catch(() => {
+        setTwilioConnected(false);
+      })
+      .finally(() => setTwilioLoading(false));
+  }, [getToken]);
+
   // ── Handlers ───────────────────────────────────────────────────────────
 
   const handleConnect = useCallback((plugin: SchedulingPlugin): void => {
@@ -125,17 +149,9 @@ export function IntegrationsSettings(): JSX.Element {
     const state = btoa(JSON.stringify({ providerId: plugin.type, nonce }));
     sessionStorage.setItem('pipe_oauth_state_nonce', nonce);
 
-    const verifierArray = crypto.getRandomValues(new Uint8Array(32));
-    const verifier = Array.from(verifierArray).map(b => b.toString(16).padStart(2, '0')).join('');
-    sessionStorage.setItem('pipe_oauth_code_verifier', verifier);
-
-    void window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)).then(digest => {
-      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-      const authUrl = plugin.getAuthUrl!(redirectUri, state, challenge);
-      setFlow({ step: 'waiting', provider: plugin.type });
-      window.location.href = authUrl;
-    });
+    const authUrl = plugin.getAuthUrl!(redirectUri, state);
+    setFlow({ step: 'waiting', provider: plugin.type });
+    window.location.href = authUrl;
   }, [redirectUri]);
 
   const handleDisconnect = useCallback(async (conn: SchedulingConnectionInfo): Promise<void> => {
@@ -326,6 +342,44 @@ export function IntegrationsSettings(): JSX.Element {
           )}
         </div>
       )}
+
+      {/* Section: Phone Screening */}
+      <div>
+        <label style={sectionLabel}>PHONE_SCREENING</label>
+        <p style={descriptionStyle}>
+          Twilio powers browser-to-phone calling for candidate screening. Calls are recorded and transcribed automatically.
+        </p>
+
+        {twilioLoading ? (
+          <div style={statusCard}>
+            <Loader size={14} style={{ animation: 'spin 1s linear infinite', color: '#60a5fa' }} />
+            <span style={labelSmall}>Checking phone configuration...</span>
+          </div>
+        ) : twilioConnected ? (
+          <div style={statusCard}>
+            <CheckCircle size={14} color="#4ade80" />
+            <div style={{ flex: 1 }}>
+              <div style={{ ...labelSmall, color: '#4ade80' }}>CONNECTED</div>
+              {twilioPhone && (
+                <div style={{ ...labelSmall, color: 'var(--pipe-text-dim)', marginTop: 2, fontSize: 10, fontWeight: 600 }}>
+                  <Phone size={10} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                  {twilioPhone}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={statusCard}>
+            <AlertCircle size={14} color="var(--pipe-text-dim)" />
+            <div style={{ flex: 1 }}>
+              <div style={{ ...labelSmall, color: 'var(--pipe-text-dim)' }}>NOT_CONFIGURED</div>
+              <div style={{ ...labelSmall, color: 'var(--pipe-text-dim)', marginTop: 2, fontSize: 9, opacity: 0.7 }}>
+                Set TWILIO_* environment variables in Worker secrets to enable phone screening.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

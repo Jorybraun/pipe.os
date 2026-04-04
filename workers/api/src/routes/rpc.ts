@@ -323,14 +323,37 @@ rpcAuth.post('/get-stage-config', async (c) => {
       .bind(stage.id, candidateId)
       .run();
 
+    // Prepend synthetic challenge steps: WELCOME always, LIVE_VIDEO for video stages
+    const syntheticChallenges: Array<{ type: string; order: number }> = [];
+    syntheticChallenges.push({ type: 'WELCOME', order: -2 });
+    if (stage.mode === 'LIVE_VIDEO') {
+      syntheticChallenges.push({ type: 'LIVE_VIDEO', order: -1 });
+    }
+
+    const allChallenges = [
+      ...syntheticChallenges,
+      ...stage.challenges,
+    ];
+
+    // Re-index orders sequentially
+    const indexedChallenges = allChallenges.map((ch, i) => ({ type: ch.type, order: i }));
+
+    // If no real challenges submitted yet, start at 0 (WELCOME).
+    // If resuming (some submitted), skip synthetics and jump to the right real challenge.
+    const syntheticCount = syntheticChallenges.length;
+    const hasSubmissions = currentIndex > 0;
+    const adjustedIndex = hasSubmissions ? currentIndex + syntheticCount : 0;
+
     // Build response — challenge IDs are NOT exposed, only type + order index
     return c.json({
       isComplete: false,
+      stageId: stage.id,
+      candidateId,
       stageTitle: stage.title,
       mode: stage.mode ?? 'ASYNC',
       timeLimit: stage.timeLimit,
-      challenges: stage.challenges.map((ch, i) => ({ type: ch.type, order: i })),
-      currentIndex,
+      challenges: indexedChallenges,
+      currentIndex: adjustedIndex,
     });
   }
 
@@ -370,6 +393,35 @@ rpcAuth.post('/get-challenge', async (c) => {
     return c.json({ error: 'No active stage' }, 404);
   }
 
+  // Determine synthetic challenge count for this stage
+  const stageInfo = await c.env.DB.prepare(
+    `SELECT mode FROM stages WHERE id = ?1`
+  )
+    .bind(candidate.current_stage_id)
+    .first<{ mode: string | null }>();
+
+  const syntheticCount = 1 + (stageInfo?.mode === 'LIVE_VIDEO' ? 1 : 0); // WELCOME + optional LIVE_VIDEO
+
+  // Return synthetic challenges without DB lookup
+  if (order < syntheticCount) {
+    const syntheticType = order === 0 ? 'WELCOME' : 'LIVE_VIDEO';
+    return c.json({
+      id: `synthetic-${syntheticType.toLowerCase()}`,
+      type: syntheticType,
+      title: syntheticType === 'WELCOME' ? 'Welcome' : 'Video Interview',
+      instructions: null,
+      config: null,
+      cachedDiffJson: null,
+      githubPrTitle: null,
+      githubPrNumber: null,
+      githubRepoUrl: null,
+      githubPrDescription: null,
+    });
+  }
+
+  // Adjust order to account for synthetic entries
+  const dbOrder = order - syntheticCount;
+
   // Fetch challenges for the current stage, ordered
   const challenges = await c.env.DB.prepare(`
     SELECT id, type, title, instructions, config,
@@ -384,11 +436,11 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   const rows = challenges.results ?? [];
 
-  if (order >= rows.length) {
+  if (dbOrder >= rows.length) {
     return c.json({ error: 'Challenge not found at this order index' }, 404);
   }
 
-  const ch = rows[order] as Record<string, unknown>;
+  const ch = rows[dbOrder] as Record<string, unknown>;
 
   // Parse config JSON if stored as string
   let config: unknown = null;
@@ -501,6 +553,22 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
   const stageId = candidate.current_stage_id;
 
+  // Determine synthetic challenge count for this stage
+  const stageInfo = await c.env.DB.prepare(
+    `SELECT mode FROM stages WHERE id = ?1`
+  )
+    .bind(stageId)
+    .first<{ mode: string | null }>();
+
+  const syntheticCount = 1 + (stageInfo?.mode === 'LIVE_VIDEO' ? 1 : 0);
+
+  // Synthetic challenges (WELCOME, LIVE_VIDEO) — no DB write needed
+  if (order < syntheticCount) {
+    return c.json({ success: true, next: true });
+  }
+
+  const dbOrder = order - syntheticCount;
+
   // Fetch challenges for the current stage, ordered
   const challenges = await c.env.DB.prepare(`
     SELECT id, type, sort_order, server_config
@@ -513,11 +581,11 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
   const rows = challenges.results ?? [];
 
-  if (order >= rows.length) {
+  if (dbOrder >= rows.length) {
     return c.json({ success: false, error: 'Challenge not found at this order index' }, 404);
   }
 
-  const challenge = rows[order] as Record<string, unknown>;
+  const challenge = rows[dbOrder] as Record<string, unknown>;
   const challengeId = challenge.id as string;
 
   // Get or create assessment for this stage
@@ -816,7 +884,21 @@ rpcAuth.post('/upload-media', async (c) => {
 
   console.log('[rpc/upload-media] Stored media', { candidateId, challengeId, r2Key, size: fileEntry.size });
 
-  return c.json({ r2Key, uploadUrl: null }, 201);
+  // Auto-transcribe audio files via Workers AI Whisper (free, at-edge)
+  let transcript: string | null = null;
+  if (fileEntry.type.startsWith('audio/') && c.env.AI) {
+    try {
+      const result = await c.env.AI.run('@cf/openai/whisper' as Parameters<typeof c.env.AI.run>[0], {
+        audio: [...new Uint8Array(arrayBuffer)],
+      }) as { text?: string };
+      transcript = result.text?.trim() || null;
+      console.log('[rpc/upload-media] Whisper transcript:', transcript?.slice(0, 100));
+    } catch (err) {
+      console.error('[rpc/upload-media] Whisper transcription failed:', err);
+    }
+  }
+
+  return c.json({ r2Key, uploadUrl: null, transcript }, 201);
 });
 
 // ── POST /rpc/get-scheduled-interview ──────────────────────────────────────

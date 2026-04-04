@@ -58,6 +58,20 @@ export interface Env {
    * Defaults to 'https://pipe.build' in production.
    */
   APP_BASE_URL?: string;
+  /** Twilio Account SID for phone screening. */
+  TWILIO_ACCOUNT_SID?: string;
+  /** Twilio Auth Token for webhook signature validation. */
+  TWILIO_AUTH_TOKEN?: string;
+  /** Twilio phone number (E.164) for outbound calls. */
+  TWILIO_PHONE_NUMBER?: string;
+  /** Twilio TwiML App SID for browser-based calling. */
+  TWILIO_TWIML_APP_SID?: string;
+  /** Twilio API Key SID for Access Token (JWT) generation. */
+  TWILIO_API_KEY_SID?: string;
+  /** Twilio API Key Secret for Access Token (JWT) generation. */
+  TWILIO_API_KEY_SECRET?: string;
+  /** Deepgram API key for call transcription. */
+  DEEPGRAM_API_KEY?: string;
 }
 
 /**
@@ -140,6 +154,28 @@ export interface StageWithOwnerRow extends StageRow {
   notification_templates: string | null;
   scheduling_event_type_id: string | null;
   video_config: string | null;
+}
+
+export interface PhoneCallRow {
+  id: string;
+  candidate_id: string;
+  pipeline_id: string;
+  owner_id: string;
+  direction: 'OUTBOUND' | 'INBOUND';
+  status: string;
+  from_number: string;
+  to_number: string;
+  twilio_call_sid: string | null;
+  duration_seconds: number | null;
+  recording_url: string | null;
+  recording_s3_key: string | null;
+  transcription: string | null;
+  transcription_status: string | null;
+  recruiter_notes: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── API Response shapes (camelCase) ─────────────────────────────────────────

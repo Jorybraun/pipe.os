@@ -17,6 +17,8 @@ import { CodeReviewChallenge } from './CodeReviewChallenge';
 import { FollowUpQuestionsPanel } from './FollowUpQuestionsPanel';
 import { VoicePanel } from '../Panels/VoicePanel';
 import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
+import { VideoWaitingRoom } from '../Video/VideoWaitingRoom';
+import { WelcomeScreen, type ChallengeType } from './WelcomeScreen';
 import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
 import type { FollowUpQuestion } from '../../hooks/useAssessment';
 
@@ -309,6 +311,38 @@ export function ChallengeRegistry({
   }
 
   // ---------------------------------------------------------------------------
+  // WELCOME bypass — intro screen as first challenge step
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'WELCOME') {
+    // Determine the next real challenge type for the welcome screen display
+    const nextType = (config.nextChallengeType as string) ?? 'QUIZ_SHORT_ANSWER';
+    return (
+      <WelcomeScreen
+        pipelineName={challenge.title || 'Technical Assessment'}
+        stageName={challenge.title || 'Interview'}
+        challengeType={nextType as ChallengeType}
+        onStart={() => onSubmit({})}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // LIVE_VIDEO bypass — waiting room as a challenge step
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'LIVE_VIDEO') {
+    return (
+      <VideoWaitingRoom
+        localStream={null}
+        isRecruiterWaiting={false}
+        isCandidatePresent={false}
+        role="CANDIDATE"
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Panel Rendering (non-CODE_REVIEW, non-FOLLOW_UP)
   // ---------------------------------------------------------------------------
 
@@ -488,30 +522,12 @@ export function ChallengeRegistry({
               setSubmission((prev) => ({ ...prev, inputMode: 'voice', text }))
             }
             {...(questionVideoUrl !== null ? { questionVideoUrl } : {})}
-            onAudioReady={(blob) => {
-              // Fire-and-forget R2 upload for audio backup via Worker endpoint
-              void (async () => {
-                if (!candidateId || !sessionToken) return;
-                try {
-                  const formData = new FormData();
-                  formData.append('file', blob, `response-${challenge.id}.webm`);
-                  formData.append('challengeId', challenge.id);
-                  const res = await fetch(`${API_BASE}/rpc/upload-media`, {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${sessionToken}` },
-                    body: formData,
-                  });
-                  if (res.ok) {
-                    const data = await res.json() as { r2Key: string };
-                    setSubmission((prev) => ({ ...prev, audioS3Key: data.r2Key }));
-                  } else {
-                    console.warn('[ChallengeRegistry] Audio backup upload failed with status:', res.status);
-                  }
-                } catch (err) {
-                  console.warn('[ChallengeRegistry] Audio backup upload failed:', err);
-                }
-              })();
-            }}
+            uploadUrl={`${API_BASE}/rpc/upload-media`}
+            sessionToken={sessionToken}
+            challengeId={challenge.id}
+            onAudioUploaded={(r2Key) =>
+              setSubmission((prev) => ({ ...prev, audioS3Key: r2Key }))
+            }
           />
         );
       }
