@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useAssessment, type StageConfigDTO, type ChallengeContentDTO } from '../hooks/useAssessment';
 import { SessionTokenProvider } from '../contexts/SessionTokenContext';
+import { CandidateIdProvider } from '../contexts/CandidateIdContext';
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
-import { WelcomeScreen, type ChallengeType } from '../components/Assessment/WelcomeScreen';
+import { VideoShell } from '../components/Shells/VideoShell';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -92,6 +93,19 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
   // Current challenge type (from stage config, not content — available before hydration)
   const currentType = stageConfig?.challenges?.[currentOrder]?.type;
+
+  // Auto-start: WELCOME is now a challenge in the queue, not a separate screen
+  useEffect(() => {
+    if (!hasStarted && candidate && !isLoading) {
+      void onStart();
+    }
+  }, [hasStarted, candidate, isLoading, onStart]);
+
+  // Candidate IDs for VideoInterviewStep (must be before early returns)
+  const candidateIds = useMemo(() => {
+    if (!candidate?.id || !stageConfig?.stageId) return null;
+    return { candidateId: candidate.id, stageId: stageConfig.stageId };
+  }, [candidate?.id, stageConfig?.stageId]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -207,20 +221,6 @@ export default function CandidateAssessmentPage(): JSX.Element {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Welcome screen
-  // ---------------------------------------------------------------------------
-
-  if (!hasStarted) {
-    return (
-      <WelcomeScreen
-        pipelineName={candidate?.name ? `Welcome, ${candidate.name}` : 'Technical Assessment'}
-        stageName={stageConfig?.stageTitle ?? 'Interview'}
-        challengeType={(stageConfig?.challenges?.[currentOrder]?.type ?? challengeContent?.type ?? 'QUIZ_SHORT_ANSWER') as ChallengeType}
-        onStart={onStart}
-      />
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // Loading challenge
@@ -249,10 +249,12 @@ export default function CandidateAssessmentPage(): JSX.Element {
   const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
+  const isLiveVideo = stageConfig.mode === 'LIVE_VIDEO';
 
   return (
     <SessionTokenProvider value={sessionToken}>
-    <div style={{ minHeight: '100vh', background: '#0c0c0e' }}>
+    <CandidateIdProvider value={candidateIds}>
+    <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
       <ChromeMeshGrid />
 
       {isPreview && (
@@ -300,33 +302,42 @@ export default function CandidateAssessmentPage(): JSX.Element {
         onSubmit={handleSubmit}
         onSubmissionChange={setCurrentSubmission}
       >
-        <TimerProvider>
-          <StageShell
-            title={challengeContent.title ?? 'Challenge'}
-            totalChallenges={totalChallenges}
-            currentChallengeIndex={currentOrder}
-            onNext={() => handleSubmit()}
-            isLastChallenge={isLastChallenge}
-            fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION'}
-            canAdvance={!isPreview && (followUpReady || (!isFollowUp && currentSubmission !== null))}
-            isSubmitting={isLoading}
-          >
-            {followUpWaiting ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-                <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
-              </div>
-            ) : followUpReady ? (
-              <FollowUpQuestionsPanel
-                questions={followUpQuestions}
+        {/* VideoShell wraps for LIVE_VIDEO stages (adds floating PiP), otherwise renders directly */}
+        {(() => {
+          const inner = (
+            <TimerProvider>
+              <StageShell
+                title={challengeContent.title ?? 'Challenge'}
+                totalChallenges={totalChallenges}
+                currentChallengeIndex={currentOrder}
+                onNext={() => handleSubmit()}
+                isLastChallenge={isLastChallenge}
+                fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION'}
+                canAdvance={!isPreview && currentType !== 'WELCOME' && currentType !== 'LIVE_VIDEO' && (followUpReady || (!isFollowUp && currentSubmission !== null))}
                 isSubmitting={isLoading}
-                onSubmit={(answers) => handleSubmit({ answers })}
-                onSkip={() => handleSubmit({ answers: {} })}
-              />
-            ) : (
-              <StageRenderer />
-            )}
-          </StageShell>
-        </TimerProvider>
+              >
+                {followUpWaiting ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+                    <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
+                  </div>
+                ) : followUpReady ? (
+                  <FollowUpQuestionsPanel
+                    questions={followUpQuestions}
+                    isSubmitting={isLoading}
+                    onSubmit={(answers) => handleSubmit({ answers })}
+                    onSkip={() => handleSubmit({ answers: {} })}
+                  />
+                ) : (
+                  <StageRenderer />
+                )}
+              </StageShell>
+            </TimerProvider>
+          );
+
+          // VideoShell only activates once past the LIVE_VIDEO waiting room step
+          // (recruiter initiates the call, not the candidate)
+          return inner;
+        })()}
       </InterviewProvider>
 
       <style>{`
@@ -335,6 +346,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </div>
+    </CandidateIdProvider>
     </SessionTokenProvider>
   );
 }

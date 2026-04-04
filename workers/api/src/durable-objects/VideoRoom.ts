@@ -5,6 +5,9 @@
  * Manages WebSocket connections for two peers (recruiter + candidate)
  * and routes signaling messages between them.
  *
+ * Uses the Hibernation API — peer tracking via state.getWebSockets()
+ * (survives hibernation) instead of in-memory Maps (lost on wake).
+ *
  * Session lifecycle: WAITING → CALLING → ACTIVE → ENDED
  *
  * Messages are JSON-encoded with the format:
@@ -28,14 +31,8 @@ interface SignalMessage {
   payload?: unknown;
 }
 
-interface PeerConnection {
-  ws: WebSocket;
-  role: VideoRole;
-}
-
 export class VideoRoom {
   private state: DurableObjectState;
-  private peers: Map<string, PeerConnection> = new Map();
   private sessionStatus: SessionStatus = 'WAITING';
   private metadata: {
     stageId?: string;
@@ -52,8 +49,58 @@ export class VideoRoom {
       if (stored) this.sessionStatus = stored;
       const meta = await state.storage.get<typeof this.metadata>('metadata');
       if (meta) this.metadata = meta;
+      const offer = await state.storage.get<string>('lastOffer');
+      if (offer) this._lastOffer = offer;
     });
   }
+
+  private _lastOffer: string | null = null;
+
+  // ── Helpers: use Hibernation API for peer tracking ──────────────────────
+
+  /** Get all active WebSockets for a specific role */
+  private getWebSocketsByRole(role: VideoRole): WebSocket[] {
+    return this.state.getWebSockets(role);
+  }
+
+  /** Get the role tag from a WebSocket */
+  private getRoleFromWs(ws: WebSocket): VideoRole | null {
+    const tags = this.state.getTags(ws);
+    if (tags.includes('RECRUITER')) return 'RECRUITER';
+    if (tags.includes('CANDIDATE')) return 'CANDIDATE';
+    return null;
+  }
+
+  /** Get all active WebSockets */
+  private getAllWebSockets(): WebSocket[] {
+    return this.state.getWebSockets();
+  }
+
+  /** Broadcast a message to all connected peers */
+  private broadcast(message: string): void {
+    for (const ws of this.getAllWebSockets()) {
+      try {
+        ws.send(message);
+      } catch {
+        // Ignore — peer may have already disconnected
+      }
+    }
+  }
+
+  /** Send a message to all peers EXCEPT the given WebSocket */
+  private broadcastExcept(ws: WebSocket, message: string): void {
+    for (const peer of this.getAllWebSockets()) {
+      if (peer !== ws) {
+        try {
+          peer.send(message);
+        } catch {
+          // Ignore
+        }
+      }
+    }
+  }
+
+  // ── HTTP handler ────────────────────────────────────────────────────────
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -71,8 +118,10 @@ export class VideoRoom {
         recruiterId: body.recruiterId,
       };
       this.sessionStatus = 'WAITING';
+      this._lastOffer = null;
       await this.state.storage.put('metadata', this.metadata);
       await this.state.storage.put('status', this.sessionStatus);
+      await this.state.storage.delete('lastOffer');
 
       return new Response(JSON.stringify({ status: 'WAITING' }), {
         headers: { 'Content-Type': 'application/json' },
@@ -81,10 +130,11 @@ export class VideoRoom {
 
     // GET /status — return current session status
     if (request.method === 'GET' && url.pathname === '/status') {
+      const peerCount = this.getAllWebSockets().length;
       return new Response(JSON.stringify({
         status: this.sessionStatus,
         metadata: this.metadata,
-        peers: this.peers.size,
+        peers: peerCount,
       }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -97,28 +147,42 @@ export class VideoRoom {
         return new Response('Missing or invalid role parameter', { status: 400 });
       }
 
-      // Check if this role is already connected
-      for (const [, peer] of this.peers) {
-        if (peer.role === role) {
-          return new Response(`${role} is already connected`, { status: 409 });
+      // Close any stale connections for this role (can happen after hibernation/reconnect)
+      const existingForRole = this.getWebSocketsByRole(role);
+      for (const staleWs of existingForRole) {
+        try {
+          staleWs.close(1000, 'Replaced by new connection');
+        } catch {
+          // Already closed
         }
       }
 
       const pair = new WebSocketPair();
       const [client, server] = [pair[0], pair[1]];
 
-      const peerId = crypto.randomUUID();
-
+      // Accept the WebSocket with the role as a tag (survives hibernation)
       this.state.acceptWebSocket(server, [role]);
 
-      this.peers.set(peerId, { ws: server, role });
+      const peerCount = this.getAllWebSockets().length + 1; // +1 for the new connection being established
 
       // Send current status to the new peer
       server.send(JSON.stringify({
         type: 'STATUS_UPDATE',
         status: this.sessionStatus,
         metadata: this.metadata,
+        peers: peerCount,
       }));
+
+      // Notify other peers that this role has connected
+      this.broadcastExcept(server, JSON.stringify({
+        type: 'PEER_CONNECTED',
+        role,
+      }));
+
+      // Replay stored OFFER to late-joining candidates
+      if (role === 'CANDIDATE' && this._lastOffer && this.sessionStatus === 'CALLING') {
+        server.send(this._lastOffer);
+      }
 
       return new Response(null, {
         status: 101,
@@ -128,6 +192,8 @@ export class VideoRoom {
 
     return new Response('Not found', { status: 404 });
   }
+
+  // ── Hibernation API handlers ────────────────────────────────────────────
 
   async webSocketMessage(ws: WebSocket, rawMessage: string | ArrayBuffer): Promise<void> {
     const messageStr = typeof rawMessage === 'string'
@@ -142,11 +208,9 @@ export class VideoRoom {
       return;
     }
 
-    // Find the sender
-    const senderEntry = [...this.peers.entries()].find(([, p]) => p.ws === ws);
-    if (!senderEntry) return;
-
-    const [, sender] = senderEntry;
+    // Identify the sender by their tag
+    const senderRole = this.getRoleFromWs(ws);
+    if (!senderRole) return;
 
     // Handle status updates
     if (message.type === 'STATUS_UPDATE' && message.status) {
@@ -157,72 +221,81 @@ export class VideoRoom {
       this.broadcast(JSON.stringify({
         type: 'STATUS_UPDATE',
         status: this.sessionStatus,
-        role: sender.role,
+        role: senderRole,
       }));
 
-      // If ENDED, schedule cleanup
+      // If ENDED, clear offer and schedule cleanup
       if (this.sessionStatus === 'ENDED') {
-        // Give peers 5 seconds to receive the ENDED message, then clean up
+        this._lastOffer = null;
+        await this.state.storage.delete('lastOffer');
         void this.state.storage.setAlarm(Date.now() + 5000);
       }
       return;
     }
 
-    // Route signaling messages to the remote peer
-    const remoteRole: VideoRole = sender.role === 'RECRUITER' ? 'CANDIDATE' : 'RECRUITER';
-    const remotePeer = [...this.peers.values()].find((p) => p.role === remoteRole);
-
-    if (remotePeer) {
-      remotePeer.ws.send(JSON.stringify({
-        type: message.type,
-        role: sender.role,
+    // Store OFFER for replay to late-joining candidates
+    if (message.type === 'OFFER' && senderRole === 'RECRUITER') {
+      this._lastOffer = JSON.stringify({
+        type: 'OFFER',
+        role: senderRole,
         payload: message.payload,
-      }));
+      });
+      await this.state.storage.put('lastOffer', this._lastOffer);
+    }
+
+    // Route signaling messages to the remote peer
+    const remoteRole: VideoRole = senderRole === 'RECRUITER' ? 'CANDIDATE' : 'RECRUITER';
+    const remotePeers = this.getWebSocketsByRole(remoteRole);
+
+    for (const remotePeer of remotePeers) {
+      try {
+        remotePeer.send(JSON.stringify({
+          type: message.type,
+          role: senderRole,
+          payload: message.payload,
+        }));
+      } catch {
+        // Remote peer may have disconnected
+      }
     }
   }
 
   async webSocketClose(ws: WebSocket, code: number, _reason: string): Promise<void> {
-    // Remove the disconnected peer
-    for (const [id, peer] of this.peers) {
-      if (peer.ws === ws) {
-        this.peers.delete(id);
+    const role = this.getRoleFromWs(ws);
 
-        // Notify the remaining peer
-        this.broadcast(JSON.stringify({
-          type: 'PEER_DISCONNECTED',
-          role: peer.role,
-          code,
-        }));
-
-        break;
-      }
+    // Clear stale OFFER if recruiter disconnects
+    if (role === 'RECRUITER') {
+      this._lastOffer = null;
+      this.sessionStatus = 'WAITING';
+      await this.state.storage.delete('lastOffer');
+      await this.state.storage.put('status', this.sessionStatus);
     }
 
-    // If both peers are gone and session is active, mark as ended
-    if (this.peers.size === 0 && this.sessionStatus !== 'ENDED') {
+    // Notify remaining peers
+    if (role) {
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'PEER_DISCONNECTED',
+        role,
+        code,
+      }));
+    }
+
+    // If all peers are gone and session was active, mark as ended
+    // Note: the closing ws is still in getWebSockets() at this point,
+    // so check for <= 1 (only the closing one left)
+    const remaining = this.getAllWebSockets().filter(w => w !== ws);
+    if (remaining.length === 0 && this.sessionStatus !== 'ENDED') {
       this.sessionStatus = 'ENDED';
       await this.state.storage.put('status', this.sessionStatus);
     }
   }
 
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
-    // Same as close — remove the peer
     await this.webSocketClose(ws, 1011, 'error');
   }
 
   async alarm(): Promise<void> {
     // Clean up storage after session ends
     await this.state.storage.deleteAll();
-    this.peers.clear();
-  }
-
-  private broadcast(message: string): void {
-    for (const [, peer] of this.peers) {
-      try {
-        peer.ws.send(message);
-      } catch {
-        // Ignore — peer may have already disconnected
-      }
-    }
   }
 }

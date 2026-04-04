@@ -6,6 +6,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed (Video room bidirectional signaling — 2026-04-04)
+- **`workers/api/src/durable-objects/VideoRoom.ts`** — Rewrote DO to use Hibernation API (`state.getWebSockets()` + tags) instead of in-memory `peers` Map that was lost on hibernation. Persists `lastOffer` to storage. Closes stale WebSocket connections instead of rejecting new ones with 409.
+- **`src/hooks/useVideoRoom.ts`** — Fixed STATUS_UPDATE handler to process ENDED/CALLING status from remote peer (was only checking peer count). Added `setExistingStream()` to accept pre-acquired MediaStream. Removed dead `wsSend` helper.
+- **`src/components/Video/RecruiterCallDrawer.tsx`** — Replaced hardcoded `candidatePresent = true` with real presence detection via DO `/status` polling. Fixed ActiveCallView race condition: WS connect deferred until POST `/init` completes.
+- **`src/components/Video/VideoInterviewStep.tsx`** — Fixed double `getUserMedia`: reuses stream from `VideoDeviceCheck` instead of re-acquiring.
+- **`src/pages/CandidateAssessmentPage.tsx`** — Fixed assessment page scroll overflow (`height: 100vh` + `overflow: hidden`).
+
 #### Added (Settings panel + video call drawer wiring — 2026-04-03)
 - **`src/components/SettingsPanel.tsx`** — Tabbed settings panel replacing DisplaySettingsPanel. Two tabs: DISPLAY (theme controls) and INTEGRATIONS (scheduling provider OAuth connection).
 - **`src/components/settings/DisplaySettings.tsx`** — Display/theme tab extracted from old DisplaySettingsPanel.

@@ -9,17 +9,10 @@
  * Renders in Layout's agentPanel slot.
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, ChevronLeft, User } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
-import { useVideoSignaling } from '../../hooks/useVideoSignaling';
-import { useVideoSession } from '../../hooks/useVideoSession';
-import type {
-  VideoSignalType,
-  VideoSignalPayload,
-  SdpPayload,
-  IceCandidatePayload,
-} from '../../lib/video/types';
+import { useVideoRoom } from '../../hooks/useVideoRoom';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -189,6 +182,33 @@ function CallDetailView({
   onBack: () => void;
   onCallStarted: () => void;
 }): React.ReactElement {
+  const [candidatePresent, setCandidatePresent] = useState(false);
+
+  // Poll DO /status to detect candidate presence
+  useEffect(() => {
+    const sessionId = `${interview.stageId}--${interview.candidateId}`;
+    let cancelled = false;
+
+    const checkPresence = async (): Promise<void> => {
+      try {
+        const clerkToken = await getClerkTokenForRoom();
+        const res = await fetch(`${API_BASE}/api/v1/video/sessions/${sessionId}/status`, {
+          headers: clerkToken ? { Authorization: `Bearer ${clerkToken}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json() as { peers: number };
+          if (!cancelled) setCandidatePresent(data.peers > 0);
+        }
+      } catch {
+        // Ignore — session may not exist yet
+      }
+    };
+
+    void checkPresence();
+    const interval = setInterval(() => void checkPresence(), 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [interview.stageId, interview.candidateId]);
+
   return (
     <>
       <div style={HEADER_STYLE}>
@@ -220,27 +240,43 @@ function CallDetailView({
             </div>
           </div>
         )}
+
+        {/* Candidate presence indicator */}
         <div style={{
           marginBottom: 20, padding: 16,
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(255,255,255,0.06)',
-          borderRadius: 4, fontSize: 12, color: '#888',
+          background: candidatePresent
+            ? 'rgba(52,211,153,0.06)'
+            : 'rgba(255,255,255,0.02)',
+          border: `1px solid ${candidatePresent ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.06)'}`,
+          borderRadius: 4, fontSize: 12,
+          color: candidatePresent ? '#34d399' : '#888',
+          display: 'flex', alignItems: 'center', gap: 10,
         }}>
-          Camera and mic will be activated when you start the call.
+          <span style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: candidatePresent ? '#34d399' : '#555',
+            boxShadow: candidatePresent ? '0 0 8px rgba(52,211,153,0.5)' : 'none',
+          }} />
+          {candidatePresent
+            ? 'Candidate is in the room'
+            : 'Waiting for candidate to join...'}
         </div>
+
         <button
-          onClick={onCallStarted}
+          onClick={candidatePresent ? onCallStarted : undefined}
+          disabled={!candidatePresent}
           style={{
             width: '100%', padding: '12px 0',
-            background: '#4ade80', color: '#0c0c0e',
+            background: candidatePresent ? '#4ade80' : '#333',
+            color: candidatePresent ? '#0c0c0e' : '#666',
             border: 'none', borderRadius: 4,
             fontFamily: '"Space Mono", monospace',
             fontWeight: 700, fontSize: 13,
-            cursor: 'pointer',
+            cursor: candidatePresent ? 'pointer' : 'not-allowed',
             letterSpacing: '0.5px',
           }}
         >
-          START CALL
+          {candidatePresent ? 'START CALL' : 'WAITING FOR CANDIDATE...'}
         </button>
       </div>
     </>
@@ -260,106 +296,70 @@ function ActiveCallView({
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
-  // Signal dispatcher for useVideoSession
-  const sessionHookRef = useRef<{
-    handleOffer?: ((p: SdpPayload) => void) | undefined;
-    handleAnswer?: ((p: SdpPayload) => void) | undefined;
-    handleIceCandidate?: ((p: IceCandidatePayload) => void) | undefined;
-    handleHangup?: (() => void) | undefined;
-  }>({});
+  // Defer WS connect until after DO /init completes to avoid stale state
+  const computedSessionId = `${interview.stageId}--${interview.candidateId}`;
+  const [sessionReady, setSessionReady] = useState(false);
 
-  const handleSignal = useCallback((type: VideoSignalType, payload: VideoSignalPayload) => {
-    switch (type) {
-      case 'OFFER':
-        sessionHookRef.current.handleOffer?.(payload as SdpPayload);
-        break;
-      case 'ANSWER':
-        sessionHookRef.current.handleAnswer?.(payload as SdpPayload);
-        break;
-      case 'ICE_CANDIDATE':
-        sessionHookRef.current.handleIceCandidate?.(payload as IceCandidatePayload);
-        break;
-      case 'HANGUP':
-        sessionHookRef.current.handleHangup?.();
-        break;
-    }
-  }, []);
-
-  const {
-    status,
-    createSession,
-    markCalling,
-    markEnded,
-    sendSignal,
-  } = useVideoSignaling({
-    stageId: interview.stageId,
-    candidateId: interview.candidateId,
+  const room = useVideoRoom({
+    sessionId: sessionReady ? computedSessionId : null,
     role: 'RECRUITER',
-    onSignal: handleSignal,
   });
 
-  const videoSession = useVideoSession({
-    role: 'RECRUITER',
-    sendSignal,
-    onEnded: () => {
-      void markEnded();
-      onEnded();
-    },
-  });
-
-  // Wire up signal dispatchers
+  // Init DO session first, THEN allow WS connect
   useEffect(() => {
-    // _handleAnswer is exposed only for RECRUITER role (not in the public type)
-    const handleAnswer = (videoSession as unknown as Record<string, unknown>)['_handleAnswer'] as
-      ((p: SdpPayload) => Promise<void>) | undefined;
-
-    sessionHookRef.current = {
-      handleAnswer: handleAnswer
-        ? (p: SdpPayload) => { void handleAnswer(p); }
-        : undefined,
-      handleIceCandidate: (p: IceCandidatePayload) => {
-        void videoSession.addIceCandidate(p);
-      },
-      handleHangup: () => {
-        void videoSession.hangUp();
-      },
+    let cancelled = false;
+    const init = async (): Promise<void> => {
+      await room.initMedia();
+      // Create/reset the DO session via the existing API endpoint
+      try {
+        const clerkToken = await getClerkTokenForRoom();
+        await fetch(`${API_BASE}/api/v1/video/sessions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(clerkToken ? { Authorization: `Bearer ${clerkToken}` } : {}),
+          },
+          body: JSON.stringify({ stageId: interview.stageId, candidateId: interview.candidateId }),
+        });
+      } catch (err) {
+        console.error('[ActiveCallView] Failed to create session:', err);
+      }
+      if (!cancelled) setSessionReady(true);
     };
-  }, [videoSession]);
+    void init();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Attach streams to video elements
   useEffect(() => {
-    if (localVideoRef.current && videoSession.localStream) {
-      localVideoRef.current.srcObject = videoSession.localStream;
+    if (localVideoRef.current && room.localStream) {
+      localVideoRef.current.srcObject = room.localStream;
     }
-  }, [videoSession.localStream]);
+  }, [room.localStream]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && videoSession.remoteStream) {
-      remoteVideoRef.current.srcObject = videoSession.remoteStream;
+    if (remoteVideoRef.current && room.remoteStream) {
+      remoteVideoRef.current.srcObject = room.remoteStream;
     }
-  }, [videoSession.remoteStream]);
+  }, [room.remoteStream]);
 
-  // Auto-create session and start call
+  // Auto-end notification
   useEffect(() => {
-    const init = async (): Promise<void> => {
-      await videoSession.initMedia();
-      const sess = await createSession();
-      if (sess) {
-        await videoSession.startCall();
-        await markCalling();
-      }
-    };
-    void init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (room.phase === 'ended') onEnded();
+  }, [room.phase, onEnded]);
+
+  const canCall = room.phase === 'peer_connected';
+  const isConnected = room.phase === 'connected';
+  const isWaiting = room.phase === 'waiting' || room.phase === 'disconnected';
+  const statusLabel = isConnected ? 'LIVE' : canCall ? 'READY' : room.phase.toUpperCase();
 
   return (
     <>
       <div style={HEADER_STYLE}>
         <button
           onClick={() => {
-            void videoSession.hangUp();
-            void markEnded();
+            void room.hangUp();
             onEnded();
           }}
           style={{
@@ -370,15 +370,34 @@ function ActiveCallView({
           <ChevronLeft size={16} />
         </button>
         <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>
-          {status === 'ACTIVE' ? 'LIVE' : status ?? 'CONNECTING'}
+          {statusLabel}
         </span>
-        {status === 'ACTIVE' && (
+        {isConnected && (
           <span style={{
             width: 8, height: 8, borderRadius: '50%',
             background: '#4ade80', animation: 'pulse 2s infinite',
           }} />
         )}
       </div>
+
+      {/* START CALL button when candidate is present but call hasn't started */}
+      {canCall && (
+        <div style={{ padding: 20 }}>
+          <button
+            onClick={() => void room.startCall()}
+            style={{
+              width: '100%', padding: '12px 0',
+              background: '#4ade80', color: '#0c0c0e',
+              border: 'none', borderRadius: 4,
+              fontFamily: '"Space Mono", monospace',
+              fontWeight: 700, fontSize: 13,
+              cursor: 'pointer', letterSpacing: '0.5px',
+            }}
+          >
+            START CALL
+          </button>
+        </div>
+      )}
 
       {/* Remote video (main) */}
       <div style={{ flex: 1, position: 'relative', background: '#000', minHeight: 200 }}>
@@ -388,13 +407,13 @@ function ActiveCallView({
           playsInline
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
-        {!videoSession.remoteStream && (
+        {!room.remoteStream && (
           <div style={{
             position: 'absolute', inset: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#666', fontSize: 12,
           }}>
-            Waiting for candidate...
+            {isWaiting ? 'Waiting for candidate...' : canCall ? 'Ready to call' : 'Connecting...'}
           </div>
         )}
 
@@ -419,31 +438,30 @@ function ActiveCallView({
         borderTop: '1px solid rgba(255,255,255,0.06)',
       }}>
         <button
-          onClick={() => videoSession.toggleCamera()}
+          onClick={room.toggleCamera}
           style={{
             width: 40, height: 40, borderRadius: '50%',
-            background: videoSession.cameraEnabled ? 'rgba(255,255,255,0.1)' : '#f87171',
+            background: room.cameraEnabled ? 'rgba(255,255,255,0.1)' : '#f87171',
             border: 'none', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
-          {videoSession.cameraEnabled ? <Video size={16} /> : <VideoOff size={16} />}
+          {room.cameraEnabled ? <Video size={16} /> : <VideoOff size={16} />}
         </button>
         <button
-          onClick={() => videoSession.toggleMic()}
+          onClick={room.toggleMic}
           style={{
             width: 40, height: 40, borderRadius: '50%',
-            background: videoSession.micEnabled ? 'rgba(255,255,255,0.1)' : '#f87171',
+            background: room.micEnabled ? 'rgba(255,255,255,0.1)' : '#f87171',
             border: 'none', color: '#fff', cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
-          {videoSession.micEnabled ? <Mic size={16} /> : <MicOff size={16} />}
+          {room.micEnabled ? <Mic size={16} /> : <MicOff size={16} />}
         </button>
         <button
           onClick={() => {
-            void videoSession.hangUp();
-            void markEnded();
+            void room.hangUp();
             onEnded();
           }}
           style={{
@@ -459,3 +477,13 @@ function ActiveCallView({
     </>
   );
 }
+
+// Helper to get Clerk token for session creation
+async function getClerkTokenForRoom(): Promise<string | null> {
+  try {
+    const clerk = (window as unknown as { Clerk?: { session?: { getToken: () => Promise<string> } } }).Clerk;
+    return clerk?.session ? await clerk.session.getToken() : null;
+  } catch { return null; }
+}
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
