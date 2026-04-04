@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Short answer sub-type picker — 2026-04-04)
+- **`src/components/StageConfigPanel.tsx`** — Short answer challenges now show a RESPONSE_FORMAT picker (Text, Video, Voice) before the template list. Selected mode is injected into the challenge config as `inputMode`. Back navigation returns to format picker.
+
 #### Fixed (Video room bidirectional signaling — 2026-04-04)
 - **`workers/api/src/durable-objects/VideoRoom.ts`** — Rewrote DO to use Hibernation API (`state.getWebSockets()` + tags) instead of in-memory `peers` Map that was lost on hibernation. Persists `lastOffer` to storage. Closes stale WebSocket connections instead of rejecting new ones with 409.
 - **`src/hooks/useVideoRoom.ts`** — Fixed STATUS_UPDATE handler to process ENDED/CALLING status from remote peer (was only checking peer count). Added `setExistingStream()` to accept pre-acquired MediaStream. Removed dead `wsSend` helper.

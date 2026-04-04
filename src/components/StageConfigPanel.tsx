@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, Mic, Type } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -18,6 +18,7 @@ import {
   ALL_CHALLENGE_TEMPLATES,
   type ChallengeTemplate,
   type ChallengeType,
+  type ShortAnswerInputMode,
 } from '../content/challengeLibrary';
 import { useChallengeMutations } from '../hooks/useChallengeMutations';
 import { useAuth as useClerkAuth } from '@clerk/react';
@@ -274,18 +275,34 @@ function TypeSelector({ onSelect, currentType }: {
 
 // ── Step 2: Type-specific challenge picker ──────────────────────────────────
 
+const SHORT_ANSWER_MODES: { mode: ShortAnswerInputMode; label: string; description: string; Icon: typeof Type }[] = [
+  { mode: 'text', label: 'TEXT', description: 'Written response', Icon: Type },
+  { mode: 'video', label: 'VIDEO', description: 'Recorded video response', Icon: Video },
+  { mode: 'voice', label: 'VOICE', description: 'Recorded voice response', Icon: Mic },
+];
+
 function TypeChallengePicker({ stageType, onAdd, existingCount }: {
   stageType: StageType;
   onAdd: (template: ChallengeTemplate) => Promise<void>;
   existingCount: number;
 }): JSX.Element {
   const [search, setSearch] = useState('');
+  const [selectedInputMode, setSelectedInputMode] = useState<ShortAnswerInputMode | null>(null);
   const challengeTypes = TYPE_TO_CHALLENGE_TYPES[stageType];
+  const hasShortAnswer = challengeTypes.includes('QUIZ_SHORT_ANSWER');
+  const hasOnlyShortAnswer = challengeTypes.every((t) => t === 'QUIZ_SHORT_ANSWER' || t === 'FOLLOW_UP');
+
+  // Show mode picker if short answer is available and no mode selected yet
+  const showModePicker = hasShortAnswer && selectedInputMode === null;
 
   const filtered = useMemo(() => {
     let templates = ALL_CHALLENGE_TEMPLATES.filter((t) =>
       challengeTypes.includes(t.type),
     );
+    // When a short answer input mode is selected, only show short answer + follow-up templates
+    if (selectedInputMode !== null) {
+      templates = templates.filter((t) => t.type === 'QUIZ_SHORT_ANSWER' || t.type === 'FOLLOW_UP');
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       templates = templates.filter(
@@ -296,12 +313,127 @@ function TypeChallengePicker({ stageType, onAdd, existingCount }: {
       );
     }
     return templates;
-  }, [challengeTypes, search]);
+  }, [challengeTypes, search, selectedInputMode]);
+
+  const handleAdd = async (template: ChallengeTemplate): Promise<void> => {
+    // Override inputMode on short answer templates when a mode is selected
+    if (selectedInputMode !== null && template.type === 'QUIZ_SHORT_ANSWER') {
+      const config = { ...(template.config as Record<string, unknown>), inputMode: selectedInputMode };
+      const overridden = {
+        ...template,
+        config: config as ChallengeTemplate['config'],
+      };
+      await onAdd(overridden);
+    } else {
+      await onAdd(template);
+    }
+  };
+
+  if (showModePicker) {
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <label style={labelStyle}>RESPONSE_FORMAT</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {SHORT_ANSWER_MODES.map(({ mode, label, description, Icon }) => (
+            <button
+              key={mode}
+              onClick={() => setSelectedInputMode(mode)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '12px 14px',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                fontFamily: '"Space Mono", monospace',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 4,
+                color: 'var(--pipe-text-dim)',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                textAlign: 'left',
+              }}
+            >
+              <Icon size={14} />
+              <div>
+                <div>{label}</div>
+                <div style={{
+                  fontSize: 8,
+                  fontWeight: 400,
+                  letterSpacing: '0.05em',
+                  opacity: 0.7,
+                  marginTop: 2,
+                }}>
+                  {description}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+        {!hasOnlyShortAnswer && (
+          <>
+            <div style={{
+              fontSize: 8,
+              letterSpacing: '0.1em',
+              color: 'var(--pipe-text-dim)',
+              textAlign: 'center',
+              padding: '8px 0',
+              opacity: 0.5,
+            }}>
+              OR
+            </div>
+            <button
+              onClick={() => setSelectedInputMode('text')}
+              style={{
+                padding: '10px 12px',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                fontFamily: '"Space Mono", monospace',
+                background: 'transparent',
+                border: '1px dashed var(--pipe-border)',
+                borderRadius: 4,
+                color: 'var(--pipe-text-dim)',
+                cursor: 'pointer',
+                textAlign: 'center',
+              }}
+            >
+              BROWSE ALL CHALLENGES
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
       {/* Search */}
       <div style={{ padding: '12px 20px 0' }}>
+        {hasShortAnswer && (
+          <button
+            onClick={() => setSelectedInputMode(null)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              marginBottom: 8,
+              padding: 0,
+              background: 'none',
+              border: 'none',
+              color: 'var(--pipe-text-dim)',
+              cursor: 'pointer',
+              fontSize: 8,
+              fontFamily: '"Space Mono", monospace',
+              letterSpacing: '0.1em',
+            }}
+          >
+            <ArrowLeft size={10} />
+            {selectedInputMode !== null ? selectedInputMode.toUpperCase() + ' RESPONSE' : 'ALL'}
+          </button>
+        )}
         <div style={{ position: 'relative' }}>
           <Search
             size={12}
@@ -349,7 +481,7 @@ function TypeChallengePicker({ stageType, onAdd, existingCount }: {
         {filtered.map((template) => (
           <button
             key={template.id}
-            onClick={() => void onAdd(template)}
+            onClick={() => void handleAdd(template)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -422,6 +554,7 @@ function StageConfigToggles({ stageId, stage, updateStage, refetch }: {
     try {
       await updateStage(stageId, { isScheduled: value });
       await refetch();
+      await triggerRefetch();
     } catch (err) {
       console.error('[StageConfigToggles] Failed to update scheduling:', err);
       setIsScheduled(!value);
@@ -433,6 +566,7 @@ function StageConfigToggles({ stageId, stage, updateStage, refetch }: {
     try {
       await updateStage(stageId, { mode: value ? 'LIVE_VIDEO' : 'ASYNC' });
       await refetch();
+      await triggerRefetch();
     } catch (err) {
       console.error('[StageConfigToggles] Failed to update video:', err);
       setIsVideoMeeting(!value);
