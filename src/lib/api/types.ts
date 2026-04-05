@@ -222,6 +222,112 @@ export interface CreateCandidateResponse {
 
 export type OverviewPipeline = PipelineListItem;
 
+// ─── Role Discovery ──────────────────────────────────────────────────────────
+
+export type DomainCoverage = 'none' | 'sparse' | 'partial' | 'covered' | 'deep';
+
+export interface RoleContextBaseline {
+  title: string;
+  level?: string;
+  stack?: string[];
+  department?: string;
+  workModel?: string;
+  location?: string;
+  teamSize?: string;
+  reportsTo?: string;
+}
+
+export interface ParseJDResponse {
+  parsed: {
+    title?: string;
+    level?: string;
+    stack?: string[];
+    department?: string;
+    workModel?: string;
+    location?: string;
+    teamSize?: string;
+    reportsTo?: string;
+  };
+}
+
+export interface RoleContextQuestionInput {
+  type: 'text' | 'textarea' | 'tags' | 'select' | 'radio';
+  options?: string[];
+  placeholder?: string;
+}
+
+export interface RoleContextQuestion {
+  id: string;
+  text: string;
+  input: RoleContextQuestionInput;
+}
+
+export interface RoleContextProgress {
+  asked: number;
+  budget: number;
+  domains: Record<string, DomainCoverage>;
+}
+
+export interface CreateRoleContextRequest {
+  baseline: RoleContextBaseline;
+  questionBudget?: number;
+}
+
+export interface CreateRoleContextResponse {
+  id: string;
+  status: 'BASELINE';
+  baseline: RoleContextBaseline;
+  questionBudget: number;
+  questionsAsked: number;
+}
+
+export interface StartRoleContextResponse {
+  acknowledgment: string;
+  question: RoleContextQuestion;
+  progress: RoleContextProgress;
+  status: 'INTERVIEWING';
+}
+
+export interface RespondRoleContextRequest {
+  answer: string;
+  questionId: string;
+}
+
+export interface RespondQuestionResponse {
+  acknowledgment: string;
+  question: RoleContextQuestion;
+  progress: RoleContextProgress;
+  status: 'INTERVIEWING';
+}
+
+export interface RespondSynthesisResponse {
+  synthesis: string;
+  knowledgeState: Record<string, Record<string, unknown>>;
+  progress: RoleContextProgress;
+  status: 'COMPLETE';
+}
+
+export type RespondRoleContextResponse = RespondQuestionResponse | RespondSynthesisResponse;
+
+export interface RoleContextFullState {
+  id: string;
+  pipelineId: string | null;
+  status: 'BASELINE' | 'INTERVIEWING' | 'COMPLETE' | 'ABANDONED';
+  baseline: RoleContextBaseline;
+  knowledgeState: Record<string, Record<string, unknown>>;
+  exchanges: Array<{
+    questionId: string;
+    acknowledgment: string;
+    question: string;
+    input: RoleContextQuestionInput;
+    answer?: string;
+  }>;
+  questionBudget: number;
+  questionsAsked: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Candidate Profile ────────────────────────────────────────────────────────
 
 export interface ChallengeSubmissionDetail {

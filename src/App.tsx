@@ -20,7 +20,7 @@ import OverviewPage from "./pages/OverviewPage";
 import StageDetailPage from "./pages/StageDetailPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
-import PipelineCreatePage from "./pages/archived/PipelineCreatePage";
+import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import SchedulingPage from "./pages/SchedulingPage";
@@ -335,7 +335,7 @@ function App(): JSX.Element {
                         element={<ChallengeEditorPage />}
                       />
                     )}
-                    <Route path="/pipeline/new" element={<PipelineCreatePage />} />
+                    <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
                     <Route
                       path="/candidates/:id"
                       element={<CandidateProfilePage />}

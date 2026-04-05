@@ -13,6 +13,7 @@ import { videoAuth, videoCandidate } from './routes/video';
 import { challengeSubmissions } from './routes/challengeSubmissions';
 import { reviewSessions } from './routes/reviewSessions';
 import { rpcPublic, rpcAuth } from './routes/rpc';
+import { roleContexts } from './routes/roleContexts';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 
@@ -84,6 +85,9 @@ app.route('/rpc/video', videoCandidate);
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
 app.route('/api/v1/review-sessions', reviewSessions);
+
+// Role Discovery Agent: AI-powered role context extraction (ADR-027)
+app.route('/api/v1/role-contexts', roleContexts);
 
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);

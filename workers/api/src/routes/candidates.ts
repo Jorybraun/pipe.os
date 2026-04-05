@@ -238,7 +238,7 @@ candidateOps.get('/:candidateId', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.id, c.name, c.email, c.status, c.pipeline_id,
-              c.current_stage_id, c.resume_s3_key,
+              c.current_stage_id, c.resume_s3_key, c.phone_number,
               c.skills, c.years_of_experience, c.current_role, c.education,
               c.created_at, c.updated_at
        FROM candidates c
@@ -254,6 +254,7 @@ candidateOps.get('/:candidateId', async (c) => {
       pipeline_id: string;
       current_stage_id: string | null;
       resume_s3_key: string | null;
+      phone_number: string | null;
       skills: string | null;
       years_of_experience: number | null;
       current_role: string | null;
@@ -462,7 +463,7 @@ candidateOps.get('/:candidateId', async (c) => {
       id: candidate.id,
       name: candidate.name,
       email: candidate.email,
-      phoneNumber: (candidate as Record<string, unknown>).phone_number as string | null ?? null,
+      phoneNumber: candidate.phone_number,
       status: candidate.status,
       pipelineId: candidate.pipeline_id,
       currentStageId: candidate.current_stage_id,

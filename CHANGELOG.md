@@ -6,6 +6,24 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (ADR-027: Role Discovery Agent — Full Stack — 2026-04-05)
+- **`workers/api/migrations/0011_role_contexts.sql`** — D1 migration: `role_contexts` table with baseline, knowledge_state, exchanges JSON columns, budget tracking, status state machine (BASELINE → INTERVIEWING → COMPLETE | ABANDONED).
+- **`workers/api/src/routes/roleContexts.ts`** — Hono route module: POST create, GET retrieve, POST start, POST respond, POST complete, POST parse-jd. Clerk JWT auth, ownership checks.
+- **`workers/api/src/lib/roleAgent.ts`** — Mistral API integration (`mistral-small-latest`, JSON response format). ReAct reasoning, knowledge state merging, mock fallback for testing.
+- **`workers/api/src/lib/roleAgentPrompts.ts`** — System prompt encoding IDEO empathy interviews, Five Whys contextual drilling, Laddering (Means-End Chain), Beginner's Mind, Seven Question Types, Negative Space rules.
+- **`workers/api/src/lib/jdParser.ts`** — Job description parser: accepts pasted text or uploaded PDF, extracts title/level/stack/department/location/workModel/teamSize/reportsTo via Mistral.
+- **`workers/api/src/validation/roleContexts.ts`** — Zod schemas for create (baseline + budget), respond (answer + questionId).
+- **`workers/api/src/types.ts`** — Added `RoleContextRow`, `RoleExchange`, `DomainCoverage`, `RoleAgentProgress` types.
+- **`workers/api/src/index.ts`** — Mounted role context routes at `/api/v1/role-contexts`.
+- **`src/pages/RoleDiscoveryPage.tsx`** — Three-phase UI: baseline form (JD import + manual fields), AI interview (conversation thread with typed inputs, domain coverage bars, collapsible history), synthesis (narrative + pipeline creation). Route: `/pipeline/new`.
+- **`src/hooks/useRoleDiscovery.ts`** — Hook managing full discovery flow (IDLE → BASELINE → INTERVIEWING → COMPLETE). Replaced Amplify-era version.
+- **`src/lib/api/types.ts`** — Added `RoleContextBaseline`, `RoleContextQuestion`, `RoleContextProgress`, `ParseJDResponse`, and related response types.
+- **`src/App.tsx`** — Replaced archived PipelineCreatePage with RoleDiscoveryPage at `/pipeline/new`.
+
+#### Added (ADR-027: Role Discovery Agent — Design — 2026-04-05)
+- **`docs/decisions/ADR-027-role-discovery-agent.md`** — Architecture decision for AI-powered role context extraction. Server-side Mistral agent with fixed question budget ("20 Questions" model), hybrid conversational + structured input UI, free/pro tier gating. Encodes IDEO empathy interview, Five Whys contextual drilling, Laddering, and ReAct reasoning principles. Defines D1 schema (`role_contexts` table), API routes (`/api/v1/role-contexts`), and Knowledge State output (Six Domains: Why, Work, Team, Bar, Codebase, Process).
+- **`docs/decisions/README.md`** — Added ADR-026 and ADR-027 to index.
+
 #### Changed (Stage type confirmation + phone screening UX — 2026-04-05)
 - **`src/components/StageConfigPanel.tsx`** — Stage type and screening format changes now require confirmation when existing challenges would be removed. Amber warning banner with CONFIRM/CANCEL. Challenges are deleted before switching type.
 - **`src/pages/StageDetailPage.tsx`** — PHONE_CALL and VIDEO_CALL stages hide CHALLENGES tab, auto-switch to CANDIDATES-only view.

@@ -1772,9 +1772,22 @@ export default function CandidateProfilePage(): JSX.Element {
                         </span>
                         {call.recordingS3Key && (
                           <button
-                            onClick={() => {
-                              const audio = new Audio(`${import.meta.env['VITE_API_URL'] ?? 'http://localhost:8787'}/api/v1/phone/calls/${call.id}/recording`);
-                              void audio.play();
+                            onClick={async () => {
+                              try {
+                                const token = await getToken();
+                                const baseUrl = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+                                const res = await fetch(`${baseUrl}/api/v1/phone/calls/${call.id}/recording`, {
+                                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                                });
+                                if (!res.ok) { console.error('[CandidateProfilePage] Recording fetch failed:', res.status); return; }
+                                const blob = await res.blob();
+                                const url = URL.createObjectURL(blob);
+                                const audio = new Audio(url);
+                                void audio.play();
+                                audio.addEventListener('ended', () => URL.revokeObjectURL(url));
+                              } catch (err) {
+                                console.error('[CandidateProfilePage] Error playing recording:', err);
+                              }
                             }}
                             style={{
                               background: "none",

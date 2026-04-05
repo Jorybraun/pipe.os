@@ -178,6 +178,47 @@ export interface PhoneCallRow {
   updated_at: string;
 }
 
+// ─── Role Context ────────────────────────────────────────────────────────────
+
+export type RoleContextStatus = 'BASELINE' | 'INTERVIEWING' | 'COMPLETE' | 'ABANDONED';
+
+export interface RoleContextRow {
+  id: string;
+  pipeline_id: string | null;
+  owner_id: string;
+  baseline: string | null;
+  knowledge_state: string | null;
+  exchanges: string | null;
+  question_budget: number;
+  questions_asked: number;
+  status: RoleContextStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A single exchange (turn) in the role discovery interview. */
+export interface RoleExchange {
+  questionId: string;
+  acknowledgment: string;
+  question: string;
+  input: {
+    type: 'text' | 'textarea' | 'tags' | 'select' | 'radio';
+    options?: string[];
+    placeholder?: string;
+  };
+  answer?: string;
+}
+
+/** Six Domains coverage levels. */
+export type DomainCoverage = 'none' | 'sparse' | 'partial' | 'covered' | 'deep';
+
+/** Progress snapshot returned with each turn. */
+export interface RoleAgentProgress {
+  asked: number;
+  budget: number;
+  domains: Record<string, DomainCoverage>;
+}
+
 // ─── API Response shapes (camelCase) ─────────────────────────────────────────
 
 export interface PipelineResponse {
