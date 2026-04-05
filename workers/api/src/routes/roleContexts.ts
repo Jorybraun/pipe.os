@@ -278,6 +278,7 @@ roleContexts.post('/:id/start', async (c) => {
       domains: agentResponse.domainCoverage,
     },
     status: 'INTERVIEWING' as const,
+    toolsUsed: agentResponse.toolsUsed,
   });
 });
 
@@ -401,6 +402,7 @@ roleContexts.post('/:id/respond', async (c) => {
       domains: agentResponse.domainCoverage,
     },
     status: 'INTERVIEWING' as const,
+    toolsUsed: agentResponse.toolsUsed,
   });
 });
 

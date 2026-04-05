@@ -1,13 +1,16 @@
 /**
- * Role Discovery Agent — Mistral API Integration
+ * Role Discovery Agent — Mistral API with Tool Calling
  *
- * Calls mistral-small-latest to generate the next interview question
- * based on conversation history, knowledge state, and remaining budget.
+ * Calls mistral-small-latest with function calling support. The agent can
+ * request tools mid-turn to research the company, look up technologies, etc.
  *
- * Follows the same HTTP fetch pattern as implementerAgent.ts:
- * - Synchronous JSON response (no SSE)
- * - Graceful fallback to mock when API key missing
- * - Code-fence stripping for JSON parsing
+ * ReAct loop:
+ * 1. Send messages + tool definitions to Mistral
+ * 2. If Mistral returns tool_calls → execute them (fetch URLs, extract text)
+ * 3. Append tool results, call Mistral again
+ * 4. Repeat until Mistral returns the final question/synthesis JSON
+ *
+ * Falls back to mock responses when MISTRAL_API_KEY is not set.
  */
 
 import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage, buildSynthesisPrompt } from './roleAgentPrompts';
@@ -30,6 +33,7 @@ export interface RoleAgentQuestionResponse {
   };
   knowledgeStateUpdate: Record<string, Record<string, unknown>>;
   domainCoverage: Record<string, DomainCoverage>;
+  toolsUsed: string[];
 }
 
 export interface RoleAgentSynthesisResponse {
@@ -38,6 +42,7 @@ export interface RoleAgentSynthesisResponse {
   synthesis: string;
   knowledgeStateUpdate: Record<string, Record<string, unknown>>;
   domainCoverage: Record<string, DomainCoverage>;
+  toolsUsed: string[];
 }
 
 export type RoleAgentResponse = RoleAgentQuestionResponse | RoleAgentSynthesisResponse;
@@ -51,42 +56,256 @@ export interface CallRoleAgentInput {
   questionBudget: number;
 }
 
-// ─── Mistral API ────────────────────────────────────────────────────────────
+// ─── Mistral API types (with tool calling) ──────────────────────────────────
+
+interface MistralToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+interface MistralMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: MistralToolCall[];
+  tool_call_id?: string;
+  name?: string;
+}
 
 interface MistralChoice {
-  message: { role: string; content: string };
+  message: MistralMessage;
+  finish_reason: string;
 }
 
 interface MistralChatResponse {
   choices: MistralChoice[];
 }
 
-async function callMistral(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+// ─── Tool definitions ───────────────────────────────────────────────────────
+
+const AGENT_TOOLS = [
+  {
+    type: 'function' as const,
+    function: {
+      name: 'research_company',
+      description: 'Fetch and read a company website to understand their business, product, culture, and tech stack. Use this when you know the company name or URL to ask more informed questions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'The company website URL (e.g., "https://acme.com" or "acme.com")',
+          },
+          focus: {
+            type: 'string',
+            description: 'What to look for: "about" for company overview, "careers" for job listings, "engineering" for tech blog',
+            enum: ['about', 'careers', 'engineering'],
+          },
+        },
+        required: ['url'],
+      },
     },
-    body: JSON.stringify({
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'search_technology',
+      description: 'Look up information about a specific technology, framework, or tool to ask better follow-up questions. Use this when the user mentions a technology you want to understand in their specific context.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The technology or concept to research (e.g., "Temporal workflow engine", "Pulumi vs Terraform")',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+];
+
+// ─── Tool execution ─────────────────────────────────────────────────────────
+
+/** Fetch a URL and extract readable text (strips HTML tags). */
+async function fetchAndExtract(url: string, maxChars = 3000): Promise<string> {
+  let fullUrl = url;
+  if (!fullUrl.startsWith('http')) fullUrl = `https://${fullUrl}`;
+
+  try {
+    const response = await fetch(fullUrl, {
+      headers: { 'User-Agent': 'PipeBot/1.0 (role-discovery)' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) {
+      return `[Error: HTTP ${response.status} fetching ${fullUrl}]`;
+    }
+
+    const html = await response.text();
+
+    // Strip HTML tags, scripts, styles — crude but effective for context
+    const text = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return text.slice(0, maxChars);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[roleAgent] Fetch failed for ${fullUrl}:`, msg);
+    return `[Error: Could not fetch ${fullUrl} — ${msg}]`;
+  }
+}
+
+async function executeToolCall(call: MistralToolCall): Promise<{ result: string; label: string }> {
+  const args = JSON.parse(call.function.arguments) as Record<string, string>;
+
+  switch (call.function.name) {
+    case 'research_company': {
+      const url = args.url ?? '';
+      const focus = args.focus ?? 'about';
+      const paths: Record<string, string[]> = {
+        about: ['', '/about', '/about-us'],
+        careers: ['/careers', '/jobs', '/hiring'],
+        engineering: ['/blog', '/engineering', '/tech'],
+      };
+      const targetPaths = paths[focus] ?? [''];
+
+      // Try the first path that works
+      for (const path of targetPaths) {
+        const fullUrl = url.replace(/\/$/, '') + path;
+        const result = await fetchAndExtract(fullUrl);
+        if (!result.startsWith('[Error')) {
+          console.log(`[roleAgent] research_company: fetched ${fullUrl}, ${result.length} chars`);
+          return { result, label: `Researching ${url}...` };
+        }
+      }
+      return { result: `[Could not access ${url}]`, label: `Researching ${url}...` };
+    }
+
+    case 'search_technology': {
+      const query = args.query ?? '';
+      // Use DuckDuckGo instant answer API (no key needed)
+      try {
+        const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+        const response = await fetch(ddgUrl, { signal: AbortSignal.timeout(4000) });
+        const data = (await response.json()) as {
+          Abstract?: string;
+          AbstractText?: string;
+          RelatedTopics?: Array<{ Text?: string }>;
+        };
+        const parts: string[] = [];
+        if (data.AbstractText) parts.push(data.AbstractText);
+        if (data.RelatedTopics) {
+          for (const topic of data.RelatedTopics.slice(0, 5)) {
+            if (topic.Text) parts.push(topic.Text);
+          }
+        }
+        const result = parts.join('\n\n') || `[No results for "${query}"]`;
+        console.log(`[roleAgent] search_technology: "${query}", ${result.length} chars`);
+        return { result: result.slice(0, 2000), label: `Looking up ${query}...` };
+      } catch {
+        return { result: `[Search failed for "${query}"]`, label: `Looking up ${query}...` };
+      }
+    }
+
+    default:
+      return { result: `[Unknown tool: ${call.function.name}]`, label: 'Thinking...' };
+  }
+}
+
+// ─── Mistral call with tool loop ────────────────────────────────────────────
+
+const MAX_TOOL_ROUNDS = 3;
+
+async function callMistralWithTools(
+  apiKey: string,
+  messages: MistralMessage[],
+): Promise<{ content: string; toolsUsed: string[] }> {
+  const toolsUsed: string[] = [];
+  let currentMessages = [...messages];
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const isLastRound = round === MAX_TOOL_ROUNDS - 1;
+
+    const body: Record<string, unknown> = {
       model: 'mistral-small-latest',
       max_tokens: 1024,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  });
+      messages: currentMessages,
+    };
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[roleAgent] Mistral API error', { status: response.status, body: errorText });
-    throw new Error(`Mistral API returned ${response.status}`);
+    // Only offer tools if not the last round (force final answer on last round)
+    if (!isLastRound) {
+      body.tools = AGENT_TOOLS;
+      body.tool_choice = 'auto';
+    } else {
+      body.response_format = { type: 'json_object' };
+    }
+
+    // If this is the first round, allow JSON response format too
+    if (round === 0) {
+      // Don't set response_format when tools are available — Mistral will either
+      // return tool_calls or content
+    }
+
+    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[roleAgent] Mistral API error', { status: response.status, body: errorText });
+      throw new Error(`Mistral API returned ${response.status}`);
+    }
+
+    const data = (await response.json()) as MistralChatResponse;
+    const choice = data.choices?.[0];
+    if (!choice) throw new Error('No choices in Mistral response');
+
+    const msg = choice.message;
+
+    // If no tool calls, we have the final content
+    if (!msg.tool_calls || msg.tool_calls.length === 0) {
+      return { content: msg.content?.trim() ?? '', toolsUsed };
+    }
+
+    // Execute tool calls
+    currentMessages.push({
+      role: 'assistant',
+      content: msg.content,
+      tool_calls: msg.tool_calls,
+    });
+
+    for (const call of msg.tool_calls) {
+      const { result, label } = await executeToolCall(call);
+      toolsUsed.push(label);
+
+      currentMessages.push({
+        role: 'tool',
+        content: result,
+        tool_call_id: call.id,
+        name: call.function.name,
+      });
+    }
+
+    console.log(`[roleAgent] Tool round ${round + 1}: executed ${msg.tool_calls.length} tool(s)`);
   }
 
-  const data = (await response.json()) as MistralChatResponse;
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
+  // Should not reach here, but just in case
+  return { content: '', toolsUsed };
 }
 
 // ─── Mock response (for testing without API key) ────────────────────────────
@@ -95,9 +314,9 @@ function getMockQuestionResponse(questionsAsked: number): RoleAgentQuestionRespo
   const questionNum = questionsAsked + 1;
   return {
     type: 'question',
-    reasoning: `[MOCK] Generating question ${questionNum}. This is a mock response for testing.`,
+    reasoning: `[MOCK] Generating question ${questionNum}.`,
     acknowledgment: questionNum === 1
-      ? "I'll help you build a detailed profile for this role so we can design assessments that test for what actually matters. The more specific you can be, the better the challenges I'll generate."
+      ? "I'll help you build a detailed profile for this role so we can design assessments that test for what actually matters."
       : 'Thanks for that context — it helps me understand the scope.',
     question: {
       id: `q-${questionNum}`,
@@ -111,14 +330,8 @@ function getMockQuestionResponse(questionsAsked: number): RoleAgentQuestionRespo
       },
     },
     knowledgeStateUpdate: {},
-    domainCoverage: {
-      why: 'none',
-      work: 'none',
-      team: 'none',
-      bar: 'none',
-      codebase: 'none',
-      process: 'none',
-    },
+    domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+    toolsUsed: [],
   };
 }
 
@@ -126,17 +339,11 @@ function getMockSynthesisResponse(baseline: Record<string, unknown>): RoleAgentS
   const title = typeof baseline.title === 'string' ? baseline.title : 'the role';
   return {
     type: 'synthesis',
-    reasoning: '[MOCK] Budget exhausted. Generating synthesis.',
-    synthesis: `Based on our conversation, you're looking for a ${title} who can contribute meaningfully to your team. This is a mock synthesis — in production, this would be a detailed narrative demonstrating understanding of the role context, team dynamics, and technical requirements.`,
+    reasoning: '[MOCK] Budget exhausted.',
+    synthesis: `Based on our conversation, you're looking for a ${title} who can contribute meaningfully to your team.`,
     knowledgeStateUpdate: {},
-    domainCoverage: {
-      why: 'partial',
-      work: 'partial',
-      team: 'sparse',
-      bar: 'sparse',
-      codebase: 'none',
-      process: 'none',
-    },
+    domainCoverage: { why: 'partial', work: 'partial', team: 'sparse', bar: 'sparse', codebase: 'none', process: 'none' },
+    toolsUsed: [],
   };
 }
 
@@ -152,13 +359,10 @@ function parseDomainCoverage(raw: unknown): Record<string, DomainCoverage> {
     for (const domain of SIX_DOMAINS) {
       const val = (raw as Record<string, unknown>)[domain];
       result[domain] = typeof val === 'string' && VALID_COVERAGES.includes(val as DomainCoverage)
-        ? (val as DomainCoverage)
-        : 'none';
+        ? (val as DomainCoverage) : 'none';
     }
   } else {
-    for (const domain of SIX_DOMAINS) {
-      result[domain] = 'none';
-    }
+    for (const domain of SIX_DOMAINS) result[domain] = 'none';
   }
   return result;
 }
@@ -174,7 +378,7 @@ function parseKnowledgeStateUpdate(raw: unknown): Record<string, Record<string, 
   return result;
 }
 
-function parseQuestionResponse(parsed: Record<string, unknown>, questionsAsked: number): RoleAgentQuestionResponse {
+function parseQuestionResponse(parsed: Record<string, unknown>, questionsAsked: number, toolsUsed: string[]): RoleAgentQuestionResponse {
   const question = parsed.question as Record<string, unknown> | undefined;
   const input = question?.input as Record<string, unknown> | undefined;
 
@@ -197,33 +401,35 @@ function parseQuestionResponse(parsed: Record<string, unknown>, questionsAsked: 
     },
     knowledgeStateUpdate: parseKnowledgeStateUpdate(parsed.knowledgeStateUpdate),
     domainCoverage: parseDomainCoverage(parsed.domainCoverage),
+    toolsUsed,
   };
 }
 
-function parseSynthesisResponse(parsed: Record<string, unknown>): RoleAgentSynthesisResponse {
+function parseSynthesisResponse(parsed: Record<string, unknown>, toolsUsed: string[]): RoleAgentSynthesisResponse {
   return {
     type: 'synthesis',
     reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
     synthesis: typeof parsed.synthesis === 'string' ? parsed.synthesis : '',
     knowledgeStateUpdate: parseKnowledgeStateUpdate(parsed.knowledgeStateUpdate),
     domainCoverage: parseDomainCoverage(parsed.domainCoverage),
+    toolsUsed,
   };
 }
 
 // ─── Main export ────────────────────────────────────────────────────────────
 
 /**
- * Call the Role Discovery Agent.
+ * Call the Role Discovery Agent with tool support.
  *
- * Returns either a question turn or a synthesis (when budget exhausted).
- * Falls back to mock responses when API key is not set.
+ * The agent may use tools (research_company, search_technology) mid-turn
+ * to gather context before generating its question. Returns toolsUsed
+ * so the frontend can show what the agent researched.
  */
 export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgentResponse> {
   const { apiKey, baseline, exchanges, knowledgeState, questionsAsked, questionBudget } = input;
 
   const budgetExhausted = questionsAsked >= questionBudget;
 
-  // Mock mode
   if (!apiKey) {
     console.log('[roleAgent] No MISTRAL_API_KEY configured. Returning mock response.');
     return budgetExhausted
@@ -236,9 +442,17 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
     ? buildSynthesisPrompt({ baseline, exchanges, knowledgeState })
     : buildRoleAgentUserMessage({ baseline, exchanges, knowledgeState, questionsAsked, questionBudget });
 
-  let raw: string;
+  const messages: MistralMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
+  ];
+
+  let content: string;
+  let toolsUsed: string[];
   try {
-    raw = await callMistral(apiKey, systemPrompt, userMessage);
+    const result = await callMistralWithTools(apiKey, messages);
+    content = result.content;
+    toolsUsed = result.toolsUsed;
   } catch (err) {
     console.error('[roleAgent] Mistral call failed:', err);
     return budgetExhausted
@@ -246,36 +460,34 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
       : getMockQuestionResponse(questionsAsked);
   }
 
-  if (!raw) {
-    console.warn('[roleAgent] Mistral returned empty response. Falling back to mock.');
+  if (!content) {
+    console.warn('[roleAgent] Mistral returned empty content. Falling back to mock.');
     return budgetExhausted
       ? getMockSynthesisResponse(baseline)
       : getMockQuestionResponse(questionsAsked);
   }
 
-  // Parse JSON — handle potential code fences
+  // Parse JSON
   let parsed: Record<string, unknown>;
   try {
-    const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     parsed = JSON.parse(jsonText) as Record<string, unknown>;
   } catch {
-    console.error('[roleAgent] Failed to parse JSON response:', raw.slice(0, 300));
+    console.error('[roleAgent] Failed to parse JSON:', content.slice(0, 300));
     return budgetExhausted
       ? getMockSynthesisResponse(baseline)
       : getMockQuestionResponse(questionsAsked);
   }
 
-  // Determine response type: synthesis if budget exhausted or "synthesis" field present
   if (budgetExhausted || typeof parsed.synthesis === 'string') {
-    return parseSynthesisResponse(parsed);
+    return parseSynthesisResponse(parsed, toolsUsed);
   }
 
-  return parseQuestionResponse(parsed, questionsAsked);
+  return parseQuestionResponse(parsed, questionsAsked, toolsUsed);
 }
 
 /**
  * Merge a knowledge state update into the existing knowledge state.
- * Performs a shallow merge per domain.
  */
 export function mergeKnowledgeState(
   existing: Record<string, Record<string, unknown>>,

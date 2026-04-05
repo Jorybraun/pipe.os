@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Agent tool calling, voice UX, role profile tabs — 2026-04-05)
+- **`workers/api/src/lib/roleAgent.ts`** — Mistral function calling with ReAct loop. Tools: `research_company` (fetches company website), `search_technology` (DuckDuckGo instant answers). Up to 3 tool rounds per turn. Returns `toolsUsed` for frontend loading messages.
+- **`workers/api/src/lib/roleAgentPrompts.ts`** — Added Research Tools section to system prompt. Agent proactively researches company on first turn when URL provided. Synthesis tone rules: critical in knowledge state, neutral in narrative.
+- **`src/pages/RoleDiscoveryPage.tsx`** — Big centered voice recording button (72px circle, hides when text entered), company URL field in baseline, ThinkingIndicator with contextual messages ("Researching...", "Generating next question...").
+- **`src/pages/OverviewPage.tsx`** — TabNav with ROLE_PROFILE (dynamic highlights) and RAW_INSIGHTS (full JSON) tabs.
+
 #### Added (Role profile on pipeline overview — 2026-04-05)
 - **`src/pages/OverviewPage.tsx`** — Collapsible ROLE_PROFILE section shows baseline fields (level, department, location, team size) and Six Domains knowledge state grid. Formatted camelCase keys and flattened JSON objects for readability.
 - **`workers/api/src/routes/overview.ts`** — Overview route fetches linked role context (COMPLETE status) and includes it in the response.

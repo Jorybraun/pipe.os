@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
+import { TabNav } from "../components/ui/TabNav";
 import { Skeleton } from "../components/ui/Skeleton";
 import { CandidateIntakeModal } from "../components/Candidate/CandidateIntakeModal";
 import { useOverviewData } from "../hooks/useOverviewData";
@@ -558,7 +559,6 @@ function formatKSValue(value: unknown): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) return (value as string[]).join(', ');
   if (value && typeof value === 'object') {
-    // Flatten objects like {"senior":2,"mid":3} into "senior: 2, mid: 3"
     return Object.entries(value as Record<string, unknown>)
       .map(([k, v]) => `${k}: ${v}`)
       .join(', ');
@@ -569,15 +569,52 @@ function formatKSValue(value: unknown): string {
 /** Convert camelCase key to readable label */
 function formatKSKey(key: string): string {
   return key
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (c) => c.toUpperCase())
-    .trim();
+    .replace(/([A-Z])/g, '_$1')
+    .toUpperCase()
+    .replace(/^_/, '');
 }
+
+const ROLE_PROFILE_TABS = [
+  { id: 'profile', label: 'ROLE_PROFILE', icon: <Sparkles size={12} /> },
+  { id: 'insights', label: 'RAW_INSIGHTS', icon: <FileText size={12} /> },
+];
 
 function RoleProfileSection({ roleContext }: { roleContext: OverviewRoleContext }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState('profile');
   const ks = roleContext.knowledgeState;
   const baseline = roleContext.baseline;
+
+  // Build a dynamic role summary from the knowledge state
+  const highlights: Array<{ label: string; value: string }> = [];
+
+  // Pull the most useful fields from the KS dynamically
+  const why = ks.why as Record<string, unknown> | undefined;
+  const work = ks.work as Record<string, unknown> | undefined;
+  const team = ks.team as Record<string, unknown> | undefined;
+  const bar = ks.bar as Record<string, unknown> | undefined;
+  const process = ks.process as Record<string, unknown> | undefined;
+
+  if (why) {
+    if (why.roleOrigin) highlights.push({ label: 'ORIGIN', value: String(why.roleOrigin) });
+    if (why.urgency) highlights.push({ label: 'URGENCY', value: String(why.urgency) });
+    if (why.problemToSolve) highlights.push({ label: 'PROBLEM', value: String(why.problemToSolve) });
+  }
+  if (work) {
+    if (work.coreSystem) highlights.push({ label: 'SYSTEMS', value: String(work.coreSystem) });
+    if (work.migrationDirection) highlights.push({ label: 'MIGRATION', value: String(work.migrationDirection) });
+  }
+  if (team) {
+    if (team.communication) highlights.push({ label: 'CULTURE', value: String(team.communication) });
+    if (team.thrivingTraits) highlights.push({ label: 'THRIVES', value: String(team.thrivingTraits) });
+    if (team.size) highlights.push({ label: 'TEAM', value: `${team.size} engineers` });
+  }
+  if (bar) {
+    if (bar.interviewPainPoints) highlights.push({ label: 'PAIN_POINTS', value: String(bar.interviewPainPoints) });
+  }
+  if (process) {
+    if (process.timeline) highlights.push({ label: 'TIMELINE', value: String(process.timeline) });
+  }
 
   return (
     <div style={{ marginBottom: 24 }}>
@@ -592,7 +629,6 @@ function RoleProfileSection({ roleContext }: { roleContext: OverviewRoleContext 
           background: 'rgba(255,255,255,0.02)',
           border: '1px solid rgba(255,255,255,0.06)',
           cursor: 'pointer',
-          transition: 'all 0.2s ease',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -620,15 +656,6 @@ function RoleProfileSection({ roleContext }: { roleContext: OverviewRoleContext 
                   {t}
                 </span>
               ))}
-              {baseline.stack.length > 5 && (
-                <span style={{
-                  fontSize: 8,
-                  color: 'rgba(255,255,255,0.2)',
-                  fontFamily: '"Space Mono", monospace',
-                }}>
-                  +{baseline.stack.length - 5}
-                </span>
-              )}
             </div>
           )}
         </div>
@@ -658,78 +685,174 @@ function RoleProfileSection({ roleContext }: { roleContext: OverviewRoleContext 
           borderTop: 'none',
           padding: 24,
         }}>
-          {/* Baseline summary */}
-          <div style={{ display: 'flex', gap: 32, marginBottom: 24, flexWrap: 'wrap' }}>
-            {([
-              ['LEVEL', baseline.level],
-              ['DEPARTMENT', baseline.department],
-              ['WORK_MODEL', baseline.workModel],
-              ['LOCATION', baseline.location],
-              ['TEAM_SIZE', baseline.teamSize],
-              ['REPORTS_TO', baseline.reportsTo],
-            ] as [string, string | undefined][])
-              .filter(([, v]) => !!v)
-              .map(([label, value]) => (
-                <div key={label}>
-                  <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 4, fontFamily: '"Space Mono", monospace' }}>{label}</div>
-                  <div style={{ fontSize: 13, color: 'var(--pipe-text, #fff)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
-                </div>
-              ))}
-          </div>
+          <TabNav tabs={ROLE_PROFILE_TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
-          {/* Knowledge State — Six Domains */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-            {SIX_DOMAINS.map((domain) => {
-              const domainData = ks[domain];
-              if (!domainData || Object.keys(domainData).length === 0) return null;
+          {/* Tab: Role Profile — dynamic, human-readable */}
+          {activeTab === 'profile' && (
+            <div>
+              {/* Baseline metadata row */}
+              <div style={{ display: 'flex', gap: 32, marginBottom: 24, flexWrap: 'wrap' }}>
+                {([
+                  ['LEVEL', baseline.level],
+                  ['DEPARTMENT', baseline.department],
+                  ['WORK_MODEL', baseline.workModel],
+                  ['LOCATION', baseline.location],
+                  ['TEAM_SIZE', baseline.teamSize],
+                  ['REPORTS_TO', baseline.reportsTo],
+                ] as [string, string | undefined][])
+                  .filter(([, v]) => !!v)
+                  .map(([label, value]) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 4, fontFamily: '"Space Mono", monospace' }}>{label}</div>
+                      <div style={{ fontSize: 13, color: 'var(--pipe-text, #fff)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
+                    </div>
+                  ))}
+              </div>
 
-              return (
-                <div key={domain} style={{
-                  padding: 16,
-                  background: 'rgba(255,255,255,0.02)',
-                  border: '1px solid rgba(255,255,255,0.04)',
-                }}>
-                  <div style={{
-                    fontSize: 8,
-                    letterSpacing: '0.2em',
-                    color: 'var(--pipe-text-dim)',
-                    marginBottom: 10,
-                    fontFamily: '"Space Mono", monospace',
-                  }}>
-                    {DOMAIN_DISPLAY[domain]}
-                  </div>
-                  {Object.entries(domainData).map(([key, value]) => {
-                    if (value === null || value === undefined) return null;
-                    const formatted = formatKSValue(value);
-                    if (!formatted) return null;
-
-                    return (
-                      <div key={key} style={{ marginBottom: 8 }}>
+              {/* Dynamic highlights from knowledge state */}
+              {highlights.length > 0 && (
+                <>
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 20 }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    {highlights.map((h) => (
+                      <div key={h.label} style={{ padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                         <div style={{
                           fontSize: 8,
-                          letterSpacing: '0.1em',
-                          color: 'rgba(255,255,255,0.2)',
-                          marginBottom: 2,
+                          letterSpacing: '0.15em',
+                          color: 'var(--pipe-text-dim)',
+                          marginBottom: 6,
                           fontFamily: '"Space Mono", monospace',
-                          textTransform: 'uppercase',
                         }}>
-                          {formatKSKey(key)}
+                          {h.label}
                         </div>
                         <div style={{
-                          fontSize: 11,
-                          color: 'rgba(255,255,255,0.55)',
-                          lineHeight: 1.5,
+                          fontSize: 12,
+                          color: 'rgba(255,255,255,0.65)',
+                          lineHeight: 1.6,
                           fontFamily: '"Space Mono", monospace',
                         }}>
-                          {formatted}
+                          {h.value}
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Six Domains grid — formatted */}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', marginTop: 20, paddingTop: 20 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                  {SIX_DOMAINS.map((domain) => {
+                    const domainData = ks[domain];
+                    if (!domainData || Object.keys(domainData).length === 0) return null;
+
+                    return (
+                      <div key={domain} style={{
+                        padding: 16,
+                        background: 'rgba(255,255,255,0.02)',
+                        border: '1px solid rgba(255,255,255,0.04)',
+                      }}>
+                        <div style={{
+                          fontSize: 8,
+                          letterSpacing: '0.2em',
+                          color: 'var(--pipe-text-dim)',
+                          marginBottom: 10,
+                          fontFamily: '"Space Mono", monospace',
+                        }}>
+                          {DOMAIN_DISPLAY[domain]}
+                        </div>
+                        {Object.entries(domainData).map(([key, value]) => {
+                          if (value === null || value === undefined) return null;
+                          const formatted = formatKSValue(value);
+                          if (!formatted) return null;
+
+                          return (
+                            <div key={key} style={{ marginBottom: 8 }}>
+                              <div style={{
+                                fontSize: 8,
+                                letterSpacing: '0.1em',
+                                color: 'rgba(255,255,255,0.2)',
+                                marginBottom: 2,
+                                fontFamily: '"Space Mono", monospace',
+                              }}>
+                                {formatKSKey(key)}
+                              </div>
+                              <div style={{
+                                fontSize: 11,
+                                color: 'rgba(255,255,255,0.55)',
+                                lineHeight: 1.5,
+                                fontFamily: '"Space Mono", monospace',
+                              }}>
+                                {formatted}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab: Raw Insights — full JSON */}
+          {activeTab === 'insights' && (
+            <div>
+              <div style={{
+                fontSize: 8,
+                letterSpacing: '0.15em',
+                color: 'var(--pipe-text-dim)',
+                marginBottom: 12,
+                fontFamily: '"Space Mono", monospace',
+              }}>
+                KNOWLEDGE_STATE_JSON
+              </div>
+              <pre style={{
+                padding: 20,
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: 11,
+                fontFamily: '"Space Mono", monospace',
+                lineHeight: 1.6,
+                overflow: 'auto',
+                maxHeight: 500,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                margin: 0,
+              }}>
+                {JSON.stringify(ks, null, 2)}
+              </pre>
+
+              <div style={{
+                fontSize: 8,
+                letterSpacing: '0.15em',
+                color: 'var(--pipe-text-dim)',
+                marginTop: 20,
+                marginBottom: 12,
+                fontFamily: '"Space Mono", monospace',
+              }}>
+                BASELINE_JSON
+              </div>
+              <pre style={{
+                padding: 20,
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: 11,
+                fontFamily: '"Space Mono", monospace',
+                lineHeight: 1.6,
+                overflow: 'auto',
+                maxHeight: 300,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                margin: 0,
+              }}>
+                {JSON.stringify(baseline, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>

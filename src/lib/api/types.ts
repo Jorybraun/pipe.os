@@ -243,6 +243,7 @@ export interface RoleContextBaseline {
   department?: string;
   workModel?: string;
   location?: string;
+  companyUrl?: string;
   teamSize?: string;
   reportsTo?: string;
 }
@@ -296,6 +297,7 @@ export interface StartRoleContextResponse {
   question: RoleContextQuestion;
   progress: RoleContextProgress;
   status: 'INTERVIEWING';
+  toolsUsed?: string[];
 }
 
 export interface RespondRoleContextRequest {
@@ -308,6 +310,7 @@ export interface RespondQuestionResponse {
   question: RoleContextQuestion;
   progress: RoleContextProgress;
   status: 'INTERVIEWING';
+  toolsUsed?: string[];
 }
 
 export interface RespondSynthesisResponse {

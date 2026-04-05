@@ -106,21 +106,33 @@ function DomainBars({ domains }: { domains: Record<string, DomainCoverage> }): J
 
 // ─── Typing Indicator ───────────────────────────────────────────────────────
 
-function TypingIndicator(): JSX.Element {
+function ThinkingIndicator({ message }: { message?: string }): JSX.Element {
   return (
-    <div style={{ display: 'flex', gap: 4, padding: '16px 0', alignItems: 'center' }}>
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: 'rgba(139, 92, 246, 0.6)',
-            animation: `typingPulse 1.4s ease-in-out ${i * 0.2}s infinite`,
-          }}
-        />
-      ))}
+    <div style={{ display: 'flex', gap: 10, padding: '20px 0', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            style={{
+              width: 5,
+              height: 5,
+              borderRadius: '50%',
+              background: 'rgba(74, 222, 128, 0.5)',
+              animation: `typingPulse 1.4s ease-in-out ${i * 0.2}s infinite`,
+            }}
+          />
+        ))}
+      </div>
+      {message && (
+        <span style={{
+          fontSize: 10,
+          letterSpacing: '0.1em',
+          color: 'rgba(255,255,255,0.3)',
+          fontFamily: '"Space Mono", monospace',
+        }}>
+          {message}
+        </span>
+      )}
       <style>{`
         @keyframes typingPulse {
           0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
@@ -291,6 +303,7 @@ function BaselinePhase({
   const [department, setDepartment] = useState('');
   const [workModel, setWorkModel] = useState('');
   const [location, setLocation] = useState('');
+  const [companyUrl, setCompanyUrl] = useState('');
   const [teamSize, setTeamSize] = useState('');
   const [reportsTo, setReportsTo] = useState('');
   const [budget, setBudget] = useState(10);
@@ -381,6 +394,7 @@ function BaselinePhase({
     if (department.trim()) baseline.department = department.trim();
     if (workModel) baseline.workModel = workModel;
     if (location.trim()) baseline.location = location.trim();
+    if (companyUrl.trim()) baseline.companyUrl = companyUrl.trim();
     if (teamSize.trim()) baseline.teamSize = teamSize.trim();
     if (reportsTo.trim()) baseline.reportsTo = reportsTo.trim();
     onSubmit(baseline, budget);
@@ -581,6 +595,9 @@ function BaselinePhase({
         </FieldGroup>
         <FieldGroup label="Location">
           <TextInput value={location} onChange={setLocation} placeholder="San Francisco, CA / Remote" />
+        </FieldGroup>
+        <FieldGroup label="Company Website" hint="Agent will research before asking questions">
+          <TextInput value={companyUrl} onChange={setCompanyUrl} placeholder="https://acme.com" />
         </FieldGroup>
         <FieldGroup label="Team Size">
           <TextInput value={teamSize} onChange={setTeamSize} placeholder="4 engineers" />
@@ -828,7 +845,22 @@ function InterviewPhase({
 
       {/* Current turn */}
       {isLoading && !question ? (
-        <TypingIndicator />
+        <ThinkingIndicator message={pastExchanges.length === 0 ? "Researching and preparing your first question..." : "Thinking..."} />
+      ) : isLoading ? (
+        <div>
+          {acknowledgment && (
+            <div style={{
+              fontSize: 12,
+              color: 'rgba(255,255,255,0.45)',
+              lineHeight: 1.7,
+              marginBottom: 12,
+              fontFamily: '"Space Mono", monospace',
+            }}>
+              {acknowledgment}
+            </div>
+          )}
+          <ThinkingIndicator message="Generating next question..." />
+        </div>
       ) : question ? (
         <div ref={scrollRef}>
           {/* Agent message — flat, no card */}
@@ -854,7 +886,51 @@ function InterviewPhase({
             {question.text}
           </div>
 
-          {/* Input + controls */}
+          {/* Voice button — big, centered, always visible for text/textarea */}
+          {(question.input.type === 'text' || question.input.type === 'textarea') && !answer.trim() && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={isTranscribing}
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: '50%',
+                  background: isRecording
+                    ? 'rgba(248, 113, 113, 0.15)'
+                    : isTranscribing
+                      ? 'rgba(255,255,255,0.04)'
+                      : 'rgba(255,255,255,0.04)',
+                  border: isRecording
+                    ? '2px solid rgba(248, 113, 113, 0.4)'
+                    : '2px solid rgba(255,255,255,0.08)',
+                  color: isRecording
+                    ? 'rgba(248, 113, 113, 0.9)'
+                    : 'rgba(255,255,255,0.3)',
+                  cursor: isTranscribing ? 'default' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'column',
+                  gap: 4,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {isTranscribing ? (
+                  <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
+                ) : isRecording ? (
+                  <>
+                    <Square size={18} fill="currentColor" />
+                    <span style={{ fontSize: 8, fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>{recordDuration}s</span>
+                  </>
+                ) : (
+                  <Mic size={24} />
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Text input + send */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'start' }}>
             <div style={{ flex: 1 }}>
               <QuestionInput
@@ -866,89 +942,38 @@ function InterviewPhase({
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-              {/* Send */}
-              <button
-                onClick={handleSubmit}
-                disabled={!answer.trim() || isLoading}
-                style={{
-                  padding: '10px 20px',
-                  background: answer.trim() && !isLoading
-                    ? 'rgba(74, 222, 128, 0.08)'
-                    : 'transparent',
-                  border: answer.trim() && !isLoading
-                    ? '1px solid rgba(74, 222, 128, 0.3)'
-                    : '1px solid rgba(255,255,255,0.06)',
-                  color: answer.trim() && !isLoading
-                    ? 'rgba(74, 222, 128, 0.9)'
-                    : 'rgba(255,255,255,0.15)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  fontFamily: '"Space Mono", monospace',
-                  cursor: answer.trim() && !isLoading ? 'pointer' : 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                {isLoading ? (
-                  <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                ) : (
-                  <ArrowRight size={12} />
-                )}
-                SEND
-              </button>
-
-              {/* Voice input — only for text/textarea */}
-              {(question.input.type === 'text' || question.input.type === 'textarea') && (
-                <button
-                  onClick={isRecording ? stopRecording : startRecording}
-                  disabled={isTranscribing}
-                  style={{
-                    padding: '10px 20px',
-                    background: isRecording
-                      ? 'rgba(248, 113, 113, 0.1)'
-                      : isTranscribing
-                        ? 'rgba(255,255,255,0.02)'
-                        : 'transparent',
-                    border: isRecording
-                      ? '1px solid rgba(248, 113, 113, 0.3)'
-                      : '1px solid rgba(255,255,255,0.06)',
-                    color: isRecording
-                      ? 'rgba(248, 113, 113, 0.9)'
-                      : isTranscribing
-                        ? 'rgba(255,255,255,0.3)'
-                        : 'rgba(255,255,255,0.25)',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: '0.1em',
-                    fontFamily: '"Space Mono", monospace',
-                    cursor: isTranscribing ? 'default' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  {isTranscribing ? (
-                    <>
-                      <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                      ...
-                    </>
-                  ) : isRecording ? (
-                    <>
-                      <Square size={10} fill="currentColor" />
-                      {recordDuration}s
-                    </>
-                  ) : (
-                    <>
-                      <Mic size={12} />
-                      VOICE
-                    </>
-                  )}
-                </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!answer.trim() || isLoading}
+              style={{
+                padding: '10px 20px',
+                flexShrink: 0,
+                background: answer.trim() && !isLoading
+                  ? 'rgba(74, 222, 128, 0.08)'
+                  : 'transparent',
+                border: answer.trim() && !isLoading
+                  ? '1px solid rgba(74, 222, 128, 0.3)'
+                  : '1px solid rgba(255,255,255,0.06)',
+                color: answer.trim() && !isLoading
+                  ? 'rgba(74, 222, 128, 0.9)'
+                  : 'rgba(255,255,255,0.15)',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '0.15em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: answer.trim() && !isLoading ? 'pointer' : 'default',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              {isLoading ? (
+                <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <ArrowRight size={12} />
               )}
-            </div>
+              SEND
+            </button>
           </div>
         </div>
       ) : null}

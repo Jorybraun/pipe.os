@@ -14,6 +14,7 @@ export const baselineSchema = z.object({
   department: z.string().optional(),
   workModel: z.string().optional(),
   location: z.string().optional(),
+  companyUrl: z.string().optional(),
   teamSize: z.string().optional(),
   reportsTo: z.string().optional(),
 });
