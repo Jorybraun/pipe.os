@@ -59,9 +59,21 @@ emailRoutes.post('/:candidateId/send-invite', async (c) => {
       .first<{ title: string; mode: string | null; notification_templates: string | null; is_scheduled: number | null; scheduling_event_type_id: string | null }>();
     stageTemplatesJson = stageRow?.notification_templates ?? null;
     stageName = stageRow?.title;
+  }
 
-    // Look up Calendly booking URL for scheduled stages
-    if (stageRow?.is_scheduled || stageRow?.mode === 'LIVE_VIDEO') {
+  // Check ANY stage in the pipeline for scheduling (not just current stage)
+  {
+    const scheduledStage = await db
+      .prepare(
+        `SELECT mode, is_scheduled, scheduling_event_type_id FROM stages
+         WHERE pipeline_id = ? AND (is_scheduled = 1 OR mode = 'LIVE_VIDEO')
+         LIMIT 1`
+      )
+      .bind(candidate.pipeline_id)
+      .first<{ mode: string | null; is_scheduled: number | null; scheduling_event_type_id: string | null }>();
+
+    console.log('[email] Scheduled stage in pipeline:', scheduledStage ? { is_scheduled: scheduledStage.is_scheduled, mode: scheduledStage.mode, scheduling_event_type_id: scheduledStage.scheduling_event_type_id } : 'NONE');
+    if (scheduledStage) {
       const conn = await db
         .prepare(
           `SELECT access_token, provider_id FROM scheduling_connections
@@ -70,42 +82,59 @@ emailRoutes.post('/:candidateId/send-invite', async (c) => {
         .bind(userId)
         .first<{ access_token: string; provider_id: string }>();
 
+      console.log('[email] Scheduling connection:', { found: !!conn, provider: conn?.provider_id });
       if (conn && conn.provider_id === 'CALENDLY') {
         try {
-          if (stageRow.scheduling_event_type_id) {
-            const etRes = await fetch(stageRow.scheduling_event_type_id, {
+          if (scheduledStage.scheduling_event_type_id) {
+            console.log('[email] Fetching event type:', scheduledStage.scheduling_event_type_id);
+            const etRes = await fetch(scheduledStage.scheduling_event_type_id, {
               headers: { Authorization: `Bearer ${conn.access_token}` },
             });
+            console.log('[email] Event type response:', { status: etRes.status });
             if (etRes.ok) {
               const etData = await etRes.json() as { resource?: { scheduling_url?: string } };
+              console.log('[email] Event type data scheduling_url:', etData.resource?.scheduling_url);
               bookingUrl = etData.resource?.scheduling_url;
+            } else {
+              const errText = await etRes.text();
+              console.error('[email] Event type fetch failed:', errText);
             }
           } else {
             // Fallback: first active event type
+            console.log('[email] No event type configured, using fallback');
             const userRes = await fetch('https://api.calendly.com/users/me', {
               headers: { Authorization: `Bearer ${conn.access_token}` },
             });
+            console.log('[email] /users/me response:', { status: userRes.status });
             if (userRes.ok) {
               const userData = await userRes.json() as { resource?: { uri?: string } };
               const userUri = userData.resource?.uri;
+              console.log('[email] User URI:', userUri);
               if (userUri) {
                 const etListRes = await fetch(
                   `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true&count=1`,
                   { headers: { Authorization: `Bearer ${conn.access_token}` } },
                 );
+                console.log('[email] Event types list response:', { status: etListRes.status });
                 if (etListRes.ok) {
                   const etList = await etListRes.json() as { collection?: { scheduling_url?: string }[] };
+                  console.log('[email] Event types collection:', JSON.stringify(etList.collection?.map(e => e.scheduling_url)));
                   bookingUrl = etList.collection?.[0]?.scheduling_url;
                 }
               }
+            } else {
+              const errText = await userRes.text();
+              console.error('[email] /users/me failed:', errText);
             }
           }
-        } catch {
-          // Skip booking URL on error
+        } catch (err) {
+          console.error('[email] Calendly fetch error:', err instanceof Error ? err.message : String(err));
         }
       }
     }
   }
+
+  console.log('[email] Final bookingUrl:', bookingUrl ?? 'NONE');
 
   const result = await sendNotificationEmail({
     apiKey: c.env.RESEND_API_KEY,

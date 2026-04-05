@@ -16,6 +16,8 @@ export type VideoSession = {
   candidateId: string;
   recruiterId: string;
   status: string;
+  peerConnected?: boolean;
+  peerRole?: string;
   createdAt?: string;
 };
 
@@ -33,6 +35,7 @@ interface UseVideoSignalingReturn {
   isLoading: boolean;
   error: Error | null;
   createSession: () => Promise<VideoSession | null>;
+  joinSession: (sessionId: string) => void;
   markCalling: () => Promise<void>;
   markActive: () => Promise<void>;
   markEnded: () => Promise<void>;
@@ -78,7 +81,7 @@ export function useVideoSignaling({
 
     const wsPath = role === 'RECRUITER'
       ? `${WS_BASE}/api/v1/video/sessions/${session.id}/ws`
-      : `${WS_BASE}/rpc/video/sessions/${session.id}/ws`;
+      : `${WS_BASE}/rpc/video/sessions/${session.id}/ws${sessionToken ? `?token=${sessionToken}` : ''}`;
 
     const ws = new WebSocket(wsPath);
     wsRef.current = ws;
@@ -96,17 +99,34 @@ export function useVideoSignaling({
           payload?: unknown;
         };
 
-        // Handle status updates
+        // Handle status updates (includes peer count on initial connect)
         if (message.type === 'STATUS_UPDATE' && message.status) {
+          const peers = (message as { peers?: number }).peers;
           setSession((prev) =>
-            prev ? { ...prev, status: message.status as string } : prev,
+            prev ? {
+              ...prev,
+              status: message.status as string,
+              // If peers > 1 on initial status, the other side is already connected
+              ...(typeof peers === 'number' && peers > 1 ? { peerConnected: true } : {}),
+            } : prev,
+          );
+          return;
+        }
+
+        // Handle peer connection (candidate arrived)
+        if (message.type === 'PEER_CONNECTED') {
+          setSession((prev) =>
+            prev ? { ...prev, peerConnected: true, peerRole: message.role as string } : prev,
           );
           return;
         }
 
         // Handle peer disconnection
         if (message.type === 'PEER_DISCONNECTED') {
-          onSignalRef.current('HANGUP', { reason: 'peer_disconnected' });
+          setSession((prev) =>
+            prev ? { ...prev, peerConnected: false } : prev,
+          );
+          onSignalRef.current('PEER_DISCONNECTED' as VideoSignalType, { reason: 'peer_disconnected' });
           return;
         }
 
@@ -214,12 +234,24 @@ export function useVideoSignaling({
     [],
   );
 
+  // Candidate: join an existing session by ID (triggers WebSocket connection)
+  const joinSession = useCallback((sessionId: string): void => {
+    setSession({
+      id: sessionId,
+      stageId,
+      candidateId,
+      recruiterId: '',
+      status: 'WAITING',
+    });
+  }, [stageId, candidateId]);
+
   return {
     session,
     status: (session?.status as VideoSessionStatus) ?? null,
     isLoading,
     error,
     createSession,
+    joinSession,
     markCalling,
     markActive,
     markEnded,

@@ -164,6 +164,22 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
     initialSubmission: { answers: {} },
     isComplete: () => false, // follow-up panel handles its own submit
   }),
+
+  WELCOME: () => ({
+    layout: 'fullbleed',
+    panels: { center: ['welcome'] },
+    shells: [],
+    initialSubmission: {},
+    isComplete: () => true,
+  }),
+
+  LIVE_VIDEO: () => ({
+    layout: 'fullbleed',
+    panels: { center: ['video-waiting'] },
+    shells: [],
+    initialSubmission: {},
+    isComplete: () => false, // recruiter controls advancement
+  }),
 };
 
 const FALLBACK_BLUEPRINT: Blueprint = {

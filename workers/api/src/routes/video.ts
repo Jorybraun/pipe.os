@@ -36,7 +36,8 @@ videoAuth.post('/sessions', async (c) => {
   }
 
   const { stageId, candidateId } = parsed.data;
-  const sessionId = crypto.randomUUID();
+  // Deterministic session ID so both recruiter and candidate resolve to the same DO
+  const sessionId = `${stageId}--${candidateId}`;
 
   // Initialize the Durable Object
   const doId = c.env.VIDEO_ROOM.idFromName(sessionId);

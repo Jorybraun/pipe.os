@@ -6,6 +6,8 @@ import {
   Trash2,
   Edit3,
   Clock,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { LiquidMetalCard } from "../ui/LiquidMetalCard";
 import { useSortable } from "@dnd-kit/sortable";
@@ -19,6 +21,7 @@ interface ChallengeCardProps {
   onClick?: () => void;
   isTemplate?: boolean;
   isSelected?: boolean;
+  multiSelect?: boolean;
 }
 
 const TYPE_COLORS = {
@@ -59,6 +62,7 @@ export function ChallengeCard({
   onClick,
   isTemplate = false,
   isSelected = false,
+  multiSelect = false,
 }: ChallengeCardProps): JSX.Element {
   const {
     attributes,
@@ -242,7 +246,24 @@ export function ChallengeCard({
                 gap: 12,
               }}
             >
-              {onEdit && (
+              {multiSelect ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClick?.();
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: isSelected ? "#fff" : "var(--pipe-text-dim)",
+                    cursor: "pointer",
+                    padding: 8,
+                    transition: "color 0.2s",
+                  }}
+                >
+                  {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+                </button>
+              ) : onEdit ? (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -263,7 +284,7 @@ export function ChallengeCard({
                 >
                   <Edit3 size={14} />
                 </button>
-              )}
+              ) : null}
               {onDelete && (
                 <button
                   onClick={(e) => {

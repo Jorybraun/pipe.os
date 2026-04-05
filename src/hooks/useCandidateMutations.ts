@@ -35,6 +35,7 @@ export interface UseCandidateMutationsResult {
     candidateId: string,
     input: UpdateCandidateInput,
   ) => Promise<void>;
+  deleteCandidate: (candidateId: string) => Promise<void>;
   refreshLink: (candidateId: string) => Promise<string>;
 }
 
@@ -93,6 +94,26 @@ export function useCandidateMutations(): UseCandidateMutationsResult {
   );
 
   /**
+   * Permanently delete a candidate and all related data.
+   */
+  const deleteCandidate = useCallback(
+    async (candidateId: string): Promise<void> => {
+      const api = createApiClient({ getToken });
+      try {
+        await api.del(`/api/v1/candidates/${candidateId}`);
+      } catch (err) {
+        if (err instanceof ApiError) {
+          console.error('[useCandidateMutations] deleteCandidate API error:', err.code, err.message);
+        } else {
+          console.error('[useCandidateMutations] deleteCandidate unexpected error:', err);
+        }
+        throw err;
+      }
+    },
+    [getToken],
+  );
+
+  /**
    * Regenerate a candidate's invite token and reset status to INVITED.
    * Returns the new invite token.
    */
@@ -117,5 +138,5 @@ export function useCandidateMutations(): UseCandidateMutationsResult {
     [getToken],
   );
 
-  return { createCandidate, updateCandidate, refreshLink };
+  return { createCandidate, updateCandidate, deleteCandidate, refreshLink };
 }

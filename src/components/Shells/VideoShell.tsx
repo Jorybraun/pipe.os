@@ -254,6 +254,7 @@ export function VideoShell({
           isWaiting={isWaiting}
           isCalling={isCalling}
           isIncomingCall={isIncomingCall}
+          isCandidatePresent={!!signaling.session?.peerConnected}
           onCall={handleCall}
           onAccept={handleAccept}
           onDecline={handleDecline}
@@ -314,6 +315,7 @@ interface VideoWidgetProps {
   isWaiting: boolean;
   isCalling: boolean;
   isIncomingCall: boolean;
+  isCandidatePresent: boolean;
   localStream: MediaStream | null;
   onCall: () => void;
   onAccept: () => void;
@@ -328,6 +330,7 @@ function VideoWidget({
   isWaiting,
   isCalling,
   isIncomingCall,
+  isCandidatePresent,
   localStream,
   onCall,
   onAccept,
@@ -542,15 +545,19 @@ function VideoWidget({
             <div
               style={{
                 fontSize: 9,
-                color: "rgba(96,165,250,0.7)",
+                color: isCandidatePresent
+                  ? "rgba(52,211,153,0.8)"
+                  : "rgba(96,165,250,0.7)",
                 letterSpacing: "0.12em",
                 marginBottom: 2,
               }}
             >
-              LIVE_VIDEO_STAGE
+              {isCandidatePresent ? "⦿ CANDIDATE_IN_ROOM" : "LIVE_VIDEO_STAGE"}
             </div>
             <div style={{ fontSize: 10, color: "var(--pipe-text-dim)" }}>
-              Ready to start call
+              {isCandidatePresent
+                ? "Ready to start call"
+                : "Waiting for candidate..."}
             </div>
           </div>
           <div style={{ display: "flex", gap: 0 }}>
@@ -572,24 +579,29 @@ function VideoWidget({
               DISMISS
             </button>
             <button
-              onClick={onCall}
+              onClick={isCandidatePresent ? onCall : undefined}
+              disabled={!isCandidatePresent}
               style={{
                 flex: 2,
                 padding: "10px 0",
-                background: "rgba(96,165,250,0.08)",
+                background: isCandidatePresent
+                  ? "rgba(52,211,153,0.12)"
+                  : "rgba(96,165,250,0.04)",
                 border: "none",
-                color: "rgba(96,165,250,0.9)",
+                color: isCandidatePresent
+                  ? "rgba(52,211,153,0.9)"
+                  : "rgba(96,165,250,0.3)",
                 fontSize: 9,
                 letterSpacing: "0.12em",
                 fontFamily: '"Space Mono", monospace',
-                cursor: "pointer",
+                cursor: isCandidatePresent ? "pointer" : "not-allowed",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 6,
               }}
             >
-              <Phone size={10} /> START_CALL
+              <Phone size={10} /> {isCandidatePresent ? "START_CALL" : "WAITING..."}
             </button>
           </div>
         </div>

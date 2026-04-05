@@ -77,9 +77,18 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     }
   }, [api]);
 
+  // Sync once on mount (fetches recent Calendly events), then load interviews
   useEffect(() => {
-    void fetchInterviews();
-  }, [fetchInterviews]);
+    const load = async (): Promise<void> => {
+      try {
+        await api.post('/api/v1/scheduling/interviews/sync', {});
+      } catch {
+        // Best-effort — fails gracefully if no connection
+      }
+      await fetchInterviews();
+    };
+    void load();
+  }, [fetchInterviews, api]);
 
   const updateStatus = useCallback(
     async (

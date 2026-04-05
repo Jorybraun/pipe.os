@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Stage config, scheduling emails, video toggle — 2026-04-04)
+- **`src/pages/StageDetailPage.tsx`** — Stage config wizard: stage type selector (screening/cultural fit/technical/code review/panel interview), response format picker, scheduling link + video meeting toggles, email template editor (invitation/success/failure), stage settings panel.
+- **`src/components/Pipeline/ChallengeCard.tsx`** — Drag handle + delete button for challenge reorder.
+- **`src/lib/challenge/componentMap.ts`** — Registered `video-waiting` panel for LIVE_VIDEO challenges.
+- **`src/lib/challenge/resolveStageConfig.ts`** — Added LIVE_VIDEO mode resolution.
+- **`src/contexts/CandidateIdContext.tsx`** — Context provider for candidate/stage IDs used by VideoInterviewStep.
+- **`workers/api/src/routes/scheduling.ts`** — Scheduling webhook + email notification routes.
+- **`workers/api/src/routes/email.ts`** — Email template send via Resend.
+- **`workers/api/src/middleware/auth.ts`** + **`candidateAuth.ts`** — WebSocket query param token support for WS upgrades.
+
 #### Added (Phone screening via Twilio — 2026-04-04)
 - **`workers/api/migrations/0008_phone_screening.sql`** — D1 migration: `phone_number` column on candidates, `phone_calls` table with status tracking, recording keys, transcription state.
 - **`workers/api/src/routes/phone.ts`** — Full phone CRUD: Twilio webhook handlers (TwiML, recording-status, call-status), access token generation, call creation, recording stream from R2.

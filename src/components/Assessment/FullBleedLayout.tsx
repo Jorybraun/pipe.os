@@ -18,8 +18,9 @@ export function FullBleedLayout({ slots, children }: FullBleedLayoutProps): JSX.
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      minHeight: 'calc(100vh - 200px)',
+      height: '100%',
       padding: '40px 24px',
+      overflow: 'auto',
     }}>
       <div style={{ width: '100%', maxWidth: 720 }}>
         {content}

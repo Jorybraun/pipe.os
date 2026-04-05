@@ -56,7 +56,7 @@ overview.get('/:pipelineId/overview', async (c) => {
               (SELECT AVG(a.score) FROM assessments a
                WHERE a.candidate_id = c.id AND a.score IS NOT NULL) AS avg_score
        FROM candidates c
-       WHERE c.pipeline_id = ?
+       WHERE c.pipeline_id = ? AND c.status != 'ARCHIVED'
        ORDER BY c.created_at ASC`
     )
     .bind(pipelineId)

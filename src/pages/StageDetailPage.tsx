@@ -2,14 +2,17 @@ import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Plus, Settings, Mail, ChevronRight, Save, Trash2, CheckSquare, Square, X } from "lucide-react";
+import { Plus, Settings, Mail, ChevronRight, Save, Trash2, CheckSquare, Square, X, Users, Clock, CheckCircle } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
 import { ChallengeCard } from "../components/Pipeline/ChallengeCard";
 import { ChallengeBrowserPanel } from "../components/Pipeline/ChallengeBrowserPanel";
 import { useStageDetail } from "../hooks/useStageDetail";
+import { useOverviewData } from "../hooks/useOverviewData";
 import { useStageMutations } from "../hooks/useStageMutations";
 import { useChallengeMutations } from "../hooks/useChallengeMutations";
+import { useCandidateMutations } from "../hooks/useCandidateMutations";
+import { CandidateIntakeModal } from "../components/Candidate/CandidateIntakeModal";
 import type { NotificationTemplate, ChallengeItem } from "../lib/api/types";
 import { useSidebarPortal } from "../contexts/SidebarPortalContext";
 import { useStageRefetch } from "../contexts/StageRefetchContext";
@@ -53,9 +56,11 @@ export default function StageDetailPage(): JSX.Element {
   }, [location.pathname, navigate]);
 
   const { stage, isLoading, refetch } = useStageDetail(stageId);
+  const { candidates: allCandidates, refetch: refetchOverview } = useOverviewData(id);
   const { updateStage } = useStageMutations();
   const { createChallenge, deleteChallenge, reorderChallenges } =
     useChallengeMutations();
+  const { deleteCandidate } = useCandidateMutations();
 
   // Register refetch so StageConfigPanel (in Layout aside) can trigger it
   const { registerRefetch } = useStageRefetch();
@@ -65,6 +70,12 @@ export default function StageDetailPage(): JSX.Element {
 
   // Local title state for the inline editable input (mirrors stage.title)
   const [localTitle, setLocalTitle] = useState<string | null>(null);
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'challenges' | 'candidates'>('challenges');
+
+  // Add candidate modal
+  const [showAddCandidate, setShowAddCandidate] = useState(false);
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -366,7 +377,7 @@ export default function StageDetailPage(): JSX.Element {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, visibility: activeTab === 'challenges' ? 'visible' : 'hidden' }}>
           <button
             onClick={() => toggleChallengePanel()}
             style={{
@@ -425,6 +436,52 @@ export default function StageDetailPage(): JSX.Element {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Tabs */}
+          {(() => {
+            const stageCandidates = allCandidates.filter((c) => c.currentStageId === stageId);
+            return (
+              <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--pipe-border-light)', marginBottom: 8 }}>
+                <button
+                  onClick={() => setActiveTab('challenges')}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeTab === 'challenges' ? '2px solid var(--pipe-text, #fff)' : '2px solid transparent',
+                    color: activeTab === 'challenges' ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-dim)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: '0.1em',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  CHALLENGES ({challenges.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('candidates')}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: activeTab === 'candidates' ? '2px solid var(--pipe-text, #fff)' : '2px solid transparent',
+                    color: activeTab === 'candidates' ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-dim)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: '0.1em',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  CANDIDATES ({stageCandidates.length})
+                </button>
+              </div>
+            );
+          })()}
+
+          {activeTab === 'challenges' && <>
           {/* Selection toolbar */}
           {selectedIds.size > 0 ? (
             <div style={{
@@ -494,9 +551,7 @@ export default function StageDetailPage(): JSX.Element {
                 </button>
               </div>
             </div>
-          ) : (
-            <SubTitle>CHALLENGES ({challenges.length})</SubTitle>
-          )}
+          ) : null}
 
           <DndContext
             sensors={sensors}
@@ -516,6 +571,47 @@ export default function StageDetailPage(): JSX.Element {
               portalNode,
             )}
 
+          {/* Video call card for LIVE_VIDEO stages */}
+          {stage.mode === 'LIVE_VIDEO' && (
+            <div style={{
+              marginTop: 20,
+              marginBottom: challenges.length > 0 ? 0 : 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              padding: '14px 18px',
+              background: 'rgba(96, 165, 250, 0.06)',
+              border: '1px solid rgba(96, 165, 250, 0.15)',
+              borderRadius: 8,
+            }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 6,
+                background: 'rgba(96, 165, 250, 0.12)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="23 7 16 12 23 17 23 7" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                </svg>
+              </div>
+              <div>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: 'var(--pipe-text, #fff)',
+                  fontFamily: '"Space Mono", monospace', letterSpacing: '0.05em',
+                }}>
+                  VIDEO CALL
+                </div>
+                <div style={{
+                  fontSize: 10, color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace', marginTop: 2,
+                }}>
+                  {stage.isScheduled ? 'Scheduled via Calendly' : 'Live video interview'}
+                </div>
+              </div>
+            </div>
+          )}
+
           {challenges.length > 0 ? (
             <SortableContext
               items={challenges.map((c) => c.id)}
@@ -528,6 +624,7 @@ export default function StageDetailPage(): JSX.Element {
                     challenge={c}
                     index={i}
                     isSelected={selectedIds.has(c.id)}
+                    multiSelect={selectedIds.size > 0}
                     onClick={() => toggleSelect(c.id)}
                     onEdit={(challenge) =>
                       navigate(
@@ -605,11 +702,183 @@ export default function StageDetailPage(): JSX.Element {
               )}
             </DragOverlay>
           </DndContext>
+          </>}
+
+          {activeTab === 'candidates' && (() => {
+            const stageCandidates = allCandidates.filter((c) => c.currentStageId === stageId);
+            const completed = stageCandidates.filter((c) => c.status === 'COMPLETED');
+            const pending = stageCandidates.filter((c) => c.status !== 'COMPLETED');
+
+            const addCandidateBtn = (
+              <button
+                onClick={() => setShowAddCandidate(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '10px 14px', background: 'rgba(255,255,255,0.03)',
+                  border: '1px dashed var(--pipe-border-light)', borderRadius: 6,
+                  color: 'var(--pipe-text-dim)', fontSize: 10, fontWeight: 700,
+                  fontFamily: '"Space Mono", monospace', letterSpacing: '0.08em',
+                  cursor: 'pointer', width: '100%',
+                }}
+              >
+                <Plus size={12} /> ADD CANDIDATE
+              </button>
+            );
+
+            if (stageCandidates.length === 0) {
+              return (
+                <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {addCandidateBtn}
+                  <div style={{
+                    padding: '40px 24px', textAlign: 'center',
+                    border: '1px dashed var(--pipe-border-light)', borderRadius: 12,
+                  }}>
+                    <Users size={24} color="var(--pipe-text-dim)" style={{ marginBottom: 12 }} />
+                    <div style={{ color: 'var(--pipe-text-dim)', fontSize: 12 }}>
+                      No candidates in this stage yet.
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {addCandidateBtn}
+                {completed.length > 0 && (
+                  <>
+                    <div style={{
+                      fontSize: 9, letterSpacing: '0.15em', color: '#4ade80',
+                      fontFamily: '"Space Mono", monospace', fontWeight: 700, marginBottom: 4,
+                    }}>
+                      SUBMITTED ({completed.length})
+                    </div>
+                    {completed.map((c) => (
+                      <div
+                        key={c.id}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          background: 'rgba(74, 222, 128, 0.04)',
+                          border: '1px solid rgba(74, 222, 128, 0.12)',
+                          borderRadius: 6,
+                        }}
+                      >
+                        <div
+                          onClick={() => navigate(`/candidates/${c.id}`)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flex: 1 }}
+                        >
+                          <CheckCircle size={13} color="#4ade80" />
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, color: 'var(--pipe-text, #fff)',
+                            fontFamily: '"Space Mono", monospace',
+                          }}>
+                            {c.name ?? c.email ?? 'Unknown'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          {c.score !== null && (
+                            <span style={{
+                              fontSize: 11, fontWeight: 700, color: '#4ade80',
+                              fontFamily: '"Space Mono", monospace',
+                            }}>
+                              {Math.round(c.score)}%
+                            </span>
+                          )}
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Remove ${c.name ?? c.email ?? 'this candidate'}?`)) return;
+                              await deleteCandidate(c.id);
+                              await refetchOverview();
+                            }}
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              color: 'var(--pipe-text-dim)', padding: 4,
+                              display: 'flex', alignItems: 'center',
+                              opacity: 0.5, transition: 'opacity 0.2s',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#f87171'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.color = 'var(--pipe-text-dim)'; }}
+                            title="Remove candidate"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {pending.length > 0 && (
+                  <>
+                    <div style={{
+                      fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)',
+                      fontFamily: '"Space Mono", monospace', fontWeight: 700,
+                      marginTop: completed.length > 0 ? 12 : 0, marginBottom: 4,
+                    }}>
+                      PENDING ({pending.length})
+                    </div>
+                    {pending.map((c) => (
+                      <div
+                        key={c.id}
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          border: '1px solid var(--pipe-border-light)',
+                          borderRadius: 6,
+                        }}
+                      >
+                        <div
+                          onClick={() => navigate(`/candidates/${c.id}`)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flex: 1 }}
+                        >
+                          <Clock size={13} color="var(--pipe-text-dim)" />
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, color: 'var(--pipe-text-muted)',
+                            fontFamily: '"Space Mono", monospace',
+                          }}>
+                            {c.name ?? c.email ?? 'Unknown'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{
+                            fontSize: 9, color: 'var(--pipe-text-dim)',
+                            fontFamily: '"Space Mono", monospace',
+                          }}>
+                            {c.status === 'INVITED' ? 'INVITED' : 'IN PROGRESS'}
+                          </span>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Remove ${c.name ?? c.email ?? 'this candidate'}?`)) return;
+                              await deleteCandidate(c.id);
+                              await refetchOverview();
+                            }}
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              color: 'var(--pipe-text-dim)', padding: 4,
+                              display: 'flex', alignItems: 'center',
+                              opacity: 0.5, transition: 'opacity 0.2s',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#f87171'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.5'; e.currentTarget.style.color = 'var(--pipe-text-dim)'; }}
+                            title="Remove candidate"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         <aside style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Email Templates Section */}
-          <LiquidMetalCard variant="chrome" style={{ padding: 24 }}>
+          <LiquidMetalCard style={{ padding: 24 }}>
             <div
               style={{
                 display: "flex",
@@ -820,7 +1089,7 @@ export default function StageDetailPage(): JSX.Element {
             </div>
           </LiquidMetalCard>
 
-          <LiquidMetalCard variant="chrome" style={{ padding: 24 }}>
+          <LiquidMetalCard style={{ padding: 24 }}>
             <div
               style={{
                 display: "flex",
@@ -885,6 +1154,17 @@ export default function StageDetailPage(): JSX.Element {
         </aside>
       </div>
 
+      {showAddCandidate && id && (
+        <CandidateIntakeModal
+          pipelineId={id}
+          stageId={stageId}
+          onClose={() => setShowAddCandidate(false)}
+          onSuccess={() => {
+            setShowAddCandidate(false);
+            void refetchOverview();
+          }}
+        />
+      )}
     </div>
   );
 }

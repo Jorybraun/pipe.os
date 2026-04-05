@@ -29,6 +29,8 @@ export type StageSubmission = CodeReviewSubmission | QuizSubmission | ShortAnswe
 /** Stage rendering config returned by get-stage-config Worker */
 export interface StageConfigDTO {
   isComplete: boolean;
+  stageId?: string;
+  candidateId?: string;
   stageTitle?: string;
   mode?: string;
   timeLimit?: number | null;
@@ -323,13 +325,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       try {
-        const result = await rpcPost<{ success: boolean; challengeSubmissionId?: string; error?: string }>(
+        const result = await rpcPost<{ success: boolean; next?: boolean; challengeSubmissionId?: string; error?: string }>(
           '/rpc/submit-challenge-response',
           { order: currentOrder, submission: JSON.stringify(submission) },
           sessionTokenRef.current,
         );
 
-        if (result.success && result.challengeSubmissionId) {
+        if (result.success && result.next) {
+          // Synthetic challenge (WELCOME, LIVE_VIDEO) — just advance, no scoring
+          await advance();
+        } else if (result.success && result.challengeSubmissionId) {
           // Score (fire-and-forget)
           rpcPost('/rpc/score-submission', { challengeSubmissionId: result.challengeSubmissionId }, sessionTokenRef.current)
             .catch((e: unknown) => console.error('[useAssessment] scoringAgent failed:', e));

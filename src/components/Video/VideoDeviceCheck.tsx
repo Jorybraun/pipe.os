@@ -141,7 +141,7 @@ export function VideoDeviceCheck({
                 'rgba(255,255,255,0.08)')
             }
           >
-            JOIN_INTERVIEW_ROOM
+            READY
           </button>
         </>
       )}

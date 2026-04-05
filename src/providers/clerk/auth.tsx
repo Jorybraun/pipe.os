@@ -77,12 +77,13 @@ function ClerkSignInScreen(): JSX.Element {
   return (
     <div
       style={{
+        position: 'relative',
+        zIndex: 1,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        background: '#0c0c0e',
         fontFamily: '"Space Mono", monospace',
         color: 'var(--pipe-text, #fff)',
         gap: 32,

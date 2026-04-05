@@ -41,7 +41,7 @@ import { StageRefetchProvider } from "./contexts/StageRefetchContext";
  */
 const SubHeader = () => {
   const navigate = useNavigate();
-  const { id, stage, questionId } = useParams();
+  const { id, stageId, questionId } = useParams();
   const location = useLocation();
   const auth = useAuth();
 
@@ -53,7 +53,7 @@ const SubHeader = () => {
     navigate("/pipeline/new");
   };
 
-  const currentStage = stage ? { title: stage } : null;
+  const currentStage = stageId ? { title: stageId } : null;
   const isHome = location.pathname === "/";
 
   return (
@@ -78,12 +78,12 @@ const SubHeader = () => {
               onClick={() => {
                 if (isCandidateContext) {
                   navigate(-1);
-                } else if (questionId && stage) {
-                  navigate(`/pipeline/${id}/${stage}`);
-                } else if (stage) {
+                } else if (questionId && stageId) {
+                  navigate(`/pipeline/${id}/stages/${stageId}`);
+                } else if (stageId) {
                   navigate(`/pipeline/${id}`);
                 } else if (id) {
-                  navigate(`/pipeline/${id}`);
+                  navigate('/');
                 } else {
                   navigate('/');
                 }
@@ -102,8 +102,8 @@ const SubHeader = () => {
             >
               <ArrowLeft size={12} />{" "}
               {questionId && currentStage
-                ? `BACK TO ${currentStage.title.toUpperCase()}`
-                : stage
+                ? "BACK TO STAGE"
+                : stageId
                   ? "BACK TO OVERVIEW"
                   : "BACK"}
             </button>
@@ -193,7 +193,10 @@ const SubHeader = () => {
 function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
-  const [showSettings, setShowSettings] = useState(false);
+  // Auto-open settings on OAuth callback (Calendly redirects back with ?code=&state=)
+  const hasOAuthCallback = new URLSearchParams(window.location.search).has('code') &&
+    new URLSearchParams(window.location.search).has('state');
+  const [showSettings, setShowSettings] = useState(hasOAuthCallback);
   const [showCalls, setShowCalls] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const configStageId = searchParams.get('config');
@@ -206,7 +209,7 @@ function AppLayout(): JSX.Element {
   const panelContent = configStageId
     ? <StageConfigPanel stageId={configStageId} onClose={closeConfig} />
     : showSettings
-      ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} />
+      ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
       : showCalls
         ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
         : undefined;

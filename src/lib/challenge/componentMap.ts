@@ -29,6 +29,9 @@ import { FullBleedLayout } from '../../components/Assessment/FullBleedLayout';
 import { CodeWorkspaceLayout } from '../../components/Assessment/CodeWorkspaceLayout';
 import { CodeBrowserLayout } from '../../components/Assessment/CodeBrowserLayout';
 
+// Synthetic challenge panels
+import { WelcomeScreen } from '../../components/Assessment/WelcomeScreen';
+
 // ---------------------------------------------------------------------------
 // Connected panels — HOC wrappers that bridge InterviewContext → panel props
 // ---------------------------------------------------------------------------
@@ -439,6 +442,17 @@ const ConnectedCodePreviewPanel = connectInterview(PreviewPanel, (ctx) => {
   };
 });
 
+// Synthetic challenge panels — connected via InterviewContext
+const ConnectedWelcomePanel = connectInterview(WelcomeScreen, (ctx) => ({
+  pipelineName: ctx.currentChallenge.title || 'Technical Assessment',
+  stageName: ctx.currentChallenge.title || 'Interview',
+  challengeType: 'CODE_REVIEW' as const,
+  onStart: () => ctx.submit(),
+}));
+
+// LIVE_VIDEO challenge panel
+import { VideoInterviewStep } from '../../components/Video/VideoInterviewStep';
+
 // ---------------------------------------------------------------------------
 // Component map — flat type → component lookup
 // ---------------------------------------------------------------------------
@@ -466,6 +480,10 @@ export const COMPONENT_MAP: Record<string, ComponentType<any>> = {
   'code-editor': ConnectedCodeEditorPanel,
   'console': ConnectedRunConsolePanel,
   'code-preview': ConnectedCodePreviewPanel,
+
+  // Synthetic challenge panels
+  'welcome': ConnectedWelcomePanel,
+  'video-waiting': VideoInterviewStep,
 
   // Layouts
   'workspace': WorkspaceLayout,

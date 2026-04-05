@@ -26,6 +26,12 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
       token = authHeader.slice(7);
     }
 
+    // WebSocket connections can't set headers — accept token from query param
+    if (!token) {
+      const url = new URL(c.req.url);
+      token = url.searchParams.get('token') ?? undefined;
+    }
+
     if (!token) {
       c.res = c.json(
         { error: { code: 'UNAUTHORIZED', message: 'Missing or malformed Authorization header.' } },

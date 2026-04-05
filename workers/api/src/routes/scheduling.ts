@@ -179,6 +179,14 @@ schedulingAuth.post('/callback', async (c) => {
     return apiError(c, 'SERVICE_UNAVAILABLE', `${providerId} not configured.`);
   }
 
+  // Debug: log what credentials are being used
+  console.log('[scheduling] Token exchange config', {
+    clientId: config.clientId ? `${config.clientId.slice(0, 8)}...` : 'EMPTY',
+    clientSecretLen: config.clientSecret?.length ?? 0,
+    redirectUri,
+    codeLen: code.length,
+  });
+
   // Exchange code for tokens
   const tokenParams: Record<string, string> = {
     grant_type: 'authorization_code',
@@ -497,6 +505,128 @@ schedulingAuth.get('/interviews', async (c) => {
   }));
 
   return c.json({ interviews });
+});
+
+// POST /interviews/sync — poll Calendly for recent events and update interviews
+schedulingAuth.post('/interviews/sync', async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  // Get active Calendly connection
+  const conn = await db
+    .prepare(
+      `SELECT id, access_token, provider_id, token_expiry, refresh_token
+       FROM scheduling_connections
+       WHERE owner_id = ? AND status = 'ACTIVE' AND provider_id = 'CALENDLY' LIMIT 1`
+    )
+    .bind(userId)
+    .first<{ id: string; access_token: string; provider_id: string; token_expiry: string | null; refresh_token: string | null }>();
+
+  if (!conn) {
+    return apiError(c, 'NOT_FOUND', 'No active Calendly connection.');
+  }
+
+  // Refresh token if expired
+  if (conn.token_expiry && new Date(conn.token_expiry) < new Date()) {
+    const refreshed = await refreshToken(conn as Parameters<typeof refreshToken>[0], c.env);
+    if (!refreshed) {
+      return apiError(c, 'UNAUTHORIZED', 'Calendly token expired and refresh failed.');
+    }
+    conn.access_token = refreshed;
+  }
+
+  // Fetch current user URI
+  const userRes = await fetch('https://api.calendly.com/users/me', {
+    headers: { Authorization: `Bearer ${conn.access_token}` },
+  });
+  if (!userRes.ok) {
+    return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly user.');
+  }
+  const userData = await userRes.json() as { resource?: { uri?: string } };
+  const userUri = userData.resource?.uri;
+  if (!userUri) {
+    return apiError(c, 'INTERNAL_ERROR', 'Could not resolve Calendly user URI.');
+  }
+
+  // Fetch recent scheduled events (last 30 days)
+  const minDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const eventsRes = await fetch(
+    `https://api.calendly.com/scheduled_events?user=${encodeURIComponent(userUri)}&min_start_time=${minDate}&status=active&count=50`,
+    { headers: { Authorization: `Bearer ${conn.access_token}` } },
+  );
+  if (!eventsRes.ok) {
+    console.error('[scheduling/sync] Failed to fetch events:', eventsRes.status);
+    return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly events.');
+  }
+
+  const eventsData = await eventsRes.json() as {
+    collection?: Array<{
+      uri: string;
+      start_time: string;
+      end_time: string;
+      status: string;
+      location?: { join_url?: string };
+    }>;
+  };
+
+  const events = eventsData.collection ?? [];
+  let synced = 0;
+  const now = new Date().toISOString();
+
+  // Get all INVITED interviews for this user
+  const invited = await db
+    .prepare(
+      `SELECT si.id, si.candidate_id, c.email AS candidate_email
+       FROM scheduled_interviews si
+       JOIN candidates c ON c.id = si.candidate_id
+       WHERE si.owner_id = ? AND si.status = 'INVITED'`
+    )
+    .bind(userId)
+    .all<{ id: string; candidate_id: string; candidate_email: string | null }>();
+
+  // For each event, fetch invitees and try to match to our interviews
+  for (const event of events) {
+    const inviteesRes = await fetch(
+      `${event.uri}/invitees`,
+      { headers: { Authorization: `Bearer ${conn.access_token}` } },
+    );
+    if (!inviteesRes.ok) continue;
+
+    const inviteesData = await inviteesRes.json() as {
+      collection?: Array<{ email: string; uri: string }>;
+    };
+
+    for (const invitee of inviteesData.collection ?? []) {
+      // Match by candidate email
+      const match = invited.results?.find(
+        (i) => i.candidate_email?.toLowerCase() === invitee.email.toLowerCase()
+      );
+      if (!match) continue;
+
+      const meetingUrl = event.location?.join_url ?? null;
+
+      await db
+        .prepare(
+          `UPDATE scheduled_interviews
+           SET status = 'SCHEDULED', scheduled_at = ?, meeting_url = ?,
+               external_event_id = ?, scheduling_provider = 'CALENDLY',
+               sync_source = 'POLL', last_synced_at = ?, updated_at = ?
+           WHERE id = ?`
+        )
+        .bind(event.start_time, meetingUrl, event.uri, now, now, match.id)
+        .run();
+
+      synced++;
+    }
+  }
+
+  // Update connection sync timestamp
+  await db
+    .prepare('UPDATE scheduling_connections SET last_sync_at = ?, updated_at = ? WHERE id = ?')
+    .bind(now, now, conn.id)
+    .run();
+
+  return c.json({ synced, total: events.length });
 });
 
 // POST /interviews — create scheduled interview
