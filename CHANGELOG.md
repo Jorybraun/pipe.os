@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Voice-first interview UI — 2026-04-05)
+- **`src/pages/RoleDiscoveryPage.tsx`** — Current question wrapped in rounded card (16px radius) for separation from history. Big 80px centered mic button as primary, OR_TYPE divider, text input as secondary. ThinkingIndicator with contextual messages.
+
 #### Added (Agent tool calling, voice UX, role profile tabs — 2026-04-05)
 - **`workers/api/src/lib/roleAgent.ts`** — Mistral function calling with ReAct loop. Tools: `research_company` (fetches company website), `search_technology` (DuckDuckGo instant answers). Up to 3 tool rounds per turn. Returns `toolsUsed` for frontend loading messages.
 - **`workers/api/src/lib/roleAgentPrompts.ts`** — Added Research Tools section to system prompt. Agent proactively researches company on first turn when URL provided. Synthesis tone rules: critical in knowledge state, neutral in narrative.

@@ -862,8 +862,16 @@ function InterviewPhase({
           <ThinkingIndicator message="Generating next question..." />
         </div>
       ) : question ? (
-        <div ref={scrollRef}>
-          {/* Agent message — flat, no card */}
+        <div
+          ref={scrollRef}
+          style={{
+            padding: 32,
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 16,
+          }}
+        >
+          {/* Agent message */}
           {acknowledgment && (
             <div style={{
               fontSize: 12,
@@ -880,33 +888,33 @@ function InterviewPhase({
             fontWeight: 700,
             color: 'var(--pipe-text, #fff)',
             lineHeight: 1.4,
-            marginBottom: 24,
+            marginBottom: 28,
             letterSpacing: '-0.01em',
           }}>
             {question.text}
           </div>
 
-          {/* Voice button — big, centered, always visible for text/textarea */}
-          {(question.input.type === 'text' || question.input.type === 'textarea') && !answer.trim() && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+          {/* Voice button — big, centered, primary action */}
+          {(question.input.type === 'text' || question.input.type === 'textarea') && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginBottom: 24 }}>
               <button
                 onClick={isRecording ? stopRecording : startRecording}
                 disabled={isTranscribing}
                 style={{
-                  width: 72,
-                  height: 72,
+                  width: 80,
+                  height: 80,
                   borderRadius: '50%',
                   background: isRecording
                     ? 'rgba(248, 113, 113, 0.15)'
                     : isTranscribing
                       ? 'rgba(255,255,255,0.04)'
-                      : 'rgba(255,255,255,0.04)',
+                      : 'rgba(255,255,255,0.03)',
                   border: isRecording
                     ? '2px solid rgba(248, 113, 113, 0.4)'
                     : '2px solid rgba(255,255,255,0.08)',
                   color: isRecording
                     ? 'rgba(248, 113, 113, 0.9)'
-                    : 'rgba(255,255,255,0.3)',
+                    : 'rgba(255,255,255,0.35)',
                   cursor: isTranscribing ? 'default' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -920,13 +928,30 @@ function InterviewPhase({
                   <Loader2 size={24} style={{ animation: 'spin 1s linear infinite' }} />
                 ) : isRecording ? (
                   <>
-                    <Square size={18} fill="currentColor" />
-                    <span style={{ fontSize: 8, fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>{recordDuration}s</span>
+                    <Square size={20} fill="currentColor" />
+                    <span style={{ fontSize: 9, fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>{recordDuration}s</span>
                   </>
                 ) : (
-                  <Mic size={24} />
+                  <Mic size={26} />
                 )}
               </button>
+              <span style={{
+                fontSize: 8,
+                letterSpacing: '0.15em',
+                color: 'rgba(255,255,255,0.15)',
+                fontFamily: '"Space Mono", monospace',
+              }}>
+                {isRecording ? 'TAP_TO_STOP' : isTranscribing ? 'TRANSCRIBING...' : 'TAP_TO_SPEAK'}
+              </span>
+            </div>
+          )}
+
+          {/* Divider */}
+          {(question.input.type === 'text' || question.input.type === 'textarea') && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.04)' }} />
+              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>OR_TYPE</span>
+              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.04)' }} />
             </div>
           )}
 
