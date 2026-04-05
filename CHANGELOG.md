@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (ADR-028: Multi-Stakeholder Role Discovery — 2026-04-05)
+- **`docs/decisions/ADR-028-multi-stakeholder-role-discovery.md`** — Architecture decision for multi-stakeholder role discovery. Generic baseline (not tech-specific), interviewer calibration, multi-participant interviews via email invitation, adaptive system prompt per participant role, knowledge state merge rules (factual vs perspective), raw data preservation. Builds on ADR-027.
+
 #### Changed (Voice-first interview UI — 2026-04-05)
 - **`src/pages/RoleDiscoveryPage.tsx`** — Current question wrapped in rounded card (16px radius) for separation from history. Big 80px centered mic button as primary, OR_TYPE divider, text input as secondary. ThinkingIndicator with contextual messages.
 

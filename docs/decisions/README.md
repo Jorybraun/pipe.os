@@ -59,3 +59,4 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-025](ADR-025-multi-turn-code-review-e2e-spec.md) | Multi-turn code review — end-to-end spec (agents, DTOs, BDD) | Accepted | 2026-03-29 |
 | [ADR-026](ADR-026-implementer-agent-improvements.md) | Implementer Agent improvements — persona, iterative diffs | Accepted | 2026-03-30 |
 | [ADR-027](ADR-027-role-discovery-agent.md) | Role Discovery Agent — AI-powered role context extraction via Mistral | Proposed | 2026-04-05 |
+| [ADR-028](ADR-028-multi-stakeholder-role-discovery.md) | Multi-Stakeholder Role Discovery — generic baseline, participant-aware agent, invite flow | Proposed | 2026-04-05 |
