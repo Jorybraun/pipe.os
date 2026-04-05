@@ -6,6 +6,20 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Stage type confirmation + phone screening UX — 2026-04-05)
+- **`src/components/StageConfigPanel.tsx`** — Stage type and screening format changes now require confirmation when existing challenges would be removed. Amber warning banner with CONFIRM/CANCEL. Challenges are deleted before switching type.
+- **`src/pages/StageDetailPage.tsx`** — PHONE_CALL and VIDEO_CALL stages hide CHALLENGES tab, auto-switch to CANDIDATES-only view.
+- **`workers/api/src/routes/stages.ts`** — Restored `stage_type`, `is_scheduled`, `screening_format` columns in queries (migrations now applied).
+- **`workers/api/migrations/0010_stage_config_columns.sql`** — D1 migration: `stage_type` and `is_scheduled` columns on stages.
+
+#### Added (Screening stage journey — 2026-04-04)
+- **`src/content/screeningQuestions.ts`** — Seed data: 22 screening question templates across 6 categories (background, motivation, compensation, experience, availability, logistics) with purposes and follow-up prompts.
+- **`workers/api/migrations/0009_screening_format.sql`** — D1 migration: `screening_format` column on stages (PHONE_CALL | VIDEO_CALL | ONLINE).
+- **`workers/api/src/routes/stages.ts`** — Added `screeningFormat` to stage create/update validation, GET/PATCH responses.
+- **`src/lib/api/types.ts`** — Added `ScreeningFormat` type and `screeningFormat` field to `StageDetail` and `UpdateStageRequest`.
+- **`src/components/StageConfigPanel.tsx`** — `ScreeningFormatPicker`: format selection (Phone Call / Video Call / Online Questions), `ScreeningCallConfig` (scheduling + call flow steps), `ScreeningQuestionPicker` (categorized question browser with search).
+- **`src/pages/PipelineBuilderPage.tsx`** — Replaced mock question list with format-aware screening config: 3 format cards (phone/video/online), call flow overview with step-by-step journey, online question browser by category.
+
 #### Added (Stage config, scheduling emails, video toggle — 2026-04-04)
 - **`src/pages/StageDetailPage.tsx`** — Stage config wizard: stage type selector (screening/cultural fit/technical/code review/panel interview), response format picker, scheduling link + video meeting toggles, email template editor (invitation/success/failure), stage settings panel.
 - **`src/components/Pipeline/ChallengeCard.tsx`** — Drag handle + delete button for challenge reorder.

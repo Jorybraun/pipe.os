@@ -88,6 +88,8 @@ export interface ChallengeItem {
   updatedAt: string;
 }
 
+export type ScreeningFormat = 'PHONE_CALL' | 'VIDEO_CALL' | 'ONLINE';
+
 export interface StageDetail {
   id: string;
   pipelineId: string;
@@ -100,6 +102,7 @@ export interface StageDetail {
   schedulingEventTypeId: string | null;
   stageType: string | null;
   isScheduled: boolean;
+  screeningFormat: ScreeningFormat | null;
   createdAt: string;
   updatedAt: string;
   challenges: ChallengeItem[];
@@ -137,6 +140,7 @@ export interface UpdateStageRequest {
   schedulingEventTypeId?: string | null;
   stageType?: string | null;
   isScheduled?: boolean;
+  screeningFormat?: ScreeningFormat | null;
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────

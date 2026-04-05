@@ -9,6 +9,13 @@ import {
   CheckCircle,
   MessageSquare,
   Send,
+  PhoneCall,
+  Video,
+  MonitorPlay,
+  Calendar,
+  Mail,
+  Clock,
+  CheckCircle2,
 } from "lucide-react";
 import {
   Layout,
@@ -17,8 +24,11 @@ import {
   SidebarNav,
   SubTitle,
 } from "../components";
-import { questions } from "../mocks/questions";
-import QuestionCard from "../components/QuestionCard";
+import {
+  SCREENING_QUESTIONS,
+  SCREENING_CATEGORIES,
+  type ScreeningCategory,
+} from "../content/screeningQuestions";
 
 /**
  * PipelineBuilderPage - Configure assessment pipeline with AI assistance
@@ -227,25 +237,425 @@ function TimeCard({ duration, label }: { duration: string; label: string }) {
   );
 }
 
+// Screening format type for the overview display
+type ScreeningFormatDisplay = 'PHONE_CALL' | 'VIDEO_CALL' | 'ONLINE';
+
+const FORMAT_INFO: Record<ScreeningFormatDisplay, { label: string; description: string; Icon: typeof Phone; color: string }> = {
+  PHONE_CALL: {
+    label: 'Phone Call',
+    description: 'Recruiter calls the candidate through the app. Recorded and transcribed automatically.',
+    Icon: PhoneCall,
+    color: '#60a5fa',
+  },
+  VIDEO_CALL: {
+    label: 'Video Call',
+    description: 'Live video screening meeting in the browser.',
+    Icon: Video,
+    color: '#a78bfa',
+  },
+  ONLINE: {
+    label: 'Online Questions',
+    description: 'Candidate answers screening questions asynchronously.',
+    Icon: MonitorPlay,
+    color: '#4ade80',
+  },
+};
+
 // Stage configuration panels
 function ScreeningStageConfig() {
+  const [selectedFormat, setSelectedFormat] = useState<ScreeningFormatDisplay | null>(null);
+
   return (
     <div>
       <div style={{ marginBottom: 32 }}>
-        <SubTitle>SCREENING_QUESTIONS</SubTitle>
+        <SubTitle>SCREENING_STAGE</SubTitle>
       </div>
 
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
+      {/* Format selector cards */}
+      {!selectedFormat ? (
         <div>
-          {questions.map((question, index) => {
-            return <QuestionCard key={question.id ?? index} question={question} index={index} />;
+          <div style={{
+            fontSize: 9,
+            letterSpacing: '0.15em',
+            color: 'var(--pipe-text-dim)',
+            marginBottom: 16,
+          }}>
+            SELECT FORMAT
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            {(Object.entries(FORMAT_INFO) as [ScreeningFormatDisplay, typeof FORMAT_INFO[ScreeningFormatDisplay]][]).map(([key, info]) => {
+              const Icon = info.Icon;
+              return (
+                <LiquidMetalCard
+                  key={key}
+                  hover
+                  onClick={() => setSelectedFormat(key)}
+                  style={{ padding: 24, cursor: 'pointer', textAlign: 'center' }}
+                >
+                  <div style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '50%',
+                    background: `${info.color}15`,
+                    border: `1px solid ${info.color}30`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 16px',
+                  }}>
+                    <Icon size={20} color={info.color} />
+                  </div>
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.1em',
+                    color: 'var(--pipe-text, #fff)',
+                    marginBottom: 8,
+                  }}>
+                    {info.label.toUpperCase()}
+                  </div>
+                  <div style={{
+                    fontSize: 10,
+                    lineHeight: 1.6,
+                    color: 'var(--pipe-text-muted)',
+                  }}>
+                    {info.description}
+                  </div>
+                </LiquidMetalCard>
+              );
+            })}
+          </div>
+        </div>
+      ) : selectedFormat === 'ONLINE' ? (
+        <ScreeningOnlineConfig onBack={() => setSelectedFormat(null)} />
+      ) : (
+        <ScreeningCallOverview format={selectedFormat} onBack={() => setSelectedFormat(null)} />
+      )}
+    </div>
+  );
+}
+
+/** Online screening — shows question templates by category */
+function ScreeningOnlineConfig({ onBack }: { onBack: () => void }) {
+  const categories = Object.entries(SCREENING_CATEGORIES) as [ScreeningCategory, { label: string; description: string }][];
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: 24,
+          padding: 0,
+          background: 'none',
+          border: 'none',
+          color: 'var(--pipe-text-dim)',
+          cursor: 'pointer',
+          fontSize: 9,
+          fontFamily: '"Space Mono", monospace',
+          letterSpacing: '0.1em',
+        }}
+      >
+        ONLINE QUESTIONS
+      </button>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 24 }}>
+        <div>
+          {categories.map(([catKey, catInfo]) => {
+            const catQuestions = SCREENING_QUESTIONS.filter((q) => q.category === catKey);
+            if (catQuestions.length === 0) return null;
+            return (
+              <div key={catKey} style={{ marginBottom: 28 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 12,
+                  marginBottom: 12,
+                }}>
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.15em',
+                    color: 'var(--pipe-text-dim)',
+                  }}>
+                    {catInfo.label.toUpperCase()}
+                  </span>
+                  <span style={{
+                    fontSize: 9,
+                    color: 'var(--pipe-text-dim)',
+                    opacity: 0.5,
+                  }}>
+                    {catInfo.description}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {catQuestions.map((q) => (
+                    <LiquidMetalCard key={q.id} variant="dark" style={{ padding: 16 }}>
+                      <div style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: 'var(--pipe-text, #fff)',
+                        lineHeight: 1.5,
+                        marginBottom: 6,
+                      }}>
+                        {q.text}
+                      </div>
+                      <div style={{
+                        fontSize: 9,
+                        color: 'var(--pipe-text-dim)',
+                        lineHeight: 1.5,
+                      }}>
+                        {q.purpose}
+                      </div>
+                      {q.followUps && q.followUps.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                          {q.followUps.map((fu, i) => (
+                            <div key={i} style={{
+                              fontSize: 9,
+                              color: 'var(--pipe-text-dim)',
+                              opacity: 0.6,
+                              paddingLeft: 12,
+                              position: 'relative',
+                              lineHeight: 1.6,
+                            }}>
+                              <span style={{ position: 'absolute', left: 0 }}>+</span>
+                              {fu}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </LiquidMetalCard>
+                  ))}
+                </div>
+              </div>
+            );
           })}
         </div>
 
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <TimeCard duration="15m" label="Est. Duration" />
+          <LiquidMetalCard variant="dark" style={{ padding: 20 }}>
+            <div style={{
+              fontSize: 9,
+              letterSpacing: '0.15em',
+              color: 'var(--pipe-text-dim)',
+              marginBottom: 8,
+            }}>
+              CANDIDATE JOURNEY
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                'Receives email with screening link',
+                'Answers questions at their own pace',
+                'Recruiter reviews responses',
+                'Advances to technical challenge',
+              ].map((step, i) => (
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: 9,
+                  color: 'var(--pipe-text-muted)',
+                  lineHeight: 1.5,
+                }}>
+                  <div style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    background: 'rgba(74,222,128,0.08)',
+                    border: '1px solid rgba(74,222,128,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    fontSize: 7,
+                    color: '#4ade80',
+                    fontWeight: 700,
+                  }}>
+                    {i + 1}
+                  </div>
+                  {step}
+                </div>
+              ))}
+            </div>
+          </LiquidMetalCard>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Phone/Video screening overview — shows the call flow and config */
+function ScreeningCallOverview({ format, onBack }: { format: 'PHONE_CALL' | 'VIDEO_CALL'; onBack: () => void }) {
+  const info = FORMAT_INFO[format];
+  const Icon = info.Icon;
+  const isPhone = format === 'PHONE_CALL';
+
+  const flowSteps = isPhone ? [
+    { icon: Mail, label: 'INVITE', text: 'Send invitation email to candidate' },
+    { icon: Calendar, label: 'SCHEDULE', text: 'Candidate books a time slot' },
+    { icon: PhoneCall, label: 'CALL', text: 'Call through the app — recorded and transcribed' },
+    { icon: Clock, label: 'REVIEW', text: 'Review transcript, recording, and notes' },
+    { icon: CheckCircle2, label: 'DECIDE', text: 'Advance to next stage or reject' },
+  ] : [
+    { icon: Mail, label: 'INVITE', text: 'Send invitation email to candidate' },
+    { icon: Calendar, label: 'SCHEDULE', text: 'Candidate books a time slot' },
+    { icon: Video, label: 'MEET', text: 'Live video meeting in browser' },
+    { icon: CheckCircle2, label: 'DECIDE', text: 'Advance to next stage or reject' },
+  ];
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: 24,
+          padding: 0,
+          background: 'none',
+          border: 'none',
+          color: 'var(--pipe-text-dim)',
+          cursor: 'pointer',
+          fontSize: 9,
+          fontFamily: '"Space Mono", monospace',
+          letterSpacing: '0.1em',
+        }}
+      >
+        {info.label.toUpperCase()}
+      </button>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 24 }}>
         <div>
-          <TimeCard duration="30m" label="Duration" />
+          {/* Format header */}
+          <LiquidMetalCard style={{
+            padding: 24,
+            marginBottom: 24,
+            background: `linear-gradient(135deg, ${info.color}08 0%, transparent 60%)`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                background: `${info.color}15`,
+                border: `1px solid ${info.color}30`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <Icon size={18} color={info.color} />
+              </div>
+              <div>
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--pipe-text, #fff)',
+                  letterSpacing: '0.05em',
+                }}>
+                  {info.label}
+                </div>
+                <div style={{
+                  fontSize: 9,
+                  color: 'var(--pipe-text-dim)',
+                  marginTop: 2,
+                }}>
+                  {info.description}
+                </div>
+              </div>
+            </div>
+          </LiquidMetalCard>
+
+          {/* Flow steps */}
+          <div style={{
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: '0.15em',
+            color: 'var(--pipe-text-dim)',
+            marginBottom: 12,
+          }}>
+            {isPhone ? 'CALL_FLOW' : 'MEETING_FLOW'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {flowSteps.map((step, i) => {
+              const StepIcon = step.icon;
+              return (
+                <LiquidMetalCard key={i} variant="dark" style={{ padding: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: '50%',
+                      background: `${info.color}10`,
+                      border: `1px solid ${info.color}20`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <StepIcon size={12} color={info.color} />
+                    </div>
+                    <div>
+                      <div style={{
+                        fontSize: 8,
+                        fontWeight: 700,
+                        letterSpacing: '0.12em',
+                        color: info.color,
+                        marginBottom: 2,
+                      }}>
+                        {step.label}
+                      </div>
+                      <div style={{
+                        fontSize: 10,
+                        color: 'var(--pipe-text-muted)',
+                        lineHeight: 1.5,
+                      }}>
+                        {step.text}
+                      </div>
+                    </div>
+                  </div>
+                </LiquidMetalCard>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <TimeCard duration={isPhone ? '20m' : '30m'} label="Typical Duration" />
+          {isPhone && (
+            <LiquidMetalCard variant="dark" style={{ padding: 20 }}>
+              <div style={{
+                fontSize: 9,
+                letterSpacing: '0.15em',
+                color: 'var(--pipe-text-dim)',
+                marginBottom: 12,
+              }}>
+                AFTER THE CALL
+              </div>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {[
+                  'Voice transcript available immediately',
+                  'Recording stored securely',
+                  'Recruiter adds notes',
+                  'Manual pass/fail decision',
+                ].map((item, i) => (
+                  <li key={i} style={{
+                    fontSize: 10,
+                    lineHeight: 1.8,
+                    color: 'var(--pipe-text-muted)',
+                    paddingLeft: 12,
+                    position: 'relative',
+                  }}>
+                    <span style={{ position: 'absolute', left: 0, color: 'var(--pipe-text-dim)' }}>·</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </LiquidMetalCard>
+          )}
         </div>
       </div>
     </div>

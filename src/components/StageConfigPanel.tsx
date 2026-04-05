@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, Mic, Type } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, Mic, Type, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -24,6 +24,13 @@ import { useChallengeMutations } from '../hooks/useChallengeMutations';
 import { useAuth as useClerkAuth } from '@clerk/react';
 import { createApiClient } from '../lib/api/client';
 import { useStageRefetch } from '../contexts/StageRefetchContext';
+import type { ScreeningFormat } from '../lib/api/types';
+import {
+  SCREENING_QUESTIONS,
+  SCREENING_CATEGORIES,
+  type ScreeningCategory,
+  type ScreeningQuestionTemplate,
+} from '../content/screeningQuestions';
 
 interface StageConfigPanelProps {
   stageId: string;
@@ -50,11 +57,14 @@ const TYPE_TO_CHALLENGE_TYPES: Record<StageType, ChallengeType[]> = {
 export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): JSX.Element {
   const { stage, isLoading, refetch } = useStageDetail(stageId);
   const { updateStage } = useStageMutations();
-  const { createChallenge } = useChallengeMutations();
+  const { createChallenge, deleteChallenge } = useChallengeMutations();
   const { triggerRefetch } = useStageRefetch();
 
   const [selectedType, setSelectedType] = useState<StageType | null>(null);
   const [initialized, setInitialized] = useState(false);
+
+  // Pending type change awaiting confirmation when existing challenges are present
+  const [pendingType, setPendingType] = useState<StageType | null>(null);
 
   // Sync from server on load
   useEffect(() => {
@@ -64,9 +74,9 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
     }
   }, [stage, initialized]);
 
-  const handleSelectType = async (type: StageType): Promise<void> => {
+  const commitSelectType = async (type: StageType): Promise<void> => {
     setSelectedType(type);
-    // Rename stage + save type
+    setPendingType(null);
     const config = STAGE_TYPE_CONFIGS[type];
     try {
       await updateStage(stageId, {
@@ -77,6 +87,16 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
       await triggerRefetch();
     } catch (err) {
       console.error('[StageConfigPanel] Failed to update stage type:', err);
+    }
+  };
+
+  const handleSelectType = (type: StageType): void => {
+    const existingCount = stage?.challenges?.length ?? 0;
+    if (existingCount > 0 && type !== selectedType) {
+      // Gate behind confirmation when challenges would be lost
+      setPendingType(type);
+    } else {
+      void commitSelectType(type);
     }
   };
 
@@ -192,6 +212,17 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
             existingCount={stage?.challenges?.length ?? 0}
             onAdded={async () => { await refetch(); await triggerRefetch(); }}
           />
+        ) : selectedType === 'SCREENING' ? (
+          <ScreeningFormatPicker
+            stageId={stageId}
+            stage={stage}
+            updateStage={updateStage}
+            refetch={refetch}
+            triggerRefetch={triggerRefetch}
+            onAddChallenge={handleAddChallenge}
+            existingCount={stage?.challenges?.length ?? 0}
+            deleteChallenge={deleteChallenge}
+          />
         ) : (
           <TypeChallengePicker
             stageType={selectedType}
@@ -201,7 +232,15 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
         )
       ) : (
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-          <TypeSelector onSelect={(t) => void handleSelectType(t)} currentType={(stage?.stageType as StageType | null) ?? null} />
+          {pendingType && (
+            <StageTypeConfirmBanner
+              pendingType={pendingType}
+              challengeCount={stage?.challenges?.length ?? 0}
+              onConfirm={() => void commitSelectType(pendingType)}
+              onCancel={() => setPendingType(null)}
+            />
+          )}
+          <TypeSelector onSelect={handleSelectType} currentType={(stage?.stageType as StageType | null) ?? null} pendingType={pendingType} />
           <StageConfigToggles
             stageId={stageId}
             stage={stage}
@@ -214,11 +253,655 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
   );
 }
 
+// ── Screening format picker ─────────────────────────────────────────────────
+
+const SCREENING_FORMAT_OPTIONS: { format: ScreeningFormat; label: string; description: string; Icon: typeof Phone }[] = [
+  { format: 'PHONE_CALL', label: 'PHONE CALL', description: 'Recruiter calls candidate via Twilio', Icon: PhoneCall },
+  { format: 'VIDEO_CALL', label: 'VIDEO CALL', description: 'Live video screening meeting', Icon: Video },
+  { format: 'ONLINE', label: 'ONLINE QUESTIONS', description: 'Candidate answers async screening questions', Icon: MonitorPlay },
+];
+
+function ScreeningFormatPicker({ stageId, stage, updateStage, refetch, triggerRefetch, onAddChallenge, existingCount, deleteChallenge }: {
+  stageId: string;
+  stage: ReturnType<typeof useStageDetail>['stage'];
+  updateStage: ReturnType<typeof useStageMutations>['updateStage'];
+  refetch: () => Promise<void>;
+  triggerRefetch: () => Promise<void>;
+  onAddChallenge: (template: ChallengeTemplate) => Promise<void>;
+  existingCount: number;
+  deleteChallenge: ReturnType<typeof useChallengeMutations>['deleteChallenge'];
+}): JSX.Element {
+  const [selectedFormat, setSelectedFormat] = useState<ScreeningFormat | null>(
+    (stage?.screeningFormat as ScreeningFormat | null) ?? null,
+  );
+  const [pendingFormat, setPendingFormat] = useState<ScreeningFormat | null>(null);
+
+  const commitSelectFormat = async (format: ScreeningFormat): Promise<void> => {
+    setSelectedFormat(format);
+    setPendingFormat(null);
+    try {
+      // Delete existing challenges when switching format
+      const challenges = stage?.challenges ?? [];
+      for (const c of challenges) {
+        await deleteChallenge(c.id);
+      }
+      // Persist the screening format + auto-set mode and scheduling
+      const modeForFormat = format === 'VIDEO_CALL' ? 'LIVE_VIDEO' as const : 'ASYNC' as const;
+      const isScheduled = format !== 'ONLINE';
+      await updateStage(stageId, {
+        screeningFormat: format,
+        mode: modeForFormat,
+        isScheduled,
+      });
+      await refetch();
+      await triggerRefetch();
+    } catch (err) {
+      console.error('[ScreeningFormatPicker] Failed to set format:', err);
+      setSelectedFormat(null);
+    }
+  };
+
+  const handleSelectFormat = (format: ScreeningFormat): void => {
+    const currentFormat = stage?.screeningFormat as ScreeningFormat | null;
+    const hasExisting = (stage?.challenges?.length ?? 0) > 0;
+    if (hasExisting && format !== currentFormat) {
+      setPendingFormat(format);
+    } else {
+      void commitSelectFormat(format);
+    }
+  };
+
+  const handleBack = (): void => {
+    setSelectedFormat(null);
+  };
+
+  // ── No format selected → show format picker ─────────────────────────────
+  if (!selectedFormat) {
+    return (
+      <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <label style={labelStyle}>SCREENING_FORMAT</label>
+        {pendingFormat && (
+          <div style={{
+            padding: '12px 14px',
+            background: 'rgba(251,191,36,0.06)',
+            border: '1px solid rgba(251,191,36,0.25)',
+            borderRadius: 4,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+              <AlertCircle size={12} style={{ color: '#fbbf24', flexShrink: 0, marginTop: 1 }} />
+              <span style={{
+                fontFamily: '"Space Mono", monospace',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                color: '#fbbf24',
+                lineHeight: 1.5,
+              }}>
+                Changing format will delete {stage?.challenges?.length ?? 0} existing challenge{(stage?.challenges?.length ?? 0) !== 1 ? 's' : ''}. Continue?
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => void commitSelectFormat(pendingFormat)}
+                style={{
+                  padding: '5px 12px',
+                  background: 'rgba(74,222,128,0.1)',
+                  border: '1px solid rgba(74,222,128,0.3)',
+                  borderRadius: 3,
+                  color: '#4ade80',
+                  fontFamily: '"Space Mono", monospace',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  cursor: 'pointer',
+                }}
+              >
+                CONFIRM
+              </button>
+              <button
+                onClick={() => setPendingFormat(null)}
+                style={{
+                  padding: '5px 12px',
+                  background: 'none',
+                  border: '1px solid var(--pipe-border)',
+                  borderRadius: 3,
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {SCREENING_FORMAT_OPTIONS.map(({ format, label, description, Icon }) => {
+            const isPending = pendingFormat === format;
+            const isCurrent = (stage?.screeningFormat as ScreeningFormat | null) === format;
+            return (
+              <button
+                key={format}
+                onClick={() => handleSelectFormat(format)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '12px 14px',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  fontFamily: '"Space Mono", monospace',
+                  background: isPending ? 'rgba(251,191,36,0.08)' : isCurrent ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
+                  border: isPending ? '1px solid rgba(251,191,36,0.3)' : isCurrent ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                  borderRadius: 4,
+                  color: isPending ? '#fbbf24' : isCurrent ? '#a78bfa' : 'var(--pipe-text-dim)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  textAlign: 'left',
+                }}
+              >
+                <Icon size={16} />
+                <div>
+                  <div>{label}</div>
+                  <div style={{
+                    fontSize: 8,
+                    fontWeight: 400,
+                    letterSpacing: '0.05em',
+                    opacity: 0.7,
+                    marginTop: 2,
+                  }}>
+                    {description}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Format selected → show format-specific config ───────────────────────
+  if (selectedFormat === 'ONLINE') {
+    return (
+      <ScreeningQuestionPicker
+        onAdd={onAddChallenge}
+        existingCount={existingCount}
+        onBack={handleBack}
+      />
+    );
+  }
+
+  // PHONE_CALL or VIDEO_CALL → scheduling + email config
+  return (
+    <ScreeningCallConfig
+      format={selectedFormat}
+      stageId={stageId}
+      stage={stage}
+      updateStage={updateStage}
+      refetch={refetch}
+      triggerRefetch={triggerRefetch}
+      onBack={handleBack}
+    />
+  );
+}
+
+// ── Screening call config (phone/video) ─────────────────────────────────────
+
+function ScreeningCallConfig({ format, stageId, stage, updateStage, refetch, triggerRefetch, onBack }: {
+  format: 'PHONE_CALL' | 'VIDEO_CALL';
+  stageId: string;
+  stage: ReturnType<typeof useStageDetail>['stage'];
+  updateStage: ReturnType<typeof useStageMutations>['updateStage'];
+  refetch: () => Promise<void>;
+  triggerRefetch: () => Promise<void>;
+  onBack: () => void;
+}): JSX.Element {
+  const [isScheduled, setIsScheduled] = useState(stage?.isScheduled ?? true);
+
+  const handleToggleScheduling = async (value: boolean): Promise<void> => {
+    setIsScheduled(value);
+    try {
+      await updateStage(stageId, { isScheduled: value });
+      await refetch();
+      await triggerRefetch();
+    } catch (err) {
+      console.error('[ScreeningCallConfig] Failed to toggle scheduling:', err);
+      setIsScheduled(!value);
+    }
+  };
+
+  const isPhone = format === 'PHONE_CALL';
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      {/* Back button */}
+      <div style={{ padding: '12px 20px 0' }}>
+        <button
+          onClick={onBack}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            marginBottom: 8,
+            padding: 0,
+            background: 'none',
+            border: 'none',
+            color: 'var(--pipe-text-dim)',
+            cursor: 'pointer',
+            fontSize: 8,
+            fontFamily: '"Space Mono", monospace',
+            letterSpacing: '0.1em',
+          }}
+        >
+          <ArrowLeft size={10} />
+          {isPhone ? 'PHONE CALL' : 'VIDEO CALL'}
+        </button>
+      </div>
+
+      <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Format summary */}
+        <div style={{
+          padding: 16,
+          background: isPhone ? 'rgba(96,165,250,0.06)' : 'rgba(167,139,250,0.06)',
+          border: `1px solid ${isPhone ? 'rgba(96,165,250,0.15)' : 'rgba(167,139,250,0.15)'}`,
+          borderRadius: 6,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            {isPhone ? <PhoneCall size={14} color="#60a5fa" /> : <Video size={14} color="#a78bfa" />}
+            <span style={{
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              color: isPhone ? '#60a5fa' : '#a78bfa',
+            }}>
+              {isPhone ? 'PHONE_SCREENING' : 'VIDEO_SCREENING'}
+            </span>
+          </div>
+          <p style={{
+            fontSize: 10,
+            lineHeight: 1.6,
+            color: 'var(--pipe-text-muted)',
+            margin: 0,
+          }}>
+            {isPhone
+              ? 'Recruiter calls the candidate through the app. The call is recorded and transcribed automatically.'
+              : 'Schedule a live video meeting. The recruiter and candidate join a video room in the browser.'}
+          </p>
+        </div>
+
+        {/* Scheduling toggle */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Calendar size={12} style={{ color: 'var(--pipe-text-dim)' }} />
+              <span style={{ ...labelStyle, marginBottom: 0 }}>SCHEDULING_LINK</span>
+            </div>
+            <ToggleSwitch value={isScheduled} onChange={(v) => void handleToggleScheduling(v)} />
+          </div>
+          <div style={{ marginTop: 4, fontSize: 8, color: 'var(--pipe-text-dim)', opacity: 0.6, letterSpacing: '0.05em' }}>
+            Candidate receives a link to book a time slot
+          </div>
+        </div>
+
+        {/* Call flow steps */}
+        <div>
+          <label style={labelStyle}>
+            {isPhone ? 'CALL_FLOW' : 'MEETING_FLOW'}
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {(isPhone ? [
+              { icon: Mail, text: 'Send invitation email to candidate' },
+              { icon: Calendar, text: isScheduled ? 'Candidate books a time slot' : 'Recruiter initiates call directly' },
+              { icon: PhoneCall, text: 'Call through the app — recorded + transcribed' },
+              { icon: Clock, text: 'Review transcript and notes' },
+              { icon: CheckCircle2, text: 'Advance candidate to next stage or reject' },
+            ] : [
+              { icon: Mail, text: 'Send invitation email to candidate' },
+              { icon: Calendar, text: isScheduled ? 'Candidate books a time slot' : 'Share meeting link directly' },
+              { icon: Video, text: 'Live video meeting in browser' },
+              { icon: CheckCircle2, text: 'Advance candidate to next stage or reject' },
+            ]).map((step, i) => {
+              const StepIcon = step.icon;
+              return (
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '8px 10px',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
+                  borderRadius: 4,
+                }}>
+                  <div style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.04)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <StepIcon size={10} color="var(--pipe-text-dim)" />
+                  </div>
+                  <span style={{
+                    fontSize: 9,
+                    color: 'var(--pipe-text-muted)',
+                    letterSpacing: '0.03em',
+                  }}>
+                    {step.text}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Screening question picker (online format) ───────────────────────────────
+
+function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
+  onAdd: (template: ChallengeTemplate) => Promise<void>;
+  existingCount: number;
+  onBack: () => void;
+}): JSX.Element {
+  const [search, setSearch] = useState('');
+  const [expandedCategory, setExpandedCategory] = useState<ScreeningCategory | null>('background');
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return SCREENING_QUESTIONS;
+    const q = search.toLowerCase();
+    return SCREENING_QUESTIONS.filter(
+      (sq) =>
+        sq.text.toLowerCase().includes(q) ||
+        sq.purpose.toLowerCase().includes(q) ||
+        sq.category.includes(q),
+    );
+  }, [search]);
+
+  const groupedFiltered = useMemo(() => {
+    const groups = new Map<ScreeningCategory, ScreeningQuestionTemplate[]>();
+    for (const q of filtered) {
+      const list = groups.get(q.category) ?? [];
+      list.push(q);
+      groups.set(q.category, list);
+    }
+    return groups;
+  }, [filtered]);
+
+  const handleAddQuestion = async (sq: ScreeningQuestionTemplate): Promise<void> => {
+    // Convert screening question to a QUIZ_SHORT_ANSWER challenge
+    const instructions = sq.text + (sq.followUps?.length ? '\n\nFollow-up prompts:\n' + sq.followUps.map((f) => `- ${f}`).join('\n') : '');
+    const template: ChallengeTemplate = {
+      id: sq.id,
+      type: 'QUIZ_SHORT_ANSWER',
+      title: sq.text,
+      description: sq.purpose,
+      instructions,
+      tags: [sq.category, 'screening'],
+      difficulty: 'beginner',
+      topic: 'screening',
+      estimatedMinutes: 3,
+      config: { inputMode: 'text' as const, question: sq.text, placeholder: 'Type your answer...' },
+    };
+    await onAdd(template);
+  };
+
+  const categories = Object.entries(SCREENING_CATEGORIES) as [ScreeningCategory, { label: string; description: string }][];
+
+  return (
+    <>
+      {/* Back + search */}
+      <div style={{ padding: '12px 20px 0' }}>
+        <button
+          onClick={onBack}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            marginBottom: 8,
+            padding: 0,
+            background: 'none',
+            border: 'none',
+            color: 'var(--pipe-text-dim)',
+            cursor: 'pointer',
+            fontSize: 8,
+            fontFamily: '"Space Mono", monospace',
+            letterSpacing: '0.1em',
+          }}
+        >
+          <ArrowLeft size={10} />
+          ONLINE QUESTIONS
+        </button>
+        <div style={{ position: 'relative' }}>
+          <Search
+            size={12}
+            style={{
+              position: 'absolute',
+              left: 10,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--pipe-text-dim)',
+            }}
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search screening questions..."
+            style={{
+              width: '100%',
+              padding: '8px 10px 8px 30px',
+              fontSize: 10,
+              fontFamily: '"Space Mono", monospace',
+              background: 'transparent',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 4,
+              color: 'var(--pipe-text)',
+              outline: 'none',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Category groups */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {categories.map(([catKey, catInfo]) => {
+          const questions = groupedFiltered.get(catKey);
+          if (!questions || questions.length === 0) return null;
+          const isExpanded = expandedCategory === catKey || search.trim().length > 0;
+          return (
+            <div key={catKey}>
+              <button
+                onClick={() => setExpandedCategory(isExpanded && !search.trim() ? null : catKey)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  padding: '6px 0',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                <div>
+                  <div style={{
+                    fontSize: 8,
+                    fontWeight: 700,
+                    letterSpacing: '0.15em',
+                    color: 'var(--pipe-text-dim)',
+                  }}>
+                    {catInfo.label.toUpperCase()}
+                  </div>
+                  <div style={{
+                    fontSize: 8,
+                    color: 'var(--pipe-text-dim)',
+                    opacity: 0.5,
+                    marginTop: 2,
+                    textAlign: 'left',
+                  }}>
+                    {catInfo.description}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: 8,
+                  color: 'var(--pipe-text-dim)',
+                  opacity: 0.4,
+                }}>
+                  {questions.length}
+                </span>
+              </button>
+              {isExpanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                  {questions.map((sq) => (
+                    <button
+                      key={sq.id}
+                      onClick={() => void handleAddQuestion(sq)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 3,
+                        padding: '10px 12px',
+                        background: 'transparent',
+                        border: '1px solid var(--pipe-border)',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'all 0.15s',
+                        fontFamily: '"Space Mono", monospace',
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: 'var(--pipe-text)',
+                        lineHeight: 1.4,
+                      }}>
+                        {sq.text}
+                      </div>
+                      <div style={{
+                        fontSize: 8,
+                        color: 'var(--pipe-text-dim)',
+                        opacity: 0.6,
+                        lineHeight: 1.4,
+                      }}>
+                        {sq.purpose}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        padding: '12px 20px',
+        borderTop: '1px solid var(--pipe-border)',
+        fontSize: 8,
+        color: 'var(--pipe-text-dim)',
+        letterSpacing: '0.1em',
+        textAlign: 'center',
+      }}>
+        {filtered.length} QUESTIONS — {existingCount} ADDED
+      </div>
+    </>
+  );
+}
+
 // ── Step 1: Type selector ───────────────────────────────────────────────────
 
-function TypeSelector({ onSelect, currentType }: {
+// ── Stage type change confirmation banner ───────────────────────────────────
+
+function StageTypeConfirmBanner({ pendingType, challengeCount, onConfirm, onCancel }: {
+  pendingType: StageType;
+  challengeCount: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const config = STAGE_TYPE_CONFIGS[pendingType];
+  return (
+    <div style={{
+      margin: '12px 16px 0',
+      padding: '12px 14px',
+      background: 'rgba(251,191,36,0.06)',
+      border: '1px solid rgba(251,191,36,0.25)',
+      borderRadius: 4,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        marginBottom: 10,
+      }}>
+        <AlertCircle size={12} style={{ color: '#fbbf24', flexShrink: 0, marginTop: 1 }} />
+        <span style={{
+          fontFamily: '"Space Mono", monospace',
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          color: '#fbbf24',
+          lineHeight: 1.5,
+        }}>
+          Changing to {config.label.toUpperCase()} will remove {challengeCount} existing challenge{challengeCount !== 1 ? 's' : ''}. Continue?
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={onConfirm}
+          style={{
+            padding: '5px 12px',
+            background: 'rgba(74,222,128,0.1)',
+            border: '1px solid rgba(74,222,128,0.3)',
+            borderRadius: 3,
+            color: '#4ade80',
+            fontFamily: '"Space Mono", monospace',
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            cursor: 'pointer',
+          }}
+        >
+          CONFIRM
+        </button>
+        <button
+          onClick={onCancel}
+          style={{
+            padding: '5px 12px',
+            background: 'none',
+            border: '1px solid var(--pipe-border)',
+            borderRadius: 3,
+            color: 'var(--pipe-text-dim)',
+            fontFamily: '"Space Mono", monospace',
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            cursor: 'pointer',
+          }}
+        >
+          CANCEL
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TypeSelector({ onSelect, currentType, pendingType }: {
   onSelect: (type: StageType) => void;
   currentType: StageType | null;
+  pendingType: StageType | null;
 }): JSX.Element {
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 28 }}>
@@ -229,6 +912,7 @@ function TypeSelector({ onSelect, currentType }: {
             const config = STAGE_TYPE_CONFIGS[key];
             const Icon = STAGE_TYPE_ICONS[key];
             const isActive = currentType === key;
+            const isPending = pendingType === key;
             return (
               <button
                 key={key}
@@ -242,10 +926,10 @@ function TypeSelector({ onSelect, currentType }: {
                   fontWeight: 700,
                   letterSpacing: '0.08em',
                   fontFamily: '"Space Mono", monospace',
-                  background: isActive ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
-                  border: isActive ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                  background: isPending ? 'rgba(251,191,36,0.08)' : isActive ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
+                  border: isPending ? '1px solid rgba(251,191,36,0.3)' : isActive ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
                   borderRadius: 4,
-                  color: isActive ? '#a78bfa' : 'var(--pipe-text-dim)',
+                  color: isPending ? '#fbbf24' : isActive ? '#a78bfa' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                   textAlign: 'left',

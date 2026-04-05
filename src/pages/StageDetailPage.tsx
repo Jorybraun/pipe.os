@@ -71,8 +71,21 @@ export default function StageDetailPage(): JSX.Element {
   // Local title state for the inline editable input (mirrors stage.title)
   const [localTitle, setLocalTitle] = useState<string | null>(null);
 
-  // Tab state
+  // Live stages (phone/video call screenings) have no challenges — show candidates only
+  const isLiveStage =
+    stage?.screeningFormat === 'PHONE_CALL' ||
+    stage?.screeningFormat === 'VIDEO_CALL' ||
+    stage?.mode === 'LIVE_VIDEO';
+
+  // Tab state — default to candidates for live stages
   const [activeTab, setActiveTab] = useState<'challenges' | 'candidates'>('challenges');
+
+  // Sync tab default once stage loads: live stages always land on candidates
+  useEffect(() => {
+    if (isLiveStage) {
+      setActiveTab('candidates');
+    }
+  }, [isLiveStage]);
 
   // Add candidate modal
   const [showAddCandidate, setShowAddCandidate] = useState(false);
@@ -441,24 +454,26 @@ export default function StageDetailPage(): JSX.Element {
             const stageCandidates = allCandidates.filter((c) => c.currentStageId === stageId);
             return (
               <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--pipe-border-light)', marginBottom: 8 }}>
-                <button
-                  onClick={() => setActiveTab('challenges')}
-                  style={{
-                    padding: '10px 20px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: activeTab === 'challenges' ? '2px solid var(--pipe-text, #fff)' : '2px solid transparent',
-                    color: activeTab === 'challenges' ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-dim)',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    fontFamily: '"Space Mono", monospace',
-                    letterSpacing: '0.1em',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  CHALLENGES ({challenges.length})
-                </button>
+                {!isLiveStage && (
+                  <button
+                    onClick={() => setActiveTab('challenges')}
+                    style={{
+                      padding: '10px 20px',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: activeTab === 'challenges' ? '2px solid var(--pipe-text, #fff)' : '2px solid transparent',
+                      color: activeTab === 'challenges' ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-dim)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: '"Space Mono", monospace',
+                      letterSpacing: '0.1em',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    CHALLENGES ({challenges.length})
+                  </button>
+                )}
                 <button
                   onClick={() => setActiveTab('candidates')}
                   style={{
