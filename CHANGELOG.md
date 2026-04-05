@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added (Role profile on pipeline overview — 2026-04-05)
+- **`src/pages/OverviewPage.tsx`** — Collapsible ROLE_PROFILE section shows baseline fields (level, department, location, team size) and Six Domains knowledge state grid. Formatted camelCase keys and flattened JSON objects for readability.
+- **`workers/api/src/routes/overview.ts`** — Overview route fetches linked role context (COMPLETE status) and includes it in the response.
+- **`workers/api/src/routes/roleContexts.ts`** — PATCH /:id endpoint to link role context to pipeline, POST /transcribe for voice input via Workers AI Whisper.
+- **`src/pages/RoleDiscoveryPage.tsx`** — Pipeline creation uses baseline title/level and links role context via PATCH.
+- **`src/hooks/useOverviewData.ts`** — Exposes `roleContext` from overview response.
+- **`src/hooks/useRoleDiscovery.ts`** — Exposes `baseline` for pipeline creation.
+- **`src/lib/api/types.ts`** — Added `OverviewRoleContext` type.
+
 #### Added (ADR-027: Role Discovery Agent — Full Stack — 2026-04-05)
 - **`workers/api/migrations/0011_role_contexts.sql`** — D1 migration: `role_contexts` table with baseline, knowledge_state, exchanges JSON columns, budget tracking, status state machine (BASELINE → INTERVIEWING → COMPLETE | ABANDONED).
 - **`workers/api/src/routes/roleContexts.ts`** — Hono route module: POST create, GET retrieve, POST start, POST respond, POST complete, POST parse-jd. Clerk JWT auth, ownership checks.

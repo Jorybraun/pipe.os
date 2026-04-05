@@ -195,11 +195,21 @@ export interface OverviewCandidate {
   createdAt: string;
 }
 
+export interface OverviewRoleContext {
+  id: string;
+  baseline: RoleContextBaseline;
+  knowledgeState: Record<string, Record<string, unknown>>;
+  questionsAsked: number;
+  questionBudget: number;
+  createdAt: string;
+}
+
 export interface OverviewResponse {
   pipeline: PipelineListItem;
   stages: OverviewStage[];
   candidates: OverviewCandidate[];
   interviews: unknown[];
+  roleContext: OverviewRoleContext | null;
 }
 
 // ─── Candidates ────────────────────────────────────────────────────────────────

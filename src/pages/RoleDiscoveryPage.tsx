@@ -1085,6 +1085,7 @@ function SynthesisPhase({
 
 export default function RoleDiscoveryPage(): JSX.Element {
   const navigate = useNavigate();
+  const api = useApiClient();
   const rd = useRoleDiscovery();
   const { create: createPipeline, isCreating } = usePipelineCreate();
 
@@ -1104,13 +1105,25 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
   const handleCreatePipeline = async (): Promise<void> => {
     try {
-      const id = await createPipeline({
-        title: 'Role from AI Discovery', // TODO: use baseline title
-        level: 'Senior',
+      // Use baseline data from the discovery session
+      const baseline = rd.baseline;
+      const pipelineId = await createPipeline({
+        title: baseline?.title ?? 'New Role',
+        level: (baseline?.level as 'Senior') ?? 'Senior',
         status: 'DRAFT',
         creationMode: 'BLANK',
       });
-      navigate(`/pipeline/${id}`);
+
+      // Link the role context to this pipeline
+      if (rd.contextId) {
+        try {
+          await api.patch(`/api/v1/role-contexts/${rd.contextId}`, { pipelineId });
+        } catch (err) {
+          console.error('[RoleDiscoveryPage] Failed to link role context:', err);
+        }
+      }
+
+      navigate(`/pipeline/${pipelineId}`);
     } catch {
       // Error surfaced via pipeline create hook
     }

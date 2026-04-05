@@ -48,6 +48,9 @@ export interface UseRoleDiscoveryResult {
   // History
   pastExchanges: PastExchange[];
 
+  // Baseline (stored for pipeline creation)
+  baseline: RoleContextBaseline | null;
+
   // Synthesis (when COMPLETE)
   synthesis: string | null;
 
@@ -70,6 +73,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const [currentQuestion, setCurrentQuestion] = useState<RoleContextQuestion | null>(null);
   const [progress, setProgress] = useState<RoleContextProgress | null>(null);
   const [pastExchanges, setPastExchanges] = useState<PastExchange[]>([]);
+  const [baseline, setBaseline] = useState<RoleContextBaseline | null>(null);
   const [synthesis, setSynthesis] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +101,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
         );
         const newId = created.id;
         setContextId(newId);
+        setBaseline(baseline);
 
         // Step 2: Start (use newId directly — don't rely on React state)
         const started = await api.post<StartRoleContextResponse>(
@@ -193,6 +198,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     currentQuestion,
     progress,
     pastExchanges,
+    baseline,
     synthesis,
     isLoading,
     error,

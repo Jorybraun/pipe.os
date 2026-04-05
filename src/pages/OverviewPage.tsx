@@ -21,6 +21,8 @@ import {
   Rocket,
   RefreshCw,
   Settings,
+  ChevronDown,
+  Sparkles,
 } from "lucide-react";
 import { LiquidMetalCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -28,7 +30,7 @@ import { CandidateIntakeModal } from "../components/Candidate/CandidateIntakeMod
 import { useOverviewData } from "../hooks/useOverviewData";
 import { useStageMutations } from "../hooks/useStageMutations";
 import { useCandidateMutations } from "../hooks/useCandidateMutations";
-import type { OverviewStage, OverviewCandidate } from "../lib/api/types";
+import type { OverviewStage, OverviewCandidate, OverviewRoleContext } from "../lib/api/types";
 import {
   DndContext,
   closestCorners,
@@ -539,6 +541,201 @@ function CandidateKanbanCard({
   );
 }
 
+// ─── RoleProfileSection ─────────────────────────────────────────────────────
+
+const SIX_DOMAINS = ['why', 'work', 'team', 'bar', 'codebase', 'process'] as const;
+const DOMAIN_DISPLAY: Record<string, string> = {
+  why: 'WHY_THIS_ROLE',
+  work: 'THE_WORK',
+  team: 'TEAM_&_CULTURE',
+  bar: 'REQUIREMENTS',
+  codebase: 'CODEBASE',
+  process: 'HIRING_PROCESS',
+};
+
+/** Format a knowledge state value for display — no raw JSON. */
+function formatKSValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return (value as string[]).join(', ');
+  if (value && typeof value === 'object') {
+    // Flatten objects like {"senior":2,"mid":3} into "senior: 2, mid: 3"
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(', ');
+  }
+  return String(value ?? '');
+}
+
+/** Convert camelCase key to readable label */
+function formatKSKey(key: string): string {
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+}
+
+function RoleProfileSection({ roleContext }: { roleContext: OverviewRoleContext }): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const ks = roleContext.knowledgeState;
+  const baseline = roleContext.baseline;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      {/* Collapsed bar */}
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          background: 'rgba(255,255,255,0.02)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Sparkles size={14} style={{ color: 'var(--pipe-text-dim)' }} />
+          <span style={{
+            fontSize: 10,
+            letterSpacing: '0.15em',
+            color: 'var(--pipe-text-muted, rgba(255,255,255,0.5))',
+            fontFamily: '"Space Mono", monospace',
+            fontWeight: 700,
+          }}>
+            ROLE_PROFILE
+          </span>
+          {baseline.stack && baseline.stack.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+              {baseline.stack.slice(0, 5).map((t) => (
+                <span key={t} style={{
+                  fontSize: 8,
+                  padding: '2px 6px',
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.4)',
+                  fontFamily: '"Space Mono", monospace',
+                }}>
+                  {t}
+                </span>
+              ))}
+              {baseline.stack.length > 5 && (
+                <span style={{
+                  fontSize: 8,
+                  color: 'rgba(255,255,255,0.2)',
+                  fontFamily: '"Space Mono", monospace',
+                }}>
+                  +{baseline.stack.length - 5}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{
+            fontSize: 9,
+            color: 'rgba(255,255,255,0.2)',
+            fontFamily: '"Space Mono", monospace',
+          }}>
+            {roleContext.questionsAsked}_QUESTIONS
+          </span>
+          <ChevronDown
+            size={14}
+            style={{
+              color: 'rgba(255,255,255,0.2)',
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
+              transition: 'transform 0.2s ease',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div style={{
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderTop: 'none',
+          padding: 24,
+        }}>
+          {/* Baseline summary */}
+          <div style={{ display: 'flex', gap: 32, marginBottom: 24, flexWrap: 'wrap' }}>
+            {([
+              ['LEVEL', baseline.level],
+              ['DEPARTMENT', baseline.department],
+              ['WORK_MODEL', baseline.workModel],
+              ['LOCATION', baseline.location],
+              ['TEAM_SIZE', baseline.teamSize],
+              ['REPORTS_TO', baseline.reportsTo],
+            ] as [string, string | undefined][])
+              .filter(([, v]) => !!v)
+              .map(([label, value]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 4, fontFamily: '"Space Mono", monospace' }}>{label}</div>
+                  <div style={{ fontSize: 13, color: 'var(--pipe-text, #fff)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
+                </div>
+              ))}
+          </div>
+
+          {/* Knowledge State — Six Domains */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+            {SIX_DOMAINS.map((domain) => {
+              const domainData = ks[domain];
+              if (!domainData || Object.keys(domainData).length === 0) return null;
+
+              return (
+                <div key={domain} style={{
+                  padding: 16,
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.04)',
+                }}>
+                  <div style={{
+                    fontSize: 8,
+                    letterSpacing: '0.2em',
+                    color: 'var(--pipe-text-dim)',
+                    marginBottom: 10,
+                    fontFamily: '"Space Mono", monospace',
+                  }}>
+                    {DOMAIN_DISPLAY[domain]}
+                  </div>
+                  {Object.entries(domainData).map(([key, value]) => {
+                    if (value === null || value === undefined) return null;
+                    const formatted = formatKSValue(value);
+                    if (!formatted) return null;
+
+                    return (
+                      <div key={key} style={{ marginBottom: 8 }}>
+                        <div style={{
+                          fontSize: 8,
+                          letterSpacing: '0.1em',
+                          color: 'rgba(255,255,255,0.2)',
+                          marginBottom: 2,
+                          fontFamily: '"Space Mono", monospace',
+                          textTransform: 'uppercase',
+                        }}>
+                          {formatKSKey(key)}
+                        </div>
+                        <div style={{
+                          fontSize: 11,
+                          color: 'rgba(255,255,255,0.55)',
+                          lineHeight: 1.5,
+                          fontFamily: '"Space Mono", monospace',
+                        }}>
+                          {formatted}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── OverviewPage ─────────────────────────────────────────────────────────────
 
 /**
@@ -551,7 +748,7 @@ export default function OverviewPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { pipeline, stages, candidates, isLoading, error, refetch, publishPipeline } =
+  const { pipeline, stages, candidates, roleContext, isLoading, error, refetch, publishPipeline } =
     useOverviewData(id);
 
   const { createStage, reorderStages, deleteStage } = useStageMutations();
@@ -936,6 +1133,11 @@ export default function OverviewPage(): JSX.Element {
               void refetch();
             }}
           />
+        )}
+
+        {/* Role Profile — shown when pipeline was created via AI Discovery */}
+        {roleContext && (
+          <RoleProfileSection roleContext={roleContext} />
         )}
 
         {/* Stage Headers and Kanban Grid */}

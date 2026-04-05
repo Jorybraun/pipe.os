@@ -62,7 +62,7 @@ overview.get('/:pipelineId/overview', async (c) => {
     .bind(pipelineId)
     .all();
 
-  // 4. Interviews (empty in Phase 2 until scheduling is wired)
+  // 4. Interviews
   const interviewsResult = await db
     .prepare(
       `SELECT * FROM scheduled_interviews
@@ -71,6 +71,18 @@ overview.get('/:pipelineId/overview', async (c) => {
     )
     .bind(pipelineId)
     .all();
+
+  // 5. Role context (if this pipeline was created via AI discovery)
+  const roleContextRow = await db
+    .prepare(
+      `SELECT id, baseline, knowledge_state, exchanges, question_budget,
+              questions_asked, status, created_at
+       FROM role_contexts
+       WHERE pipeline_id = ? AND status = 'COMPLETE'
+       LIMIT 1`
+    )
+    .bind(pipelineId)
+    .first();
 
   return c.json({
     pipeline: {
@@ -116,6 +128,16 @@ overview.get('/:pipelineId/overview', async (c) => {
       scheduledAt: iv.scheduled_at as string | null,
       meetingUrl: iv.meeting_url as string | null,
     })),
+    roleContext: roleContextRow
+      ? {
+          id: roleContextRow.id as string,
+          baseline: JSON.parse((roleContextRow.baseline as string) || '{}'),
+          knowledgeState: JSON.parse((roleContextRow.knowledge_state as string) || '{}'),
+          questionsAsked: roleContextRow.questions_asked as number,
+          questionBudget: roleContextRow.question_budget as number,
+          createdAt: roleContextRow.created_at as string,
+        }
+      : null,
   });
 });
 

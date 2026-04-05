@@ -464,3 +464,43 @@ roleContexts.post('/:id/complete', async (c) => {
     status: 'COMPLETE' as const,
   });
 });
+
+// ─── PATCH /:id — Link role context to a pipeline ───────────────────────────
+
+roleContexts.patch('/:id', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const pipelineId = (body as Record<string, unknown>)?.pipelineId;
+  if (typeof pipelineId !== 'string') {
+    return apiError(c, 'VALIDATION_ERROR', 'pipelineId must be a string.');
+  }
+
+  const row = await c.env.DB.prepare(
+    'SELECT owner_id FROM role_contexts WHERE id = ?1',
+  )
+    .bind(id)
+    .first<{ owner_id: string }>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  await c.env.DB.prepare(
+    'UPDATE role_contexts SET pipeline_id = ?1, updated_at = ?2 WHERE id = ?3',
+  )
+    .bind(pipelineId, now(), id)
+    .run();
+
+  return c.json({ success: true });
+});
