@@ -1,19 +1,25 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { pipelines } from './routes/pipelines';
-import { pipelineStages, stageOps, stageChallenges } from './routes/stages';
-import { challenges } from './routes/challenges';
-import { github } from './routes/github';
-import { overview } from './routes/overview';
-import { pipelineCandidates, candidateOps } from './routes/candidates';
-import { emailRoutes } from './routes/email';
-import { schedulingAuth, schedulingPublic } from './routes/scheduling';
-import { phonePublic, phoneAuth } from './routes/phone';
-import { videoAuth, videoCandidate } from './routes/video';
-import { challengeSubmissions } from './routes/challengeSubmissions';
-import { reviewSessions } from './routes/reviewSessions';
+// Cockpit — recruiter config + view CRUD
+import { pipelines } from './routes/cockpit/pipelines';
+import { pipelineStages, stageOps, stageChallenges } from './routes/cockpit/stages';
+import { challenges } from './routes/cockpit/challenges';
+import { github } from './routes/cockpit/github';
+import { overview } from './routes/cockpit/overview';
+import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
+import { schedulingAuth, schedulingPublic } from './routes/cockpit/scheduling';
+// Discovery — Role Discovery Agent
+import { roleContexts } from './routes/discovery/roleContexts';
+// Outreach — invites + result emails
+import { emailRoutes } from './routes/outreach/email';
+// Screening — phone screening
+import { phonePublic, phoneAuth } from './routes/screening/phone';
+// Assessment — code review, challenges, video interviews
+import { videoAuth, videoCandidate } from './routes/assessment/video';
+import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
+import { reviewSessions } from './routes/assessment/reviewSessions';
+// Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
-import { roleContexts } from './routes/roleContexts';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 

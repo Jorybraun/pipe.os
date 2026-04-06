@@ -14,8 +14,8 @@
 import { Hono } from 'hono';
 import { signJwt, verifyJwt } from '../lib/jwt';
 import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
-import { review } from './review';
-import { repo } from './repo';
+import { review } from './assessment/review';
+import { repo } from './assessment/repo';
 import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import type { Env } from '../types';
 

@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Routes reorganized into funnel segments — 2026-04-06)
+- **`workers/api/src/routes/`** — Restructured 16 route files into 6 segment subdirectories that mirror the candidate funnel: `cockpit/` (recruiter CRUD: pipelines, stages, challenges, candidates, github, overview, scheduling), `discovery/` (roleContexts), `outreach/` (email), `screening/` (phone), `assessment/` (reviewSessions, challengeSubmissions, video, review, repo). Empty placeholder dirs `ingestion/` and `ranking/` mark Phase 7 work and embedded scoring respectively. Cross-cutting candidate runtime entry (`rpc.ts`) stays at top level.
+- **`workers/api/src/index.ts`** — Updated 14 route imports to new segment paths, grouped by segment with section comments.
+- **`workers/api/src/routes/rpc.ts`** — Updated imports for `review` and `repo` to point at `./assessment/` subdir.
+- All moved files had relative imports rewritten from `../` to `../../` (68 import statements across 15 files). Used `git mv` to preserve file history. Zero new TypeScript errors introduced (13 pre-existing errors map 1:1 from old paths to new). Filesystem now reflects the seven-segment funnel decomposition — empty dirs are honest "not built yet" markers.
+
 #### Added (ADR-028: Multi-Stakeholder Role Discovery — Implementation Phases A-E, H — 2026-04-05)
 - **`docs/decisions/ADR-028-multi-stakeholder-role-discovery.md`** — Architecture decision for multi-stakeholder role discovery.
 - **`workers/api/migrations/0012_role_context_participants.sql`** — New `role_context_participants` table: per-person exchanges, budget, invite tokens, participant_role enum. Unique index on invite_token.

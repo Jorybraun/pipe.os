@@ -7,10 +7,10 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth';
-import { apiError } from '../middleware/errors';
-import { sendNotificationEmail } from '../lib/email';
-import type { Env, Variables } from '../types';
+import { authMiddleware } from '../../middleware/auth';
+import { apiError } from '../../middleware/errors';
+import { sendNotificationEmail } from '../../lib/email';
+import type { Env, Variables } from '../../types';
 
 const emailRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
 emailRoutes.use('*', authMiddleware);

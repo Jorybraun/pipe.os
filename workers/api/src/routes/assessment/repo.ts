@@ -9,9 +9,9 @@
  */
 
 import { Hono } from 'hono';
-import type { Env } from '../types';
-import type { CandidateVariables } from '../middleware/candidateAuth';
-import { extractRepoPath } from '../lib/fetchGitHubDiff';
+import type { Env } from '../../types';
+import type { CandidateVariables } from '../../middleware/candidateAuth';
+import { extractRepoPath } from '../../lib/fetchGitHubDiff';
 
 export const repo = new Hono<{ Bindings: Env; Variables: CandidateVariables }>();
 

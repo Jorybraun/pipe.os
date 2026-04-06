@@ -9,10 +9,10 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth';
-import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
-import { apiError } from '../middleware/errors';
-import type { Env, Variables } from '../types';
+import { authMiddleware } from '../../middleware/auth';
+import { candidateAuth, type CandidateVariables } from '../../middleware/candidateAuth';
+import { apiError } from '../../middleware/errors';
+import type { Env, Variables } from '../../types';
 
 // ─── Validation ─────────────────────────────────────────────────────────────
 

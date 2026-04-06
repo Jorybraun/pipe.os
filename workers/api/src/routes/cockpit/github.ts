@@ -12,11 +12,11 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth';
-import { apiError } from '../middleware/errors';
-import { fetchGitHubDiff, extractRepoPath } from '../lib/fetchGitHubDiff';
-import type { RepoKnowledgeInput } from '../lib/explainerPrompts';
-import type { Env, Variables } from '../types';
+import { authMiddleware } from '../../middleware/auth';
+import { apiError } from '../../middleware/errors';
+import { fetchGitHubDiff, extractRepoPath } from '../../lib/fetchGitHubDiff';
+import type { RepoKnowledgeInput } from '../../lib/explainerPrompts';
+import type { Env, Variables } from '../../types';
 
 // ─── Validation ────────────────────────────────────────────────────────────────
 

@@ -11,8 +11,8 @@
  */
 
 import { Hono } from 'hono';
-import { authMiddleware } from '../middleware/auth';
-import type { Env, Variables } from '../types';
+import { authMiddleware } from '../../middleware/auth';
+import type { Env, Variables } from '../../types';
 
 const reviewSessions = new Hono<{ Bindings: Env; Variables: Variables }>();
 reviewSessions.use('*', authMiddleware);

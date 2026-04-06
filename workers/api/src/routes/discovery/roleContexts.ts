@@ -15,13 +15,13 @@
  */
 
 import { Hono } from 'hono';
-import { authMiddleware } from '../middleware/auth';
-import { apiError } from '../middleware/errors';
-import { createRoleContextSchema, respondSchema, inviteSchema, PARTICIPANT_ROLES } from '../validation/roleContexts';
-import { callRoleAgent, mergeKnowledgeState } from '../lib/roleAgent';
-import { parseJobDescription } from '../lib/jdParser';
-import { sendNotificationEmail } from '../lib/email';
-import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole } from '../types';
+import { authMiddleware } from '../../middleware/auth';
+import { apiError } from '../../middleware/errors';
+import { createRoleContextSchema, respondSchema, inviteSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
+import { callRoleAgent, mergeKnowledgeState } from '../../lib/roleAgent';
+import { parseJobDescription } from '../../lib/jdParser';
+import { sendNotificationEmail } from '../../lib/email';
+import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole } from '../../types';
 
 export const roleContexts = new Hono<{ Bindings: Env; Variables: Variables }>();
 roleContexts.use('*', authMiddleware);

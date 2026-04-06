@@ -17,11 +17,11 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth';
-import { apiError } from '../middleware/errors';
-import { validateTwilioSignature, generateTwilioAccessToken } from '../lib/twilioAuth';
-import { transcribeAudioWhisper } from '../lib/transcribe';
-import type { Env, Variables, PhoneCallRow } from '../types';
+import { authMiddleware } from '../../middleware/auth';
+import { apiError } from '../../middleware/errors';
+import { validateTwilioSignature, generateTwilioAccessToken } from '../../lib/twilioAuth';
+import { transcribeAudioWhisper } from '../../lib/transcribe';
+import type { Env, Variables, PhoneCallRow } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
