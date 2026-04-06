@@ -238,26 +238,21 @@ export type DomainCoverage = 'none' | 'sparse' | 'partial' | 'covered' | 'deep';
 
 export interface RoleContextBaseline {
   title: string;
-  level?: string;
-  stack?: string[];
   department?: string;
-  workModel?: string;
-  location?: string;
+  companyName?: string;
   companyUrl?: string;
-  teamSize?: string;
-  reportsTo?: string;
+  location?: string;
 }
+
+export type ParticipantRole = 'HIRING_MANAGER' | 'INTERNAL_RECRUITER' | 'EXTERNAL_RECRUITER' | 'TEAM_MEMBER';
 
 export interface ParseJDResponse {
   parsed: {
     title?: string;
-    level?: string;
-    stack?: string[];
     department?: string;
-    workModel?: string;
+    companyName?: string;
+    companyUrl?: string;
     location?: string;
-    teamSize?: string;
-    reportsTo?: string;
   };
 }
 
@@ -286,6 +281,7 @@ export interface CreateRoleContextRequest {
 
 export interface CreateRoleContextResponse {
   id: string;
+  participantId: string;
   status: 'BASELINE';
   baseline: RoleContextBaseline;
   questionBudget: number;
@@ -293,19 +289,23 @@ export interface CreateRoleContextResponse {
 }
 
 export interface StartRoleContextResponse {
+  participantId: string;
   acknowledgment: string;
   question: RoleContextQuestion;
   progress: RoleContextProgress;
-  status: 'INTERVIEWING';
+  status: 'CALIBRATING';
   toolsUsed?: string[];
 }
 
 export interface RespondRoleContextRequest {
   answer: string;
   questionId: string;
+  participantId: string;
 }
 
 export interface RespondQuestionResponse {
+  participantId: string;
+  participantRole?: ParticipantRole;
   acknowledgment: string;
   question: RoleContextQuestion;
   progress: RoleContextProgress;
@@ -314,6 +314,7 @@ export interface RespondQuestionResponse {
 }
 
 export interface RespondSynthesisResponse {
+  participantId: string;
   synthesis: string;
   knowledgeState: Record<string, Record<string, unknown>>;
   progress: RoleContextProgress;

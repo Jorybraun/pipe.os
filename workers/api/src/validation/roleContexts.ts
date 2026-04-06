@@ -5,18 +5,16 @@ export const QUESTION_BUDGETS = [5, 10, 15, 20] as const;
 export const ROLE_CONTEXT_STATUSES = ['BASELINE', 'INTERVIEWING', 'COMPLETE', 'ABANDONED'] as const;
 
 /**
- * Baseline form — structured data always collected (free + pro tier).
+ * Baseline form — role-agnostic fields only (ADR-028).
+ * Tech-specific fields (level, stack, teamSize, reportsTo, workModel)
+ * are removed — the agent discovers these during the interview.
  */
 export const baselineSchema = z.object({
   title: z.string().min(1, 'title is required').max(200),
-  level: z.string().optional(),
-  stack: z.array(z.string()).optional(),
   department: z.string().optional(),
-  workModel: z.string().optional(),
-  location: z.string().optional(),
+  companyName: z.string().optional(),
   companyUrl: z.string().optional(),
-  teamSize: z.string().optional(),
-  reportsTo: z.string().optional(),
+  location: z.string().optional(),
 });
 
 /**
@@ -48,3 +46,25 @@ export const respondSchema = z.object({
 });
 
 export type RespondInput = z.infer<typeof respondSchema>;
+
+/**
+ * Participant roles for the calibration question (ADR-028).
+ */
+export const PARTICIPANT_ROLES = [
+  'HIRING_MANAGER',
+  'INTERNAL_RECRUITER',
+  'EXTERNAL_RECRUITER',
+  'TEAM_MEMBER',
+] as const;
+
+/**
+ * POST /api/v1/role-contexts/:id/invite — invite team members.
+ */
+export const inviteSchema = z.object({
+  invitees: z.array(
+    z.object({
+      name: z.string().min(1, 'name is required').max(200),
+      email: z.string().email('valid email required'),
+    }),
+  ).min(1, 'at least one invitee required').max(10),
+});

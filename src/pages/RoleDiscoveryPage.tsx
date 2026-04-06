@@ -12,18 +12,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
-import { FieldGroup, TextInput, TextareaInput, TagsInput, SelectInput, RadioGroup } from '../components/ui/form';
+import { FieldGroup, TextInput, TextareaInput, TagsInput, RadioGroup, SelectInput } from '../components/ui/form';
 import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
-import { Loader2, ArrowRight, Sparkles, Check, MessageSquare, ChevronDown, Upload, FileText, Mic, Square } from 'lucide-react';
+import { Loader2, ArrowRight, Sparkles, Check, MessageSquare, ChevronDown, Upload, FileText, Mic, Square, Flag } from 'lucide-react';
 import type { RoleContextBaseline, RoleContextQuestion, RoleContextProgress, DomainCoverage, ParseJDResponse } from '../lib/api/types';
 import type { PastExchange } from '../hooks/useRoleDiscovery';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const LEVEL_OPTIONS = ['Junior', 'Mid', 'Senior', 'Staff', 'Principal', 'Lead', 'Manager'];
-const WORK_MODEL_OPTIONS = ['Remote', 'Hybrid', 'On-site'];
 const BUDGET_OPTIONS = [
   { value: 5, label: '5 — Quick' },
   { value: 10, label: '10 — Standard' },
@@ -145,8 +143,30 @@ function ThinkingIndicator({ message }: { message?: string }): JSX.Element {
 
 // ─── Past Exchange (collapsed) ──────────────────────────────────────────────
 
-function PastExchangeCard({ exchange, index }: { exchange: PastExchange; index: number }): JSX.Element {
+function PastExchangeCard({ exchange, index, onFeedback }: {
+  exchange: PastExchange;
+  index: number;
+  onFeedback?: (questionId: string, feedback: string) => void;
+}): JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackText, setFeedbackText] = useState(exchange.feedback ?? '');
+
+  const hasFeedback = !!(exchange.feedback || feedbackText.trim());
+
+  const handleFlagClick = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    setShowFeedback(!showFeedback);
+    if (!expanded) setExpanded(true);
+  };
+
+  const handleSubmitFeedback = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    if (feedbackText.trim() && onFeedback) {
+      onFeedback(exchange.questionId, feedbackText.trim());
+      setShowFeedback(false);
+    }
+  };
 
   return (
     <div
@@ -154,7 +174,7 @@ function PastExchangeCard({ exchange, index }: { exchange: PastExchange; index: 
       style={{
         padding: expanded ? '16px 20px' : '10px 20px',
         background: 'rgba(255,255,255,0.02)',
-        borderLeft: '2px solid rgba(139, 92, 246, 0.2)',
+        borderLeft: `2px solid ${hasFeedback ? 'rgba(251, 191, 36, 0.4)' : 'rgba(139, 92, 246, 0.2)'}`,
         cursor: 'pointer',
         transition: 'all 0.3s ease',
         marginBottom: 2,
@@ -182,15 +202,30 @@ function PastExchangeCard({ exchange, index }: { exchange: PastExchange; index: 
             {exchange.questionText}
           </span>
         </div>
-        <ChevronDown
-          size={12}
-          style={{
-            color: 'rgba(255,255,255,0.2)',
-            transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
-            transition: 'transform 0.2s ease',
-            flexShrink: 0,
-          }}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div
+            onClick={handleFlagClick}
+            title={hasFeedback ? 'Flagged — click to edit' : 'Flag this question'}
+            style={{
+              padding: 4,
+              cursor: 'pointer',
+              opacity: hasFeedback ? 1 : 0.3,
+              transition: 'opacity 0.2s ease',
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.opacity = '1'; }}
+            onMouseOut={(e) => { e.currentTarget.style.opacity = hasFeedback ? '1' : '0.3'; }}
+          >
+            <Flag size={11} color={hasFeedback ? 'rgba(251, 191, 36, 0.9)' : 'rgba(255,255,255,0.5)'} />
+          </div>
+          <ChevronDown
+            size={12}
+            style={{
+              color: 'rgba(255,255,255,0.2)',
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
+              transition: 'transform 0.2s ease',
+            }}
+          />
+        </div>
       </div>
       {expanded && (
         <div style={{ marginTop: 12 }}>
@@ -211,6 +246,74 @@ function PastExchangeCard({ exchange, index }: { exchange: PastExchange; index: 
           }}>
             {exchange.answer}
           </div>
+
+          {/* Feedback section */}
+          {showFeedback && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ marginTop: 12, borderTop: '1px solid rgba(251, 191, 36, 0.15)', paddingTop: 12 }}
+            >
+              <div style={{
+                fontSize: 10,
+                color: 'rgba(251, 191, 36, 0.6)',
+                marginBottom: 6,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+              }}>
+                FLAG_QUESTION
+              </div>
+              <textarea
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                placeholder="What's wrong with this question? Too vague, leading, irrelevant..."
+                style={{
+                  width: '100%',
+                  minHeight: 48,
+                  padding: '10px 12px',
+                  background: 'rgba(251, 191, 36, 0.04)',
+                  border: '1px solid rgba(251, 191, 36, 0.15)',
+                  color: 'rgba(255,255,255,0.7)',
+                  fontSize: 11,
+                  fontFamily: '"Space Mono", monospace',
+                  resize: 'vertical',
+                  outline: 'none',
+                }}
+              />
+              <button
+                onClick={handleSubmitFeedback}
+                disabled={!feedbackText.trim()}
+                style={{
+                  marginTop: 8,
+                  padding: '6px 16px',
+                  background: feedbackText.trim() ? 'rgba(251, 191, 36, 0.1)' : 'transparent',
+                  border: `1px solid ${feedbackText.trim() ? 'rgba(251, 191, 36, 0.3)' : 'rgba(255,255,255,0.06)'}`,
+                  color: feedbackText.trim() ? 'rgba(251, 191, 36, 0.9)' : 'rgba(255,255,255,0.2)',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  fontFamily: '"Space Mono", monospace',
+                  cursor: feedbackText.trim() ? 'pointer' : 'default',
+                }}
+              >
+                SAVE_FLAG
+              </button>
+            </div>
+          )}
+
+          {/* Show saved feedback inline */}
+          {!showFeedback && hasFeedback && (
+            <div style={{
+              marginTop: 10,
+              padding: '8px 12px',
+              background: 'rgba(251, 191, 36, 0.04)',
+              borderLeft: '2px solid rgba(251, 191, 36, 0.3)',
+              fontSize: 10,
+              color: 'rgba(251, 191, 36, 0.6)',
+              fontFamily: '"Space Mono", monospace',
+            }}>
+              {exchange.feedback || feedbackText}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -298,14 +401,10 @@ function BaselinePhase({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState('');
-  const [level, setLevel] = useState('Senior');
-  const [stack, setStack] = useState<string[]>([]);
   const [department, setDepartment] = useState('');
-  const [workModel, setWorkModel] = useState('');
-  const [location, setLocation] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [companyUrl, setCompanyUrl] = useState('');
-  const [teamSize, setTeamSize] = useState('');
-  const [reportsTo, setReportsTo] = useState('');
+  const [location, setLocation] = useState('');
   const [budget, setBudget] = useState(10);
 
   // JD import state
@@ -319,13 +418,10 @@ function BaselinePhase({
 
   const applyParsed = (parsed: ParseJDResponse['parsed']): void => {
     if (parsed.title) setTitle(parsed.title);
-    if (parsed.level && LEVEL_OPTIONS.includes(parsed.level)) setLevel(parsed.level);
-    if (parsed.stack?.length) setStack(parsed.stack);
     if (parsed.department) setDepartment(parsed.department);
-    if (parsed.workModel && WORK_MODEL_OPTIONS.includes(parsed.workModel)) setWorkModel(parsed.workModel);
+    if (parsed.companyName) setCompanyName(parsed.companyName);
+    if (parsed.companyUrl) setCompanyUrl(parsed.companyUrl);
     if (parsed.location) setLocation(parsed.location);
-    if (parsed.teamSize) setTeamSize(parsed.teamSize);
-    if (parsed.reportsTo) setReportsTo(parsed.reportsTo);
     setDidImport(true);
   };
 
@@ -388,15 +484,11 @@ function BaselinePhase({
     if (!canSubmit) return;
     const baseline: RoleContextBaseline = {
       title: title.trim(),
-      level,
     };
-    if (stack.length > 0) baseline.stack = stack;
     if (department.trim()) baseline.department = department.trim();
-    if (workModel) baseline.workModel = workModel;
-    if (location.trim()) baseline.location = location.trim();
+    if (companyName.trim()) baseline.companyName = companyName.trim();
     if (companyUrl.trim()) baseline.companyUrl = companyUrl.trim();
-    if (teamSize.trim()) baseline.teamSize = teamSize.trim();
-    if (reportsTo.trim()) baseline.reportsTo = reportsTo.trim();
+    if (location.trim()) baseline.location = location.trim();
     onSubmit(baseline, budget);
   };
 
@@ -577,42 +669,29 @@ function BaselinePhase({
         </div>
       )}
 
-      {/* Role fields — flat grid, no card wrappers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 20, marginBottom: 28 }}>
-        <div style={{ gridColumn: '1 / 3' }}>
+      {/* Role fields — simplified for any role type (ADR-028) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
+        <div style={{ gridColumn: '1 / -1' }}>
           <FieldGroup label="Role Title" required>
-            <TextInput value={title} onChange={setTitle} placeholder="Senior Backend Engineer" />
+            <TextInput value={title} onChange={setTitle} placeholder="e.g., Senior Backend Engineer, Marketing Director, UX Designer" />
           </FieldGroup>
         </div>
-        <FieldGroup label="Level">
-          <SelectInput value={level} onChange={setLevel} options={LEVEL_OPTIONS} />
-        </FieldGroup>
         <FieldGroup label="Department">
-          <TextInput value={department} onChange={setDepartment} placeholder="Engineering" />
-        </FieldGroup>
-        <FieldGroup label="Work Model">
-          <SelectInput value={workModel} onChange={setWorkModel} options={WORK_MODEL_OPTIONS} placeholder="Select..." />
+          <TextInput value={department} onChange={setDepartment} placeholder="Engineering, Marketing, Design..." />
         </FieldGroup>
         <FieldGroup label="Location">
-          <TextInput value={location} onChange={setLocation} placeholder="San Francisco, CA / Remote" />
+          <TextInput value={location} onChange={setLocation} placeholder="San Francisco / Remote / Hybrid" />
+        </FieldGroup>
+        <FieldGroup label="Company Name">
+          <TextInput value={companyName} onChange={setCompanyName} placeholder="Acme Corp" />
         </FieldGroup>
         <FieldGroup label="Company Website" hint="Agent will research before asking questions">
           <TextInput value={companyUrl} onChange={setCompanyUrl} placeholder="https://acme.com" />
         </FieldGroup>
-        <FieldGroup label="Team Size">
-          <TextInput value={teamSize} onChange={setTeamSize} placeholder="4 engineers" />
-        </FieldGroup>
-        <FieldGroup label="Reports To">
-          <TextInput value={reportsTo} onChange={setReportsTo} placeholder="Engineering Manager" />
-        </FieldGroup>
       </div>
 
-      {/* Tech Stack + Interview Depth — flat, side by side */}
+      {/* Interview Depth */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <FieldGroup label="Tech Stack" hint="Press Enter to add each technology">
-          <TagsInput value={stack} onChange={setStack} placeholder="TypeScript, React, Kafka..." />
-        </FieldGroup>
-
         <div>
           <div style={{
             fontSize: 8,
@@ -667,6 +746,7 @@ function InterviewPhase({
   isLoading,
   onRespond,
   onComplete,
+  onFeedback,
 }: {
   acknowledgment: string | null;
   question: RoleContextQuestion | null;
@@ -675,6 +755,7 @@ function InterviewPhase({
   isLoading: boolean;
   onRespond: (answer: string, questionId: string) => void;
   onComplete: () => void;
+  onFeedback?: (questionId: string, feedback: string) => void;
 }): JSX.Element {
   const [answer, setAnswer] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -838,7 +919,7 @@ function InterviewPhase({
       {pastExchanges.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           {pastExchanges.map((ex, i) => (
-            <PastExchangeCard key={ex.questionId} exchange={ex} index={i} />
+            <PastExchangeCard key={ex.questionId} exchange={ex} index={i} onFeedback={onFeedback} />
           ))}
         </div>
       )}
@@ -1159,7 +1240,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
       const baseline = rd.baseline;
       const pipelineId = await createPipeline({
         title: baseline?.title ?? 'New Role',
-        level: (baseline?.level as 'Senior') ?? 'Senior',
+        level: 'Senior',
         status: 'DRAFT',
         creationMode: 'BLANK',
       });
@@ -1204,7 +1285,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
         />
       )}
 
-      {rd.phase === 'INTERVIEWING' && (
+      {(rd.phase === 'CALIBRATING' || rd.phase === 'INTERVIEWING') && (
         <InterviewPhase
           acknowledgment={rd.acknowledgment}
           question={rd.currentQuestion}
@@ -1213,6 +1294,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           isLoading={rd.isLoading}
           onRespond={handleRespond}
           onComplete={() => { rd.completeEarly().catch(() => {}); }}
+          onFeedback={(qId, fb) => { rd.submitFeedback(qId, fb).catch(() => {}); }}
         />
       )}
 

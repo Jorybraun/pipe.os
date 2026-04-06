@@ -207,6 +207,8 @@ export interface RoleExchange {
     placeholder?: string;
   };
   answer?: string;
+  /** Recruiter feedback on this question — free text, stored for prompt tuning. */
+  feedback?: string;
 }
 
 /** Six Domains coverage levels. */
@@ -217,6 +219,28 @@ export interface RoleAgentProgress {
   asked: number;
   budget: number;
   domains: Record<string, DomainCoverage>;
+}
+
+// ─── Role Context Participants (ADR-028) ───────────────────────────────────
+
+export type ParticipantRole = 'HIRING_MANAGER' | 'INTERNAL_RECRUITER' | 'EXTERNAL_RECRUITER' | 'TEAM_MEMBER';
+
+export type ParticipantStatus = 'PENDING' | 'INVITED' | 'CALIBRATING' | 'INTERVIEWING' | 'COMPLETE';
+
+export interface RoleContextParticipantRow {
+  id: string;
+  role_context_id: string;
+  name: string | null;
+  email: string | null;
+  participant_role: ParticipantRole | null;
+  invite_token: string | null;
+  is_creator: number; // SQLite boolean
+  exchanges: string | null;
+  questions_asked: number;
+  question_budget: number;
+  status: ParticipantStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── API Response shapes (camelCase) ─────────────────────────────────────────

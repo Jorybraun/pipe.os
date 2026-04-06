@@ -54,6 +54,8 @@ export interface CallRoleAgentInput {
   knowledgeState: Record<string, unknown>;
   questionsAsked: number;
   questionBudget: number;
+  /** ADR-028: participant role for adaptive prompt variants. */
+  participantRole?: string;
 }
 
 // ─── Mistral API types (with tool calling) ──────────────────────────────────
@@ -426,7 +428,7 @@ function parseSynthesisResponse(parsed: Record<string, unknown>, toolsUsed: stri
  * so the frontend can show what the agent researched.
  */
 export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgentResponse> {
-  const { apiKey, baseline, exchanges, knowledgeState, questionsAsked, questionBudget } = input;
+  const { apiKey, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole } = input;
 
   const budgetExhausted = questionsAsked >= questionBudget;
 
@@ -437,7 +439,7 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
       : getMockQuestionResponse(questionsAsked);
   }
 
-  const systemPrompt = buildRoleAgentSystemPrompt();
+  const systemPrompt = buildRoleAgentSystemPrompt(participantRole);
   const userMessage = budgetExhausted
     ? buildSynthesisPrompt({ baseline, exchanges, knowledgeState })
     : buildRoleAgentUserMessage({ baseline, exchanges, knowledgeState, questionsAsked, questionBudget });

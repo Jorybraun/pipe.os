@@ -6,8 +6,19 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
-#### Added (ADR-028: Multi-Stakeholder Role Discovery — 2026-04-05)
-- **`docs/decisions/ADR-028-multi-stakeholder-role-discovery.md`** — Architecture decision for multi-stakeholder role discovery. Generic baseline (not tech-specific), interviewer calibration, multi-participant interviews via email invitation, adaptive system prompt per participant role, knowledge state merge rules (factual vs perspective), raw data preservation. Builds on ADR-027.
+#### Added (ADR-028: Multi-Stakeholder Role Discovery — Implementation Phases A-E, H — 2026-04-05)
+- **`docs/decisions/ADR-028-multi-stakeholder-role-discovery.md`** — Architecture decision for multi-stakeholder role discovery.
+- **`workers/api/migrations/0012_role_context_participants.sql`** — New `role_context_participants` table: per-person exchanges, budget, invite tokens, participant_role enum. Unique index on invite_token.
+- **`workers/api/src/middleware/participantAuth.ts`** — JWT auth middleware for invited team members (reuses candidateAuth pattern, sub=participantId, pid=roleContextId).
+- **`workers/api/src/routes/roleContexts.ts`** — Full participant-aware refactor: create returns participantId, start returns hardcoded calibration question, respond detects calibration answer → sets participant_role → calls agent with role-specific prompt, complete is per-participant, new invite route sends emails via Resend. Knowledge state merges incrementally into shared role_contexts row.
+- **`workers/api/src/lib/roleAgentPrompts.ts`** — Participant-role adaptive prompt variants (Hiring Manager, Internal Recruiter, External Recruiter, Team Member). Shared knowledge state context injection with factual vs perspective merge rules. Removed legacy adaptive detection (now explicit via calibration).
+- **`workers/api/src/lib/roleAgent.ts`** — `callRoleAgent` accepts optional `participantRole`, passes it to prompt builder.
+- **`workers/api/src/validation/roleContexts.ts`** — Simplified baseline (title, department, companyName, companyUrl, location). Added `inviteSchema` and `PARTICIPANT_ROLES`.
+- **`workers/api/src/types.ts`** — Added `ParticipantRole`, `ParticipantStatus`, `RoleContextParticipantRow` types.
+- **`src/lib/api/types.ts`** — Simplified `RoleContextBaseline` (removed tech fields), added `ParticipantRole`, `participantId` to create/start/respond types, new `CALIBRATING` status.
+- **`src/hooks/useRoleDiscovery.ts`** — State machine now IDLE → BASELINE → CALIBRATING → INTERVIEWING → COMPLETE. Tracks participantId/participantRole. Sends participantId with every request.
+- **`src/pages/RoleDiscoveryPage.tsx`** — Simplified baseline form (5 fields, role-agnostic). Handles CALIBRATING phase. Removed level/stack/teamSize/reportsTo/workModel fields. Per-question feedback flag button (amber) on past exchanges — click flag icon → write feedback → SAVE_FLAG. Persisted to participant exchanges for prompt tuning.
+- **`workers/api/src/routes/roleContexts.ts`** — POST /:id/feedback route: stores free-text feedback on a specific exchange by questionId. Amber left-border on flagged exchanges.
 
 #### Changed (Voice-first interview UI — 2026-04-05)
 - **`src/pages/RoleDiscoveryPage.tsx`** — Current question wrapped in rounded card (16px radius) for separation from history. Big 80px centered mic button as primary, OR_TYPE divider, text input as secondary. ThinkingIndicator with contextual messages.
