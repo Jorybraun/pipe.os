@@ -6,6 +6,21 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (Role Discovery: form-first UX with optional AI interview — 2026-04-06)
+- **`src/components/RoleDiscovery/JobDescriptionImportModal.tsx`** — New modal owning all JD import state (paste textarea, PDF upload, parse error display). Mirrors the StatusOverrideModal pattern (backdrop + panel + close button). Parent receives only the parsed result via `onParsed` callback, then the modal closes itself. Multipart upload uses raw fetch since `useApiClient` is JSON-only.
+- **`src/components/RoleDiscovery/InterviewDepthModal.tsx`** — New modal for selecting question budget (5 / 10 / 15 / 20) with per-option hint text, CANCEL + SAVE actions. Stores draft in local state and only commits to parent on SAVE.
+- **`src/pages/RoleDiscoveryPage.tsx`** — `BaselinePhase` rewritten as a form-first UX:
+  - **CREATE_ROLE** is now the primary green action — calls `usePipelineCreate.create()` directly with the baseline title and lands on `/pipeline/:id`. No role context, no interview, no synthesis.
+  - **START_INTERVIEW** is now the secondary action — opens the existing AI Discovery flow via `rd.createAndStart(baseline, budget)`.
+  - Inline JD import zone removed; replaced with `IMPORT_FROM_JD` button that opens `JobDescriptionImportModal`. Button shows green `IMPORTED_FROM_JD` state once parsing succeeds.
+  - Inline 4-button budget grid removed; replaced with `INTERVIEW_DEPTH: <n>` button that opens `InterviewDepthModal`.
+  - `BaselinePhase` no longer holds `useApiClient`, `fileInputRef`, `jdText`, `jdFile`, `isParsing`, or `parseError` — all moved into `JobDescriptionImportModal`.
+  - New props: `onSkipInterview: (baseline) => void`, `isSkipping: boolean`.
+  - Removed unused imports: `Upload`, `FileText`, `useApiClient` from `BaselinePhase` scope (kept at page level where it's still needed).
+  - Replaced `BUDGET_OPTIONS` constant with `DEFAULT_BUDGET = 10`; the options now live inside the modal.
+- **Known gap (not blocking ship):** The skip path only sends `title` to `POST /api/v1/pipelines` because `CreatePipelineRequest` doesn't have `department`/`location`/`companyName`/`companyUrl` fields. Form collects them but they currently evaporate on CREATE_ROLE. Resolve by extending the pipelines route + types when persistence is needed.
+- **Verified:** `vite build` succeeds (5.91s). Pre-existing tsc errors stayed at 211 (zero introduced by this change).
+
 #### Removed (AWS dependencies pulled from root package.json — 2026-04-06)
 - **`package.json`** — Removed 16 AWS-related packages: `aws-amplify`, `@aws-amplify/ui-react`, `@aws-amplify/backend`, `@aws-amplify/backend-cli`, `@aws-sdk/s3-request-presigner`, `@aws-sdk/client-cognito-identity-provider`, `@aws-sdk/client-dynamodb`, `@aws-sdk/client-ses`, `@aws-sdk/client-ssm`, `@aws-sdk/lib-dynamodb`, `@aws-sdk/util-dynamodb`, `aws-cdk`, `aws-cdk-lib`, `aws-sdk-client-mock`, `aws-sdk-client-mock-jest`, `constructs`. Net effect: **1891 packages removed** from `node_modules`.
 - **`tsconfig.json`** — Added `exclude: ["src/providers/amplify/**"]` to skip the orphan AWS provider files (`auth.tsx`, `storage.ts`, `data.ts`) which are no longer imported by anything in `src/`. Switched `include` from `["src"]` to `["src/**/*"]` glob form.

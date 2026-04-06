@@ -13,21 +13,18 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { FieldGroup, TextInput, TextareaInput, TagsInput, RadioGroup, SelectInput } from '../components/ui/form';
+import { JobDescriptionImportModal } from '../components/RoleDiscovery/JobDescriptionImportModal';
+import { InterviewDepthModal } from '../components/RoleDiscovery/InterviewDepthModal';
 import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
-import { Loader2, ArrowRight, Sparkles, Check, MessageSquare, ChevronDown, Upload, FileText, Mic, Square, Flag } from 'lucide-react';
+import { Loader2, ArrowRight, Sparkles, Check, MessageSquare, ChevronDown, Mic, Square, Flag, Settings, FileUp } from 'lucide-react';
 import type { RoleContextBaseline, RoleContextQuestion, RoleContextProgress, DomainCoverage, ParseJDResponse } from '../lib/api/types';
 import type { PastExchange } from '../hooks/useRoleDiscovery';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const BUDGET_OPTIONS = [
-  { value: 5, label: '5 — Quick' },
-  { value: 10, label: '10 — Standard' },
-  { value: 15, label: '15 — Thorough' },
-  { value: 20, label: '20 — Deep Dive' },
-];
+const DEFAULT_BUDGET = 10;
 
 const DOMAIN_LABELS: Record<string, string> = {
   why: 'WHY',
@@ -392,29 +389,28 @@ function QuestionInput({
 
 function BaselinePhase({
   onSubmit,
+  onSkipInterview,
   isLoading,
+  isSkipping,
 }: {
   onSubmit: (baseline: RoleContextBaseline, budget: number) => void;
+  onSkipInterview: (baseline: RoleContextBaseline) => void;
   isLoading: boolean;
+  isSkipping: boolean;
 }): JSX.Element {
-  const api = useApiClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [title, setTitle] = useState('');
   const [department, setDepartment] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [companyUrl, setCompanyUrl] = useState('');
   const [location, setLocation] = useState('');
-  const [budget, setBudget] = useState(10);
-
-  // JD import state
-  const [jdText, setJdText] = useState('');
-  const [jdFile, setJdFile] = useState<File | null>(null);
-  const [isParsing, setIsParsing] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [budget, setBudget] = useState(DEFAULT_BUDGET);
   const [didImport, setDidImport] = useState(false);
 
-  const canSubmit = title.trim().length > 0 && !isLoading && !isParsing;
+  const [isJDModalOpen, setIsJDModalOpen] = useState(false);
+  const [isDepthModalOpen, setIsDepthModalOpen] = useState(false);
+
+  const isBusy = isLoading || isSkipping;
+  const canSubmit = title.trim().length > 0 && !isBusy;
 
   const applyParsed = (parsed: ParseJDResponse['parsed']): void => {
     if (parsed.title) setTitle(parsed.title);
@@ -425,77 +421,29 @@ function BaselinePhase({
     setDidImport(true);
   };
 
-  const handleParseText = async (): Promise<void> => {
-    if (jdText.trim().length < 20) return;
-    setIsParsing(true);
-    setParseError(null);
-    try {
-      const data = await api.post<ParseJDResponse>('/api/v1/role-contexts/parse-jd', { text: jdText });
-      applyParsed(data.parsed);
-      setJdText('');
-    } catch (err) {
-      setParseError(err instanceof Error ? err.message : 'Failed to parse');
-    } finally {
-      setIsParsing(false);
-    }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') {
-      setParseError('Only PDF files are supported.');
-      return;
-    }
-    setJdFile(file);
-    setIsParsing(true);
-    setParseError(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      // Use raw fetch for multipart — the API client only does JSON
-      const baseUrl = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
-      const clerkWindow = window as { Clerk?: { session?: { getToken: () => Promise<string> } } };
-      const token = await clerkWindow.Clerk?.session?.getToken();
-
-      const response = await fetch(`${baseUrl}/api/v1/role-contexts/parse-jd`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-        throw new Error(body?.error?.message ?? `Upload failed (${response.status})`);
-      }
-
-      const data = (await response.json()) as ParseJDResponse;
-      applyParsed(data.parsed);
-    } catch (err) {
-      setParseError(err instanceof Error ? err.message : 'Failed to parse file');
-    } finally {
-      setIsParsing(false);
-    }
-  };
-
-  const handleSubmit = (): void => {
-    if (!canSubmit) return;
-    const baseline: RoleContextBaseline = {
-      title: title.trim(),
-    };
+  const buildBaseline = (): RoleContextBaseline => {
+    const baseline: RoleContextBaseline = { title: title.trim() };
     if (department.trim()) baseline.department = department.trim();
     if (companyName.trim()) baseline.companyName = companyName.trim();
     if (companyUrl.trim()) baseline.companyUrl = companyUrl.trim();
     if (location.trim()) baseline.location = location.trim();
-    onSubmit(baseline, budget);
+    return baseline;
+  };
+
+  const handleStartInterview = (): void => {
+    if (!canSubmit) return;
+    onSubmit(buildBaseline(), budget);
+  };
+
+  const handleSkipInterview = (): void => {
+    if (!canSubmit) return;
+    onSkipInterview(buildBaseline());
   };
 
   return (
     <div>
       {/* Header — matches ListingPage / OverviewPage */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, gap: 16 }}>
         <div>
           <div style={{
             fontSize: 10,
@@ -516,158 +464,123 @@ function BaselinePhase({
             New Role
           </h1>
         </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+          {/* START_INTERVIEW — secondary, optional AI enhancement path */}
+          <button
+            onClick={handleStartInterview}
+            disabled={!canSubmit}
+            title="Run the AI Discovery interview to enrich the role context before creating the pipeline"
+            style={{
+              padding: '14px 22px',
+              background: 'transparent',
+              border: canSubmit
+                ? '1px solid rgba(255,255,255,0.12)'
+                : '1px solid rgba(255,255,255,0.05)',
+              color: canSubmit ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.15em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: canSubmit ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            {isLoading ? (
+              <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <Sparkles size={12} />
+            )}
+            START_INTERVIEW
+          </button>
+          {/* CREATE_ROLE — primary, creates pipeline directly from the form */}
+          <button
+            onClick={handleSkipInterview}
+            disabled={!canSubmit}
+            style={{
+              padding: '14px 28px',
+              background: canSubmit
+                ? 'rgba(74, 222, 128, 0.08)'
+                : 'rgba(255,255,255,0.03)',
+              border: canSubmit
+                ? '1px solid rgba(74, 222, 128, 0.3)'
+                : '1px solid rgba(255,255,255,0.06)',
+              color: canSubmit ? 'rgba(74, 222, 128, 0.9)' : 'rgba(255,255,255,0.2)',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.15em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: canSubmit ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            {isSkipping ? (
+              <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <ArrowRight size={14} />
+            )}
+            CREATE_ROLE
+          </button>
+        </div>
+      </div>
+
+      {/* Action row — JD import + interview depth triggers */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         <button
-          onClick={handleSubmit}
-          disabled={!canSubmit}
+          onClick={() => setIsJDModalOpen(true)}
+          disabled={isBusy}
           style={{
-            padding: '14px 28px',
-            background: canSubmit
-              ? 'rgba(74, 222, 128, 0.08)'
-              : 'rgba(255,255,255,0.03)',
-            border: canSubmit
+            padding: '12px 18px',
+            background: didImport
+              ? 'rgba(74, 222, 128, 0.06)'
+              : 'transparent',
+            border: didImport
               ? '1px solid rgba(74, 222, 128, 0.3)'
-              : '1px solid rgba(255,255,255,0.06)',
-            color: canSubmit ? 'rgba(74, 222, 128, 0.9)' : 'rgba(255,255,255,0.2)',
-            fontSize: 11,
+              : '1px solid rgba(255,255,255,0.08)',
+            color: didImport
+              ? 'rgba(74, 222, 128, 0.85)'
+              : 'rgba(255,255,255,0.55)',
+            fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.15em',
             fontFamily: '"Space Mono", monospace',
-            cursor: canSubmit ? 'pointer' : 'default',
+            cursor: isBusy ? 'default' : 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            gap: 8,
+            borderRadius: 4,
           }}
         >
-          {isLoading ? (
-            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-          ) : (
-            <Sparkles size={14} />
-          )}
-          START_INTERVIEW
+          {didImport ? <Check size={12} /> : <FileUp size={12} />}
+          {didImport ? 'IMPORTED_FROM_JD' : 'IMPORT_FROM_JD'}
+        </button>
+
+        <button
+          onClick={() => setIsDepthModalOpen(true)}
+          disabled={isBusy}
+          style={{
+            padding: '12px 18px',
+            background: 'transparent',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: 'rgba(255,255,255,0.55)',
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.15em',
+            fontFamily: '"Space Mono", monospace',
+            cursor: isBusy ? 'default' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            borderRadius: 4,
+          }}
+        >
+          <Settings size={12} />
+          INTERVIEW_DEPTH: {budget}
         </button>
       </div>
-
-      {/* JD Import zone */}
-      {!didImport && (
-        <div style={{ marginBottom: 28 }}>
-          <div style={{
-            fontSize: 10,
-            letterSpacing: '0.2em',
-            color: 'var(--pipe-text-dim)',
-            fontFamily: '"Space Mono", monospace',
-            marginBottom: 12,
-          }}>
-            IMPORT_JOB_DESCRIPTION
-          </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'start' }}>
-            <div style={{ flex: 1 }}>
-              <TextareaInput
-                value={jdText}
-                onChange={setJdText}
-                placeholder="Paste a job description here and we'll extract the details..."
-                rows={3}
-              />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-              <button
-                onClick={handleParseText}
-                disabled={jdText.trim().length < 20 || isParsing}
-                style={{
-                  padding: '10px 20px',
-                  background: jdText.trim().length >= 20 && !isParsing
-                    ? 'rgba(74, 222, 128, 0.08)'
-                    : 'transparent',
-                  border: jdText.trim().length >= 20 && !isParsing
-                    ? '1px solid rgba(74, 222, 128, 0.3)'
-                    : '1px solid rgba(255,255,255,0.06)',
-                  color: jdText.trim().length >= 20 && !isParsing
-                    ? 'rgba(74, 222, 128, 0.9)'
-                    : 'rgba(255,255,255,0.2)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.1em',
-                  fontFamily: '"Space Mono", monospace',
-                  cursor: jdText.trim().length >= 20 && !isParsing ? 'pointer' : 'default',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                {isParsing ? (
-                  <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                ) : (
-                  <Sparkles size={12} />
-                )}
-                PARSE
-              </button>
-              <div
-                onClick={() => !isParsing && fileInputRef.current?.click()}
-                style={{
-                  padding: '10px 20px',
-                  border: '1px dashed rgba(255,255,255,0.08)',
-                  cursor: isParsing ? 'default' : 'pointer',
-                  fontSize: 10,
-                  fontFamily: '"Space Mono", monospace',
-                  color: 'rgba(255,255,255,0.25)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                {jdFile ? (
-                  <>
-                    <FileText size={12} />
-                    {jdFile.name.slice(0, 18)}
-                  </>
-                ) : (
-                  <>
-                    <Upload size={12} />
-                    UPLOAD_PDF
-                  </>
-                )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf"
-                onChange={handleFileChange}
-                style={{ display: 'none' }}
-              />
-            </div>
-          </div>
-          {parseError && (
-            <div style={{
-              marginTop: 10,
-              fontSize: 10,
-              color: 'rgba(248, 113, 113, 0.85)',
-              fontFamily: '"Space Mono", monospace',
-            }}>
-              {parseError}
-            </div>
-          )}
-          <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', marginTop: 24 }} />
-        </div>
-      )}
-
-      {/* Import success */}
-      {didImport && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 20,
-        }}>
-          <Check size={12} style={{ color: 'rgba(74, 222, 128, 0.7)' }} />
-          <span style={{
-            fontSize: 10,
-            letterSpacing: '0.1em',
-            color: 'rgba(74, 222, 128, 0.5)',
-            fontFamily: '"Space Mono", monospace',
-          }}>
-            IMPORTED_FROM_JD
-          </span>
-        </div>
-      )}
 
       {/* Role fields — simplified for any role type (ADR-028) */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
@@ -690,47 +603,21 @@ function BaselinePhase({
         </FieldGroup>
       </div>
 
-      {/* Interview Depth */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <div>
-          <div style={{
-            fontSize: 8,
-            letterSpacing: '0.2em',
-            color: 'var(--pipe-text-dim)',
-            marginBottom: 10,
-            textTransform: 'uppercase',
-          }}>
-            INTERVIEW_DEPTH
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {BUDGET_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setBudget(opt.value)}
-                style={{
-                  padding: '10px 8px',
-                  background: budget === opt.value
-                    ? 'rgba(255,255,255,0.06)'
-                    : 'transparent',
-                  border: budget === opt.value
-                    ? '1px solid rgba(255,255,255,0.15)'
-                    : '1px solid rgba(255,255,255,0.04)',
-                  color: budget === opt.value
-                    ? 'var(--pipe-text, #fff)'
-                    : 'rgba(255,255,255,0.3)',
-                  fontSize: 10,
-                  fontFamily: '"Space Mono", monospace',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Modals */}
+      {isJDModalOpen && (
+        <JobDescriptionImportModal
+          onParsed={applyParsed}
+          onClose={() => setIsJDModalOpen(false)}
+        />
+      )}
+      {isDepthModalOpen && (
+        <InterviewDepthModal
+          initialBudget={budget}
+          onSave={setBudget}
+          onClose={() => setIsDepthModalOpen(false)}
+        />
+      )}
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
@@ -1228,6 +1115,23 @@ export default function RoleDiscoveryPage(): JSX.Element {
     }
   };
 
+  // Skip the AI interview entirely — create the pipeline directly from baseline data.
+  // No role_context is created and no synthesis is generated; the recruiter can fill
+  // in the rest of the pipeline manually.
+  const handleSkipInterview = async (baseline: RoleContextBaseline): Promise<void> => {
+    try {
+      const pipelineId = await createPipeline({
+        title: baseline.title,
+        level: 'Senior',
+        status: 'DRAFT',
+        creationMode: 'BLANK',
+      });
+      navigate(`/pipeline/${pipelineId}`);
+    } catch (err) {
+      console.error('[RoleDiscoveryPage] Skip-interview create failed:', err);
+    }
+  };
+
   const handleRespond = (answer: string, questionId: string): void => {
     rd.respond(answer, questionId).catch(() => {
       // Error surfaced via rd.error
@@ -1281,7 +1185,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
       {(rd.phase === 'IDLE' || rd.phase === 'BASELINE') && (
         <BaselinePhase
           onSubmit={handleBaselineSubmit}
+          onSkipInterview={(baseline) => { handleSkipInterview(baseline).catch(() => {}); }}
           isLoading={rd.isLoading}
+          isSkipping={isCreating}
         />
       )}
 
