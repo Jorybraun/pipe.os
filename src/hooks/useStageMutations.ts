@@ -16,7 +16,11 @@ export interface UseStageMutationsResult {
     stageId: string,
     payload: UpdateStageRequest,
   ) => Promise<StageDetail>;
-  createStage: (pipelineId: string, title: string) => Promise<{ id: string }>;
+  createStage: (
+    pipelineId: string,
+    title: string,
+    stageType?: string | null,
+  ) => Promise<{ id: string }>;
   reorderStages: (pipelineId: string, stages: { id: string; order: number }[]) => Promise<void>;
   deleteStage: (stageId: string) => Promise<void>;
 }
@@ -47,9 +51,15 @@ export function useStageMutations(): UseStageMutationsResult {
   );
 
   const createStage = useCallback(
-    async (pipelineId: string, title: string): Promise<{ id: string }> => {
+    async (
+      pipelineId: string,
+      title: string,
+      stageType?: string | null,
+    ): Promise<{ id: string }> => {
       const api = createApiClient({ getToken });
-      return api.post<{ id: string }>(`/api/v1/pipelines/${pipelineId}/stages`, { title });
+      const body: { title: string; stageType?: string | null } = { title };
+      if (stageType !== undefined) body.stageType = stageType;
+      return api.post<{ id: string }>(`/api/v1/pipelines/${pipelineId}/stages`, body);
     },
     [getToken],
   );

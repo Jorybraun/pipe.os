@@ -313,9 +313,35 @@ export interface RespondQuestionResponse {
   toolsUsed?: string[];
 }
 
+/**
+ * Structured candidate persona — the internal hiring truth produced by the
+ * Discovery Agent on COMPLETE. Mirrors `CandidatePersona` in the Worker types.
+ */
+export interface CandidatePersona {
+  seniority: string;
+  archetype: string;
+  mustHaveSkills: string[];
+  niceToHaveSkills: string[];
+  disposition: string[];
+  careerSignal: string;
+  redFlags: string[];
+  dealbreakers: string[];
+}
+
+/**
+ * Generated job description — public-facing Markdown artifact produced by the
+ * Discovery Agent on COMPLETE. This is the raw markdown string (not parsed sections).
+ */
+export type GeneratedJobDescription = string;
+
 export interface RespondSynthesisResponse {
   participantId: string;
+  /** Legacy narrative string — now derived from `persona.archetype`. Kept for backwards compat. */
   synthesis: string;
+  /** Structured candidate persona (Role Discovery v2). Null if the agent failed to produce one. */
+  persona: CandidatePersona | null;
+  /** Generated job description in Markdown (Role Discovery v2). */
+  jobDescription: GeneratedJobDescription;
   knowledgeState: Record<string, Record<string, unknown>>;
   progress: RoleContextProgress;
   status: 'COMPLETE';
@@ -336,6 +362,10 @@ export interface RoleContextFullState {
     input: RoleContextQuestionInput;
     answer?: string;
   }>;
+  /** Persisted persona from prior synthesis — null if not yet synthesized. */
+  persona: CandidatePersona | null;
+  /** Persisted JD markdown from prior synthesis — null if not yet synthesized. */
+  jobDescription: GeneratedJobDescription | null;
   questionBudget: number;
   questionsAsked: number;
   createdAt: string;

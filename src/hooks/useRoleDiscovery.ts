@@ -19,6 +19,8 @@ import type {
   RespondRoleContextResponse,
   RespondSynthesisResponse,
   ParticipantRole,
+  CandidatePersona,
+  GeneratedJobDescription,
 } from '../lib/api/types';
 
 export type DiscoveryPhase = 'IDLE' | 'BASELINE' | 'CALIBRATING' | 'INTERVIEWING' | 'COMPLETE';
@@ -48,7 +50,10 @@ export interface UseRoleDiscoveryResult {
   // Baseline (stored for pipeline creation)
   baseline: RoleContextBaseline | null;
 
-  // Synthesis (when COMPLETE)
+  // Synthesis (when COMPLETE) — Role Discovery v2 artifacts
+  persona: CandidatePersona | null;
+  jobDescription: GeneratedJobDescription | null;
+  /** Legacy narrative string, derived from persona.archetype. Kept for compat. */
   synthesis: string | null;
 
   // Loading & error
@@ -74,6 +79,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const [progress, setProgress] = useState<RoleContextProgress | null>(null);
   const [pastExchanges, setPastExchanges] = useState<PastExchange[]>([]);
   const [baseline, setBaseline] = useState<RoleContextBaseline | null>(null);
+  const [persona, setPersona] = useState<CandidatePersona | null>(null);
+  const [jobDescription, setJobDescription] = useState<GeneratedJobDescription | null>(null);
   const [synthesis, setSynthesis] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +161,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
         if (data.status === 'COMPLETE') {
           const synthData = data as RespondSynthesisResponse;
           setSynthesis(synthData.synthesis);
+          setPersona(synthData.persona);
+          setJobDescription(synthData.jobDescription);
           setCurrentQuestion(null);
           setAcknowledgment(null);
           setPhase('COMPLETE');
@@ -186,6 +195,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
         { participantId },
       );
       setSynthesis(data.synthesis);
+      setPersona(data.persona);
+      setJobDescription(data.jobDescription);
       setProgress(data.progress);
       setCurrentQuestion(null);
       setAcknowledgment(null);
@@ -230,6 +241,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     progress,
     pastExchanges,
     baseline,
+    persona,
+    jobDescription,
     synthesis,
     isLoading,
     error,

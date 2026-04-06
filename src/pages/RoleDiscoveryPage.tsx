@@ -19,12 +19,13 @@ import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
 import { Loader2, ArrowRight, Sparkles, Check, MessageSquare, ChevronDown, Mic, Square, Flag, Settings, FileUp } from 'lucide-react';
-import type { RoleContextBaseline, RoleContextQuestion, RoleContextProgress, DomainCoverage, ParseJDResponse } from '../lib/api/types';
+import ReactMarkdown from 'react-markdown';
+import type { RoleContextBaseline, RoleContextQuestion, RoleContextProgress, DomainCoverage, ParseJDResponse, CandidatePersona, GeneratedJobDescription } from '../lib/api/types';
 import type { PastExchange } from '../hooks/useRoleDiscovery';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const DEFAULT_BUDGET = 10;
+const DEFAULT_BUDGET = 15;
 
 const DOMAIN_LABELS: Record<string, string> = {
   why: 'WHY',
@@ -976,26 +977,100 @@ function InterviewPhase({
 
 // ─── Synthesis Phase ────────────────────────────────────────────────────────
 
+type SynthesisTab = 'PERSONA' | 'JOB_DESCRIPTION';
+
+function PersonaField({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{
+        fontSize: 8,
+        letterSpacing: '0.2em',
+        color: 'rgba(139, 92, 246, 0.55)',
+        fontFamily: '"Space Mono", monospace',
+        marginBottom: 8,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 13,
+        color: 'rgba(255,255,255,0.85)',
+        lineHeight: 1.7,
+        fontFamily: '"Space Mono", monospace',
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PersonaTagList({ items, tone }: { items: string[]; tone: 'neutral' | 'warn' | 'danger' }): JSX.Element {
+  if (items.length === 0) {
+    return <span style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>;
+  }
+  const palette = {
+    neutral: { bg: 'rgba(139, 92, 246, 0.12)', border: 'rgba(139, 92, 246, 0.3)', fg: 'rgba(216, 180, 254, 0.95)' },
+    warn:    { bg: 'rgba(251, 191, 36, 0.1)',  border: 'rgba(251, 191, 36, 0.3)',  fg: 'rgba(253, 224, 71, 0.95)' },
+    danger:  { bg: 'rgba(252, 165, 165, 0.1)', border: 'rgba(252, 165, 165, 0.3)', fg: 'rgba(252, 165, 165, 0.95)' },
+  }[tone];
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {items.map((item, i) => (
+        <span key={i} style={{
+          fontSize: 11,
+          padding: '4px 10px',
+          background: palette.bg,
+          border: `1px solid ${palette.border}`,
+          color: palette.fg,
+          fontFamily: '"Space Mono", monospace',
+        }}>
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function SynthesisPhase({
-  synthesis,
+  persona,
+  jobDescription,
   progress,
   onCreatePipeline,
   isCreating,
 }: {
-  synthesis: string;
+  persona: CandidatePersona | null;
+  jobDescription: GeneratedJobDescription | null;
   progress: RoleContextProgress | null;
   onCreatePipeline: () => void;
   isCreating: boolean;
 }): JSX.Element {
+  const [tab, setTab] = useState<SynthesisTab>('PERSONA');
+
+  const tabButton = (value: SynthesisTab, label: string): JSX.Element => {
+    const active = tab === value;
+    return (
+      <button
+        onClick={() => setTab(value)}
+        style={{
+          padding: '10px 18px',
+          background: active ? 'rgba(139, 92, 246, 0.18)' : 'transparent',
+          border: active ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid rgba(255,255,255,0.08)',
+          color: active ? '#fff' : 'rgba(255,255,255,0.5)',
+          fontSize: 9,
+          letterSpacing: '0.2em',
+          fontFamily: '"Space Mono", monospace',
+          fontWeight: 700,
+          cursor: 'pointer',
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
   return (
     <div>
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 32,
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
         <div style={{
           width: 32,
           height: 32,
@@ -1034,33 +1109,113 @@ function SynthesisPhase({
         </div>
       )}
 
-      {/* Synthesis narrative */}
-      <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 32 }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 16,
-        }}>
-          <MessageSquare size={14} style={{ color: 'rgba(139, 92, 246, 0.6)' }} />
-          <span style={{
-            fontSize: 8,
-            letterSpacing: '0.2em',
-            color: 'rgba(139, 92, 246, 0.5)',
-            fontFamily: '"Space Mono", monospace',
+      {/* Tab toggle */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        {tabButton('PERSONA', 'CANDIDATE PERSONA')}
+        {tabButton('JOB_DESCRIPTION', 'JOB DESCRIPTION')}
+      </div>
+
+      {/* Persona card */}
+      {tab === 'PERSONA' && (
+        <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 32 }}>
+          {persona ? (
+            <>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 20,
+              }}>
+                <Sparkles size={14} style={{ color: 'rgba(139, 92, 246, 0.6)' }} />
+                <span style={{
+                  fontSize: 8,
+                  letterSpacing: '0.2em',
+                  color: 'rgba(139, 92, 246, 0.5)',
+                  fontFamily: '"Space Mono", monospace',
+                }}>
+                  INTERNAL HIRING TRUTH
+                </span>
+              </div>
+
+              <PersonaField label="SENIORITY">{persona.seniority}</PersonaField>
+              <PersonaField label="ARCHETYPE">{persona.archetype}</PersonaField>
+              <PersonaField label="MUST-HAVE SKILLS">
+                <PersonaTagList items={persona.mustHaveSkills} tone="neutral" />
+              </PersonaField>
+              <PersonaField label="NICE-TO-HAVE SKILLS">
+                <PersonaTagList items={persona.niceToHaveSkills} tone="neutral" />
+              </PersonaField>
+              <PersonaField label="DISPOSITION">
+                <PersonaTagList items={persona.disposition} tone="neutral" />
+              </PersonaField>
+              <PersonaField label="CAREER SIGNAL">{persona.careerSignal}</PersonaField>
+              <PersonaField label="RED FLAGS">
+                <PersonaTagList items={persona.redFlags} tone="warn" />
+              </PersonaField>
+              <div style={{ marginBottom: 0 }}>
+                <div style={{
+                  fontSize: 8,
+                  letterSpacing: '0.2em',
+                  color: 'rgba(252, 165, 165, 0.65)',
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 8,
+                }}>
+                  DEALBREAKERS
+                </div>
+                <PersonaTagList items={persona.dealbreakers} tone="danger" />
+              </div>
+            </>
+          ) : (
+            <div style={{
+              fontSize: 12,
+              color: 'rgba(255,255,255,0.45)',
+              fontFamily: '"Space Mono", monospace',
+            }}>
+              No persona generated.
+            </div>
+          )}
+        </LiquidMetalCard>
+      )}
+
+      {/* JD card */}
+      {tab === 'JOB_DESCRIPTION' && (
+        <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 32 }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 20,
           }}>
-            SYNTHESIS
-          </span>
-        </div>
-        <div style={{
-          fontSize: 13,
-          color: 'rgba(255,255,255,0.75)',
-          lineHeight: 1.8,
-          fontFamily: '"Space Mono", monospace',
-        }}>
-          {synthesis}
-        </div>
-      </LiquidMetalCard>
+            <MessageSquare size={14} style={{ color: 'rgba(139, 92, 246, 0.6)' }} />
+            <span style={{
+              fontSize: 8,
+              letterSpacing: '0.2em',
+              color: 'rgba(139, 92, 246, 0.5)',
+              fontFamily: '"Space Mono", monospace',
+            }}>
+              CANDIDATE-FACING JD
+            </span>
+          </div>
+          {jobDescription ? (
+            <div className="jd-markdown" style={{
+              fontSize: 13,
+              color: 'rgba(255,255,255,0.82)',
+              lineHeight: 1.75,
+              fontFamily: '"Space Mono", monospace',
+            }}>
+              <ReactMarkdown>{jobDescription}</ReactMarkdown>
+            </div>
+          ) : (
+            <div style={{
+              fontSize: 12,
+              color: 'rgba(255,255,255,0.45)',
+              fontFamily: '"Space Mono", monospace',
+            }}>
+              No job description generated.
+            </div>
+          )}
+        </LiquidMetalCard>
+      )}
 
       {/* Create pipeline CTA */}
       <button
@@ -1204,9 +1359,10 @@ export default function RoleDiscoveryPage(): JSX.Element {
         />
       )}
 
-      {rd.phase === 'COMPLETE' && rd.synthesis && (
+      {rd.phase === 'COMPLETE' && (rd.persona || rd.jobDescription) && (
         <SynthesisPhase
-          synthesis={rd.synthesis}
+          persona={rd.persona}
+          jobDescription={rd.jobDescription}
           progress={rd.progress}
           onCreatePipeline={handleCreatePipeline}
           isCreating={isCreating}

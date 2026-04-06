@@ -192,8 +192,52 @@ export interface RoleContextRow {
   question_budget: number;
   questions_asked: number;
   status: RoleContextStatus;
+  /** Persisted CandidatePersona JSON (stringified). Null until synthesis runs. */
+  persona_json: string | null;
+  /** Generated job description in Markdown. Null until synthesis runs. */
+  job_description_md: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Structured candidate persona — the internal hiring truth derived from the
+ * Discovery interview. Shared across stakeholders (merged per ADR-028).
+ * Drives downstream matching and scoring; also seeds the generated JD.
+ */
+export interface CandidatePersona {
+  /** e.g. "Mid-to-senior, 5–8 years" */
+  seniority: string;
+  /** e.g. "Backend-leaning fullstack from Series A-C startup" */
+  archetype: string;
+  /** 70% of skills the candidate should have day one. */
+  mustHaveSkills: string[];
+  /** 30% of skills that can be grown into. */
+  niceToHaveSkills: string[];
+  /** Cultural / working-style traits. e.g. "Comfortable pushing back on PMs". */
+  disposition: string[];
+  /** One-line career arc signal. e.g. "Has shipped at least one greenfield system end-to-end". */
+  careerSignal: string;
+  /** Watchouts — not absolute NOs. */
+  redFlags: string[];
+  /** Hard NOs — reject on contact if any of these are true. */
+  dealbreakers: string[];
+}
+
+/**
+ * Generated job description — the public-facing artifact ready to post on
+ * a job board or send directly to a candidate. Derived from the persona + the
+ * interview's knowledge state. Rendered as Markdown in the UI.
+ */
+export interface GeneratedJobDescription {
+  jobTitle: string;
+  companySummary: string;
+  roleOverview: string;
+  responsibilities: string[];
+  mustHaves: string[];
+  niceToHaves: string[];
+  compAndBenefits: string;
+  callToAction: string;
 }
 
 /** A single exchange (turn) in the role discovery interview. */

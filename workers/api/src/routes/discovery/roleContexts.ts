@@ -261,6 +261,10 @@ roleContexts.get('/:id', async (c) => {
   // Legacy: exchanges on role_contexts for backward compat during migration
   const exchanges = parseJsonColumn<RoleExchange[]>(row.exchanges, []);
 
+  // Role Discovery v2 artifacts (null until synthesis runs)
+  const persona = row.persona_json ? parseJsonColumn(row.persona_json, null) : null;
+  const jobDescription = row.job_description_md ?? null;
+
   return c.json({
     id: row.id,
     pipelineId: row.pipeline_id,
@@ -268,6 +272,8 @@ roleContexts.get('/:id', async (c) => {
     baseline,
     knowledgeState,
     exchanges,
+    persona,
+    jobDescription,
     questionBudget: row.question_budget,
     questionsAsked: row.questions_asked,
     participants,
@@ -502,9 +508,14 @@ roleContexts.post('/:id/respond', async (c) => {
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
 
   if (agentResponse.type === 'synthesis' || budgetExhausted) {
+    // Role Discovery v2: synthesis now emits persona + jobDescription artifacts.
+    // Legacy `synthesis` string is preserved for backwards compat (derived from archetype).
     const synthesis = agentResponse.type === 'synthesis' ? agentResponse.synthesis : '';
+    const persona = agentResponse.type === 'synthesis' ? agentResponse.persona : null;
+    const jobDescription = agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '';
 
-    // Update participant as complete + merge knowledge state into shared
+    // Update participant as complete + merge knowledge state into shared +
+    // persist persona/JD on the role_contexts row (shared across stakeholders).
     await c.env.DB.batch([
       c.env.DB.prepare(
         `UPDATE role_context_participants
@@ -514,9 +525,20 @@ roleContexts.post('/:id/respond', async (c) => {
 
       c.env.DB.prepare(
         `UPDATE role_contexts
-         SET knowledge_state = ?1, questions_asked = questions_asked + ?2, updated_at = ?3
-         WHERE id = ?4`,
-      ).bind(JSON.stringify(updatedKnowledgeState), questionsAsked, now(), id),
+         SET knowledge_state = ?1,
+             questions_asked = questions_asked + ?2,
+             persona_json = ?3,
+             job_description_md = ?4,
+             updated_at = ?5
+         WHERE id = ?6`,
+      ).bind(
+        JSON.stringify(updatedKnowledgeState),
+        questionsAsked,
+        persona ? JSON.stringify(persona) : null,
+        jobDescription || null,
+        now(),
+        id,
+      ),
     ]);
 
     // Check if all participants are complete → mark role context COMPLETE
@@ -538,6 +560,8 @@ roleContexts.post('/:id/respond', async (c) => {
     return c.json({
       participantId: participant.id,
       synthesis,
+      persona,
+      jobDescription,
       knowledgeState: updatedKnowledgeState,
       progress: {
         asked: questionsAsked,
@@ -653,6 +677,8 @@ roleContexts.post('/:id/complete', async (c) => {
 
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
   const synthesis = agentResponse.type === 'synthesis' ? agentResponse.synthesis : '';
+  const persona = agentResponse.type === 'synthesis' ? agentResponse.persona : null;
+  const jobDescription = agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '';
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -663,9 +689,18 @@ roleContexts.post('/:id/complete', async (c) => {
 
     c.env.DB.prepare(
       `UPDATE role_contexts
-       SET knowledge_state = ?1, updated_at = ?2
-       WHERE id = ?3`,
-    ).bind(JSON.stringify(updatedKnowledgeState), now(), id),
+       SET knowledge_state = ?1,
+           persona_json = ?2,
+           job_description_md = ?3,
+           updated_at = ?4
+       WHERE id = ?5`,
+    ).bind(
+      JSON.stringify(updatedKnowledgeState),
+      persona ? JSON.stringify(persona) : null,
+      jobDescription || null,
+      now(),
+      id,
+    ),
   ]);
 
   // Check if all complete
@@ -687,6 +722,8 @@ roleContexts.post('/:id/complete', async (c) => {
   return c.json({
     participantId: participant.id,
     synthesis,
+    persona,
+    jobDescription,
     knowledgeState: updatedKnowledgeState,
     progress: {
       asked: participant.questions_asked,

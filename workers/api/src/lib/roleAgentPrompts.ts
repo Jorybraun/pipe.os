@@ -131,24 +131,76 @@ You MUST respond with valid JSON matching this exact schema:
   }
 }
 
-## Playback Synthesis (Final Turn)
+## Information you MUST gather (to produce a real JD)
 
-When the budget is exhausted, respond with this format instead:
+The Six Domains are your reasoning scaffold. But the final artifacts require specific facts — if the interview doesn't surface these, the persona and JD will be generic. Probe for them naturally during the conversation:
+
+1. **Compensation** — salary range (or an explicit "we don't share comp yet"). Benefits the company is known for (equity, remote, learning stipend, time off).
+2. **Success metrics** — what does "crushing it" look like at 6 months? At 12 months? What would make you want to clone this person?
+3. **Day-in-the-life** — three concrete things this person actually does on a Tuesday. Not aspirations — lived reality.
+4. **Dealbreakers** — hard NOs. What's an instant reject during the interview? (e.g., "no on-call experience", "can't work PST hours", "hasn't shipped production code")
+5. **Team shape** — who do they work with daily? Who do they report to? How big is the team?
+6. **Tools they should already know** vs. tools they can learn on the job (the 70/30 split).
+7. **What kind of person thrives here** vs. what kind struggles (from hiring manager or team member perspective).
+
+If the conversation has covered fewer than 4 of these by mid-budget, prioritize them over further Six Domains depth.
+
+## Final Synthesis (Budget Exhausted)
+
+When the budget is exhausted, STOP asking questions and produce the two final artifacts in this exact JSON shape:
 
 {
-  "reasoning": "<final assessment of coverage>",
-  "synthesis": "<narrative summary — NOT a data dump. Demonstrate understanding of the role in 3-5 sentences. This is the Design Thinking 'Define' phase.>",
-  "knowledgeStateUpdate": { "<final extractions>" },
-  "domainCoverage": { "<final coverage>" }
+  "reasoning": "<final assessment of coverage — which domains are deep, which are sparse, any contradictions across stakeholders>",
+  "persona": {
+    "seniority": "<e.g., 'Mid-to-senior, 5–8 years' — based on actual evidence, not a guess>",
+    "archetype": "<one line describing the shape of person. e.g., 'Backend-leaning fullstack from Series A-C startup, comfortable with production on-call'>",
+    "mustHaveSkills": ["<5-8 items they need day one, specific. 'REST API design' not 'backend skills'>"],
+    "niceToHaveSkills": ["<3-5 items they can grow into. Frame as trajectory signals.>"],
+    "disposition": ["<3-5 cultural/working-style traits grounded in the interview. e.g., 'Comfortable pushing back on PMs', 'Opinionated about testing strategy'>"],
+    "careerSignal": "<one-line trajectory marker. e.g., 'Has shipped at least one greenfield system end-to-end'>",
+    "redFlags": ["<2-4 watchouts — not absolute NOs, but things to probe>"],
+    "dealbreakers": ["<hard NOs from the interview. If none were stated, use empty array>"]
+  },
+  "jobDescription": "<Full Markdown job description — ready to post. See structure below.>",
+  "knowledgeStateUpdate": { "<final extractions by domain>" },
+  "domainCoverage": { "<final coverage per domain>" }
 }
 
-The synthesis should read like: "You're looking for a senior backend engineer to join a 4-person team building a HIPAA-compliant messaging platform..." — shows understanding, not data collection.
+### Persona rules
 
-### Synthesis vs. Knowledge State — Different Audiences
+- **Evidence-grounded**: every field must be derivable from something the recruiter or stakeholder actually said. If the conversation didn't cover it, use a short placeholder like "Not specified" rather than inventing.
+- **Specific over generic**: "PostgreSQL query optimization under load" beats "strong SQL skills". "Has handled a production incident without escalating" beats "production-ready".
+- **Deal-breakers are HARD NOs only**. If the recruiter said "ideally they know Rust but we're flexible" — that's a nice-to-have, not a dealbreaker.
+- **Internal tone can be critical**: the persona is internal hiring truth. If the team has ownership problems or the role is really a dev-ops-disguised-as-backend role, say so plainly in redFlags or disposition.
 
-The **knowledgeStateUpdate** is consumed by machines (downstream agents that design assessments). Be as critical and honest as the conversation warrants. If the team has ownership problems, broken escalation, or red flags — record them plainly. This is where the real signal lives.
+### Job description rules
 
-The **synthesis** is read by the recruiter. Be analytical and incisive — make sharp observations, surface patterns they might not have seen, connect dots between their answers. The agent IS critical in its thinking and its knowledge state. But the synthesis should present those critical assessments in a **neutral, professional tone** — no emotional language, no judgment, no words like "broken", "plagued", "struggling", "dysfunctional", "comically". State what IS, not what's wrong. "The team currently operates without formal escalation paths" — not "escalation is broken." "Seniors hold titles but juniors drive technical decisions" — not "the team has a broken hierarchy." Same information, no emotional charge.`;
+The jobDescription field is a **Markdown string** — the final artifact ready to post on LinkedIn / a careers page / send to a candidate. Structure (use literal Markdown headings):
+
+- H1 with the industry-standard job title (never "Rockstar Ninja").
+- 2-3 paragraph company summary using companyName + companyUrl context if available. Mention mission, size, stage, recent momentum. "You" voice, not third person.
+- ## The Role — 2-3 paragraphs on why this role exists and what you'll own. Candidate-facing, "you" voice.
+- ## What You'll Do — 5-7 bullets, action verb first, specific about tools and outcomes. e.g. "Design and ship the payment retry system handling ~2M transactions/month."
+- ## What You Bring — 5-7 must-haves, the 70% they need day one. Specific. "3+ years writing production Python" not "strong Python skills".
+- ## Bonus Points — 3-5 nice-to-haves, the 30% they can learn.
+- ## Compensation & Benefits — if the recruiter provided a range, write it (e.g. "$X – $Y base + equity, depending on experience"). If not, omit this section entirely or say "Competitive — we'll discuss in the first call." NEVER invent numbers. Follow with bullets for benefits the recruiter mentioned (remote, health, equity, learning stipend).
+- ## How to Apply — short call to action. Default to: "Hit apply — we'll be in touch within a few days. No cover letter needed."
+
+### JD writing rules (non-negotiable)
+
+- **"You" not "the candidate"** or "the employee". Personal. Direct.
+- **No jargon clichés**: banned phrases include "wear many hats", "work hard play hard", "rockstar", "ninja", "fast-paced environment", "self-starter", "think outside the box", "disrupt". These signal burnout or laziness.
+- **Short paragraphs** (3-4 sentences max). Mobile-scannable.
+- **Use bullets** for responsibilities, requirements, benefits — not for narrative sections.
+- **Industry-standard job title** in the H1. If the recruiter gave a fancy internal title, translate it to what candidates actually search for.
+- **Never invent facts**. If the interview didn't surface something, omit it rather than hallucinate.
+- **Be honest about what's hard**. If the interview revealed on-call, tight deadlines, or ambiguity — name it plainly rather than hiding it. Honest JDs filter better than polished lies.
+
+### Persona vs. JD voice — different audiences
+
+The **persona** is internal hiring truth. Be analytical, incisive, plainly critical when the evidence warrants it. If the team has broken escalation paths, say so in disposition or redFlags.
+
+The **jobDescription** is public-facing. It should present the same reality in a **neutral, professional tone** — no emotional language, no "broken"/"plagued"/"struggling". State what IS, not what's wrong. "This team is actively rebuilding its escalation process" — not "escalation is broken." Same information, no emotional charge.`;
 
 // ─── Participant-role adaptive sections (ADR-028) ──────────────────────────
 
@@ -355,8 +407,9 @@ export function buildSynthesisPrompt(opts: {
     parts.push('');
   }
 
-  parts.push('BUDGET EXHAUSTED. Produce the final Playback Synthesis.');
-  parts.push('Respond with the synthesis JSON format. No markdown fencing.');
+  parts.push('BUDGET EXHAUSTED. Produce the Final Synthesis JSON.');
+  parts.push('Emit { reasoning, persona, jobDescription, knowledgeStateUpdate, domainCoverage } exactly as specified in your instructions.');
+  parts.push('The persona is structured JSON. The jobDescription is a Markdown string. No outer markdown fencing on the response.');
 
   return parts.join('\n');
 }

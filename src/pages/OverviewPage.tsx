@@ -23,11 +23,25 @@ import {
   Settings,
   ChevronDown,
   Sparkles,
+  Phone,
+  Users,
+  Zap,
+  Code,
 } from "lucide-react";
+import { STAGE_TYPES, STAGE_TYPE_CONFIGS, type StageType } from "../lib/stageTemplates";
+
+const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
+  SCREENING: Phone,
+  CULTURAL: Users,
+  TECHNICAL: Zap,
+  CODE_REVIEW: Code,
+  PANEL: FileText,
+};
 import { LiquidMetalCard } from "../components";
 import { TabNav } from "../components/ui/TabNav";
 import { Skeleton } from "../components/ui/Skeleton";
 import { CandidateIntakeModal } from "../components/Candidate/CandidateIntakeModal";
+import { PipelineTemplateModal } from "../components/PipelineTemplateModal";
 import { useOverviewData } from "../hooks/useOverviewData";
 import { useStageMutations } from "../hooks/useStageMutations";
 import { useCandidateMutations } from "../hooks/useCandidateMutations";
@@ -881,8 +895,7 @@ export default function OverviewPage(): JSX.Element {
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeCandidate, setActiveCandidate] = useState<OverviewCandidate | null>(null);
   const [activeStage, setActiveStage] = useState<OverviewStage | null>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const configStageId = searchParams.get('config');
+  const [, setSearchParams] = useSearchParams();
   const setConfigStageId = useCallback((stageId: string | null) => {
     setSearchParams((prev) => {
       if (stageId) prev.set('config', stageId);
@@ -891,7 +904,7 @@ export default function OverviewPage(): JSX.Element {
     }, { replace: true });
   }, [setSearchParams]);
   const [isAddingStage, setIsAddingStage] = useState(false);
-  const [newStageTitle, setNewStageTitle] = useState('');
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
 
   // Use locally-optimistic stage order if available, otherwise fall back to fetched.
   const displayStages = localStages ?? stages;
@@ -915,16 +928,16 @@ export default function OverviewPage(): JSX.Element {
     [refreshLink, refetch],
   );
 
-  const handleAddStage = async (): Promise<void> => {
-    if (!id || !newStageTitle.trim()) return;
+  const handleAddStage = async (stageType: StageType): Promise<void> => {
+    if (!id) return;
 
     try {
-      const created = await createStage(id, newStageTitle.trim());
-      setNewStageTitle('');
+      const title = STAGE_TYPE_CONFIGS[stageType].label;
+      const created = await createStage(id, title, stageType);
       setIsAddingStage(false);
       setLocalStages(null);
       await refetch();
-      // Auto-open config panel for the new stage
+      // Auto-open the config panel for the new stage
       if (created?.id) setConfigStageId(created.id);
     } catch (err) {
       console.error("[OverviewPage] Failed to add stage:", err);
@@ -1245,6 +1258,21 @@ export default function OverviewPage(): JSX.Element {
           )}
         </div>
 
+        {/* Template Picker Modal */}
+        {showTemplateModal && id && (
+          <PipelineTemplateModal
+            pipelineId={id}
+            onClose={() => setShowTemplateModal(false)}
+            onApplied={(firstStageId) => {
+              setShowTemplateModal(false);
+              void refetch();
+              // Open the config panel on the first stage so the user can
+              // immediately review or refine the seeded content.
+              if (firstStageId) setConfigStageId(firstStageId);
+            }}
+          />
+        )}
+
         {/* Add Candidate Modal */}
         {showAddForm && id && (
           <CandidateIntakeModal
@@ -1261,6 +1289,141 @@ export default function OverviewPage(): JSX.Element {
         {/* Role Profile — shown when pipeline was created via AI Discovery */}
         {roleContext && (
           <RoleProfileSection roleContext={roleContext} />
+        )}
+
+        {/* Empty-state quick-start — only on DRAFT pipelines with no stages */}
+        {isDraft && displayStages.length === 0 && !isAddingStage && (
+          <div
+            style={{
+              border: "1px dashed rgba(255,255,255,0.12)",
+              borderRadius: 12,
+              padding: 32,
+              marginBottom: 16,
+              background: "var(--pipe-surface)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 20,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.2em",
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 6,
+                }}
+              >
+                EMPTY_PIPELINE
+              </div>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "var(--pipe-text)",
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: "0.05em",
+                }}
+              >
+                START FROM A TEMPLATE OR LET PIPE BUILD IT FOR YOU
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: '"Space Mono", monospace',
+                  marginTop: 6,
+                  maxWidth: 560,
+                  lineHeight: 1.5,
+                }}
+              >
+                Pick a curated template to seed stages and questions in one shot,
+                or run a specialized AI interview to generate a pipeline tailored
+                to the role.
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button
+                onClick={() => setShowTemplateModal(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 18px",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.15em",
+                  fontFamily: '"Space Mono", monospace',
+                  background: "rgba(96,165,250,0.12)",
+                  border: "1px solid rgba(96,165,250,0.35)",
+                  borderRadius: 6,
+                  color: "#60a5fa",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(96,165,250,0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(96,165,250,0.12)";
+                }}
+              >
+                <FileText size={14} />
+                USE_TEMPLATE
+              </button>
+              <button
+                onClick={() => navigate("/pipeline/new")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 18px",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.15em",
+                  fontFamily: '"Space Mono", monospace',
+                  background: "rgba(167,139,250,0.12)",
+                  border: "1px solid rgba(167,139,250,0.35)",
+                  borderRadius: 6,
+                  color: "#a78bfa",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(167,139,250,0.2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(167,139,250,0.12)";
+                }}
+              >
+                <Sparkles size={14} />
+                AI_INTERVIEW
+              </button>
+              <button
+                onClick={() => setIsAddingStage(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 18px",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.15em",
+                  fontFamily: '"Space Mono", monospace',
+                  background: "var(--pipe-surface)",
+                  border: "1px solid var(--pipe-border)",
+                  borderRadius: 6,
+                  color: "var(--pipe-text-dim)",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                <Plus size={14} />
+                ADD_SINGLE_STAGE
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Stage Headers and Kanban Grid */}
@@ -1305,7 +1468,7 @@ export default function OverviewPage(): JSX.Element {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setConfigStageId(s.id);
+                            navigate(`/pipeline/${id}/stages/${s.id}?config=${s.id}`);
                           }}
                           title="Configure stage"
                           style={{
@@ -1420,82 +1583,80 @@ export default function OverviewPage(): JSX.Element {
                       fontFamily: '"Space Mono", monospace',
                     }}
                   >
-                    STAGE_NAME
+                    SELECT_TYPE
                   </label>
-                  <input
-                    autoFocus
-                    type="text"
-                    value={newStageTitle}
-                    onChange={(e) => setNewStageTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleAddStage();
-                      if (e.key === "Escape") {
-                        setIsAddingStage(false);
-                        setNewStageTitle("");
-                      }
-                    }}
-                    placeholder="e.g. Screening"
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {STAGE_TYPES.map((key) => {
+                      const config = STAGE_TYPE_CONFIGS[key];
+                      const Icon = STAGE_TYPE_ICONS[key];
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => void handleAddStage(key)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px 12px",
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: "0.08em",
+                            fontFamily: '"Space Mono", monospace',
+                            background: "var(--pipe-surface)",
+                            border: "1px solid var(--pipe-border)",
+                            borderRadius: 4,
+                            color: "var(--pipe-text-dim)",
+                            cursor: "pointer",
+                            transition: "all 0.15s",
+                            textAlign: "left",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "rgba(167,139,250,0.12)";
+                            e.currentTarget.style.borderColor = "rgba(167,139,250,0.3)";
+                            e.currentTarget.style.color = "#a78bfa";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "var(--pipe-surface)";
+                            e.currentTarget.style.borderColor = "var(--pipe-border)";
+                            e.currentTarget.style.color = "var(--pipe-text-dim)";
+                          }}
+                        >
+                          <Icon size={14} />
+                          <div>
+                            <div>{config.label.toUpperCase()}</div>
+                            <div
+                              style={{
+                                fontSize: 8,
+                                fontWeight: 400,
+                                letterSpacing: "0.05em",
+                                opacity: 0.7,
+                                marginTop: 2,
+                              }}
+                            >
+                              {config.description}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={() => setIsAddingStage(false)}
                     style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      fontSize: 11,
+                      padding: "8px 12px",
+                      fontSize: 9,
+                      fontWeight: 700,
+                      letterSpacing: "0.1em",
                       fontFamily: '"Space Mono", monospace',
-                      background: "rgba(0,0,0,0.2)",
+                      background: "var(--pipe-surface)",
                       border: "1px solid var(--pipe-border)",
                       borderRadius: 4,
-                      color: "var(--pipe-text)",
-                      outline: "none",
+                      color: "var(--pipe-text-dim)",
+                      cursor: "pointer",
                     }}
-                  />
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => {
-                        setIsAddingStage(false);
-                        setNewStageTitle("");
-                      }}
-                      style={{
-                        flex: 1,
-                        padding: "8px 12px",
-                        fontSize: 9,
-                        fontWeight: 700,
-                        letterSpacing: "0.1em",
-                        fontFamily: '"Space Mono", monospace',
-                        background: "var(--pipe-surface)",
-                        border: "1px solid var(--pipe-border)",
-                        borderRadius: 4,
-                        color: "var(--pipe-text-dim)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      CANCEL
-                    </button>
-                    <button
-                      onClick={() => void handleAddStage()}
-                      disabled={!newStageTitle.trim()}
-                      style={{
-                        flex: 1,
-                        padding: "8px 12px",
-                        fontSize: 9,
-                        fontWeight: 700,
-                        letterSpacing: "0.1em",
-                        fontFamily: '"Space Mono", monospace',
-                        background: newStageTitle.trim()
-                          ? "rgba(167,139,250,0.15)"
-                          : "var(--pipe-surface)",
-                        border: newStageTitle.trim()
-                          ? "1px solid rgba(167,139,250,0.3)"
-                          : "1px solid var(--pipe-border)",
-                        borderRadius: 4,
-                        color: newStageTitle.trim()
-                          ? "#a78bfa"
-                          : "var(--pipe-text-dim)",
-                        cursor: newStageTitle.trim() ? "pointer" : "default",
-                        opacity: newStageTitle.trim() ? 1 : 0.5,
-                      }}
-                    >
-                      CREATE
-                    </button>
-                  </div>
+                  >
+                    CANCEL
+                  </button>
                 </div>
               ) : (
                 <button

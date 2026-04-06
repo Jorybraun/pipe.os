@@ -14,7 +14,14 @@
  */
 
 import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage, buildSynthesisPrompt } from './roleAgentPrompts';
-import type { RoleExchange, DomainCoverage } from '../types';
+import type {
+  RoleExchange,
+  DomainCoverage,
+  CandidatePersona,
+  GeneratedJobDescription,
+} from '../types';
+
+export type { CandidatePersona, GeneratedJobDescription } from '../types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -39,6 +46,15 @@ export interface RoleAgentQuestionResponse {
 export interface RoleAgentSynthesisResponse {
   type: 'synthesis';
   reasoning: string;
+  /** Structured candidate persona (Role Discovery v2 output). */
+  persona: CandidatePersona;
+  /** Markdown job description (Role Discovery v2 output). */
+  jobDescription: string;
+  /**
+   * Legacy narrative string. Derived from `persona.archetype` for backwards
+   * compatibility with any caller still reading this field. New code should
+   * use `persona` and `jobDescription`.
+   */
   synthesis: string;
   knowledgeStateUpdate: Record<string, Record<string, unknown>>;
   domainCoverage: Record<string, DomainCoverage>;
@@ -339,10 +355,70 @@ function getMockQuestionResponse(questionsAsked: number): RoleAgentQuestionRespo
 
 function getMockSynthesisResponse(baseline: Record<string, unknown>): RoleAgentSynthesisResponse {
   const title = typeof baseline.title === 'string' ? baseline.title : 'the role';
+  const companyName = typeof baseline.companyName === 'string' ? baseline.companyName : 'the company';
+  const location = typeof baseline.location === 'string' ? baseline.location : 'Remote';
+
+  const persona: CandidatePersona = {
+    seniority: 'Mid-to-senior, 4-7 years',
+    archetype: `Practitioner-shaped ${title} who has shipped and owned the outcome`,
+    mustHaveSkills: [
+      'Has written and maintained production code for 3+ years',
+      'Can reason about trade-offs out loud',
+      'Comfortable with ambiguity in requirements',
+    ],
+    niceToHaveSkills: [
+      'Prior experience at a similar-stage company',
+      'Has given technical talks or mentored juniors',
+    ],
+    disposition: [
+      'Pragmatic over dogmatic',
+      'Asks questions before assuming',
+      'Comfortable with iterative feedback',
+    ],
+    careerSignal: 'Has shipped at least one substantial feature end-to-end',
+    redFlags: [
+      'Only ever worked in isolation',
+      'Cannot articulate why they made past technical decisions',
+    ],
+    dealbreakers: [],
+  };
+
+  const jobDescription = `# ${title}
+
+${companyName} is hiring a ${title} to join the team ${location ? `(${location})` : ''}.
+
+## The Role
+
+You'll own meaningful work from day one — shipping features that real users depend on, and shaping how the team builds over time.
+
+## What You'll Do
+
+- Ship features end-to-end, from design through production
+- Collaborate closely with product and design on trade-offs
+- Review code with care and push back when something doesn't add up
+
+## What You Bring
+
+- 3+ years writing production code
+- Opinions about engineering craft, held loosely
+- Comfort with ambiguity and iterative feedback
+
+## Bonus Points
+
+- Prior experience at a similar-stage company
+- Have given technical talks or mentored others
+
+## How to Apply
+
+Hit apply — we'll be in touch within a few days. No cover letter needed.
+`;
+
   return {
     type: 'synthesis',
-    reasoning: '[MOCK] Budget exhausted.',
-    synthesis: `Based on our conversation, you're looking for a ${title} who can contribute meaningfully to your team.`,
+    reasoning: '[MOCK] Budget exhausted. Mock persona + JD returned because MISTRAL_API_KEY is not configured.',
+    persona,
+    jobDescription,
+    synthesis: persona.archetype,
     knowledgeStateUpdate: {},
     domainCoverage: { why: 'partial', work: 'partial', team: 'sparse', bar: 'sparse', codebase: 'none', process: 'none' },
     toolsUsed: [],
@@ -407,11 +483,40 @@ function parseQuestionResponse(parsed: Record<string, unknown>, questionsAsked: 
   };
 }
 
+function toStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+}
+
+function parsePersona(raw: unknown): CandidatePersona {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  return {
+    seniority: typeof r.seniority === 'string' ? r.seniority : 'Not specified',
+    archetype: typeof r.archetype === 'string' ? r.archetype : 'Not specified',
+    mustHaveSkills: toStringArray(r.mustHaveSkills),
+    niceToHaveSkills: toStringArray(r.niceToHaveSkills),
+    disposition: toStringArray(r.disposition),
+    careerSignal: typeof r.careerSignal === 'string' ? r.careerSignal : 'Not specified',
+    redFlags: toStringArray(r.redFlags),
+    dealbreakers: toStringArray(r.dealbreakers),
+  };
+}
+
 function parseSynthesisResponse(parsed: Record<string, unknown>, toolsUsed: string[]): RoleAgentSynthesisResponse {
+  const persona = parsePersona(parsed.persona);
+  const jobDescription = typeof parsed.jobDescription === 'string' ? parsed.jobDescription : '';
+  // Legacy synthesis string: prefer explicit field, fall back to archetype so
+  // any caller still reading `synthesis` gets a meaningful one-liner instead
+  // of an empty string.
+  const legacySynthesis = typeof parsed.synthesis === 'string' && parsed.synthesis.length > 0
+    ? parsed.synthesis
+    : persona.archetype;
   return {
     type: 'synthesis',
     reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
-    synthesis: typeof parsed.synthesis === 'string' ? parsed.synthesis : '',
+    persona,
+    jobDescription,
+    synthesis: legacySynthesis,
     knowledgeStateUpdate: parseKnowledgeStateUpdate(parsed.knowledgeStateUpdate),
     domainCoverage: parseDomainCoverage(parsed.domainCoverage),
     toolsUsed,
