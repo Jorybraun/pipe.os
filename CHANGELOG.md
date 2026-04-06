@@ -6,6 +6,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Removed (AWS dependencies pulled from root package.json — 2026-04-06)
+- **`package.json`** — Removed 16 AWS-related packages: `aws-amplify`, `@aws-amplify/ui-react`, `@aws-amplify/backend`, `@aws-amplify/backend-cli`, `@aws-sdk/s3-request-presigner`, `@aws-sdk/client-cognito-identity-provider`, `@aws-sdk/client-dynamodb`, `@aws-sdk/client-ses`, `@aws-sdk/client-ssm`, `@aws-sdk/lib-dynamodb`, `@aws-sdk/util-dynamodb`, `aws-cdk`, `aws-cdk-lib`, `aws-sdk-client-mock`, `aws-sdk-client-mock-jest`, `constructs`. Net effect: **1891 packages removed** from `node_modules`.
+- **`tsconfig.json`** — Added `exclude: ["src/providers/amplify/**"]` to skip the orphan AWS provider files (`auth.tsx`, `storage.ts`, `data.ts`) which are no longer imported by anything in `src/`. Switched `include` from `["src"]` to `["src/**/*"]` glob form.
+- **Folders preserved (not deleted):** `amplify/` (still has its own `package.json` with its own AWS deps), `src/providers/amplify/` (zombie files remain on disk for reference). Per user request, no folders removed.
+- **Side effect:** Twelve seed/dev scripts in `scripts/*.ts` that import `@aws-sdk/*` will fail at runtime if invoked (`createFreshCandidate`, `seedIntelligenceReport`, `purgeTestData`, etc.). They are not in `tsconfig`'s include path, so they don't break build/typecheck. They were Amplify-era seeds whose underlying backend is being replaced anyway.
+- **Verified:** `vite build` succeeds (5.65s, ships normally). Pre-existing tsc errors went from 213 → 211 — strictly better, no new errors introduced.
+
 #### Changed (Routes reorganized into funnel segments — 2026-04-06)
 - **`workers/api/src/routes/`** — Restructured 16 route files into 6 segment subdirectories that mirror the candidate funnel: `cockpit/` (recruiter CRUD: pipelines, stages, challenges, candidates, github, overview, scheduling), `discovery/` (roleContexts), `outreach/` (email), `screening/` (phone), `assessment/` (reviewSessions, challengeSubmissions, video, review, repo). Empty placeholder dirs `ingestion/` and `ranking/` mark Phase 7 work and embedded scoring respectively. Cross-cutting candidate runtime entry (`rpc.ts`) stays at top level.
 - **`workers/api/src/index.ts`** — Updated 14 route imports to new segment paths, grouped by segment with section comments.
