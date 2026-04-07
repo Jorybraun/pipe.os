@@ -126,6 +126,20 @@ export class CloudflareAIProvider implements LLMProvider {
     }
 
     const content = forceJson ? stripJsonFences(rawText) : rawText;
+
+    // Populate usage when the Workers AI response includes token counts.
+    // Must not include usage: undefined — exactOptionalPropertyTypes requires omission.
+    if (result.usage) {
+      const usage: import('./types').LLMUsage = {};
+      if (result.usage.prompt_tokens !== undefined) {
+        usage.inputTokens = result.usage.prompt_tokens;
+      }
+      if (result.usage.completion_tokens !== undefined) {
+        usage.outputTokens = result.usage.completion_tokens;
+      }
+      return { content, usage };
+    }
+
     return { content };
   }
 }

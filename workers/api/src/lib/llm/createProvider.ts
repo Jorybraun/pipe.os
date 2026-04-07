@@ -22,6 +22,8 @@ interface ProviderEnv {
   ROLE_AGENT_PROVIDER?: string;
   CULTURE_AGENT_PROVIDER?: string;
   AI?: Ai;
+  /** When 'true', culture agent returns null provider and uses deterministic mock path. */
+  MOCK_AI?: string;
 }
 
 export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
@@ -45,6 +47,10 @@ export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
  * Can be overridden for calibration runs or fallback via CULTURE_AGENT_PROVIDER.
  */
 export function createCultureAgentProvider(env: ProviderEnv): LLMProvider | null {
+  // MOCK_AI short-circuit — forces the culture agent down its deterministic
+  // mock-turn path (see mockTurnResponse in cultureAgent.ts). Used by E2E/Vitest.
+  if (env.MOCK_AI === 'true') return null;
+
   const providerName = (env.CULTURE_AGENT_PROVIDER ?? 'cloudflare-ai') as ProviderName;
 
   if (providerName === 'cloudflare-ai') {

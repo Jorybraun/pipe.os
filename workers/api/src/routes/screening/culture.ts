@@ -41,6 +41,7 @@ import {
   type CultureScoreReport,
 } from '../../lib/cultureScorer';
 import { createCultureAgentProvider } from '../../lib/llm/createProvider';
+import { withCultureMetering } from '../../lib/llm/meteredProvider';
 import type { Env, Variables } from '../../types';
 import type { CompetencyDimension } from '../../lib/cultureQuestionBank';
 
@@ -164,7 +165,13 @@ export async function runScoringJob(env: Env, sessionId: string): Promise<void> 
     defaultCultureTranscript(),
   );
 
-  const provider = createCultureAgentProvider(env);
+  const rawProvider = createCultureAgentProvider(env);
+  // Wrap with metering — no ExecutionContext inside a background job, so pass
+  // null. The metering awaits the DB write directly (acceptable: we're already
+  // running async inside ctx.waitUntil on the outer request).
+  const provider = rawProvider !== null
+    ? withCultureMetering(rawProvider, sessionId, 'scoring', db, null)
+    : null;
 
   let report: CultureScoreReport;
   try {
@@ -337,6 +344,32 @@ cultureRecruiter.get('/sessions/:sessionId/report', async (c) => {
     );
   }
 
+  // Aggregate AI cost for this session
+  interface UsageRow {
+    feature: string;
+    cost: number;
+    n: number;
+  }
+  const usageRows = await c.env.DB.prepare(
+    `SELECT feature, SUM(usd_cost) as cost, COUNT(*) as n
+     FROM culture_ai_usage_events
+     WHERE session_id = ?1
+     GROUP BY feature`,
+  )
+    .bind(sessionId)
+    .all<UsageRow>();
+
+  const byFeature = { conversation: 0, scoring: 0, stt: 0 };
+  let totalUsd = 0;
+  let callCount = 0;
+  for (const row of usageRows.results ?? []) {
+    totalUsd += row.cost;
+    callCount += row.n;
+    if (row.feature === 'conversation') byFeature.conversation += row.cost;
+    else if (row.feature === 'scoring' || row.feature === 'synthesis') byFeature.scoring += row.cost;
+    else if (row.feature === 'stt') byFeature.stt += row.cost;
+  }
+
   return c.json({
     sessionId: session.id,
     candidateId: session.candidate_id,
@@ -348,6 +381,11 @@ cultureRecruiter.get('/sessions/:sessionId/report', async (c) => {
     reviewNotes: session.review_notes ?? null,
     reviewedAt: session.reviewed_at ?? null,
     report,
+    cost: {
+      totalUsd,
+      byFeature,
+      callCount,
+    },
   });
 });
 
@@ -448,6 +486,66 @@ cultureRecruiter.post('/sessions/:sessionId/review', async (c) => {
     .run();
 
   return c.json({ success: true, reviewedAt });
+});
+
+// ── GET /cost-dashboard ───────────────────────────────────────────────────────
+
+cultureRecruiter.get('/cost-dashboard', async (c) => {
+  const db = c.env.DB;
+
+  interface MonthlyRow {
+    total_cost: number;
+    interview_count: number;
+  }
+
+  // Monthly aggregates (current calendar month)
+  const monthlyRow = await db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(usd_cost), 0) AS total_cost,
+         COUNT(DISTINCT session_id) AS interview_count
+       FROM culture_ai_usage_events
+       WHERE created_at >= date('now', 'start of month')`,
+    )
+    .first<MonthlyRow>();
+
+  const totalCost = monthlyRow?.total_cost ?? 0;
+  const interviewCount = monthlyRow?.interview_count ?? 0;
+  const avgCostPerInterview = interviewCount > 0 ? totalCost / interviewCount : 0;
+
+  interface TopExpensiveRow {
+    session_id: string;
+    total_cost: number;
+    candidate_id: string | null;
+    state: string | null;
+    completed_at: string | null;
+  }
+
+  // Top 10 most expensive sessions
+  const topExpensive = await db
+    .prepare(
+      `SELECT
+         u.session_id,
+         SUM(u.usd_cost) AS total_cost,
+         s.candidate_id,
+         s.state,
+         s.completed_at
+       FROM culture_ai_usage_events u
+       LEFT JOIN culture_interview_sessions s ON s.id = u.session_id
+       GROUP BY u.session_id
+       ORDER BY total_cost DESC
+       LIMIT 10`,
+    )
+    .all<TopExpensiveRow>();
+
+  return c.json({
+    monthly: {
+      totalCost,
+      interviewCount,
+      avgCostPerInterview,
+    },
+    topExpensive: topExpensive.results ?? [],
+  });
 });
 
 // ─── Candidate router ─────────────────────────────────────────────────────────
@@ -645,7 +743,11 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     defaultCultureTranscript(),
   );
 
-  const provider = createCultureAgentProvider(c.env);
+  const rawProvider = createCultureAgentProvider(c.env);
+  // Wrap with metering so each conversation turn is cost-tracked.
+  const provider = rawProvider !== null
+    ? withCultureMetering(rawProvider, session.id, 'conversation', c.env.DB, c.executionCtx)
+    : null;
 
   const result = await advanceCultureInterview({
     provider,

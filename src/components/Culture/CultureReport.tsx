@@ -50,11 +50,22 @@ interface CultureScoreReport {
   scoredAt: string;
 }
 
+export interface CultureCostSummary {
+  totalUsd: number;
+  byFeature: {
+    conversation: number;
+    scoring: number;
+    stt: number;
+  };
+  callCount: number;
+}
+
 export interface CultureReportProps {
   report: CultureScoreReport;
   reviewed?: boolean;
   onConfirm?: () => void;
   onOverride?: () => void;
+  cost?: CultureCostSummary;
 }
 
 // ─── Colour tokens ────────────────────────────────────────────────────────────
@@ -491,7 +502,7 @@ function SectionHeading({ children }: { children: string }): JSX.Element {
  * <CultureReport report={scoreReport} onConfirm={handleConfirm} onOverride={handleOverride} />
  * ```
  */
-export function CultureReport({ report, reviewed = false, onConfirm, onOverride }: CultureReportProps): JSX.Element {
+export function CultureReport({ report, reviewed = false, onConfirm, onOverride, cost }: CultureReportProps): JSX.Element {
   const { synthesis, competencyScores, profileScores, orgBenchmark, scoredAt } = report;
   const recStyle = RECOMMENDATION_STYLES[synthesis.recommendation];
 
@@ -665,6 +676,7 @@ export function CultureReport({ report, reviewed = false, onConfirm, onOverride 
       </LiquidMetalCard>
 
       {/* ── 5. HITL review box (ADR-031) ─────────────────────────────────── */}
+      {/* cost footer is rendered after this block */}
       <LiquidMetalCard
         variant="dark"
         style={{
@@ -765,6 +777,31 @@ export function CultureReport({ report, reviewed = false, onConfirm, onOverride 
           )}
         </div>
       </LiquidMetalCard>
+
+      {/* ── 6. AI cost footer (optional, recruiter-only) ──────────────────── */}
+      {cost !== undefined && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            paddingTop: 4,
+          }}
+        >
+          <span
+            title={`Breakdown — conversation: $${cost.byFeature.conversation.toFixed(6)}, scoring: $${cost.byFeature.scoring.toFixed(6)}, stt: $${cost.byFeature.stt.toFixed(6)} (${cost.callCount} calls)`}
+            style={{
+              fontSize: 9,
+              color: 'var(--pipe-text-dim)',
+              opacity: 0.5,
+              letterSpacing: '0.06em',
+              cursor: 'help',
+              ...FONT_MONO,
+            }}
+          >
+            AI cost for this interview: ${cost.totalUsd.toFixed(4)}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

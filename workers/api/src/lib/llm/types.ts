@@ -44,9 +44,18 @@ export interface LLMTool {
 
 // ─── Completion result ────────────────────────────────────────────────────────
 
+/** Token usage reported by the provider, when available. */
+export interface LLMUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 export interface LLMCompletion {
   content: string | null;
   toolCalls?: LLMToolCall[];
+  /** Token usage reported by the underlying provider. May be absent if the
+   *  provider does not return usage metadata for this model/call. */
+  usage?: LLMUsage;
 }
 
 // ─── Provider interface ───────────────────────────────────────────────────────
