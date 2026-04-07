@@ -6,6 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Docs — Culture Interview Agent foundation (2026-04-07)
+- **`docs/decisions/ADR-029-culture-interview-agent-architecture.md`** — FSM + ReAct control flow mirroring `roleAgent`, deterministic BARS-backed question bank, multi-agent scoring decomposition via Gemma 4 on Workers AI, adaptive 5-min / 20-max termination rule, evidence-grounded scoring mandate, `review_sessions`-shaped storage.
+- **`docs/decisions/ADR-030-culture-profile-operationalization.md`** — 5-dimension slider model (Autonomy / Risk Tolerance / Work Pace / Collaboration Style / Feedback Orientation), "culture add" framing, explicit rejection of any aggregate culture-fit score. Grounds the decision in P-O fit research (ρ=.44 retention, ρ=.15 performance) and EEOC enforcement history.
+- **`docs/decisions/ADR-031-ai-hiring-compliance-architecture.md`** — Consent gate (Illinois HB 3773), HITL gate (EU AI Act Article 14), append-only `culture_compliance_audit` table, candidate deletion path. Consent-before-turn invariant enforced at the data layer.
+- **`docs/decisions/README.md`** — Indexed ADR-029/030/031.
+- **`knowledge/culture/`** — Full wiki scaffold: 5 competency dimension files, 5 culture-profile dimension files, STAR-slot probe library, role overlays (senior-IC, manager), question bank structure, authoring template, and `.raw/` staging area for phase C scraping. Moved the pre-existing `questions.md` First Round seed into `.raw/` as source material.
+- **`knowledge/culture/questions/**`** — Initial bank of **15 questions** with full BARS rubrics + L/M/H calibration examples + probe libraries: 3 per competency dimension (ownership, collaboration, learning-orientation, conflict-handling, self-awareness). This is the scoring calibration surface for the culture agent — every scored dimension grounds against these rubrics.
+
 #### Changed (STT quality upgrade — 2026-04-07)
 - **`workers/api/src/lib/transcribe.ts`** — Swapped `@cf/openai/whisper` for `@cf/openai/whisper-large-v3-turbo`. Same price ($0.00051/audio-min), materially better accuracy. Updated input encoding from `number[]` to base64 string (new model's schema). Added chunked `arrayBufferToBase64` helper to avoid `String.fromCharCode` argument-limit overflow on larger audio buffers.
 

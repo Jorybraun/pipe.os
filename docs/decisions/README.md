@@ -60,3 +60,6 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-026](ADR-026-implementer-agent-improvements.md) | Implementer Agent improvements — persona, iterative diffs | Accepted | 2026-03-30 |
 | [ADR-027](ADR-027-role-discovery-agent.md) | Role Discovery Agent — AI-powered role context extraction via Mistral | Proposed | 2026-04-05 |
 | [ADR-028](ADR-028-multi-stakeholder-role-discovery.md) | Multi-Stakeholder Role Discovery — generic baseline, participant-aware agent, invite flow | Proposed | 2026-04-05 |
+| [ADR-029](ADR-029-culture-interview-agent-architecture.md) | Behavioral & Culture Interview Agent — FSM+ReAct, BARS rubrics, multi-agent scoring via Gemma 4 | Proposed | 2026-04-07 |
+| [ADR-030](ADR-030-culture-profile-operationalization.md) | Culture Profile Operationalization — 5-dimension slider benchmark, "culture add" framing, no aggregate score | Proposed | 2026-04-07 |
+| [ADR-031](ADR-031-ai-hiring-compliance-architecture.md) | AI Hiring Compliance Architecture — consent gate, HITL gate, audit log, deletion path | Proposed | 2026-04-07 |
