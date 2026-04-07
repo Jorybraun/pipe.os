@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Changed (STT quality upgrade — 2026-04-07)
+- **`workers/api/src/lib/transcribe.ts`** — Swapped `@cf/openai/whisper` for `@cf/openai/whisper-large-v3-turbo`. Same price ($0.00051/audio-min), materially better accuracy. Updated input encoding from `number[]` to base64 string (new model's schema). Added chunked `arrayBufferToBase64` helper to avoid `String.fromCharCode` argument-limit overflow on larger audio buffers.
+
 #### Changed (Role Discovery v2: persona + JD output — 2026-04-06)
 - **`workers/api/migrations/0013_persona_jd.sql`** — New migration. Adds `persona_json TEXT` and `job_description_md TEXT` columns to `role_contexts` (shared across stakeholders per ADR-028). Synthesis was previously ephemeral; these columns persist the Discovery Agent's final artifacts.
 - **`workers/api/src/types.ts`** — Added `CandidatePersona` (seniority, archetype, mustHaveSkills, niceToHaveSkills, disposition, careerSignal, redFlags, dealbreakers) and `GeneratedJobDescription` (markdown string) types. Extended `RoleContextRow` with `persona_json` and `job_description_md` columns.
