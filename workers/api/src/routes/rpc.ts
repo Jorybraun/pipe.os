@@ -17,6 +17,7 @@ import { candidateAuth, type CandidateVariables } from '../middleware/candidateA
 import { review } from './assessment/review';
 import { repo } from './assessment/repo';
 import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
+import { cultureCandidate } from './screening/culture';
 import type { Env } from '../types';
 
 // ─── Public routes (no auth) ────────────────────────────────────────────────
@@ -968,5 +969,12 @@ rpcAuth.post('/get-scheduled-interview', async (c) => {
 
 rpcAuth.route('/review', review);
 rpcAuth.route('/repo', repo);
+
+// ─── Mount culture interview candidate sub-router ────────────────────────────
+// Culture routes use path-param token auth (the session JWT is the :token URL
+// param, not an Authorization header). Mount on rpcPublic so candidateAuth
+// middleware doesn't intercept before the route handler reads its own token.
+// Each handler calls verifyJwt internally. See screening/culture.ts.
+rpcPublic.route('/culture', cultureCandidate);
 
 export { rpcPublic, rpcAuth };

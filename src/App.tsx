@@ -10,19 +10,25 @@ import {
   useNavigate,
   useParams,
   useLocation,
-  useSearchParams,
 } from "react-router-dom";
 import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
 import { useAuth } from "./providers";
 import { Layout, SidebarNav } from "./components";
 import ListingPage from "./pages/ListingPage";
-import OverviewPage from "./pages/OverviewPage";
-import StageDetailPage from "./pages/StageDetailPage";
+import PipelineShellPage from "./pages/PipelineShellPage";
+import PipelineInsightsPanel from "./pages/PipelineInsightsPanel";
+import StagePanel from "./pages/StagePanel";
+import ChallengesTab from "./pages/stage-tabs/ChallengesTab";
+import CandidatesTab from "./pages/stage-tabs/CandidatesTab";
+import ConfigureTab from "./pages/stage-tabs/ConfigureTab";
+import NewStageFormPage from "./pages/NewStageFormPage";
+import KanbanPage from "./pages/KanbanPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
 import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
+import CultureInterviewPage from "./pages/CultureInterviewPage";
 import SchedulingPage from "./pages/SchedulingPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
@@ -32,7 +38,6 @@ import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { useAuth as useClerkAuth } from "@clerk/react";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { RecruiterCallDrawer } from "./components/Video/RecruiterCallDrawer";
-import { StageConfigPanel } from "./components/StageConfigPanel";
 import { SidebarPortalProvider } from "./contexts/SidebarPortalContext";
 import { StageRefetchProvider } from "./contexts/StageRefetchContext";
 
@@ -79,7 +84,7 @@ const SubHeader = () => {
                 if (isCandidateContext) {
                   navigate(-1);
                 } else if (questionId && stageId) {
-                  navigate(`/pipeline/${id}/stages/${stageId}`);
+                  navigate(`/pipeline/${id}/stage/${stageId}`);
                 } else if (stageId) {
                   navigate(`/pipeline/${id}`);
                 } else if (id) {
@@ -198,23 +203,14 @@ function AppLayout(): JSX.Element {
     new URLSearchParams(window.location.search).has('state');
   const [showSettings, setShowSettings] = useState(hasOAuthCallback);
   const [showCalls, setShowCalls] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const configStageId = searchParams.get('config');
 
-  const closeConfig = (): void => {
-    setSearchParams((prev) => { prev.delete('config'); return prev; }, { replace: true });
-  };
+  const panelContent = showSettings
+    ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
+    : showCalls
+      ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
+      : undefined;
 
-  // Determine which panel to show (stage config takes priority)
-  const panelContent = configStageId
-    ? <StageConfigPanel stageId={configStageId} onClose={closeConfig} />
-    : showSettings
-      ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
-      : showCalls
-        ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
-        : undefined;
-
-  const isPanelOpen = !!configStageId || showSettings || showCalls;
+  const isPanelOpen = showSettings || showCalls;
 
   return (
     <SidebarPortalProvider>
@@ -228,7 +224,6 @@ function AppLayout(): JSX.Element {
             setActiveSection("roles");
             setShowSettings(false);
             setShowCalls(false);
-            closeConfig();
             navigate("/");
           }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
@@ -253,7 +248,6 @@ function AppLayout(): JSX.Element {
           {...(FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO
             ? {
                 onCallsClick: () => {
-                  if (configStageId) closeConfig();
                   setShowSettings(false);
                   setShowCalls((prev) => !prev);
                   if (!showCalls) setActiveSection("calls");
@@ -262,7 +256,6 @@ function AppLayout(): JSX.Element {
               }
             : {})}
           onSettingsClick={() => {
-            if (configStageId) closeConfig();
             setShowCalls(false);
             setShowSettings((prev) => !prev);
             if (!showSettings) setActiveSection("settings");
@@ -278,6 +271,12 @@ function AppLayout(): JSX.Element {
     </StageRefetchProvider>
     </SidebarPortalProvider>
   );
+}
+
+/** Redirect old /pipeline/:id/stages/:stageId paths to the new /stage/:stageId shape. */
+function LegacyStageRedirect(): JSX.Element {
+  const { id, stageId } = useParams<{ id: string; stageId: string }>();
+  return <Navigate to={`/pipeline/${id}/stage/${stageId}`} replace />;
 }
 
 /** Binds the theme storage to the signed-in recruiter's Clerk userId. */
@@ -309,6 +308,18 @@ function App(): JSX.Element {
           }
         />
 
+        {/* Public Candidate Culture Interview Route */}
+        <Route
+          path="/culture/:token"
+          element={
+            <ThemeProvider>
+              <ErrorBoundary>
+                <CultureInterviewPage />
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
         {/* Protected Recruiter Routes */}
         <Route
           path="*"
@@ -320,14 +331,24 @@ function App(): JSX.Element {
                 <Routes>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />
-                    <Route path="/pipeline/:id" element={<OverviewPage />} />
+                    <Route path="/pipeline/:id" element={<PipelineShellPage />}>
+                      <Route index element={<PipelineInsightsPanel />} />
+                      <Route path="new-stage" element={<NewStageFormPage />} />
+                      <Route path="stage/:stageId" element={<StagePanel />}>
+                        <Route index element={<ChallengesTab />} />
+                        <Route path="candidates" element={<CandidatesTab />} />
+                        <Route path="configure" element={<ConfigureTab />} />
+                      </Route>
+                    </Route>
+                    <Route path="/pipeline/:id/kanban" element={<KanbanPage />} />
+                    {/* Legacy redirects — old /stages/:stageId paths */}
                     <Route
                       path="/pipeline/:id/stages/:stageId"
-                      element={<StageDetailPage />}
+                      element={<LegacyStageRedirect />}
                     />
                     <Route
                       path="/pipeline/:id/stages/:stageId/challenges"
-                      element={<StageDetailPage />}
+                      element={<LegacyStageRedirect />}
                     />
                     {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
                       <Route

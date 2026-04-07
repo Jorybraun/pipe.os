@@ -12,8 +12,9 @@ import { schedulingAuth, schedulingPublic } from './routes/cockpit/scheduling';
 import { roleContexts } from './routes/discovery/roleContexts';
 // Outreach — invites + result emails
 import { emailRoutes } from './routes/outreach/email';
-// Screening — phone screening
+// Screening — phone screening + culture interview
 import { phonePublic, phoneAuth } from './routes/screening/phone';
+import { cultureRecruiter } from './routes/screening/culture';
 // Assessment — code review, challenges, video interviews
 import { videoAuth, videoCandidate } from './routes/assessment/video';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
@@ -79,6 +80,8 @@ app.route('/api/v1/candidates', emailRoutes);
 app.route('/api/v1/scheduling', schedulingPublic);
 // Scheduling: OAuth, event types, interviews (authenticated)
 app.route('/api/v1/scheduling', schedulingAuth);
+// Culture interview: recruiter config + report + HITL review
+app.route('/api/v1/screening/culture', cultureRecruiter);
 // Phone: Twilio webhooks (public, signature validation)
 app.route('/api/v1/phone', phonePublic);
 // Phone: token generation, call CRUD (authenticated)
