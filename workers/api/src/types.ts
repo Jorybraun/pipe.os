@@ -25,6 +25,9 @@ export interface Env {
    * Optional — falls back to Workers AI when not set.
    */
   MISTRAL_API_KEY?: string;
+  GOOGLE_AI_API_KEY?: string;
+  /** 'mistral' | 'google-ai' — selects the role agent provider. Default: 'mistral'. */
+  ROLE_AGENT_PROVIDER?: string;
   /**
    * Anthropic API key — alternative provider for the implementer agent.
    * Only used if MISTRAL_API_KEY and Workers AI are not available.
@@ -120,7 +123,7 @@ export interface StageRow {
 export interface ChallengeRow {
   id: string;
   stage_id: string;
-  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP';
+  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'AGENT_INTERVIEW';
   sort_order: number;
   title: string;
   instructions: string | null;
@@ -322,7 +325,7 @@ export interface ApiError {
 export interface ChallengeResponse {
   id: string;
   stageId: string;
-  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP';
+  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'AGENT_INTERVIEW';
   order: number;
   title: string;
   instructions: string | null;

@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Culture Interview Agent plumbing (2026-04-07)
+- **`workers/api/migrations/0014_culture_interview.sql`** — New migration introducing `culture_interview_sessions` (one row per candidate interview, `transcript` JSON column mirroring the `review_sessions` precedent, `consent_at` as the compliance audit anchor, `state` CHECK constraint for the FSM) and `culture_compliance_audit` (append-only event log for Illinois HB 3773 / EU AI Act Art. 14, `event_type` CHECK enumerating the 13 auditable events).
+- **`workers/api/src/lib/llm/cloudflareAIProvider.ts`** — New provider implementing the `LLMProvider` interface on top of `env.AI.run()`. Defaults to `@cf/google/gemma-4-26b-a4b-it` for the culture agent. `supportsTools = false`. Translates standardized messages into OpenAI-compatible chat shape; strips ```json``` fences Gemma tends to emit; `forceJson` prepends a strict JSON-only instruction since Workers AI doesn't reliably honor `response_format: json_schema`.
+- **`workers/api/src/lib/llm/createProvider.ts`** — Added `createCultureAgentProvider(env)` factory defaulting to `cloudflare-ai`. Extended `ProviderName` to include `'cloudflare-ai'` and `ProviderEnv` to carry `AI?: Ai`.
+- **`workers/api/src/types.ts`** — Added `'AGENT_INTERVIEW'` to both challenge-type unions (`ChallengeRow.type` and `ChallengeResponse.type`) so culture-agent challenges type-check through the D1 row / API response layer.
+
 #### Docs — Culture Interview Agent foundation (2026-04-07)
 - **`docs/decisions/ADR-029-culture-interview-agent-architecture.md`** — FSM + ReAct control flow mirroring `roleAgent`, deterministic BARS-backed question bank, multi-agent scoring decomposition via Gemma 4 on Workers AI, adaptive 5-min / 20-max termination rule, evidence-grounded scoring mandate, `review_sessions`-shaped storage.
 - **`docs/decisions/ADR-030-culture-profile-operationalization.md`** — 5-dimension slider model (Autonomy / Risk Tolerance / Work Pace / Collaboration Style / Feedback Orientation), "culture add" framing, explicit rejection of any aggregate culture-fit score. Grounds the decision in P-O fit research (ρ=.44 retention, ρ=.15 performance) and EEOC enforcement history.
