@@ -1,0 +1,131 @@
+---
+type: archetype-hub
+name: feedback
+question_count: 119
+---
+
+# Feedback
+
+Hub page for the **feedback** archetype. 119 questions.
+
+## Questions
+
+- [[q-exponent-0445-reviewing-culture-memo-feedback]] — What do you like most about the culture memo, and what would you have done differently? *(self-awareness)*
+- [[q-exponent-0527-using-customer-feedback-for-innovation]] — Tell me about a time when you used customer feedback to drive innovation. *(conflict-handling, self-awareness)*
+- [[q-exponent-0533-provide-harsh-feedback-colleague]] — Tell me about a time when you provided harsh feedback to a colleague. *(conflict-handling, self-awareness)*
+- [[q-exponent-0775-negative-feedback-how-handled]] — Tell me about a time when you received negative feedback and how you handled it. *(conflict-handling, self-awareness)*
+- [[q-exponent-1521-difficult-employee-situation-handling]] — What is the most difficult employee situation you have handled well, and which one not-so-well? *(conflict-handling, self-awareness)*
+- [[q-exponent-1523-employee-negative-feedback-example]] — Tell me about a time when an employee gave you negative feedback. *(self-awareness, learning-orientation)*
+- [[q-exponent-1532-important-feedback-provided]] — Tell me about a time when you provided important feedback. *(conflict-handling, self-awareness)*
+- [[q-exponent-1769-work-criticism-experience]] — Tell me about a time when your work received criticism. *(self-awareness, learning-orientation)*
+- [[q-exponent-1777-helpful-feedback-to-peer]] — Tell me about a time you provided feedback that was helpful to a peer. *(collaboration, conflict-handling)*
+- [[q-exponent-4118-handling-difficult-situation-product-design]] — Tell me about a time you dealt with a difficult situation or roadblock while designing a product and how you obtained stakeholder buy-in. *(self-awareness)*
+- [[q-exponent-4121-why-work-at-hinge]] — Why do you want to work at Hinge? *(self-awareness)*
+- [[q-exponent-4158-what-are-your-weaknesses]] — What are your weaknesses? *(self-awareness)*
+- [[q-exponent-4229-past-projects]] — Tell me about your past projects. *(self-awareness)*
+- [[q-exponent-4250-identify-unexplored-opportunity-actions-outcome]] — Tell me about a time when you discovered an area of opportunity that hadn't been fully explored. How did you identify it, what actions did you take, and what was the outcome? *(self-awareness)*
+- [[q-exponent-4263-why-uber]] — Why do you want to work at Uber? *(self-awareness)*
+- [[q-exponent-4264-tools-used-as-tpm]] — What tools have you used as a TPM? *(self-awareness)*
+- [[q-exponent-4265-day-as-product-designer]] — Tell me about your day to day as a product designer. *(self-awareness)*
+- [[q-exponent-4272-experience-that-changed-way-of-thinking]] — Can you describe an experience that significantly changed your way of thinking or approach to a situation? *(self-awareness)*
+- [[q-exponent-4273-most-important-person]] — Who is the most important person in your life and why? *(self-awareness)*
+- [[q-exponent-4274-handling-problems-outside-team-ownership]] — Describe a situation where you encountered a problem that no one was willing to investigate because it was considered outside their scope. *(self-awareness, conflict-handling)*
+- [[q-exponent-4275-why-twilio]] — Why do you want to work at Twilio? *(self-awareness)*
+- [[q-exponent-4276-most-appealing-twilio-value]] — Which of Twilio’s values appeals to you the most? *(self-awareness)*
+- [[q-exponent-4284-least-favorite-leadership-principle]] — Which leadership principle do you least resonate with? *(self-awareness, conflict-handling)*
+- [[q-exponent-4285-why-netflix]] — Why do you want to work at Netflix? *(self-awareness)*
+- [[q-exponent-4286-most-valuable-experience]] — Describe an experience that you consider most valuable. *(self-awareness)*
+- [[q-exponent-4288-why-tiktok]] — Why do you want to work at TikTok? *(self-awareness)*
+- [[q-exponent-4290-experience-analytical-skills]] — Tell me about a time when you needed to be analytical. *(self-awareness)*
+- [[q-exponent-4301-data-product-manager-surprising-experience]] — Tell me about a time when you were surprised during your work as a data product manager. *(self-awareness)*
+- [[q-exponent-4308-layoff-communication]] — How would you communicate layoffs to affected individuals? *(self-awareness, conflict-handling)*
+- [[q-exponent-4343-handling-price-objections]] — How do you handle a customer who asks why your product is so expensive? *(self-awareness)*
+- [[q-exponent-4346-build-up-technical-champion]] — Tell me about a time you built up a technical champion. *(self-awareness)*
+- [[q-exponent-4354-prevent-customer-churn]] — Tell me about a time you prevented a customer from churning. *(self-awareness)*
+- [[q-exponent-4355-customer-price-objections]] — How would you talk a customer through price objections? *(self-awareness)*
+- [[q-exponent-4413-explaining-technical-and-business-concepts]] — How would you simplify a technical concept for a business user, and how would you explain a business concept to a technical user? *(self-awareness)*
+- [[q-exponent-4450-project-applying-cap-theorem]] — Tell me about a project where you applied the CAP theorem. *(self-awareness)*
+- [[q-exponent-4492-exceeded-expectations-project-task]] — Tell me about a time when you significantly exceeded expectations on a project or task. *(self-awareness)*
+- [[q-exponent-4579-why-mongo-db]] — Why are you interested in working at MongoDB? *(self-awareness)*
+- [[q-exponent-4596-why-nvidia]] — Why do you want to work at Nvidia? *(self-awareness)*
+- [[q-exponent-4597-nvidia-tech-industry]] — What role does Nvidia play in shaping the tech industry? *(self-awareness)*
+- [[q-exponent-4598-ray-tracing-experience]] — What's your experience with ray tracing in video games? *(self-awareness)*
+- [[q-exponent-4599-directx-experience]] — What's your experience with DirectX? *(self-awareness, conflict-handling)*
+- [[q-exponent-4603-work-experience-ar-vr]] — What's your experience working with AR and/or VR technology? *(self-awareness)*
+- [[q-exponent-4605-3d-graphics-experience]] — What's your experience with 3D graphics? *(self-awareness)*
+- [[q-exponent-4607-cuda-experience]] — What's your experience working with CUDA? *(self-awareness)*
+- [[q-exponent-4608-why-openai]] — Why do you want to work at OpenAI? *(self-awareness)*
+- [[q-exponent-4609-openai-mission-statement]] — What parts of OpenAI's mission statement resonate with you? *(self-awareness)*
+- [[q-exponent-4624-why-bloomberg]] — Why are you interested in working at Bloomberg? *(self-awareness)*
+- [[q-exponent-4626-strategies-to-keep-motivated-at-coding]] — What activities or strategies do you use to keep yourself motivated and interested in coding? *(self-awareness, conflict-handling)*
+- [[q-exponent-4627-why-visa]] — Why do you want to work at Visa? *(self-awareness)*
+- [[q-exponent-4629-why-no-hire]] — Why do you think we should not hire you? *(self-awareness)*
+- [[q-exponent-4668-why-engineer]] — Why did you become an engineer? *(self-awareness)*
+- [[q-exponent-4670-interviewing-at-other-companies]] — What other companies are you interviewing at and why? *(self-awareness)*
+- [[q-exponent-4671-why-discord]] — Why do you want to work at Discord? *(self-awareness)*
+- [[q-exponent-4675-why-walmart-labs]] — Why do you want to work at Walmart Labs? *(self-awareness)*
+- [[q-exponent-4695-limited-information-drive-customer-outcomes]] — Tell me about a time when you worked with limited information to drive customer outcomes. *(self-awareness)*
+- [[q-exponent-4715-role-model]] — Who is your role model? *(self-awareness)*
+- [[q-exponent-4726-open-adapt-to-changes]] — How open are you to adapting to changes? *(self-awareness)*
+- [[q-exponent-4777-user-need-unmet-validate-solution]] — Tell me about a user need that is not being met by the market. How would you validate a solution for it? *(self-awareness)*
+- [[q-exponent-4784-behavioral-last-minute-change]] — Tell me about a time when you had to incorporate a last minute change. *(self-awareness)*
+- [[q-exponent-4785-situational-customer-ticket-delay]] — A customer calls you with a critical issue and says that their ticket is not being picked. How would you handle this? *(self-awareness)*
+- [[q-exponent-4786-situational-engineer-ticket-delay]] — Your engineers are not ready to pick up outstanding tickets. How would you handle this? *(self-awareness)*
+- [[q-exponent-4790-behavioral-simple-solution-complex-problem]] — Tell me about a time when you gave a simple solution to a complex problem. *(self-awareness)*
+- [[q-exponent-4796-describe-data-science-project]] — Walk me through a past data science project. *(self-awareness)*
+- [[q-exponent-4807-pm-hubspot-market-share]] — Tell me what you know about Hubspot and its market share. *(self-awareness)*
+- [[q-exponent-4837-write-product-requirement-doc]] — How do you write your PRDs? *(self-awareness)*
+- [[q-exponent-4857-explain-cricket-communication-skills]] — How would you explain cricket to someone who has never encountered the sport? *(self-awareness)*
+- [[q-exponent-4861-proudest-product-experience]] — What product are you most proud of? What problems did you solve and what were the outcomes? *(self-awareness)*
+- [[q-exponent-4869-root-cause-analysis-experience]] — Tell me about a time when you had to ask more questions or dig deeper to get to the bottom of something. *(self-awareness)*
+- [[q-exponent-4880-prioritize-competing-features]] — How do you prioritize competing features? *(self-awareness)*
+- [[q-exponent-4883-day-spent-work]] — How do you spend your day at work? *(self-awareness)*
+- [[q-exponent-4888-thoughts-on-ai]] — What are your thoughts on AI? *(self-awareness)*
+- [[q-exponent-4889-philosophy-on-technology]] — What is your philosophy on technology? *(self-awareness)*
+- [[q-exponent-4913-explain-technical-concept]] — How would you explain a technical concept to a non-technical person? *(self-awareness)*
+- [[q-exponent-4914-handle-project-deadlines-targets]] — You're working on a project where deadlines and targets are constantly slipping. How would you handle this? *(self-awareness)*
+- [[q-exponent-4927-persevere-project-despite-obstacles]] — Tell me about a time when you persevered with a project despite facing obstacles. *(self-awareness)*
+- [[q-exponent-4929-enjoy-most-about-previous-role]] — What did you enjoy most about your last role? *(self-awareness)*
+- [[q-exponent-4933-welcome-new-ways-thinking]] — Tell me about a time when you welcomed new ways of thinking (Include and Empower core value). *(self-awareness)*
+- [[q-exponent-4938-adapt-changing-project-goals]] — Tell me about a time when project goals changed and how you handled it. *(self-awareness)*
+- [[q-exponent-5416-define-ideal-workplace-colleagues]] — Define your ideal workplace and colleagues.
+- [[q-exponent-5451-experience-present-financial-result-to-stakeholders]] — Tell me about a time when you had to present financial result to non-financial stakeholders.
+- [[q-exponent-5459-reason-switch-jobs]] — Why do you want to switch jobs now?
+- [[q-exponent-5561-tell-me-about-agile-kanban-experience]] — Tell me about your experience working with Agile, specfically with Kanban
+- [[q-exponent-5598-interest-in-ai]] — Tell me about your interest in AI.
+- [[q-exponent-5682-pivot-marketing-strategy]] — Tell me about a time where you had to pivot a marketing strategy mid-campaign. *(ownership, collaboration)*
+- [[q-exponent-5779-time-you-owned-project-that-was-not-originally-yours]] — Tell me about a time when you took ownership of a project you weren't originally responsible for.
+- [[q-exponent-5792-evidence-for-anthropic-mission]] — What evidence shows Anthropic's sincerity about their mission?
+- [[q-exponent-5793-critique-anthropic-direction]] — Do you have any critique or concerns about Anthropic's approach or direction?
+- [[q-exponent-5795-work-process-you-disliked]] — Is there a work process or decision strategy you strongly disliked?
+- [[q-exponent-5797-meaningful-work]] — Has there been work that felt genuinely meaningful to you?
+- [[q-exponent-5798-give-difficult-feedback-to-others]] — Tell me about a time you gave difficult feedback to others.
+- [[q-exponent-5809-do-you-believe-in-anthropics-mission]] — Do you believe in Anthropic's mission?
+- [[q-exponent-5812-experiences-built-in-career]] — What kind of experiences have you built in your career?
+- [[q-exponent-5813-define-goals-for-project]] — How do you define the right goals/KPIs/success criteria of the project?
+- [[q-exponent-5814-time-you-disliked-team]] — Tell me about a time you did not like the team you were working with and wanted to switch.
+- [[q-exponent-5816-example-of-outstanding-success]] — What's an example of outstanding or exemplary success?
+- [[q-exponent-5817-rank-yourself]] — How would you rank yourself in terms of percentile?
+- [[q-exponent-5824-day-as-a-swe]] — Tell me about your day as a software engineer.
+- [[q-exponent-5836-decide-ship-new-powerful-risky-capability]] — You have a new capability that's extremely powerful but potentially risky, how do you decide whether or not to ship it?
+- [[q-exponent-5837-delay-launch]] — What would make you delay a major launch even under executive pressure? *(ownership, collaboration)*
+- [[q-exponent-5850-balancing-data-insights-with-technical-perspective]] — How would you handle a disagreement with an engineer over a product decision, balancing data insights with their technical perspective while preserving collaboration?
+- [[q-exponent-5852-quick-iterations-with-ux-designers]] — How have you worked on quick iterations with UX designers in the past? *(collaboration)*
+- [[q-exponent-5865-how-do-you-work-with-engineering]] — As a PM, how do you work with your engineering team?
+- [[q-exponent-5891-customer-interaction]] — Have you directly spoken with customers or managed customer relationships yourself?
+- [[q-exponent-5895-prioritizing-competing-demands]] — With one engineer and one week, how would you prioritize competing demands from multiple enterprise customers?
+- [[q-exponent-5898-independent-project]] — Tell me about something you built end-to-end without relying on others.
+- [[q-exponent-5900-ai-tools-usage]] — How do you approach building prototypes using AI tools versus traditional coding?
+- [[q-exponent-5919-what-does-mission-first-mean]] — What does "mission-first" mean?
+- [[q-exponent-5922-ai-first-product]] — Have you done any “vibe coding” or built anything outside work that shows AI-first product thinking? *(ownership, collaboration)*
+- [[q-exponent-5936-trade-offs]] — What tradeoffs did you consider on products you worked on?
+- [[q-exponent-5937-stakeholder-management]] — How did you handle stakeholder management on your past projects?
+- [[q-exponent-5973-physics-experience]] — What 3D or foundational physics experience do you have from your previous roles?
+- [[q-exponent-5974-technical-knowledge]] — What technical knowledge do you have that would make you successful in this role?
+- [[q-exponent-5977-prosumers-experience]] — What experience or work have you done with prosumers in the past?
+- [[q-exponent-5978-ai-experience]] — Have you worked with AI or generative AI products before?
+- [[q-exponent-5979-tough-decision-justification]] — Tell me about a tough product decision you made and how you backed it up.
+- [[q-exponent-5980-products-launched-scaled]] — What products have you worked on that you launched or scaled? *(ownership, collaboration)*
+- [[q-exponent-5989-technical-challenge]] — Tell me about a time there was a technical challenge and a disagreement with a partner team—how did you handle it?
+- [[q-exponent-6030-future-career-path]] — Where do you see your career going in the next few years?
+- [[q-exponent-6036-overcome-challenging-product-problem]] — Describe a challenging product problem you faced and how you overcame it. *(ownership, collaboration)*

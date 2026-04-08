@@ -23,6 +23,7 @@
  */
 
 import type { CultureQuestion, StarSlot } from './cultureQuestionBank';
+import { PROBE_PATTERNS } from './cultureProbePatterns';
 
 // ─── Turn input / output shapes ─────────────────────────────────────────────
 
@@ -85,8 +86,10 @@ export interface AgentTurnJsonResponse {
    */
   reasoning: string;
   /**
-   * Optional 1-line running theme to append to the scratchpad. May be null.
-   * Examples: "Repeated pattern: framing assigned work as ownership".
+   * Optional probe-pattern tag to append to the scratchpad. MUST be one of
+   * the closed-vocabulary tags in `cultureProbePatterns.ts` or null. The
+   * selector intersects this list against question `probe_patterns` to award
+   * a theme-resonance bonus, so free-text strings are dead code.
    */
   running_theme_to_add: string | null;
 }
@@ -142,6 +145,13 @@ NEVER probe more than the budget allows. NEVER invent new scenarios. The probe M
 
 # Probe library for the current question
 You will be given a probe library keyed by deficiency type. Use these templates as your starting point and adapt the wording so it references the candidate's actual answer. Do NOT paste them verbatim.
+
+# Running theme vocabulary (CLOSED LIST)
+The \`running_theme_to_add\` field MUST be exactly one of these strings, or null. Do NOT invent new strings — free text is silently discarded by the selector.
+
+${PROBE_PATTERNS.map((p) => `  - ${p}`).join('\n')}
+
+Pick the tag that best names the BEHAVIOR the candidate just demonstrated (or failed to demonstrate). If nothing fits cleanly, return null.
 
 # Acknowledgment style
   - One sentence, or at most two.

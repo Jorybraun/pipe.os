@@ -74,11 +74,30 @@ Storage:       Cloudflare R2 (media, resumes)
 Auth:          Clerk Pro (recruiter) + custom JWT (candidate — no sign-in)
 Billing:       Clerk Billing (Stripe underneath)
 Email:         Resend
-AI:            Mistral (scoring, follow-ups, intelligence reports)
+AI:            per-task routing — see "AI model routing" below
 Design:        Brutalist glassmorphic, dark #0c0c0e, Space Mono font
 ```
 
 See `migration/PLAN.md` for full details.
+
+### AI model routing
+
+There is no single LLM. Different agents use different models so each task picks the cheapest option that's still strong enough. All routing lives in `workers/api/src/lib/llm/createProvider.ts`.
+
+| Agent / job                       | Primary model                              | Provider           | Why                                                                 |
+|-----------------------------------|--------------------------------------------|--------------------|---------------------------------------------------------------------|
+| Culture interview agent (turn FSM, scoring) | `@cf/google/gemma-4-26b-a4b-it`     | Workers AI         | Strong instruction-following + structured JSON output, cheap on the AI binding. |
+| Culture scorer (5 dimensions × 5 axes + synthesis) | `@cf/google/gemma-4-26b-a4b-it`  | Workers AI         | 11 calls per scoring run; Gemma keeps the per-interview cost negligible.        |
+| Role Discovery agent (persona + JD synthesis) | Gemma 4 31B (primary)               | Workers AI         | Migrated off Mistral Small. Free-tier-friendly and strong at structured output. |
+| Code review implementer agent     | Qwen 2.5-Coder 32B                         | Workers AI         | Coder-tuned model handles diff understanding + rebuttals well.       |
+| Code review scoring panel         | Devstral Small                             | Mistral            | Specialized evaluative model; runs the per-PR scoring in the Worker. |
+| Emergency fallback (any agent)    | Claude Sonnet 4.5                          | Anthropic          | Used only when the primary provider is down. Cost gate enforced.     |
+
+**Quotas to remember:**
+- Workers AI Gemma 4 has a daily call ceiling (~10k) — production interviews must keep below this. Build-time bulk tagging (e.g. wiki sync) uses Haiku 4.5 via the Agent tool, never Gemma.
+- Mistral Devstral is metered per-token; budget tracked in `culture_usage_tracking` and `culture_compliance_audit`.
+
+**Build-time vs. runtime:** Workers cannot read the filesystem. Anything that needs to ship to the Worker (question banks, role overlays, calibration fixtures) must be bundled as a TS const via a sync script (see `workers/api/scripts/sync-culture-wiki.ts`).
 
 ---
 

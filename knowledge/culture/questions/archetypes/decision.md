@@ -1,0 +1,180 @@
+---
+type: archetype-hub
+name: decision
+question_count: 168
+---
+
+# Decision
+
+Hub page for the **decision** archetype. 168 questions.
+
+## Questions
+
+- [[q-exponent-0107-tell-me-about-time-solved-complex-problem]] — Tell me about a time when you solved a complex problem and how you went about it. *(ownership)*
+- [[q-exponent-0127-metrics-engineering-team]] — What metrics would you set for an engineering team you work with? *(ownership, collaboration)*
+- [[q-exponent-0227-convince-someone-change-mind]] — Tell me about a time you convinced someone to change their mind. *(collaboration)*
+- [[q-exponent-0276-convince-team-members]] — Tell me about a time when you had to convince team members on something you proposed. *(collaboration)*
+- [[q-exponent-0321-persuade-team-specific-price-point]] — How did you persuade your team to adopt a specific price point? *(collaboration)*
+- [[q-exponent-0411-convince-launch-analytics-platform-linkedin]] — How would you convince stakeholders to launch a new analytics platform for LinkedIn? *(collaboration)*
+- [[q-exponent-0528-using-metrics-to-drive-change]] — Tell me about a time when you used a specific metric to drive change in your department.
+- [[q-exponent-0551-time-handled-difficult-stakeholder]] — Tell me about a time when you handled a difficult stakeholder. *(collaboration, conflict-handling)*
+- [[q-exponent-0592-should-google-acquire-irobot]] — Should Google acquire iRobot?
+- [[q-exponent-0641-manager-belief-difference-how-handle]] — Tell me about a time your manager strongly believed in something and you did not. How did you handle it?
+- [[q-exponent-0784-measure-success-new-vr-feature]] — How would you measure success for a new VR feature?
+- [[q-exponent-0802-how-to-increase-pixel-market-share]] — How would you increase Pixel market share?
+- [[q-exponent-0814-validate-news-feed-split-metrics-facebook]] — Facebook wants to split its News Feed into two. What metrics would you evaluate to validate this decision?
+- [[q-exponent-0821-sales-decreased-what-would-you-do]] — If sales decreased in a particular month, what would you do?
+- [[q-exponent-0835-measure-success-go-to-market-strategy]] — How would you evaluate the success of a go-to-market strategy?
+- [[q-exponent-0851-work-with-competing-stakeholders-prioritize]] — How would you work with competing stakeholders to prioritize projects? *(collaboration, conflict-handling)*
+- [[q-exponent-0913-how-to-prioritize-tradeoffs]] — How do you prioritize trade-offs?
+- [[q-exponent-0935-choosing-one-solution-from-many]] — Tell me about a time when you chose one solution from many possible solutions. *(ownership)*
+- [[q-exponent-0947-prioritize-five-different-projects]] — If you had to work on five different projects, how would you prioritize them? *(ownership)*
+- [[q-exponent-0980-main-considerations-prioritizing]] — What main considerations do you take when prioritizing? *(ownership)*
+- [[q-exponent-1011-prioritize-feature-development-design]] — How do you prioritize feature development when working with design? *(ownership)*
+- [[q-exponent-1525-balance-engineering-limitations-customer-requirements]] — How do you balance engineering limitations with customer requirements? *(conflict-handling, collaboration)*
+- [[q-exponent-1526-manager-handle-tradeoffs]] — As a manager, how do you handle trade-offs? *(conflict-handling)*
+- [[q-exponent-1530-tough-decision-during-project]] — Tell me about a tough decision you made during a project. *(ownership, conflict-handling)*
+- [[q-exponent-1579-fb-watch-redesign-ship-decision]] — You're a PM on Facebook Watch working on a redesign that improved watch time but dropped likes and comments. Should you ship this? *(ownership)*
+- [[q-exponent-1589-linkedin-pm-response-rate-strategy]] — You're a PM at LinkedIn. Your data science team reports that 64% of outbound messages receive no response. What do you do? *(ownership)*
+- [[q-exponent-1607-instagram-reels-rollout]] — How would you roll out Instagram Reels? *(ownership)*
+- [[q-exponent-1613-prioritize-multiple-requests-teams]] — How would you prioritize multiple requests from different teams? *(ownership, conflict-handling)*
+- [[q-exponent-1623-increase-revenue-lower-prices-walmart]] — You are responsible for pricing at physical Walmart stores. How would you increase revenue by decreasing prices? *(ownership)*
+- [[q-exponent-1665-instacart-retention-improvement]] — You're a PM at Instacart. What would you do to improve retention? *(ownership)*
+- [[q-exponent-1683-instagram-store-purchase-without-login]] — Determine if we should launch a feature of Instagram Store that allows purchases without logging in. *(ownership)*
+- [[q-exponent-1688-prioritize-features-engineering-team]] — How do you prioritize features for your engineering team? *(ownership)*
+- [[q-exponent-1692-reduce-amusement-park-ride-queue]] — An amusement park has a ride with a long queue that is a growing concern. How would you address this issue? *(ownership)*
+- [[q-exponent-1700-help-customer-make-decision]] — Describe a situation where you helped a customer make a decision. *(collaboration)*
+- [[q-exponent-1704-deliver-project-solution-four-months]] — How would you plan to deliver a solution for the project within four months? *(ownership)*
+- [[q-exponent-1710-decision-based-on-metric-tracking]] — Tell me about a decision you made based on a metric you were tracking. *(ownership)*
+- [[q-exponent-1744-doordash-goals-north-star-prioritization]] — What goals would you set for DoorDash, and what would be your North Star? How would you prioritize between launching new features to increase orders or simplifying the onboarding funnel to attract ... *(ownership)*
+- [[q-exponent-1749-process-improvement-differences]] — What would you have done differently in a process you improved? *(ownership, learning-orientation)*
+- [[q-exponent-1750-current-system-overview]] — Tell me about a system you are currently working on. *(ownership)*
+- [[q-exponent-1768-project-deadline-earlier-than-expected]] — Have you ever faced a project deadline that was earlier than expected? How did you handle it and what was the outcome? *(ownership, conflict-handling)*
+- [[q-exponent-1771-plan-obstacles-addressing]] — Tell me about a time when you encountered obstacles in your plan. How did you address them? *(ownership, conflict-handling)*
+- [[q-exponent-1774-managing-multiple-deadlines]] — Tell me about a time when you had two deadlines at the same time. How did you manage the situation? *(ownership, conflict-handling)*
+- [[q-exponent-1782-budget-management-tips]] — When managing a budget, what are some ways you get more out of less? *(ownership)*
+- [[q-exponent-1865-pm-cisco-supply-chain-client-conversation]] — You are a PM at Cisco facing supply chain issues. Role play a conversation with your client on how to address this. *(ownership, collaboration)*
+- [[q-exponent-1870-balance-short-term-wins-long-term-goals]] — Tell me about a time when you had to balance short-term wins with long-term goals. *(ownership, conflict-handling)*
+- [[q-exponent-1871-balance-engineering-foundational-work-new-features]] — How do you balance engineering foundational work with building new features? *(ownership, collaboration)*
+- [[q-exponent-1873-favorite-product-build-competitor]] — Tell me about your favorite product. How would you build its competitor? *(ownership, learning-orientation)*
+- [[q-exponent-1888-measure-success-facebook-live]] — How would you measure the success of Facebook Live? *(ownership)*
+- [[q-exponent-1889-deliver-product-feature-half-timeline]] — What would you do if you had to deliver a product or feature in half of the initial timeline? *(ownership, conflict-handling)*
+- [[q-exponent-1894-important-metric-instagram-verified-badges]] — What is the most important metric for Instagram's verified badges?
+- [[q-exponent-1903-time-you-exceeded-customer-expectations]] — Tell me about a time when you delivered over and above customer expectations.
+- [[q-exponent-1910-set-success-metrics-for-google-maps]] — Set the success metrics for Google Maps.
+- [[q-exponent-1917-time-you-went-above-beyond-for-customer]] — Tell me about a time when you went above and beyond for a customer.
+- [[q-exponent-1921-handling-duplicate-project-work]] — You have 12 months to deliver a project. After 6 months, you realize during a meeting that another team is working on the same project. What would you do? *(collaboration)*
+- [[q-exponent-1927-why-cisco]] — Why Cisco?
+- [[q-exponent-1930-convincing-co-worker-adopt-your-approach-outcome]] — Tell me about a time when you convinced your co-worker to adopt your approach. What was the outcome? *(collaboration)*
+- [[q-exponent-1935-solving-problem-outside-team-scope]] — Tell me about a time when you resolved a problem that was outside your team's scope. *(collaboration)*
+- [[q-exponent-1950-reaction-to-high-product-prices-in-drug-store]] — How would you react to finding the price of a product in a drug store to be very high?
+- [[q-exponent-1955-time-you-launched-a-product]] — Tell me about a time when you launched a product.
+- [[q-exponent-1958-challenges-of-being-a-product-manager]] — What do you find to be the most challenging part of being a Product Manager?
+- [[q-exponent-1961-design-social-crypto-bank]] — Design a social crypto bank.
+- [[q-exponent-1962-approach-stakeholders-when-feature-delayed]] — How would you approach your stakeholders if you cannot deliver the feature in the next six months? *(collaboration)*
+- [[q-exponent-1964-measure-engineering-manager-performance]] — How do you measure the performance of an engineering manager?
+- [[q-exponent-1965-handling-sick-leave-during-critical-project-deadlines]] — What happens when a team member takes sick leave with an upcoming project deadline? *(collaboration)*
+- [[q-exponent-1986-likes-and-dislikes-about-product-management]] — What aspects do you like about product management and what aspects do you not like?
+- [[q-exponent-1990-measure-success-toshiba-self-checkout]] — As a Product Manager, how would you measure the success of Toshiba's self-checkout systems used by millions of grocery store shoppers daily?
+- [[q-exponent-2025-manage-project-multiple-stakeholders-unclear-goal]] — How would you manage a project with numerous stakeholders, diverse opinions, and an unclear goal? *(collaboration)*
+- [[q-exponent-2027-why-google-maps-successful-future-developments]] — Why has Google Maps been so successful and what would you build next on this platform?
+- [[q-exponent-2032-google-ceo-pixel-handset-investment-decision]] — As the CEO of Google, should the company continue, slow down, maintain, or ramp up investments in the Pixel handset line?
+- [[q-exponent-2033-value-of-google-photos-user]] — What is the value of a Google Photos user to Google?
+- [[q-exponent-2035-version-control-google-docs]] — Discuss version control on Google Docs.
+- [[q-exponent-2037-launch-waitlist-appointment-feature-salon]] — As a product marketing manager, how would you launch the new waitlist appointment feature for a salon? What process would you follow?
+- [[q-exponent-2048-time-you-worked-on-passion-project]] — Tell me about a time when you worked on something you were passionate about.
+- [[q-exponent-2060-describe-time-when-values-were-tested]] — Describe a time when your values were tested.
+- [[q-exponent-2061-why-join-graduate-scheme]] — Why do you want to join a Graduate Scheme?
+- [[q-exponent-2062-why-work-for-astrazeneca]] — Why do you want to work for AstraZeneca?
+- [[q-exponent-2064-describe-time-played-win-right-thing-entrepreneurial]] — Describe a time when you played to win, did the right thing, and were entrepreneurial.
+- [[q-exponent-2069-using-data-address-problem]] — Tell me about a time when you used data to address a problem.
+- [[q-exponent-2071-increase-onboarding-funnel-conversion]] — You're a PM in the Onboarding team. You have to increase the conversion of the onboarding funnel by 15% in 3 months. *(collaboration)*
+- [[q-exponent-2079-change-project-given-chance]] — If given a chance, what would you change about a project, and why?
+- [[q-exponent-2099-explain-prime-numbers-simply]] — Explain prime numbers to a five-year-old.
+- [[q-exponent-2107-create-product-without-client-request]] — Tell me about a time when you created a product or feature without the client requesting it.
+- [[q-exponent-2116-new-ceo-blue-origin-break-even]] — As the new CEO of Blue Origin, what actions would you take to make the company break even?
+- [[q-exponent-2127-goals-for-reels-recommendation-engine]] — What goals would you set for the Reels recommendation engine?
+- [[q-exponent-2128-determining-worthwhile-new-product-launch]] — How would you determine if launching a new product is worthwhile?
+- [[q-exponent-2130-launching-new-product-existing-users]] — How would you launch a new product to our existing user base?
+- [[q-exponent-2133-leadership-principles-functional-competencies]] — Describe three behavioral leadership principles, two functional competencies, and one technical system design.
+- [[q-exponent-2142-cpo-strategy-declining-supermarket-revenue]] — You're the CPO of a small bricks-and-mortar supermarket chain with no online presence and declining revenue over the last 5-10 years. What would you do?
+- [[q-exponent-2144-project-did-not-meet-client-expectations]] — Describe a time where a project didn't meet the client's expectations.
+- [[q-exponent-2147-handling-project-lacking-information]] — Describe a time when a project lacked key information.
+- [[q-exponent-2149-manage-remote-project-without-meeting]] — You are working on a project remotely without meeting team members. What steps would you take to ensure smooth operations? *(collaboration)*
+- [[q-exponent-2151-managed-project-without-pm-title]] — Tell me about a time when you managed a project without having the title of a project manager.
+- [[q-exponent-2152-example-using-technical-judgment]] — Give me an example of a time you used technical judgment.
+- [[q-exponent-2158-eliminate-usd-bill-reason]] — If you were to eliminate one USD bill, which would it be and why?
+- [[q-exponent-2161-time-took-strategic-risk]] — Tell me about a time you took a strategic risk.
+- [[q-exponent-2163-program-execution-style]] — Tell me about your program execution style.
+- [[q-exponent-2165-goals-not-measured-by-kpis]] — What goals cannot be measured by KPIs?
+- [[q-exponent-2170-what-is-dns]] — What is DNS?
+- [[q-exponent-2173-why-use-personaccounts]] — Why would a company use PersonAccounts?
+- [[q-exponent-2176-design-for-accessibility-experience]] — Tell me about a time when you designed for accessibility.
+- [[q-exponent-2181-feature-fought-to-keep]] — What was a feature that you fought to keep in and why?
+- [[q-exponent-2185-google-home-hotels]] — Should Google provide Google Home devices to hotel room guests?
+- [[q-exponent-2192-experience-role-job-expectations]] — Tell me about your experience and role in your most recent team. What are you looking for in this job? *(collaboration)*
+- [[q-exponent-2197-measure-success-favorite-product-pmo]] — How would you measure the success of your favorite product as the PMO?
+- [[q-exponent-2223-gaining-trust-experience]] — Tell me about a time when you gained trust.
+- [[q-exponent-2224-reason-leaving-consulting]] — Why are you leaving consulting?
+- [[q-exponent-2225-interest-in-technology]] — What got you interested in technology?
+- [[q-exponent-2239-experience-managing-team]] — Do you have experience managing a team? *(collaboration)*
+- [[q-exponent-2247-motivate-team-new-feature-launch]] — Facing a new feature launch, the team is not motivated to collaborate. What would you do? *(collaboration)*
+- [[q-exponent-2251-structuring-opportunity-feature-x-gtm]] — How would you structure the opportunity for a new product feature X and create a go-to-market strategy?
+- [[q-exponent-2254-explaining-technical-project-to-pmm]] — Take a technical project you worked on and explain it to a product marketing manager.
+- [[q-exponent-2255-interacting-product-marketing-lifecycle]] — How do you interact with product marketing during a product lifecycle?
+- [[q-exponent-2256-working-on-stakeholder-requirement]] — If a stakeholder or customer gives you a requirement, how would you approach it? *(collaboration)*
+- [[q-exponent-2267-home-page-pm-netflix-measure-success]] — As a Home Page PM at Netflix, how would you measure the success of your product?
+- [[q-exponent-2268-introduce-yourself]] — Can you introduce yourself?
+- [[q-exponent-2273-impact-of-work-on-world]] — How do you consider the impact of your work on the world?
+- [[q-exponent-2282-philosophy-of-product-management]] — What is your philosophy of Product Management?
+- [[q-exponent-2283-challenge-you-faced-and-overcame]] — Tell me about a challenge you faced and how you overcame it.
+- [[q-exponent-2284-idea-that-adds-value-to-organization]] — What is an idea you have used in your career to add value to an organization?
+- [[q-exponent-2286-solving-complex-problem-for-customer]] — Tell me about a time you solved a complex problem for a customer.
+- [[q-exponent-2291-handling-major-bug-before-release]] — Today is Wednesday, and you need to deliver a release on Friday that is crucial for a key customer. The engineering manager reports a major bug. What do you do?
+- [[q-exponent-2299-prioritize-worst-post-booking-taskrabbit]] — How would you prioritize solving the worst post-booking experience for TaskRabbit?
+- [[q-exponent-2303-situation-dig-deep-root-cause]] — Tell me about a situation that required you to dig deep to find the root cause.
+- [[q-exponent-2313-customer-advocating-new-feature]] — Your largest customer is advocating for a new feature not in your roadmap. What do you do? *(collaboration, conflict-handling)*
+- [[q-exponent-2314-resolving-conflicting-product-requirements]] — How do you resolve conflicting product requirements, and who determines which requirement takes priority? *(collaboration, conflict-handling)*
+- [[q-exponent-2318-measuring-team-success]] — How do you measure your team's success? *(collaboration)*
+- [[q-exponent-2319-handling-goal-misalignment]] — How do you handle misalignment between team goals and company goals? *(ownership, conflict-handling)*
+- [[q-exponent-2324-handling-3-year-vs-3-week-project]] — How will you handle a 3-year project compared to a 3-week project? *(ownership)*
+- [[q-exponent-2402-measuring-project-success]] — How do you measure the success of a project?
+- [[q-exponent-2477-tracking-success-at-slack]] — How would you track success at Slack? *(ownership)*
+- [[q-exponent-2690-balancing-customer-business-needs]] — Tell me about a time when you needed to balance the needs of the customer with the needs of the business. *(collaboration, conflict-handling)*
+- [[q-exponent-2692-finding-business-value-ambiguous-question]] — How do you find the business value from an ambiguous question? *(ownership)*
+- [[q-exponent-2718-localizing-mobile-app-country-expansion-plan]] — How would you plan to localize a mobile app and decide which country to expand into and what changes to implement? *(learning-orientation)*
+- [[q-exponent-2767-implement-cloud-solution-legacy-system]] — Imagine you've just started working with a client who wants to implement a cloud solution on their legacy system. What steps would you take? How would you tailor a demo for this client? *(ownership, learning-orientation)*
+- [[q-exponent-2769-healthtech-ceo-approach-disease-detection]] — You're the CEO of a healthtech startup with technology that can detect 20 deadly diseases. How would you approach this? *(ownership)*
+- [[q-exponent-2797-handling-tight-sprint-shipping]] — If short on time with limited background on the sprint before shipping, what would you do? *(ownership)*
+- [[q-exponent-2804-determine-effective-positioning]] — How did you determine your positioning was effective? *(collaboration)*
+- [[q-exponent-2806-improve-shopify-for-new-merchants]] — How would you improve Shopify for new merchants who have difficulty sourcing products to sell? *(ownership)*
+- [[q-exponent-2856-prioritizing-funds-non-profit-food-bank]] — You're the PM of a non-profit food bank. You've just received a large charitable donation. How do you prioritize where to use the money? *(ownership)*
+- [[q-exponent-2954-adopting-long-term-strategy-stakeholder-management]] — Tell me about a time when you adopted a long-term strategy despite pressure for a short-term fix. How did you manage stakeholder expectations and meet their needs? *(conflict-handling, collaboration)*
+- [[q-exponent-3019-prioritize-structure-roadmaps-interview-question]] — How do you prioritize and structure roadmaps, deciding what to build and when? *(ownership)*
+- [[q-exponent-3028-measure-success-facebook-reels-ads]] — As the PM for Ads in Facebook Reels, how would you measure success? *(ownership)*
+- [[q-exponent-3230-time-you-made-prioritization-tradeoff]] — Tell me about a time when you made a prioritization tradeoff. *(ownership, collaboration)*
+- [[q-exponent-3334-setting-priorities-limited-resources]] — How do you set priorities with limited resources? *(ownership, collaboration)*
+- [[q-exponent-3338-success-product-manager-experience]] — Tell me about a time when you succeeded as a product manager. *(collaboration, learning-orientation)*
+- [[q-exponent-3339-product-management-experience]] — Tell me about your product management experience. *(collaboration, learning-orientation)*
+- [[q-exponent-3347-expand-product-management-skills]] — How do you expand your product management skills? *(collaboration, learning-orientation)*
+- [[q-exponent-3363-differences-product-manager-project-manager-scrum-master]] — Describe the differences between a product manager, project manager, and scrum master. *(collaboration, learning-orientation)*
+- [[q-exponent-3406-manage-projects-under-pressure]] — How do you manage projects under pressure? *(ownership, collaboration)*
+- [[q-exponent-3567-decision-making-without-manager]] — Tell me about a time when you had to make a significant decision without your manager. *(ownership, conflict-handling)*
+- [[q-exponent-3568-quick-decision-making-experience]] — Tell me about a time when you had to make a decision quickly. *(ownership, conflict-handling)*
+- [[q-exponent-3615-project-back-on-track]] — Tell me about a time you got a project back on track. *(learning-orientation, ownership)*
+- [[q-exponent-3664-why-become-pm-passionate-aspects-product-management]] — Why do you want to be a PM? What aspects of product management are you most passionate about? *(collaboration, learning-orientation)*
+- [[q-exponent-3665-excel-as-product-manager]] — What does it mean to excel as a product manager and how can you excel in any team or project? *(collaboration, learning-orientation)*
+- [[q-exponent-3666-weaknesses-as-product-manager-mitigation]] — What are your weaknesses as a product manager and how do you mitigate them? *(collaboration, learning-orientation)*
+- [[q-exponent-3827-alter-strategy-direction-project]] — Tell me about a project where you recognized the need to alter the strategy or direction. *(learning-orientation, ownership)*
+- [[q-exponent-3833-manage-multiple-demands-tight-deadlines]] — Tell me about a time when you had to manage and meet multiple demands within tight deadlines. *(ownership, collaboration)*
+- [[q-exponent-3866-why-become-a-product-manager]] — Why do you want to be a product manager? *(collaboration, learning-orientation)*
+- [[q-exponent-3874-first-day-activities-pm]] — What would you do on your first day as a PM? *(collaboration, learning-orientation)*
+- [[q-exponent-4020-pm-tiktok-address-addictive-algorithms]] — As a Product Manager at TikTok, how would you address user concerns regarding the platform's algorithms being excessively addictive? *(collaboration, learning-orientation)*
+- [[q-exponent-4117-attributes-product-manager-examples]] — What are the most important attributes of a Product Manager and why? Provide examples from your past experiences that demonstrate these attributes. *(collaboration, learning-orientation)*
+- [[q-exponent-4182-decision-making-process-important-choice]] — Tell me about a time when you had to make an important decision and had to choose between moving forward or gathering more information. *(ownership)*
+- [[q-exponent-4946-change-previous-decision]] — Tell me about a time when you had to change a decision you had previously made. *(ownership)*
+- [[q-exponent-5436-rfi-tool-launch-development-experience]] — You are tasked to launch a RFI (Request for Information) Tool. How would you plan to develop and launch this product? *(ownership, collaboration)*
+- [[q-exponent-5535-complex-system-architecture-design-approach]] — Tell me about a time when you designed a complex system architecture. What was your approach? *(ownership, collaboration)*
+- [[q-exponent-5712-asked-for-help-avoid-outage]] — Tell me about a time you asked for help early and avoided an outage. *(ownership, conflict-handling)*
+- [[q-exponent-5717-decisions-during-major-incident]] — Walk me through your decision-making during a major incident. *(ownership, conflict-handling)*
+- [[q-exponent-6035-platform-framework-prioritize-backlog-features]] — What platform/framework are you using to prioritize the features in your backlog? *(ownership, collaboration)*

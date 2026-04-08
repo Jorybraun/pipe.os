@@ -35,6 +35,7 @@ import {
   defaultCultureTranscript,
   type CultureTranscript,
 } from '../../lib/cultureAgent';
+import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
 import {
   scoreCultureInterview,
   type OrgCultureBenchmark,
@@ -548,6 +549,82 @@ cultureRecruiter.get('/cost-dashboard', async (c) => {
   });
 });
 
+// ── POST /calibration/run ─────────────────────────────────────────────────────
+//
+// Replaces the deprecated `workers/api/scripts/run-culture-calibration.ts`,
+// which used the Cloudflare REST API + manual API token. This route runs the
+// same calibration harness inside the Worker using the `env.AI` binding —
+// same model, same fixtures, no API token bookkeeping.
+//
+// Recruiter-authed (Clerk JWT). Use sparingly: each run executes the full
+// 11-call scoring pipeline against ~10 fixtures, so it burns Workers AI
+// quota. Intended for use after any prompt change in cultureScorerPrompts.ts.
+//
+// Returns the full CalibrationReport JSON. The caller (recruiter UI or curl)
+// can inspect QWK metrics and per-dimension confusion.
+cultureRecruiter.post('/calibration/run', async (c) => {
+  if (!c.env.AI) {
+    return c.json(
+      {
+        error: {
+          code: 'AI_BINDING_MISSING',
+          message: 'Workers AI binding (env.AI) is not configured. Calibration cannot run.',
+        },
+      },
+      503,
+    );
+  }
+
+  // Lazy imports to keep the cold-start surface small for non-calibration
+  // requests. The fixtures alone are ~440 lines of static JSON-ish data.
+  const [{ runCalibration }, { CALIBRATION_FIXTURES }, { CloudflareAIProvider }] = await Promise.all([
+    import('../../lib/cultureScorerCalibration'),
+    import('../../lib/__tests__/cultureScorerCalibration.fixtures'),
+    import('../../lib/llm/cloudflareAIProvider'),
+  ]);
+
+  const provider = new CloudflareAIProvider(c.env.AI);
+
+  // Neutral mid-point benchmark so the scorer's profile match logic doesn't
+  // bias the calibration output (matches the previous script's defaults).
+  const orgBenchmark = {
+    autonomy: 3,
+    riskTolerance: 3,
+    workPace: 3,
+    collaborationStyle: 3,
+    feedbackOrientation: 3,
+  } as const;
+
+  try {
+    const report = await runCalibration({
+      provider,
+      fixtures: CALIBRATION_FIXTURES,
+      orgBenchmark,
+    });
+
+    return c.json({
+      passed: report.passed,
+      competencyQwk: report.competencyQwk,
+      profileQwk: report.profileQwk,
+      overallQwk: report.overallQwk,
+      target: 0.55,
+      competencyResults: report.competencyResults,
+      profileResults: report.profileResults,
+    });
+  } catch (err) {
+    console.error('[culture-calibration] run failed:', err);
+    return c.json(
+      {
+        error: {
+          code: 'CALIBRATION_FAILED',
+          message: err instanceof Error ? err.message : 'Unknown error during calibration.',
+        },
+      },
+      500,
+    );
+  }
+});
+
 // ─── Candidate router ─────────────────────────────────────────────────────────
 //
 // These routes authenticate via a culture session token extracted from the URL
@@ -668,8 +745,16 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
     );
   }
 
+  // Resolve persona-derived seniority + role overlay so the selector applies
+  // dimension weights from the role context. Falls back to mid + universal on
+  // any lookup miss — never blocks the interview.
+  const roleContext = await resolveCultureRoleContext(c.env.DB, session.assessment_id);
+
   // Seed first question
-  const { transcript, nextQuestion } = startCultureInterview();
+  const { transcript, nextQuestion } = startCultureInterview({
+    seniority: roleContext.seniority,
+    roleOverlayId: roleContext.roleOverlayId,
+  });
 
   const consentAt = now();
 
@@ -749,10 +834,16 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     ? withCultureMetering(rawProvider, session.id, 'conversation', c.env.DB, c.executionCtx)
     : null;
 
+  // Re-resolve role context on every advance — cheap (one indexed query)
+  // and avoids storing seniority/overlay on the session row.
+  const roleContext = await resolveCultureRoleContext(c.env.DB, session.assessment_id);
+
   const result = await advanceCultureInterview({
     provider,
     transcript,
     candidateAnswer: answer.trim(),
+    seniority: roleContext.seniority,
+    roleOverlayId: roleContext.roleOverlayId,
   });
 
   if (result.action === 'terminate') {

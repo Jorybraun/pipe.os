@@ -1,0 +1,142 @@
+---
+type: archetype-hub
+name: failure
+question_count: 130
+---
+
+# Failure
+
+Hub page for the **failure** archetype. 130 questions.
+
+## Questions
+
+- [[q-exponent-0105-pm-biggest-challenge]] — What's your biggest challenge as a PM, and how did you overcome it? *(ownership, learning-orientation)*
+- [[q-exponent-0142-biggest-failure]] — Tell me about your biggest failure. *(ownership)*
+- [[q-exponent-0240-mistake]] — Tell me about a time you made a mistake. *(ownership)*
+- [[q-exponent-0305-manage-product-failure-conference-release]] — An important feature of a product fails on the release day at a conference. What would you do? *(ownership)*
+- [[q-exponent-0452-sharing-work-failure-experience]] — Tell me about a time when you failed at work. *(ownership)*
+- [[q-exponent-0642-time-you-were-wrong]] — Tell me about a time you made a mistake. *(self-awareness)*
+- [[q-exponent-0746-decision-based-on-data-were-wrong]] — Tell me about a time when you made a decision based on data and were wrong. *(self-awareness)*
+- [[q-exponent-0932-time-when-project-failed]] — Describe a time when your project failed. *(learning-orientation, self-awareness)*
+- [[q-exponent-0939-challenging-project-description]] — Describe a challenging project you worked on and what made it difficult. *(learning-orientation, self-awareness)*
+- [[q-exponent-0995-example-tough-feedback-received]] — Give an example of tough feedback you received. *(learning-orientation, self-awareness)*
+- [[q-exponent-1002-time-manage-difficult-customer]] — Tell me about a time when you had to manage a difficult customer. *(learning-orientation, self-awareness)*
+- [[q-exponent-1346-time-data-failed-you]] — Tell me about a time when data failed you. *(learning-orientation, self-awareness)*
+- [[q-exponent-1367-time-bold-difficult-decision]] — Tell me about a time you made a bold and difficult decision. *(learning-orientation, self-awareness)*
+- [[q-exponent-1370-time-team-member-difficulty-task]] — Tell me about a time when a team member had difficulty performing a task. *(learning-orientation, self-awareness)*
+- [[q-exponent-1509-mistake-and-lessons-learned]] — Tell me about a mistake you made and what you learned from it. *(learning-orientation, self-awareness)*
+- [[q-exponent-1515-recent-project-reflection]] — Looking back on your most recent project, what would you have done differently? *(learning-orientation, self-awareness)*
+- [[q-exponent-1755-project-did-not-go-expected]] — Tell me about a time when a project did not go as expected. *(learning-orientation, self-awareness)*
+- [[q-exponent-1786-successful-project-reflection]] — Describe a successful project you completed and how you would approach it differently next time. *(ownership, learning-orientation)*
+- [[q-exponent-1872-technical-debt-consequences-trade-offs]] — Tell me about a technical debt you introduced and its consequences. What trade-off options did you have? *(ownership, self-awareness)*
+- [[q-exponent-1971-time-you-failed-as-people-manager]] — Tell me about a time when you failed as a people manager. *(ownership)*
+- [[q-exponent-2088-failed-leadership-pitch-experience]] — Tell me about a time when you failed to pitch something to leadership. *(ownership)*
+- [[q-exponent-2146-handling-inefficiency-midway-project]] — Describe a time when you discovered inefficiency midway through a project. What did you do? *(ownership)*
+- [[q-exponent-2148-impact-negative-software-release]] — Describe a time you had a software release that negatively affected another team. *(ownership, collaboration)*
+- [[q-exponent-2202-handling-negative-feedback-manager]] — Tell me about a time when you received negative feedback from your manager and how you dealt with it. *(ownership, learning-orientation)*
+- [[q-exponent-2260-delivering-negative-feedback]] — Tell me about a time when you had to deliver negative feedback. *(ownership, learning-orientation)*
+- [[q-exponent-2307-unable-meet-commitment-impact]] — Give me an example of a time when you were unable to meet a commitment. What was the impact? *(ownership, self-awareness)*
+- [[q-exponent-2398-describing-a-failure-experience]] — Tell me about a time you failed. *(ownership)*
+- [[q-exponent-3169-most-challenging-situation-career-response]] — Tell me about the most challenging situation you faced in your career and how you handled it. *(self-awareness, learning-orientation)*
+- [[q-exponent-3170-recent-negative-feedback]] — What was the most recent negative feedback you received? *(self-awareness, learning-orientation)*
+- [[q-exponent-3200-handle-difficult-news-peer-manager]] — Tell me about a time you received difficult news from a peer or a manager. *(self-awareness, learning-orientation)*
+- [[q-exponent-3259-time-overcame-adversity]] — Tell me about a time you overcame adversity. *(self-awareness, learning-orientation)*
+- [[q-exponent-3342-time-failed-to-launch-product]] — Tell me about a time when you failed to launch a product. *(self-awareness, learning-orientation)*
+- [[q-exponent-3569-handling-unmet-goals]] — Tell me about a time when you knew you weren't going to meet a goal. *(self-awareness, learning-orientation)*
+- [[q-exponent-3667-time-you-failed-what-to-do-differently]] — Tell me about a time you failed. What would you have done differently? *(self-awareness, learning-orientation)*
+- [[q-exponent-3755-failed-experiment-experience]] — Tell me about a time you conducted a failed experiment. *(self-awareness, learning-orientation)*
+- [[q-exponent-4181-error-in-judgment-impact-reflection]] — Tell me about a time when you made an error in judgment in the last year or two. What did you do and what was the impact? *(self-awareness, learning-orientation)*
+- [[q-exponent-4224-underestimate-coworker-experience]] — Tell me about a time when you underestimated someone you were supposed to work with. *(self-awareness, learning-orientation)*
+- [[q-exponent-4724-product-ship-failure]] — Tell me about a product you shipped that failed. *(self-awareness, learning-orientation)*
+- [[q-exponent-4948-overcome-unexpected-obstacles-significant-goal]] — Tell me about a time when you faced significant unexpected obstacles while working toward a key goal. How did you overcome them, and what would you do differently now?
+- [[q-exponent-4949-alternative-opportunity-decision-outcome]] — Tell me about a time when you were working on a project but discovered an opportunity to do something bigger and better. Did you pursue it and what was the outcome?
+- [[q-exponent-4953-handle-team-enthusiasm-differences]] — Tell me about a time when you felt inspired about an idea or project even when your team wasn't as enthusiastic. *(collaboration)*
+- [[q-exponent-4993-idea-to-implementation]] — Tell me about an idea you came up with and followed through to implementation.
+- [[q-exponent-4995-high-pressure-complex-project]] — Tell me about a complex project you managed where there was a lot of pressure to deliver. *(collaboration)*
+- [[q-exponent-4996-handle-project-behind-schedule]] — Tell me about a time when a program you were managing was not meeting committed timelines. How did you handle it?
+- [[q-exponent-5000-how-you-meet-current-kpis]] — What are your current KPIs? How do you ensure you meet them?
+- [[q-exponent-5005-grit]] — What does grit mean to you?
+- [[q-exponent-5006-personal-motivation]] — What motivates you?
+- [[q-exponent-5008-organize-multiple-projects]] — How would you organize multiple projects that must be delivered on specified dates?
+- [[q-exponent-5016-assertive-communication]] — Tell me about a time when you had to be assertive when communicating with a client or team member. *(collaboration)*
+- [[q-exponent-5017-wrong-hypothesis]] — Tell me about a time when you had a hypothesis that turned out to be wrong.
+- [[q-exponent-5020-ethical-standards-in-decision-making]] — Do you believe in holding high ethical standards when conducting business or making decisions?
+- [[q-exponent-5025-handling-non-compliance-from-sales-rep]] — Imagine you're deploying a new routine for the sales reps. How would you handle a situation where someone is not onboard? *(learning-orientation)*
+- [[q-exponent-5027-address-late-delivery-by-supplier]] — How would you address a late delivery by a supplier?
+- [[q-exponent-5031-convince-senior-stakeholders]] — What approach would you take to convince senior stakeholders? *(collaboration)*
+- [[q-exponent-5032-assess-resources-required]] — How do you know that you are getting the right level of resources for your organization?
+- [[q-exponent-5036-people-you-dislike-working-with]] — What sort of people do you dislike working with?
+- [[q-exponent-5038-free-time-activities]] — What do you do in your free time?
+- [[q-exponent-5041-ideal-work-environment]] — Describe your ideal work environment. *(self-awareness)*
+- [[q-exponent-5047-client-feature-request-prioritize]] — If you have 2 clients requesting very different features for the same product, how would you prioritize them?
+- [[q-exponent-5048-favorite-stakeholder-type]] — What's your favorite type of stakeholder and why? *(collaboration)*
+- [[q-exponent-5051-define-product-manager-role]] — How would you define the role of a product manager? *(collaboration)*
+- [[q-exponent-5054-hardest-engineering-challenge]] — What's the hardest engineering challenge you've ever solved? *(conflict-handling)*
+- [[q-exponent-5065-experience-managing-global-teams]] — What experience do you have managing global teams? *(collaboration)*
+- [[q-exponent-5090-present-past-project]] — Present slides on a past project you've worked on.
+- [[q-exponent-5099-most-difficult-bug]] — Tell me about the most difficult bug you've fixed. *(conflict-handling)*
+- [[q-exponent-5100-difficult-challenge-project]] — Tell me about a time you faced a difficult challenge while working on a project. *(conflict-handling)*
+- [[q-exponent-5101-day-one]] — Imagine it's your first day at the company, what's the first thing you want to work on?
+- [[q-exponent-5102-projects-relevant-to-company]] — What projects have you worked on that you think will be relevant to our company? *(self-awareness)*
+- [[q-exponent-5103-most-passionate-project]] — Tell me about a project you are most passionate about.
+- [[q-exponent-5104-great-work-day]] — What does a great day at work look like for you?
+- [[q-exponent-5105-perseverance-through-challenge]] — Tell me about a time you had to persevere through a challenge that lasted several months. *(conflict-handling)*
+- [[q-exponent-5106-time-management-skill]] — What’s one time-management skill you’ve picked up and put into practice at work? *(collaboration)*
+- [[q-exponent-5110-overlapping-projects]] — Tell me about a time when your team and another were developing similar solutions. What happened, and how was it resolved? *(collaboration)*
+- [[q-exponent-5111-deploy-change-friday-afternoon]] — How would you handle a request to develop and deploy a production change when you’re the only one available on a Friday afternoon?
+- [[q-exponent-5112-no-answer-reaction]] — What do you do when you’re asked something you don’t know the answer to?
+- [[q-exponent-5114-being-accountable-for-others]] — Tell me about a situation where you had to take the lead and be accountable for others.
+- [[q-exponent-5115-project-struggles]] — Tell me about a time you struggled on a project.
+- [[q-exponent-5116-helping-juniors-problem-solve]] — Tell me about a situation where a junior team member got stuck. How did you assist them in solving the problem? *(collaboration)*
+- [[q-exponent-5117-what-does-success-look-like-to-you]] — What does success look like to you?
+- [[q-exponent-5118-standing-up-for-someone]] — Tell me about a time you stood up for someone in the workplace.
+- [[q-exponent-5120-dynamically-changing-environments]] — How do you cope with dynamically-changing environments?
+- [[q-exponent-5121-your-champion-idea]] — Tell me about a time when your approach was selected and successfully implemented over other alternatives.
+- [[q-exponent-5123-cannot-meet-deadline]] — Tell me about a time you couldn't meet your deadline.
+- [[q-exponent-5124-making-important-decisions]] — How do you make important decisions?
+- [[q-exponent-5125-decision-many-options-little-time]] — Tell me about a time where you needed to make a decision with many options and very little time.
+- [[q-exponent-5127-wrong-objective-project-in-progress]] — Tell me about a time you discovered halfway through a project that the objective was wrong.
+- [[q-exponent-5128-push-back-management-decision]] — Have you ever pushed back on management's decision? *(collaboration, conflict-handling)*
+- [[q-exponent-5129-failed-to-meet-commitments]] — Have you ever failed to meet your commitments? *(ownership)*
+- [[q-exponent-5131-facing-difficult-challenge]] — Tell me about a time you faced a difficult challenge. *(conflict-handling)*
+- [[q-exponent-5132-unpopular-idea]] — Tell me about a time you had an unpopular idea.
+- [[q-exponent-5133-overcome-challenge-achieve-goal]] — Tell me about a time you overcame a challenge to achieve a goal. *(conflict-handling)*
+- [[q-exponent-5134-cut-corners-meet-deadline]] — Tell me about a time you cut corners to meet a deadline?
+- [[q-exponent-5135-belong-anywhere]] — What does "belong anywhere" mean to you?
+- [[q-exponent-5136-go-where-in-the-world]] — If you could go to anywhere in the world, where would you go?
+- [[q-exponent-5137-tell-me-about-your-trip]] — Tell us about one of your trips.
+- [[q-exponent-5139-good-host]] — Tell me about a time you were a good host.
+- [[q-exponent-5140-bad-news]] — Tell me about a time you had to give someone bad news. *(learning-orientation)*
+- [[q-exponent-5141-mission-resonate]] — What part of our mission resonates the most with you?
+- [[q-exponent-5142-proceed-without-approval]] — Have you ever worked on something without waiting for your manager’s go-ahead? What made you decide to do that? *(collaboration)*
+- [[q-exponent-5143-situation-in-hindsight]] — Describe a situation where, in hindsight, you would have done things differently. *(self-awareness)*
+- [[q-exponent-5144-unresponsive-team-member]] — Tell me about a time you had to work with an unresponsive team member. *(collaboration)*
+- [[q-exponent-5145-describe-company-to-grandmother]] — How would you describe what our company does to your grandmother? *(self-awareness)*
+- [[q-exponent-5146-predicted-something]] — Tell me about a time you predicted something.
+- [[q-exponent-5147-supervisor-rating]] — How do you think your supervisor will rate you from a scale of 1-10? *(self-awareness)*
+- [[q-exponent-5148-favorite-slack-feature]] — What is your favorite Slack feature?
+- [[q-exponent-5149-most-fun-recently]] — What's the most fun thing you did recently?
+- [[q-exponent-5150-teach-something-interesting]] — What’s something interesting you could teach me in just a few minutes?
+- [[q-exponent-5161-behavioral-insight-drove-business-impact]] — Tell me about a non-obvious insight that you had that drove business impact.
+- [[q-exponent-5162-behavioral-push-back-on-leadership]] — Tell me about a time you pushed back on leadership. *(conflict-handling)*
+- [[q-exponent-5169-project-data-issues]] — Tell me about a project where you faced data issues and how you handled them.
+- [[q-exponent-5171-exert-influence-to-drive-decision]] — Tell me about a time when you had to exert influence to drive a decision.
+- [[q-exponent-5250-develop-as-a-data-engineer]] — How will you develop yourself professionally as a data engineer? *(self-awareness)*
+- [[q-exponent-5254-favorite-food-ordering-app]] — What's your favorite food ordering app?
+- [[q-exponent-5264-why-data-analytics-as-a-career]] — Why did you choose analytics as a career?
+- [[q-exponent-5266-handling-vague-business-problems]] — Tell me about a time the business problem wasn’t clearly defined. How did you handle it?
+- [[q-exponent-5276-personal-passion-example]] — Tell me about something you're passionate about.
+- [[q-exponent-5314-manage-low-value-stakeholder-suggestions]] — What is a suggestion that a stakeholder provided that did not add much value? How did you handle this & what did you recommend to move the project forward? *(collaboration)*
+- [[q-exponent-5320-program-management-stakeholder-engagement-alignment]] — Tell me about a relevant complex program you've managed. How did you handle stakeholder & team management, and escalating issues while prioritizing work? *(collaboration)*
+- [[q-exponent-5321-system-architecture-technology-program-decisions]] — Tell me about the design and architecture of the program you managed. Explain the system end-to-end and various technologies you picked with reason. *(collaboration)*
+- [[q-exponent-5323-financial-planning-management-process]] — Tell me about how you would manage a financial planning process end-to-end. *(collaboration)*
+- [[q-exponent-5330-handling-driver-incentive-conflict-uber]] — You suggest changing Uber’s driver incentives, but data shows it might hurt supply. How would you proceed?
+- [[q-exponent-5342-set-apart-from-other-data-analysts]] — What sets you apart from other data analysts?
+- [[q-exponent-5404-biggest-deal-closed-process-stakeholders]] — Tell me about the biggest deal you've closed. What process did you follow and how did you manage stakeholder relationships? *(collaboration)*
+- [[q-exponent-5411-amazon-technical-program-manager-typical-day]] — Describe to me what your typical day would be like in Amazon as a Technical Program Manager. *(collaboration, self-awareness)*
+- [[q-exponent-5414-manage-cross-functional-team-delays]] — A cross-functional team which your feature delivery is dependent on is not working at the expected pace. How would you handle this? *(collaboration)*
+- [[q-exponent-5415-handle-solution-criticized-tried-and-failed]] — Tell me about a time when your solution was criticized for being something that has been tried before and failed. How did you manage this? *(ownership, collaboration)*
+- [[q-exponent-5422-experience-learn-from-poor-decision]] — Tell me about a time when you made a poor decision, and learned from it to make a better decision after. *(learning-orientation, self-awareness)*
+- [[q-exponent-5825-things-went-wrong-reaction]] — Tell me a challenging situation when things went wrong and how you reacted. *(learning-orientation, self-awareness)*
+- [[q-exponent-5888-confident-in-wrong-solution]] — Tell me about a time you were confident in a solution and later realized it was wrong. *(learning-orientation, self-awareness)*
+- [[q-exponent-6020-walk-through-a-failure-and-how-you-handled-it]] — Can you walk me through a failure and how you handled it? *(learning-orientation, self-awareness)*

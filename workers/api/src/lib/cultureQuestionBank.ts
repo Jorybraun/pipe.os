@@ -1,19 +1,23 @@
 /**
- * Culture Interview Agent — deterministic question bank.
+ * Culture Interview Agent — question bank.
  *
- * This module mirrors `knowledge/culture/questions/**` in TypeScript so the
- * Worker can load the bank at runtime without a wiki sync step. The wiki is
- * the source of truth for BARS rubrics and calibration examples (used by the
- * scorer); the runtime bank here is a slimmed-down index used by the agent to
- * pick the next question and compose probes.
- *
- * Phase C will add a build-time sync script (`scripts/sync-culture-wiki.ts`)
- * that regenerates this file from the markdown wiki. Until then, changes to
- * the question set are made in both places by hand.
+ * The 15 hand-authored questions live in this file. The 1,015 Exponent-sourced
+ * questions live as markdown nodes in `knowledge/culture/questions/exponent/`
+ * and are loaded into `CULTURE_QUESTION_BANK_GENERATED` by the sync script
+ * `workers/api/scripts/sync-culture-wiki.ts`. The runtime selector unions
+ * both arrays.
  *
  * Question IDs MUST match the `id` field in the corresponding markdown file
  * so that the scorer can load the full BARS rubric by ID.
+ *
+ * The 15 curated questions have rich `probes` libraries and BARS rubrics in
+ * `knowledge/culture/questions/{dim}/`. The 1,015 Exponent questions are
+ * tagged-only (dimensions, archetype, probe_patterns, etc.) and rely on the
+ * generic probe library at runtime.
  */
+
+import { CULTURE_QUESTION_BANK_GENERATED } from './cultureQuestionBank.generated.js';
+import { loadRoleOverlay, type RoleOverlayId } from './cultureRoleOverlay.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -56,6 +60,9 @@ export interface QuestionProbeLibrary {
   cliche_or_generic?: string;
 }
 
+/** Discipline a question is calibrated for. The eng filter excludes pm/design. */
+export type Discipline = 'eng' | 'pm' | 'design' | 'leadership' | 'universal';
+
 export interface CultureQuestion {
   id: string;
   /** Primary + secondary dimensions this question evidences. First entry is primary. */
@@ -71,16 +78,35 @@ export interface CultureQuestion {
   /** Probe templates indexed by deficiency. */
   probes: QuestionProbeLibrary;
   /**
-   * Optional tags — `role-overlays/` may use these to bias selection.
-   * e.g. ['unowned-work', 'initiative', 'oncall']
+   * Free-text legacy tags — `role-overlays/` may match against these to bias
+   * selection (preferred/deprioritized lists). e.g. ['unowned-work', 'initiative'].
    */
   tags?: string[];
+  /**
+   * Closed-vocabulary probe patterns from `knowledge/culture/probe-patterns.md`.
+   * The selector intersects these against the live agent's `runningThemes` to
+   * award a theme-resonance bonus. Empty for pure-trivia questions.
+   */
+  probe_patterns?: string[];
+  /** Which role overlays this question fits. Defaults to ['universal']. */
+  role_overlays?: RoleOverlayId[];
+  /** Hub archetype this question belongs to (e.g. 'failure', 'conflict'). */
+  archetype?: string;
+  /** Discipline filter — `eng` interviews exclude `pm`/`design`/`leadership`. */
+  discipline?: Discipline;
+  /**
+   * BARS-fitness 1–5: how well this question elicits observable, gradeable
+   * behavior. 5 = classic STAR, 1 = pure trivia. Drives a small selector bonus.
+   */
+  bars_fitness?: number;
 }
 
-// ─── The 15-question seed bank ───────────────────────────────────────────────
-// Mirrors knowledge/culture/questions/**. Keep in sync until Phase C sync script lands.
+// ─── The 15-question curated seed bank ──────────────────────────────────────
+// Mirrors knowledge/culture/questions/{dimension}/*.md. These have rich BARS
+// rubrics and bespoke probe libraries. The Exponent-sourced 1,015 questions
+// are unioned in via CULTURE_QUESTION_BANK_GENERATED below.
 
-export const CULTURE_QUESTION_BANK: CultureQuestion[] = [
+const CURATED_BANK: CultureQuestion[] = [
   // ─── Ownership (3) ─────────────────────────────────────────────────────────
   {
     id: 'ownership-001',
@@ -307,6 +333,17 @@ export const CULTURE_QUESTION_BANK: CultureQuestion[] = [
   },
 ];
 
+// ─── Unioned bank ────────────────────────────────────────────────────────────
+
+/**
+ * The full runtime bank: 15 curated questions + ~1,015 Exponent-sourced
+ * questions loaded from the markdown wiki via the sync script.
+ */
+export const CULTURE_QUESTION_BANK: CultureQuestion[] = [
+  ...CURATED_BANK,
+  ...CULTURE_QUESTION_BANK_GENERATED,
+];
+
 // ─── Bank helpers ────────────────────────────────────────────────────────────
 
 /**
@@ -326,39 +363,6 @@ export function filterBySeniority(seniority: SeniorityTag | null | undefined): C
 }
 
 /**
- * Pick the next question given the current coverage map and the set of
- * already-asked question IDs.
- *
- * Selection rule:
- *   1. Filter out already-asked questions.
- *   2. Rank remaining by coverage gap: the lowest-covered primary dimension
- *      wins. Ties broken by the question's position in the bank (stable).
- *   3. Return the first match, or null if the bank is exhausted.
- */
-export function pickNextQuestion(
-  coverage: Record<CompetencyDimension, number>,
-  askedIds: ReadonlySet<string>,
-  seniority?: SeniorityTag | null,
-): CultureQuestion | null {
-  const eligible = filterBySeniority(seniority).filter((q) => !askedIds.has(q.id));
-  if (eligible.length === 0) return null;
-
-  // Find the lowest-covered dimension among eligible primary dimensions.
-  // We prefer questions whose PRIMARY dimension has the lowest coverage.
-  let best: CultureQuestion | null = null;
-  let bestScore = Infinity;
-  for (const q of eligible) {
-    const primary = q.dimensions[0]!;
-    const score = coverage[primary] ?? 0;
-    if (score < bestScore) {
-      bestScore = score;
-      best = q;
-    }
-  }
-  return best;
-}
-
-/**
  * Compute an initial coverage map with all dimensions at 0.
  */
 export function emptyCoverage(): Record<CompetencyDimension, number> {
@@ -369,4 +373,105 @@ export function emptyCoverage(): Record<CompetencyDimension, number> {
     'conflict-handling': 0,
     'self-awareness': 0,
   };
+}
+
+// ─── Scored selector ─────────────────────────────────────────────────────────
+
+export interface PickNextQuestionOptions {
+  coverage: Record<CompetencyDimension, number>;
+  askedIds: ReadonlySet<string>;
+  seniority?: SeniorityTag | null | undefined;
+  /** Role overlay id from the Role Discovery Agent persona, or null. */
+  roleOverlayId?: RoleOverlayId | null | undefined;
+  /** Live themes the agent has been emitting (closed vocabulary probe patterns). */
+  runningThemes?: readonly string[];
+  /** Discipline filter; defaults to `eng`-friendly (eng + universal only). */
+  discipline?: Discipline;
+}
+
+/**
+ * Pick the next question with a scored selector.
+ *
+ * Pipeline:
+ *   1. Pre-filter (gate 1): seniority + role overlay + discipline + not-asked
+ *   2. Score each candidate (gate 2):
+ *        coverageGap        — sum of inverse coverage across the question's dimensions
+ *        × overlayWeight    — average of role-overlay weights for those dimensions
+ *        + themeBonus       — +0.3 if any probe_pattern intersects runningThemes
+ *        + barsBonus        — (bars_fitness − 3) × 0.1
+ *        + tagPreference    — ±0.2 if tags overlap overlay preferred/deprioritized
+ *   3. Highest score wins. Stable on ties via bank order.
+ */
+export function pickNextQuestion(
+  optionsOrCoverage: PickNextQuestionOptions | Record<CompetencyDimension, number>,
+  askedIdsLegacy?: ReadonlySet<string>,
+  seniorityLegacy?: SeniorityTag | null,
+): CultureQuestion | null {
+  // Backwards-compat shim: callers passing the old positional args still work.
+  const opts: PickNextQuestionOptions =
+    'coverage' in optionsOrCoverage
+      ? optionsOrCoverage
+      : {
+          coverage: optionsOrCoverage,
+          askedIds: askedIdsLegacy ?? new Set(),
+          seniority: seniorityLegacy ?? null,
+        };
+
+  const overlay = loadRoleOverlay(opts.roleOverlayId);
+  const runningThemes = opts.runningThemes ?? [];
+  const allowedDisciplines: ReadonlySet<Discipline> = new Set<Discipline>(
+    opts.discipline === 'eng' || !opts.discipline
+      ? ['eng', 'universal']
+      : [opts.discipline, 'universal'],
+  );
+
+  // Gate 1 — pre-filter.
+  const candidates = CULTURE_QUESTION_BANK.filter((q) => {
+    if (opts.askedIds.has(q.id)) return false;
+    if (opts.seniority && !q.seniority.includes(opts.seniority)) return false;
+    const disc: Discipline = q.discipline ?? 'universal';
+    if (!allowedDisciplines.has(disc)) return false;
+    const overlays = q.role_overlays ?? ['universal'];
+    if (opts.roleOverlayId && !overlays.includes(opts.roleOverlayId) && !overlays.includes('universal')) {
+      return false;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) return null;
+
+  // Gate 2 — scored ranking.
+  let best: CultureQuestion | null = null;
+  let bestScore = -Infinity;
+
+  for (const q of candidates) {
+    if (q.dimensions.length === 0) continue; // skip pure-trivia (dimensions: [])
+
+    const coverageGap = q.dimensions.reduce(
+      (acc, d) => acc + 1 / ((opts.coverage[d] ?? 0) + 1),
+      0,
+    );
+    const overlayWeight =
+      q.dimensions.reduce((acc, d) => acc + (overlay.weights[d] ?? 1), 0) / q.dimensions.length;
+
+    const probePatterns = q.probe_patterns ?? [];
+    const themeBonus = probePatterns.some((p) => runningThemes.includes(p)) ? 0.3 : 0;
+
+    const barsBonus = ((q.bars_fitness ?? 3) - 3) * 0.1;
+
+    const tags = q.tags ?? [];
+    let tagPreference = 0;
+    if (overlay.preferredTags.some((t) => tags.includes(t))) tagPreference += 0.2;
+    if (overlay.deprioritizedTags.some((t) => tags.includes(t))) tagPreference -= 0.2;
+
+    const score = coverageGap * overlayWeight + themeBonus + barsBonus + tagPreference;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = q;
+    }
+  }
+
+  // Edge case: every candidate had empty dimensions. Fall back to first non-asked.
+  return best ?? candidates[0] ?? null;
 }

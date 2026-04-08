@@ -1,0 +1,234 @@
+---
+type: archetype-hub
+name: self-reflection
+question_count: 222
+---
+
+# Self-reflection
+
+Hub page for the **self-reflection** archetype. 222 questions.
+
+## Questions
+
+- [[q-exponent-0104-tell-me-about-yourself]] — Tell me about yourself. *(self-awareness)*
+- [[q-exponent-0139-design-email-app-blind]] — Design an email application for the blind.
+- [[q-exponent-0161-yelp-fake-reviews]] — You are a PM at Yelp. How would you detect fake reviews?
+- [[q-exponent-0164-pm-best-practices]] — What are some of the best practices you've observed from PMs you've worked with?
+- [[q-exponent-0176-supervisor-describe-you]] — If I spoke to your previous supervisor, how would they describe you?
+- [[q-exponent-0180-explain-pm-mom]] — Explain the role of a PM to your mom.
+- [[q-exponent-0185-pm-bank-cto-incorporate-alexa]] — As a PM at a small bank, the CTO wants to incorporate Alexa into the product offering. How would you respond?
+- [[q-exponent-0195-developer-not-testing]] — A developer is not testing their work. How would you address this?
+- [[q-exponent-0220-people-like-work-with]] — What kind of people do you enjoy working with?
+- [[q-exponent-0221-ideal-pm-role]] — What's your ideal PM role?
+- [[q-exponent-0228-how-prioritize-features]] — How do you prioritize tasks?
+- [[q-exponent-0229-handle-customer-requests]] — How do you handle conflicting customer requests?
+- [[q-exponent-0230-why-pm]] — Why do you want to be a Product Manager?
+- [[q-exponent-0266-strongest-technical-expertise]] — What is your strongest technical expertise?
+- [[q-exponent-0273-five-years-passion]] — What are you passionate about?
+- [[q-exponent-0281-spare-time]] — What do you like to do in your spare time?
+- [[q-exponent-0282-prioritize-customer-requests-planned-projects]] — How do you prioritize customer requests over planned projects?
+- [[q-exponent-0287-respond-competitor-features]] — How would you respond to competitors building many new features?
+- [[q-exponent-0288-feature-negatively-impact-metrics-response]] — If your feature is going to negatively affect another team's metrics, what would you do?
+- [[q-exponent-0299-estimate-time-wasted-meetings-us]] — Estimate the total time wasted in meetings across the US.
+- [[q-exponent-0314-discuss-improve-toughest-project]] — Talk about your toughest project and how you would improve it.
+- [[q-exponent-0319-describe-interesting-product-built]] — Describe an interesting product you built.
+- [[q-exponent-0322-describe-first-exposure-apple-products]] — When did you first gain exposure to Apple products, and what was your impression?
+- [[q-exponent-0339-handling-product-release-delays]] — What do you do when a product cannot meet the release date?
+- [[q-exponent-0340-product-development-process]] — What is your process for developing a product?
+- [[q-exponent-0342-career-goals]] — What are your career goals?
+- [[q-exponent-0343-titles-product-management-book-chapters]] — If you were to write a book about product management based on your experience, what would be the title of each chapter?
+- [[q-exponent-0372-why-work-at-airbnb]] — Why do you want to work at Airbnb?
+- [[q-exponent-0379-product-feature-shipped]] — Tell me about a product or feature you shipped.
+- [[q-exponent-0380-handling-ceo-expectation-mismatches-product-release]] — You're presenting to the CEO close to a product release and what you present mismatches their expectations, what do you do?
+- [[q-exponent-0387-manage-team]] — How do you manage a team?
+- [[q-exponent-0434-analyze-situation-encourage-team-innovation]] — Your team isn't innovating. How would you analyze the situation and encourage innovation?
+- [[q-exponent-0437-example-idea-advocated-for-outcome]] — Give an example of an idea you advocated for and its outcome.
+- [[q-exponent-0438-best-team-experience-and-reasons]] — What's the best team you've worked with and why?
+- [[q-exponent-0446-handle-saying-no-to-stakeholders]] — How do you handle saying no to stakeholders?
+- [[q-exponent-0448-pm-develop-biometric-wearable-product]] — You're a PM at a wearable startup focusing on biometrics. What product would you develop?
+- [[q-exponent-0459-bringing-departments-effective-collaboration]] — Describe a time when you brought two departments together to work more effectively.
+- [[q-exponent-0461-motivating-team-members-current-strategies]] — How are you currently motivating the people you work with?
+- [[q-exponent-0475-develop-defend-business-case-product]] — How would you develop a business case for your product and defend it in front of the Investment Review Board?
+- [[q-exponent-0476-importance-shipping-time-vs-features]] — What is more important—shipping product on time or shipping products with the right features?
+- [[q-exponent-0477-familiar-scrum-terminologies]] — What are the different SCRUM terminologies that you are familiar with?
+- [[q-exponent-0478-convincing-stakeholders-against-proposal]] — How would you convince stakeholders who are against your proposal?
+- [[q-exponent-0481-approach-market-user-research]] — What is your approach to market/user research?
+- [[q-exponent-0482-defining-problem-scope]] — How do you define the scope of the problem you are solving?
+- [[q-exponent-0483-securing-resources-funding-product]] — How would you secure resources or funding for your product?
+- [[q-exponent-0484-shipped-security-governance-compliance-features]] — What security, governance, or compliance features have you shipped and why?
+- [[q-exponent-0485-challenging-issues-product-development-solutions]] — What are the most challenging issues you've faced in developing a product, and how did you overcome them as a PM?
+- [[q-exponent-0487-tools-for-requirements-mapping]] — What tools do you use for your requirements mapping?
+- [[q-exponent-0488-advising-cio-cloud-migrations]] — How would you advise a CIO regarding cloud migrations?
+- [[q-exponent-0490-handling-roadblocks-obstacles]] — How do you handle roadblocks or obstacles?
+- [[q-exponent-0491-influencing-without-authority]] — How do you influence without authority?
+- [[q-exponent-0492-how-to-hire-team]] — How do you hire your team?
+- [[q-exponent-0493-negotiating-with-vendors]] — How do you negotiate with vendors?
+- [[q-exponent-0503-dealing-with-ambiguous-situations]] — How do you deal with ambiguous situations?
+- [[q-exponent-0505-gain-influence-trust-as-new-hire]] — How do you gain influence and trust as a new hire?
+- [[q-exponent-0510-vp-product-proposes-linkedin-messenger-app]] — What would you do if your VP of product proposes launching a separate LinkedIn messenger app?
+- [[q-exponent-0517-setting-goals-for-teams]] — How will you set goals for your teams?
+- [[q-exponent-0534-project-manager-did-not-support]] — Tell me about a project your manager didn't support. What did you do and what happened? *(self-awareness)*
+- [[q-exponent-0536-looking-for-next-opportunity]] — What are you looking for in your next opportunity? *(self-awareness)*
+- [[q-exponent-0546-what-type-of-product-manager-are-you]] — What type of Product Manager are you? *(self-awareness)*
+- [[q-exponent-0547-pm-principles]] — What are your principles as a Product Manager? *(self-awareness)*
+- [[q-exponent-0563-greatest-strengths-and-weaknesses]] — What are your two greatest strengths and biggest weaknesses? *(self-awareness)*
+- [[q-exponent-0572-time-you-missed-a-deadline]] — Tell me about a time when you missed a deadline. *(self-awareness)*
+- [[q-exponent-0598-what-excites-you-about-technology]] — What excites you most about technology? *(self-awareness)*
+- [[q-exponent-0603-uber-feature-potential-not-achieved]] — Which Uber feature has potential but hasn't achieved it yet? *(self-awareness)*
+- [[q-exponent-0604-grow-dropbox-education-segment]] — How would you grow Dropbox's education segment? *(self-awareness)*
+- [[q-exponent-0605-favorite-yahoo-product]] — What is your favorite Yahoo product? *(self-awareness)*
+- [[q-exponent-0621-pm-facebook-sports-what-to-build]] — You're a PM for Facebook Sports. What would you build? *(self-awareness)*
+- [[q-exponent-0623-deciding-launch-additional-reactions-instagram]] — How do you decide to launch additional reactions for Instagram? *(self-awareness)*
+- [[q-exponent-0634-identify-critical-defect-before-launch]] — Tell me about a time you identified a critical defect just before a major launch. *(self-awareness)*
+- [[q-exponent-0653-time-short-term-sacrifices-long-term-gains]] — Tell me about a time when you made short-term sacrifices for long-term gains. *(self-awareness)*
+- [[q-exponent-0684-challenging-situation-design-counterpart]] — Tell me about a time when you had a challenging situation with your design counterpart. *(self-awareness)*
+- [[q-exponent-0687-technical-challenge-you-have-overcome]] — Tell me about a technical challenge that you have overcome. *(self-awareness)*
+- [[q-exponent-0691-pm-ecommerce-site-sales-dropped]] — As a PM for an e-commerce site, sales dropped 7% in the last few days. What could be wrong? *(self-awareness)*
+- [[q-exponent-0692-cost-to-replace-google-maps-street-view-ny]] — Estimate the cost to replace lost street view data for Google Maps in NY. *(self-awareness)*
+- [[q-exponent-0696-biggest-failure-as-product-manager]] — What was your biggest failure as a product manager? *(self-awareness)*
+- [[q-exponent-0700-three-regular-consumer-apps-and-why]] — What are three consumer apps you use regularly and why? *(self-awareness)*
+- [[q-exponent-0701-three-year-roadmap-head-of-product]] — How would you create a three-year roadmap as head of product? *(self-awareness)*
+- [[q-exponent-0702-change-hotels-perception-airbnb]] — How would you change hotels' perception on Airbnb's platform? *(self-awareness)*
+- [[q-exponent-0708-mentor-inexperienced-product-managers]] — How will you mentor inexperienced Product Managers? *(self-awareness)*
+- [[q-exponent-0750-three-product-enhancements-favorite-product]] — Give me three product enhancements for your favorite product. *(self-awareness)*
+- [[q-exponent-0755-bringing-product-to-market]] — Tell me about how you brought a product to market. *(self-awareness)*
+- [[q-exponent-0774-favorite-facebook-product]] — What is your favorite Facebook product and why? *(self-awareness)*
+- [[q-exponent-0776-past-experiences-good-pm]] — Tell me about your past experiences and how they would make you a good PM. *(self-awareness)*
+- [[q-exponent-0803-why-interested-in-pm-role-at-facebook]] — Why are you interested in a PM role at Facebook? *(self-awareness)*
+- [[q-exponent-0815-triage-video-issue-amazon-fire-stick]] — A customer cannot watch videos on the Amazon Fire Stick. How would you triage and respond? *(self-awareness)*
+- [[q-exponent-0816-go-to-market-campaign-example]] — Could you provide an example of a go-to-market campaign? *(self-awareness)*
+- [[q-exponent-0823-deliver-products-lacked-resources]] — When you lacked resources, how did you deliver products? *(self-awareness)*
+- [[q-exponent-0837-favorite-brand-and-why]] — What is your favorite brand and why? *(self-awareness)*
+- [[q-exponent-0842-improvements-for-facebook]] — What could Facebook improve? *(self-awareness)*
+- [[q-exponent-0844-successful-marketing-campaign-developed]] — Describe a successful marketing campaign you developed. *(self-awareness)*
+- [[q-exponent-0847-recently-effective-campaign]] — What is a recently effective campaign you found? *(self-awareness)*
+- [[q-exponent-0854-skill-not-on-resume]] — What is a skill you have that is not listed on your resume? *(self-awareness)*
+- [[q-exponent-0856-influence-product-roadmap]] — Tell me about a time when you successfully influenced the product roadmap. *(self-awareness)*
+- [[q-exponent-0859-pm-at-lyft-requests-down-5-percent]] — You're a PM at Lyft. Why might requests be down 5% in a given city? *(self-awareness)*
+- [[q-exponent-0862-favorite-product-key-features]] — What product do you like and use often? What are its key features? *(self-awareness)*
+- [[q-exponent-0878-influenced-product-roadmap]] — Tell me about a time when you influenced a product roadmap. *(self-awareness)*
+- [[q-exponent-0880-channels-used-for-leads]] — What channels did you use, and which ones generated the most leads? *(self-awareness)*
+- [[q-exponent-0882-influence-software-ui-achievements]] — Describe a role where you had to influence software or UI and what you accomplished. *(self-awareness)*
+- [[q-exponent-0884-interest-in-grammarly]] — Why are you interested in Grammarly? *(self-awareness)*
+- [[q-exponent-0891-domain-specific-technical-challenges]] — What domain-specific technical challenges have you encountered during program execution, and how did you solve them? *(self-awareness)*
+- [[q-exponent-0893-example-technical-complexity-contributions]] — Give an example of a technical complexity you dealt with and your contributions. *(self-awareness)*
+- [[q-exponent-0896-unable-to-provide-user-requirement]] — Tell me about a time when you could not provide a user requirement. What did you do? *(self-awareness)*
+- [[q-exponent-0902-resolve-resource-time-issue]] — A resource from another team says they lack time for an important project. How will you resolve this? *(self-awareness)*
+- [[q-exponent-0903-technical-issue-resolution-example]] — Tell me about a technical issue you resolved in your current role. *(self-awareness)*
+- [[q-exponent-0904-negotiated-win-win-outcome]] — Describe a situation where you negotiated a win-win outcome. *(self-awareness)*
+- [[q-exponent-0905-address-early-milestone-delay]] — If you encounter an early delay in a milestone, what would you do? *(self-awareness)*
+- [[q-exponent-0907-handle-stress-pressure-demands]] — How do you handle stress, pressure, and unreasonable demands? *(self-awareness)*
+- [[q-exponent-0909-time-you-had-to-say-no]] — Tell me about a time when you had to say no to someone. *(self-awareness)*
+- [[q-exponent-0911-time-you-were-unhappy-in-job]] — Tell me about a time when you were unhappy in your job. *(self-awareness)*
+- [[q-exponent-0912-time-you-automated-task-in-job]] — Tell me about a time when you automated a task in your job. *(self-awareness)*
+- [[q-exponent-0914-time-you-gained-group-buy-in]] — Tell me about a time when you identified an opportunity and gained group buy-in. *(self-awareness)*
+- [[q-exponent-0915-identify-account-risk-in-program]] — How do you identify and account for risks in a program? *(self-awareness)*
+- [[q-exponent-0920-starting-restaurant-business-campus]] — If you were starting a restaurant on a business campus, what steps would you take? *(self-awareness)*
+- [[q-exponent-0921-implement-gdpr-program-google-services]] — How would you implement a GDPR program for Google Services? *(self-awareness)*
+- [[q-exponent-0933-earning-trust-of-team-members]] — How do you earn the trust of your team members? *(collaboration)*
+- [[q-exponent-0936-why-join-amazon]] — Why do you want to join Amazon? *(collaboration)*
+- [[q-exponent-0937-project-that-started-small-became-big]] — Tell me about a project that started small but grew significantly. *(collaboration)*
+- [[q-exponent-0938-obtain-resources-another-organization]] — How would you obtain resources from another organization for your project? *(collaboration)*
+- [[q-exponent-0941-project-with-tight-deadline]] — Tell me about a time when you worked on a project with a tight deadline. *(collaboration)*
+- [[q-exponent-0943-questioned-status-quo]] — Tell me about a time when you questioned the status quo. *(collaboration)*
+- [[q-exponent-0946-assess-impact-changing-timeline]] — How do you assess the impact of a changing timeline? *(collaboration)*
+- [[q-exponent-0954-why-should-we-hire-you]] — Why should we hire you? *(collaboration)*
+- [[q-exponent-0976-create-product-roadmap]] — How do you create a product roadmap? *(collaboration)*
+- [[q-exponent-0992-ideal-relationship-platform-feature-teams]] — What is the ideal relationship between platform and feature teams? *(collaboration)*
+- [[q-exponent-1001-time-deal-with-co-worker-struggled]] — Tell me about a time when you had to deal with a co-worker who struggled to keep up. *(collaboration)*
+- [[q-exponent-1003-time-change-direction-project-70-percent]] — Tell me about a time when you had to change the direction of a project that was 70% complete. *(collaboration)*
+- [[q-exponent-1004-time-dissatisfied-with-status-quo]] — Tell me about a time when you were dissatisfied with the status quo. *(collaboration)*
+- [[q-exponent-1008-project-you-are-proud-of]] — What is a project you are proud of that you shipped? *(collaboration)*
+- [[q-exponent-1012-ceo-shopify-focus-next]] — As the CEO of Shopify, what should we focus on next? *(collaboration)*
+- [[q-exponent-1013-shopify-retail-strategy-future-locations]] — Shopify opened its first retail location in LA; what is your strategy for future locations? *(collaboration)*
+- [[q-exponent-1031-project-you-are-most-proud-of]] — What is the project you are most proud of? *(collaboration)*
+- [[q-exponent-1182-project-lead-feature-development]] — Tell me about a project where you led feature development. *(collaboration)*
+- [[q-exponent-1183-project-trade-off-experience]] — Tell me about a project where you dealt with a trade-off. *(collaboration)*
+- [[q-exponent-1192-managing-performance-levels-team]] — How have you managed varying performance levels among your team members? *(collaboration)*
+- [[q-exponent-1193-junior-senior-ics-differently]] — How do you approach differences in working with junior and senior individual contributors on your team? *(collaboration)*
+- [[q-exponent-1194-support-team-new-heights-brand]] — How have you supported your team in achieving new heights and building a brand within the organization? *(collaboration)*
+- [[q-exponent-1198-ceo-new-feature-engineering-team-bugs]] — How would you handle a situation where the CEO wants to push a new feature but the engineering team warns it will be full of bugs? *(collaboration)*
+- [[q-exponent-1199-demonstrate-success-without-results]] — How would you demonstrate success without concrete results to share? *(collaboration)*
+- [[q-exponent-1201-why-work-at-better]] — Why do you want to work at Better? *(collaboration)*
+- [[q-exponent-1202-if-you-could-do-anything]] — If you could do anything in your life, what would it be? *(collaboration)*
+- [[q-exponent-1216-why-plaid]] — Why do you want to work at Plaid? *(collaboration)*
+- [[q-exponent-1221-why-robinhood]] — Why do you want to work at Robinhood? *(collaboration)*
+- [[q-exponent-1226-why-peloton]] — Why do you want to work at Peloton? *(collaboration)*
+- [[q-exponent-1263-project-lead-change-management]] — Tell me about a time when someone changed their mind after you started leading a project. How did you handle it? *(collaboration)*
+- [[q-exponent-1264-presentation-complex-project-led]] — Prepare a presentation about a complex project you led from start to finish. *(collaboration)*
+- [[q-exponent-1266-potential-company-join-factors]] — What do you look for in a potential company to join? *(collaboration)*
+- [[q-exponent-1267-accurate-project-forecasting]] — How do you forecast projects more accurately? *(collaboration)*
+- [[q-exponent-1297-solving-customer-pain-points-example]] — Tell me about a time when you solved pain points for customers. *(collaboration)*
+- [[q-exponent-1299-end-to-end-program-management-example]] — Tell me about a time when you managed an end-to-end program. *(collaboration)*
+- [[q-exponent-1306-why-pmm]] — Why PMM? *(collaboration)*
+- [[q-exponent-1348-strengths-weaknesses]] — What are your strengths and weaknesses?
+- [[q-exponent-1360-b2b-expand-b2c-position-market]] — We are a B2B company wanting to expand to the B2C segment. How can we position ourselves in the market? *(collaboration)*
+- [[q-exponent-1363-time-innovative-solution-problem]] — Tell me about a time when you conceived an innovative solution to a problem. *(collaboration)*
+- [[q-exponent-1365-time-discover-real-cause]] — Tell me about a time you had a problem and had to discover the real cause. *(collaboration)*
+- [[q-exponent-1366-time-proposed-idea-not-agreed]] — Tell me about a time when you proposed an idea that was not agreed on. *(collaboration)*
+- [[q-exponent-1369-time-raised-the-bar]] — Tell me about a time when you raised the bar. *(collaboration)*
+- [[q-exponent-1377-why-work-at-google]] — Why do you want to work at Google? *(collaboration)*
+- [[q-exponent-1422-google-pm-discussion-board]] — Google PM Discussion Board. *(collaboration)*
+- [[q-exponent-1424-amazon-pm-discussion-board]] — Amazon PM Discussion Board. *(collaboration)*
+- [[q-exponent-1428-pmm-discussion-board]] — PMM Discussion Board *(collaboration)*
+- [[q-exponent-1434-pm-gmail-react-competing-product]] — You're a PM for Gmail. How would you react to a competing product? *(collaboration)*
+- [[q-exponent-1483-determine-if-product-is-good]] — How do you determine if a product is good? *(collaboration)*
+- [[q-exponent-1501-firing-someone-example]] — Tell me about a time when you had to fire someone. *(collaboration)*
+- [[q-exponent-1503-why-work-at-amazon]] — Why do you want to work at Amazon? *(collaboration)*
+- [[q-exponent-1506-motivate-team-perform-better]] — How do you motivate your team to perform better? *(collaboration)*
+- [[q-exponent-1507-value-of-one-on-ones]] — What is the value of one-on-ones with your direct reports? *(collaboration)*
+- [[q-exponent-1511-hiring-team-manager]] — What do you look for when hiring for a team manager role? *(collaboration)*
+- [[q-exponent-1531-contribute-diversity-inclusion]] — How do you contribute to diversity and inclusion?
+- [[q-exponent-1580-best-worst-performing-team]] — What's the best and worst performing team you've been on? *(collaboration, self-awareness)*
+- [[q-exponent-1741-recent-role-experience]] — Tell me about your recent role.
+- [[q-exponent-1773-handling-pressure-experience]] — Tell me about a time when you had to handle pressure. *(self-awareness)*
+- [[q-exponent-1791-unaddressed-project-risks]] — What project risks are you currently unprepared to address? *(self-awareness)*
+- [[q-exponent-1967-pm-traits-strength-weakness-assessment]] — Among the following PM traits, which is your greatest strength and which is your greatest weakness: working with engineering, execution, ideation and visioning, working with design, working with me... *(collaboration, self-awareness)*
+- [[q-exponent-2063-closest-friend-feedback-strengths]] — What would your closest friend say about you and your strengths? *(self-awareness)*
+- [[q-exponent-2180-strengths-as-designer]] — What are your strengths as a designer? *(self-awareness)*
+- [[q-exponent-2317-describing-team-culture]] — How would you describe the culture of the teams you have worked on?
+- [[q-exponent-2395-day-to-day-activities-current-company]] — What does your day-to-day look like at your current company?
+- [[q-exponent-2397-why-choose-college]] — Why did you choose to attend [College]?
+- [[q-exponent-2399-changes-during-tenure-current-company]] — What would you change about your time at [Current Company]?
+- [[q-exponent-2475-biggest-risks-for-airbnb]] — What do you think are Airbnb's biggest risks?
+- [[q-exponent-2563-impact-of-covid19-on-uber]] — How did COVID-19 affect Uber?
+- [[q-exponent-2580-facebook-preparation-next-pandemic]] — How can Facebook improve preparing for another pandemic?
+- [[q-exponent-2603-america-decisions-about-tiktok]] — What should America do about TikTok?
+- [[q-exponent-2622-why-airbnb-is-good-app]] — Explain why Airbnb is a good app.
+- [[q-exponent-2634-reason-yelp-sold-eat24]] — Why did Yelp sell Eat24?
+- [[q-exponent-2668-tell-about-your-experience]] — Tell me about your experience.
+- [[q-exponent-2691-difference-product-manager-owner]] — What is the difference between a product manager and a product owner?
+- [[q-exponent-2720-program-improvement-deterioration-involvement]] — How has this program improved or deteriorated because of your involvement? *(ownership)*
+- [[q-exponent-2724-should-amazon-enter-food-delivery]] — Should Amazon enter the food delivery business?
+- [[q-exponent-2774-current-job-likes-dislikes]] — What do you like about your current job and what aspects would you change? *(self-awareness)*
+- [[q-exponent-2790-what-is-product-marketing]] — What is product marketing?
+- [[q-exponent-2845-why-leave-last-role]] — Why did you leave your last role?
+- [[q-exponent-2850-major-differences-java-go]] — What are the major differences between Java and Go?
+- [[q-exponent-2924-project-most-time-spent]] — What project have you spent the most time on? *(ownership)*
+- [[q-exponent-2931-explain-product-manager-role-to-child]] — How would you explain the role of a product manager to a 4-year-old child?
+- [[q-exponent-2947-explain-blockchain-to-child]] — Explain what a blockchain is as if to a five-year-old.
+- [[q-exponent-2955-favorite-music-app-reasons]] — What is your favorite music app and why?
+- [[q-exponent-3017-improve-favorite-music-application]] — How would you improve your favorite music application?
+- [[q-exponent-3026-global-booking-cancellation-rate-booking-com]] — What do you think the global booking cancellation rate is at Booking.com, and why?
+- [[q-exponent-3029-should-google-create-gcp-region-portugal]] — Should Google create a new GCP region in Portugal?
+- [[q-exponent-3168-define-humility-application-example]] — What does humility mean to you, and describe a situation where you applied it. *(self-awareness)*
+- [[q-exponent-3765-coworkers-feedback-positive-negative]] — What do coworkers say about you? Share some positive and negative feedback you've received. *(self-awareness)*
+- [[q-exponent-3781-gather-user-feedback]] — How do you gather feedback from users? *(self-awareness)*
+- [[q-exponent-4283-favorite-leadership-principle]] — What is your favorite leadership principle? *(self-awareness, conflict-handling)*
+- [[q-exponent-5435-feature-customer-expectations-engineering-roadmap-constraints]] — Your recently launched feature isn't meeting customer expectations, but your engineering team and roadmap are at capacity. How would you address this?
+- [[q-exponent-5450-why-unilever-this-role]] — Why do you want to work this role at Unilever?
+- [[q-exponent-5486-tell-me-something-thats-not-in-your-resume]] — Tell me something that's not in your resume. *(self-awareness)*
+- [[q-exponent-5524-concerns-over-role]] — Do you have any concerns or reservations about this role?
+- [[q-exponent-5528-biggest-challenge-and-exciting-part-of-role]] — What challenge do you anticipate in this role, and what excites you most about it?
+- [[q-exponent-5577-why-atlassian]] — Why do you want to work at Atlassian?
+- [[q-exponent-5596-why-anthropic]] — Why do you want to work at Anthropic?
+- [[q-exponent-5773-why-elevenlabs]] — Why do you want to work at ElevenLabs?
+- [[q-exponent-5838-why-cursor]] — Why do you want to work at Cursor?
+- [[q-exponent-5842-why-perplexity]] — Why do you want to work at Perplexity?
+- [[q-exponent-5844-why-ai-first-company]] — Why do you want to join an AI-first company?
+- [[q-exponent-5867-why-sierra-ai]] — Why do you want to work at Sierra AI?
+- [[q-exponent-5923-motivation]] — What motivates you to get up from the bed? *(self-awareness)*
+- [[q-exponent-5924-pet-peeve]] — What is your pet peeve? *(self-awareness)*
+- [[q-exponent-5925-news]] — What kind of news do you read? *(self-awareness)*
+- [[q-exponent-5926-tried-powerpoint]] — Have you tried PowerPoint and what would you improve about it? *(self-awareness)*
+- [[q-exponent-6031-why-american-express]] — Why American Express?

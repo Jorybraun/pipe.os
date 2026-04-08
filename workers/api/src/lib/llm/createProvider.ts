@@ -2,11 +2,17 @@
  * Factory — creates the correct LLMProvider from environment variables.
  *
  * Config via env vars:
- *   ROLE_AGENT_PROVIDER    = 'mistral' | 'google-ai'                 (default: 'mistral')
+ *   ROLE_AGENT_PROVIDER    = 'cloudflare-ai' | 'mistral' | 'google-ai' (default: 'cloudflare-ai')
  *   CULTURE_AGENT_PROVIDER = 'cloudflare-ai' | 'mistral' | 'google-ai' (default: 'cloudflare-ai')
- *   MISTRAL_API_KEY        = your Mistral API key
+ *   MISTRAL_API_KEY        = your Mistral API key (used as Role Agent fallback)
  *   GOOGLE_AI_API_KEY      = your Google AI Studio key
  *   (cloudflare-ai uses env.AI binding — no key required)
+ *
+ * Routing rationale: Role Discovery and Culture both use Workers AI Gemma 4
+ * as primary because it's strong at structured JSON output, runs at the edge
+ * with no per-call API key cost, and avoids burning Mistral budget on
+ * non-evaluative tasks. Mistral is reserved for the code-review scoring panel
+ * (Devstral) where evaluative quality matters more than cost.
  */
 
 import { MistralProvider } from './mistralProvider';
@@ -27,7 +33,15 @@ interface ProviderEnv {
 }
 
 export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
-  const providerName = (env.ROLE_AGENT_PROVIDER ?? 'mistral') as ProviderName;
+  const providerName = (env.ROLE_AGENT_PROVIDER ?? 'cloudflare-ai') as ProviderName;
+
+  if (providerName === 'cloudflare-ai') {
+    if (env.AI) return new CloudflareAIProvider(env.AI);
+    // Fallback chain: Workers AI binding missing → Mistral → null.
+    const mistralKey = env.MISTRAL_API_KEY ?? '';
+    if (mistralKey) return new MistralProvider(mistralKey);
+    return null;
+  }
 
   if (providerName === 'google-ai') {
     const key = env.GOOGLE_AI_API_KEY ?? '';
@@ -35,7 +49,7 @@ export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
     return new GoogleAIProvider(key);
   }
 
-  // Default: Mistral
+  // Explicit 'mistral' selection
   const key = env.MISTRAL_API_KEY ?? '';
   if (!key) return null;
   return new MistralProvider(key);

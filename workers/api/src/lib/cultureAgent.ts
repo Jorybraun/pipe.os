@@ -56,6 +56,8 @@ import {
   type AgentTurnContext,
   type AgentTurnJsonResponse,
 } from './cultureAgentPrompts';
+import { coerceProbePattern } from './cultureProbePatterns';
+import type { RoleOverlayId } from './cultureRoleOverlay';
 
 // ─── Transcript shape ────────────────────────────────────────────────────────
 // Stored as JSON in `culture_interview_sessions.transcript`. Keep this shape
@@ -126,6 +128,11 @@ export interface StartCultureInterviewInput {
    * eligible. Usually derived from the role context.
    */
   seniority?: SeniorityTag | null;
+  /**
+   * Role overlay id derived from the Role Discovery Agent persona. Drives
+   * dimension weights and tag preferences in the selector.
+   */
+  roleOverlayId?: RoleOverlayId | null;
 }
 
 export interface StartCultureInterviewResult {
@@ -144,7 +151,13 @@ export interface StartCultureInterviewResult {
  */
 export function startCultureInterview(input: StartCultureInterviewInput = {}): StartCultureInterviewResult {
   const transcript = defaultCultureTranscript();
-  const first = pickNextQuestion(transcript.scratchpad.dimensionCoverage, new Set(), input.seniority);
+  const first = pickNextQuestion({
+    coverage: transcript.scratchpad.dimensionCoverage,
+    askedIds: new Set(),
+    seniority: input.seniority,
+    roleOverlayId: input.roleOverlayId,
+    runningThemes: [],
+  });
   if (!first) {
     throw new Error('Culture interview bank is empty — cannot start interview.');
   }
@@ -177,6 +190,12 @@ export interface AdvanceCultureInterviewInput {
   minQuestions?: number;
   /** Optional seniority filter for question selection. */
   seniority?: SeniorityTag | null;
+  /**
+   * Role overlay id derived from the Role Discovery Agent persona at session
+   * boot. When set, the selector applies dimension weights and tag preferences
+   * from `knowledge/culture/role-overlays/{id}.md`.
+   */
+  roleOverlayId?: RoleOverlayId | null;
 }
 
 export type AdvanceCultureInterviewResult =
@@ -249,9 +268,13 @@ export async function advanceCultureInterview(
 
   const llmResult = await runTurnAnalysis(input.provider, turnContext);
   pendingTurn.starSlots = llmResult.star_slots;
-  if (llmResult.running_theme_to_add) {
+  // Coerce the LLM's running theme into the closed probe-pattern vocabulary.
+  // Free-text strings are silently dropped — they break the selector's
+  // theme-resonance bonus (intersection with q.probe_patterns becomes empty).
+  const coercedTheme = coerceProbePattern(llmResult.running_theme_to_add);
+  if (coercedTheme && !transcript.scratchpad.runningThemes.includes(coercedTheme)) {
     // Cap themes at 5 — oldest wins eviction.
-    transcript.scratchpad.runningThemes.push(llmResult.running_theme_to_add);
+    transcript.scratchpad.runningThemes.push(coercedTheme);
     if (transcript.scratchpad.runningThemes.length > 5) {
       transcript.scratchpad.runningThemes.shift();
     }
@@ -321,7 +344,13 @@ export async function advanceCultureInterview(
 
   // 7. Otherwise pick the next bank question.
   const askedIds = new Set(transcript.turns.map((t) => t.questionId));
-  const next = pickNextQuestion(transcript.scratchpad.dimensionCoverage, askedIds, input.seniority);
+  const next = pickNextQuestion({
+    coverage: transcript.scratchpad.dimensionCoverage,
+    askedIds,
+    seniority: input.seniority,
+    roleOverlayId: input.roleOverlayId,
+    runningThemes: transcript.scratchpad.runningThemes,
+  });
   if (!next) {
     // Bank exhausted before termination — terminate with a distinct reason
     // so the caller can decide whether to re-use the bank or just finish.
