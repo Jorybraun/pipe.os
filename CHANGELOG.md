@@ -6,6 +6,9 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Phase C recon: Exponent scrape spec (2026-04-07)
+- **`knowledge/culture/.research/exponent-scrape-spec.md`** — Manual recon pass against `tryexponent.com/questions?type=behavioral`. Documents the URL structure (`/questions?type=behavioral&page=N`, pages 1..51, ~1020 total questions, 20/page), the question detail page DOM (`<h1>` title; `Interview Details` subsection containing roles / companies-with-counts / categories; `Community Answers` block typically 100KB+ — capped to first 2 answers × 5000 chars in extraction), pacing rules (3–5s jitter, real Chrome UA, robots.txt check first), the per-question markdown output shape with frontmatter, and the Phase C task #23 subagent invocation contract. Authorization posture (paying customer, derivatives only, never republished verbatim) explicit. Includes open questions for the scrape subagent to answer or escalate.
+
 #### Added — Phase B: Culture Agent price tracking (2026-04-07)
 - **`workers/api/src/lib/llm/pricing.ts`** — Single source of truth for model pricing. Exports `MODEL_PRICING` table (Gemma 4 26B at $0.10/$0.30 per M tokens; Whisper large-v3-turbo at $0.0005/audio-min), `TokenUsage` / `ModelPrice` interfaces, and `computeCallCost(model, usage)`. Throws loudly on unknown models — `Unknown model: X — add entry to MODEL_PRICING` — per the plan's no-silent-zero-billing requirement.
 - **`workers/api/src/lib/llm/types.ts`** — Added `LLMUsage` interface and `usage?: LLMUsage` field on `LLMCompletion` so token counts can be propagated out of providers.
