@@ -163,7 +163,105 @@ export function resolveTemplate(
   return DEFAULT_TEMPLATES[trigger];
 }
 
-// ─── Send email ─────────────────────────────────────────────────────────────
+// ─── OAuth email connection ─────────────────────────────────────────────────
+
+export type EmailProvider = 'GMAIL' | 'MICROSOFT';
+
+export interface EmailConnection {
+  provider: EmailProvider;
+  accessToken: string;
+  accountEmail: string;
+}
+
+// ─── Gmail send (via Gmail API) ─────────────────────────────────────────────
+
+async function sendViaGmail(
+  accessToken: string,
+  fromEmail: string,
+  params: SendEmailParams,
+): Promise<{ id: string } | null> {
+  // Build RFC 2822 message
+  const messageParts = [
+    `From: ${fromEmail}`,
+    `To: ${params.to}`,
+    `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(params.subject)))}?=`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    params.html,
+  ];
+  const rawMessage = messageParts.join('\r\n');
+
+  // Base64url encode for Gmail API
+  const encoded = btoa(unescape(encodeURIComponent(rawMessage)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  try {
+    const resp = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ raw: encoded }),
+      },
+    );
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      console.error('[email] Gmail API error:', { status: resp.status, body: errBody.slice(0, 300) });
+      return null;
+    }
+
+    const data = (await resp.json()) as { id: string };
+    return { id: data.id };
+  } catch (err) {
+    console.error('[email] Gmail send failed:', err);
+    return null;
+  }
+}
+
+// ─── Microsoft send (via Graph API) ─────────────────────────────────────────
+
+async function sendViaMicrosoft(
+  accessToken: string,
+  params: SendEmailParams,
+): Promise<{ id: string } | null> {
+  try {
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject: params.subject,
+          body: { contentType: 'HTML', content: params.html },
+          toRecipients: [{ emailAddress: { address: params.to } }],
+        },
+      }),
+    });
+
+    // Microsoft sendMail returns 202 with no body on success
+    if (resp.status === 202 || resp.ok) {
+      return { id: crypto.randomUUID() };
+    }
+
+    const errBody = await resp.text();
+    console.error('[email] Microsoft Graph error:', { status: resp.status, body: errBody.slice(0, 300) });
+    return null;
+  } catch (err) {
+    console.error('[email] Microsoft send failed:', err);
+    return null;
+  }
+}
+
+// ─── Send email (Resend fallback) ───────────────────────────────────────────
 
 async function sendEmail(
   resend: Resend,
@@ -206,13 +304,27 @@ export async function sendNotificationEmail(params: {
   variables: EmailVariables;
   stageTemplatesJson?: string | null;
   from?: string;
+  /** OAuth email connection — if provided, sends via Gmail/Microsoft instead of Resend. */
+  emailConnection?: EmailConnection | null;
 }): Promise<{ id: string } | null> {
-  const resend = new Resend(params.apiKey);
   const template = resolveTemplate(params.trigger, params.stageTemplatesJson ?? null);
 
   const subject = substituteVariables(template.subject, params.variables);
   const html = substituteVariables(template.body, params.variables);
 
+  // Try OAuth provider first (recruiter's own email)
+  if (params.emailConnection) {
+    const { provider, accessToken, accountEmail } = params.emailConnection;
+    if (provider === 'GMAIL') {
+      return sendViaGmail(accessToken, accountEmail, { to: params.to, subject, html });
+    }
+    if (provider === 'MICROSOFT') {
+      return sendViaMicrosoft(accessToken, { to: params.to, subject, html });
+    }
+  }
+
+  // Fallback to Resend
+  const resend = new Resend(params.apiKey);
   return sendEmail(resend, {
     to: params.to,
     subject,

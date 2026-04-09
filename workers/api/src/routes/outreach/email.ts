@@ -10,6 +10,8 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
+import type { EmailConnection } from '../../lib/email';
+import { getValidEmailToken } from '../../lib/emailTokenRefresh';
 import type { Env, Variables } from '../../types';
 
 const emailRoutes = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -136,6 +138,34 @@ emailRoutes.post('/:candidateId/send-invite', async (c) => {
 
   console.log('[email] Final bookingUrl:', bookingUrl ?? 'NONE');
 
+  // Look up recruiter's OAuth email connection (Gmail / Microsoft)
+  let emailConnection: EmailConnection | null = null;
+  const emailConn = await db
+    .prepare(
+      `SELECT id, provider_id, access_token, token_expiry, refresh_token, account_email
+       FROM email_connections WHERE owner_id = ? AND status = 'ACTIVE' LIMIT 1`,
+    )
+    .bind(userId)
+    .first<{
+      id: string;
+      provider_id: string;
+      access_token: string;
+      token_expiry: string | null;
+      refresh_token: string | null;
+      account_email: string;
+    }>();
+
+  if (emailConn) {
+    const validToken = await getValidEmailToken(emailConn, c.env);
+    if (validToken) {
+      emailConnection = {
+        provider: emailConn.provider_id as 'GMAIL' | 'MICROSOFT',
+        accessToken: validToken,
+        accountEmail: emailConn.account_email,
+      };
+    }
+  }
+
   const result = await sendNotificationEmail({
     apiKey: c.env.RESEND_API_KEY,
     trigger: 'INVITATION',
@@ -149,6 +179,7 @@ emailRoutes.post('/:candidateId/send-invite', async (c) => {
       ...(bookingUrl ? { bookingUrl } : {}),
     },
     stageTemplatesJson,
+    emailConnection,
   });
 
   if (!result) {
@@ -205,6 +236,34 @@ emailRoutes.post('/:candidateId/send-result', async (c) => {
 
   if (!stage) return apiError(c, 'NOT_FOUND', 'Stage not found.');
 
+  // Look up recruiter's OAuth email connection (Gmail / Microsoft)
+  let emailConnection: EmailConnection | null = null;
+  const emailConn = await db
+    .prepare(
+      `SELECT id, provider_id, access_token, token_expiry, refresh_token, account_email
+       FROM email_connections WHERE owner_id = ? AND status = 'ACTIVE' LIMIT 1`,
+    )
+    .bind(userId)
+    .first<{
+      id: string;
+      provider_id: string;
+      access_token: string;
+      token_expiry: string | null;
+      refresh_token: string | null;
+      account_email: string;
+    }>();
+
+  if (emailConn) {
+    const validToken = await getValidEmailToken(emailConn, c.env);
+    if (validToken) {
+      emailConnection = {
+        provider: emailConn.provider_id as 'GMAIL' | 'MICROSOFT',
+        accessToken: validToken,
+        accountEmail: emailConn.account_email,
+      };
+    }
+  }
+
   const result = await sendNotificationEmail({
     apiKey: c.env.RESEND_API_KEY,
     trigger,
@@ -216,6 +275,7 @@ emailRoutes.post('/:candidateId/send-result', async (c) => {
       stageName: stage.title,
     },
     stageTemplatesJson: stage.notification_templates,
+    emailConnection,
   });
 
   if (!result) {

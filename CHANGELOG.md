@@ -6,6 +6,53 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Gmail & Microsoft OAuth email integration (2026-04-09)
+Recruiters can now connect their Gmail or Microsoft Outlook account to send candidate emails (invitations, results) from their own address instead of the platform default. Falls back to Resend if no OAuth connection exists.
+
+**New files:**
+- `workers/api/migrations/0016_email_connections.sql` — D1 table for OAuth token storage
+- `workers/api/src/routes/outreach/emailOAuth.ts` — OAuth flow routes (connect, callback, disconnect)
+- `workers/api/src/lib/emailTokenRefresh.ts` — Token refresh utility with 5-minute expiry buffer
+- `src/hooks/useEmailConnection.ts` — Frontend hook for email connection management
+
+**Modified:**
+- `workers/api/src/lib/email.ts` — Added Gmail API + Microsoft Graph send functions; `sendNotificationEmail` accepts optional `emailConnection` parameter
+- `workers/api/src/routes/outreach/email.ts` — Both send-invite and send-result look up active email OAuth connection before sending
+- `workers/api/src/types.ts` — Added 4 optional Google/Microsoft OAuth env vars
+- `workers/api/src/index.ts` — Mounted email OAuth routes at `/api/v1/email`
+- `src/components/settings/IntegrationsSettings.tsx` — Added EMAIL_PROVIDER section with Connect Gmail / Connect Microsoft buttons
+
+#### Added — Intake, outreach & CRM research (2026-04-09)
+Full research brief on building a Serra-like intake + outreach system. 4 parallel research streams, 102 combined sources. Key finding: use RocketReach + PDL for sourcing (not Apollo), Instantly/Smartlead for outreach sequences, Cloudflare Workflows for sequence orchestration. Research lives in `knowledge/intake_outreach/`.
+
+#### Removed — Culture Exponent question layer (2026-04-08)
+Reverts the Exponent-sourced portion of the culture question graph added in commit `5cec8ff`. Root cause: the 1,015 Exponent nodes were built from an aborted scrape that only captured question titles (detail-page fetch was blocked in both attempts — see `knowledge/outputs/_superseded/exponent-scrape-spec.md`). Haiku 4.5 then tagged those title strings with a closed vocabulary, but no BARS rubric or L/M/H calibration was ever written for them. The runtime selector (`cultureQuestionBank.ts:pickNextQuestion`) unioned them with the 15 hand-authored curated questions, so the selector could hand a candidate a question the scorer has no rubric to grade — a live landmine, not harmless decoration.
+
+**Deleted:**
+- `knowledge/culture/questions/exponent/` — 1,015 tagged-only question stubs
+- `knowledge/culture/questions/archetypes/` — 12 auto-generated archetype hub pages
+- `knowledge/culture/questions/{index,log}.md` if present (generated artifacts)
+- `knowledge/culture/.raw/exponent/` — raw scrape output (untracked; listing JSON, slice files, `_aborted.md`, robots.txt)
+- `knowledge/culture/.raw/first-round-seed-questions.md` — inspiration material never wired to anything (sourced from public GitHub repo `GitCodeCareer/culture-fit-interview-questions`)
+- `knowledge/culture/raw-exponent/` — duplicate slice data from a second failed Chrome MCP scrape attempt (already deleted earlier this session)
+- `workers/api/src/lib/cultureQuestionBank.generated.ts` — 513 KB generated TS bank
+- `workers/api/scripts/sync-culture-wiki.ts` — sole purpose was generating the above
+- `workers/api/package.json` `sync:culture-wiki` script entry
+
+**Moved to `knowledge/outputs/_superseded/`:**
+- `exponent-scrape-spec.md` (was `knowledge/culture/.research/`) — retained as provenance with a SUPERSEDED header; do not revive the scrape strategy
+
+**Edited:**
+- `workers/api/src/lib/cultureQuestionBank.ts` — removed `CULTURE_QUESTION_BANK_GENERATED` import and the union; runtime bank is now `[...CURATED_BANK]` only. File header comment rewritten to reflect the history.
+- `workers/api/src/__tests__/cultureQuestionGraph.test.ts` — rewrote the suite for the 15-question reality. Dropped the "senior-ic vs manager overlays produce different top picks" assertion and the theme-resonance test (both depended on having 1,000+ candidate questions with `probe_patterns` set; no curated question uses that field). Kept bank-size, exhaustion, and discipline-filter checks.
+- `knowledge/culture/README.md` — directory tree + sync section updated. The old text said `scripts/sync-culture-wiki.ts` was "to be written in task #25"; that was stale both before and after (the script was written, then removed).
+
+**Kept (deliberately):**
+- `knowledge/culture/probe-patterns.md` + `workers/api/src/lib/cultureProbePatterns.ts` — still used by the live agent to coerce the LLM's emitted theme tags into a closed vocabulary before tracking them on the scratchpad (`cultureAgent.ts:274`). With no curated question currently using `probe_patterns`, the theme-resonance bonus is dead code, but the coercion layer still enforces prompt-output discipline. Safe to leave; wiring questions to probe patterns later is a one-line addition per question.
+- `knowledge/culture/role-overlays/`, `cultureRoleOverlay.ts`, `cultureRoleResolution.ts`, `cultureSeniorityNormalize.ts` — all work with the 15 curated questions via the `tags` field (not `probe_patterns`). Role-aware selection still functions.
+
+**Impact:** The culture interview agent now runs over the 15 scorable hand-authored questions only. Worst-case interview length is `min(5 dimensions × 2–3 questions each, 20 cap)` which is well within the existing 5-20 question budget. TypeScript type-check is clean for culture files. All 26 culture tests pass (`cultureQuestionGraph`, `cultureRoleOverlay`, `cultureSeniorityNormalize`).
+
 #### Added — Culture question graph: role-aware + live-targeted selection (2026-04-08)
 - **`knowledge/culture/questions/exponent/*.md`** — 1,015 Exponent-sourced behavioral interview question nodes built via 10 parallel Haiku 4.5 subagents. Each frontmatter carries `dimensions`, `archetype`, `discipline`, `probe_patterns`, `role_overlays`, `seniority`, `bars_fitness`, `bias_risk` from closed vocabularies. Titles HTML-decoded; deterministic filenames `q-exponent-{paddedId}-{slug}.md`.
 - **`knowledge/culture/questions/archetypes/*.md`** — 12 auto-generated archetype hub pages with backlinks to member questions (failure, conflict, ownership, ambiguity, growth, collaboration, feedback, decision, leadership, self-reflection, motivation, discipline-specific).

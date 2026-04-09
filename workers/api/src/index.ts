@@ -10,8 +10,9 @@ import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
 import { schedulingAuth, schedulingPublic } from './routes/cockpit/scheduling';
 // Discovery — Role Discovery Agent
 import { roleContexts } from './routes/discovery/roleContexts';
-// Outreach — invites + result emails
+// Outreach — invites + result emails + email OAuth
 import { emailRoutes } from './routes/outreach/email';
+import { emailOAuth } from './routes/outreach/emailOAuth';
 // Screening — phone screening + culture interview
 import { phonePublic, phoneAuth } from './routes/screening/phone';
 import { cultureRecruiter } from './routes/screening/culture';
@@ -76,6 +77,8 @@ app.route('/api/v1/pipelines', pipelineCandidates);
 app.route('/api/v1/candidates', candidateOps);
 // Email: POST /api/v1/candidates/:candidateId/send-invite, /send-result
 app.route('/api/v1/candidates', emailRoutes);
+// Email OAuth: connect Gmail / Microsoft for send-as
+app.route('/api/v1/email', emailOAuth);
 // Scheduling: webhook receiver (public, no auth) — must mount before auth routes
 app.route('/api/v1/scheduling', schedulingPublic);
 // Scheduling: OAuth, event types, interviews (authenticated)

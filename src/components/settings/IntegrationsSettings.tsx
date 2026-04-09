@@ -19,11 +19,13 @@ import {
   ExternalLink,
   RefreshCw,
   Phone,
+  Mail,
 } from 'lucide-react';
 import { useAuth as useClerkAuth } from '@clerk/react';
 import { createApiClient } from '../../lib/api/client';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import type { SchedulingConnectionInfo, ProviderEventType } from '../../hooks/useSchedulingConnection';
+import { useEmailConnection } from '../../hooks/useEmailConnection';
 import { getAllPlugins } from '../../lib/scheduling/pluginRegistry';
 import type { SchedulingPlugin } from '../../lib/scheduling/pluginRegistry';
 // Side-effect import: registers Calendly + Cal.com plugins
@@ -55,9 +57,21 @@ export function IntegrationsSettings(): JSX.Element {
     refetch,
   } = useSchedulingConnection();
 
+  const {
+    connection: emailConnection,
+    isLoading: emailLoading,
+    error: emailHookError,
+    getAuthUrl: getEmailAuthUrl,
+    exchangeOAuth: exchangeEmailOAuth,
+    disconnect: disconnectEmail,
+    refetch: refetchEmail,
+  } = useEmailConnection();
+
   const { getToken } = useClerkAuth();
 
   const [flow, setFlow] = useState<FlowState>({ step: 'idle' });
+  const [emailFlow, setEmailFlow] = useState<FlowState>({ step: 'idle' });
+  const [isDisconnectingEmail, setIsDisconnectingEmail] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [eventTypes, setEventTypes] = useState<ProviderEventType[]>([]);
 
@@ -80,7 +94,9 @@ export function IntegrationsSettings(): JSX.Element {
 
     let providerId: string;
     try {
-      const parsed = JSON.parse(atob(stateRaw)) as { providerId: string; nonce: string };
+      const parsed = JSON.parse(atob(stateRaw)) as { providerId: string; nonce: string; type?: string };
+      // Skip email OAuth callbacks — handled by the email callback effect
+      if (parsed.type === 'email') return;
       providerId = parsed.providerId;
 
       const storedNonce = sessionStorage.getItem('pipe_oauth_state_nonce');
@@ -136,7 +152,85 @@ export function IntegrationsSettings(): JSX.Element {
       .finally(() => setTwilioLoading(false));
   }, [getToken]);
 
+  // ── Handle Email OAuth callback ────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const stateRaw = params.get('state');
+
+    if (!code || !stateRaw) return;
+
+    let parsed: { providerId: string; nonce: string; type?: string };
+    try {
+      parsed = JSON.parse(atob(stateRaw)) as { providerId: string; nonce: string; type?: string };
+    } catch {
+      return; // scheduling callback handler will pick this up
+    }
+
+    // Only handle email OAuth callbacks
+    if (parsed.type !== 'email') return;
+
+    const storedNonce = sessionStorage.getItem('pipe_email_oauth_nonce');
+    sessionStorage.removeItem('pipe_email_oauth_nonce');
+    if (!storedNonce || storedNonce !== parsed.nonce) {
+      setEmailFlow({ step: 'error', message: 'OAuth state mismatch — please try again' });
+      return;
+    }
+
+    window.history.replaceState({}, '', `${window.location.origin}${window.location.pathname}`);
+
+    const codeVerifier = sessionStorage.getItem('pipe_email_oauth_verifier') ?? undefined;
+    sessionStorage.removeItem('pipe_email_oauth_verifier');
+
+    setEmailFlow({ step: 'exchanging', provider: parsed.providerId });
+    exchangeEmailOAuth(
+      parsed.providerId as 'GMAIL' | 'MICROSOFT',
+      code,
+      `${window.location.origin}/schedule`,
+      codeVerifier,
+    )
+      .then(() => {
+        setEmailFlow({ step: 'connected' });
+        void refetchEmail();
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Exchange failed';
+        setEmailFlow({ step: 'error', message: msg });
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Handlers ───────────────────────────────────────────────────────────
+
+  const handleEmailConnect = useCallback(async (providerId: 'GMAIL' | 'MICROSOFT'): Promise<void> => {
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const state = btoa(JSON.stringify({ providerId, nonce, type: 'email' }));
+    sessionStorage.setItem('pipe_email_oauth_nonce', nonce);
+
+    try {
+      const authUrl = await getEmailAuthUrl(providerId, redirectUri);
+      // Append state to the auth URL
+      const url = new URL(authUrl);
+      url.searchParams.set('state', state);
+      setEmailFlow({ step: 'waiting', provider: providerId });
+      window.location.href = url.toString();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to start OAuth';
+      setEmailFlow({ step: 'error', message: msg });
+    }
+  }, [getEmailAuthUrl, redirectUri]);
+
+  const handleEmailDisconnect = useCallback(async (): Promise<void> => {
+    setIsDisconnectingEmail(true);
+    try {
+      await disconnectEmail();
+      setEmailFlow({ step: 'idle' });
+    } catch {
+      setEmailFlow({ step: 'error', message: 'Failed to disconnect' });
+    } finally {
+      setIsDisconnectingEmail(false);
+    }
+  }, [disconnectEmail]);
 
   const handleConnect = useCallback((plugin: SchedulingPlugin): void => {
     if (!plugin.getAuthUrl) {
@@ -342,6 +436,105 @@ export function IntegrationsSettings(): JSX.Element {
           )}
         </div>
       )}
+
+      {/* Section: Email Provider (Send-As) */}
+      <div>
+        <label style={sectionLabel}>EMAIL_PROVIDER</label>
+        <p style={descriptionStyle}>
+          Connect your Gmail or Microsoft account to send candidate emails from your own address instead of the default platform address.
+        </p>
+
+        {emailLoading && (
+          <div style={statusCard}>
+            <Loader size={14} style={{ animation: 'spin 1s linear infinite', color: '#60a5fa' }} />
+            <span style={labelSmall}>Checking email connection...</span>
+          </div>
+        )}
+
+        {/* Exchanging state */}
+        {emailFlow.step === 'exchanging' && (
+          <div style={statusCard}>
+            <Loader size={14} style={{ animation: 'spin 1s linear infinite', color: '#60a5fa' }} />
+            <span style={labelSmall}>Connecting to {emailFlow.provider}...</span>
+          </div>
+        )}
+
+        {/* Error state */}
+        {(emailFlow.step === 'error' || emailHookError) && (
+          <div style={{ ...statusCard, borderColor: 'rgba(248,113,113,0.2)' }}>
+            <AlertCircle size={14} color="#f87171" />
+            <span style={{ ...labelSmall, color: '#f87171' }}>
+              {emailFlow.step === 'error' ? emailFlow.message : emailHookError?.message ?? 'Unknown error'}
+            </span>
+            <button onClick={() => setEmailFlow({ step: 'idle' })} style={smallButton}>
+              TRY AGAIN
+            </button>
+          </div>
+        )}
+
+        {/* Connected state */}
+        {!emailLoading && emailConnection && emailConnection.status === 'ACTIVE' && emailFlow.step !== 'error' && (
+          <div style={{ ...statusCard, borderColor: 'rgba(74,222,128,0.2)' }}>
+            <CheckCircle size={14} color="#4ade80" />
+            <div style={{ flex: 1 }}>
+              <div style={{ ...labelSmall, color: '#4ade80', marginBottom: 2 }}>
+                {emailConnection.providerId === 'GMAIL' ? 'GMAIL' : 'MICROSOFT OUTLOOK'}
+              </div>
+              <div style={{ ...labelSmall, color: 'var(--pipe-text-dim)', fontSize: 9 }}>
+                {emailConnection.accountEmail}
+              </div>
+            </div>
+            <button
+              onClick={() => void handleEmailDisconnect()}
+              disabled={isDisconnectingEmail}
+              style={disconnectBtn}
+            >
+              {isDisconnectingEmail ? (
+                <Loader size={10} style={{ animation: 'spin 1s linear infinite' }} />
+              ) : (
+                <Unlink size={10} />
+              )}
+              DISCONNECT
+            </button>
+          </div>
+        )}
+
+        {/* Expired state */}
+        {!emailLoading && emailConnection && emailConnection.status === 'EXPIRED' && (
+          <div style={{ ...statusCard, borderColor: 'rgba(251,191,36,0.2)' }}>
+            <AlertCircle size={14} color="#fbbf24" />
+            <span style={{ ...labelSmall, color: '#fbbf24', flex: 1 }}>
+              Connection expired — reconnect to resume
+            </span>
+            <button onClick={() => void handleEmailConnect('GMAIL')} style={connectBtn}>
+              <Link2 size={10} />
+              RECONNECT
+            </button>
+          </div>
+        )}
+
+        {/* Not connected — show provider buttons */}
+        {!emailLoading && !emailConnection && emailFlow.step !== 'exchanging' && emailFlow.step !== 'error' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              onClick={() => void handleEmailConnect('GMAIL')}
+              style={providerButton}
+            >
+              <Mail size={14} />
+              <span style={{ flex: 1, textAlign: 'left' }}>CONNECT GMAIL</span>
+              <ExternalLink size={10} color="var(--pipe-text-dim)" />
+            </button>
+            <button
+              onClick={() => void handleEmailConnect('MICROSOFT')}
+              style={providerButton}
+            >
+              <Mail size={14} />
+              <span style={{ flex: 1, textAlign: 'left' }}>CONNECT MICROSOFT OUTLOOK</span>
+              <ExternalLink size={10} color="var(--pipe-text-dim)" />
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Section: Phone Screening */}
       <div>

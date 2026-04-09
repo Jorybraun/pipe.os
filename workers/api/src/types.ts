@@ -50,6 +50,14 @@ export interface Env {
   CALCOM_CLIENT_ID?: string;
   /** Cal.com OAuth client secret. */
   CALCOM_CLIENT_SECRET?: string;
+  /** Google OAuth client ID for Gmail send-as integration. */
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  /** Google OAuth client secret for Gmail send-as integration. */
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  /** Microsoft OAuth client ID for Outlook send-as integration. */
+  MICROSOFT_OAUTH_CLIENT_ID?: string;
+  /** Microsoft OAuth client secret for Outlook send-as integration. */
+  MICROSOFT_OAUTH_CLIENT_SECRET?: string;
   /**
    * Resend API key for transactional emails (invitations, notifications).
    * Set via .dev.vars in dev, Worker secret in production.
