@@ -6,6 +6,26 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Challenge Authoring System: CA Phase 1 data foundation (2026-04-09)
+ADR-034 implementation — template packs, challenge templates, and language variants. Lays the data foundation for AI-generated challenges, curated role-based packs, and multi-language code execution.
+
+**New files:**
+- `workers/api/migrations/0017_challenge_authoring.sql` — 4 new D1 tables (`challenge_templates`, `challenge_language_variants`, `template_packs`, `template_pack_items`) + ALTER stages for `template_pack_id`/`template_pack_version`
+- `workers/api/src/routes/cockpit/challengeTemplates.ts` — Challenge template CRUD + publish + language variant management routes
+- `workers/api/src/routes/cockpit/templatePacks.ts` — Template pack CRUD + publish + duplicate + `expandPack()` function
+- `workers/api/src/routes/cockpit/__tests__/challengeAuthoring.rest.test.ts` — 44 Vitest tests covering validation, transformation, immutability
+
+**Frontend (CA Phase 2 — template pack UX):**
+- `src/components/Pipeline/ChallengeWizard.tsx` — New 3-source wizard (Template Packs, Library, AI placeholder, Custom) replacing broken InlineChallengeAdder for non-SCREENING stages
+- `src/hooks/useTemplateLibrary.ts` — Hook for fetching challenge templates and template packs from the new API
+- `src/pages/stage-tabs/ChallengesTab.tsx` — Wired ChallengeWizard for TECHNICAL/CODE_REVIEW/CULTURAL/PANEL stages
+
+**Modified:**
+- `workers/api/src/types.ts` — Added 8 type aliases + 8 interfaces for challenge authoring row/response shapes
+- `workers/api/src/index.ts` — Mounted `/api/v1/challenge-templates` and `/api/v1/template-packs` routes
+- `workers/api/src/validation/pipelines.ts` — Added `TEMPLATE_PACK` creation mode, `templatePackId`, `templatePackVersion` fields
+- `workers/api/src/routes/cockpit/pipelines.ts` — Pipeline creation now supports `templatePackId` for pack-based expansion with `template_pack_id`/`template_pack_version` tracking on stages
+
 #### Added — Gmail & Microsoft OAuth email integration (2026-04-09)
 Recruiters can now connect their Gmail or Microsoft Outlook account to send candidate emails (invitations, results) from their own address instead of the platform default. Falls back to Resend if no OAuth connection exists.
 

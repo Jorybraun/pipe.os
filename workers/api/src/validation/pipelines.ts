@@ -47,10 +47,16 @@ export const createPipelineSchema = z.object({
   status: z.enum(['DRAFT', 'ACTIVE']).optional().default('DRAFT'),
 
   /** How the pipeline was created. */
-  creationMode: z.enum(['BLANK', 'PRESET']).optional().default('BLANK'),
+  creationMode: z.enum(['BLANK', 'PRESET', 'TEMPLATE_PACK']).optional().default('BLANK'),
 
   /** Optional preset ID to expand into stages + challenges. */
   presetId: z.string().optional(),
+
+  /** Optional template pack ID to expand into stages + challenges (ADR-034). */
+  templatePackId: z.string().optional(),
+
+  /** Optional template pack version — defaults to latest published. */
+  templatePackVersion: z.number().int().min(1).optional(),
 });
 
 export type CreatePipelineInput = z.infer<typeof createPipelineSchema>;

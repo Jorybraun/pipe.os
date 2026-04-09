@@ -4,6 +4,8 @@ import { cors } from 'hono/cors';
 import { pipelines } from './routes/cockpit/pipelines';
 import { pipelineStages, stageOps, stageChallenges } from './routes/cockpit/stages';
 import { challenges } from './routes/cockpit/challenges';
+import { challengeTemplates } from './routes/cockpit/challengeTemplates';
+import { templatePacks } from './routes/cockpit/templatePacks';
 import { github } from './routes/cockpit/github';
 import { overview } from './routes/cockpit/overview';
 import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
@@ -67,6 +69,10 @@ app.route('/api/v1/stages', stageOps);
 app.route('/api/v1/stages', stageChallenges);
 // Challenge CRUD: GET/PUT /api/v1/challenges/:id, POST /api/v1/challenges/:id/clone
 app.route('/api/v1/challenges', challenges);
+// Challenge templates: CRUD + publish + language variants (ADR-034)
+app.route('/api/v1/challenge-templates', challengeTemplates);
+// Template packs: CRUD + publish + duplicate + expand (ADR-034)
+app.route('/api/v1/template-packs', templatePacks);
 // GitHub PR proxy: POST /api/v1/github/pr
 app.route('/api/v1/github', github);
 // Overview: GET /api/v1/pipelines/:pipelineId/overview

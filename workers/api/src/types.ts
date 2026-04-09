@@ -364,3 +364,128 @@ export interface StageDetailResponse {
   updatedAt: string;
   challenges: ChallengeResponse[];
 }
+
+// ─── Challenge Authoring (ADR-034) ──────────────────────────────────────────
+
+export type ChallengeTemplateType = 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER';
+export type TemplateDifficulty = 'JUNIOR' | 'MID' | 'SENIOR';
+export type TemplateSource = 'SYSTEM' | 'AI_GENERATED' | 'USER_CREATED';
+export type BloomLevel = 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
+export type PackRoleType = 'FRONTEND' | 'BACKEND' | 'FULLSTACK' | 'DATA_ENGINEERING' | 'DEVOPS' | 'MOBILE' | 'CUSTOM';
+export type PackSeniority = 'JUNIOR' | 'MID' | 'SENIOR' | 'ANY';
+export type PackSource = 'SYSTEM' | 'USER_CREATED';
+
+export interface ChallengeTemplateRow {
+  id: string;
+  type: ChallengeTemplateType;
+  title: string;
+  instructions: string;
+  difficulty: TemplateDifficulty;
+  primary_skill: string;
+  secondary_skills: string | null;
+  bloom_level: BloomLevel | null;
+  estimated_minutes: number | null;
+  config: string;
+  server_config: string | null;
+  source: TemplateSource;
+  is_published: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChallengeLanguageVariantRow {
+  id: string;
+  challenge_template_id: string;
+  language: string;
+  starter_code: string;
+  test_suite: string;
+  test_framework: string;
+  test_command: string;
+  solution_code: string | null;
+}
+
+export interface TemplatePackRow {
+  id: string;
+  name: string;
+  description: string | null;
+  role_type: PackRoleType;
+  seniority: PackSeniority;
+  version: number;
+  skills: string;
+  supported_languages: string | null;
+  source: PackSource;
+  is_published: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface TemplatePackItemRow {
+  template_pack_id: string;
+  template_pack_version: number;
+  challenge_template_id: string;
+  sort_order: number;
+  weight: number;
+  is_required: number;
+}
+
+// ─── Challenge Authoring API responses ──────────────────────────────────────
+
+export interface ChallengeTemplateResponse {
+  id: string;
+  type: ChallengeTemplateType;
+  title: string;
+  instructions: string;
+  difficulty: TemplateDifficulty;
+  primarySkill: string;
+  secondarySkills: string[];
+  bloomLevel: BloomLevel | null;
+  estimatedMinutes: number | null;
+  config: Record<string, unknown>;
+  /** Only included for owner / admin requests. */
+  serverConfig?: Record<string, unknown>;
+  source: TemplateSource;
+  isPublished: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Language variants — only included on single-template GET. */
+  variants?: LanguageVariantResponse[];
+}
+
+export interface LanguageVariantResponse {
+  id: string;
+  language: string;
+  starterCode: string;
+  testSuite: string;
+  testFramework: string;
+  testCommand: string;
+  /** Only included for owner / admin. */
+  solutionCode?: string | null;
+}
+
+export interface TemplatePackResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  roleType: PackRoleType;
+  seniority: PackSeniority;
+  version: number;
+  skills: string[];
+  supportedLanguages: string[];
+  source: PackSource;
+  isPublished: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  /** Included on single-pack GET. */
+  items?: TemplatePackItemResponse[];
+}
+
+export interface TemplatePackItemResponse {
+  challengeTemplateId: string;
+  sortOrder: number;
+  weight: number;
+  isRequired: boolean;
+  /** Included when pack is fetched with ?expand=challenges. */
+  challenge?: ChallengeTemplateResponse;
+}
