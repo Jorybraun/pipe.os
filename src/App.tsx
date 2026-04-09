@@ -18,9 +18,10 @@ import ListingPage from "./pages/ListingPage";
 import PipelineShellPage from "./pages/PipelineShellPage";
 import PipelineInsightsPanel from "./pages/PipelineInsightsPanel";
 import StagePanel from "./pages/StagePanel";
-import ChallengesTab from "./pages/stage-tabs/ChallengesTab";
+import StageIndexTab from "./pages/stage-tabs/StageIndexTab";
 import CandidatesTab from "./pages/stage-tabs/CandidatesTab";
 import ConfigureTab from "./pages/stage-tabs/ConfigureTab";
+import CultureBenchmarkTab from "./pages/stage-tabs/CultureBenchmarkTab";
 import NewStageFormPage from "./pages/NewStageFormPage";
 import KanbanPage from "./pages/KanbanPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
@@ -335,9 +336,10 @@ function App(): JSX.Element {
                       <Route index element={<PipelineInsightsPanel />} />
                       <Route path="new-stage" element={<NewStageFormPage />} />
                       <Route path="stage/:stageId" element={<StagePanel />}>
-                        <Route index element={<ChallengesTab />} />
+                        <Route index element={<StageIndexTab />} />
                         <Route path="candidates" element={<CandidatesTab />} />
                         <Route path="configure" element={<ConfigureTab />} />
+                        <Route path="benchmark" element={<CultureBenchmarkTab />} />
                       </Route>
                     </Route>
                     <Route path="/pipeline/:id/kanban" element={<KanbanPage />} />

@@ -6,6 +6,26 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Stage detail redesign: type-aware tabs + config (2026-04-09)
+Purpose-built detail tabs for all 4 stage types, replacing the generic CHALLENGES/CONFIGURE tabs.
+
+**New stage detail tabs:**
+- `CultureDetailTab` — AI interview description, 5 competency dimensions, 5 culture profile axes, stat cards
+- `CultureBenchmarkTab` — 5 sliders for org culture benchmark (BC-23), saves to challenge config
+- `CodeReviewDetailTab` — PR status, multi-turn/AI assistant/follow-up toggles, persona selector, 3 scoring dimensions
+- `QuestionsDetailTab` — 3 source modes (library/AI/custom), question list with type badges
+- `ScreeningDetailTab` — format picker (phone/video/online), scheduling toggle, candidate flow diagram
+- `StageIndexTab` — smart router picking the right detail tab by stage type/title/challenges
+
+**Stage panel refactored:**
+- `StagePanel.tsx` — config-driven tab system (no more nested ternaries), 5 stage variants
+- `NewStageModal` — modal type picker (Code Review, Cultural Fit, Questions, Screening) with screening sub-type step
+- `PipelineShellPage` — ADD_STAGE opens modal instead of creating blank stage
+
+**Tracking:**
+- `TODO.md` — work tracker replacing migration phase-following
+- `BUGS.md` — QA bug list for capturing issues during testing
+
 #### Added — Challenge Authoring System: CA Phase 1 data foundation (2026-04-09)
 ADR-034 implementation — template packs, challenge templates, and language variants. Lays the data foundation for AI-generated challenges, curated role-based packs, and multi-language code execution.
 
