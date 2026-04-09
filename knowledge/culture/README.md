@@ -42,12 +42,11 @@ knowledge/culture/
 │   └── self-awareness/
 ├── probes/                       ← the probe library — shared across questions
 │   └── star-slot-probes.md
-├── role-overlays/                ← how role discovery context shifts question selection
-│   ├── senior-ic.md
-│   ├── manager.md
-│   └── README.md
-└── .raw/                         ← scraped material (phase C), not synced to D1
-    └── .gitkeep
+├── probe-patterns.md             ← closed vocabulary for runningThemes (live agent)
+└── role-overlays/                ← how role discovery context shifts question selection
+    ├── senior-ic.md
+    ├── manager.md
+    └── README.md
 ```
 
 ---
@@ -62,11 +61,11 @@ knowledge/culture/
 
 ---
 
-## Sync to D1
+## How the wiki reaches the runtime
 
-At deploy time, `scripts/sync-culture-wiki.ts` (to be written in task #25) parses every `questions/**/*.md` file and upserts into the D1 `culture_questions` table. The culture agent reads questions from D1 at runtime. The wiki is the source of truth; D1 is the cache.
+The 15 curated questions live as markdown files in `questions/{dimension}/` AND as a TypeScript `CURATED_BANK` const in `workers/api/src/lib/cultureQuestionBank.ts`. The two must stay in sync by hand — every question ID in the wiki must exist in the TS const, and vice versa. This is craft work, not a sync script.
 
-If the sync script fails, deploy fails. Stale D1 data is worse than no data.
+History: an earlier commit (`5cec8ff`) shipped a 1,015-node Exponent-sourced layer and a `sync-culture-wiki.ts` generator. Both were removed on 2026-04-08 because the Exponent stubs had no BARS rubrics and could surface to candidates through the selector. See the CHANGELOG entry of that date.
 
 ---
 

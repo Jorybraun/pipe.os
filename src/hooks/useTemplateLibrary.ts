@@ -63,16 +63,23 @@ export interface TemplatePackItem {
 
 // ─── Filters ────────────────────────────────────────────────────────────────
 
+export type TemplateSource = 'SYSTEM' | 'AI_GENERATED' | 'USER_CREATED';
+
 export interface TemplateFilters {
   type?: TemplateType;
   difficulty?: TemplateDifficulty;
   skill?: string;
   search?: string;
+  source?: TemplateSource;
+  /** When omitted defaults to 'true'. Pass 'false' for drafts, 'all' for both. */
+  published?: 'true' | 'false' | 'all';
 }
 
 export interface PackFilters {
   roleType?: PackRoleType;
   seniority?: string;
+  /** When omitted defaults to 'true'. Pass 'false' for drafts, 'all' for both. */
+  published?: 'true' | 'false' | 'all';
 }
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
@@ -106,7 +113,9 @@ export function useTemplateLibrary(): UseTemplateLibraryResult {
         if (filters?.type) params.set('type', filters.type);
         if (filters?.difficulty) params.set('difficulty', filters.difficulty);
         if (filters?.skill) params.set('skill', filters.skill);
-        params.set('published', 'true');
+        if (filters?.source) params.set('source', filters.source);
+        const pub = filters?.published ?? 'true';
+        if (pub !== 'all') params.set('published', pub);
 
         const qs = params.toString();
         const result = await api.get<{ templates: ChallengeTemplateItem[] }>(
@@ -146,7 +155,8 @@ export function useTemplateLibrary(): UseTemplateLibraryResult {
         const params = new URLSearchParams();
         if (filters?.roleType) params.set('roleType', filters.roleType);
         if (filters?.seniority) params.set('seniority', filters.seniority);
-        params.set('published', 'true');
+        const pubPack = filters?.published ?? 'true';
+        if (pubPack !== 'all') params.set('published', pubPack);
 
         const qs = params.toString();
         const result = await api.get<{ packs: TemplatePackItem[] }>(

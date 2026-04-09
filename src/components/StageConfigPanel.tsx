@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, Code, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, Mic, Type, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, Mic, Type, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -41,15 +41,15 @@ const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   SCREENING: Phone,
   CULTURAL: Users,
   TECHNICAL: Zap,
-  CODE_REVIEW: Code,
+  CODE_REVIEW: GitPullRequest,
   PANEL: FileText,
 };
 
 /** Map stage types to the challenge types they should show */
 const TYPE_TO_CHALLENGE_TYPES: Record<StageType, ChallengeType[]> = {
   SCREENING: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
-  CULTURAL: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
-  TECHNICAL: ['CODE_IMPLEMENTATION', 'QUIZ_SHORT_ANSWER', 'QUIZ_MCQ'],
+  CULTURAL: ['AGENT_INTERVIEW', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
+  TECHNICAL: ['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_SHORT_ANSWER', 'QUIZ_MCQ'],
   CODE_REVIEW: ['CODE_REVIEW'],
   PANEL: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
 };
@@ -62,14 +62,17 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
 
   const [selectedType, setSelectedType] = useState<StageType | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [showGitHubPicker, setShowGitHubPicker] = useState(false);
 
   // Pending type change awaiting confirmation when existing challenges are present
   const [pendingType, setPendingType] = useState<StageType | null>(null);
 
-  // Sync from server on load
+  // Sync from server on load — only accept types we have config for
   useEffect(() => {
     if (stage && !initialized) {
-      setSelectedType((stage.stageType as StageType | null) ?? null);
+      const raw = stage.stageType as string | null;
+      const valid = raw && raw in STAGE_TYPE_CONFIGS ? (raw as StageType) : null;
+      setSelectedType(valid);
       setInitialized(true);
     }
   }, [stage, initialized]);
@@ -77,6 +80,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
   const commitSelectType = async (type: StageType): Promise<void> => {
     setSelectedType(type);
     setPendingType(null);
+    setShowGitHubPicker(false);
     const config = STAGE_TYPE_CONFIGS[type];
     try {
       await updateStage(stageId, {
@@ -102,6 +106,10 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
 
   const handleBack = (): void => {
     setSelectedType(null);
+  };
+
+  const handleBrowseGitHub = (): void => {
+    setShowGitHubPicker(true);
   };
 
   const handleAddChallenge = async (template: ChallengeTemplate): Promise<void> => {
@@ -175,7 +183,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
               letterSpacing: '0.2em',
               color: 'var(--pipe-text-dim)',
             }}>
-              {selectedType ? STAGE_TYPE_CONFIGS[selectedType].label.toUpperCase() : 'STAGE_CONFIG'}
+              {selectedType && STAGE_TYPE_CONFIGS[selectedType] ? STAGE_TYPE_CONFIGS[selectedType].label.toUpperCase() : 'STAGE_CONFIG'}
             </span>
             {stage && (
               <div style={{
@@ -205,14 +213,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
 
       {/* Content */}
       {selectedType ? (
-        selectedType === 'CODE_REVIEW' ? (
-          <CodeReviewPicker
-            key={stageId}
-            stageId={stageId}
-            existingCount={stage?.challenges?.length ?? 0}
-            onAdded={async () => { await refetch(); await triggerRefetch(); }}
-          />
-        ) : selectedType === 'SCREENING' ? (
+        selectedType === 'SCREENING' ? (
           <ScreeningFormatPicker
             stageId={stageId}
             stage={stage}
@@ -223,11 +224,20 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
             existingCount={stage?.challenges?.length ?? 0}
             deleteChallenge={deleteChallenge}
           />
+        ) : showGitHubPicker ? (
+          <CodeReviewPicker
+            key={stageId}
+            stageId={stageId}
+            existingCount={stage?.challenges?.length ?? 0}
+            onAdded={async () => { await refetch(); await triggerRefetch(); setShowGitHubPicker(false); }}
+            onBack={() => setShowGitHubPicker(false)}
+          />
         ) : (
           <TypeChallengePicker
             stageType={selectedType}
             onAdd={handleAddChallenge}
             existingCount={stage?.challenges?.length ?? 0}
+            {...(selectedType === 'TECHNICAL' ? { onBrowseGitHub: handleBrowseGitHub } : {})}
           />
         )
       ) : (
@@ -965,10 +975,11 @@ const SHORT_ANSWER_MODES: { mode: ShortAnswerInputMode; label: string; descripti
   { mode: 'voice', label: 'VOICE', description: 'Recorded voice response', Icon: Mic },
 ];
 
-function TypeChallengePicker({ stageType, onAdd, existingCount }: {
+function TypeChallengePicker({ stageType, onAdd, existingCount, onBrowseGitHub }: {
   stageType: StageType;
   onAdd: (template: ChallengeTemplate) => Promise<void>;
   existingCount: number;
+  onBrowseGitHub?: () => void;
 }): JSX.Element {
   const [search, setSearch] = useState('');
   const [selectedInputMode, setSelectedInputMode] = useState<ShortAnswerInputMode | null>(null);
@@ -976,8 +987,9 @@ function TypeChallengePicker({ stageType, onAdd, existingCount }: {
   const hasShortAnswer = challengeTypes.includes('QUIZ_SHORT_ANSWER');
   const hasOnlyShortAnswer = challengeTypes.every((t) => t === 'QUIZ_SHORT_ANSWER' || t === 'FOLLOW_UP');
 
-  // Show mode picker if short answer is available and no mode selected yet
-  const showModePicker = hasShortAnswer && selectedInputMode === null;
+  // Only show mode picker for stages that are purely short-answer (CULTURAL, PANEL).
+  // TECHNICAL skips this and goes straight to the template list.
+  const showModePicker = hasOnlyShortAnswer && hasShortAnswer && selectedInputMode === null;
 
   const filtered = useMemo(() => {
     let templates = ALL_CHALLENGE_TEMPLATES.filter((t) =>
@@ -1151,6 +1163,33 @@ function TypeChallengePicker({ stageType, onAdd, existingCount }: {
 
       {/* Template list */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {onBrowseGitHub && (
+          <button
+            onClick={onBrowseGitHub}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 12px',
+              background: 'rgba(96,165,250,0.06)',
+              border: '1px solid rgba(96,165,250,0.25)',
+              borderRadius: 4,
+              cursor: 'pointer',
+              textAlign: 'left',
+              marginBottom: 4,
+            }}
+          >
+            <GitPullRequest size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', color: '#60a5fa' }}>
+                BROWSE GITHUB PR
+              </div>
+              <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 2 }}>
+                Pick a real pull request from your repo
+              </div>
+            </div>
+          </button>
+        )}
         {filtered.length === 0 && (
           <div style={{
             padding: 20,
@@ -1344,10 +1383,11 @@ const DEFAULT_REPOS = [
 ];
 const SAVED_REPOS_KEY = 'pipe_saved_repos';
 
-function CodeReviewPicker({ stageId, existingCount, onAdded }: {
+function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   stageId: string;
   existingCount: number;
   onAdded: () => Promise<void>;
+  onBack?: () => void;
 }): JSX.Element {
   const { getToken } = useClerkAuth();
   const { createChallenge } = useChallengeMutations();
@@ -1445,6 +1485,24 @@ function CodeReviewPicker({ stageId, existingCount, onAdded }: {
 
   return (
     <>
+      {/* Back button (when opened from within TECHNICAL) */}
+      {onBack && (
+        <div style={{ padding: '8px 20px 0' }}>
+          <button
+            onClick={onBack}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: 0, background: 'none', border: 'none',
+              color: 'var(--pipe-text-dim)', cursor: 'pointer',
+              fontSize: 8, fontFamily: '"Space Mono", monospace',
+              letterSpacing: '0.1em',
+            }}
+          >
+            <ArrowLeft size={10} />
+            BACK_TO_TEMPLATES
+          </button>
+        </div>
+      )}
       {/* Repo selector */}
       <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <label style={labelStyle}>SELECT_REPOSITORY</label>

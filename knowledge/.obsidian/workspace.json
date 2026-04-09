@@ -1,0 +1,297 @@
+{
+  "main": {
+    "id": "fea894ccdc9f3322",
+    "type": "split",
+    "children": [
+      {
+        "id": "4c53311b2381707c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "23bb4689c30485f6",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "culture/questions.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "questions"
+            }
+          },
+          {
+            "id": "8c6bc0b9eaed224d",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "technical/FRONT END.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "FRONT END"
+            }
+          },
+          {
+            "id": "74ca4508455ccd43",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "New tab"
+            }
+          },
+          {
+            "id": "a6bfed987851fcca",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Behavioral interviews for Software Engineers How to prepare.md",
+                "mode": "preview",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Behavioral interviews for Software Engineers How to prepare"
+            }
+          },
+          {
+            "id": "e7fe83971e051bad",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Assesment Apr 8th.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Assesment Apr 8th"
+            }
+          },
+          {
+            "id": "ff8cf7171e36788c",
+            "type": "leaf",
+            "state": {
+              "type": "image",
+              "state": {
+                "file": "Screenshot 2026-04-09 at 3.29.57 AM.png"
+              },
+              "icon": "lucide-image",
+              "title": "Screenshot 2026-04-09 at 3.29.57 AM"
+            }
+          }
+        ],
+        "currentTab": 5
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "3146bf3654798cab",
+    "type": "split",
+    "children": [
+      {
+        "id": "0d282004dc4f0e13",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a4035d3ecb93a827",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "78b40ea9a0d99f8e",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "5ca4eb898a6cf745",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 379.5
+  },
+  "right": {
+    "id": "2458148d14d25504",
+    "type": "split",
+    "children": [
+      {
+        "id": "1566241c5c9e66ef",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "229b3da0e58d7b64",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "e206e24ddcbd35e2",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "68156857c42825c6",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "388766f311e24835",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "d933cf54f974e6fa",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "ff8cf7171e36788c",
+  "lastOpenFiles": [
+    "outputs/repo-discovery-pipeline.provenance.md",
+    "outputs/repo-discovery-pipeline.md",
+    "outputs/repo-discovery-pipeline-brief.md",
+    "outputs/repo-discovery-pipeline-research-matching.md",
+    "outputs/repo-discovery-pipeline-research-tools.md",
+    "outputs/repo-discovery-pipeline-research-quality.md",
+    "Screenshot 2026-04-09 at 3.30.21 AM.png",
+    "Screenshot 2026-04-09 at 3.30.57 AM.png",
+    "Screenshot 2026-04-09 at 3.31.46 AM.png",
+    "Screenshot 2026-04-09 at 3.33.18 AM.png",
+    "Screenshot 2026-04-09 at 3.34.19 AM.png",
+    "Screenshot 2026-04-09 at 3.35.47 AM.png",
+    "Screenshot 2026-04-09 at 3.37.22 AM.png",
+    "Screenshot 2026-04-09 at 3.39.33 AM.png",
+    "intake_outreach/README.md",
+    "Test Gorilla Review.md",
+    "Screenshot 2026-04-09 at 3.32.31 AM.png",
+    "Screenshot 2026-04-09 at 3.29.57 AM.png",
+    "intake_outreach/provenance.md",
+    "intake_outreach/intake-outreach-crm-brief.md",
+    "intake_outreach/intake-outreach-crm-draft.md",
+    "intake_outreach/research-plan.md",
+    "intake_outreach/intake-outreach-crm-R4-integration-arch.md",
+    "intake_outreach/intake-outreach-crm-R3-crm-outreach.md",
+    "intake_outreach/intake-outreach-crm-R2-sourcing-apis.md",
+    "intake_outreach/intake-outreach-crm-R1-serra-teardown.md",
+    "intake_outreach",
+    "culture/questions/log.md",
+    "culture/questions/index.md",
+    "culture/questions/exponent/q-exponent-6036-overcome-challenging-product-problem.md",
+    "culture/questions/exponent/q-exponent-6035-platform-framework-prioritize-backlog-features.md",
+    "culture/questions/exponent/q-exponent-6031-why-american-express.md",
+    "culture/questions/exponent/q-exponent-6030-future-career-path.md",
+    "culture/questions/exponent/q-exponent-6020-walk-through-a-failure-and-how-you-handled-it.md",
+    "culture/questions/exponent/q-exponent-5990-stakeholder-management-conflicting-priorities.md",
+    "culture/questions/exponent/q-exponent-5989-technical-challenge.md",
+    "culture/questions/exponent/q-exponent-5988-mentor-engineers.md",
+    "culture/questions/exponent",
+    "culture/questions/archetypes",
+    "technical",
+    "outputs",
+    "behavioural/question-repo/Staff",
+    "behavioural/question-repo/Senior",
+    "behavioural/question-repo/Mid",
+    "behavioural/question-repo/Manager",
+    "behavioural/question-repo/Lead"
+  ]
+}

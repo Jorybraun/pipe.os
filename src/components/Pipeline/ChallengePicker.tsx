@@ -19,6 +19,7 @@ import {
   GitPullRequest,
   BookMarked,
   Trash2,
+  Users,
 } from "lucide-react";
 import { LiquidMetalCard } from "../ui/LiquidMetalCard";
 import { ChallengeCard } from "./ChallengeCard";
@@ -64,6 +65,12 @@ const TYPES = [
     label: "Short Answer",
     icon: FileText,
     color: "#fbbf24",
+  },
+  {
+    id: "AGENT_INTERVIEW",
+    label: "Culture Interview",
+    icon: Users,
+    color: "#06b6d4",
   },
 ];
 

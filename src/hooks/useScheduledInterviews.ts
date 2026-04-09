@@ -48,6 +48,10 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           lastSyncedAt: string | null;
           createdAt: string;
           updatedAt: string;
+          candidateName: string | null;
+          candidateEmail: string | null;
+          pipelineTitle: string | null;
+          stageTitle: string | null;
         }>;
       }>('/api/v1/scheduling/interviews');
 
@@ -67,6 +71,10 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           recruiterNotes: r.recruiterNotes,
           syncSource: r.syncSource as ScheduledInterview['syncSource'],
           lastSyncedAt: r.lastSyncedAt,
+          candidateName: r.candidateName,
+          candidateEmail: r.candidateEmail,
+          pipelineTitle: r.pipelineTitle,
+          stageTitle: r.stageTitle,
         })),
       );
     } catch (err) {
@@ -77,17 +85,21 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     }
   }, [api]);
 
-  // Sync once on mount (fetches recent Calendly events), then load interviews
+  // Load interviews immediately, then sync with provider in background and refetch
   useEffect(() => {
-    const load = async (): Promise<void> => {
+    void fetchInterviews();
+
+    // Background sync — don't block initial render
+    const syncThenRefresh = async (): Promise<void> => {
       try {
         await api.post('/api/v1/scheduling/interviews/sync', {});
+        // Refetch to pick up any newly synced data
+        await fetchInterviews();
       } catch {
         // Best-effort — fails gracefully if no connection
       }
-      await fetchInterviews();
     };
-    void load();
+    void syncThenRefresh();
   }, [fetchInterviews, api]);
 
   const updateStatus = useCallback(

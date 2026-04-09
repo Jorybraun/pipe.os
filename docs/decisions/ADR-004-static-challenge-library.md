@@ -1,7 +1,7 @@
 # ADR-004: Static TypeScript Files for Challenge Library at MVP
 
 **Date:** 2026-02-27
-**Status:** Accepted
+**Status:** Superseded by [ADR-034](ADR-034-challenge-authoring-system.md)
 **Deciders:** Jory (solo founder)
 
 ---

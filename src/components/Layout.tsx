@@ -104,6 +104,7 @@ export function Layout({
         <main
           style={{
             flex: 1,
+            minWidth: 0,
             maxWidth: 1400,
             margin: "0 auto",
             marginLeft: showSidebar ? (asideOpen ? "480px" : "80px") : "auto",

@@ -9,6 +9,8 @@ export { CandidateCard } from "./CandidateCard";
 export { RoleCard } from "./RoleCard";
 export { StatsCard } from "./StatsCard";
 export { SubTitle } from "./ui/SubTitle";
+export { SectionCard } from "./ui/SectionCard";
+export type { SectionCardProps } from "./ui/SectionCard";
 
 // Re-export types
 export type { StageStatus } from "./StageCard";

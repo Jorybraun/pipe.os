@@ -33,6 +33,7 @@ import CultureInterviewPage from "./pages/CultureInterviewPage";
 import SchedulingPage from "./pages/SchedulingPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
+import ChallengeStudioPage from "./pages/ChallengeStudioPage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
@@ -227,6 +228,12 @@ function AppLayout(): JSX.Element {
             setShowCalls(false);
             navigate("/");
           }}
+          onChallengesClick={() => {
+            setActiveSection("challenges");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/challenges");
+          }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
             ? {
                 onScheduleClick: () => {
@@ -358,6 +365,7 @@ function App(): JSX.Element {
                         element={<ChallengeEditorPage />}
                       />
                     )}
+                    <Route path="/challenges" element={<ChallengeStudioPage />} />
                     <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
                     <Route
                       path="/candidates/:id"

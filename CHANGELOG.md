@@ -6,6 +6,83 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — REPOS Tab: Role-Driven Repo Discovery for Code Review Challenges (2026-04-09)
+New REPOS tab in Challenge Studio connects role personas to real open-source repo discovery (CR-13, repo-discovery-pipeline.md).
+
+**Backend:** D1 migration 0018 (discovered_repos + discovery_jobs + CODE_REVIEW template support). Discovery pipeline: Libraries.io + GitHub quality filter. 6 API routes under `/api/v1/repos/`. Conversion flow: accepted repo → best PR → diff fetch → CODE_REVIEW challenge template.
+
+**Frontend:** Third tab (MY_CHALLENGES | MY_PACKS | REPOS). Pipeline selector, persona skills preview, async discovery with job polling, RepoCard with quality bars and accept/reject/convert actions. `useRepoDiscovery` hook.
+
+#### Added — 6-Dimension BARS Scoring Rubric: CR-2, CR-3, CR-4 (2026-04-09)
+Replaced the 4-dimension scorer with a 6-dimension BARS rubric per STRATEGY.md Phase 1. Research-grounded, Hodges-compliant behavioral anchors. New dimensions: Issue Identification (20%), Reasoning (20%), Prioritization (15%), Question Formation (15%), Revision Evaluation (20%), AI Direction (10%). Composite: BARS×0.85 + Effectiveness×0.15. Seniority-adjusted weights.
+
+#### Added — Challenge Studio page: /challenges (2026-04-09)
+Personal challenge authoring workspace. Browse, generate, refine, and organize challenges.
+
+**New page:** `/challenges` with sidebar nav (Library icon)
+- Two tabs: MY_CHALLENGES (template grid with type/difficulty/source/published filters) and MY_PACKS (pack grid)
+- Generate panel: inline AI generation from role context → batch save as drafts
+- Per-challenge actions: Publish, Delete (draft only)
+- Per-pack actions: Publish, Delete, Duplicate
+- Empty states with generate prompts
+
+**New backend endpoints:**
+- `DELETE /api/v1/challenge-templates/:id` — delete draft template (owner only)
+- `DELETE /api/v1/template-packs/:id` — delete draft pack (owner only)
+- `POST /api/v1/challenges/generate/batch-save` — save generated challenges as draft templates
+- `POST /api/v1/challenges/generate/refine` — AI refinement of existing challenge
+
+**New hooks:** `useChallengeStudio` (CRUD + refine), updated `useTemplateLibrary` (source/published filters)
+
+#### Added — 6-Dimension BARS Scoring Rubric: CR-2, CR-3, CR-4 (2026-04-09)
+Replaced the 4-dimension scorer (Technical/Conversation/Practice/Effectiveness) with a 6-dimension BARS rubric per STRATEGY.md Phase 1. Research-grounded, Hodges-compliant behavioral anchors at every level.
+
+**New dimensions (1-5 scale, encounter-level):**
+1. Issue Identification Depth (20%) — bug detection quality
+2. Reasoning & Explanation Quality (20%) — failure mechanism explanations
+3. Prioritization Accuracy (15%) — blocker vs nitpick calibration
+4. Question Formation (15%) — Sillito-taxonomy clarifying questions
+5. Revision Evaluation (20%) — PIPE-exclusive moat: fix verification
+6. AI Direction (10%, seniority-adjusted) — judgment on AI suggestions
+
+**Architecture changes:**
+- `scorerRubric.yaml` — canonical human-readable rubric reference
+- `scorerRubric.ts` — typed rubric with BARS anchors, cross-checks, helpers
+- `scorerPrompts.ts` — 2-scorer pipeline (Scorer A: ground truth, Scorer B: communication)
+- `scoring.ts` — new `computeBarsComposite()` and `computeOverallScore()`, legacy exports preserved
+- `scorerAgent.ts` — parallel Scorer A + Scorer B, evidence-linked output
+- `mockResponses.ts` — updated mock to match new ScoreReport shape
+- Composite: BARS × 0.85 + Effectiveness × 0.15 (deterministic bug-matching unchanged)
+- Seniority-adjusted weights: AI direction 5%/10%/15% for junior/mid/senior
+- All 23 existing scoring tests pass (backward-compatible legacy exports)
+
+#### Added — AI Challenge Generation Pipeline: CA Phase 3 (2026-04-09)
+Multi-agent pipeline that generates interview challenges from the Role Discovery persona output (ADR-034 CA Phase 3, STRATEGY.md CA-1 through CA-6, CA-16).
+
+**Backend — 4-stage AI pipeline:**
+- `POST /api/v1/challenges/generate` — takes roleContextId, runs persona through generation pipeline
+- Stage 1: Generator (Gemma 4 26B for MCQ/text, Qwen 2.5-Coder 32B for code challenges)
+- Stage 2: Content Reviewer — cross-model-family validation (CA-4: generator ≠ reviewer)
+- Stage 3: Linguistic Evaluator (Gemma 4 12B) — clarity/ambiguity scoring
+- Stage 4: Difficulty Calibrator (Gemma 4 12B) — Bloom's alignment with CA-5 caveat
+- Confidence scores per challenge: topicRelevance, roleFit, clarity (CA-16 differentiator)
+- MOCK_AI=true path for deterministic testing
+- CoT reasoning in generator prompts (CA-2), misconception-based MCQ distractors (CA-3)
+
+**Frontend — wizard AI generator:**
+- Replaced CA_PHASE_3 placeholder in ChallengeWizard with full generation UI
+- Config form: challenge type filter (MCQ/CODE/LONG-FORM), count slider (1-10)
+- Persona summary card showing archetype + skills being generated for
+- Review cards with confidence score bars, issue warnings, calibration warnings
+- Accept/Remove per-challenge actions flowing into existing staged queue
+- Graceful states: no-persona prompt, loading animation, error + retry
+- `useChallengeGeneration` hook for API interaction
+
+**Provider factory:**
+- `createGenerationProvider(env, model)` — explicit model selection for per-stage routing
+
+**Tests:** 18 passing (validation, mock pipeline, prompt builders, type contracts, error handling)
+
 #### Added — Stage detail redesign: type-aware tabs + config (2026-04-09)
 Purpose-built detail tabs for all 4 stage types, replacing the generic CHALLENGES/CONFIGURE tabs.
 

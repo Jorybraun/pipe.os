@@ -1,38 +1,54 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Calendar, RefreshCw } from 'lucide-react';
-import { useApiClient } from '../../hooks/useApiClient';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import { InterviewCard } from './InterviewCard';
-import {
-  SchedulingFilters,
-  DEFAULT_FILTER,
-  applySchedulingFilters,
-  sortInterviews,
-  type SchedulingFilterState,
-} from './SchedulingFilters';
 import { Skeleton } from '../ui/Skeleton';
 import { ConnectionSetup } from './ConnectionSetup';
+import type { ScheduledInterview } from '../../lib/scheduling/types';
 
-// ---------------------------------------------------------------------------
-// Types for enrichment lookup tables
-// ---------------------------------------------------------------------------
+// Timeline grouping
+type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
 
-interface PipelineRef {
-  id: string;
-  title: string;
+function getTimelineGroup(scheduledAt: string | null): TimelineGroup {
+  if (!scheduledAt) return 'UNSCHEDULED';
+
+  const eventDate = new Date(scheduledAt);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const nextWeek = new Date(today);
+  nextWeek.setDate(nextWeek.getDate() + 7);
+
+  eventDate.setHours(0, 0, 0, 0);
+
+  if (eventDate < today) return 'PAST';
+  if (eventDate.getTime() === today.getTime()) return 'TODAY';
+  if (eventDate.getTime() === tomorrow.getTime()) return 'TOMORROW';
+  if (eventDate < nextWeek) return 'THIS_WEEK';
+  return 'LATER';
 }
 
-interface CandidateRef {
-  id: string;
-  name: string | null;
-  email: string | null;
-}
+const TIMELINE_ORDER: Record<TimelineGroup, number> = {
+  TODAY: 0,
+  TOMORROW: 1,
+  THIS_WEEK: 2,
+  LATER: 3,
+  PAST: 4,
+  UNSCHEDULED: 5,
+};
 
-interface StageRef {
-  id: string;
-  title: string;
-}
+const TIMELINE_LABELS: Record<TimelineGroup, string> = {
+  TODAY: 'TODAY',
+  TOMORROW: 'TOMORROW',
+  THIS_WEEK: 'THIS WEEK',
+  LATER: 'LATER',
+  PAST: 'PAST',
+  UNSCHEDULED: 'UNSCHEDULED',
+};
 
 // ---------------------------------------------------------------------------
 // SchedulingDashboard
@@ -41,103 +57,47 @@ interface StageRef {
 /**
  * SchedulingDashboard — recruiter view of all scheduled interviews.
  *
- * Enrichment strategy: after loading ScheduledInterviews via subscription,
- * we batch-fetch the unique pipelines, candidates, and stages referenced by
- * those records. This is intentionally simple for MVP.
- *
- * TODO: Replace the triple batch-fetch with a single GraphQL query that
- * returns denormalized data once AppSync resolver support improves, or add
- * displayName fields directly to ScheduledInterview to avoid the N+1-style
- * pattern on first load.
+ * Data enrichment is now done server-side: GET /api/v1/scheduling/interviews
+ * returns interviews with candidateName, candidateEmail, pipelineTitle, and
+ * stageTitle embedded via LEFT JOINs. This component simply groups by timeline
+ * and renders.
  */
 export function SchedulingDashboard(): JSX.Element {
-  const api = useApiClient();
   const { interviews, isLoading, error, updateStatus } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
 
-  const [filters, setFilters] = useState<SchedulingFilterState>(DEFAULT_FILTER);
+  // Group interviews by timeline, then sort within each group by time
+  const groupedInterviews = useMemo(() => {
+    const groups = new Map<TimelineGroup, ScheduledInterview[]>();
 
-  // Lookup tables built after interviews load
-  const [pipelinesMap, setPipelinesMap]   = useState<Record<string, PipelineRef>>({});
-  const [candidatesMap, setCandidatesMap] = useState<Record<string, CandidateRef>>({});
-  const [stagesMap, setStagesMap]         = useState<Record<string, StageRef>>({});
-  const [enriching, setEnriching]         = useState(false);
-
-  // Unique IDs needed
-  const pipelineIds  = useMemo(() => [...new Set(interviews.map((i) => i.pipelineId))],  [interviews]);
-  const candidateIds = useMemo(() => [...new Set(interviews.map((i) => i.candidateId))], [interviews]);
-  const stageIds     = useMemo(() => [...new Set(interviews.map((i) => i.stageId))],     [interviews]);
-
-  useEffect(() => {
-    if (interviews.length === 0) return;
-    let cancelled = false;
-
-    const enrich = async () => {
-      setEnriching(true);
-      try {
-        // Fetch enrichment data from Worker API
-        const [pipResults, candResults, stageResults] = await Promise.all([
-          Promise.all(pipelineIds.map((pid) =>
-            api.get<{ pipeline: { id: string; title: string } }>(`/api/v1/pipelines/${pid}`).catch(() => null)
-          )),
-          Promise.all(candidateIds.map((cid) =>
-            api.get<{ candidate: { id: string; name: string | null; email: string | null } }>(`/api/v1/candidates/${cid}`).catch(() => null)
-          )),
-          Promise.all(stageIds.map((sid) =>
-            api.get<{ stage: { id: string; title: string } }>(`/api/v1/stages/${sid}`).catch(() => null)
-          )),
-        ]);
-
-        if (cancelled) return;
-
-        const pm: Record<string, PipelineRef> = {};
-        pipResults.forEach((r) => {
-          if (r?.pipeline) pm[r.pipeline.id] = { id: r.pipeline.id, title: r.pipeline.title };
-        });
-
-        const cm: Record<string, CandidateRef> = {};
-        candResults.forEach((r) => {
-          if (r?.candidate) cm[r.candidate.id] = { id: r.candidate.id, name: r.candidate.name, email: r.candidate.email };
-        });
-
-        const sm: Record<string, StageRef> = {};
-        stageResults.forEach((r) => {
-          if (r?.stage) sm[r.stage.id] = { id: r.stage.id, title: r.stage.title };
-        });
-
-        setPipelinesMap(pm);
-        setCandidatesMap(cm);
-        setStagesMap(sm);
-      } catch (err) {
-        console.error('[SchedulingDashboard] Enrichment error:', err);
-      } finally {
-        if (!cancelled) setEnriching(false);
+    interviews.forEach((iv) => {
+      const group = getTimelineGroup(iv.scheduledAt);
+      if (!groups.has(group)) {
+        groups.set(group, []);
       }
-    };
+      groups.get(group)!.push(iv);
+    });
 
-    enrich();
-    return () => { cancelled = true; };
-    // We intentionally depend on the unique ID arrays — ref-stable via useMemo
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pipelineIds.join(','), candidateIds.join(','), stageIds.join(',')]);
+    // Sort each group by scheduledAt (ascending), and sort groups by timeline order
+    const sorted = Array.from(groups.entries())
+      .sort((a, b) => TIMELINE_ORDER[a[0]] - TIMELINE_ORDER[b[0]])
+      .map(([group, ivs]) => [
+        group,
+        ivs.sort((a, b) => {
+          if (!a.scheduledAt) return 1;
+          if (!b.scheduledAt) return -1;
+          return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+        }),
+      ] as [TimelineGroup, ScheduledInterview[]]);
 
-  // Build pipeline list for filter dropdown
-  const pipelineList = useMemo(
-    () => Object.values(pipelinesMap).sort((a, b) => a.title.localeCompare(b.title)),
-    [pipelinesMap]
-  );
-
-  // Apply filters + sort
-  const displayedInterviews = useMemo(
-    () => sortInterviews(applySchedulingFilters(interviews, filters)),
-    [interviews, filters]
-  );
+    return sorted;
+  }, [interviews]);
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
-  if (isLoading || enriching) {
+  if (isLoading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {[1, 2, 3].map((i) => (
@@ -163,7 +123,7 @@ export function SchedulingDashboard(): JSX.Element {
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             INTERVIEW_SCHEDULE
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em' }}>
             Schedule
           </h1>
         </div>
@@ -197,17 +157,8 @@ export function SchedulingDashboard(): JSX.Element {
       {/* OAuth connection setup */}
       <ConnectionSetup />
 
-      {/* Filters */}
-      <div style={{ marginBottom: 24 }}>
-        <SchedulingFilters
-          filters={filters}
-          onFiltersChange={setFilters}
-          pipelines={pipelineList}
-        />
-      </div>
-
-      {/* List */}
-      {displayedInterviews.length === 0 ? (
+      {/* Timeline groups */}
+      {interviews.length === 0 ? (
         <div
           style={{
             padding: 64,
@@ -218,33 +169,48 @@ export function SchedulingDashboard(): JSX.Element {
         >
           <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
           <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
-            {interviews.length === 0
-              ? 'No interviews yet. Invite candidates to LIVE_VIDEO stages to get started.'
-              : 'No interviews match the current filters.'}
+            No interviews yet. Invite candidates to LIVE_VIDEO stages to get started.
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {displayedInterviews.map((iv) => {
-            const candidate = candidatesMap[iv.candidateId];
-            const pipeline  = pipelinesMap[iv.pipelineId];
-            const stage     = stagesMap[iv.stageId];
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {groupedInterviews.map(([group, ivs]) => (
+            <div key={group}>
+              <div
+                style={{
+                  fontSize: 9,
+                  letterSpacing: '0.2em',
+                  fontWeight: 700,
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 12,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {TIMELINE_LABELS[group]}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {ivs.map((iv) => {
+                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.candidateId;
+                  const candidateEmail = iv.candidateEmail;
+                  const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId;
+                  const stageTitle = iv.stageTitle ?? iv.stageId;
 
-            const candidateName = candidate?.name ?? candidate?.email ?? iv.candidateId;
-            const pipelineTitle = pipeline?.title ?? iv.pipelineId;
-            const stageTitle    = stage?.title    ?? iv.stageId;
-
-            return (
-              <InterviewCard
-                key={iv.id}
-                interview={iv}
-                candidateName={candidateName}
-                pipelineTitle={pipelineTitle}
-                stageTitle={stageTitle}
-                updateStatus={updateStatus}
-              />
-            );
-          })}
+                  return (
+                    <InterviewCard
+                      key={iv.id}
+                      interview={iv}
+                      candidateName={candidateName}
+                      candidateEmail={candidateEmail}
+                      pipelineTitle={pipelineTitle}
+                      stageTitle={stageTitle}
+                      updateStatus={updateStatus}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

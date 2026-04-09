@@ -159,7 +159,7 @@ challengeTemplates.get('/', async (c) => {
   const difficulty = c.req.query('difficulty');
   const skill = c.req.query('skill');
   const source = c.req.query('source');
-  const publishedOnly = c.req.query('published') === 'true';
+  const publishedParam = c.req.query('published');
 
   const conditions: string[] = [];
   const bindings: (string | number)[] = [];
@@ -180,8 +180,10 @@ challengeTemplates.get('/', async (c) => {
     bindings.push(source);
     conditions.push(`source = ?${bindings.length}`);
   }
-  if (publishedOnly) {
+  if (publishedParam === 'true') {
     conditions.push('is_published = 1');
+  } else if (publishedParam === 'false') {
+    conditions.push('is_published = 0');
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -480,6 +482,30 @@ challengeTemplates.post('/:id/variants', async (c) => {
     .first<ChallengeLanguageVariantRow>();
 
   return c.json(variantRowToResponse(created!, true), 201);
+});
+
+// DELETE /:id — delete a draft template (owner only, draft only)
+challengeTemplates.delete('/:id', async (c) => {
+  const templateId = c.req.param('id');
+  const userId = c.var.userId;
+
+  const existing = await c.env.DB.prepare(
+    'SELECT id, created_by, is_published FROM challenge_templates WHERE id = ?1',
+  )
+    .bind(templateId)
+    .first<Pick<ChallengeTemplateRow, 'id' | 'created_by' | 'is_published'>>();
+
+  if (!existing) return apiError(c, 'NOT_FOUND', 'Template not found.');
+  if (existing.created_by !== userId) return apiError(c, 'FORBIDDEN', 'You can only delete your own templates.');
+  if (existing.is_published) return apiError(c, 'VALIDATION_ERROR', 'Published templates cannot be deleted.');
+
+  // Delete variants first, then the template
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM challenge_language_variants WHERE challenge_template_id = ?1').bind(templateId),
+    c.env.DB.prepare('DELETE FROM challenge_templates WHERE id = ?1').bind(templateId),
+  ]);
+
+  return c.json({ deleted: true });
 });
 
 export { challengeTemplates };

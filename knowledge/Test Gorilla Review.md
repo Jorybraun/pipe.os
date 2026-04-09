@@ -1,0 +1,30 @@
+![[Screenshot 2026-04-09 at 3.29.03 AM.png]]
+
+TestGorilla, a talent assessment platform, raised a $70 million Series A round in June 2022 to fuel its skills-based hiring platform. While the specific valuation was ==not publicly disclosed==, the company is backed by major investors like Atomico and Balderton Capital, following a previous $10 million seed round. ![TechCrunch](data:image/jpeg;base64,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)TechCrunch +1
+
+Key details regarding TestGorilla's financial and operational growth include:
+
+- **Funding:** Raised a total of $70M+ over several rounds,.
+- **Revenue:** Generated an estimated $36.2M in annual revenue.
+- **Operations:** Founded in 2020, the platform serves over 5,300 customers, including large corporations like H&M and Sony.
+- **Platform Focus:** The company aims to replace traditional CVs with a wide range of soft and hard skill assessments. ![GetLatka](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAACKklEQVRoge2aMWvbQBiG3/eTIQTisZ66GWTHxsnSZvd/8FTo0pKCf0CXZAgeOvQXFBzoUvDk/+C9dDHBrSTIlskdXSgG674MaoyIVSdW5ZxV9Gz6ON29792nO0l3xBquj+vuQk0HijaBJomKKpx19/wrJEJVTBWYgBiVKMPq2Av+Wj4peH1cd0OjF4C+2p7UTeDAEfaSjKwY8FvuqRCftt3Tm0IiNIpu7Sq4jMclfuEfuWcE+rsmHgBU4RDo+0fuWTy+HAG/5Z4S6D+9tM1R4N3dSBCIct6o+b6LPZ8EiVAojerYCwQAQqMXeREPROkUTTIAoxnH+LZFpcERqclCTce2kLQs1HQEirZtIalRtIVA07aOtBBoComKbSFpIVGRPM0+91GFIw8X220KA7bJvYFSlpXt1Q/x7H30sjgPPPz8+CHL6hPJ1ICUy9h/eRJdJH4qZU/uU6gwYJvCgG0KA7YpDNgm05U4jhyUsf/iZCVufs0w935k1s7WDOzVD/H885eV+O9vX3Hz5nVm7RQpFGfuebh5u753zWyWZZNg0HI10xqfmNynUGHANkIitC0iLSRCUcXUtpC0qGIqCkxsC0mLAhMBMbItJDXESEqUoW0daSlRhhLtvXJgW8zmcLDcI3OEvTzNRiRCR9gD/qwD1bEXGEXXrqzHYxTdu1375UJWuwoulTi3J+txKHEe363/v44aANFICKWxWw82B0Jp3BcPPPALNg/HbW4ByGfGQIFNotEAAAAASUVORK5CYII=)GetLatka +4
+- 
+Test gorilla is basically the same thing i have but probalby not as good. but it has integrations into ats systems
+
+The wlecome page is frielndly and show cases the application.
+
+![[Screenshot 2026-04-09 at 3.29.57 AM.png]]
+
+The jobs page is simple
+
+
+![[Screenshot 2026-04-09 at 3.30.21 AM.png]]![[Screenshot 2026-04-09 at 3.30.57 AM.png]]![[Screenshot 2026-04-09 at 3.31.46 AM.png]]![[Screenshot 2026-04-09 at 3.32.31 AM.png]]
+
+information like auto scored The creation seems very friendly and not very exhausting. But it really lacks intelligence.
+
+![[Screenshot 2026-04-09 at 3.33.18 AM.png]]
+
+
+![[Screenshot 2026-04-09 at 3.34.19 AM.png]]![[Screenshot 2026-04-09 at 3.35.47 AM.png]]
+
+They reall describe and sell the assesment using lots of content. ![[Screenshot 2026-04-09 at 3.37.22 AM.png]]![[Screenshot 2026-04-09 at 3.39.33 AM.png]]

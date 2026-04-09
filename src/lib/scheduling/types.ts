@@ -28,6 +28,11 @@ export interface ScheduledInterview {
   inviteLinkSentAt?: string | null;
   emailSentAt?: string | null;
   owner?: string | null;
+  // Enriched fields (from JOIN with candidates, pipelines, stages)
+  candidateName?: string | null;
+  candidateEmail?: string | null;
+  pipelineTitle?: string | null;
+  stageTitle?: string | null;
 }
 
 /**

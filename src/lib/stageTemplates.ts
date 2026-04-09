@@ -91,6 +91,12 @@ export const STAGE_TYPE_CONFIGS: Record<StageType, StageTypeConfig> = {
       },
     ],
   },
+  CODE_REVIEW: {
+    key: 'CODE_REVIEW',
+    label: 'Code Review',
+    description: 'Multi-turn code review challenge',
+    templateQuestions: [],
+  },
   TECHNICAL: {
     key: 'TECHNICAL',
     label: 'Technical',
@@ -115,12 +121,6 @@ export const STAGE_TYPE_CONFIGS: Record<StageType, StageTypeConfig> = {
           'Describe a technical decision where you had to weigh trade-offs. What did you choose and why?',
       },
     ],
-  },
-  CODE_REVIEW: {
-    key: 'CODE_REVIEW',
-    label: 'Code Review',
-    description: 'Review real pull requests',
-    templateQuestions: [],
   },
   PANEL: {
     key: 'PANEL',

@@ -1,19 +1,20 @@
 /**
- * Role Discovery Agent — Mistral API with Tool Calling
+ * Role Discovery Agent — provider-agnostic with tool calling support.
  *
- * Calls mistral-small-latest with function calling support. The agent can
- * request tools mid-turn to research the company, look up technologies, etc.
+ * Uses the LLMProvider interface so Mistral and Google AI (Gemma 4) can be
+ * swapped via the ROLE_AGENT_PROVIDER env var.
  *
- * ReAct loop:
- * 1. Send messages + tool definitions to Mistral
- * 2. If Mistral returns tool_calls → execute them (fetch URLs, extract text)
- * 3. Append tool results, call Mistral again
- * 4. Repeat until Mistral returns the final question/synthesis JSON
+ * ReAct loop (only when provider.supportsTools):
+ * 1. Send messages + tool definitions to provider
+ * 2. If provider returns tool_calls → execute them (fetch URLs, extract text)
+ * 3. Append tool results, call provider again
+ * 4. Repeat until provider returns the final question/synthesis JSON
  *
- * Falls back to mock responses when MISTRAL_API_KEY is not set.
+ * Falls back to mock responses when no provider key is configured.
  */
 
 import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage, buildSynthesisPrompt } from './roleAgentPrompts';
+import type { LLMProvider, LLMMessage, LLMToolCall } from './llm/types';
 import type {
   RoleExchange,
   DomainCoverage,
@@ -64,7 +65,7 @@ export interface RoleAgentSynthesisResponse {
 export type RoleAgentResponse = RoleAgentQuestionResponse | RoleAgentSynthesisResponse;
 
 export interface CallRoleAgentInput {
-  apiKey: string;
+  provider: LLMProvider | null;
   baseline: Record<string, unknown>;
   exchanges: RoleExchange[];
   knowledgeState: Record<string, unknown>;
@@ -74,71 +75,37 @@ export interface CallRoleAgentInput {
   participantRole?: string;
 }
 
-// ─── Mistral API types (with tool calling) ──────────────────────────────────
-
-interface MistralToolCall {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-}
-
-interface MistralMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
-  tool_calls?: MistralToolCall[];
-  tool_call_id?: string;
-  name?: string;
-}
-
-interface MistralChoice {
-  message: MistralMessage;
-  finish_reason: string;
-}
-
-interface MistralChatResponse {
-  choices: MistralChoice[];
-}
 
 // ─── Tool definitions ───────────────────────────────────────────────────────
 
-const AGENT_TOOLS = [
+import type { LLMTool } from './llm/types';
+
+const AGENT_TOOLS: LLMTool[] = [
   {
-    type: 'function' as const,
-    function: {
-      name: 'research_company',
-      description: 'Fetch and read a company website to understand their business, product, culture, and tech stack. Use this when you know the company name or URL to ask more informed questions.',
-      parameters: {
-        type: 'object',
-        properties: {
-          url: {
-            type: 'string',
-            description: 'The company website URL (e.g., "https://acme.com" or "acme.com")',
-          },
-          focus: {
-            type: 'string',
-            description: 'What to look for: "about" for company overview, "careers" for job listings, "engineering" for tech blog',
-            enum: ['about', 'careers', 'engineering'],
-          },
+    name: 'research_company',
+    description: 'Fetch and read a company website to understand their business, product, culture, and tech stack. Use this when you know the company name or URL to ask more informed questions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The company website URL (e.g., "https://acme.com" or "acme.com")' },
+        focus: {
+          type: 'string',
+          description: 'What to look for: "about" for company overview, "careers" for job listings, "engineering" for tech blog',
+          enum: ['about', 'careers', 'engineering'],
         },
-        required: ['url'],
       },
+      required: ['url'],
     },
   },
   {
-    type: 'function' as const,
-    function: {
-      name: 'search_technology',
-      description: 'Look up information about a specific technology, framework, or tool to ask better follow-up questions. Use this when the user mentions a technology you want to understand in their specific context.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'The technology or concept to research (e.g., "Temporal workflow engine", "Pulumi vs Terraform")',
-          },
-        },
-        required: ['query'],
+    name: 'search_technology',
+    description: 'Look up information about a specific technology, framework, or tool to ask better follow-up questions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The technology or concept to research (e.g., "Temporal workflow engine")' },
       },
+      required: ['query'],
     },
   },
 ];
@@ -183,8 +150,8 @@ async function fetchAndExtract(url: string, maxChars = 3000): Promise<string> {
   }
 }
 
-async function executeToolCall(call: MistralToolCall): Promise<{ result: string; label: string }> {
-  const args = JSON.parse(call.function.arguments) as Record<string, string>;
+async function executeToolCall(call: LLMToolCall): Promise<{ result: string; label: string }> {
+  const args = call.arguments as Record<string, string>;
 
   switch (call.function.name) {
     case 'research_company': {
@@ -240,13 +207,13 @@ async function executeToolCall(call: MistralToolCall): Promise<{ result: string;
   }
 }
 
-// ─── Mistral call with tool loop ────────────────────────────────────────────
+// ─── Provider call with tool loop ───────────────────────────────────────────
 
 const MAX_TOOL_ROUNDS = 3;
 
-async function callMistralWithTools(
-  apiKey: string,
-  messages: MistralMessage[],
+async function callProviderWithTools(
+  provider: LLMProvider,
+  messages: LLMMessage[],
 ): Promise<{ content: string; toolsUsed: string[] }> {
   const toolsUsed: string[] = [];
   let currentMessages = [...messages];
@@ -254,75 +221,38 @@ async function callMistralWithTools(
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const isLastRound = round === MAX_TOOL_ROUNDS - 1;
 
-    const body: Record<string, unknown> = {
-      model: 'mistral-small-latest',
-      max_tokens: 1024,
-      messages: currentMessages,
-    };
-
-    // Only offer tools if not the last round (force final answer on last round)
-    if (!isLastRound) {
-      body.tools = AGENT_TOOLS;
-      body.tool_choice = 'auto';
-    } else {
-      body.response_format = { type: 'json_object' };
-    }
-
-    // If this is the first round, allow JSON response format too
-    if (round === 0) {
-      // Don't set response_format when tools are available — Mistral will either
-      // return tool_calls or content
-    }
-
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
+    const completion = await provider.complete(currentMessages, {
+      tools: (!isLastRound && provider.supportsTools) ? AGENT_TOOLS : undefined,
+      forceJson: isLastRound || !provider.supportsTools,
+      maxTokens: 1024,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[roleAgent] Mistral API error', { status: response.status, body: errorText });
-      throw new Error(`Mistral API returned ${response.status}`);
+    // No tool calls — we have the final answer
+    if (!completion.toolCalls?.length) {
+      return { content: completion.content?.trim() ?? '', toolsUsed };
     }
 
-    const data = (await response.json()) as MistralChatResponse;
-    const choice = data.choices?.[0];
-    if (!choice) throw new Error('No choices in Mistral response');
-
-    const msg = choice.message;
-
-    // If no tool calls, we have the final content
-    if (!msg.tool_calls || msg.tool_calls.length === 0) {
-      return { content: msg.content?.trim() ?? '', toolsUsed };
-    }
-
-    // Execute tool calls
+    // Execute tool calls and append results
     currentMessages.push({
       role: 'assistant',
-      content: msg.content,
-      tool_calls: msg.tool_calls,
+      content: completion.content,
+      toolCalls: completion.toolCalls,
     });
 
-    for (const call of msg.tool_calls) {
+    for (const call of completion.toolCalls) {
       const { result, label } = await executeToolCall(call);
       toolsUsed.push(label);
-
       currentMessages.push({
         role: 'tool',
         content: result,
-        tool_call_id: call.id,
-        name: call.function.name,
+        toolCallId: call.id,
+        toolName: call.name,
       });
     }
 
-    console.log(`[roleAgent] Tool round ${round + 1}: executed ${msg.tool_calls.length} tool(s)`);
+    console.log(`[roleAgent] Tool round ${round + 1} (${provider.name}): executed ${completion.toolCalls.length} tool(s)`);
   }
 
-  // Should not reach here, but just in case
   return { content: '', toolsUsed };
 }
 
@@ -533,12 +463,12 @@ function parseSynthesisResponse(parsed: Record<string, unknown>, toolsUsed: stri
  * so the frontend can show what the agent researched.
  */
 export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgentResponse> {
-  const { apiKey, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole } = input;
+  const { provider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole } = input;
 
   const budgetExhausted = questionsAsked >= questionBudget;
 
-  if (!apiKey) {
-    console.log('[roleAgent] No MISTRAL_API_KEY configured. Returning mock response.');
+  if (!provider) {
+    console.log('[roleAgent] No provider configured. Returning mock response.');
     return budgetExhausted
       ? getMockSynthesisResponse(baseline)
       : getMockQuestionResponse(questionsAsked);
@@ -549,7 +479,7 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
     ? buildSynthesisPrompt({ baseline, exchanges, knowledgeState })
     : buildRoleAgentUserMessage({ baseline, exchanges, knowledgeState, questionsAsked, questionBudget });
 
-  const messages: MistralMessage[] = [
+  const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
   ];
@@ -557,18 +487,18 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
   let content: string;
   let toolsUsed: string[];
   try {
-    const result = await callMistralWithTools(apiKey, messages);
+    const result = await callProviderWithTools(provider, messages);
     content = result.content;
     toolsUsed = result.toolsUsed;
   } catch (err) {
-    console.error('[roleAgent] Mistral call failed:', err);
+    console.error(`[roleAgent] ${provider.name} call failed:`, err);
     return budgetExhausted
       ? getMockSynthesisResponse(baseline)
       : getMockQuestionResponse(questionsAsked);
   }
 
   if (!content) {
-    console.warn('[roleAgent] Mistral returned empty content. Falling back to mock.');
+    console.warn('[roleAgent] Provider returned empty content. Falling back to mock.');
     return budgetExhausted
       ? getMockSynthesisResponse(baseline)
       : getMockQuestionResponse(questionsAsked);

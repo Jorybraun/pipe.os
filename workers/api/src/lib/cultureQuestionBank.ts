@@ -1,22 +1,21 @@
 /**
  * Culture Interview Agent — question bank.
  *
- * The 15 hand-authored questions live in this file. The 1,015 Exponent-sourced
- * questions live as markdown nodes in `knowledge/culture/questions/exponent/`
- * and are loaded into `CULTURE_QUESTION_BANK_GENERATED` by the sync script
- * `workers/api/scripts/sync-culture-wiki.ts`. The runtime selector unions
- * both arrays.
+ * Every scorable question is hand-authored in this file and mirrors a markdown
+ * file under `knowledge/culture/questions/{dimension}/`. Each has a full BARS
+ * rubric + L/M/H calibration in its markdown counterpart, which the scorer
+ * loads by question ID.
  *
  * Question IDs MUST match the `id` field in the corresponding markdown file
  * so that the scorer can load the full BARS rubric by ID.
  *
- * The 15 curated questions have rich `probes` libraries and BARS rubrics in
- * `knowledge/culture/questions/{dim}/`. The 1,015 Exponent questions are
- * tagged-only (dimensions, archetype, probe_patterns, etc.) and rely on the
- * generic probe library at runtime.
+ * History: commit 5cec8ff added a 1,015-node Exponent-sourced layer generated
+ * from an aborted scrape + Haiku tagging pass. That layer was removed because
+ * the Exponent questions had no BARS rubrics and the unioned selector could
+ * surface them to real candidates — producing transcript turns the scorer
+ * cannot grade. The selector now runs over the curated bank only.
  */
 
-import { CULTURE_QUESTION_BANK_GENERATED } from './cultureQuestionBank.generated.js';
 import { loadRoleOverlay, type RoleOverlayId } from './cultureRoleOverlay.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -333,16 +332,14 @@ const CURATED_BANK: CultureQuestion[] = [
   },
 ];
 
-// ─── Unioned bank ────────────────────────────────────────────────────────────
+// ─── Runtime bank ────────────────────────────────────────────────────────────
 
 /**
- * The full runtime bank: 15 curated questions + ~1,015 Exponent-sourced
- * questions loaded from the markdown wiki via the sync script.
+ * The full runtime bank: 15 hand-authored questions. Every question here has
+ * a BARS rubric + L/M/H calibration in its markdown counterpart so the scorer
+ * can grade any turn the selector produces.
  */
-export const CULTURE_QUESTION_BANK: CultureQuestion[] = [
-  ...CURATED_BANK,
-  ...CULTURE_QUESTION_BANK_GENERATED,
-];
+export const CULTURE_QUESTION_BANK: CultureQuestion[] = [...CURATED_BANK];
 
 // ─── Bank helpers ────────────────────────────────────────────────────────────
 

@@ -461,13 +461,19 @@ schedulingAuth.get('/interviews', async (c) => {
 
   const result = await db
     .prepare(
-      `SELECT id, candidate_id, pipeline_id, stage_id, status,
-              scheduled_at, meeting_url, scheduling_provider,
-              scheduling_url, recruiter_notes, sync_source,
-              last_synced_at, created_at, updated_at
-       FROM scheduled_interviews
-       WHERE owner_id = ?
-       ORDER BY scheduled_at DESC`
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
+              si.scheduled_at, si.meeting_url, si.scheduling_provider,
+              si.scheduling_url, si.recruiter_notes, si.sync_source,
+              si.last_synced_at, si.created_at, si.updated_at,
+              c.name AS candidate_name, c.email AS candidate_email,
+              p.title AS pipeline_title,
+              s.title AS stage_title
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN pipelines p ON p.id = si.pipeline_id
+       LEFT JOIN stages s ON s.id = si.stage_id
+       WHERE si.owner_id = ?
+       ORDER BY si.scheduled_at ASC`
     )
     .bind(userId)
     .all<{
@@ -485,6 +491,10 @@ schedulingAuth.get('/interviews', async (c) => {
       last_synced_at: string | null;
       created_at: string;
       updated_at: string;
+      candidate_name: string | null;
+      candidate_email: string | null;
+      pipeline_title: string | null;
+      stage_title: string | null;
     }>();
 
   const interviews = (result.results ?? []).map((r) => ({
@@ -502,6 +512,10 @@ schedulingAuth.get('/interviews', async (c) => {
     lastSyncedAt: r.last_synced_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    candidateName: r.candidate_name,
+    candidateEmail: r.candidate_email,
+    pipelineTitle: r.pipeline_title,
+    stageTitle: r.stage_title,
   }));
 
   return c.json({ interviews });

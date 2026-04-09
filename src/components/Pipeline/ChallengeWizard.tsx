@@ -46,6 +46,11 @@ import {
   type TemplateType,
   type PackRoleType,
 } from '../../hooks/useTemplateLibrary';
+import {
+  useChallengeGeneration,
+  type GeneratedChallengeItem,
+} from '../../hooks/useChallengeGeneration';
+import type { CandidatePersona } from '../../lib/api/types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -764,18 +769,305 @@ function LibraryBrowser({
   );
 }
 
-// ─── AI Generated placeholder (Step 2c) ─────────────────────────────────────
+// ─── AI Generator (Step 2c) — CA Phase 3 ──────────────────────────────────
 
-function AiGeneratedPlaceholder({
+const GENERATION_TYPE_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: 'QUIZ_MCQ', label: 'MCQ' },
+  { key: 'CODE_IMPLEMENTATION', label: 'CODE' },
+  { key: 'QUIZ_SHORT_ANSWER', label: 'LONG-FORM' },
+];
+
+function ConfidenceBar({ value, label }: { value: number; label: string }): JSX.Element {
+  const color = value >= 0.8 ? '#4ade80' : value >= 0.6 ? '#fbbf24' : '#f87171';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ ...mono, fontSize: 7, color: 'var(--pipe-text-dim)', width: 55, letterSpacing: '0.05em' }}>
+        {label}
+      </span>
+      <div
+        style={{
+          flex: 1,
+          height: 4,
+          background: 'var(--pipe-surface)',
+          borderRadius: 2,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.round(value * 100)}%`,
+            height: '100%',
+            background: color,
+            borderRadius: 2,
+            transition: 'width 0.3s ease',
+          }}
+        />
+      </div>
+      <span style={{ ...mono, fontSize: 7, color, fontWeight: 700, width: 24, textAlign: 'right' }}>
+        {Math.round(value * 100)}
+      </span>
+    </div>
+  );
+}
+
+function GeneratedChallengeCard({
+  item,
+  onAccept,
+  onRemove,
+}: {
+  item: GeneratedChallengeItem;
+  onAccept: () => void;
+  onRemove: () => void;
+}): JSX.Element {
+  const { challenge, confidence, issues, calibrationWarnings } = item;
+  const typeColor = TYPE_BADGE_COLORS[challenge.type] ?? 'var(--pipe-text-dim)';
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 8,
+        padding: 14,
+        background: 'var(--pipe-bg)',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span
+          style={{
+            ...mono,
+            fontSize: 7,
+            fontWeight: 700,
+            color: typeColor,
+            padding: '2px 6px',
+            borderRadius: 3,
+            background: `${typeColor}15`,
+            border: `1px solid ${typeColor}30`,
+            letterSpacing: '0.1em',
+          }}
+        >
+          {challenge.type.replace('_', ' ')}
+        </span>
+        <span
+          style={{
+            ...mono,
+            fontSize: 7,
+            color: DIFFICULTY_COLORS[challenge.difficulty] ?? 'var(--pipe-text-dim)',
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+          }}
+        >
+          {challenge.difficulty}
+        </span>
+        <span style={{ ...mono, fontSize: 7, color: 'var(--pipe-text-dim)' }}>
+          {challenge.primarySkill}
+        </span>
+        <span style={{ ...mono, fontSize: 7, color: 'var(--pipe-text-dim)', marginLeft: 'auto' }}>
+          <Clock size={8} style={{ verticalAlign: 'middle', marginRight: 3 }} />
+          {challenge.estimatedMinutes}m
+        </span>
+      </div>
+
+      {/* Title + instructions preview */}
+      <div style={{ ...mono, fontSize: 10, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 6 }}>
+        {challenge.title}
+      </div>
+      <p
+        style={{
+          ...mono,
+          fontSize: 8,
+          color: 'var(--pipe-text-muted)',
+          lineHeight: 1.6,
+          margin: '0 0 12px',
+          maxHeight: 48,
+          overflow: 'hidden',
+        }}
+      >
+        {challenge.instructions.slice(0, 200)}
+        {challenge.instructions.length > 200 ? '...' : ''}
+      </p>
+
+      {/* Confidence scores (CA-16) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+        <ConfidenceBar value={confidence.topicRelevance} label="TOPIC" />
+        <ConfidenceBar value={confidence.roleFit} label="FIT" />
+        <ConfidenceBar value={confidence.clarity} label="CLARITY" />
+      </div>
+
+      {/* Warnings */}
+      {(issues.length > 0 || calibrationWarnings.length > 0) && (
+        <div
+          style={{
+            ...mono,
+            fontSize: 7,
+            color: '#fbbf24',
+            padding: '6px 8px',
+            background: 'rgba(251,191,36,0.05)',
+            border: '1px solid rgba(251,191,36,0.15)',
+            borderRadius: 4,
+            marginBottom: 10,
+            lineHeight: 1.6,
+          }}
+        >
+          {[...issues, ...calibrationWarnings].map((w, i) => (
+            <div key={i}>{w}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={onAccept}
+          style={{
+            ...mono,
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 5,
+            padding: '6px 10px',
+            background: 'rgba(74,222,128,0.1)',
+            border: '1px solid rgba(74,222,128,0.3)',
+            borderRadius: 4,
+            color: '#4ade80',
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            cursor: 'pointer',
+          }}
+        >
+          <Check size={10} />
+          ACCEPT
+        </button>
+        <button
+          onClick={onRemove}
+          style={{
+            ...mono,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 5,
+            padding: '6px 10px',
+            background: 'none',
+            border: '1px solid var(--pipe-border)',
+            borderRadius: 4,
+            color: 'var(--pipe-text-dim)',
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            cursor: 'pointer',
+          }}
+        >
+          <X size={10} />
+          REMOVE
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AiGenerator({
+  roleContextId,
+  persona,
+  onAdd,
   onBack,
 }: {
+  roleContextId: string | null;
+  persona: CandidatePersona | null;
+  onAdd: (item: StagedChallenge) => void;
   onBack: () => void;
 }): JSX.Element {
+  const { generate, result, isGenerating, error, reset, removeChallenge } = useChallengeGeneration();
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
+  const [count, setCount] = useState(5);
+
+  const toggleType = useCallback((key: string) => {
+    setSelectedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleGenerate = useCallback(async () => {
+    if (!roleContextId) return;
+    const config: import('../../hooks/useChallengeGeneration').GenerationConfig = {
+      roleContextId,
+      count,
+    };
+    if (selectedTypes.size > 0) config.types = [...selectedTypes];
+    await generate(config);
+  }, [roleContextId, selectedTypes, count, generate]);
+
+  const handleAccept = useCallback(
+    (item: GeneratedChallengeItem) => {
+      onAdd({
+        id: crypto.randomUUID(),
+        type: item.challenge.type,
+        title: item.challenge.title,
+        instructions: item.challenge.instructions,
+        config: item.challenge.config,
+        source: 'ai',
+      });
+    },
+    [onAdd],
+  );
+
+  // No persona yet — show prompt
+  if (!persona || !roleContextId) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={onBack}
+            style={{
+              ...mono,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '5px 10px',
+              background: 'none',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 4,
+              color: 'var(--pipe-text-dim)',
+              fontSize: 8,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              cursor: 'pointer',
+            }}
+          >
+            <ArrowLeft size={10} />
+            BACK
+          </button>
+          <label style={{ ...labelStyle, marginBottom: 0, flex: 1 }}>AI_GENERATION</label>
+        </div>
+        <div
+          style={{
+            padding: '32px 20px',
+            textAlign: 'center',
+            border: '1px dashed rgba(74,222,128,0.2)',
+            borderRadius: 10,
+            background: 'rgba(74,222,128,0.02)',
+          }}
+        >
+          <Sparkles size={18} color="#4ade80" style={{ margin: '0 auto 12px' }} />
+          <p style={{ ...mono, fontSize: 9, color: 'var(--pipe-text-muted)', lineHeight: 1.7, margin: 0 }}>
+            Complete the Role Discovery interview first to generate
+            AI-powered challenges tailored to your role.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <button
-          onClick={onBack}
+          onClick={() => { reset(); onBack(); }}
           style={{
             ...mono,
             display: 'flex',
@@ -798,85 +1090,208 @@ function AiGeneratedPlaceholder({
         <label style={{ ...labelStyle, marginBottom: 0, flex: 1 }}>AI_GENERATION</label>
       </div>
 
+      {/* Persona summary */}
       <div
         style={{
-          padding: '32px 20px',
-          textAlign: 'center',
-          border: '1px dashed rgba(74,222,128,0.2)',
-          borderRadius: 10,
-          background: 'rgba(74,222,128,0.02)',
+          padding: '10px 12px',
+          border: '1px solid rgba(74,222,128,0.15)',
+          borderRadius: 6,
+          background: 'rgba(74,222,128,0.03)',
         }}
       >
-        <div
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 10,
-            background: 'rgba(74,222,128,0.08)',
-            border: '1px solid rgba(74,222,128,0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px',
-          }}
-        >
-          <Sparkles size={18} color="#4ade80" />
+        <div style={{ ...mono, fontSize: 8, fontWeight: 700, color: '#4ade80', letterSpacing: '0.1em', marginBottom: 4 }}>
+          GENERATING FOR
         </div>
-        <div
-          style={{
-            ...mono,
-            fontSize: 10,
-            fontWeight: 700,
-            color: '#4ade80',
-            letterSpacing: '0.12em',
-            marginBottom: 8,
-          }}
-        >
-          CA_PHASE_3
+        <div style={{ ...mono, fontSize: 9, color: 'var(--pipe-text-muted)', lineHeight: 1.6 }}>
+          {persona.archetype} — {persona.seniority}
         </div>
-        <p
-          style={{
-            ...mono,
-            fontSize: 9,
-            color: 'var(--pipe-text-muted)',
-            lineHeight: 1.7,
-            margin: 0,
-            maxWidth: 340,
-            marginLeft: 'auto',
-            marginRight: 'auto',
-          }}
-        >
-          AI challenge generation from role discovery output.
-          Multi-agent pipeline with confidence scoring.
-          Coming in CA Phase 3.
-        </p>
-        <div
-          style={{
-            display: 'flex',
-            gap: 6,
-            justifyContent: 'center',
-            marginTop: 16,
-            flexWrap: 'wrap',
-          }}
-        >
-          {['CA-1', 'CA-2', 'CA-3', 'CA-4', 'CA-16'].map((id) => (
-            <span
-              key={id}
-              style={{
-                ...mono,
-                fontSize: 7,
-                color: 'var(--pipe-text-dim)',
-                padding: '2px 6px',
-                borderRadius: 2,
-                background: 'var(--pipe-surface)',
-                border: '1px solid var(--pipe-border)',
-              }}
-            >
-              {id}
-            </span>
-          ))}
+        <div style={{ ...mono, fontSize: 7, color: 'var(--pipe-text-dim)', marginTop: 4 }}>
+          Skills: {persona.mustHaveSkills.slice(0, 5).join(', ')}
         </div>
       </div>
+
+      {/* Config form (only show before generation) */}
+      {!result && !isGenerating && (
+        <>
+          {/* Type filter */}
+          <div>
+            <label style={labelStyle}>CHALLENGE_TYPES</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {GENERATION_TYPE_OPTIONS.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => toggleType(key)}
+                  style={{
+                    ...pillBase,
+                    background: selectedTypes.has(key) ? 'rgba(74,222,128,0.12)' : 'none',
+                    borderColor: selectedTypes.has(key) ? 'rgba(74,222,128,0.4)' : 'var(--pipe-border)',
+                    color: selectedTypes.has(key) ? '#4ade80' : 'var(--pipe-text-dim)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ ...mono, fontSize: 7, color: 'var(--pipe-text-dim)', marginTop: 4 }}>
+              {selectedTypes.size === 0 ? 'All types (mixed)' : `${selectedTypes.size} type(s) selected`}
+            </div>
+          </div>
+
+          {/* Count slider */}
+          <div>
+            <label style={labelStyle}>COUNT: {count}</label>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+              style={{ width: '100%', accentColor: '#4ade80' }}
+            />
+          </div>
+
+          {/* Generate button */}
+          <button
+            onClick={() => void handleGenerate()}
+            style={{
+              ...mono,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '10px 16px',
+              background: 'rgba(74,222,128,0.1)',
+              border: '1px solid rgba(74,222,128,0.3)',
+              borderRadius: 6,
+              color: '#4ade80',
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: '0.12em',
+              cursor: 'pointer',
+            }}
+          >
+            <Sparkles size={14} />
+            GENERATE_CHALLENGES
+          </button>
+        </>
+      )}
+
+      {/* Loading state */}
+      {isGenerating && (
+        <div
+          style={{
+            padding: '32px 20px',
+            textAlign: 'center',
+            border: '1px dashed rgba(74,222,128,0.2)',
+            borderRadius: 10,
+            background: 'rgba(74,222,128,0.02)',
+          }}
+        >
+          <Loader2
+            size={24}
+            color="#4ade80"
+            style={{ animation: 'spin 1s linear infinite', margin: '0 auto 12px' }}
+          />
+          <div style={{ ...mono, fontSize: 9, color: '#4ade80', fontWeight: 700, letterSpacing: '0.1em', marginBottom: 6 }}>
+            GENERATING...
+          </div>
+          <p style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', lineHeight: 1.6, margin: 0 }}>
+            Running 4-stage pipeline: generate, review, evaluate, calibrate.
+          </p>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div
+          style={{
+            padding: '12px 14px',
+            border: '1px solid rgba(248,113,113,0.3)',
+            borderRadius: 6,
+            background: 'rgba(248,113,113,0.05)',
+          }}
+        >
+          <div style={{ ...mono, fontSize: 8, color: '#f87171', fontWeight: 700 }}>GENERATION_FAILED</div>
+          <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-muted)', marginTop: 4 }}>{error}</div>
+          <button
+            onClick={() => void handleGenerate()}
+            style={{
+              ...mono,
+              marginTop: 8,
+              padding: '5px 10px',
+              background: 'none',
+              border: '1px solid rgba(248,113,113,0.3)',
+              borderRadius: 4,
+              color: '#f87171',
+              fontSize: 8,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              cursor: 'pointer',
+            }}
+          >
+            RETRY
+          </button>
+        </div>
+      )}
+
+      {/* Results — review cards */}
+      {result && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em' }}>
+              {result.challenges.length} PASSED / {result.totalGenerated} GENERATED
+              {result.totalRejected > 0 && (
+                <span style={{ color: '#f87171' }}> ({result.totalRejected} REJECTED)</span>
+              )}
+            </div>
+            <button
+              onClick={() => { reset(); }}
+              style={{
+                ...mono,
+                marginLeft: 'auto',
+                padding: '4px 8px',
+                background: 'none',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 4,
+                color: 'var(--pipe-text-dim)',
+                fontSize: 7,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                cursor: 'pointer',
+              }}
+            >
+              REGENERATE
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {result.challenges.map((item, i) => (
+              <GeneratedChallengeCard
+                key={i}
+                item={item}
+                onAccept={() => handleAccept(item)}
+                onRemove={() => removeChallenge(i)}
+              />
+            ))}
+          </div>
+
+          {result.challenges.length === 0 && (
+            <div
+              style={{
+                padding: '20px',
+                textAlign: 'center',
+                border: '1px dashed rgba(248,113,113,0.2)',
+                borderRadius: 8,
+              }}
+            >
+              <p style={{ ...mono, fontSize: 9, color: '#f87171', margin: 0 }}>
+                All challenges were rejected by the review pipeline. Try adjusting the type or generating more.
+              </p>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1187,11 +1602,15 @@ function StagedQueue({
 
 export interface ChallengeWizardProps {
   stageId: string;
+  roleContextId: string | null;
+  persona: CandidatePersona | null;
   onClose: () => void;
 }
 
 export function ChallengeWizard({
   stageId,
+  roleContextId,
+  persona,
   onClose,
 }: ChallengeWizardProps): JSX.Element {
   const { createChallenge } = useChallengeMutations();
@@ -1294,9 +1713,14 @@ export function ChallengeWizard({
         <LibraryBrowser onAdd={handleStage} onBack={() => setSource(null)} />
       )}
 
-      {/* Step 2c: AI generated */}
+      {/* Step 2c: AI generated (CA Phase 3) */}
       {source === 'ai' && (
-        <AiGeneratedPlaceholder onBack={() => setSource(null)} />
+        <AiGenerator
+          roleContextId={roleContextId}
+          persona={persona}
+          onAdd={handleStage}
+          onBack={() => setSource(null)}
+        />
       )}
 
       {/* Step 2d: Custom creator */}

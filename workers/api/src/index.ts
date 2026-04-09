@@ -6,6 +6,8 @@ import { pipelineStages, stageOps, stageChallenges } from './routes/cockpit/stag
 import { challenges } from './routes/cockpit/challenges';
 import { challengeTemplates } from './routes/cockpit/challengeTemplates';
 import { templatePacks } from './routes/cockpit/templatePacks';
+import { challengeGeneration } from './routes/cockpit/challengeGeneration';
+import { repoDiscovery } from './routes/cockpit/repoDiscovery';
 import { github } from './routes/cockpit/github';
 import { overview } from './routes/cockpit/overview';
 import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
@@ -73,6 +75,10 @@ app.route('/api/v1/challenges', challenges);
 app.route('/api/v1/challenge-templates', challengeTemplates);
 // Template packs: CRUD + publish + duplicate + expand (ADR-034)
 app.route('/api/v1/template-packs', templatePacks);
+// Challenge generation: AI pipeline from role discovery persona (ADR-034 CA Phase 3)
+app.route('/api/v1/challenges/generate', challengeGeneration);
+// Repo discovery: role-matched repo discovery for code review challenges (CR-13)
+app.route('/api/v1/repos', repoDiscovery);
 // GitHub PR proxy: POST /api/v1/github/pr
 app.route('/api/v1/github', github);
 // Overview: GET /api/v1/pipelines/:pipelineId/overview

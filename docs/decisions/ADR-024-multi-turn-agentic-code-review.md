@@ -1,8 +1,21 @@
 # ADR-024: Multi-Turn Agentic Code Review
 
 **Date:** 2026-03-29
-**Status:** Accepted
+**Status:** Accepted — **Updated 2026-04-08 by [ADR-032](ADR-032-code-review-research-integration.md)**
 **Supersedes:** [ADR-021 — Deterministic Code Review Scoring](ADR-021-deterministic-code-review-scoring.md)
+
+> **UPDATE NOTICE — 2026-04-08**
+> The directional decision in this ADR (multi-turn conversation + panel scoring + implementer persona) is confirmed by the 2026-04-08 code review research brief (`knowledge/outputs/code-review-content-sourcing.md`, 50 cited sources). However, four specific design details have been updated by [ADR-032](ADR-032-code-review-research-integration.md):
+>
+> 1. **Scoring panel decomposition** — 3 panelists (Communication / Technical / Practice) + Synthesizer has been **expanded to 6 panelists** (Issue identification depth / Reasoning / Prioritization / Question formation / Revision evaluation / AI direction) + Synthesizer. This is grounded in the practitioner literature (Bacchelli & Bird 2013, Sadowski et al. 2018, Bosu et al. 2015, Zhang et al. 2024, Sillito et al. 2006, MacLeod et al. 2018). The two new dimensions (Revision evaluation, AI direction) are PIPE's exclusive moat dimensions.
+>
+> 2. **Single-PR challenge → multi-PR bundled challenge** — Every simulation-based assessment domain (OSCE, MMI, aviation LOE) converged on multi-encounter sampling because context-specificity accounts for ~25% of score variance. The new default is **3 PRs per CODE_REVIEW session**, aggregated to a session-level score.
+>
+> 3. **Consistency classifier** — A new Gemma 4 12B Worker runs on every implementer response before delivery, checking for persona drift on 4 axes (bug-disclosure violation / tone drift / knowledge-boundary violation / pushback deviation). This addresses the #1 engineering risk from the research brief (instruction-tuned LLM agents drift 14–34% off-persona at baseline).
+>
+> 4. **BARS-anchored rubric in versioned YAML** — Current scorer prompts have partial anchors; the new `workers/api/src/lib/scorerRubric.yaml` establishes Hodges-compliant concrete behavioral anchors at every level of every dimension, so expert reviewers are not penalized by checklist-style scoring.
+>
+> See [ADR-032](ADR-032-code-review-research-integration.md) for the full phased migration plan. The core vision of this ADR (multi-turn as the assessment) is **unchanged** — these are design refinements, not a reversal.
 
 > **Source of truth:** [`research/code-review-arena/spec/system-spec.md`](../../../research/code-review-arena/spec/system-spec.md)
 > This ADR records the decision. The system spec contains the full implementation details, agent contracts, scoring rubric, and training loop.

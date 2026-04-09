@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo } from 'react';
-import { X, Search, Code, FileText, MessageSquare, HelpCircle, GripVertical } from 'lucide-react';
+import { X, Search, Code, FileText, MessageSquare, HelpCircle, GripVertical, Users } from 'lucide-react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import {
@@ -30,6 +30,7 @@ const TYPE_FILTERS: { key: ChallengeType | 'ALL'; label: string; icon: typeof Co
   { key: 'QUIZ_MCQ', label: 'MULTIPLE_CHOICE', icon: HelpCircle },
   { key: 'QUIZ_SHORT_ANSWER', label: 'SHORT_ANSWER', icon: MessageSquare },
   { key: 'CODE_REVIEW', label: 'CODE_REVIEW', icon: Code },
+  { key: 'AGENT_INTERVIEW', label: 'CULTURE_INTERVIEW', icon: Users },
 ];
 
 

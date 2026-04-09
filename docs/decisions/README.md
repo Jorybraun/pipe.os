@@ -35,7 +35,7 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-001](ADR-001-amplify-gen2-backend.md) | Use AWS Amplify Gen 2 as backend platform | Accepted | 2025-12-26 |
 | [ADR-002](ADR-002-challenge-architecture.md) | Stage = container, Challenge = atomic unit | Accepted | 2026-02-26 |
 | [ADR-003](ADR-003-assessment-fk-strategy.md) | Assessment holds both stageId and challengeId | Superseded | 2026-02-26 |
-| [ADR-004](ADR-004-static-challenge-library.md) | Static TypeScript files for challenge library at MVP | Accepted | 2026-02-27 |
+| [ADR-004](ADR-004-static-challenge-library.md) | Static TypeScript files for challenge library at MVP | Superseded by ADR-034 | 2026-02-27 |
 | [ADR-005](ADR-005-composable-challenge-system.md) | Composable Shell + Panel challenge architecture | Accepted | 2026-02-27 |
 | [ADR-006](ADR-006-submission-type-system.md) | Discriminated union for challenge submission types | Accepted | 2026-02-27 |
 | [ADR-007](ADR-007-ground-truth-sanitization.md) | Server-side ground truth sanitization via scoringAgent Lambda | Proposed | 2026-02-27 |
@@ -63,3 +63,6 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-029](ADR-029-culture-interview-agent-architecture.md) | Behavioral & Culture Interview Agent — FSM+ReAct, BARS rubrics, multi-agent scoring via Gemma 4 | Proposed | 2026-04-07 |
 | [ADR-030](ADR-030-culture-profile-operationalization.md) | Culture Profile Operationalization — 5-dimension slider benchmark, "culture add" framing, no aggregate score | Proposed | 2026-04-07 |
 | [ADR-031](ADR-031-ai-hiring-compliance-architecture.md) | AI Hiring Compliance Architecture — consent gate, HITL gate, audit log, deletion path | Proposed | 2026-04-07 |
+| [ADR-032](ADR-032-code-review-research-integration.md) | Code Review Research Integration — 6 dimensions, multi-PR, consistency classifier, BARS, rolling-freshness | Accepted | 2026-04-08 |
+| [ADR-033](ADR-033-research-integration-strategy-and-guardrails.md) | Research Integration Strategy — plan guardrails, contradiction flagging | Accepted | 2026-04-08 |
+| [ADR-034](ADR-034-challenge-authoring-system.md) | Challenge Authoring System — template packs, AI generation, multi-language, Judge0 | Proposed | 2026-04-09 |

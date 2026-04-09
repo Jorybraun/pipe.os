@@ -57,23 +57,23 @@ export function RoleCard({
     switch (status) {
       case "active":
         return {
-          color: "#34d399",
-          bg: "rgba(16, 185, 129, 0.1)",
-          border: "rgba(16, 185, 129, 0.2)",
+          color: "#10b981",
+          bg: "rgba(16, 185, 129, 0.12)",
+          border: "rgba(16, 185, 129, 0.28)",
           label: "ACTIVE",
         };
       case "draft":
         return {
-          color: "#fbbf24",
-          bg: "rgba(245, 158, 11, 0.1)",
-          border: "rgba(245, 158, 11, 0.2)",
+          color: "#d97706",
+          bg: "rgba(245, 158, 11, 0.12)",
+          border: "rgba(245, 158, 11, 0.28)",
           label: "DRAFT",
         };
       case "closed":
         return {
           color: "var(--pipe-text-dim)",
-          bg: "rgba(255,255,255,0.05)",
-          border: "rgba(255,255,255,0.1)",
+          bg: "var(--pipe-surface)",
+          border: "var(--pipe-border)",
           label: "CLOSED",
         };
     }
@@ -95,7 +95,6 @@ export function RoleCard({
 
   const statusStyle = getStatusStyle(status);
   const isComplete = stagesConfigured === totalStages;
-  const progressPercent = totalStages > 0 ? (stagesConfigured / totalStages) * 100 : 0;
 
   const formattedDate = new Date(createdAt)
     .toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -104,12 +103,13 @@ export function RoleCard({
   return (
     <div style={{ marginBottom: 12, ...style }} className={className}>
       <LiquidMetalCard
-        variant="default"
-        onClick={onClick}
+        variant="chrome"
+        {...(onClick ? { onClick } : {})}
         style={{
           padding: 0,
           borderRadius: 8,
           cursor: onClick ? "pointer" : "default",
+          border: "1px solid var(--pipe-border-light)",
         }}
       >
         <div style={{ display: "flex", alignItems: "stretch" }}>
@@ -124,7 +124,7 @@ export function RoleCard({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: isSelected ? "rgba(139, 92, 246, 0.1)" : "rgba(255,255,255,0.01)",
+              background: isSelected ? "rgba(139, 92, 246, 0.1)" : "transparent",
               borderRight: "1px solid var(--pipe-border-light)",
               cursor: "pointer",
               transition: "all 0.2s ease",
@@ -134,7 +134,7 @@ export function RoleCard({
               width: 18,
               height: 18,
               borderRadius: 4,
-              border: `2px solid ${isSelected ? "#8b5cf6" : "rgba(255,255,255,0.1)"}`,
+              border: `2px solid ${isSelected ? "#8b5cf6" : "var(--pipe-border)"}`,
               background: isSelected ? "#8b5cf6" : "transparent",
               display: "flex",
               alignItems: "center",
@@ -148,9 +148,9 @@ export function RoleCard({
           {/* Status Indicator Bar */}
           <div
             style={{
-              width: 4,
+              width: 3,
               background: statusStyle.color,
-              opacity: status === "active" ? 0.8 : 0.3,
+              opacity: 0.6,
             }}
           />
 
@@ -191,7 +191,7 @@ export function RoleCard({
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "var(--pipe-text, #fff)",
+                  color: "var(--pipe-text)",
                   margin: 0,
                   letterSpacing: "0.01em",
                 }}
@@ -236,7 +236,7 @@ export function RoleCard({
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: "var(--pipe-text, #fff)",
+                      color: "var(--pipe-text)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -286,7 +286,7 @@ export function RoleCard({
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: isComplete ? "#34d399" : "var(--pipe-text, #fff)",
+                      color: isComplete ? "#10b981" : "var(--pipe-text)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -334,7 +334,7 @@ export function RoleCard({
             ref={menuRef}
             style={{
               width: 48,
-              borderLeft: "1px solid rgba(255,255,255,0.05)",
+              borderLeft: "1px solid var(--pipe-border-light)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -344,9 +344,9 @@ export function RoleCard({
             <button
               aria-label="Pipeline actions"
               style={{
-                background: menuOpen ? "rgba(255,255,255,0.05)" : "transparent",
+                background: menuOpen ? "var(--pipe-surface-hover)" : "transparent",
                 border: "none",
-                color: menuOpen ? "rgba(255,255,255,0.6)" : "var(--pipe-text-dim)",
+                color: menuOpen ? "var(--pipe-text)" : "var(--pipe-text-dim)",
                 cursor: "pointer",
                 padding: 8,
                 borderRadius: 4,
@@ -368,10 +368,10 @@ export function RoleCard({
                   right: 0,
                   zIndex: 50,
                   minWidth: 160,
-                  background: "#1a1a1e",
+                  background: "var(--pipe-bg)",
                   border: "1px solid var(--pipe-border)",
                   borderRadius: 8,
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                  boxShadow: "0 8px 32px var(--pipe-shadow)",
                   overflow: "hidden",
                   marginTop: 4,
                 }}
@@ -410,18 +410,6 @@ export function RoleCard({
               </div>
             )}
           </div>
-        </div>
-
-        {/* Mini progress bar at the very bottom */}
-        <div style={{ height: 1, background: "var(--pipe-surface)" }}>
-          <div
-            style={{
-              width: `${progressPercent}%`,
-              height: "100%",
-              background: isComplete ? "#34d399" : "var(--pipe-text-dim)",
-              transition: "width 0.6s ease-out",
-            }}
-          />
         </div>
       </LiquidMetalCard>
     </div>

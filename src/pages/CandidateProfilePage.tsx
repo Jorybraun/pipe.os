@@ -101,6 +101,7 @@ const CHALLENGE_TYPE_COLORS: Record<string, string> = {
   CODE_IMPLEMENTATION: "#a78bfa",
   QUIZ_MCQ: "#4ade80",
   QUIZ_SHORT_ANSWER: "#fbbf24",
+  AGENT_INTERVIEW: "#06b6d4",
 };
 
 // ============================================================================

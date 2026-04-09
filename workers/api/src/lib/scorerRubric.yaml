@@ -1,0 +1,292 @@
+# Code Review Scoring Rubric — 6 BARS Dimensions
+#
+# Canonical reference for the scoring system described in:
+# - knowledge/outputs/code-review-content-sourcing.md (2026-04-08)
+# - knowledge/STRATEGY.md — CR-2, CR-3, CR-4, CR-25, CR-26
+#
+# This YAML is the human-readable source of truth.
+# The Worker imports the same data from scorerRubric.ts (kept in sync manually).
+#
+# Scale: 1-5 per dimension, scored at ENCOUNTER level (per PR, not per turn).
+# Anchors follow the Hodges-compliant BARS pattern: every level describes
+# a concrete observable behavior, never generic adjectives.
+#
+# Research citations:
+#   Bosu 2015 [R6-P5], Zhang 2024 [R6-P7], MacLeod 2018 [R6-P4],
+#   Sillito 2006 [R6-P10], Bacchelli & Bird 2013 [R6-P1],
+#   Jellyfish 2025 [R6-P11], Graphite Diamond [R6-S11],
+#   Hodges et al. 1999 [R5-S5], Smith & Kendall 1963 [R5-S18]
+
+version: "1.0.0"
+
+# ─── Scoring structure ──────────────────────────────────────────────────────
+#
+# Overall = (BARS composite × 0.85) + (Effectiveness × 0.15)
+# BARS composite = weighted average of 6 dimensions (each 1-5, normalized to 0-100)
+# Effectiveness = deterministic bug-matching metric (unchanged from v19)
+
+scale:
+  min: 1
+  max: 5
+  scoring_level: encounter  # per PR, not per turn
+
+bands:
+  strong:   { min: 75, max: 100 }
+  adequate: { min: 45, max: 74 }
+  weak:     { min: 0,  max: 44 }
+
+composite_weights:
+  bars: 0.85
+  effectiveness: 0.15
+
+# ─── Dimension weights ──────────────────────────────────────────────────────
+#
+# Revision evaluation and issue identification carry the most weight:
+# - Revision evaluation is the PIPE moat (no competitor can score it)
+# - Issue identification is the core competency signal
+# AI direction gets lowest weight — novel dimension, least validated.
+# These are tunable via /calibrate.
+
+dimensions:
+
+  # ── 1. Issue Identification Depth ──────────────────────────────────────────
+  - id: issue_identification
+    name: Issue Identification Depth
+    weight: 0.20
+    description: >
+      What defects and design issues does the reviewer surface, and how
+      significant are they? Functional defects and security issues outrank
+      design concerns, which outrank style and docs issues.
+    needs_ground_truth: true
+    research: "Bosu 2015 [R6-P5], Zhang 2024 [R6-P7]"
+    anchors:
+      5: >
+        Found all critical and major planted bugs; correctly identified their
+        category (functional, security, design); flagged no more than one
+        false positive across the entire review.
+      4: >
+        Found ≥70% of critical/major bugs with correct categorization;
+        may have missed one major bug or surfaced 1-2 false positives.
+      3: >
+        Found 40-70% of critical/major bugs; may have miscategorized
+        severity on one or two findings; 2-3 false positives.
+      2: >
+        Found fewer than 40% of critical/major bugs; most comments target
+        style or cosmetic issues while real defects go unmentioned;
+        or more false positives than true findings.
+      1: >
+        Found zero planted bugs; comments are exclusively style nits,
+        boilerplate ("add error handling"), or factually incorrect claims.
+    cross_checks:
+      - condition: "bugs_found_pct < 0.40"
+        max_score: 3
+        reason: "Cannot score above 3 when <40% of critical/major bugs found"
+      - condition: "false_positives > true_findings"
+        max_score: 2
+        reason: "Cannot score above 2 when false positives outnumber real findings"
+
+  # ── 2. Reasoning & Explanation Quality ─────────────────────────────────────
+  - id: reasoning_quality
+    name: Reasoning & Explanation Quality
+    weight: 0.20
+    description: >
+      Does the reviewer explain WHY an issue matters — the failure mechanism,
+      the user-facing consequence, the violated invariant — not just THAT
+      something is wrong?
+    needs_ground_truth: false
+    research: "Bosu 2015 [R6-P5]"
+    anchors:
+      5: >
+        Every finding specifies the failure mechanism (what breaks, when,
+        for which input), references the relevant constraint or contract,
+        and proposes a fix with stated trade-offs.
+      4: >
+        Most findings explain the failure mechanism with correct technical
+        framing; proposes direction for a fix but not a complete solution;
+        one or two findings are surface-level.
+      3: >
+        Mix of deep and surface explanations; some comments explain
+        consequences ("this will throw on empty input") while others
+        say only "this is wrong" or "this could cause issues."
+      2: >
+        Predominantly surface-level: "this is wrong" without explaining
+        consequences; or vague claims ("this could cause issues")
+        with no scenario or mechanism described.
+      1: >
+        No explanations given; comments are bare directives ("fix this"),
+        factually incorrect reasoning, or copy-paste boilerplate
+        unrelated to the specific code under review.
+
+  # ── 3. Prioritization Accuracy ────────────────────────────────────────────
+  - id: prioritization
+    name: Prioritization Accuracy
+    weight: 0.15
+    description: >
+      Can the reviewer distinguish blockers from nitpicks? Do severity labels
+      match actual impact? Does the final verdict correctly reflect
+      which issues are merge-blocking?
+    needs_ground_truth: true
+    research: "MacLeod 2018 [R6-P4]"
+    anchors:
+      5: >
+        Every severity label matches actual impact; critical bugs are
+        flagged as blockers; the verdict correctly gates merge on
+        unresolved critical/major issues; nits are explicitly
+        marked as non-blocking.
+      4: >
+        Severity labels mostly correct with one miscalibration (e.g. a
+        major bug marked as minor); verdict is directionally correct;
+        blocker/nit distinction is clear.
+      3: >
+        Some severity errors (2-3 miscalibrations); or approved the PR
+        while a major (non-critical) bug remained unresolved; blocker
+        vs. nit distinction is inconsistent.
+      2: >
+        Multiple severity errors; approved with an unfound critical bug;
+        or treated all issues as equal severity (no triage).
+      1: >
+        No severity labels at all; or severity is inverted (critical
+        issues marked as nits, style issues marked as blockers);
+        rubber-stamp "LGTM" with unresolved critical bugs.
+    cross_checks:
+      - condition: "approved_with_unfound_critical"
+        max_score: 2
+        reason: "Cannot score above 2 when PR approved with unfound critical bugs"
+
+  # ── 4. Question Formation ─────────────────────────────────────────────────
+  - id: question_formation
+    name: Question Formation
+    weight: 0.15
+    description: >
+      Does the reviewer ask questions that elicit rationale, history, and
+      design intent before criticizing? Questions that surface context
+      the reviewer couldn't know from the diff alone are the hallmark
+      of senior reviewers (Sillito's taxonomy).
+    needs_ground_truth: false
+    research: "Sillito 2006 [R6-P10], Bacchelli & Bird 2013 [R6-P1]"
+    anchors:
+      5: >
+        Asked ≥2 questions that surfaced design intent, historical context,
+        or constraints not visible in the diff; adjusted feedback based
+        on the answers received; no assumptions made without checking.
+      4: >
+        Asked 1-2 clarifying questions before critiquing ambiguous code;
+        demonstrated awareness that context might change the assessment;
+        one or two assumptions made but reasonable ones.
+      3: >
+        Occasionally asked "why" but mostly assumed intent; questions
+        were superficial ("was this intentional?") rather than probing
+        design rationale or constraints.
+      2: >
+        Never asked any clarifying questions; made confident claims
+        about code that could have alternative valid interpretations;
+        assumptions led to at least one false positive.
+      1: >
+        Dismissed all context provided by the implementer; insisted
+        on changes without engaging with rationale; or asked zero
+        questions across the entire review.
+
+  # ── 5. Revision Evaluation ────────────────────────────────────────────────
+  - id: revision_evaluation
+    name: Revision Evaluation
+    weight: 0.20
+    description: >
+      After the implementer responds to feedback (fix, pushback, or
+      clarification), does the reviewer correctly assess whether the fix
+      is complete, incomplete, or introduces new issues? This is PIPE's
+      exclusive moat — no competitor can score it without an interactive
+      multi-turn implementer agent.
+    needs_ground_truth: true
+    research: "PIPE-exclusive dimension"
+    anchors:
+      5: >
+        Verified every claimed fix against the actual code change;
+        caught at least one incomplete fix or newly introduced issue;
+        concessions were reasoned ("you're right because X") not
+        reflexive ("oh ok makes sense").
+      4: >
+        Verified most claimed fixes; correctly identified fix
+        completeness on critical issues; may have accepted one
+        minor incomplete fix without checking; concessions mostly
+        reasoned.
+      3: >
+        Spot-checked some fixes but accepted others at face value;
+        mix of verified and unverified responses; at least one
+        "oh ok" concession without evaluation on a significant issue.
+      2: >
+        Accepted most implementer responses without verification;
+        caved on pushback ("oh ok makes sense") on >50% of
+        challenged points; missed an incomplete fix on a major bug.
+      1: >
+        Rubber-stamped all implementer responses; never re-examined
+        code after implementer claimed a fix; or abandoned all
+        original findings after pushback.
+    cross_checks:
+      - condition: "cave_ratio > 0.50"
+        max_score: 3
+        reason: "Cannot score above 3 when reviewer caves on >50% of pushback"
+      - condition: "zero_fix_verifications"
+        max_score: 2
+        reason: "Cannot score above 2 when reviewer never verified any claimed fix"
+
+  # ── 6. AI Direction ───────────────────────────────────────────────────────
+  - id: ai_direction
+    name: AI Direction
+    weight: 0.10
+    description: >
+      Can the reviewer direct, evaluate, and push back on AI-generated
+      code? This measures judgment on acceptance — not blind acceptance
+      of suggested changes, not blanket rejection, but merit-based
+      evaluation. Weighted more heavily for senior-level assessments.
+    needs_ground_truth: false
+    research: "Jellyfish 2025 [R6-P11], Graphite Diamond [R6-S11]"
+    note: >
+      This dimension has no prior empirical BARS validation (OQ-11 in
+      STRATEGY.md). Anchors are inferred from operational metrics.
+      Treat scores as directional until a critical-incident study
+      with expert reviewers can validate the anchor points.
+    anchors:
+      5: >
+        Caught a flawed implementer fix and held the line with evidence
+        when pushed back; evaluated a cleaner alternative on its merits
+        (accepted or rejected with stated reasoning); escalated
+        productively when the conversation stalled.
+      4: >
+        Correctly evaluated most implementer proposals; pushed back
+        on at least one flawed suggestion with a specific counter-
+        argument; accepted valid alternatives without defensiveness.
+      3: >
+        Mix of merit-based and reflexive responses; accepted some
+        flawed implementer proposals without scrutiny; pushed back
+        on others with reasoning; no clear pattern of judgment.
+      2: >
+        Deferred to the implementer on most suggestions regardless
+        of quality; or rejected all implementer proposals without
+        evaluating their merit; pattern is reflexive not reasoned.
+      1: >
+        Blindly accepted every implementer suggestion ("sounds good,
+        ship it") or blindly rejected everything ("no, do it my way")
+        with no evidence of evaluating individual proposals.
+    weight_override:
+      senior: 0.15  # increase to 15% for senior-level assessments
+      junior: 0.05  # decrease to 5% for junior-level assessments
+
+# ─── Effectiveness (deterministic, unchanged from v19) ──────────────────────
+#
+# Not a BARS dimension. Computed from bug-matching metrics with no LLM call.
+# Kept as-is from the arena v19 calibration (76.5% baseline).
+
+effectiveness:
+  description: >
+    Deterministic metric based on planted-bug matching. No LLM involved.
+    Provides an objective anchor that the BARS dimensions are scored against.
+  components:
+    ris:
+      weight: 0.50
+      description: "Severity-weighted bug detection ratio (0-100)"
+    efficiency:
+      weight: 0.30
+      description: "Useful comments / total comments, penalized by false positives (0-100)"
+    delta:
+      weight: 0.20
+      description: "Percentage of critical+major bugs found (0-100)"

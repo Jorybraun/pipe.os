@@ -112,7 +112,7 @@ templatePacks.use('*', authMiddleware);
 templatePacks.get('/', async (c) => {
   const roleType = c.req.query('roleType');
   const seniority = c.req.query('seniority');
-  const publishedOnly = c.req.query('published') === 'true';
+  const publishedParam = c.req.query('published');
 
   const conditions: string[] = [];
   const bindings: (string | number)[] = [];
@@ -125,8 +125,10 @@ templatePacks.get('/', async (c) => {
     bindings.push(seniority);
     conditions.push(`seniority = ?${bindings.length}`);
   }
-  if (publishedOnly) {
+  if (publishedParam === 'true') {
     conditions.push('is_published = 1');
+  } else if (publishedParam === 'false') {
+    conditions.push('is_published = 0');
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -506,5 +508,30 @@ export async function expandPack(
     ],
   };
 }
+
+// DELETE /:id — delete a draft pack (owner only, draft only)
+templatePacks.delete('/:id', async (c) => {
+  const packId = c.req.param('id');
+  const userId = c.var.userId;
+
+  // Get the latest version of this pack
+  const existing = await c.env.DB.prepare(
+    'SELECT id, version, created_by, is_published FROM template_packs WHERE id = ?1 ORDER BY version DESC LIMIT 1',
+  )
+    .bind(packId)
+    .first<Pick<TemplatePackRow, 'id' | 'version' | 'created_by' | 'is_published'>>();
+
+  if (!existing) return apiError(c, 'NOT_FOUND', 'Pack not found.');
+  if (existing.created_by !== userId) return apiError(c, 'FORBIDDEN', 'You can only delete your own packs.');
+  if (existing.is_published) return apiError(c, 'VALIDATION_ERROR', 'Published packs cannot be deleted.');
+
+  // Delete items first, then all versions of the pack
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM template_pack_items WHERE template_pack_id = ?1').bind(packId),
+    c.env.DB.prepare('DELETE FROM template_packs WHERE id = ?1').bind(packId),
+  ]);
+
+  return c.json({ deleted: true });
+});
 
 export { templatePacks };

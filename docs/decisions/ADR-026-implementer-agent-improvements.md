@@ -1,8 +1,19 @@
 # ADR-026: Implementer Agent Improvements — Real Code Changes, Metrics, TDD
 
-**Status:** Accepted
+**Status:** Accepted — **Updated 2026-04-08 by [ADR-032](ADR-032-code-review-research-integration.md)**
 **Date:** 2026-03-31
 **Deciders:** Hans (founder)
+
+> **UPDATE NOTICE — 2026-04-08**
+> The 2026-04-08 code review research brief (`knowledge/outputs/code-review-content-sourcing.md`) confirms the direction of this ADR — implementer producing real code changes, implementer metrics, TDD. Two additions from [ADR-032](ADR-032-code-review-research-integration.md):
+>
+> 1. **Persona reactivity as versioned YAML.** The current hardcoded prompts in `workers/api/src/lib/prompts.ts` are replaced by `workers/api/src/lib/personas/{junior,mid,senior}.yaml` with explicit reactivity parameters: `pushback_probability` (research: junior persona = 0.40), `fix_acceptance_threshold`, `information_volunteering_rate`, `error_introduction_rate`. This is the "reactivity calibration" framing from the research brief Part 3.3.
+>
+> 2. **Revision evaluation dimension.** The `updated_code` work in Phase 2 of this ADR is the **prerequisite** for scoring "did the reviewer correctly assess whether the fix is complete, incomplete, or introduces new issues" — a new exclusive moat dimension (Dimension 5 in ADR-032). Phase 2 of this ADR must be complete before Revision Evaluation scoring can work.
+>
+> 3. **Consistency classifier.** The Phase 5 "Calibration Integration" step in this ADR should also wire in the new Gemma 4 12B consistency classifier (ADR-032, Phase 2) that runs before every implementer turn.
+>
+> See [ADR-032](ADR-032-code-review-research-integration.md) for the full context. The core work plan of this ADR (Phases 1–5) is **unchanged** — these are additions, not revisions.
 
 ## Context
 

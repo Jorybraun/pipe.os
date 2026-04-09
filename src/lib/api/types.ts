@@ -65,7 +65,8 @@ export type ChallengeType =
   | 'CODE_IMPLEMENTATION'
   | 'QUIZ_MCQ'
   | 'QUIZ_SHORT_ANSWER'
-  | 'FOLLOW_UP';
+  | 'FOLLOW_UP'
+  | 'AGENT_INTERVIEW';
 
 export interface NotificationTemplate {
   trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE';
@@ -202,6 +203,10 @@ export interface OverviewRoleContext {
   questionsAsked: number;
   questionBudget: number;
   createdAt: string;
+  /** Structured candidate persona produced by the Role Discovery Agent on synthesis. */
+  persona: CandidatePersona | null;
+  /** Generated job description in Markdown produced by the Role Discovery Agent. */
+  jobDescription: GeneratedJobDescription | null;
 }
 
 export interface OverviewResponse {

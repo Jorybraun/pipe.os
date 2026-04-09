@@ -74,15 +74,17 @@ function saveTheme(theme: ThemeSettings, userId?: string): void {
 
 const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
   dark: {
-    '--pipe-bg': '#0c0c0e',
+    '--pipe-bg': '#15151b',
     '--pipe-text': '#ffffff',
     '--pipe-text-muted': 'rgba(255,255,255,0.5)',
     '--pipe-text-dim': 'rgba(255,255,255,0.3)',
     '--pipe-border': 'rgba(255,255,255,0.08)',
     '--pipe-border-light': 'rgba(255,255,255,0.04)',
-    '--pipe-surface': 'var(--pipe-surface)',
+    '--pipe-surface': 'rgba(255,255,255,0.04)',
     '--pipe-surface-hover': 'rgba(255,255,255,0.08)',
-    '--pipe-overlay': 'rgba(12, 12, 14, 0.93)',
+    '--pipe-surface-solid': '#1e1e25',
+    '--pipe-surface-solid-hover': '#26262e',
+    '--pipe-overlay': 'rgba(21, 21, 27, 0.93)',
     '--pipe-shadow': 'rgba(0,0,0,0.3)',
   },
   light: {
@@ -94,6 +96,8 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-border-light': 'rgba(0,0,0,0.08)',
     '--pipe-surface': 'rgba(0,0,0,0.05)',
     '--pipe-surface-hover': 'rgba(0,0,0,0.1)',
+    '--pipe-surface-solid': '#ffffff',
+    '--pipe-surface-solid-hover': '#fafafa',
     '--pipe-overlay': 'rgba(245, 245, 247, 0.88)',
     '--pipe-shadow': 'rgba(0,0,0,0.08)',
   },

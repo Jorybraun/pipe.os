@@ -1,42 +1,46 @@
 /**
- * Scorer Agent — Multi-Turn Code Review Scoring Pipeline
+ * Scorer Agent — 6-Dimension BARS Code Review Scoring Pipeline
  *
- * Calls Devstral (Mistral) to score a completed review session across 3 dimensions:
- * - Technical (30%) — bug detection, accuracy, design awareness
- * - Conversation (30%) — pushback handling, clarity, thread resolution
- * - Practice (25%) — prioritization, coverage, verdict quality
- * - Effectiveness (15%) — deterministic, no LLM
+ * Calls Devstral (Mistral) to score a completed review session across 6 BARS dimensions:
  *
- * Then synthesizes a narrative summary via a 4th LLM call.
+ * Scorer A (needs ground truth):
+ *   1. Issue Identification Depth (20%)
+ *   3. Prioritization Accuracy (15%)
+ *   5. Revision Evaluation (20%)
+ *
+ * Scorer B (no ground truth — communication quality):
+ *   2. Reasoning & Explanation Quality (20%)
+ *   4. Question Formation (15%)
+ *   6. AI Direction (10%, seniority-adjusted)
+ *
+ * Effectiveness (15% of composite): deterministic bug-matching, no LLM.
+ * Synthesizer: narrative summary for hiring managers.
  *
  * Same pattern as implementerAgent.ts: Devstral by default, Anthropic as fallback.
  * When MISTRAL_API_KEY is not set, returns mock responses for testing.
  */
 
 import {
-  TECHNICAL_SCORER_PROMPT,
-  CONVERSATION_SCORER_PROMPT,
-  PRACTICE_SCORER_PROMPT,
+  SCORER_A_PROMPT,
+  SCORER_B_PROMPT,
   SYNTHESIZER_PROMPT,
 } from './scorerPrompts';
 import { getMockScoreReport } from './mockResponses';
+import { type DimensionId } from './scorerRubric';
 
 import {
   computeEffectiveness,
-  weightedAvg,
+  computeOverallScore,
   assignBand,
   countReviewerComments,
-  TECH_WEIGHTS,
-  CONV_WEIGHTS,
-  PRACTICE_WEIGHTS,
   type PlantedBug,
-  type DimensionScores,
+  type BarsDimensionScores,
   type EffectivenessScore,
 } from './scoring';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type { PlantedBug, DimensionScores, EffectivenessScore };
+export type { PlantedBug, BarsDimensionScores, EffectivenessScore };
 
 export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic';
 
@@ -55,6 +59,58 @@ export interface ScorerInput {
   prTitle?: string | null;
   prDescription?: string | null;
   instructions?: string | null;
+  /** Candidate seniority level — affects AI direction weight */
+  level?: 'junior' | 'mid' | 'senior';
+}
+
+/** Evidence attached to each scorer's output */
+export interface ScorerEvidence {
+  issue_identification_evidence?: string;
+  prioritization_evidence?: string;
+  revision_evaluation_evidence?: string;
+  reasoning_quality_evidence?: string;
+  question_formation_evidence?: string;
+  ai_direction_evidence?: string;
+}
+
+/** Metrics extracted by Scorer A from ground truth comparison */
+export interface ScorerAMetrics {
+  bugs_found: number[];
+  bugs_missed: number[];
+  bugs_found_pct: number;
+  false_positive_count: number;
+  true_finding_count: number;
+  approved_with_unfound_critical: boolean;
+  cave_ratio: number;
+  fix_verifications: number;
+}
+
+export interface ScoreReport {
+  /** All 6 BARS dimension scores (1-5 each) */
+  dimensions: BarsDimensionScores;
+  /** Evidence supporting each dimension score */
+  evidence: ScorerEvidence;
+  /** Metrics from ground truth comparison */
+  metrics: ScorerAMetrics;
+  /** Deterministic effectiveness score */
+  effectiveness: EffectivenessScore;
+  /** Overall composite and narrative */
+  overall: {
+    score: number;
+    band: 'strong' | 'adequate' | 'weak';
+    narrative: string;
+    strengths: string[];
+    growth_areas: string[];
+  };
+  /** Scorer summaries */
+  scorer_a_summary: string;
+  scorer_b_summary: string;
+}
+
+// ─── Legacy types (kept for backward compatibility during migration) ────────
+
+export interface DimensionScores {
+  [key: string]: number;
 }
 
 export interface TechnicalScore extends DimensionScores {
@@ -86,14 +142,6 @@ export interface PracticeScore extends DimensionScores {
   craft_observations: number;
   coverage: number;
   positive_recognition: number;
-}
-
-export interface ScoreReport {
-  technical: { score: number; dimensions: TechnicalScore; bugs_found: number[]; bugs_missed: number[]; false_positive_count: number; summary: string };
-  conversation: { score: number; dimensions: ConversationScore; defenses: number; caves: number; threads_resolved: number; threads_dangling: number; summary: string };
-  practice: { score: number; dimensions: PracticeScore; summary: string };
-  effectiveness: EffectivenessScore;
-  overall: { score: number; band: 'strong' | 'adequate' | 'weak'; narrative: string; strengths: string[]; growth_areas: string[] };
 }
 
 // ─── LLM API calls (same as implementerAgent) ──────────────────────────────
@@ -218,7 +266,12 @@ function extractJson<T>(raw: string): T {
 
 // ─── User message builders ──────────────────────────────────────────────────
 
-function buildTechnicalUserMessage(transcript: unknown, groundTruth: PlantedBug[], prContext: string, diff?: string | null): string {
+function buildScorerAUserMessage(
+  transcript: unknown,
+  groundTruth: PlantedBug[],
+  prContext: string,
+  diff?: string | null,
+): string {
   const diffSection = diff ? `## Code Diff\n${diff.slice(0, 50_000)}\n\n` : '';
   return `## PR Context
 ${prContext}
@@ -229,39 +282,33 @@ ${JSON.stringify(groundTruth, null, 2)}
 ## Review Transcript
 ${JSON.stringify(transcript, null, 2)}
 
-Score this review's technical quality. Return a JSON object with all 7 dimension scores (1-10), comment_evaluations, bugs_found, bugs_missed, false_positive_count, tradeoffs_identified, and a 2-3 sentence summary.`;
+Score this review on the 3 ground-truth dimensions (issue_identification, prioritization, revision_evaluation). Each score 1-5. Return a JSON object with all dimension scores, evidence, metrics, and a summary.`;
 }
 
-function buildConversationUserMessage(transcript: unknown): string {
+function buildScorerBUserMessage(transcript: unknown): string {
   return `## Review Transcript
 ${JSON.stringify(transcript, null, 2)}
 
-Score this review's conversation dynamics. Return a JSON object with all 8 dimension scores (1-10), thread_evaluations, defenses, caves_without_evaluating, threads_resolved, threads_dangling, and a summary.`;
+Score this review on the 3 communication dimensions (reasoning_quality, question_formation, ai_direction). Each score 1-5. Return a JSON object with all dimension scores, evidence quotes, and a summary.`;
 }
 
-function buildPracticeUserMessage(transcript: unknown, groundTruth: PlantedBug[], diff?: string | null): string {
-  const diffSection = diff ? `## Code Diff\n${diff.slice(0, 50_000)}\n\n` : '';
-  return `${diffSection}## Ground Truth — Planted Bugs
-${JSON.stringify(groundTruth, null, 2)}
+function buildSynthesizerUserMessage(
+  dimensions: BarsDimensionScores,
+  effectiveness: EffectivenessScore,
+  scorerASummary: string,
+  scorerBSummary: string,
+): string {
+  return `## Dimension Scores (1-5 each)
+${JSON.stringify(dimensions, null, 2)}
 
-## Review Transcript
-${JSON.stringify(transcript, null, 2)}
-
-Score this review's practical quality. Return a JSON object with all 7 dimension scores (1-10), bugs_found_ids, bugs_missed_ids, false_positive_count, files_reviewed, files_in_pr, coverage_ratio, reviews_tests, nit_ratio, verdict_type, and a summary.`;
-}
-
-function buildSynthesizerUserMessage(tech: unknown, conv: unknown, practice: unknown, effectiveness: EffectivenessScore): string {
-  return `## Technical Score (30%)
-${JSON.stringify(tech, null, 2)}
-
-## Conversation Score (30%)
-${JSON.stringify(conv, null, 2)}
-
-## Practice Score (25%)
-${JSON.stringify(practice, null, 2)}
-
-## Effectiveness Score (15%)
+## Effectiveness Score (0-100)
 ${JSON.stringify(effectiveness, null, 2)}
+
+## Scorer A Summary (ground-truth dimensions)
+${scorerASummary}
+
+## Scorer B Summary (communication dimensions)
+${scorerBSummary}
 
 Write the hiring assessment narrative. Return JSON with: { "narrative": "...", "strengths": ["..."], "growth_areas": ["..."] }`;
 }
@@ -269,18 +316,19 @@ Write the hiring assessment narrative. Return JSON with: { "narrative": "...", "
 // ─── Main scoring function ──────────────────────────────────────────────────
 
 /**
- * Scores a completed review session by calling Devstral 4 times:
- * 1. Technical scorer
- * 2. Conversation scorer
- * 3. Practice scorer
- * 4. Synthesizer
+ * Scores a completed review session using the 6-dimension BARS rubric.
  *
- * Plus one deterministic effectiveness computation.
- *
- * Throws if API key is missing or any LLM call fails.
+ * Pipeline:
+ * 1. Scorer A (ground truth) + Scorer B (communication) — in parallel
+ * 2. Deterministic effectiveness computation
+ * 3. Overall composite = BARS × 0.85 + Effectiveness × 0.15
+ * 4. Synthesizer for narrative
  */
 export async function scoreReviewSession(input: ScorerInput): Promise<ScoreReport> {
-  const { apiKey, provider = 'workers-ai', ai, transcript, groundTruth, diff, prTitle, prDescription, instructions } = input;
+  const {
+    apiKey, provider = 'workers-ai', ai, transcript, groundTruth,
+    diff, prTitle, prDescription, instructions, level = 'mid',
+  } = input;
 
   // Store AI binding for use in callLLM
   _ai = ai;
@@ -304,77 +352,69 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
     instructions != null ? `Instructions: ${instructions}` : '',
   ].filter(Boolean).join('\n');
 
-  // Run technical + conversation + practice in parallel
-  const [techRaw, convRaw, practiceRaw] = await Promise.all([
-    callLLM(apiKey, provider, TECHNICAL_SCORER_PROMPT, buildTechnicalUserMessage(transcript, groundTruth, prContext, diff), 3000),
-    callLLM(apiKey, provider, CONVERSATION_SCORER_PROMPT, buildConversationUserMessage(transcript), 2048),
-    callLLM(apiKey, provider, PRACTICE_SCORER_PROMPT, buildPracticeUserMessage(transcript, groundTruth, diff), 2048),
+  // Run Scorer A + Scorer B in parallel
+  const [scorerARaw, scorerBRaw] = await Promise.all([
+    callLLM(apiKey, provider, SCORER_A_PROMPT, buildScorerAUserMessage(transcript, groundTruth, prContext, diff), 3000),
+    callLLM(apiKey, provider, SCORER_B_PROMPT, buildScorerBUserMessage(transcript), 2048),
   ]);
 
   // Parse scorer outputs
-  const techResult = extractJson<Record<string, unknown>>(techRaw);
-  const convResult = extractJson<Record<string, unknown>>(convRaw);
-  const practiceResult = extractJson<Record<string, unknown>>(practiceRaw);
+  const scorerA = extractJson<Record<string, unknown>>(scorerARaw);
+  const scorerB = extractJson<Record<string, unknown>>(scorerBRaw);
 
-  // Extract dimension scores
-  const techDimensions: TechnicalScore = {
-    bug_detection: Number(techResult.bug_detection) || 5,
-    root_cause_depth: Number(techResult.root_cause_depth) || 5,
-    technical_accuracy: Number(techResult.technical_accuracy) || 5,
-    design_awareness: Number(techResult.design_awareness) || 5,
-    fix_quality: Number(techResult.fix_quality) || 5,
-    false_positive_discipline: Number(techResult.false_positive_discipline) || 5,
-    severity_calibration: Number(techResult.severity_calibration) || 5,
+  // Extract dimension scores (1-5, default to 3 = midpoint)
+  const dimensions: BarsDimensionScores = {
+    issue_identification: clampScore(Number(scorerA.issue_identification) || 3),
+    prioritization: clampScore(Number(scorerA.prioritization) || 3),
+    revision_evaluation: clampScore(Number(scorerA.revision_evaluation) || 3),
+    reasoning_quality: clampScore(Number(scorerB.reasoning_quality) || 3),
+    question_formation: clampScore(Number(scorerB.question_formation) || 3),
+    ai_direction: clampScore(Number(scorerB.ai_direction) || 3),
   };
 
-  const convDimensions: ConversationScore = {
-    pushback_handling: Number(convResult.pushback_handling) || 5,
-    explanation_clarity: Number(convResult.explanation_clarity) || 5,
-    guidance_effectiveness: Number(convResult.guidance_effectiveness) || 5,
-    clarifying_questions: Number(convResult.clarifying_questions) || 5,
-    fix_verification: Number(convResult.fix_verification) || 5,
-    thread_resolution: Number(convResult.thread_resolution) || 5,
-    concession_quality: Number(convResult.concession_quality) || 5,
-    teaching_depth: Number(convResult.teaching_depth) || 5,
+  // Extract evidence
+  const scorerAEvidence = (scorerA.evidence ?? {}) as Record<string, string>;
+  const scorerBEvidence = (scorerB.evidence ?? {}) as Record<string, string>;
+  const evidence: ScorerEvidence = {
+    issue_identification_evidence: scorerAEvidence.issue_identification_evidence,
+    prioritization_evidence: scorerAEvidence.prioritization_evidence,
+    revision_evaluation_evidence: scorerAEvidence.revision_evaluation_evidence,
+    reasoning_quality_evidence: scorerBEvidence.reasoning_quality_evidence,
+    question_formation_evidence: scorerBEvidence.question_formation_evidence,
+    ai_direction_evidence: scorerBEvidence.ai_direction_evidence,
   };
 
-  const practiceDimensions: PracticeScore = {
-    bug_prioritization: Number(practiceResult.bug_prioritization) || 5,
-    accuracy_discipline: Number(practiceResult.accuracy_discipline) || 5,
-    comment_substance: Number(practiceResult.comment_substance) || 5,
-    verdict_quality: Number(practiceResult.verdict_quality) || 5,
-    craft_observations: Number(practiceResult.craft_observations) || 5,
-    coverage: Number(practiceResult.coverage) || 5,
-    positive_recognition: Number(practiceResult.positive_recognition) || 5,
+  // Extract metrics from Scorer A
+  const metricsRaw = (scorerA.metrics ?? {}) as Record<string, unknown>;
+  const metrics: ScorerAMetrics = {
+    bugs_found: Array.isArray(metricsRaw.bugs_found) ? (metricsRaw.bugs_found as number[]) : [],
+    bugs_missed: Array.isArray(metricsRaw.bugs_missed) ? (metricsRaw.bugs_missed as number[]) : [],
+    bugs_found_pct: Number(metricsRaw.bugs_found_pct) || 0,
+    false_positive_count: Number(metricsRaw.false_positive_count) || 0,
+    true_finding_count: Number(metricsRaw.true_finding_count) || 0,
+    approved_with_unfound_critical: Boolean(metricsRaw.approved_with_unfound_critical),
+    cave_ratio: Number(metricsRaw.cave_ratio) || 0,
+    fix_verifications: Number(metricsRaw.fix_verifications) || 0,
   };
-
-  // Weighted averages (scaled 0-100)
-  const techScore = weightedAvg(techDimensions, TECH_WEIGHTS);
-  const convScore = weightedAvg(convDimensions, CONV_WEIGHTS);
-  const practiceScore = weightedAvg(practiceDimensions, PRACTICE_WEIGHTS);
 
   // Effectiveness (deterministic)
-  const bugsFound = Array.isArray(techResult.bugs_found) ? (techResult.bugs_found as number[]) : [];
-  const bugsMissed = Array.isArray(techResult.bugs_missed) ? (techResult.bugs_missed as number[]) : [];
-  const falsePositiveCount = Number(techResult.false_positive_count) || 0;
   const totalComments = countReviewerComments(transcript);
-  const effectiveness = computeEffectiveness(bugsFound, bugsMissed, groundTruth, falsePositiveCount, totalComments);
+  const effectiveness = computeEffectiveness(
+    metrics.bugs_found, metrics.bugs_missed, groundTruth,
+    metrics.false_positive_count, totalComments,
+  );
 
   // Overall composite
-  const overallScore = Math.round(
-    techScore * 0.30 + convScore * 0.30 + practiceScore * 0.25 + effectiveness.score * 0.15,
-  );
+  const overallScore = computeOverallScore(dimensions, effectiveness, level);
   const band = assignBand(overallScore);
 
   // Synthesizer call
+  const scorerASummary = typeof scorerA.summary === 'string' ? scorerA.summary : '';
+  const scorerBSummary = typeof scorerB.summary === 'string' ? scorerB.summary : '';
+
   const synthRaw = await callLLM(
     apiKey, provider, SYNTHESIZER_PROMPT,
-    buildSynthesizerUserMessage(
-      { score: techScore, dimensions: techDimensions, summary: techResult.summary },
-      { score: convScore, dimensions: convDimensions, summary: convResult.summary },
-      { score: practiceScore, dimensions: practiceDimensions, summary: practiceResult.summary },
-      effectiveness,
-    ),
+    buildSynthesizerUserMessage(dimensions, effectiveness, scorerASummary, scorerBSummary),
     1024,
   );
 
@@ -392,28 +432,9 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   }
 
   return {
-    technical: {
-      score: techScore,
-      dimensions: techDimensions,
-      bugs_found: bugsFound,
-      bugs_missed: bugsMissed,
-      false_positive_count: falsePositiveCount,
-      summary: typeof techResult.summary === 'string' ? techResult.summary : '',
-    },
-    conversation: {
-      score: convScore,
-      dimensions: convDimensions,
-      defenses: Number(convResult.defenses) || 0,
-      caves: Number(convResult.caves_without_evaluating) || 0,
-      threads_resolved: Number(convResult.threads_resolved) || 0,
-      threads_dangling: Number(convResult.threads_dangling) || 0,
-      summary: typeof convResult.summary === 'string' ? convResult.summary : '',
-    },
-    practice: {
-      score: practiceScore,
-      dimensions: practiceDimensions,
-      summary: typeof practiceResult.summary === 'string' ? practiceResult.summary : '',
-    },
+    dimensions,
+    evidence,
+    metrics,
     effectiveness,
     overall: {
       score: overallScore,
@@ -422,5 +443,14 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
       strengths,
       growth_areas: growthAreas,
     },
+    scorer_a_summary: scorerASummary,
+    scorer_b_summary: scorerBSummary,
   };
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/** Clamp a score to the valid 1-5 range. */
+function clampScore(score: number): number {
+  return Math.max(1, Math.min(5, Math.round(score)));
 }

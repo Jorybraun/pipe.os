@@ -72,11 +72,14 @@ overview.get('/:pipelineId/overview', async (c) => {
     .bind(pipelineId)
     .all();
 
-  // 5. Role context (if this pipeline was created via AI discovery)
+  // 5. Role context (if this pipeline was created via AI discovery).
+  // Includes the synthesized persona + job description from Role Discovery v2
+  // (migration 0013_persona_jd.sql) so the overview page can render them.
   const roleContextRow = await db
     .prepare(
       `SELECT id, baseline, knowledge_state, exchanges, question_budget,
-              questions_asked, status, created_at
+              questions_asked, status, created_at,
+              persona_json, job_description_md
        FROM role_contexts
        WHERE pipeline_id = ? AND status = 'COMPLETE'
        LIMIT 1`
@@ -136,6 +139,10 @@ overview.get('/:pipelineId/overview', async (c) => {
           questionsAsked: roleContextRow.questions_asked as number,
           questionBudget: roleContextRow.question_budget as number,
           createdAt: roleContextRow.created_at as string,
+          persona: roleContextRow.persona_json
+            ? JSON.parse(roleContextRow.persona_json as string)
+            : null,
+          jobDescription: (roleContextRow.job_description_md as string | null) ?? null,
         }
       : null,
   });

@@ -92,39 +92,51 @@ export function getMockComprehensionScoreReport(): {
 }
 
 /**
- * Generate deterministic mock score report
+ * Generate deterministic mock score report (6-dimension BARS rubric)
  * Ensures tests pass without real scoring API calls
  */
 export function getMockScoreReport(): ScoreReport {
   return {
-    overall_score: 75,
-    technical_score: {
-      score: 75,
-      dimensions: {
-        understanding: 7,
-        approach: 7,
-        implementation: 8,
-      },
-      summary: 'Good technical understanding with room for improvement in edge case handling.',
+    dimensions: {
+      issue_identification: 4,
+      reasoning_quality: 3,
+      prioritization: 4,
+      question_formation: 3,
+      revision_evaluation: 3,
+      ai_direction: 3,
     },
-    conversation_score: {
-      score: 70,
-      dimensions: {
-        clarity: 7,
-        engagement: 7,
-        responsiveness: 6,
-      },
-      summary: 'Clear communication and good engagement with reviewer feedback.',
+    evidence: {
+      issue_identification_evidence: 'Found 2 of 3 planted bugs with correct categorization.',
+      prioritization_evidence: 'Severity labels mostly correct; one minor miscalibration.',
+      revision_evaluation_evidence: 'Verified critical fix but accepted one minor incomplete fix.',
+      reasoning_quality_evidence: 'Most findings explain the failure mechanism.',
+      question_formation_evidence: 'Asked one clarifying question before critiquing.',
+      ai_direction_evidence: 'Evaluated implementer proposals on merit in most cases.',
     },
-    practice_score: {
-      score: 78,
-      dimensions: {
-        code_quality: 8,
-        testing: 7,
-        documentation: 8,
-      },
-      summary: 'Good coding practices with attention to quality and maintainability.',
+    metrics: {
+      bugs_found: [1, 2],
+      bugs_missed: [3],
+      bugs_found_pct: 0.67,
+      false_positive_count: 1,
+      true_finding_count: 2,
+      approved_with_unfound_critical: false,
+      cave_ratio: 0.25,
+      fix_verifications: 2,
     },
-    narrative: 'The candidate demonstrates solid technical abilities and good communication. They should focus on handling edge cases and writing more comprehensive tests.',
+    effectiveness: {
+      ris: 65.0,
+      efficiency: 70.0,
+      delta: 80.0,
+      score: 68.5,
+    },
+    overall: {
+      score: 52,
+      band: 'adequate',
+      narrative: 'The candidate demonstrates solid review skills, identifying most critical bugs and explaining their impact clearly. They could improve by verifying all claimed fixes rather than accepting some at face value.',
+      strengths: ['Found critical bugs with correct severity', 'Clear technical explanations'],
+      growth_areas: ['Verify all claimed fixes before accepting', 'Ask more clarifying questions'],
+    },
+    scorer_a_summary: 'Good bug detection and prioritization with room for improvement in fix verification.',
+    scorer_b_summary: 'Clear reasoning with adequate question formation and AI direction.',
   };
 }

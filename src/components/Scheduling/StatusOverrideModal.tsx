@@ -65,7 +65,7 @@ export function StatusOverrideModal({
     background: 'var(--pipe-surface)',
     border: '1px solid var(--pipe-border)',
     borderRadius: 4,
-    color: 'var(--pipe-text, #fff)',
+    color: 'var(--pipe-text)',
     fontSize: 12,
     fontFamily: '"Space Mono", monospace',
     outline: 'none',
@@ -94,7 +94,7 @@ export function StatusOverrideModal({
         style={{
           width: '100%',
           maxWidth: 480,
-          background: '#13131a',
+          background: 'var(--pipe-bg)',
           border: '1px solid var(--pipe-border)',
           borderRadius: 12,
           padding: 32,
@@ -213,9 +213,9 @@ export function StatusOverrideModal({
             disabled={!canSave || isSaving}
             style={{
               padding: '10px 20px',
-              background: canSave ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${canSave ? 'rgba(96,165,250,0.3)' : 'rgba(255,255,255,0.08)'}`,
-              color: canSave ? '#60a5fa' : 'rgba(255,255,255,0.2)',
+              background: canSave ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
+              border: `1px solid ${canSave ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
+              color: canSave ? '#60a5fa' : 'var(--pipe-text-dim)',
               fontSize: 10,
               letterSpacing: '0.1em',
               fontFamily: '"Space Mono", monospace',

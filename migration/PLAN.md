@@ -1,5 +1,25 @@
 # PIPE-OS Migration Plan: AWS Amplify to Cloudflare
 
+---
+
+## Research integration notice — 2026-04-08
+
+**This document describes infrastructure and migration state. It is NOT the canonical product plan.** For the product design (what we are building and why), read `knowledge/STRATEGY.md` first. For code review and culture agent work specifically, the two research briefs (`knowledge/outputs/code-review-content-sourcing.md` and `knowledge/outputs/behavioral-culture-interview-agent.md`) + ADRs 029–033 are the source of truth.
+
+**Key cross-references:**
+- `knowledge/STRATEGY.md` — 78 research findings mapped to a phased plan with a Decision Log and guardrail rule
+- `knowledge/INDEX.md` — navigation for the knowledge base
+- ADR-032 — code review research integration (updates ADR-024 and ADR-026)
+- ADR-033 — research integration strategy + plan guardrails
+
+**Drift flagged for review (see ADR-032 for full list):**
+- Phase 3c (implementer agent) — persona reactivity should be productized as versioned YAML; reactivity parameters named in the research brief Part 3.3
+- Phase 6 (challenge experience) — needs updating to incorporate the rolling-freshness AIG content pipeline from ADR-032 Phase 3, not just hand-crafted repo presets
+- Multi-PR challenge type (not in any phase doc yet) — code review sessions should bundle 3 PRs minimum per ADR-032 §Phase 1
+- Gemma 4 12B consistency classifier — new Worker component, not yet represented in any phase doc (ADR-032 Phase 2)
+
+---
+
 ## Why
 
 AWS froze Lambda access on account 051912473486 due to unresolved business verification.

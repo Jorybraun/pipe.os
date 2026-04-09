@@ -1,8 +1,21 @@
 # ADR-029: Behavioral & Culture Interview Agent Architecture
 
 **Date:** 2026-04-07
-**Status:** Proposed
+**Status:** Proposed — **Informational note added 2026-04-08 by [ADR-033](ADR-033-research-integration-strategy-and-guardrails.md)**
 **Deciders:** Hans (founder)
+
+> **INFORMATIONAL NOTE — 2026-04-08**
+> This ADR was written the same day as the behavioral/culture research brief and is **well-aligned** with its findings. No reversals or contradictions. [ADR-033](ADR-033-research-integration-strategy-and-guardrails.md) documents seven minor gaps that are tracked in `knowledge/STRATEGY.md` Phase 2:
+>
+> - Belief-state tracking with Previous Belief Aware (PBA) judge (BC-6, BC-7) — this ADR does stateless scoring at session end; research recommends per-turn belief updates
+> - Probe generator with 5 explicit trigger types (BC-11) — Missing STAR / Vague / Attribution / Evidence / Depth
+> - Belief-state delta as evasion detector (BC-15) — information-theoretic, no separate classifier
+> - Reality Monitoring fabrication detection (BC-16) — episodic specificity scoring bonus
+> - Cognitive-load unexpected follow-ups for fabrication detection (BC-17)
+> - Rolling compaction + pinned exchanges (BC-18) — may not be needed for 5–20 question flows
+> - QWK target: this ADR sets ≥ 0.55; research says ≥ 0.60 — tighten when calibration improves
+>
+> These are enhancements, not corrections. The architecture decisions in this ADR stand. See `knowledge/STRATEGY.md` BC-6 through BC-19 for the tracked work items.
 
 ---
 

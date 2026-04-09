@@ -1,9 +1,18 @@
 /**
- * Pure scoring functions extracted from scorerAgent.ts.
+ * Pure scoring functions for the 6-dimension BARS code review rubric.
  *
  * All functions here are deterministic — no LLM calls, no side effects.
  * This makes them fully unit-testable.
+ *
+ * Rubric source of truth: scorerRubric.ts (CR-2, CR-3, CR-4)
  */
+
+import {
+  SCORER_RUBRIC,
+  DIMENSION_IDS,
+  computeBarsComposite,
+  type DimensionId,
+} from './scorerRubric';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -22,11 +31,15 @@ export interface EffectivenessScore {
   score: number;
 }
 
-export interface DimensionScores {
-  [key: string]: number;
-}
+/** Scores for all 6 BARS dimensions (1-5 each) */
+export type BarsDimensionScores = Record<DimensionId, number>;
 
-// ─── Weight constants ───────────────────────────────────────────────────────
+// Re-export for convenience
+export { DIMENSION_IDS, type DimensionId };
+
+// ─── Legacy weight constants (kept for backward compatibility) ──────────────
+// These are superseded by scorerRubric.ts weights, but kept so existing
+// imports don't break during migration. Will be removed after full cutover.
 
 export const TECH_WEIGHTS: Record<string, number> = {
   bug_detection: 0.20,
@@ -108,11 +121,31 @@ export function computeEffectiveness(
   };
 }
 
-// ─── weightedAvg ────────────────────────────────────────────────────────────
+// ─── computeOverallScore ───────────────────────────────────────────────────
 
 /**
+ * Computes the overall score: BARS composite × 0.85 + effectiveness × 0.15.
+ * BARS composite converts 6 dimension scores (1-5) to 0-100.
+ */
+export function computeOverallScore(
+  dimensionScores: BarsDimensionScores,
+  effectiveness: EffectivenessScore,
+  level: 'junior' | 'mid' | 'senior' = 'mid',
+): number {
+  const barsComposite = computeBarsComposite(dimensionScores, level);
+  const { bars: barsWeight, effectiveness: effWeight } = SCORER_RUBRIC.compositeWeights;
+  return Math.round(barsComposite * barsWeight + effectiveness.score * effWeight);
+}
+
+// ─── Legacy weightedAvg (kept for backward compatibility) ──────────────────
+
+export interface DimensionScores {
+  [key: string]: number;
+}
+
+/**
+ * @deprecated Use computeBarsComposite() from scorerRubric.ts instead.
  * Computes a weighted average of dimension scores (1-10 scale) → 0-100.
- * Missing dimensions default to 5.
  */
 export function weightedAvg(dimensions: DimensionScores, weights: Record<string, number>): number {
   let sum = 0;
@@ -125,14 +158,12 @@ export function weightedAvg(dimensions: DimensionScores, weights: Record<string,
 // ─── Band assignment ────────────────────────────────────────────────────────
 
 /**
- * Assigns a band based on overall score:
- * - strong: 75-100
- * - adequate: 45-74
- * - weak: 0-44
+ * Assigns a band based on overall score.
+ * Uses rubric-defined thresholds: strong ≥75, adequate ≥45, weak <45.
  */
 export function assignBand(overallScore: number): 'strong' | 'adequate' | 'weak' {
-  if (overallScore >= 75) return 'strong';
-  if (overallScore >= 45) return 'adequate';
+  if (overallScore >= SCORER_RUBRIC.bands.strong.min) return 'strong';
+  if (overallScore >= SCORER_RUBRIC.bands.adequate.min) return 'adequate';
   return 'weak';
 }
 

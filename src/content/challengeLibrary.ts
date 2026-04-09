@@ -11,7 +11,7 @@
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP';
+export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'AGENT_INTERVIEW';
 
 export interface Bug {
   line: number;

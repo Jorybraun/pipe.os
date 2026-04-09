@@ -86,3 +86,15 @@ export function createCultureAgentProvider(env: ProviderEnv): LLMProvider | null
 
   return null;
 }
+
+/**
+ * Factory for Challenge Generation Pipeline agents (ADR-034 CA Phase 3).
+ * Takes an explicit model string because different pipeline stages use
+ * different models (Gemma 26B, Qwen 32B, Gemma 12B).
+ *
+ * Falls back to null if the AI binding is unavailable.
+ */
+export function createGenerationProvider(env: ProviderEnv, model: string): LLMProvider | null {
+  if (!env.AI) return null;
+  return new CloudflareAIProvider(env.AI, model);
+}

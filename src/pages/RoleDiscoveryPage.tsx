@@ -584,25 +584,27 @@ function BaselinePhase({
       </div>
 
       {/* Role fields — simplified for any role type (ADR-028) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <FieldGroup label="Role Title" required>
-            <TextInput value={title} onChange={setTitle} placeholder="e.g., Senior Backend Engineer, Marketing Director, UX Designer" />
+      <LiquidMetalCard style={{ padding: 32, borderRadius: 16, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <FieldGroup label="Role Title" required>
+              <TextInput value={title} onChange={setTitle} placeholder="e.g., Senior Backend Engineer, Marketing Director, UX Designer" />
+            </FieldGroup>
+          </div>
+          <FieldGroup label="Department">
+            <TextInput value={department} onChange={setDepartment} placeholder="Engineering, Marketing, Design..." />
+          </FieldGroup>
+          <FieldGroup label="Location">
+            <TextInput value={location} onChange={setLocation} placeholder="San Francisco / Remote / Hybrid" />
+          </FieldGroup>
+          <FieldGroup label="Company Name">
+            <TextInput value={companyName} onChange={setCompanyName} placeholder="Acme Corp" />
+          </FieldGroup>
+          <FieldGroup label="Company Website" hint="Agent will research before asking questions">
+            <TextInput value={companyUrl} onChange={setCompanyUrl} placeholder="https://acme.com" />
           </FieldGroup>
         </div>
-        <FieldGroup label="Department">
-          <TextInput value={department} onChange={setDepartment} placeholder="Engineering, Marketing, Design..." />
-        </FieldGroup>
-        <FieldGroup label="Location">
-          <TextInput value={location} onChange={setLocation} placeholder="San Francisco / Remote / Hybrid" />
-        </FieldGroup>
-        <FieldGroup label="Company Name">
-          <TextInput value={companyName} onChange={setCompanyName} placeholder="Acme Corp" />
-        </FieldGroup>
-        <FieldGroup label="Company Website" hint="Agent will research before asking questions">
-          <TextInput value={companyUrl} onChange={setCompanyUrl} placeholder="https://acme.com" />
-        </FieldGroup>
-      </div>
+      </LiquidMetalCard>
 
       {/* Modals */}
       {isJDModalOpen && (
@@ -651,6 +653,7 @@ function InterviewPhase({
   // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -681,6 +684,7 @@ function InterviewPhase({
       streamRef.current = stream;
       chunksRef.current = [];
       setRecordDuration(0);
+      setTranscribeError(null);
 
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -720,9 +724,14 @@ function InterviewPhase({
             if (data.transcript) {
               setAnswer((prev) => prev ? `${prev} ${data.transcript}` : data.transcript);
             }
+          } else {
+            const data = await res.json().catch(() => ({})) as { error?: string };
+            console.error('[InterviewPhase] Transcription error:', res.status, data);
+            setTranscribeError(data.error ?? 'Transcription failed. Please type your answer.');
           }
         } catch (err) {
           console.error('[InterviewPhase] Transcription failed:', err);
+          setTranscribeError('Transcription failed. Please type your answer.');
         } finally {
           setIsTranscribing(false);
         }
@@ -782,7 +791,7 @@ function InterviewPhase({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           {progress?.domains && <DomainBars domains={progress.domains} />}
-          {remaining <= 2 && remaining > 0 && (
+          {asked >= 3 && (
             <button
               onClick={onComplete}
               disabled={isLoading}
@@ -790,14 +799,14 @@ function InterviewPhase({
                 padding: '8px 16px',
                 fontSize: 10,
                 letterSpacing: '0.15em',
-                color: 'rgba(251, 191, 36, 0.7)',
-                background: 'rgba(251, 191, 36, 0.06)',
-                border: '1px solid rgba(251, 191, 36, 0.2)',
-                cursor: 'pointer',
+                color: 'rgba(74, 222, 128, 0.7)',
+                background: 'rgba(74, 222, 128, 0.06)',
+                border: '1px solid rgba(74, 222, 128, 0.2)',
+                cursor: isLoading ? 'default' : 'pointer',
                 fontFamily: '"Space Mono", monospace',
               }}
             >
-              FINISH_EARLY
+              SUBMIT_INTERVIEW
             </button>
           )}
         </div>
@@ -912,6 +921,11 @@ function InterviewPhase({
               }}>
                 {isRecording ? 'TAP_TO_STOP' : isTranscribing ? 'TRANSCRIBING...' : 'TAP_TO_SPEAK'}
               </span>
+              {transcribeError && (
+                <span style={{ fontSize: 10, color: '#f87171', fontFamily: '"Space Mono", monospace', textAlign: 'center', marginTop: 4 }}>
+                  {transcribeError}
+                </span>
+              )}
             </div>
           )}
 

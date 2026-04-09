@@ -83,6 +83,8 @@ export interface Env {
   TWILIO_API_KEY_SECRET?: string;
   /** Deepgram API key for call transcription. */
   DEEPGRAM_API_KEY?: string;
+  /** Libraries.io API key for dependency-based repo discovery. Free tier: 60 req/min. */
+  LIBRARIES_IO_API_KEY?: string;
 }
 
 /**
@@ -488,4 +490,148 @@ export interface TemplatePackItemResponse {
   isRequired: boolean;
   /** Included when pack is fetched with ?expand=challenges. */
   challenge?: ChallengeTemplateResponse;
+}
+
+// ─── Discovered Repos (CR-13, repo-discovery-pipeline.md) ─────────────────
+
+export type DiscoverySource = 'LIBRARIES_IO' | 'GITHUB_TOPICS' | 'SOURCEGRAPH' | 'MANUAL';
+export type RepoStatus =
+  | 'DISCOVERING' | 'DISCOVERED' | 'ASSESSED'
+  | 'ACCEPTED' | 'REJECTED'
+  | 'CONVERTING' | 'CHALLENGE_READY' | 'FAILED';
+export type SeniorityBand = 'JUNIOR' | 'MID' | 'SENIOR' | 'STAFF';
+
+export interface DiscoveredRepoRow {
+  id: string;
+  pipeline_id: string;
+  role_context_id: string | null;
+  owner_id: string;
+  github_owner: string;
+  github_repo: string;
+  github_url: string;
+  default_branch: string | null;
+  discovery_source: DiscoverySource;
+  discovery_query: string | null;
+  stars: number | null;
+  last_pushed_at: string | null;
+  license: string | null;
+  is_archived: number;
+  is_fork: number;
+  has_ci: number | null;
+  primary_language: string | null;
+  topics: string | null;
+  detected_stack: string | null;
+  stack_match_score: number | null;
+  sloc: number | null;
+  mean_cyclomatic_complexity: number | null;
+  source_file_count: number | null;
+  seniority_band: SeniorityBand | null;
+  quality_score: number | null;
+  quality_details: string | null;
+  status: RepoStatus;
+  rejection_reason: string | null;
+  error_message: string | null;
+  challenge_template_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscoveredRepoResponse {
+  id: string;
+  pipelineId: string;
+  githubOwner: string;
+  githubRepo: string;
+  githubUrl: string;
+  discoverySource: DiscoverySource;
+  stars: number | null;
+  lastPushedAt: string | null;
+  license: string | null;
+  primaryLanguage: string | null;
+  topics: string[];
+  stackMatchScore: number | null;
+  sloc: number | null;
+  meanCyclomaticComplexity: number | null;
+  sourceFileCount: number | null;
+  seniorityBand: SeniorityBand | null;
+  qualityScore: number | null;
+  status: RepoStatus;
+  rejectionReason: string | null;
+  challengeTemplateId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiscoveryJobRow {
+  id: string;
+  pipeline_id: string;
+  role_context_id: string | null;
+  owner_id: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  skills_queried: string | null;
+  total_candidates: number;
+  total_passed: number;
+  total_rejected: number;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface DiscoveryJobResponse {
+  id: string;
+  pipelineId: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  skillsQueried: string[];
+  totalCandidates: number;
+  totalPassed: number;
+  totalRejected: number;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+/** Maps a D1 row to the camelCase API response shape. */
+export function toRepoResponse(row: DiscoveredRepoRow): DiscoveredRepoResponse {
+  return {
+    id: row.id,
+    pipelineId: row.pipeline_id,
+    githubOwner: row.github_owner,
+    githubRepo: row.github_repo,
+    githubUrl: row.github_url,
+    discoverySource: row.discovery_source,
+    stars: row.stars,
+    lastPushedAt: row.last_pushed_at,
+    license: row.license,
+    primaryLanguage: row.primary_language,
+    topics: row.topics ? JSON.parse(row.topics) as string[] : [],
+    stackMatchScore: row.stack_match_score,
+    sloc: row.sloc,
+    meanCyclomaticComplexity: row.mean_cyclomatic_complexity,
+    sourceFileCount: row.source_file_count,
+    seniorityBand: row.seniority_band,
+    qualityScore: row.quality_score,
+    status: row.status,
+    rejectionReason: row.rejection_reason,
+    challengeTemplateId: row.challenge_template_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Maps a D1 job row to the camelCase API response shape. */
+export function toJobResponse(row: DiscoveryJobRow): DiscoveryJobResponse {
+  return {
+    id: row.id,
+    pipelineId: row.pipeline_id,
+    status: row.status,
+    skillsQueried: row.skills_queried ? JSON.parse(row.skills_queried) as string[] : [],
+    totalCandidates: row.total_candidates,
+    totalPassed: row.total_passed,
+    totalRejected: row.total_rejected,
+    errorMessage: row.error_message,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+  };
 }

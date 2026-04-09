@@ -6,13 +6,47 @@ AI-native developer interview platform. Solo-founder project.
 
 ## Read these first
 
-1. **`DREAM.md`** — product vision, route map, what we're building and why
-2. **`migration/PLAN.md`** — architecture, tech stack, design principles (source of truth)
-3. **`migration/phase-*.md`** — implementation specs per phase with BDD scenarios
-4. **`docs/decisions/README.md`** — ADR index (23 decisions; read before making architectural choices)
+1. **`knowledge/STRATEGY.md`** — **CANONICAL PLAN.** Every research finding mapped to a concrete action. Source of truth for what we're building and why. Read this before making any decision that touches code review, culture agent, scoring, or assessment design.
+2. **`knowledge/INDEX.md`** — navigation for all research outputs + operational content
+3. **`DREAM.md`** — product vision, route map, what we're building and why
+4. **`migration/PLAN.md`** — architecture, tech stack, design principles
+5. **`migration/phase-*.md`** — implementation specs per phase with BDD scenarios
+6. **`docs/decisions/README.md`** — ADR index (34 decisions). Most recent and most load-bearing:
+   - **ADR-034** (challenge authoring system — template packs, AI generation, multi-language, Judge0; supersedes ADR-004)
+   - **ADR-032** (code review research integration — 6 dimensions, multi-PR, consistency classifier, BARS, rolling-freshness content pipeline)
+   - **ADR-033** (research integration strategy + plan guardrails)
+   - ADR-029 (culture interview agent architecture)
+   - ADR-030 (culture profile operationalization)
+   - ADR-031 (AI hiring compliance architecture)
+   - ADR-024 (multi-turn agentic code review — directionally correct, updated by ADR-032)
+   - ADR-026 (implementer improvements — updated by ADR-032)
 
 For code review features specifically:
-5. **`../research/code-review-arena/docs/vision.md`** — multi-turn code review vision + integration points
+7. **`knowledge/outputs/code-review-content-sourcing.md`** — the 2026-04-08 research brief (50 cited sources)
+8. **`knowledge/outputs/behavioral-culture-interview-agent.md`** — the 2026-04-07 research brief (48 cited sources)
+9. **`../research/code-review-arena/docs/vision.md`** — multi-turn code review vision + legacy arena training loop
+
+---
+
+## Research & Strategy — the plan must not drift
+
+**`knowledge/STRATEGY.md` is the source of truth.** It enumerates 78 research findings (33 for code review, 45 for behavioral/culture) and 12 open questions, each mapped to a phase and a concrete action. Every development decision that touches those areas must trace back to a finding in the plan or an explicit override.
+
+### Guardrail rule (added 2026-04-08)
+
+**If a user request contradicts the research plan, do NOT silently comply. Pause and flag the contradiction before proceeding.** The procedure:
+
+1. **Surface the contradiction.** Name the finding being overridden by its row ID (e.g., "CR-1 says multi-PR structure is required, research brief Part 2.1, grounded in OSCE/MMI context-specificity literature").
+2. **Name the risk.** What does the research say the consequence is?
+3. **Ask for explicit override.** Wait for the user's explicit decision before proceeding. A handwave is not an override.
+4. **Record the override in the Decision Log** at the bottom of `knowledge/STRATEGY.md` with a date, the finding being overridden, the rationale, and who approved.
+5. **Never silently drop a finding.** Deferral is explicit. Removal is explicit. Ignoring is not allowed.
+
+This rule exists because the founder explicitly requested it on 2026-04-08:
+> *"do not let me steer you into neglecting the plan. if i contradict the plan remind me."*
+> *"do not leave anything in the research out of the plan or else it wont work"*
+
+See [ADR-033](docs/decisions/ADR-033-research-integration-strategy-and-guardrails.md) for the full rationale.
 
 ---
 
@@ -82,16 +116,27 @@ See `migration/PLAN.md` for full details.
 
 ### AI model routing
 
-There is no single LLM. Different agents use different models so each task picks the cheapest option that's still strong enough. All routing lives in `workers/api/src/lib/llm/createProvider.ts`.
+There is no single LLM. Different agents use different models so each task picks the cheapest option that's still strong enough. All routing lives in `workers/api/src/lib/llm/createProvider.ts`. See `knowledge/outputs/code-review-content-sourcing.md` Part 3.6 for the research-grounded rationale and `knowledge/STRATEGY.md` CR-12.
 
 | Agent / job                       | Primary model                              | Provider           | Why                                                                 |
 |-----------------------------------|--------------------------------------------|--------------------|---------------------------------------------------------------------|
 | Culture interview agent (turn FSM, scoring) | `@cf/google/gemma-4-26b-a4b-it`     | Workers AI         | Strong instruction-following + structured JSON output, cheap on the AI binding. |
 | Culture scorer (5 dimensions × 5 axes + synthesis) | `@cf/google/gemma-4-26b-a4b-it`  | Workers AI         | 11 calls per scoring run; Gemma keeps the per-interview cost negligible.        |
 | Role Discovery agent (persona + JD synthesis) | Gemma 4 31B (primary)               | Workers AI         | Migrated off Mistral Small. Free-tier-friendly and strong at structured output. |
-| Code review implementer agent     | Qwen 2.5-Coder 32B                         | Workers AI         | Coder-tuned model handles diff understanding + rebuttals well.       |
-| Code review scoring panel         | Devstral Small                             | Mistral            | Specialized evaluative model; runs the per-PR scoring in the Worker. |
-| Emergency fallback (any agent)    | Claude Sonnet 4.5                          | Anthropic          | Used only when the primary provider is down. Cost gate enforced.     |
+| Code review implementer agent (junior/mid persona) | Qwen 2.5-Coder 32B                | Workers AI         | Coder-tuned model handles diff understanding + rebuttals well.       |
+| Code review implementer agent (senior persona, premium tier) | Qwen3-Coder (when avail) / Claude Sonnet 4.6 fallback | Workers AI / Anthropic | Senior persona needs stronger reasoning to hold nuanced pushback in-character (research: CR-6, CR-12) |
+| **Consistency classifier (NEW, per ADR-032)** — runs on every implementer turn | **Gemma 4 12B** | **Workers AI** | **Non-negotiable guardrail against agent drift (14–34% off-persona baseline per research). 4-axis JSON classifier. MUST be a different model family than the implementer it guards.** |
+| Code review scoring panel (production, 6 dimensions per ADR-032) | Devstral Small | Mistral | Specialized evaluative model; runs the per-PR scoring in the Worker. |
+| **Scoring gold-standard oracle (NEW, per ADR-032)** — offline calibration | **Claude Sonnet 4.6** (via Agent tool) | **Anthropic** | **Offline κ measurement against Devstral; target ≥ 0.75; escalate Devstral dimension to Sonnet live if κ < 0.70 (research: CR-10).** |
+| **Content pipeline — bug templates (NEW, per ADR-032)** — ~20 templates, lifetime | **Claude Opus 4.6** (via Agent tool) | **Anthropic** | **Highest-leverage content artifact; spend premium tokens once per template.** |
+| **Content pipeline — variant generation (NEW)** — batch, offline | **Claude Sonnet 4.6** (via Agent tool) | **Anthropic** | **Quality-sensitive, cost-insensitive, offline.** |
+| Content pipeline — item tagging | Claude Haiku 4.5 (via Agent tool) | Anthropic | Matches existing "build-time bulk tagging" pattern; offline, bulk. |
+| Emergency fallback (any agent)    | Claude Sonnet 4.6                          | Anthropic          | Used only when the primary provider is down. Cost gate enforced.     |
+
+**Routing principles (locked in, per research):**
+1. **Never use the same model family for implementer and consistency classifier.** Gemma-guarding-Qwen is an independent perspective; Qwen-guarding-Qwen is useless.
+2. **Always keep a ceiling model distinct from production scoring.** Devstral for live scoring; Sonnet 4.6 as offline oracle. Track κ drift.
+3. **Only the real-time hot path runs on Workers AI.** The implementer (per-turn latency) and the consistency classifier (per-turn × every turn) live on Workers AI. Everything else — content generation, tagging, calibration — goes offline via the Anthropic Agent tool path.
 
 **Quotas to remember:**
 - Workers AI Gemma 4 has a daily call ceiling (~10k) — production interviews must keep below this. Build-time bulk tagging (e.g. wiki sync) uses Haiku 4.5 via the Agent tool, never Gemma.

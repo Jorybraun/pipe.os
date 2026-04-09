@@ -19,6 +19,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { createRoleContextSchema, respondSchema, inviteSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
 import { callRoleAgent, mergeKnowledgeState } from '../../lib/roleAgent';
+import { createRoleAgentProvider } from '../../lib/llm/createProvider';
 import { parseJobDescription } from '../../lib/jdParser';
 import { sendNotificationEmail } from '../../lib/email';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole } from '../../types';
@@ -201,21 +202,33 @@ roleContexts.post('/transcribe', async (c) => {
   }
 
   const buffer = await file.arrayBuffer();
+  const audio = [...new Uint8Array(buffer)];
 
-  try {
+  async function runWhisper(): Promise<string | null> {
     const result = await c.env.AI.run(
       '@cf/openai/whisper' as Parameters<typeof c.env.AI.run>[0],
-      { audio: [...new Uint8Array(buffer)] },
+      { audio },
     ) as { text?: string };
-
-    const transcript = result.text?.trim() || '';
-    console.log('[roleContexts/transcribe] Whisper result:', transcript.slice(0, 100));
-
-    return c.json({ transcript });
-  } catch (err) {
-    console.error('[roleContexts/transcribe] Whisper failed:', err);
-    return apiError(c, 'INTERNAL_ERROR', 'Transcription failed.');
+    return result.text?.trim() || null;
   }
+
+  let transcript: string | null = null;
+  try {
+    transcript = await runWhisper();
+  } catch (err) {
+    console.warn('[roleContexts/transcribe] Whisper attempt 1 failed, retrying:', err);
+    // Single retry after short delay — error 1031 is transient upstream unavailability
+    await new Promise((r) => setTimeout(r, 600));
+    try {
+      transcript = await runWhisper();
+    } catch (retryErr) {
+      console.error('[roleContexts/transcribe] Whisper failed after retry:', retryErr);
+      return c.json({ error: 'Transcription temporarily unavailable. Please type your answer.' }, 503);
+    }
+  }
+
+  console.log('[roleContexts/transcribe] Whisper result:', transcript?.slice(0, 100));
+  return c.json({ transcript: transcript ?? '' });
 });
 
 // ─── GET /:id — Retrieve full state + participants ─────────────────────────
@@ -437,10 +450,10 @@ roleContexts.post('/:id/respond', async (c) => {
 
     const baseline = parseJsonColumn<Record<string, unknown>>(row.baseline, {});
     const sharedKnowledgeState = parseJsonColumn<Record<string, Record<string, unknown>>>(row.knowledge_state, {});
-    const apiKey = c.env.MISTRAL_API_KEY ?? '';
+    const provider = createRoleAgentProvider(c.env);
 
     const agentResponse = await callRoleAgent({
-      apiKey,
+      provider,
       baseline,
       exchanges: [], // Fresh start for agent — calibration was hardcoded
       knowledgeState: sharedKnowledgeState,
@@ -490,13 +503,13 @@ roleContexts.post('/:id/respond', async (c) => {
 
   const baseline = parseJsonColumn<Record<string, unknown>>(row.baseline, {});
   const sharedKnowledgeState = parseJsonColumn<Record<string, Record<string, unknown>>>(row.knowledge_state, {});
-  const apiKey = c.env.MISTRAL_API_KEY ?? '';
+  const provider = createRoleAgentProvider(c.env);
 
   // Filter exchanges: only answered ones for the agent (skip calibration)
   const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
 
   const agentResponse = await callRoleAgent({
-    apiKey,
+    provider,
     baseline,
     exchanges: agentExchanges,
     knowledgeState: sharedKnowledgeState,
