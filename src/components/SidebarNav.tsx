@@ -5,6 +5,8 @@ import {
   Settings,
   Phone,
   Library,
+  Bot,
+  Mail,
 } from "lucide-react";
 
 interface SidebarNavProps {
@@ -21,6 +23,10 @@ interface SidebarNavProps {
   onSettingsClick?: () => void;
   /** Called when the user clicks the Calls nav item */
   onCallsClick?: () => void;
+  /** Called when the user clicks the Agent (copilot) nav item */
+  onAgentClick?: () => void;
+  /** Called when the user clicks the Outreach nav item */
+  onOutreachClick?: () => void;
 }
 
 export function SidebarNav({
@@ -30,7 +36,9 @@ export function SidebarNav({
   onSandboxClick,
   onSettingsClick,
   onCallsClick,
+  onAgentClick,
   onRolesClick,
+  onOutreachClick,
 }: SidebarNavProps) {
   return (
     <nav
@@ -213,6 +221,64 @@ export function SidebarNav({
         </button>
       )}
 
+      {/* Outreach nav item */}
+      {onOutreachClick && (
+        <button
+          onClick={onOutreachClick}
+          title="Outreach"
+          style={{
+            width: 48,
+            height: 48,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: activeSection === "outreach"
+              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
+              : "transparent",
+            border: "none",
+            borderRadius: "12px",
+            color: activeSection === "outreach" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
+            cursor: "pointer",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            position: "relative",
+            backdropFilter: activeSection === "outreach" ? "blur(20px)" : "none",
+            boxShadow: activeSection === "outreach"
+              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
+              : "none",
+          }}
+          onMouseEnter={(e) => {
+            if (activeSection !== "outreach") {
+              e.currentTarget.style.background = "var(--pipe-surface-hover)";
+              e.currentTarget.style.color = "var(--pipe-text-muted)";
+              e.currentTarget.style.transform = "translateX(4px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeSection !== "outreach") {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "var(--pipe-text-dim)";
+              e.currentTarget.style.transform = "translateX(0)";
+            }
+          }}
+        >
+          <Mail size={20} />
+          {activeSection === "outreach" && (
+            <div
+              style={{
+                position: "absolute",
+                left: -12,
+                width: 3,
+                height: 24,
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
+                borderRadius: "0 2px 2px 0",
+                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
+              }}
+            />
+          )}
+        </button>
+      )}
+
       {/* Challenges nav item */}
       {onChallengesClick && (
         <button
@@ -313,6 +379,64 @@ export function SidebarNav({
         >
           <Box size={20} />
           {activeSection === "sandbox" && (
+            <div
+              style={{
+                position: "absolute",
+                left: -12,
+                width: 3,
+                height: 24,
+                background:
+                  "linear-gradient(180deg, rgba(139, 92, 246, 0.8), rgba(167, 139, 250, 0.6))",
+                borderRadius: "0 2px 2px 0",
+                boxShadow: "0 0 12px rgba(139, 92, 246, 0.6)",
+              }}
+            />
+          )}
+        </button>
+      )}
+
+      {/* Agent copilot */}
+      {onAgentClick && (
+        <button
+          onClick={onAgentClick}
+          title="Copilot"
+          style={{
+            width: 48,
+            height: 48,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: activeSection === "agent"
+              ? "linear-gradient(135deg, rgba(167,139,250,0.2), rgba(139,92,246,0.15))"
+              : "transparent",
+            border: activeSection === "agent" ? "1px solid rgba(167,139,250,0.4)" : "none",
+            borderRadius: "12px",
+            color: activeSection === "agent" ? "#a78bfa" : "var(--pipe-text-dim)",
+            cursor: "pointer",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            position: "relative",
+            backdropFilter: activeSection === "agent" ? "blur(20px)" : "none",
+            boxShadow: activeSection === "agent"
+              ? "0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)"
+              : "none",
+          }}
+          onMouseEnter={(e) => {
+            if (activeSection !== "agent") {
+              e.currentTarget.style.background = "rgba(167,139,250,0.1)";
+              e.currentTarget.style.color = "rgba(167,139,250,0.8)";
+              e.currentTarget.style.transform = "translateX(4px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeSection !== "agent") {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "var(--pipe-text-dim)";
+              e.currentTarget.style.transform = "translateX(0)";
+            }
+          }}
+        >
+          <Bot size={20} />
+          {activeSection === "agent" && (
             <div
               style={{
                 position: "absolute",

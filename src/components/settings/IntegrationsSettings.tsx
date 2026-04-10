@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Link2,
   Unlink,
@@ -61,13 +62,13 @@ export function IntegrationsSettings(): JSX.Element {
     connection: emailConnection,
     isLoading: emailLoading,
     error: emailHookError,
-    getAuthUrl: getEmailAuthUrl,
     exchangeOAuth: exchangeEmailOAuth,
     disconnect: disconnectEmail,
     refetch: refetchEmail,
   } = useEmailConnection();
 
   const { getToken } = useClerkAuth();
+  const navigate = useNavigate();
 
   const [flow, setFlow] = useState<FlowState>({ step: 'idle' });
   const [emailFlow, setEmailFlow] = useState<FlowState>({ step: 'idle' });
@@ -186,7 +187,7 @@ export function IntegrationsSettings(): JSX.Element {
     exchangeEmailOAuth(
       parsed.providerId as 'GMAIL' | 'MICROSOFT',
       code,
-      `${window.location.origin}/schedule`,
+      `${window.location.origin}/outreach`,
       codeVerifier,
     )
       .then(() => {
@@ -201,26 +202,7 @@ export function IntegrationsSettings(): JSX.Element {
 
   // ── Handlers ───────────────────────────────────────────────────────────
 
-  const handleEmailConnect = useCallback(async (providerId: 'GMAIL' | 'MICROSOFT'): Promise<void> => {
-    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(b => b.toString(16).padStart(2, '0')).join('');
-    const state = btoa(JSON.stringify({ providerId, nonce, type: 'email' }));
-    sessionStorage.setItem('pipe_email_oauth_nonce', nonce);
-
-    try {
-      const authUrl = await getEmailAuthUrl(providerId, redirectUri);
-      // Append state to the auth URL
-      const url = new URL(authUrl);
-      url.searchParams.set('state', state);
-      setEmailFlow({ step: 'waiting', provider: providerId });
-      window.location.href = url.toString();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to start OAuth';
-      setEmailFlow({ step: 'error', message: msg });
-    }
-  }, [getEmailAuthUrl, redirectUri]);
-
-  const handleEmailDisconnect = useCallback(async (): Promise<void> => {
+const handleEmailDisconnect = useCallback(async (): Promise<void> => {
     setIsDisconnectingEmail(true);
     try {
       await disconnectEmail();
@@ -506,33 +488,23 @@ export function IntegrationsSettings(): JSX.Element {
             <span style={{ ...labelSmall, color: '#fbbf24', flex: 1 }}>
               Connection expired — reconnect to resume
             </span>
-            <button onClick={() => void handleEmailConnect('GMAIL')} style={connectBtn}>
+            <button onClick={() => navigate('/outreach')} style={connectBtn}>
               <Link2 size={10} />
               RECONNECT
             </button>
           </div>
         )}
 
-        {/* Not connected — show provider buttons */}
+        {/* Not connected — redirect to /outreach to connect */}
         {!emailLoading && !emailConnection && emailFlow.step !== 'exchanging' && emailFlow.step !== 'error' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button
-              onClick={() => void handleEmailConnect('GMAIL')}
-              style={providerButton}
-            >
-              <Mail size={14} />
-              <span style={{ flex: 1, textAlign: 'left' }}>CONNECT GMAIL</span>
-              <ExternalLink size={10} color="var(--pipe-text-dim)" />
-            </button>
-            <button
-              onClick={() => void handleEmailConnect('MICROSOFT')}
-              style={providerButton}
-            >
-              <Mail size={14} />
-              <span style={{ flex: 1, textAlign: 'left' }}>CONNECT MICROSOFT OUTLOOK</span>
-              <ExternalLink size={10} color="var(--pipe-text-dim)" />
-            </button>
-          </div>
+          <button
+            onClick={() => navigate('/outreach')}
+            style={providerButton}
+          >
+            <Mail size={14} />
+            <span style={{ flex: 1, textAlign: 'left' }}>CONNECT EMAIL PROVIDER</span>
+            <ExternalLink size={10} color="var(--pipe-text-dim)" />
+          </button>
         )}
       </div>
 

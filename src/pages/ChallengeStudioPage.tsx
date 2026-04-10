@@ -25,7 +25,7 @@ import {
   Plus,
   GitBranch,
 } from 'lucide-react';
-import { ReposTab } from '../components/ChallengeStudio/ReposTab';
+import { ChallengeBriefWizard } from '../components/ChallengeStudio/ChallengeBriefWizard';
 import { SectionCard } from '../components';
 import {
   useTemplateLibrary,
@@ -692,45 +692,47 @@ export default function ChallengeStudioPage(): JSX.Element {
         margin: '0 auto',
       }}
     >
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
-        <div>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 8 }}>
-            CHALLENGE_STUDIO
+      {/* Header — hidden on CREATE_BRIEFS tab */}
+      {tab !== 'repos' && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+          <div>
+            <div style={{ ...mono, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 8 }}>
+              CHALLENGE_STUDIO
+            </div>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text)', margin: 0 }}>
+              My Challenges
+            </h1>
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text)', margin: 0 }}>
-            My Challenges
-          </h1>
-        </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 12, ...mono, fontSize: 10 }}>
-            <span style={{ color: 'var(--pipe-text-dim)' }}>{stats.drafts} DRAFTS</span>
-            <span style={{ color: '#4ade80' }}>{stats.published} PUBLISHED</span>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 12, ...mono, fontSize: 10 }}>
+              <span style={{ color: 'var(--pipe-text-dim)' }}>{stats.drafts} DRAFTS</span>
+              <span style={{ color: '#4ade80' }}>{stats.published} PUBLISHED</span>
+            </div>
+            <button
+              onClick={() => setShowGenerate((p) => !p)}
+              style={{
+                ...mono,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 20px',
+                background: showGenerate ? 'rgba(74,222,128,0.1)' : 'var(--pipe-surface)',
+                border: `1px solid ${showGenerate ? 'rgba(74,222,128,0.3)' : 'var(--pipe-border)'}`,
+                color: showGenerate ? '#4ade80' : 'var(--pipe-text)',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                cursor: 'pointer',
+              }}
+            >
+              <Sparkles size={14} />
+              {showGenerate ? 'HIDE_GENERATOR' : 'GENERATE'}
+            </button>
           </div>
-          <button
-            onClick={() => setShowGenerate((p) => !p)}
-            style={{
-              ...mono,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 20px',
-              background: showGenerate ? 'rgba(74,222,128,0.1)' : 'var(--pipe-surface)',
-              border: `1px solid ${showGenerate ? 'rgba(74,222,128,0.3)' : 'var(--pipe-border)'}`,
-              color: showGenerate ? '#4ade80' : 'var(--pipe-text)',
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              cursor: 'pointer',
-            }}
-          >
-            <Sparkles size={14} />
-            {showGenerate ? 'HIDE_GENERATOR' : 'GENERATE'}
-          </button>
         </div>
-      </div>
+      )}
 
-      {/* Generate panel */}
-      {showGenerate && (
+      {/* Generate panel — hidden on CREATE_BRIEFS tab */}
+      {tab !== 'repos' && showGenerate && (
         <SectionCard label="AI_GENERATOR" icon={<Sparkles size={14} />}>
           <GeneratePanel onSaved={refetchTemplates} />
         </SectionCard>
@@ -742,7 +744,7 @@ export default function ChallengeStudioPage(): JSX.Element {
           const labels: Record<StudioTab, string> = {
             challenges: 'MY_CHALLENGES',
             packs: 'MY_PACKS',
-            repos: 'REPOS',
+            repos: 'CREATE_BRIEFS',
           };
           return (
             <button
@@ -899,8 +901,18 @@ export default function ChallengeStudioPage(): JSX.Element {
         </>
       )}
 
-      {/* Content: repos */}
-      {tab === 'repos' && <ReposTab />}
+      {/* Content: challenge brief wizard */}
+      {tab === 'repos' && (
+        <ChallengeBriefWizard
+          onComplete={(briefs) => {
+            // TODO: persist briefs to challenge library via API
+            console.log('[ChallengeStudio] briefs approved:', briefs.length);
+            setTab('challenges');
+            void refetchTemplates();
+          }}
+          onCancel={() => setTab('challenges')}
+        />
+      )}
     </div>
   );
 }

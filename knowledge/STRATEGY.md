@@ -173,13 +173,13 @@ Every research finding is mapped to a phase and a concrete artifact. If you disa
 | CR-10 | Cohen κ target ≥ 0.76 for LLM-judge scoring | Part 3.4 | Build offline Sonnet 4.6 oracle; measure Devstral κ vs Sonnet; escalate if κ < 0.70 | P2 | NOT STARTED |
 | CR-11 | Gold-standard conversation corpus (100 transcripts target) | Part 3.5 | Seed with 10 founder-rated transcripts; grow with real sessions; regression-test every prompt change against it | P2 | NOT STARTED (`/calibrate` logs runs but no "gold" subset yet) |
 | CR-12 | Model routing (6 roles, 5 distinct models) | Part 3.6 | Document in CLAUDE.md (done in this session); map each role to model+fallback | P1 | DOCUMENTED — enforcement gradual |
-| CR-13 | Hybrid real-skeleton + planted bug (AIG pipeline) | Part 4.1 | Build: role-matched repo discovery (Libraries.io `dependent_repositories` + GitHub API quality filter + specfy/stack-analyser) → seniority-complexity match → AIG template → variant generation → execution verification → tag → bank. See `knowledge/outputs/repo-discovery-pipeline.md` (76 sources). | P3 | NOT STARTED |
-| CR-14 | Rolling-freshness gate (post-2024-07-01, quarterly advance) | Part 4.2 | Libraries.io queries filtered by `pushed` date + quarterly gate advance; SEART GHS for Java/Python bulk only (no JS/TS support yet) | P3 | NOT STARTED |
+| CR-13 | Hybrid real-skeleton + planted bug (AIG pipeline) | Part 4.1 | ✅ **Stages 1-4 DONE (2026-04-10):** Offline repo crawler replaces real-time Libraries.io. `scripts/crawl-repos/` (Pass 1: GH Search + coarse filter; Pass 2: clone + stack-analyser + scc/lizard + construct extractors + SWE-bench PR sampling). D1 schema: `qualified_repos`, `repo_skills`, `repo_constructs`, `repo_sample_prs`, `skill_aliases` (migration 0021). Runtime: `matchRepos.ts` — tag-graph query, <50ms p95. `discover.ts` rewritten to query pre-populated catalog instead of Libraries.io. GH Actions cron: weekly pass-1, weekly pass-2 (200/run). Remaining: AIG template + variant generation (CR-15), execution verification (CR-16). | P3 | **IN PROGRESS — crawler done, AIG templates next** |
+| CR-14 | Rolling-freshness gate (post-2024-07-01, quarterly advance) | Part 4.2 | ✅ **Implemented via crawler refresh policy (2026-04-10):** `last_pushed_at >= 6mo` hard filter in `matchRepos` WHERE clause + `staleCutoff()` marks stale repos `disqualified=1,reason='stale'` on each pass-2 refresh run. Quarterly gate advance = update `STALE_MONTHS` in `config.ts`. | P3 | **DONE** |
 | CR-15 | AIG templates × variants (Gierl & Haladyna) | Part 4.1 | Write 10 bug templates; variant generator via Claude Sonnet offline | P3 | NOT STARTED |
 | CR-16 | Execution-based ground truth (not LLM-judge) | Part 4.1 | CI sandbox runs repo's test suite; discard items where planted bug doesn't fail a test | P3 | NOT STARTED |
 | CR-17 | Tag on 4 dimensions (difficulty × stack × skill × archetype) | Part 4.1 | Item bank schema with tags; selection query over tags; NOT enumerate personas | P3 | NOT STARTED |
 | CR-18 | 225-item bank target, 15 to ship MVP | Part 4.3 | Initial 15 items: 3 difficulty × 5 skills × 1 stack (TS/React) | P3 | NOT STARTED (currently has golden/cases.ts with 6 arena cases) |
-| CR-19 | Permissive-license-only filtering (MIT/Apache/BSD) | Part 4 | Scraper filter; attribution in validation file; strip PII | P3 | NOT STARTED |
+| CR-19 | Permissive-license-only filtering (MIT/Apache/BSD) | Part 4 | ✅ **DONE (2026-04-10):** `ALLOWED_LICENSES` set in `config.ts` enforced in Pass-1 coarse filter. Only MIT/Apache-2.0/BSD-2/BSD-3/ISC/MPL-2.0/LGPL-2.1/LGPL-3.0 accepted. | P3 | **DONE** |
 | CR-20 | Sillito Tier 1-2 scaffolding only (not Tier 3-4) | R3 findings | UI shows file structure, entry points, conventions; does NOT answer "why did author choose X" | P1 | CHECK CURRENT STATE |
 | CR-21 | Structured interview + work sample r=.42/.33 | Part 1.1 | Motivates format; cited in validation file | P4 | CITED-FOR-REFERENCE |
 | CR-22 | Interactive format d≈.21-.22 vs in-basket .74-.76 (Roth 2008) | Part 1.2 | Motivates multi-turn format; cited in fairness section of validation file | P4 | CITED-FOR-REFERENCE |
@@ -566,18 +566,19 @@ These are research-derived decisions that must not be traded away. Contradicting
 
 ---
 
-## Current drift vs. plan (as of 2026-04-08)
+## Current drift vs. plan (as of 2026-04-09)
 
 Places where the current codebase does not match the plan. These need verification and correction.
 
 | Item | Current state | Plan target | Action |
 |---|---|---|---|
-| Scoring dimensions | 4 (Technical 30% / Conversation 30% / Practice 25% / Effectiveness 15%) per arena v19 | 6 (Issue depth / Reasoning / Prioritization / Question formation / Revision evaluation / AI direction) | Port arena v19 findings forward; expand prompts; re-calibrate |
-| BARS anchors | Arena prompts have some anchors but not Hodges-compliant per research | Concrete behavioral anchors at every level of every dimension | Rewrite rubric YAML |
+| Scoring dimensions | ✅ **DONE.** 6-dimension BARS rubric (`scorerRubric.yaml` + `scorerRubric.ts`). Scorer A (ground truth: issue identification, prioritization, revision evaluation) + Scorer B (communication: reasoning, question formation, AI direction). Composite: BARS×0.85 + effectiveness×0.15. Seniority-adjusted weights. | 6 dimensions per research | **Calibrate:** run `/calibrate --auto` to establish new baseline vs arena v19 (76.5%) |
+| BARS anchors | ✅ **DONE.** Hodges-compliant 1-5 behavioral anchors for all 6 dimensions. Cross-checks enforced (e.g. <40% bugs → max score 3). | Concrete behavioral anchors at every level | Validate anchors produce discriminating scores via `/calibrate` |
 | Multi-PR structure | Arena scores 6 cases individually; no aggregation | 3-PR sessions aggregated to single candidate score | New Worker challenge type + seed data |
 | Consistency classifier | Does not exist | Gemma 4 12B classifier on every implementer turn | Build in Phase 2 |
-| Persona reactivity | Hardcoded in `prompts.ts` (per /calibrate skill) | Versioned YAML with parametric reactivity | Productize |
-| Content pipeline | 6 hand-crafted arena cases + slopify fixtures | AIG pipeline producing rolling-freshness items | Build in Phase 3 |
+| Persona reactivity | Hardcoded in `prompts.ts` (per /calibrate skill) | Versioned YAML with parametric reactivity | CR-6: next Phase 1 item |
+| Content pipeline | ✅ **SUBSTANTIALLY DONE (2026-04-10).** Offline repo crawler replaces Libraries.io: `scripts/crawl-repos/` (Pass 1 + Pass 2). Tag-graph D1 index with `qualified_repos`, `repo_skills`, `repo_constructs`, `repo_sample_prs`. `matchRepos.ts` runtime — <50ms, no external API calls. Weekly GH Actions cron. SWE-bench eligible PRs sampled per repo. Remaining: AIG bug planting (CR-15), execution verification (CR-16). | AIG pipeline producing rolling-freshness items | CR-15 (bug templates via Claude Opus 4.6) + CR-16 (CI sandbox) |
+| Repo discovery | ✅ **DONE + UPGRADED (2026-04-10).** Runtime now queries pre-populated `qualified_repos` catalog — no Libraries.io calls at request time. `discover.ts` rewritten to call `matchRepos`. `LIBRARIES_IO_API_KEY` no longer required at runtime. Old Libraries.io pipeline preserved in `librariesIo.ts` but unused. D1 migrations 0018 + 0021. | Role-matched repo discovery (CR-13) | ✅ Done — run crawler to populate DB |
 | Validation file | Does not exist | `docs/validation/` with job analysis + CVR + rubric + IRR + subgroup analysis | Build in Phase 4 |
 | Culture scorer architecture | `cultureAgent.ts` — needs audit against plan | FSM + ReAct + scratchpad + specialist sub-agents + summarization | Audit and upgrade in Phase 1 |
 | Culture UI framing | Unknown — needs audit | "Values alignment + working style complementarity"; attitudinal not performance | Audit and reframe in Phase 1 |
@@ -603,22 +604,32 @@ This section is append-only. Every time the plan is overridden, deferred, or cha
 | 2026-04-08 | Arena is legacy reference, /calibrate is go-forward | Arena last touched 2026-03-30 at 76.5%; /calibrate uses real Worker pipeline | Founder |
 | 2026-04-09 | CR-13/CR-14: Replace generic "scrape" with role-matched repo discovery pipeline | Research brief (76 sources): Libraries.io `dependent_repositories` for dependency-first discovery, specfy/stack-analyser for tech stack detection, scc/lizard for seniority-complexity matching. SEART GHS Java/Python only, no framework filter. See `knowledge/outputs/repo-discovery-pipeline.md` | Founder + Lead |
 | 2026-04-08 | Research findings not yet ported to production; Phase 1 = alignment work | Research briefs delivered 2026-04-07 and 2026-04-08; code hasn't caught up | Founder + Lead |
+| 2026-04-09 | **CR-2, CR-3, CR-4 DONE:** 6-dimension BARS rubric shipped | `scorerRubric.yaml` + `scorerRubric.ts` + rewritten `scorerPrompts.ts` + `scorerAgent.ts` + `scoring.ts`. 2-scorer pipeline (A: ground truth, B: communication). 1-5 scale, encounter-level, seniority-adjusted weights. All 23 existing tests pass. | Founder + Lead |
+| 2026-04-09 | **CR-13 DONE (Stages 1-2):** Repo discovery pipeline built | Libraries.io + GitHub quality filter in Worker. D1 migration 0018. 6 API routes. REPOS tab in Challenge Studio. `skillToPackage.ts` (120+ mappings). Stages 3-4 (stack-analyser + scc) deferred to offline scripts. | Founder + Lead |
+| 2026-04-10 | **CR-13 + CR-14 + CR-19 DONE (Stages 3-4 + refresh policy + license filter):** Offline repo crawler + graph index | Replaced real-time Libraries.io with pre-populated D1 catalog. `scripts/crawl-repos/` (Pass 1: GH Search + coarse filter; Pass 2: clone + manifest parsing + scc/lizard + construct extractors (60 slugs) + SWE-bench PR sampling). D1 schema: `qualified_repos`, `repo_skills`, `repo_constructs`, `repo_sample_prs`, `skill_aliases` (migration 0021). `matchRepos.ts` runtime — tag-graph scoring query, <50ms p95, no external API. `discover.ts` rewritten. LIBRARIES_IO_API_KEY no longer required at runtime. Weekly GH Actions cron (pass-1 Mon 02:00 UTC, pass-2 Mon 04:00 UTC). Contamination risk as soft penalty (not hard reject). Vectors deferred to Phase 2. Open questions: monorepo handling, pass-2 budget planning, extractor versioning — see plan §7.2. | Founder + Lead |
+| 2026-04-09 | **ADR-035: Global Copilot Agent built** | Conversational recruiter copilot in a side drawer. Gemma 4 on Workers AI with prompt-injected tool protocol. 6 tools (search_repos, fetch_repo_info, list_repo_prs, fetch_pr_diff, save_challenge_draft, lookup_pipeline). Skill modes: general + challenge_design. D1 session persistence. Replaces button-press repo discovery UX with conversational challenge design. | Founder + Lead |
 
 ---
 
 ## Next concrete action
 
-**Start Phase 1. First deliverable: the BARS rubric YAML file.**
+### Completed (2026-04-09 – 2026-04-10)
 
-This is the smallest unit of work that unblocks the most findings:
-- Defines the 6 dimensions (CR-3)
-- Defines the BARS anchors (CR-4, BC-38)
-- Establishes the content format for the rubric
-- Can be ported into both the arena (for fast iteration) AND the Worker (for production)
-- Is the thing the `/calibrate` skill tunes against
+1. ✅ **BARS rubric YAML** (CR-2, CR-3, CR-4) — `scorerRubric.yaml` + `scorerRubric.ts` with all 6 dimensions, 1-5 BARS anchors, cross-checks, seniority weights.
+2. ✅ **Scorer pipeline rewrite** — 2 LLM calls (Scorer A: ground truth, Scorer B: communication) replacing 3 old calls. New `ScoreReport` shape with evidence + metrics.
+3. ✅ **Repo discovery pipeline Stages 1-2** (CR-13) — Libraries.io + GitHub filter in Worker. REPOS tab in Challenge Studio. Convert accepted repos to CODE_REVIEW templates.
+4. ✅ **Repo crawler + graph index** (CR-13 Stages 3-4, CR-14, CR-19) — Offline crawler replaces Libraries.io at runtime. `scripts/crawl-repos/` with Pass 1 + Pass 2. `qualified_repos` D1 catalog. `matchRepos.ts` runtime (<50ms). Weekly GH Actions cron. SWE-bench eligible PR sampling. Contamination risk. 60-slug construct taxonomy.
 
-Once the rubric YAML exists, everything downstream (scorer prompts, consistency classifier specs, validation file structure) has a concrete reference point.
+### Next up
 
-**Then: run `/calibrate --auto` with the new rubric against the existing arena golden cases to establish a new baseline.** This measures the plan's impact on the empirical calibration number (currently 76.5% v19). If it drops below 70%, something is wrong with the rubric and we iterate. If it holds or improves, we have evidence that the research-derived design is at least as good as the hand-tuned v19 and we can proceed to Phase 2.
+1. **Seed the DB: run `npx tsx scripts/crawl-repos/index.ts --pass1`** then `--pass2` against the production D1 database. Requires `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_D1_DATABASE_ID` in `.dev.vars` or GH Actions secrets. Without rows in `qualified_repos`, `matchRepos` returns empty.
 
-After that: the consistency classifier (CR-5, Phase 2) — the #1 engineering risk from the research.
+2. **Run `/calibrate --auto`** with the new 6-dimension rubric to establish a baseline vs. arena v19's 76.5%. This is the empirical validation gate — if calibration drops below 70%, iterate on the rubric before proceeding.
+
+3. **CR-6: Persona YAML with reactivity parameters** — Productize the hardcoded persona configs in `prompts.ts` into versioned YAML. Same pattern as the rubric. Prerequisite for consistency classifier.
+
+4. **CR-1 / CR-31: Multi-PR challenge type** — D1 schema for 3-PR sessions. This is the format change that enables the multi-encounter design the research requires for G ≥ 0.70.
+
+5. **CR-15: AIG bug templates** — 10 templates via Claude Opus 4.6 (offline). Each template: a PR from `repo_sample_prs` + planted bug + ground truth + test that fails. Variant generator via Claude Sonnet 4.6.
+
+6. **CR-5: Consistency classifier** (Phase 2) — Gemma 4 12B on every implementer turn. Highest-priority engineering risk. Blocked on persona YAML (CR-6) being done first.

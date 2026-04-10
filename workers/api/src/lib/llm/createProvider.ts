@@ -27,6 +27,7 @@ interface ProviderEnv {
   GOOGLE_AI_API_KEY?: string;
   ROLE_AGENT_PROVIDER?: string;
   CULTURE_AGENT_PROVIDER?: string;
+  COPILOT_AGENT_PROVIDER?: string;
   AI?: Ai;
   /** When 'true', culture agent returns null provider and uses deterministic mock path. */
   MOCK_AI?: string;
@@ -76,6 +77,29 @@ export function createCultureAgentProvider(env: ProviderEnv): LLMProvider | null
     const key = env.GOOGLE_AI_API_KEY ?? '';
     if (!key) return null;
     return new GoogleAIProvider(key);
+  }
+
+  if (providerName === 'mistral') {
+    const key = env.MISTRAL_API_KEY ?? '';
+    if (!key) return null;
+    return new MistralProvider(key);
+  }
+
+  return null;
+}
+
+/**
+ * Factory for the Global Copilot Agent (recruiter assistant drawer).
+ * Defaults to Cloudflare Workers AI Gemma 4.
+ */
+export function createCopilotProvider(env: ProviderEnv): LLMProvider | null {
+  if (env.MOCK_AI === 'true') return null;
+
+  const providerName = (env.COPILOT_AGENT_PROVIDER ?? 'cloudflare-ai') as ProviderName;
+
+  if (providerName === 'cloudflare-ai') {
+    if (!env.AI) return null;
+    return new CloudflareAIProvider(env.AI);
   }
 
   if (providerName === 'mistral') {

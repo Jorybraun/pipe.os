@@ -6,6 +6,39 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Repo Crawler & Graph Index: offline pre-qualified repo catalog (2026-04-10)
+
+Replaces real-time Libraries.io discovery with an offline-crawled, pre-qualified repo database queryable at runtime in <200ms (CR-13 Stages 3-4, CR-14, CR-19).
+
+**D1 schema (migration 0021):** `qualified_repos`, `repo_skills`, `repo_constructs`, `repo_sample_prs`, `skill_aliases` tables with full indexes. Skill alias seed data for 130+ normalization mappings.
+
+**Crawler (`workers/api/scripts/crawl-repos/`):**
+- Pass 1 (no clone): GitHub Search API → coarse filter (license/archive/domain denylist) → manifest skill extraction via GraphQL dependency graph → D1 upsert. ~1000 repos/hour.
+- Pass 2 (shallow clone): `git clone --depth 1` → manifest parsing (package.json/requirements.txt/go.mod/Cargo.toml/Gemfile/pom.xml) → scc/lizard complexity → seniority banding → 60-slug construct extractor taxonomy (§3.3) → domain inference (§3.4) → SWE-bench eligible PR sampling (§6) → `pr_quality_score` computation.
+- Shared: `GitHubClient` with rate-limit-aware retry, `D1Client` (Cloudflare REST API), `skillResolver` (slug canonicalization), structured JSON logger.
+- Config: 25 search queries across TypeScript/Python/Go/Rust/Java/Ruby. Contamination risk as soft score penalty. Stale gate: 6 months.
+
+**Runtime (`matchRepos.ts`):** Tag-graph scoring query — hard filters (language, seniority ±1, freshness, must-have skills), then weighted score (stack fit 60%, domain 10%, constructs 10%, PR quality 15%, contamination penalty 5%). 2 D1 queries, <50ms p95.
+
+**Worker updates:** `discover.ts` rewritten to query `qualified_repos` via `matchRepos` instead of Libraries.io. `LIBRARIES_IO_API_KEY` no longer required at runtime. `repoDiscovery.ts` route updated accordingly.
+
+**GH Actions cron (`.github/workflows/crawl-repos.yml`):** Pass 1 weekly Mon 02:00 UTC, Pass 2 weekly Mon 04:00 UTC. Manual `workflow_dispatch` with pass/limit/dry-run controls.
+
+#### Fixed — Repo Discovery: skill parsing + zero-results feedback (2026-04-10)
+- Comma-separated skill input now splits correctly ("Redux, Next" → two separate skills)
+- Skill-to-package mapping handles space/dot variants ("Nest js" → nestjs, "React.js" → react)
+- Shows clear feedback when discovery completes with 0 repos (explains why, suggests fixes)
+- Updated placeholder text to clarify comma-separated entry
+
+#### Added — Global Copilot Agent Drawer (2026-04-09)
+Recruiter copilot that lives in a side drawer, context-aware, with skill modes and tool use.
+
+**Backend:** D1 migration 0019 (agent_sessions). Copilot agent orchestrator with prompt-injected tool protocol on Gemma 4 (Workers AI). 6 tools: `search_repos`, `fetch_repo_info`, `list_repo_prs`, `fetch_pr_diff`, `save_challenge_draft`, `lookup_pipeline`. ReAct loop (max 3 rounds). System prompts for general + challenge_design modes. Context snapshot from pipeline + persona + stages. Mock mode for testing.
+
+**Frontend:** AgentDrawer component in Layout agentPanel slot. AgentMessage (user/assistant bubbles), AgentInputBar (text + skill mode chips), AgentThinking indicator. `useAgentChat` hook with session restore, optimistic UI, error handling. `AgentDrawerContext` for global open/close. Bot icon in SidebarNav.
+
+**Routes:** `POST /api/v1/agent/chat`, `GET /api/v1/agent/session`, `DELETE /api/v1/agent/session`.
+
 #### Added — REPOS Tab: Role-Driven Repo Discovery for Code Review Challenges (2026-04-09)
 New REPOS tab in Challenge Studio connects role personas to real open-source repo discovery (CR-13, repo-discovery-pipeline.md).
 

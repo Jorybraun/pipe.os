@@ -120,8 +120,28 @@ export class CloudflareAIProvider implements LLMProvider {
       );
     }
 
-    const rawText = result.response?.trim() ?? '';
+    // Workers AI may return { response: "..." } or newer chat format with
+    // { result: { response: "..." } } or { choices: [{ message: { content } }] }.
+    // Log and normalize.
+    console.log('[cloudflareAIProvider] raw result keys:', Object.keys(result), 'response type:', typeof result.response);
+    if (typeof result.response !== 'string' && result.response !== null && result.response !== undefined) {
+      console.log('[cloudflareAIProvider] full result:', JSON.stringify(result).slice(0, 500));
+    }
+
+    let rawText = '';
+    if (typeof result.response === 'string') {
+      rawText = result.response.trim();
+    } else {
+      // Try alternate response shapes
+      const any = result as Record<string, unknown>;
+      // { choices: [{ message: { content: "..." } }] }
+      const choices = any['choices'] as Array<{ message?: { content?: string } }> | undefined;
+      if (choices?.[0]?.message?.content) {
+        rawText = choices[0].message.content.trim();
+      }
+    }
     if (!rawText) {
+      console.error('[cloudflareAIProvider] Empty response. Full result:', JSON.stringify(result).slice(0, 500));
       throw new Error(`Cloudflare Workers AI returned empty response for model ${this.model}`);
     }
 

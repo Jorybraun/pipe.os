@@ -53,9 +53,16 @@ export async function fetchDependentRepos(
   for (let page = 1; page <= maxPages; page++) {
     const url = `${BASE_URL}/${encodeURIComponent(platform)}/${encodeURIComponent(packageName)}/dependent_repositories?api_key=${apiKey}&per_page=${perPage}&page=${page}&sort=stars`;
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       headers: { 'Accept': 'application/json' },
     });
+
+    // Retry once on 5xx (Libraries.io is flaky)
+    if (response.status >= 500) {
+      response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+      });
+    }
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -67,7 +74,9 @@ export async function fetchDependentRepos(
       break;
     }
 
-    const repos = (await response.json()) as LibrariesIoRepo[];
+    const body = await response.json();
+    const repos = (Array.isArray(body) ? body : []) as LibrariesIoRepo[];
+    console.log(`[librariesIo] ${platform}/${packageName} page ${page}: ${repos.length} repos (status ${response.status})`);
     allRepos.push(...repos);
 
     if (repos.length < perPage) break;
@@ -98,6 +107,10 @@ export async function findIntersection(
   const results = await Promise.all(
     queries.map((q) => fetchDependentRepos(apiKey, q.platform, q.packageName)),
   );
+
+  for (const r of results) {
+    console.log(`[librariesIo] findIntersection: ${r.platform}/${r.packageName} → ${r.totalFetched} repos`);
+  }
 
   // Index by full_name for fast lookup
   const repoSets = results.map((r) => {

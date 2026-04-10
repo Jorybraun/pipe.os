@@ -59,6 +59,7 @@ export interface DiscoveryJob {
 export interface UseRepoDiscoveryResult {
   // Discovery
   startDiscovery: (pipelineId: string) => Promise<void>;
+  startDiscoveryBySkills: (skills: string[]) => Promise<void>;
   job: DiscoveryJob | null;
   isDiscovering: boolean;
 
@@ -113,7 +114,18 @@ export function useRepoDiscovery(): UseRepoDiscoveryResult {
     }
   }, [api]);
 
-  const pollJob = useCallback(async (jobId: string, pipelineId: string) => {
+  const pollJob = useCallback(async (jobId: string, pipelineId: string, startedAt: number) => {
+    // Stop polling after 2 minutes — the background task probably died
+    if (Date.now() - startedAt > 120_000) {
+      setIsDiscovering(false);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setError('Discovery timed out. The background task may have failed — try again.');
+      return;
+    }
+
     try {
       const data = await api.get<{ job: DiscoveryJob }>(`/api/v1/repos/jobs/${jobId}`);
       setJob(data.job);
@@ -145,13 +157,42 @@ export function useRepoDiscovery(): UseRepoDiscoveryResult {
       );
 
       // Start polling
+      const startedAt = Date.now();
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(() => {
-        void pollJob(data.jobId, pipelineId);
+        void pollJob(data.jobId, pipelineId, startedAt);
       }, 3000);
 
       // Do an initial poll immediately
-      await pollJob(data.jobId, pipelineId);
+      await pollJob(data.jobId, pipelineId, startedAt);
+    } catch (err) {
+      setIsDiscovering(false);
+      setError(err instanceof Error ? err.message : 'Failed to start discovery');
+    }
+  }, [api, pollJob]);
+
+  const startDiscoveryBySkills = useCallback(async (skills: string[]) => {
+    setIsDiscovering(true);
+    setError(null);
+    setJob(null);
+
+    try {
+      const data = await api.post<{ jobId: string; status: string }>(
+        '/api/v1/repos/discover-by-skills',
+        { skills },
+      );
+
+      // Use virtual pipeline ID for fetching repos later
+      const virtualPipelineId = `skills:${[...skills].sort().join(',')}`;
+      activePipelineRef.current = virtualPipelineId;
+
+      const startedAt = Date.now();
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(() => {
+        void pollJob(data.jobId, virtualPipelineId, startedAt);
+      }, 3000);
+
+      await pollJob(data.jobId, virtualPipelineId, startedAt);
     } catch (err) {
       setIsDiscovering(false);
       setError(err instanceof Error ? err.message : 'Failed to start discovery');
@@ -209,6 +250,7 @@ export function useRepoDiscovery(): UseRepoDiscoveryResult {
 
   return {
     startDiscovery,
+    startDiscoveryBySkills,
     job,
     isDiscovering,
     repos,

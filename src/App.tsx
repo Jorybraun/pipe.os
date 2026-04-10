@@ -14,6 +14,8 @@ import {
 import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
 import { useAuth } from "./providers";
 import { Layout, SidebarNav } from "./components";
+import { AgentDrawerProvider, useAgentDrawer } from "./contexts/AgentDrawerContext";
+import { AgentDrawer } from "./components/Agent/AgentDrawer";
 import ListingPage from "./pages/ListingPage";
 import PipelineShellPage from "./pages/PipelineShellPage";
 import PipelineInsightsPanel from "./pages/PipelineInsightsPanel";
@@ -31,6 +33,7 @@ import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
 import CultureInterviewPage from "./pages/CultureInterviewPage";
 import SchedulingPage from "./pages/SchedulingPage";
+import OutreachPage from "./pages/OutreachPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import ChallengeStudioPage from "./pages/ChallengeStudioPage";
@@ -205,14 +208,17 @@ function AppLayout(): JSX.Element {
     new URLSearchParams(window.location.search).has('state');
   const [showSettings, setShowSettings] = useState(hasOAuthCallback);
   const [showCalls, setShowCalls] = useState(false);
+  const agent = useAgentDrawer();
 
   const panelContent = showSettings
     ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
     : showCalls
       ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
-      : undefined;
+      : agent.isOpen
+        ? <AgentDrawer pipelineId={agent.pipelineId} skillMode={agent.skillMode} onClose={agent.closeAgent} onSkillModeChange={agent.setSkillMode} />
+        : undefined;
 
-  const isPanelOpen = showSettings || showCalls;
+  const isPanelOpen = showSettings || showCalls || agent.isOpen;
 
   return (
     <SidebarPortalProvider>
@@ -257,14 +263,33 @@ function AppLayout(): JSX.Element {
             ? {
                 onCallsClick: () => {
                   setShowSettings(false);
+                  agent.closeAgent();
                   setShowCalls((prev) => !prev);
                   if (!showCalls) setActiveSection("calls");
                   else setActiveSection("roles");
                 },
               }
             : {})}
+          onOutreachClick={() => {
+            setActiveSection("outreach");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/outreach");
+          }}
+          onAgentClick={() => {
+            setShowSettings(false);
+            setShowCalls(false);
+            if (agent.isOpen) {
+              agent.closeAgent();
+              setActiveSection("roles");
+            } else {
+              agent.openAgent();
+              setActiveSection("agent");
+            }
+          }}
           onSettingsClick={() => {
             setShowCalls(false);
+            agent.closeAgent();
             setShowSettings((prev) => !prev);
             if (!showSettings) setActiveSection("settings");
             else setActiveSection("roles");
@@ -336,6 +361,7 @@ function App(): JSX.Element {
             <ClerkAuthGate>
               <ClerkAuthWrapper>
                 <RecruiterThemeSync />
+                <AgentDrawerProvider>
                 <Routes>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />
@@ -378,6 +404,7 @@ function App(): JSX.Element {
                     {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
                       <Route path="/schedule" element={<SchedulingPage />} />
                     )}
+                    <Route path="/outreach" element={<OutreachPage />} />
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
                       <Route
                         path="/sandbox/dev-container"
@@ -391,6 +418,7 @@ function App(): JSX.Element {
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
+                </AgentDrawerProvider>
               </ClerkAuthWrapper>
             </ClerkAuthGate>
             </ThemeProvider>

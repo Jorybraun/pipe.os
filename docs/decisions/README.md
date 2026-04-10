@@ -66,3 +66,4 @@ You do **not** need an ADR for every feature decision — only ones with archite
 | [ADR-032](ADR-032-code-review-research-integration.md) | Code Review Research Integration — 6 dimensions, multi-PR, consistency classifier, BARS, rolling-freshness | Accepted | 2026-04-08 |
 | [ADR-033](ADR-033-research-integration-strategy-and-guardrails.md) | Research Integration Strategy — plan guardrails, contradiction flagging | Accepted | 2026-04-08 |
 | [ADR-034](ADR-034-challenge-authoring-system.md) | Challenge Authoring System — template packs, AI generation, multi-language, Judge0 | Proposed | 2026-04-09 |
+| [ADR-035](ADR-035-global-copilot-agent.md) | Global Copilot Agent — recruiter assistant drawer with skill modes + tool use | Implemented | 2026-04-09 |

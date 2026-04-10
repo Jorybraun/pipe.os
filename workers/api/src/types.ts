@@ -85,6 +85,8 @@ export interface Env {
   DEEPGRAM_API_KEY?: string;
   /** Libraries.io API key for dependency-based repo discovery. Free tier: 60 req/min. */
   LIBRARIES_IO_API_KEY?: string;
+  /** Override copilot agent LLM provider. Default: 'cloudflare-ai'. */
+  COPILOT_AGENT_PROVIDER?: string;
 }
 
 /**

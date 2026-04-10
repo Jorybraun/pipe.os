@@ -136,6 +136,12 @@ export async function checkRepoQuality(
     hasCi,
   };
 
+  if (failures.length > 0) {
+    console.log(`[qualityFilter] REJECTED ${data.full_name}: ${failures.join('; ')}`);
+  } else {
+    console.log(`[qualityFilter] PASSED ${data.full_name} (${data.stargazers_count} stars, ${license})`);
+  }
+
   return {
     passed: failures.length === 0,
     repo: info,

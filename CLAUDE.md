@@ -18,6 +18,7 @@ AI-native developer interview platform. Solo-founder project.
    - ADR-029 (culture interview agent architecture)
    - ADR-030 (culture profile operationalization)
    - ADR-031 (AI hiring compliance architecture)
+   - ADR-035 (global copilot agent — recruiter assistant drawer with skill modes + tool use)
    - ADR-024 (multi-turn agentic code review — directionally correct, updated by ADR-032)
    - ADR-026 (implementer improvements — updated by ADR-032)
 

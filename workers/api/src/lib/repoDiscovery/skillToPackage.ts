@@ -145,19 +145,37 @@ export function mapSkillsToPackages(skills: string[]): PackageMapping[] {
 
   for (const skill of skills) {
     const normalized = skill.toLowerCase().trim();
-    const entries = SKILL_MAP[normalized];
 
-    if (entries) {
-      for (const entry of entries) {
-        const key = `${entry.platform}/${entry.packageName}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          results.push({ ...entry, skill });
+    // Try exact match first, then normalized variants:
+    // "Nest js" → "nestjs", "Nest.js" → "nest.js", "Next JS" → "nextjs"
+    const variants = [
+      normalized,
+      normalized.replace(/\s+/g, ''),          // "nest js" → "nestjs"
+      normalized.replace(/\s+/g, '.'),          // "nest js" → "nest.js"
+      normalized.replace(/\.js$/i, ''),          // "react.js" → "react"
+      normalized.replace(/\s*js$/i, '').trim(),  // "nest js" → "nest"
+    ];
+
+    let matched = false;
+    for (const variant of variants) {
+      const entries = SKILL_MAP[variant];
+      if (entries) {
+        for (const entry of entries) {
+          const key = `${entry.platform}/${entry.packageName}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            results.push({ ...entry, skill });
+          }
         }
+        matched = true;
+        break;
       }
     }
     // Unknown skills are silently skipped — no guessing.
     // The recruiter sees which skills were queried in the job response.
+    if (!matched) {
+      // no-op: recruiter sees unmatched skills via the job response
+    }
   }
 
   return results;
