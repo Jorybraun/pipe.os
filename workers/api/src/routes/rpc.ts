@@ -16,6 +16,7 @@ import { signJwt, verifyJwt } from '../lib/jwt';
 import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
 import { review } from './assessment/review';
 import { repo } from './assessment/repo';
+import { devContainer } from './assessment/devContainer';
 import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import type { Env } from '../types';
@@ -969,6 +970,7 @@ rpcAuth.post('/get-scheduled-interview', async (c) => {
 
 rpcAuth.route('/review', review);
 rpcAuth.route('/repo', repo);
+rpcAuth.route('/dev-container', devContainer);
 
 // ─── Mount culture interview candidate sub-router ────────────────────────────
 // Culture routes use path-param token auth (the session JWT is the :token URL

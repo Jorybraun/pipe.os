@@ -1,0 +1,291 @@
+/**
+ * D1 CRUD helpers for dev_container_sessions (Phase 3b).
+ *
+ * Thin typed wrappers around prepare/bind/run so routes and the
+ * DevContainerDO share a single source of SQL truth. Every function
+ * assumes migration 0023 has been applied.
+ *
+ * Recruiter-visible state lives in D1. The DO's ctx.storage holds live
+ * config (env vars, pending alarm) that is opaque outside the DO instance.
+ */
+
+import type { TtlSource } from './devContainerTtl';
+
+export type DevContainerStatus =
+  | 'LAUNCHING'
+  | 'READY'
+  | 'SLEEPING'
+  | 'ERROR'
+  | 'STOPPED'
+  | 'EXPIRED';
+
+export interface DevContainerSessionRow {
+  id: string;
+  session_id: string;
+  candidate_id: string;
+  challenge_id: string | null;
+  pipeline_id: string;
+  status: DevContainerStatus;
+  instance_type: string;
+  ttl_seconds: number;
+  ttl_source: TtlSource;
+  expires_at: string;
+  warned_at: string | null;
+  url: string | null;
+  repo_r2_key: string | null;
+  challenge_branch: string | null;
+  base_branch: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InsertSessionInput {
+  id: string;
+  sessionId: string;
+  candidateId: string;
+  challengeId: string | null;
+  pipelineId: string;
+  instanceType: string;
+  ttlSeconds: number;
+  ttlSource: TtlSource;
+  expiresAt: string;
+  repoR2Key: string | null;
+  challengeBranch: string | null;
+  baseBranch: string | null;
+}
+
+/** Insert a LAUNCHING row. */
+export async function insertSession(
+  db: D1Database,
+  input: InsertSessionInput,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO dev_container_sessions (
+         id, session_id, candidate_id, challenge_id, pipeline_id,
+         status, instance_type, ttl_seconds, ttl_source, expires_at,
+         repo_r2_key, challenge_branch, base_branch
+       ) VALUES (?1, ?2, ?3, ?4, ?5, 'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+    )
+    .bind(
+      input.id,
+      input.sessionId,
+      input.candidateId,
+      input.challengeId,
+      input.pipelineId,
+      input.instanceType,
+      input.ttlSeconds,
+      input.ttlSource,
+      input.expiresAt,
+      input.repoR2Key,
+      input.challengeBranch,
+      input.baseBranch,
+    )
+    .run();
+}
+
+/**
+ * Fetch a session by its external session_id, verifying ownership.
+ * Returns null if the session does not exist OR belongs to another candidate.
+ * We deliberately conflate the two to avoid leaking session existence.
+ */
+export async function getSessionByIdForCandidate(
+  db: D1Database,
+  sessionId: string,
+  candidateId: string,
+): Promise<DevContainerSessionRow | null> {
+  return db
+    .prepare(
+      `SELECT * FROM dev_container_sessions
+       WHERE session_id = ?1 AND candidate_id = ?2
+       LIMIT 1`,
+    )
+    .bind(sessionId, candidateId)
+    .first<DevContainerSessionRow>();
+}
+
+/** Update status + timestamps without touching TTL fields. */
+export async function markStatus(
+  db: D1Database,
+  sessionId: string,
+  status: DevContainerStatus,
+  extras: {
+    url?: string | null;
+    startedAt?: string | null;
+    stoppedAt?: string | null;
+    errorMessage?: string | null;
+  } = {},
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE dev_container_sessions
+         SET status = ?1,
+             url = COALESCE(?2, url),
+             started_at = COALESCE(?3, started_at),
+             stopped_at = COALESCE(?4, stopped_at),
+             error_message = COALESCE(?5, error_message),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE session_id = ?6`,
+    )
+    .bind(
+      status,
+      extras.url ?? null,
+      extras.startedAt ?? null,
+      extras.stoppedAt ?? null,
+      extras.errorMessage ?? null,
+      sessionId,
+    )
+    .run();
+}
+
+/** Stamp the warned_at column when the 60s-before-expiry alarm fires. */
+export async function markWarned(
+  db: D1Database,
+  sessionId: string,
+  warnedAt: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE dev_container_sessions
+         SET warned_at = ?1,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       WHERE session_id = ?2`,
+    )
+    .bind(warnedAt, sessionId)
+    .run();
+}
+
+/** Manual destroy path. */
+export async function markStopped(
+  db: D1Database,
+  sessionId: string,
+  stoppedAt: string,
+): Promise<void> {
+  await markStatus(db, sessionId, 'STOPPED', { stoppedAt });
+}
+
+/** TTL alarm destroy path. */
+export async function markExpired(
+  db: D1Database,
+  sessionId: string,
+  stoppedAt: string,
+): Promise<void> {
+  await markStatus(db, sessionId, 'EXPIRED', { stoppedAt });
+}
+
+/** Error path — container failed to start or crashed mid-session. */
+export async function markError(
+  db: D1Database,
+  sessionId: string,
+  errorMessage: string,
+): Promise<void> {
+  await markStatus(db, sessionId, 'ERROR', { errorMessage });
+}
+
+// ─── Cockpit read helpers (recruiter-facing) ──────────────────────────────
+
+/** Columns exposed to the cockpit. Excludes internal `id` and proxy `url`. */
+export interface CockpitSessionRow {
+  session_id: string;
+  candidate_id: string;
+  challenge_id: string | null;
+  pipeline_id: string;
+  status: DevContainerStatus;
+  ttl_seconds: number;
+  ttl_source: TtlSource;
+  expires_at: string;
+  warned_at: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+const COCKPIT_COLUMNS = `
+  session_id, candidate_id, challenge_id, pipeline_id, status,
+  ttl_seconds, ttl_source, expires_at, warned_at,
+  started_at, stopped_at, error_message, created_at
+`.trim();
+
+/**
+ * List all sessions for a pipeline, newest first, capped at `limit` (default 100).
+ * Returns an empty array when the pipeline has no sessions.
+ */
+export async function listSessionsByPipeline(
+  db: D1Database,
+  pipelineId: string,
+  limit = 100,
+): Promise<CockpitSessionRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${COCKPIT_COLUMNS}
+       FROM dev_container_sessions
+       WHERE pipeline_id = ?1
+       ORDER BY created_at DESC
+       LIMIT ?2`,
+    )
+    .bind(pipelineId, limit)
+    .all<CockpitSessionRow>();
+  return results ?? [];
+}
+
+/**
+ * Fetch a single session by its public session_id.
+ * Returns null if not found (caller decides 404 vs. ownership-conflation).
+ */
+export async function getSessionByPublicId(
+  db: D1Database,
+  sessionId: string,
+): Promise<CockpitSessionRow | null> {
+  return db
+    .prepare(
+      `SELECT ${COCKPIT_COLUMNS}
+       FROM dev_container_sessions
+       WHERE session_id = ?1
+       LIMIT 1`,
+    )
+    .bind(sessionId)
+    .first<CockpitSessionRow>();
+}
+
+// ─── Challenge lookup for TTL + repo metadata ──────────────────────────────
+
+export interface ChallengeTtlRow {
+  id: string;
+  dev_container_ttl_seconds: number | null;
+  repo_r2_key: string | null;
+  challenge_branch: string | null;
+  base_branch: string | null;
+}
+
+/**
+ * Fetch the TTL + repo metadata for a challenge. Returns null when the
+ * challenge does not exist (the launch handler falls through to global
+ * defaults and a blank repo).
+ *
+ * NOTE: repo_r2_key / challenge_branch / base_branch columns may or may not
+ * exist on the challenges table yet; this query uses `COALESCE(NULL, NULL)`
+ * style fallbacks via a dynamic build so unknown columns do not explode.
+ * For now we only read the three known-safe fields. Repo wiring lands in
+ * Step 8 (Dockerfile + entrypoint).
+ */
+export async function getChallengeTtlMeta(
+  db: D1Database,
+  challengeId: string,
+): Promise<ChallengeTtlRow | null> {
+  return db
+    .prepare(
+      `SELECT id, dev_container_ttl_seconds,
+              NULL AS repo_r2_key,
+              NULL AS challenge_branch,
+              NULL AS base_branch
+       FROM challenges
+       WHERE id = ?1
+       LIMIT 1`,
+    )
+    .bind(challengeId)
+    .first<ChallengeTtlRow>();
+}

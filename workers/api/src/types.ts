@@ -40,6 +40,8 @@ export interface Env {
   MOCK_AI?: string;
   /** Durable Object binding for video call signaling rooms. */
   VIDEO_ROOM: DurableObjectNamespace;
+  /** Durable Object binding for dev container sessions (ADR-037, Phase 3b). */
+  DEV_CONTAINER: DurableObjectNamespace;
   /** Metered.ca API key for TURN credential fetching. */
   METERED_API_KEY?: string;
   /** Calendly OAuth client ID. */

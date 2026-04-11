@@ -1,7 +1,7 @@
 # ADR-016. Dev Container Architecture — ECS Fargate + AppSync Real-Time Status
 
 **Date:** 2026-03-06
-**Status:** Accepted
+**Status:** Superseded by [ADR-037](ADR-037-dev-containers-on-cloudflare.md) (2026-04-11)
 **Author:** Archer (Principal Architect)
 **Stakeholders:** Solo founder / product engineering
 

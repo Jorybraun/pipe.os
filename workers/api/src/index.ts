@@ -12,6 +12,7 @@ import { agentRoutes } from './routes/cockpit/agent';
 import { github } from './routes/cockpit/github';
 import { overview } from './routes/cockpit/overview';
 import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
+import { devContainerSessions } from './routes/cockpit/devContainerSessions';
 import { schedulingAuth, schedulingPublic } from './routes/cockpit/scheduling';
 // Discovery — Role Discovery Agent
 import { roleContexts } from './routes/discovery/roleContexts';
@@ -90,6 +91,8 @@ app.route('/api/v1/pipelines', overview);
 app.route('/api/v1/pipelines', pipelineCandidates);
 // Candidate ops: GET/PATCH /api/v1/candidates/:candidateId
 app.route('/api/v1/candidates', candidateOps);
+// Dev container sessions: recruiter read-only cockpit routes (ADR-037, Phase 3b)
+app.route('/api/v1', devContainerSessions);
 // Email: POST /api/v1/candidates/:candidateId/send-invite, /send-result
 app.route('/api/v1/candidates', emailRoutes);
 // Email OAuth: connect Gmail / Microsoft for send-as
@@ -166,4 +169,5 @@ app.notFound((c) =>
 );
 
 export { VideoRoom } from './durable-objects/VideoRoom';
+export { DevContainerDO } from './durable-objects/DevContainerDO';
 export default app;

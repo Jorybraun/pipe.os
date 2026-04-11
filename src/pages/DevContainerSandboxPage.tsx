@@ -92,12 +92,42 @@ function BootProgressBar(): JSX.Element {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+function formatRemaining(expiresAt: string | null): string | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return null;
+  if (ms <= 0) return '0:00';
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export default function DevContainerSandboxPage(): JSX.Element {
-  const { state, containerUrl, taskArn, error, launch, destroy, reset } =
-    useDevContainerSession();
+  const {
+    state,
+    containerUrl,
+    taskArn,
+    error,
+    expiresAt,
+    expiringSoon,
+    launch,
+    destroy,
+    reset,
+  } = useDevContainerSession();
   const dataFactory = useData();
   const [logs, setLogs] = React.useState<string[]>([]);
   const [autoRefreshLogs, setAutoRefreshLogs] = React.useState(true);
+
+  // Tick every second while a session is live so the countdown re-renders.
+  const [, setNow] = React.useState(0);
+  React.useEffect(() => {
+    if (!expiresAt) return;
+    const interval = setInterval(() => setNow((n) => n + 1), 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+
+  const remaining = formatRemaining(expiresAt);
 
   // Fetch logs when we have a taskArn
   React.useEffect(() => {
@@ -225,6 +255,38 @@ export default function DevContainerSandboxPage(): JSX.Element {
             }}
           >
             TASK ARN: {taskArn}
+          </div>
+        )}
+
+        {remaining && (state === 'READY' || state === 'BOOTING') && (
+          <div
+            style={{
+              marginTop: 12,
+              fontSize: 11,
+              color: expiringSoon ? '#fbbf24' : 'var(--pipe-text-dim)',
+              letterSpacing: '0.1em',
+              fontWeight: 700,
+            }}
+          >
+            TTL REMAINING: {remaining}
+          </div>
+        )}
+
+        {expiringSoon && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 12,
+              padding: '10px 14px',
+              background: 'rgba(251,191,36,0.08)',
+              border: '1px solid rgba(251,191,36,0.4)',
+              borderRadius: 2,
+              fontSize: 11,
+              color: '#fbbf24',
+              lineHeight: 1.5,
+            }}
+          >
+            ⚠ SESSION ENDING SOON — save your work, the container will be destroyed in ~{remaining ?? '1:00'}.
           </div>
         )}
 

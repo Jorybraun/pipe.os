@@ -34,11 +34,23 @@
 	"ai": {
 		"binding": "AI"
 	},
+	"containers": [
+		{
+			"class_name": "DevContainerDO",
+			"image": "../../containers/code-server/Dockerfile",
+			"max_instances": 50,
+			"instance_type": "standard-1"
+		}
+	],
 	"durable_objects": {
 		"bindings": [
 			{
 				"name": "VIDEO_ROOM",
 				"class_name": "VideoRoom"
+			},
+			{
+				"name": "DEV_CONTAINER",
+				"class_name": "DevContainerDO"
 			}
 		]
 	},
@@ -48,12 +60,22 @@
 			"new_classes": [
 				"VideoRoom"
 			]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": [
+				"DevContainerDO"
+			]
 		}
 	],
 	// Environment variables — secrets go in .dev.vars for local dev
 	// RESEND_API_KEY: set via `wrangler secret put RESEND_API_KEY` in production
 	// APP_BASE_URL: defaults to https://pipe.build if not set
+	// Dev container TTL knobs (ADR-037, Phase 3b)
 	"vars": {
-		"APP_BASE_URL": "http://localhost:5173"
+		"APP_BASE_URL": "http://localhost:5173",
+		"DEV_CONTAINER_DEFAULT_TTL_SECONDS": "3600",
+		"DEV_CONTAINER_MAX_TTL_SECONDS": "7200",
+		"DEV_CONTAINER_WARN_BEFORE_SECONDS": "60"
 	}
 }

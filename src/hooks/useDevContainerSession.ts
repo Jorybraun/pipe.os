@@ -1,17 +1,36 @@
 /**
  * useDevContainerSession Hook
  *
- * Manages the full lifecycle of a Fargate dev container session:
+ * Manages the full lifecycle of a dev container session:
  *   IDLE → LAUNCHING → BOOTING → READY → DESTROYING → IDLE
  *
- * Status updates during BOOTING are received via an AppSync subscription
- * on the DevContainerSession model, which is updated by the ecsStatusBridge Lambda.
+ * Two backends coexist during the Phase 3b migration:
+ *   - Legacy (default): AWS Fargate via AppSync (`useDevContainerSessionAppSync`)
+ *   - Cloudflare (ADR-037): Durable Object via REST (`useDevContainerSessionCloudflare`)
+ *
+ * Switching is controlled by `VITE_USE_CLOUDFLARE_DEV_CONTAINERS`. The
+ * hook's public shape is a strict non-breaking superset — the Cloudflare
+ * path additionally populates `expiresAt` and `expiringSoon` (derived from
+ * `warned_at`). Legacy callers who ignore those fields continue to work.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useData } from '../providers';
-import type { DataProviderFactory, DataProvider, MutationOperation, QueryOperation } from '../providers';
+import type {
+  DataProviderFactory,
+  DataProvider,
+  MutationOperation,
+  QueryOperation,
+} from '../providers';
 import { v4 as uuid } from 'uuid';
+import { useSessionToken } from '../contexts/SessionTokenContext';
+import {
+  launchDevContainer,
+  getDevContainerStatus,
+  destroyDevContainer,
+  buildProxyIframeUrl,
+  DevContainerApiError,
+} from '../lib/devContainerClient';
 
 function mut<TArgs, TResult>(
   client: DataProvider,
@@ -102,11 +121,9 @@ function parseDestroyPayload(result: unknown): DestroyPayload {
 }
 
 /**
- * How often (ms) to poll ECS status as a fallback while waiting for
- * the AppSync subscription to deliver a READY event. The subscription is
- * set up first (fast path), but we poll every few seconds to catch cases
- * where the container reached READY before the subscription was active
- * (e.g. after a page refresh) since AppSync does not replay past events.
+ * How often (ms) to poll container status. On the legacy AppSync path this
+ * is a fallback alongside the subscription; on the Cloudflare path it is
+ * the sole status source.
  */
 const POLL_INTERVAL_MS = 5_000;
 
@@ -124,17 +141,33 @@ export interface UseDevContainerSessionReturn {
   /** code-server URL — only populated when state = 'READY' */
   containerUrl: string | null;
   /**
-   * Per-session code-server password — available from BOOTING onward.
-   * Held in React component memory only; never written to localStorage,
-   * sessionStorage, or logs. Cleared on destroy() and reset().
-   * Do NOT include this value in error messages or console.log calls.
+   * Per-session code-server password — available from BOOTING onward on
+   * the legacy path. Held in React component memory only; never written
+   * to localStorage, sessionStorage, or logs. Cleared on destroy() and
+   * reset(). Do NOT include this value in error messages or console.log.
+   * Always `null` on the Cloudflare path (code-server runs `--auth none`
+   * inside the container; the Worker enforces auth via candidate JWT).
    */
   accessToken: string | null;
-  /** ECS task ARN — available from BOOTING onward */
+  /**
+   * Stable session identifier across both backends.
+   *   - Legacy: ECS task ARN
+   *   - Cloudflare: Worker sessionId (UUID)
+   */
   taskArn: string | null;
   /** Human-readable error message when state = 'ERROR' */
   error: string | null;
-  /** Spin up a new Fargate container */
+  /**
+   * ISO timestamp when the session's TTL will destroy the container.
+   * Populated on the Cloudflare path only (legacy is null).
+   */
+  expiresAt: string | null;
+  /**
+   * True once the warn alarm has fired (i.e. the session has ≤
+   * WARN_BEFORE_SECONDS left). Populated on the Cloudflare path only.
+   */
+  expiringSoon: boolean;
+  /** Spin up a new container */
   launch: () => Promise<void>;
   /** Tear down the running container */
   destroy: () => Promise<void>;
@@ -142,7 +175,166 @@ export interface UseDevContainerSessionReturn {
   reset: () => void;
 }
 
+const USE_CLOUDFLARE = import.meta.env.VITE_USE_CLOUDFLARE_DEV_CONTAINERS === 'true';
+
 export function useDevContainerSession(): UseDevContainerSessionReturn {
+  const cloudflare = useDevContainerSessionCloudflare();
+  const appsync = useDevContainerSessionAppSync();
+  return USE_CLOUDFLARE ? cloudflare : appsync;
+}
+
+// ─── Cloudflare implementation (ADR-037) ────────────────────────────────────
+
+function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
+  const sessionToken = useSessionToken();
+
+  const [state, setState] = useState<ContainerSessionState>('IDLE');
+  const [containerUrl, setContainerUrl] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [expiringSoon, setExpiringSoon] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const sessionIdRef = useRef<string | null>(null);
+  const sessionTokenRef = useRef<string | null>(sessionToken);
+  useEffect(() => {
+    sessionTokenRef.current = sessionToken;
+  }, [sessionToken]);
+
+  // Poll while a non-terminal session is live. Covers LAUNCHING → READY
+  // and surfaces warned_at → expiringSoon flips without any subscription
+  // plumbing. A single setInterval keyed on sessionId avoids tearing
+  // multiple timers during React strict-mode double-mount.
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const res = await getDevContainerStatus(sessionId, sessionTokenRef.current);
+        if (cancelled) return;
+
+        setExpiresAt(res.expiresAt);
+        setExpiringSoon(res.expiringSoon);
+
+        if (res.status === 'READY' || res.status === 'SLEEPING') {
+          setState('READY');
+          setContainerUrl(buildProxyIframeUrl(sessionId, sessionTokenRef.current));
+        } else if (res.status === 'LAUNCHING') {
+          setState((prev) => (prev === 'IDLE' || prev === 'LAUNCHING' ? 'BOOTING' : prev));
+        } else if (res.status === 'STOPPED') {
+          setState('IDLE');
+          setSessionId(null);
+          sessionIdRef.current = null;
+          setContainerUrl(null);
+          setExpiresAt(null);
+          setExpiringSoon(false);
+        } else if (res.status === 'EXPIRED') {
+          setState('IDLE');
+          setSessionId(null);
+          sessionIdRef.current = null;
+          setContainerUrl(null);
+          setError('Session expired.');
+        } else if (res.status === 'ERROR') {
+          setState('ERROR');
+          setError('Container entered an error state.');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        // A 404 after destroy is expected — treat as IDLE, not ERROR.
+        if (err instanceof DevContainerApiError && err.status === 404) {
+          setState('IDLE');
+          setSessionId(null);
+          sessionIdRef.current = null;
+          setContainerUrl(null);
+          return;
+        }
+        console.error('[useDevContainerSession:cf] status poll failed:', err);
+      }
+    };
+
+    void poll();
+    const interval = setInterval(() => {
+      void poll();
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [sessionId]);
+
+  const launch = useCallback(async () => {
+    setState('LAUNCHING');
+    setError(null);
+    setContainerUrl(null);
+    setExpiresAt(null);
+    setExpiringSoon(false);
+
+    try {
+      const res = await launchDevContainer({}, sessionTokenRef.current);
+      setSessionId(res.sessionId);
+      sessionIdRef.current = res.sessionId;
+      setExpiresAt(res.expiresAt);
+      setState('BOOTING');
+    } catch (err) {
+      console.error('[useDevContainerSession:cf] launch failed:', err);
+      setState('ERROR');
+      setError(err instanceof Error ? err.message : 'Failed to launch container');
+    }
+  }, []);
+
+  const destroy = useCallback(async () => {
+    const current = sessionIdRef.current;
+    if (!current) return;
+
+    setState('DESTROYING');
+
+    try {
+      await destroyDevContainer(current, sessionTokenRef.current);
+    } catch (err) {
+      // Idempotent — already-terminal sessions are fine.
+      if (!(err instanceof DevContainerApiError && err.status === 404)) {
+        console.error('[useDevContainerSession:cf] destroy failed:', err);
+      }
+    } finally {
+      setState('IDLE');
+      setSessionId(null);
+      sessionIdRef.current = null;
+      setContainerUrl(null);
+      setExpiresAt(null);
+      setExpiringSoon(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setState('IDLE');
+    setSessionId(null);
+    sessionIdRef.current = null;
+    setContainerUrl(null);
+    setExpiresAt(null);
+    setExpiringSoon(false);
+    setError(null);
+  }, []);
+
+  return {
+    state,
+    containerUrl,
+    accessToken: null,
+    taskArn: sessionId,
+    error,
+    expiresAt,
+    expiringSoon,
+    launch,
+    destroy,
+    reset,
+  };
+}
+
+// ─── Legacy AppSync implementation (AWS Fargate, pre-ADR-037) ───────────────
+
+function useDevContainerSessionAppSync(): UseDevContainerSessionReturn {
   const factory: DataProviderFactory = useData();
 
   const [state, setState] = useState<ContainerSessionState>('IDLE');
@@ -336,6 +528,8 @@ export function useDevContainerSession(): UseDevContainerSessionReturn {
     accessToken,
     taskArn,
     error,
+    expiresAt: null,
+    expiringSoon: false,
     launch,
     destroy,
     reset,
