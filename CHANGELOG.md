@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — ADR-036 Phase 3 BDD test: code-review consumers reading the RCD (2026-04-11)
+
+- **`workers/api/src/__tests__/codeReviewPhase3.test.ts`** — NEW. 23 BDD tests mirroring `culturePhase2.test.ts` for the code-review side of Phase 3. Six describe blocks: `loadRcdForAssessment` (happy-path JOIN resolution, null row, null `rcd_json` column, D1-failure swallow), `buildGeneratorSystemPrompt` (RCD path sources stack/seniority/constructs from `technical_context` not persona, codebase_expectations become an explicit context block, top-weighted dispositional traits surface with emphasize/de-emphasize direction, null-RCD fallback to persona fields, empty-technical-context fallback), `buildGeneratorUserMessage` (codebase hint injection, RCD-absent omission, first-three cap), `buildContentReviewPrompt` (RCD carry-through with codebase context, persona fallback), `buildImplementerSystemPrompt` (addendum presence/absence, bucket direction, no raw-number leakage, persona coexistence, unknown-key tolerance), and `buildDispositionalAddendum` (undefined/empty/baseline → empty string, non-finite skip, one bullet per non-baseline trait). Uses the same in-memory D1 stub pattern as `culturePhase2.test.ts`. 58/58 pass across the combined scorerDispositional + culturePhase2 + codeReviewPhase3 run.
+
 #### Added — ADR-036 Phase 3: code-review consumer RCD wiring + scorer model independence fix (2026-04-11)
 
 Consumer side of Phase 3 (RD-17/RD-18/RD-19). Wave 2 added the dispositional-weight plumbing through the scorer rubric + implementer prompt builder; this change wires the actual call sites so the RCD flows end-to-end from pipeline → stage → assessment → implementer/scorer. All changes are additive and fall back to the pre-RCD behavior when `rcd_json` is absent (migration-window safety).
