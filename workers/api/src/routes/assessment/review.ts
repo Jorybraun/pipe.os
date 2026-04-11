@@ -34,6 +34,7 @@ import type { RepoKnowledgeInput } from '../../lib/explainerPrompts';
 import { scoreReviewSession, type PlantedBug } from '../../lib/scorerAgent';
 import { scoreComprehensionSession, type ComprehensionGroundTruth } from '../../lib/comprehensionScorer';
 import { computeImplementerMetrics } from '../../lib/implementerMetrics';
+import { loadRcdForAssessment } from '../../lib/rcd';
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -375,6 +376,11 @@ review.post('/submit', async (c) => {
   const typedAnnotations = annotations as Array<Record<string, unknown>>;
   const [reviewerComments, nextCommentId] = annotationsToComments(typedAnnotations, 1);
 
+  // ADR-036 Phase 3: inject team dispositional weights into the implementer
+  // persona so push-back behavior reflects the team's research-grounded values.
+  const rcdSubmit = await loadRcdForAssessment(c.env.DB, assessment.id);
+  const dispositionalWeightsSubmit = rcdSubmit?.technical_context?.dispositional_weights;
+
   let agentResponses: ImplementerResponse[];
   try {
     agentResponses = await callImplementerAgent({
@@ -386,6 +392,7 @@ review.post('/submit', async (c) => {
       prDiff,
       previousRounds: [],
       newComments: reviewerComments,
+      ...(dispositionalWeightsSubmit ? { dispositionalWeights: dispositionalWeightsSubmit } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -571,6 +578,10 @@ review.post('/:sessionId/respond', async (c) => {
     | 'junior'
     | 'senior';
 
+  // ADR-036 Phase 3: dispositional weights → implementer persona tuning.
+  const rcdRespond = await loadRcdForAssessment(c.env.DB, session.assessment_id);
+  const dispositionalWeightsRespond = rcdRespond?.technical_context?.dispositional_weights;
+
   // Call implementer agent with full conversation context
   let agentResponses: ImplementerResponse[];
   try {
@@ -583,6 +594,7 @@ review.post('/:sessionId/respond', async (c) => {
       prDiff,
       previousRounds: transcript.rounds,
       newComments,
+      ...(dispositionalWeightsRespond ? { dispositionalWeights: dispositionalWeightsRespond } : {}),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1015,6 +1027,11 @@ review.post('/:sessionId/verdict', async (c) => {
 
         const provider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
 
+        // ADR-036 Phase 3: dispositional weights reshape the scorer's 6-dim
+        // composite weighting (clamped to [0.5, 1.5], renormalized, sign-preserved).
+        const rcdScore = await loadRcdForAssessment(c.env.DB, session.assessment_id);
+        const dispositionalWeightsScore = rcdScore?.technical_context?.dispositional_weights;
+
         const scoreReport = await scoreReviewSession({
           apiKey,
           provider,
@@ -1025,6 +1042,7 @@ review.post('/:sessionId/verdict', async (c) => {
           prTitle: ch.github_pr_title,
           prDescription: ch.github_pr_description,
           instructions: ch.instructions,
+          ...(dispositionalWeightsScore ? { dispositionalWeights: dispositionalWeightsScore } : {}),
         });
 
         // Compute implementer metrics (deterministic, no LLM)

@@ -18,7 +18,7 @@ import { runGenerationPipeline } from '../../lib/challengeGeneration/pipeline';
 import { createGenerationProvider } from '../../lib/llm/createProvider';
 import { buildRefinementPrompt } from '../../lib/challengeGeneration/prompts';
 import type { LLMMessage } from '../../lib/llm/types';
-import type { Env, Variables, CandidatePersona, RoleContextRow, ChallengeTemplateRow } from '../../types';
+import type { Env, Variables, CandidatePersona, RoleContextDocument, RoleContextRow, ChallengeTemplateRow } from '../../types';
 
 const TEMPLATE_TYPES = ['CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER'] as const;
 const DIFFICULTIES = ['JUNIOR', 'MID', 'SENIOR'] as const;
@@ -45,21 +45,34 @@ challengeGeneration.post('/', async (c) => {
 
   const { roleContextId, types, count, seniority, roleDescription } = parsed.data;
 
-  // Resolve persona: from role context if provided, or build a minimal one from roleDescription
+  // Resolve persona + RCD: from role context if provided, or build a minimal
+  // persona from roleDescription. RCD is preferred (ADR-036 Phase 3) —
+  // consumer_slice provides the legacy persona shape for backwards compat
+  // during the migration window.
   let persona: CandidatePersona | null = null;
+  let rcd: RoleContextDocument | null = null;
 
   if (roleContextId) {
     const row = await c.env.DB.prepare(
-      'SELECT id, persona_json FROM role_contexts WHERE id = ?1',
+      'SELECT id, persona_json, rcd_json FROM role_contexts WHERE id = ?1',
     )
       .bind(roleContextId)
-      .first<Pick<RoleContextRow, 'id' | 'persona_json'>>();
+      .first<Pick<RoleContextRow, 'id' | 'persona_json' | 'rcd_json'>>();
 
     if (!row) {
       return apiError(c, 'NOT_FOUND', 'Role context not found.');
     }
 
-    if (row.persona_json) {
+    if (row.rcd_json) {
+      try {
+        rcd = JSON.parse(row.rcd_json) as RoleContextDocument;
+        persona = rcd.consumer_slice;
+      } catch {
+        return apiError(c, 'INTERNAL_ERROR', 'Failed to parse stored RCD.');
+      }
+    }
+
+    if (!persona && row.persona_json) {
       try {
         persona = JSON.parse(row.persona_json) as CandidatePersona;
       } catch {
@@ -85,7 +98,7 @@ challengeGeneration.post('/', async (c) => {
 
   // Run the 4-stage generation pipeline
   try {
-    const result = await runGenerationPipeline(c.env, persona, { types, count, seniority });
+    const result = await runGenerationPipeline(c.env, persona, { types, count, seniority }, rcd);
     return c.json(result);
   } catch (err) {
     console.error('[challengeGeneration] Pipeline failed:', err);

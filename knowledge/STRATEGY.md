@@ -354,6 +354,38 @@ Every research finding is mapped to a phase and a concrete artifact. If you disa
 | RD-21 | `repo_constructs` semantic layer exists but is not driven by Role Discovery signals | `migrations/0021_qualified_repos.sql:86-94`, `matchRepos.ts` | Join `repo_constructs` against Technical Context construct tags | RD-P3 | NOT STARTED |
 | RD-22 | Repo DB has no README embeddings; embedding-based semantic search is deferred | `migrations/0021_qualified_repos.sql` | Deferred — structured summaries via RD-23 Pass 3 are the MVP path | RD-P3 | DEFERRED |
 
+#### Scorer model calibration (supports RD-19)
+
+RD-19 plumbs RCD dispositional weights into the scorer, but it leaves open the question of *which model* should run the scoring call. The research brief's model routing table lists Devstral as production scorer with Sonnet 4.6 as offline oracle (CR-12), but that pairing was inherited from the code-review-arena spec and has not been empirically validated against the 6-dimension BARS rubric. Gemma 4 26B is already the workhorse for the culture scorer and satisfies the **model-independence rule** (must be a different family than the Qwen 2.5-Coder implementer it scores — same rule ADR-032 applies to the consistency classifier).
+
+The scorer is currently set to Gemma 4 26B (`@cf/google/gemma-4-26b-a4b-it`) as a **provisional default** pending a three-way empirical comparison. This section defines the calibration harness that picks the production scorer.
+
+**Hypothesis:** Gemma 4 26B, Devstral Small, and Claude Sonnet 4.5 produce statistically indistinguishable 6-dimension BARS scores on our fixture set. If true, we ship Gemma (cheapest, already in the stack, satisfies independence). If false, the differences determine the routing.
+
+**Methodology:**
+
+1. **Fixture set — 30 to 50 completed review sessions (CAL-1).** Each fixture is a full `ScorerInput` payload with ground-truth planted bugs and a known seniority level. Mix of personas, PR shapes, and conversation lengths. Fixtures live under `workers/api/fixtures/scorer-calibration/{id}.json` alongside a sidecar `{id}.ground-truth.json` documenting which planted bugs were genuinely caught. The fixture set must cover the full BARS anchor range (at least one session expected to score 1, one expected 5, per dimension) or the κ measurement will be non-informative due to range restriction.
+
+2. **Harness — three-way run (CAL-2).** `workers/api/scripts/calibrate-scorer.ts` runs `scoreReviewSession` against every fixture under three provider overrides: Gemma 4 26B on Workers AI, Devstral Small on Mistral, and Claude Sonnet 4.5 on Anthropic. Raw results land in `workers/api/fixtures/scorer-calibration-runs/{timestamp}/{provider}/{fixture}.json`. The script is re-runnable and idempotent — each run is a new timestamped directory, prior runs are preserved for regression comparison.
+
+3. **Metrics — Cohen's weighted κ + ICC (CAL-3).** `workers/api/scripts/analyze-scorer-calibration.ts` reads a run directory and computes:
+   - **Per-dimension weighted Cohen's κ** (quadratic weights, since BARS is ordinal) for every pair: Gemma↔Devstral, Gemma↔Sonnet, Devstral↔Sonnet. Weighted κ penalizes larger disagreements more than adjacent-band disagreements, which matches the BARS anchor semantics.
+   - **Composite ICC(2,1)** across the 6-dimension score vectors — agreement on the overall score, not just individual dimensions.
+   - **Bias** (mean score delta per dimension per pair) — catches systematic leniency or severity drift that κ alone can miss.
+   - **MAE** per dimension — raw distance, easier to reason about than κ for stakeholder writeups.
+   - **Sonnet as oracle** for the three communication dimensions (`reasoning_quality`, `question_formation`, `prioritization`) where there is no structural ground truth — for these dimensions we treat Gemma↔Sonnet and Devstral↔Sonnet κ as the operative number, since there is no external referent.
+   - Output: `scorer-calibration-runs/{timestamp}/report.md` with a table per dimension and a recommendation.
+
+4. **Decision rule (CAL-4).**
+   - **Pass threshold:** κ ≥ 0.75 on all 6 dimensions (matches ADR-032 CR-10 gold-standard oracle target).
+   - **Escalation rule:** any dimension with κ < 0.70 against Sonnet must be escalated — that specific dimension runs on Sonnet live, not the cheaper model, while the rest of the dimensions stay on the cheap model. This mirrors ADR-032's per-dimension escalation pattern and avoids blanket upgrades.
+   - **Tie-breaking:** if Gemma and Devstral both clear κ ≥ 0.75 with overlapping confidence intervals, pick Gemma (cheapest, already in the Workers AI binding, satisfies independence rule without fetch overhead).
+   - **Failure mode:** if neither cheap model clears the threshold, Sonnet 4.5 becomes the production scorer and the cost budget for Phase 3 is revised upward in a new decision log entry.
+
+**Why this matters:** The scorer is the final signal the recruiter sees. A 0.15 κ drift in `issue_identification` is the difference between a candidate being advanced and rejected. The implementer is a persona, the classifier is a guardrail — the scorer is the verdict. We cannot run a blind model choice on the verdict call and the research brief (CR-10) is explicit that offline κ measurement is non-optional.
+
+**Tracking:** See CAL-1 through CAL-4 in the task list. Decision recorded in the Decision Log below once CAL-4 completes. OQ-2 is partially subsumed by this work — the Devstral-on-behavioral-scoring question does not apply to the code-review rubric but the methodology transfers directly when we run the equivalent harness for culture.
+
 #### Repo Understanding — 3rd AI pass (RD-23 through RD-24)
 
 | # | Finding | Source | Plan action | Phase | Status |
@@ -369,7 +401,7 @@ Every research finding is mapped to a phase and a concrete artifact. If you disa
 | # | Question | Action |
 |---|---|---|
 | OQ-1 | No published STAR-specific LLM scoring benchmark | Build PIPE-specific labeled evaluation dataset during beta (deliverable of `/calibrate` over time) |
-| OQ-2 | Mistral/Devstral performance on behavioral scoring (QWK unknown) | Calibration study against human-scored samples via `/calibrate` equivalent for culture |
+| OQ-2 | Mistral/Devstral performance on behavioral scoring (QWK unknown) | Code-review scorer calibration via CAL-1..CAL-4 (Gemma vs Devstral vs Sonnet, κ + ICC, see "Scorer model calibration" above). Culture equivalent to follow once the code-review harness is validated. |
 | OQ-3 | Culture signal vs. coaching signal | Unexpected follow-ups + RM signals as mitigation; monitor coaching saturation empirically |
 | OQ-4 | Async text vs. synchronous voice validity | Treat existing literature as upper bound for async text; measure empirically |
 | OQ-5 | Illinois AIVIA text-only applicability | Consult employment counsel before launch in Illinois |

@@ -6,6 +6,20 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — ADR-036 Phase 3: code-review consumer RCD wiring + scorer model independence fix (2026-04-11)
+
+Consumer side of Phase 3 (RD-17/RD-18/RD-19). Wave 2 added the dispositional-weight plumbing through the scorer rubric + implementer prompt builder; this change wires the actual call sites so the RCD flows end-to-end from pipeline → stage → assessment → implementer/scorer. All changes are additive and fall back to the pre-RCD behavior when `rcd_json` is absent (migration-window safety).
+
+- **`workers/api/src/lib/rcd.ts`** — NEW. Shared `loadRcdForAssessment(db, assessmentId)` helper. Resolves the chain `assessments → stages → role_contexts` and returns the latest `rcd_json` for the pipeline, or `null` on any miss. Never throws — consumers default to baseline rubrics when the RCD is absent. Used by both the implementer and scorer call sites in the review route.
+- **`workers/api/src/lib/challengeGeneration/prompts.ts`** — Generator and content-review prompt builders now read `rcd.technical_context.{stack, seniority_band, codebase_expectations}` and `rcd.technical_context.dispositional_weights`. New `formatDispositionalEmphasis` helper surfaces the top three weighted dimensions as qualitative "emphasize/de-emphasize" guidance. RCD field access is defensive — falls back to `persona.mustHaveSkills` and the legacy seniority field when the RCD is absent.
+- **`workers/api/src/lib/challengeGeneration/pipeline.ts`** — `runGenerationPipeline` gains an optional `rcd` parameter threaded through `resolveSeniority`, `runGenerator`, and `runContentReview`. `resolveSeniority` now prefers `rcd.technical_context.seniority_band` over the persona field.
+- **`workers/api/src/routes/cockpit/challengeGeneration.ts`** — Route boundary resolves the RCD once. Query expanded from `SELECT id, persona_json` to `SELECT id, persona_json, rcd_json`. When `rcd_json` is present, the route uses `rcd.consumer_slice` as the persona for the pipeline; otherwise falls back to `persona_json`. Passes the RCD to `runGenerationPipeline`.
+- **`workers/api/src/routes/assessment/review.ts`** — All three code-review handlers (submit, respond, verdict/scoring) now call `loadRcdForAssessment` and pass `dispositionalWeights` into `callImplementerAgent` and `scoreReviewSession`. Uses the conditional-spread pattern (`...(dispositionalWeights ? { dispositionalWeights } : {})`) for `exactOptionalPropertyTypes` compatibility.
+- **`workers/api/src/lib/scorerAgent.ts`** — Scorer Workers AI model switched from `@cf/qwen/qwen2.5-coder-32b-instruct` (same family as the implementer — violated the ADR-036 Phase 3 independence rule) to `@cf/google/gemma-4-26b-a4b-it`. Hoisted to `SCORER_WORKERS_AI_MODEL` constant with an explanatory comment. **Provisional default** pending the CAL-1 through CAL-4 calibration harness defined in `knowledge/STRATEGY.md` "Scorer model calibration" subsection.
+- **`knowledge/STRATEGY.md`** — New "Scorer model calibration (supports RD-19)" subsection under the RD-P3 table. Documents the Gemma 4 26B vs Devstral Small vs Claude Sonnet 4.5 three-way empirical comparison: 30–50 fixture set (CAL-1), calibration harness script (CAL-2), per-dimension weighted Cohen's κ + ICC(2,1) + bias + MAE metrics with Sonnet as oracle for the three communication dimensions (CAL-3), κ ≥ 0.75 pass threshold with per-dimension escalation rule for κ < 0.70 (CAL-4). OQ-2 updated to cross-reference the new harness.
+
+Type check: zero new errors in any touched file. All pre-existing TS errors (including the `challengeGeneration.ts:101` `exactOptionalPropertyTypes` violation) were present on HEAD and are left for a separate cleanup.
+
 #### Added — ADR-036 Path B Wave 2: role-fit reranker + scorer/implementer dispositional weight injection (2026-04-10)
 
 Runtime lane of Path B — the two-stage retrieval Stage 2 module plus the Phase 3 code-review consumer rewrite pieces that consume the RCD. All changes land behind optional parameters: callers that do not pass an RCD behave exactly as before.

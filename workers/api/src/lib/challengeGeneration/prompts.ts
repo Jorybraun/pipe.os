@@ -16,6 +16,26 @@
 import type { CandidatePersona, ChallengeTemplateType, RoleContextDocument, TemplateDifficulty } from '../../types';
 import type { RawGeneratedChallenge } from './types';
 
+/**
+ * Format the top-weighted dispositional dimensions as a guidance line.
+ * ADR-036 §Phase 3 RD-17: challenge generator should reflect dispositional
+ * context so challenges emphasize the dimensions the role cares about.
+ * Surfaces the top-3 dimensions by absolute weight, with sign annotated.
+ */
+function formatDispositionalEmphasis(
+  weights: Record<string, number> | undefined,
+): string {
+  if (!weights) return '';
+  const entries = Object.entries(weights).filter(([, v]) => Number.isFinite(v) && v !== 0);
+  if (entries.length === 0) return '';
+  const top = entries
+    .map(([k, v]) => [k, v, Math.abs(v)] as const)
+    .sort((a, b) => b[2] - a[2])
+    .slice(0, 3)
+    .map(([k, v]) => `${k} (${v > 0 ? 'emphasize' : 'de-emphasize'})`);
+  return `\nDispositional emphasis: ${top.join(', ')}`;
+}
+
 // ─── Stage 1: Generator ──────────────────────────────────────────────────────
 
 export function buildGeneratorSystemPrompt(
@@ -31,12 +51,13 @@ export function buildGeneratorSystemPrompt(
 
   // Prefer RCD technical_context when present; fall back to CandidatePersona fields.
   const tc = rcd?.technical_context ?? null;
-  const seniority = tc?.seniority_band ?? persona.seniority;
-  const mustHaveSkills = tc ? tc.stack : persona.mustHaveSkills;
-  const niceToHaveSkills = tc ? tc.constructs : persona.niceToHaveSkills;
-  const codebaseContext = tc?.codebase_expectations.length
+  const seniority = tc?.seniority_band && tc.seniority_band.length > 0 ? tc.seniority_band : persona.seniority;
+  const mustHaveSkills = tc && tc.stack.length > 0 ? tc.stack : persona.mustHaveSkills;
+  const niceToHaveSkills = tc && tc.constructs.length > 0 ? tc.constructs : persona.niceToHaveSkills;
+  const codebaseContext = tc && tc.codebase_expectations.length > 0
     ? `\nCodebase expectations: ${tc.codebase_expectations.join(', ')}`
     : '';
+  const dispositionalEmphasis = formatDispositionalEmphasis(tc?.dispositional_weights);
 
   return `You are an expert technical assessment designer. Your job is to create interview challenges that accurately evaluate candidates for a specific role.
 
@@ -46,7 +67,7 @@ Seniority: ${seniority}
 Archetype: ${persona.archetype}
 Must-have skills: ${mustHaveSkills.join(', ')}
 Nice-to-have skills: ${niceToHaveSkills.join(', ')}
-Career signal: ${persona.careerSignal}${codebaseContext}
+Career signal: ${persona.careerSignal}${codebaseContext}${dispositionalEmphasis}
 
 ## Instructions
 
@@ -107,10 +128,14 @@ export function buildGeneratorUserMessage(
   persona: CandidatePersona,
   rcd?: RoleContextDocument | null,
 ): string {
-  const skills = rcd?.technical_context
-    ? rcd.technical_context.stack.slice(0, 5)
+  const tc = rcd?.technical_context ?? null;
+  const skills = tc && tc.stack.length > 0
+    ? tc.stack.slice(0, 5)
     : persona.mustHaveSkills.slice(0, 5);
-  return `Generate the challenges now. Focus on skills that matter most for this role: ${skills.join(', ')}. The candidate should feel like these challenges were written specifically for their role, not pulled from a generic bank.`;
+  const codebaseHint = tc && tc.codebase_expectations.length > 0
+    ? ` The codebase is characterized by: ${tc.codebase_expectations.slice(0, 3).join('; ')}.`
+    : '';
+  return `Generate the challenges now. Focus on skills that matter most for this role: ${skills.join(', ')}.${codebaseHint} The candidate should feel like these challenges were written specifically for their role, not pulled from a generic bank.`;
 }
 
 // ─── Stage 2: Content Reviewer ───────────────────────────────────────────────
@@ -121,9 +146,12 @@ export function buildContentReviewPrompt(
   rcd?: RoleContextDocument | null,
 ): string {
   const tc = rcd?.technical_context ?? null;
-  const seniority = tc?.seniority_band ?? persona.seniority;
-  const mustHaveSkills = tc ? tc.stack : persona.mustHaveSkills;
-  const niceToHaveSkills = tc ? tc.constructs : persona.niceToHaveSkills;
+  const seniority = tc?.seniority_band && tc.seniority_band.length > 0 ? tc.seniority_band : persona.seniority;
+  const mustHaveSkills = tc && tc.stack.length > 0 ? tc.stack : persona.mustHaveSkills;
+  const niceToHaveSkills = tc && tc.constructs.length > 0 ? tc.constructs : persona.niceToHaveSkills;
+  const codebaseContext = tc && tc.codebase_expectations.length > 0
+    ? `\nCodebase expectations: ${tc.codebase_expectations.join(', ')}`
+    : '';
 
   return `You are a senior assessment quality reviewer. Your job is to validate AI-generated interview challenges for accuracy, fairness, and role alignment.
 
@@ -131,7 +159,7 @@ export function buildContentReviewPrompt(
 
 Seniority: ${seniority}
 Must-have skills: ${mustHaveSkills.join(', ')}
-Nice-to-have skills: ${niceToHaveSkills.join(', ')}
+Nice-to-have skills: ${niceToHaveSkills.join(', ')}${codebaseContext}
 
 ## Challenges to Review
 

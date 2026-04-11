@@ -16,7 +16,7 @@
 
 import { createGenerationProvider } from '../llm/createProvider';
 import type { LLMProvider, LLMMessage } from '../llm/types';
-import type { CandidatePersona, ChallengeTemplateType, TemplateDifficulty } from '../../types';
+import type { CandidatePersona, ChallengeTemplateType, RoleContextDocument, TemplateDifficulty } from '../../types';
 import type {
   GenerationRequest,
   RawGeneratedChallenge,
@@ -54,11 +54,17 @@ function parseLLMJson<T>(content: string | null, label: string): T {
   }
 }
 
-// ─── Resolve seniority from persona ──────────────────────────────────────────
+// ─── Resolve seniority from persona or RCD ───────────────────────────────────
 
-function resolveSeniority(persona: CandidatePersona, requested?: TemplateDifficulty): TemplateDifficulty {
+function resolveSeniority(
+  persona: CandidatePersona,
+  requested?: TemplateDifficulty,
+  rcd?: RoleContextDocument | null,
+): TemplateDifficulty {
   if (requested) return requested;
-  const s = persona.seniority.toLowerCase();
+  const rcdBand = rcd?.technical_context?.seniority_band;
+  const source = rcdBand && rcdBand.length > 0 ? rcdBand : persona.seniority;
+  const s = source.toLowerCase();
   if (s.includes('senior') || s.includes('staff') || s.includes('principal')) return 'SENIOR';
   if (s.includes('junior') || s.includes('entry') || s.includes('intern')) return 'JUNIOR';
   return 'MID';
@@ -87,10 +93,11 @@ async function runGenerator(
   provider: LLMProvider,
   persona: CandidatePersona,
   config: { types: ChallengeTemplateType[]; count: number; seniority: TemplateDifficulty },
+  rcd: RoleContextDocument | null,
 ): Promise<RawGeneratedChallenge[]> {
   const messages: LLMMessage[] = [
-    { role: 'system', content: buildGeneratorSystemPrompt(persona, config) },
-    { role: 'user', content: buildGeneratorUserMessage(persona) },
+    { role: 'system', content: buildGeneratorSystemPrompt(persona, config, rcd) },
+    { role: 'user', content: buildGeneratorUserMessage(persona, rcd) },
   ];
 
   const completion = await provider.complete(messages, {
@@ -116,9 +123,10 @@ async function runContentReview(
   provider: LLMProvider,
   challenges: RawGeneratedChallenge[],
   persona: CandidatePersona,
+  rcd: RoleContextDocument | null,
 ): Promise<ReviewedChallenge[]> {
   const messages: LLMMessage[] = [
-    { role: 'system', content: buildContentReviewPrompt(challenges, persona) },
+    { role: 'system', content: buildContentReviewPrompt(challenges, persona, rcd) },
     { role: 'user', content: 'Review the challenges now. Be strict — it is better to reject a borderline challenge than to let a bad one through.' },
   ];
 
@@ -318,10 +326,12 @@ export async function runGenerationPipeline(
   env: PipelineEnv,
   persona: CandidatePersona,
   request: GenerationRequest,
+  rcd?: RoleContextDocument | null,
 ): Promise<GenerationPipelineResult> {
   const count = Math.min(Math.max(request.count ?? 5, 1), 10);
   const types = request.types?.length ? request.types : (['QUIZ_MCQ', 'CODE_IMPLEMENTATION', 'QUIZ_SHORT_ANSWER'] as const).slice() as ChallengeTemplateType[];
-  const seniority = resolveSeniority(persona, request.seniority);
+  const rcdArg = rcd ?? null;
+  const seniority = resolveSeniority(persona, request.seniority, rcdArg);
 
   // Mock path for testing
   if (env.MOCK_AI === 'true') {
@@ -342,10 +352,10 @@ export async function runGenerationPipeline(
   }
 
   // Stage 1: Generate
-  const rawChallenges = await runGenerator(generatorProvider, persona, { types, count, seniority });
+  const rawChallenges = await runGenerator(generatorProvider, persona, { types, count, seniority }, rcdArg);
 
   // Stage 2: Content review (cross-model, CA-4)
-  const reviewed = await runContentReview(reviewerProvider, rawChallenges, persona);
+  const reviewed = await runContentReview(reviewerProvider, rawChallenges, persona, rcdArg);
   const passed = reviewed.filter((r) => r.review.passed);
   const totalRejected = reviewed.length - passed.length;
 

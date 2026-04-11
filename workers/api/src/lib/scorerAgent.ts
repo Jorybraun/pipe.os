@@ -219,9 +219,24 @@ async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: 
   return data.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
 }
 
+/**
+ * Workers AI scorer model — ADR-036 Phase 3 provisional pick.
+ *
+ * Must be a different family than the implementer (Qwen 2.5-Coder 32B) for
+ * independence — scoring is a distinct judgment pass, and a same-family pair
+ * bakes in shared biases (same rule as the ADR-032 implementer/classifier
+ * separation). Gemma 4 26B is the strongest generalist-evaluation Workers AI
+ * model already in the Pipe stack and gives us family diversity from Qwen.
+ *
+ * Provisional default pending the κ calibration harness: once we measure
+ * Gemma vs Devstral vs Sonnet κ on a 30–50 fixture set, we keep whichever
+ * model clears κ ≥ 0.75 cheapest. See STRATEGY.md "Scorer calibration".
+ */
+const SCORER_WORKERS_AI_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+
 async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
   const response = await ai.run(
-    '@cf/qwen/qwen2.5-coder-32b-instruct',
+    SCORER_WORKERS_AI_MODEL,
     {
       messages: [
         { role: 'system', content: systemPrompt },
