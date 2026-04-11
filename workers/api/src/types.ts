@@ -87,6 +87,15 @@ export interface Env {
   LIBRARIES_IO_API_KEY?: string;
   /** Override copilot agent LLM provider. Default: 'cloudflare-ai'. */
   COPILOT_AGENT_PROVIDER?: string;
+  // ─── Dev Containers (Phase 3b, ADR-037) ────────────────────────────────────
+  /** Global default TTL in seconds for dev container sessions. */
+  DEV_CONTAINER_DEFAULT_TTL_SECONDS?: string;
+  /** Hard cap TTL in seconds — neither per-challenge nor admin override may exceed this. */
+  DEV_CONTAINER_MAX_TTL_SECONDS?: string;
+  /** Seconds before expiry that the DO fires the warning alarm. */
+  DEV_CONTAINER_WARN_BEFORE_SECONDS?: string;
+  /** Shared secret required on the X-Pipe-Admin-Override header to honor a per-launch TTL override. */
+  ADMIN_TTL_OVERRIDE_SECRET?: string;
 }
 
 /**
@@ -207,10 +216,23 @@ export interface RoleContextRow {
   question_budget: number;
   questions_asked: number;
   status: RoleContextStatus;
-  /** Persisted CandidatePersona JSON (stringified). Null until synthesis runs. */
+  /**
+   * Persisted CandidatePersona JSON (stringified). Null until synthesis runs.
+   * Post-ADR-036: derived from rcd_json.consumer_slice as a legacy cache for
+   * consumers that have not yet cut over to reading the full RCD.
+   */
   persona_json: string | null;
   /** Generated job description in Markdown. Null until synthesis runs. */
   job_description_md: string | null;
+  // ── ADR-036: Role Context Document columns (migration 0022) ──
+  /** Semver of the RCD schema this row was written under. Invalidation key. */
+  rcd_version: string | null;
+  /** Full RoleContextDocument JSON (stringified). Null until synthesis runs. */
+  rcd_json: string | null;
+  /** ValidationMetadata JSON (stringified). Tracks model + prompt versions. */
+  validation_metadata: string | null;
+  /** BarsOverride[] JSON (stringified). Populated at role-setup time per ADR-036 §1.5. */
+  bars_overrides: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -237,6 +259,311 @@ export interface CandidatePersona {
   redFlags: string[];
   /** Hard NOs — reject on contact if any of these are true. */
   dealbreakers: string[];
+}
+
+// ─── Role Context Document (ADR-036) ────────────────────────────────────────
+// Replaces CandidatePersona as the canonical synthesis output. Hybrid
+// qualitative schema drawn from four research traditions: framework analysis
+// matrix (Ritchie & Spencer 1994), IPA evidence anchors (Smith et al. 2009),
+// grounded theory axial coding (Charmaz 2014), Means-End Chain laddering
+// (Reynolds & Gutman 1988). Every claim is traceable to a verbatim transcript
+// quote via LadderingChain.attribute_quote + source_exchange_id.
+//
+// consumer_slice is derived from domain_matrix at write time. Legacy readers
+// continue reading the flat CandidatePersona shape through the consumer_slice
+// until Phase 2/3 rewires them.
+
+export type StakeholderType = 'HIRING_MANAGER' | 'TEAM_MEMBER' | 'INTERNAL_RECRUITER' | 'EXTERNAL_RECRUITER';
+
+export type Domain = 'why' | 'work' | 'team' | 'bar' | 'codebase' | 'process';
+
+export type EnergySignal = 'high' | 'medium' | 'low' | 'unknown';
+
+export type DomainCoverageLevel = 'not_probed' | 'sparse' | 'partial' | 'covered' | 'deep';
+
+export type AxialRelation = 'causes' | 'enables' | 'blocks' | 'contradicts' | 'instantiates';
+
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+/**
+ * A single Means-End Chain: attribute (verbatim quote) → consequence → value.
+ * Bottom-up ordering is load-bearing — the synthesis prompt enforces that
+ * attribute_quote is extracted first, then consequence, then value, in that
+ * strict order. Reversing causes value projection (the top research failure
+ * mode).
+ */
+export interface LadderingChain {
+  /** Verbatim transcript quote — must appear character-for-character in the source exchange. */
+  attribute_quote: string;
+  /** Pointer into RoleExchange.questionId of the exchange the quote came from. */
+  source_exchange_id: string;
+  /** What the attribute enables or implies, derivable from the quote alone. */
+  consequence: string;
+  /** Root motivation the consequence ladders up to. */
+  value: string;
+  /** Per-chain energy signal; HIGH requires a verbatim lexical marker in the quote. */
+  energy_signal: EnergySignal;
+  /** Downgraded to 'low' when verifier flags the chain as unsupported. */
+  confidence: ConfidenceLevel;
+}
+
+/**
+ * Structured situation/action/outcome/moral record from the transcript.
+ * Stories are first-class because the research design pattern is
+ * "ask for specific instances, not generalities" (ADR-027 IDEO principle).
+ */
+export interface StoryRecord {
+  situation: string;
+  action: string;
+  outcome: string;
+  /** What the story tells us about the team — the interpretive layer. */
+  moral: string;
+  source_exchange_id: string;
+}
+
+/**
+ * Single cell in the domain matrix keyed by (stakeholder_type, domain).
+ * Cells that were not probed are still present with coverage='not_probed' and
+ * empty arrays — never omitted — so the schema can enforce full coverage.
+ */
+export interface DomainCell {
+  /** True if this stakeholder is the domain-authoritative source per §1.3. */
+  primary_authority: boolean;
+  /** Coverage marker — 'not_probed' is explicit, never implicit. */
+  coverage: DomainCoverageLevel;
+  laddering_chains: LadderingChain[];
+  /** Grounded theory Tier 1 — open codes extracted from the transcript. */
+  open_codes: string[];
+  /** Grounded theory axial links between open codes, with directionality. */
+  axial_links: Array<{
+    from_code: string;
+    to_code: string;
+    relation: AxialRelation;
+  }>;
+  stories: StoryRecord[];
+  /** Diplomatic, constructive summary (feedback memory: synthesis tone rule). */
+  summary: string;
+}
+
+export type DomainMatrix = {
+  [stakeholder in StakeholderType]?: {
+    [domain in Domain]?: DomainCell;
+  };
+};
+
+export type ConflictFlag = 'minor' | 'material' | 'blocking';
+
+export type ConflictResolution = 'prefer_authoritative' | 'preserve_both' | 'escalate_to_recruiter';
+
+export interface ConflictRecord {
+  domain: Domain;
+  /** Dotted field path — e.g. 'team.collaboration_style'. */
+  field: string;
+  stakeholder_a: StakeholderType;
+  position_a: string;
+  stakeholder_b: StakeholderType;
+  position_b: string;
+  conflict_flag: ConflictFlag;
+  resolution_strategy: ConflictResolution;
+}
+
+/**
+ * Dealbreaker with pre-populated Griggs business-necessity defense text.
+ * Every dealbreaker is HITL-gated at scoring time (ADR-036 §1.7) — the scorer
+ * raises a flag that blocks advancement until a recruiter confirms or overrides.
+ * Never auto-fail.
+ */
+export interface DealbreakerRecord {
+  id: string;
+  /** Human-readable summary for the recruiter UI. */
+  label: string;
+  /** What to look for in culture/code-review outputs. */
+  pattern: string;
+  source_stakeholder: StakeholderType;
+  /** Pointer into an RCD laddering chain that grounds this dealbreaker. */
+  source_chain_id: string;
+  /** Pre-populated Griggs defense text. */
+  job_relatedness_note: string;
+  job_relatedness_strength: 'strong' | 'moderate' | 'weak';
+  /** Verbatim quote from the transcript grounding this dealbreaker. */
+  evidence_quote: string;
+}
+
+/**
+ * Red flags are advisory-only — they surface in the recruiter UI but never
+ * block candidate advancement automatically (ADR-031 compliance gate pattern).
+ */
+export interface RedFlagRecord {
+  id: string;
+  label: string;
+  source_stakeholder: StakeholderType;
+  source_chain_id: string;
+  evidence_quote: string;
+}
+
+/**
+ * Five-signal team culture profile. Four OCAI Competing Values Framework
+ * archetypes (Cameron & Quinn 2006; Heritage et al. 2014) under Current-culture
+ * framing — NEVER Ideal-culture framing — plus Edmondson psychological safety.
+ * Scored 1–5 per stakeholder; cross-stakeholder averaging is forbidden per §1.3.
+ */
+export interface TeamCultureProfile {
+  per_stakeholder: {
+    [stakeholder in StakeholderType]?: {
+      clan_affinity: number;          // 1–5
+      adhocracy_affinity: number;     // 1–5
+      market_affinity: number;        // 1–5
+      hierarchy_affinity: number;     // 1–5
+      psychological_safety: number;   // 1–5
+    };
+  };
+  /** Tier-3 aggregates only for fields with genuine consensus, with explicit formula. */
+  aggregated?: {
+    formula: string;                  // e.g. 'weighted_mean([HM:.5, TM:.3, IR:.1, ER:.1])'
+    clan_affinity: number;
+    adhocracy_affinity: number;
+    market_affinity: number;
+    hierarchy_affinity: number;
+    psychological_safety: number;
+  };
+}
+
+/**
+ * BARS anchor override derived from laddering chains at role-setup time.
+ * Never per-candidate dynamic generation (NYC LL 144 + EU AI Act Art 14).
+ */
+export interface BarsOverride {
+  dimension: string;                   // e.g. 'ownership', 'communication'
+  /** Anchor level (typically 1–5) being overridden. */
+  anchor_level: number;
+  /** Universal base rubric text for this dimension × level. */
+  base_anchor_text: string;
+  /** Team-specific replacement text grounded in the RCD. */
+  override_anchor_text: string;
+  /** Pointer into the RCD laddering chain that motivated this override. */
+  source_chain_id: string;
+  approved_by: string;                 // recruiter user id
+  approved_at: string;                 // ISO 8601
+}
+
+/**
+ * Role-setup-time probe bank enrichment. The static base ships in code; the
+ * enrichment layer adds team-specific probes derived from RCD laddering chains
+ * at role setup, gated by recruiter approval (§1.6).
+ */
+export interface ProbeEnrichment {
+  static_base_version: string;
+  enriched_probes: Array<{
+    dimension: string;
+    probe_text: string;
+    source_chain_id: string;
+    approved_by: string;
+    approved_at: string;
+  }>;
+}
+
+/**
+ * Technical context aggregate derived from the codebase + work + bar domains.
+ * Read by challengeGeneration/prompts.ts (Phase 3) and repoDiscovery (Phase 4).
+ */
+export interface TechnicalContext {
+  stack: string[];
+  constructs: string[];                // engineering construct tags per ADR-036 §2.1
+  seniority_band: string;
+  codebase_expectations: string[];     // derived from 'codebase' domain cells
+  dispositional_weights: Record<string, number>; // per-dimension weight deltas for ADR-032 scorer
+}
+
+/**
+ * Legacy CandidatePersona shape derived from the RCD at write time. Lives on
+ * the RCD as consumer_slice so legacy readers can keep reading a flat persona
+ * while Phase 2/3 cuts consumers over to the full domain_matrix.
+ */
+export type CachedPersona = CandidatePersona;
+
+/** Versioning precondition for the staged validation ladder (§3.3). */
+export interface ValidationMetadata {
+  schema_version: string;
+  synthesis_model: string;
+  synthesis_prompt_version: string;
+  verification_pass_model: string;
+  face_validity_reviewed_at: string | null;
+  face_validity_reviewer: string | null;
+}
+
+/**
+ * Role Context Document — canonical synthesis output per ADR-036. Supersedes
+ * CandidatePersona as the primary artifact; CandidatePersona survives as a
+ * derived consumer_slice cache for legacy readers.
+ */
+export interface RoleContextDocument {
+  rcd_version: string;
+  role_context_id: string;
+  pipeline_id: string;
+  created_at: string;
+
+  domain_matrix: DomainMatrix;
+
+  conflicts: ConflictRecord[];
+  technical_context: TechnicalContext;
+  team_culture_profile: TeamCultureProfile;
+  bars_overrides: BarsOverride[];
+  probe_bank_enrichment: ProbeEnrichment;
+  dealbreakers: DealbreakerRecord[];
+  red_flags: RedFlagRecord[];
+
+  /** Derived at write time — legacy CandidatePersona shape. */
+  consumer_slice: CachedPersona;
+
+  validation_metadata: ValidationMetadata;
+}
+
+// ─── Repo Understanding Contract (ADR-036 §2) ───────────────────────────────
+// Two new D1 row types backing the two-stage retrieval architecture. Pass 3
+// offline summarization (Haiku 4.5, role-agnostic) writes RepoEngineeringSignals;
+// runtime Gemma 4 rerank (per role × repo, cached) writes RepoRoleAlignment.
+// Phase 4 work — types land in Phase 1 to keep the type surface coherent.
+
+export interface RepoEngineeringSignalsRow {
+  repo_id: number;
+  signals_version: string;
+  content_hash: string;
+
+  // Tier 1 — computable from existing substrate
+  test_touch_rate: number | null;
+  mean_changed_files: number | null;
+  p90_changed_files: number | null;
+  issue_link_rate: number | null;
+  complexity_band: 'low' | 'medium' | 'high' | 'mixed' | null;
+  swe_bench_eligibility_rate: number | null;
+
+  // Tier 2 — needs Pass 2 extension
+  architecture_style: 'monolith' | 'microservice' | 'modular_monolith' | 'serverless' | 'unknown' | null;
+  review_density: number | null;
+  commit_cadence: number | null;
+  satd_density: number | null;
+
+  engineering_narrative: string;
+  signal_json: string;                 // JSON-stringified full blob
+
+  generated_at: string;
+  model_used: string;
+  model_version: string;
+}
+
+export type AlignmentBand = 'strong' | 'moderate' | 'weak' | 'mismatch';
+
+export interface RepoRoleAlignmentRow {
+  role_context_id: string;
+  repo_id: number;
+  alignment_score: number;             // 0.0–1.0
+  alignment_band: AlignmentBand;
+  reasoning_json: string;              // JSON-stringified structured justification
+  per_signal_scores: string;           // JSON-stringified { signal_name: score }
+  rcd_version: string;
+  signals_version: string;
+  generated_at: string;
+  model_used: string;
 }
 
 /**
