@@ -36,7 +36,8 @@
  *    (start at 1), not D1 row IDs. The harness does not touch the database.
  */
 
-import type { PlantedBug, ReviewRound } from '../../src/lib/implementerAgent';
+import type { ReviewRound } from '../../src/lib/implementerAgent';
+import type { PlantedBug } from '../../src/lib/scoring';
 
 export type DimensionId =
   | 'issue_identification'
