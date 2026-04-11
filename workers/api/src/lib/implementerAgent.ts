@@ -60,6 +60,13 @@ export interface CallImplementerAgentInput {
   previousRounds: ReviewRound[];
   /** New comments the candidate submitted this round */
   newComments: ReviewComment[];
+  /**
+   * Optional RCD dispositional weights (ADR-036 §3). When present, the
+   * persona prompt gains a natural-language addendum describing team values
+   * ("the team values pragmatism, push back harder on theoretical concerns").
+   * The addendum never overrides persona — it tunes, it does not replace.
+   */
+  dispositionalWeights?: Record<string, number>;
 }
 
 // ─── LLM API response shapes ────────────────────────────────────────────────
@@ -232,7 +239,10 @@ async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: 
 export async function callImplementerAgent(
   input: CallImplementerAgentInput,
 ): Promise<ImplementerResponse[]> {
-  const { apiKey, provider = 'workers-ai', ai, persona, prBrief, prDiff, previousRounds, newComments } = input;
+  const {
+    apiKey, provider = 'workers-ai', ai, persona, prBrief, prDiff,
+    previousRounds, newComments, dispositionalWeights,
+  } = input;
 
   if (newComments.length === 0) {
     return [];
@@ -251,7 +261,7 @@ export async function callImplementerAgent(
     throw new Error(`[implementerAgent] No API key configured for ${provider}. Set MISTRAL_API_KEY or ANTHROPIC_API_KEY.`);
   }
 
-  const systemPrompt = buildImplementerSystemPrompt(persona, prBrief, prDiff);
+  const systemPrompt = buildImplementerSystemPrompt(persona, prBrief, prDiff, dispositionalWeights);
   const userMessage = buildUserMessage(previousRounds, newComments);
 
   let raw: string;

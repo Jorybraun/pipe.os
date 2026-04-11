@@ -6,6 +6,41 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — ADR-036 Path B Wave 2: role-fit reranker + scorer/implementer dispositional weight injection (2026-04-10)
+
+Runtime lane of Path B — the two-stage retrieval Stage 2 module plus the Phase 3 code-review consumer rewrite pieces that consume the RCD. All changes land behind optional parameters: callers that do not pass an RCD behave exactly as before.
+
+- **`workers/api/src/lib/repoDiscovery/roleFitRerank.ts`** — NEW. Implements `roleFitRerank({ provider, rcd, candidates })` on top of the existing `LLMProvider` interface with `forceJson: true`. Builds a prompt grounded in the RCD's `technical_context.{stack, constructs, seniority_band, codebase_expectations}` plus work/codebase `DomainCell` summaries, and requires the model's match bullets to quote verbatim RCD tokens. Parses the JSON response into `RepoRoleAlignmentRow[]` with sign-preservation guards: hallucinated `repo_id`s are dropped, `alignment_score` is clamped to `[0, 1]`, invalid `alignment_band` values are derived from the clamped score, rows are stamped with `rcd_version` + `signals_version` (the cache-key invariant), and the result is sorted by score desc. Gemma 4 26B is the intended primary model; model family must differ from the Pass 3 signal writer (Haiku) so the rerank is an independent perspective per ADR-032 routing rules.
+- **`workers/api/src/__tests__/roleFitRerank.test.ts`** — NEW. 11 BDD tests against a mock `LLMProvider`. Locks: empty-candidate short-circuit, `forceJson` wiring, verbatim RCD token presence in the user message, sort-by-score invariant, `rcd_version`/`signals_version` stamping (cache-key invariant), reasoning-JSON verbatim token presence (the audit-trail invariant), hallucinated-`repo_id` drop, score/band clamping, empty-response rejection, invalid-JSON rejection, markdown code-fence stripping, and `modelName` override.
+- **`workers/api/src/lib/scorerRubric.ts`** — adds `applyDispositionalWeights(baseWeights, dispositional)` with a trait→dimension mapping (`pragmatism → [prioritization, ai_direction]`, `rigor → [issue_identification, revision_evaluation]`, `communication → [reasoning_quality, question_formation]`). Direct dimension-ID keys override trait-level values. Multipliers are clamped to `[MIN_DISPOSITIONAL=0.5, MAX_DISPOSITIONAL=1.5]` **before** application — this is the sign-preservation invariant. No dimension can be zeroed, no dimension can dominate. After multiplication, weights are renormalized to sum=1.0. `computeBarsComposite` gains an optional `dispositionalWeights` third parameter.
+- **`workers/api/src/lib/scoring.ts`** — `computeOverallScore` threads the optional `dispositionalWeights` through to `computeBarsComposite`. Unchanged when omitted.
+- **`workers/api/src/lib/scorerAgent.ts`** — `ScorerInput` gains optional `dispositionalWeights?: Record<string, number>`, passed through to `computeOverallScore`. Callers that do not populate it get identical behavior.
+- **`workers/api/src/__tests__/scorerDispositional.test.ts`** — NEW. 15 Vitest unit tests locking the sign-preservation invariant and the tilt direction. Key cases: trait boosts tilt composite toward the trait's dimensions; rigor < 1 penalizes rigor dimensions; upper/lower clamps pin to `[0.5, 1.5]` (including `0`, negatives, `NaN`, `Infinity`); direct dimension-ID overrides defeat trait-level values; unknown keys are ignored; empty/undefined dispositional inputs are idempotent. The "never zeros a dimension under any extreme input" test is the key guardrail — dropping a strong dimension's score must still move the composite.
+- **`workers/api/src/lib/prompts.ts`** — `buildImplementerSystemPrompt` gains an optional `dispositionalWeights?: Record<string, number>` parameter. New `buildDispositionalAddendum` helper translates weights into a short qualitative addendum (three traits, `> 1` / `< 1` / `= 1` buckets) appended after the persona text. Unmentioned traits are omitted; numeric values are never surfaced to the model.
+- **`workers/api/src/lib/implementerAgent.ts`** — `CallImplementerAgentInput` gains optional `dispositionalWeights`, threaded to `buildImplementerSystemPrompt`. Backward compatible — callers that do not populate it get identical behavior.
+
+Type check: zero new errors in any touched file. Full vitest suite: 56/56 passing on all touched test files (26 new tests added); the 2 pre-existing `roleDiscovery.test.ts` baseline failures are unchanged.
+
+#### Added — Steps 12 + 13: REST tests for per-challenge TTL override and per-launch admin override (2026-04-10)
+
+- **`workers/api/src/__tests__/devContainer.rest.test.ts`** — 8 new targeted test cases (Tests A–H) covering per-challenge TTL override and per-launch admin override, plus a `ctx.container` stub fix for the `@cloudflare/containers` base class constructor. Total test count: 19.
+
+#### Added — Step 8: code-server container image + DevContainerDO promotes to Container (2026-04-10)
+
+- `containers/code-server/Dockerfile` — `codercom/code-server:4.22.1` + node 20 + git/curl/jq; uses `coder` user.
+- `containers/code-server/entrypoint.sh` — downloads repo tarball from `REPO_R2_URL`, checks out `CHALLENGE_BRANCH`, starts code-server on :8080.
+- `containers/code-server/.dockerignore`
+- `workers/api/src/durable-objects/DevContainerDO.ts` — promoted from `DurableObject` to `Container<Env>` (from `@cloudflare/containers`); sets `defaultPort = 8080`, `sleepAfter = '10m'`. Existing `/__init` handler preserved.
+- `workers/api/wrangler.jsonc` — adds top-level `containers` array pointing at the Dockerfile.
+- `workers/api/vitest.config.ts` — adds `@cloudflare/containers` alias to a minimal node-compatible stub so existing tests keep running.
+- `workers/api/src/__tests__/stubs/cloudflare-containers.ts` — new stub for `@cloudflare/containers` under vitest/node.
+- All 29 devContainer tests remain green.
+
+#### Added — Step 15: Recruiter cockpit read routes for dev container sessions (2026-04-10)
+
+- **`workers/api/src/routes/cockpit/devContainerSessions.ts`** — two Clerk-authed GET routes: `GET /api/v1/pipelines/:pipelineId/dev-container-sessions` (list, newest-first, cap 100) and `GET /api/v1/dev-container-sessions/:sessionId` (single lookup by public id). Both verify pipeline ownership against `c.var.userId` before returning data. Never exposes internal row `id` or proxy `url`. 404 conflation prevents session-existence leakage.
+- **`workers/api/src/lib/devContainerSessions.ts`** — adds `CockpitSessionRow` interface and `listSessionsByPipeline` / `getSessionByPublicId` helpers selecting only the 13 cockpit-safe columns.
+
 #### Added — ADR-036 Path B Wave 1: Pass 3 persister + copilot fit-explainer + RCD-aware challenge prompts (2026-04-10)
 
 Mechanical scaffolding lane of Path B (parallel to the in-flight Opus reranker work). Three slices land together — none touch Path A's files.

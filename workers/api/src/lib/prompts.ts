@@ -82,6 +82,51 @@ TONE SENSITIVITY:
 
 IMPORTANT: Respond naturally. Don't bullet-point every comment. Write like you're typing in a PR conversation — casual but professional. Some responses are one line, some are a paragraph.`;
 
+// ─── Dispositional addendum (ADR-036 §3) ───────────────────────────────────
+
+/**
+ * Translates RCD dispositional weights into a short natural-language note the
+ * implementer persona can read. We do not surface raw multipliers — the model
+ * interprets team values better than numbers. Unmentioned traits are omitted.
+ *
+ * Baseline is 1.0: >1 means the team emphasizes that trait more than average,
+ * <1 means less. We bucket into three qualitative labels so the prompt is
+ * stable against small numeric shifts.
+ */
+export function buildDispositionalAddendum(
+  dispositional: Record<string, number> | undefined,
+): string {
+  if (!dispositional) return '';
+
+  const traitDescriptions: Record<string, { high: string; low: string }> = {
+    pragmatism: {
+      high: 'values pragmatism — shipping working software beats theoretical purity. Push back harder on theoretical concerns that do not affect real users.',
+      low: 'values rigor over speed — do not wave away concerns with "it works in practice". Take principle-based pushback seriously.',
+    },
+    rigor: {
+      high: 'values rigor — every edge case and failure mode matters. Engage deeply with correctness concerns even if they feel pedantic.',
+      low: 'values delivery over exhaustive rigor — acknowledge minor concerns but do not derail the conversation with theoretical edge cases.',
+    },
+    communication: {
+      high: 'values communication — explain your reasoning fully, ask clarifying questions, surface tradeoffs out loud.',
+      low: 'values concise communication — keep responses tight, do not over-explain.',
+    },
+  };
+
+  const lines: string[] = [];
+  for (const [trait, raw] of Object.entries(dispositional)) {
+    const desc = traitDescriptions[trait];
+    if (!desc) continue;
+    if (!Number.isFinite(raw) || raw === 1) continue;
+    if (raw > 1) lines.push(`- The team ${desc.high}`);
+    else lines.push(`- The team ${desc.low}`);
+  }
+
+  if (lines.length === 0) return '';
+
+  return `\n\n---\n\nTEAM DISPOSITION (from the Role Context Document — respect these values in how you engage with feedback):\n\n${lines.join('\n')}`;
+}
+
 // ─── System prompt builder ───────────────────────────────────────────────────
 
 /**
@@ -98,10 +143,12 @@ export function buildImplementerSystemPrompt(
   persona: 'junior' | 'senior',
   prBrief: string,
   prDiff: string,
+  dispositionalWeights?: Record<string, number>,
 ): string {
   const personaText = persona === 'junior' ? JUNIOR_PERSONA_PROMPT : SENIOR_PERSONA_PROMPT;
+  const dispositionalAddendum = buildDispositionalAddendum(dispositionalWeights);
 
-  return `${personaText}
+  return `${personaText}${dispositionalAddendum}
 
 ---
 

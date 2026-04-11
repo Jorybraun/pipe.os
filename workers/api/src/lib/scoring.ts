@@ -126,13 +126,17 @@ export function computeEffectiveness(
 /**
  * Computes the overall score: BARS composite × 0.85 + effectiveness × 0.15.
  * BARS composite converts 6 dimension scores (1-5) to 0-100.
+ *
+ * Optional `dispositionalWeights` (from an RCD) are applied inside the BARS
+ * composite step, clamped per dimension to [0.5, 1.5] and renormalized.
  */
 export function computeOverallScore(
   dimensionScores: BarsDimensionScores,
   effectiveness: EffectivenessScore,
   level: 'junior' | 'mid' | 'senior' = 'mid',
+  dispositionalWeights?: Record<string, number>,
 ): number {
-  const barsComposite = computeBarsComposite(dimensionScores, level);
+  const barsComposite = computeBarsComposite(dimensionScores, level, dispositionalWeights);
   const { bars: barsWeight, effectiveness: effWeight } = SCORER_RUBRIC.compositeWeights;
   return Math.round(barsComposite * barsWeight + effectiveness.score * effWeight);
 }

@@ -398,15 +398,115 @@ export function getWeightsForLevel(
   return weights as Record<DimensionId, number>;
 }
 
+// ─── Dispositional weights (ADR-036 §3) ────────────────────────────────────
+
+/**
+ * Sign-preservation clamp range for dispositional multipliers.
+ *
+ * A scorer that silently zeros a dimension poisons every candidate result
+ * for a role forever, so dispositional multipliers are bounded to
+ * [MIN_DISPOSITIONAL, MAX_DISPOSITIONAL]. Weights can only shift magnitudes,
+ * never signs. This is the single highest-risk bug in Path B — test it.
+ */
+export const MIN_DISPOSITIONAL = 0.5;
+export const MAX_DISPOSITIONAL = 1.5;
+
+/**
+ * RCD trait names that map onto rubric dimensions. The RCD expresses team
+ * disposition in human-readable traits; the scorer cares about rubric
+ * dimensions. This table is the translation layer.
+ */
+const TRAIT_TO_DIMENSIONS: Record<string, readonly DimensionId[]> = {
+  pragmatism: ['prioritization', 'ai_direction'],
+  rigor: ['issue_identification', 'revision_evaluation'],
+  communication: ['reasoning_quality', 'question_formation'],
+};
+
+function clampDispositional(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  if (n < MIN_DISPOSITIONAL) return MIN_DISPOSITIONAL;
+  if (n > MAX_DISPOSITIONAL) return MAX_DISPOSITIONAL;
+  return n;
+}
+
+/**
+ * Applies dispositional multipliers to seniority-adjusted base weights and
+ * re-normalizes so the result still sums to 1.0.
+ *
+ * Accepted key forms in `dispositional`:
+ *   - Trait names (`pragmatism`, `rigor`, `communication`) — applied to all
+ *     dimensions in TRAIT_TO_DIMENSIONS for that trait.
+ *   - Direct dimension IDs — override trait-level values. Useful when an RCD
+ *     wants to tune a single dimension without moving the whole trait.
+ *
+ * All multipliers are clamped to [0.5, 1.5] BEFORE being applied. This is the
+ * sign-preservation invariant: no dimension can be zeroed out, no dimension
+ * can dominate.
+ */
+export function applyDispositionalWeights(
+  baseWeights: Record<DimensionId, number>,
+  dispositional: Record<string, number> | undefined,
+): Record<DimensionId, number> {
+  if (!dispositional || Object.keys(dispositional).length === 0) {
+    return baseWeights;
+  }
+
+  // Build a per-dimension multiplier starting from 1.0.
+  const multipliers: Record<DimensionId, number> = {
+    issue_identification: 1,
+    reasoning_quality: 1,
+    prioritization: 1,
+    question_formation: 1,
+    revision_evaluation: 1,
+    ai_direction: 1,
+  };
+
+  // First pass: trait-level keys.
+  for (const [key, raw] of Object.entries(dispositional)) {
+    const dims = TRAIT_TO_DIMENSIONS[key];
+    if (!dims) continue;
+    const m = clampDispositional(raw);
+    for (const d of dims) multipliers[d] = m;
+  }
+
+  // Second pass: direct dimension-ID keys override trait-level values.
+  for (const [key, raw] of Object.entries(dispositional)) {
+    if ((DIMENSION_IDS as readonly string[]).includes(key)) {
+      multipliers[key as DimensionId] = clampDispositional(raw);
+    }
+  }
+
+  const adjusted: Record<string, number> = {};
+  let total = 0;
+  for (const id of DIMENSION_IDS) {
+    const v = baseWeights[id] * multipliers[id];
+    adjusted[id] = v;
+    total += v;
+  }
+
+  if (total <= 0) {
+    // Degenerate — should be impossible given the clamp, but fall back safely.
+    return baseWeights;
+  }
+
+  for (const id of DIMENSION_IDS) {
+    adjusted[id] = adjusted[id]! / total;
+  }
+  return adjusted as Record<DimensionId, number>;
+}
+
 /**
  * Compute weighted BARS composite from dimension scores (1-5) → 0-100.
- * Applies seniority-adjusted weights.
+ * Applies seniority-adjusted weights, with optional dispositional overlay
+ * from the RCD (clamped to [0.5, 1.5] per dimension, then renormalized).
  */
 export function computeBarsComposite(
   scores: Record<DimensionId, number>,
   level: 'junior' | 'mid' | 'senior' = 'mid',
+  dispositionalWeights?: Record<string, number>,
 ): number {
-  const weights = getWeightsForLevel(level);
+  const base = getWeightsForLevel(level);
+  const weights = applyDispositionalWeights(base, dispositionalWeights);
   let sum = 0;
   for (const id of DIMENSION_IDS) {
     const score = scores[id] ?? 3; // default to midpoint

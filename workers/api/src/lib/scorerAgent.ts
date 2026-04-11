@@ -61,6 +61,14 @@ export interface ScorerInput {
   instructions?: string | null;
   /** Candidate seniority level — affects AI direction weight */
   level?: 'junior' | 'mid' | 'senior';
+  /**
+   * Optional dispositional weights from the Role Context Document (ADR-036 §3).
+   * Keys may be trait names (`pragmatism`, `rigor`, `communication`) or direct
+   * dimension IDs. Values are clamped to [0.5, 1.5] per dimension before being
+   * applied to the seniority-adjusted base weights — sign-preservation is
+   * invariant.
+   */
+  dispositionalWeights?: Record<string, number>;
 }
 
 /** Evidence attached to each scorer's output */
@@ -328,6 +336,7 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   const {
     apiKey, provider = 'workers-ai', ai, transcript, groundTruth,
     diff, prTitle, prDescription, instructions, level = 'mid',
+    dispositionalWeights,
   } = input;
 
   // Store AI binding for use in callLLM
@@ -404,8 +413,8 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
     metrics.false_positive_count, totalComments,
   );
 
-  // Overall composite
-  const overallScore = computeOverallScore(dimensions, effectiveness, level);
+  // Overall composite (with optional dispositional weight overlay from RCD)
+  const overallScore = computeOverallScore(dimensions, effectiveness, level, dispositionalWeights);
   const band = assignBand(overallScore);
 
   // Synthesizer call
