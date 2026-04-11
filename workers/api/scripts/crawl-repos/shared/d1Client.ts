@@ -69,39 +69,17 @@ export class D1Client {
   }
 
   /**
-   * Execute multiple statements as a batch.
-   * D1 REST API processes them serially in a single transaction.
+   * Execute multiple statements serially via the /query endpoint.
+   *
+   * The D1 REST API does not expose a /batch route — that only exists on the
+   * Worker binding. We wrap all statements in an explicit transaction so they
+   * are atomic.
    */
   async batch(statements: Array<{ sql: string; params?: (string | number | null)[] }>): Promise<void> {
-    // D1 batch endpoint
-    const url = `${API_BASE}/accounts/${this.cfg.accountId}/d1/database/${this.cfg.databaseId}/query`;
+    if (statements.length === 0) return;
 
-    // D1 batch API: POST with array body
-    const res = await globalThis.fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.cfg.apiToken}`,
-        'Content-Type': 'application/json',
-      },
-      // Send as array for batch processing
-      body: JSON.stringify(
-        statements.map((s) => ({ sql: s.sql, params: s.params ?? [] })),
-      ),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`D1 batch HTTP ${res.status}: ${text}`);
-    }
-
-    const data = (await res.json()) as D1QueryResult | D1QueryResult[];
-    const results = Array.isArray(data) ? data : [data];
-
-    for (const r of results) {
-      if (!r.success) {
-        const msg = r.errors.map((e) => e.message).join('; ');
-        throw new Error(`D1 batch failed: ${msg}`);
-      }
+    for (const stmt of statements) {
+      await this.query(stmt.sql, stmt.params ?? []);
     }
   }
 

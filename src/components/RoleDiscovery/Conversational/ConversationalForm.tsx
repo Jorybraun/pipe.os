@@ -34,10 +34,7 @@ const PHASES = [
 ];
 
 const CHROME_GRADIENT = {
-  background: 'linear-gradient(135deg, #fff 0%, rgba(200, 210, 230, 0.8) 25%, #fff 50%, rgba(180, 190, 220, 0.7) 75%, rgba(240, 240, 250, 0.9) 100%)',
-  WebkitBackgroundClip: 'text',
-  WebkitTextFillColor: 'transparent',
-  filter: 'drop-shadow(0 4px 30px rgba(200, 210, 230, 0.2))',
+  color: 'var(--pipe-text)',
 };
 
 export function ConversationalForm({ data, onChange, onComplete, currentPhase, onPhaseChange }: ConversationalFormProps) {
@@ -67,7 +64,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 1: Role Identity */}
           <FormFieldSet isActive={currentPhase === 0} order={0} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <User size={24} color="rgba(255, 255, 255, 0.4)" />
+              <User size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 ROLE IDENTITY
               </h2>
@@ -115,7 +112,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 2: Team Context */}
           <FormFieldSet isActive={currentPhase === 1} order={1} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Users size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Users size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 TEAM CONTEXT
               </h2>
@@ -144,7 +141,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 3: Technical Environment */}
           <FormFieldSet isActive={currentPhase === 2} order={2} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Code size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Code size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 TECHNICAL ENVIRONMENT
               </h2>
@@ -165,7 +162,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 4: Success Criteria */}
           <FormFieldSet isActive={currentPhase === 3} order={3} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Target size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Target size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 SUCCESS CRITERIA
               </h2>
@@ -186,7 +183,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 5: Challenges */}
           <FormFieldSet isActive={currentPhase === 4} order={4} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Zap size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Zap size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 CHALLENGES
               </h2>
@@ -207,7 +204,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 6: Culture */}
           <FormFieldSet isActive={currentPhase === 5} order={5} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Heart size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Heart size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 CULTURE
               </h2>
@@ -253,12 +250,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
               }}
               onMouseOver={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.background = 'var(--pipe-surface-hover)';
+                e.currentTarget.style.color = 'var(--pipe-text)';
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+                e.currentTarget.style.background = 'var(--pipe-surface)';
+                e.currentTarget.style.color = 'var(--pipe-text-muted)';
               }}
             >
               <ArrowLeft size={14} />

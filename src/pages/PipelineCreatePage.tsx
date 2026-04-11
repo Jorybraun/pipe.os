@@ -227,11 +227,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
                padding: 32,
                height: 'fit-content',
                minHeight: '640px',
-               background: 'rgba(255, 255, 255, 0.03)',
+               background: 'var(--pipe-surface-solid)',
                backdropFilter: 'blur(40px) saturate(150%)',
-               border: '1px solid rgba(255, 255, 255, 0.1)',
+               border: '1px solid var(--pipe-border)',
                borderRadius: 16,
-               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+               boxShadow: '0 8px 32px var(--pipe-shadow)',
                position: 'relative',
                overflow: 'hidden',
                display: 'flex',
@@ -310,7 +310,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <span style={{ 
                             fontSize: 10, 
-                            color: formData.selectedPresetId === preset.id ? '#fff' : 'rgba(255,255,255,0.4)',
+                            color: formData.selectedPresetId === preset.id ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                             fontWeight: 700,
                             letterSpacing: '0.05em'
                           }}>

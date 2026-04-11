@@ -182,14 +182,15 @@ export function NewStageModal({
     >
       {/* Modal */}
       <LiquidMetalCard
-        variant="dark"
+        variant="chrome"
         style={{
           width: '100%',
           maxWidth: 640,
           borderRadius: 16,
           overflow: 'hidden',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.3)',
           padding: 0,
+          background: 'var(--pipe-surface-solid)',
         }}
       >
       <div onClick={(e) => e.stopPropagation()}>

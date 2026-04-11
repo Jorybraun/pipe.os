@@ -6,6 +6,52 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Research: Role Discovery + Repo Understanding Data Contract (2026-04-10)
+
+Deep research run completing both halves of a single bridge that had drifted in the code: the Role Discovery flattening drift (Knowledge State → 8-field `CandidatePersona`) and the repo crawler's missing 3rd AI pass (`matchRepos.ts` is a SQL keyword join with no reasoning layer). 4 parallel researchers produced 84 cited sources across methodology, culture, code review, and validation dimensions. Verdict: PASS WITH NOTES (0 FATAL, 3 MAJOR patched before delivery — OCAI α values softened to reported range, SWE-bench 40% figure flagged for primary-source reconfirmation, Mobley v. Workday characterization softened because the case is in active litigation).
+
+**Research artifacts (`knowledge/outputs/`):**
+- `role-discovery-data-contract.md` — final cited brief (84 sources)
+- `role-discovery-data-contract.provenance.md` — provenance record with URL verification status
+- `role-discovery-data-contract-brief.md` — verifier's citation pass (reviewer findings were patched directly into the brief; no standalone verification file)
+- `role-discovery-data-contract-research-methodology.md` (R1, 18 sources) — qualitative methodology, synthesis prompting
+- `role-discovery-data-contract-research-culture.md` (R2, 24 sources) — OCAI, BARS, probe banks, compliance
+- `role-discovery-data-contract-research-codereview.md` (R3, 25 sources) — MSR signals, two-stage retrieval, competitor scan
+- `role-discovery-data-contract-research-validation.md` (R4, 17 sources) — multi-stakeholder aggregation, staged validation ladder
+- `.plans/role-discovery-data-contract.md` — research plan with task ledger + decision log
+- `.drafts/role-discovery-data-contract-draft.md` — Lead Researcher synthesis draft
+
+#### Added — ADR-036: Role Discovery + Repo Understanding Data Contract (Proposed, 2026-04-10)
+
+`docs/decisions/ADR-036-role-discovery-data-contract.md`. Supersedes ADR-028 sections treating `CandidatePersona` as the canonical synthesis artifact. Captures both halves of the bridge in a single architectural decision.
+
+**Half 1 — Role Context Document (replaces CandidatePersona):**
+- Hybrid qualitative schema: framework-analysis matrix + IPA evidence-anchor pattern + grounded-theory axial links + Means-End Chain laddering. Per-stakeholder per-domain cells preserve `attribute_quote → consequence → value` chains, structured stories, open codes, axial links, and energy signals as first-class fields.
+- Three-layer synthesis prompt pattern: schema-guided generation with field exemplars + constrained JSON decoding via `response_format: json_schema` + Haiku 4.5 verification pass enforcing verbatim-quote grounding. Bottom-up ordering (quote → consequence → value) is load-bearing against value projection.
+- Three-tier multi-stakeholder aggregation: domain-authoritative anchors (HM on Why/Bar, TM on Team/Process) + per-source preservation with `conflict_flag` on shared domains + explicit-formula aggregates only on genuine consensus. Grounded in Conway & Huffcutt ρ=.34.
+- 5-signal team culture profile (4 OCAI archetypes under Current-culture framing + psychological safety). Rejects Harver's Ideal-culture framing on validity grounds per Heritage et al. 2014.
+- BARS: universal base + per-dimension RCD-derived anchor overrides (role-setup-time, recruiter-approved, never per-candidate).
+- Probe bank: static base + role-setup-time enrichment derived from RCD laddering chains (never per-candidate — fails NYC LL 144 auditability and EU AI Act Art 14 interpretability).
+- HITL-only dealbreaker gates with pre-populated `jobRelatednessNote` for Griggs business-necessity defense. Legal base: Griggs, Uniform Guidelines 29 CFR 1607, EEOC v. iTutorGroup (2023), Mobley v. Workday (in litigation), EU AI Act Article 14.
+
+**Half 2 — Repo Understanding Contract (two-stage retrieval):**
+- Nine codebase signals across three tiers. Tier 1 (5 signals: test_touch_rate, mean_changed_files, p90_changed_files, issue_link_rate, complexity_band, plus SWE-bench eligibility) is computable today from existing `repo_sample_prs` + `repo_constructs` without Pass 2 extension. Tier 2 (architecture_style, review_density, commit_cadence, satd_density) is deferred to a second crawler sprint.
+- Crawler Pass 3 (offline, Cloudflare Queue consumer, Claude Haiku 4.5) writes role-*agnostic* `repo_engineering_signals` once per repo. Amortized across every role that queries it. Content-hashed, refreshed on re-crawl. ~$5 per 5,000-repo library refresh.
+- Runtime Worker role-fit rerank (Gemma 4 26B on Workers AI) reads RCD Technical Context + top-N signals per `matchRepos` candidate, writes cached per-(role × repo) `repo_role_alignment` rows. Keyed by `(role_context_id, repo_id)` with `rcd_version` + `signals_version` invalidation columns.
+- `matchRepos.ts` becomes a stage-0 SQL retriever returning top-20 candidates; Worker does stage-1 rerank with per-candidate structured justification the recruiter can audit.
+- Mirrors ColBERT offline/online split and AIF asynchronous preranking. Validated against SWE-bench query-agnostic retrieval limits.
+- Model-family independence rule: Haiku for enrichment, Gemma for rerank. Never the same family — preserves the ADR-032 independent-read principle.
+
+**New D1 tables (migration 0022 — not yet written):**
+- `repo_engineering_signals` — role-agnostic per-repo signal blob with Tier-1 and Tier-2 columns + `engineering_narrative` text + content hash + signals_version.
+- `repo_role_alignment` — cached per (`role_context_id`, `repo_id`) alignment score + reasoning_json + rcd_version + signals_version invalidation keys.
+- `role_probe_bank` — recruiter-approved static + enriched probes keyed by role_context_id.
+- `role_contexts` gains `rcd_version`, `rcd_json`, `validation_metadata`, `bars_overrides` columns; `persona_json` demoted to cached view (not dropped — legacy readers).
+
+**Validation methodology (cross-cutting):** Staged evidence ladder — N=0 face validity → N=30–50 convergent bootstrap → N=100–200 transportability per Sackett 2022 (r_op=.42) + Hoffman 1999 → N=300–500 criterion-suggestive ITS. Local criterion studies at N=85–200 are infeasible at PIPE's volumes. Versioning precondition: RCD `validation_metadata` + RUC `rcd_version` / `signals_version` are not optional — without them old cohorts mix silently with new ones after schema evolution.
+
+**STRATEGY.md updates:** RD-1 through RD-24 section header now links the brief + ADR-036. Decision Log gains two entries (research complete + ADR-036 drafted). Brief 4 added to "The four research briefs" section. No code changes yet — implementation is phased across 4 sub-phases and blocked on founder decision about culture-first vs. repo-first sequencing.
+
 #### Added — Repo Crawler & Graph Index: offline pre-qualified repo catalog (2026-04-10)
 
 Replaces real-time Libraries.io discovery with an offline-crawled, pre-qualified repo database queryable at runtime in <200ms (CR-13 Stages 3-4, CR-14, CR-19).

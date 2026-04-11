@@ -1,6 +1,6 @@
 # Knowledge Base Index
 
-Last updated: 2026-04-08 (added culture agent full code audit, §2.3)
+Last updated: 2026-04-10 (added AI literacy market brief §2.3 and human judgment R&D brief §2.4)
 
 Navigation index for `knowledge/`. Covers the canonical plan, deep-research outputs, operational question banks, and raw sources. See `knowledge/README.md` for the LLM-wiki philosophy this is built on.
 
@@ -28,9 +28,15 @@ Guardrail rule (from `CLAUDE.md`, enforced by ADR-033): if a user request contra
 
 ---
 
-## 2. Deep research outputs (`knowledge/outputs/`)
+## 2. Deep research outputs (`knowledge/outputs/`, `knowledge/business/`, `knowledge/rnd/`)
 
-Two completed research runs on disk. Each follows the same pipeline: **plan → parallel researchers → draft → verifier (citations) → reviewer (evidence integrity) → final + provenance.** Both are the input material for STRATEGY.md — read the plan first, dip into the briefs when you need the evidence behind a specific finding.
+Four completed research runs on disk, split across three tracks:
+
+- **Design research (`knowledge/outputs/`)** — the two briefs that drive what Pipe builds day-to-day. These are the input material for STRATEGY.md and the ADRs: §2.1 behavioral/culture agent, §2.2 code review content sourcing.
+- **Business research (`knowledge/business/`)** — market/competitive intelligence. §2.3 AI literacy hiring market. Commissioned to answer "is there a market for this?" rather than "how do we build it?"
+- **R&D research (`knowledge/rnd/`)** — scientific foundations and future product concepts. §2.4 human judgment in AI-augmented engineering assessment. Feeds both current product (code review challenge) and speculative product (dev container assessment).
+
+All four follow the same pipeline: **plan → parallel researchers → draft → verifier (citations) → reviewer (evidence integrity) → final + provenance.** Read the relevant STRATEGY.md section first, dip into the briefs when you need the evidence behind a specific finding.
 
 ### 2.1 Behavioral & Culture-Fit Interview Agent — 2026-04-07
 
@@ -85,9 +91,60 @@ Research brief for building PIPE's turn-based human-AI code review assessment. C
 - Rolling-freshness content gate — post-2024-07-01, quarterly advance, execution-based ground truth (`CR-16`, `CR-28`).
 - Unit economics: ~$0.05/assessment MVP tier, ~$0.16 summative tier. Margin ≥99% at any realistic price point.
 
+### 2.3 AI Literacy in Hiring (business intelligence) — 2026-04-09
+
+Market/competitive research brief answering whether testing AI literacy and judgment is a real market opportunity for Pipe. Commissioned to counter confirmation bias in the founder's own read of the market.
+
+- **Final:** [`business/papers/ai-literacy-hiring.md`](business/papers/ai-literacy-hiring.md) · ~19 KB
+- **Plan:** [`business/outputs/.plans/ai-literacy-hiring.md`](business/outputs/.plans/ai-literacy-hiring.md)
+- **Provenance:** [`business/papers/ai-literacy-hiring.provenance.md`](business/papers/ai-literacy-hiring.provenance.md)
+- **Cited brief (archive):** [`business/outputs/ai-literacy-hiring-brief.md`](business/outputs/ai-literacy-hiring-brief.md)
+- **Research files (3 parallel researchers):**
+  - [`business/outputs/ai-literacy-research-academic.md`](business/outputs/ai-literacy-research-academic.md) — R1: AI literacy frameworks (DAILI, AILit, Stanford HAI), workforce gap evidence
+  - [`business/outputs/ai-literacy-research-competitive.md`](business/outputs/ai-literacy-research-competitive.md) — R2: Competitive landscape scan (HackerRank, CodeSignal, Workera, Woven, Karat)
+  - [`business/outputs/ai-literacy-research-market.md`](business/outputs/ai-literacy-research-market.md) — R3: Market size, wage premiums, hiring signals, LinkedIn/Lightcast data
+
+**Status:** Delivered. 50 cited sources across 3 dimensions.
+
+**Key load-bearing findings:**
+- No existing hiring platform tests *evaluation of AI output* as a distinct skill. Every major competitor tests "using AI to solve problems" not "judging whether AI solved them correctly." This is the exact gap Pipe fills.
+- AI-skill wage premium is ~56% across roles (Lightcast 2025), the highest premium tracked for any skill category.
+- The global AI-in-recruitment market is $30B → $65B (~17% CAGR). The adjacent "AI literacy assessment" market is nascent (no established category leader) — category creation risk but category ownership upside.
+- LinkedIn job postings mentioning "AI collaboration" or "prompt engineering" grew 177% YoY (2024-2025). Demand signal is real but language is not standardized, which is the product opportunity.
+
+### 2.4 Human Judgment in AI-Augmented Engineering Assessment (R&D) — 2026-04-10
+
+Scientific foundation for how to assess human judgment when AI handles execution. Answers: what is the human skill that matters, how is it measured, and what does a concrete assessment product look like? Source material for both the code review challenge (building now) and the dev container assessment (future concept).
+
+- **Final:** [`rnd/papers/human-judgment-ai-assessment.md`](rnd/papers/human-judgment-ai-assessment.md) · ~33 KB
+- **Plan:** [`rnd/outputs/.plans/human-judgment-ai-assessment.md`](rnd/outputs/.plans/human-judgment-ai-assessment.md)
+- **Provenance:** [`rnd/papers/human-judgment-ai-assessment.provenance.md`](rnd/papers/human-judgment-ai-assessment.provenance.md)
+- **Verification report:** [`rnd/outputs/human-judgment-ai-assessment-verification.md`](rnd/outputs/human-judgment-ai-assessment-verification.md)
+- **Draft (archive):** [`rnd/outputs/.drafts/human-judgment-ai-assessment-draft.md`](rnd/outputs/.drafts/human-judgment-ai-assessment-draft.md)
+- **Cited brief (archive):** [`rnd/outputs/human-judgment-ai-assessment-brief.md`](rnd/outputs/human-judgment-ai-assessment-brief.md)
+- **Research files (4 parallel researchers):**
+  - [`rnd/outputs/human-judgment-research-cognitive.md`](rnd/outputs/human-judgment-research-cognitive.md) — R1: Automation bias, metacognition, calibration, cognitive forcing RCTs
+  - [`rnd/outputs/human-judgment-research-assessment.md`](rnd/outputs/human-judgment-research-assessment.md) — R2: OSCEs, aviation check rides, bar exam MPT, SWE-bench/DevBench/HumanEval gap analysis
+  - [`rnd/outputs/human-judgment-research-telemetry.md`](rnd/outputs/human-judgment-research-telemetry.md) — R3: Developer AI usage patterns, instrumentable signals, code churn / TDD / acceptance-rate predictors
+  - [`rnd/outputs/human-judgment-research-agentic.md`](rnd/outputs/human-judgment-research-agentic.md) — R4: Agent supervision, RLHF annotator quality, dev container session blueprint, grading paradox solutions
+
+**Status:** Delivered (PASS WITH NOTES; 1 FATAL + 3 MAJOR fixed before delivery). 56 cited sources.
+
+**Key load-bearing findings (candidates for STRATEGY.md row IDs `HJ-*`):**
+- Automation bias is universal and expertise does not protect against it — experienced radiologists' accuracy fell from 82% to 45.5% with incorrect AI suggestions. The single most diagnostic scenario is "AI is confidently wrong"; the implementer agent must include cases where it defends wrong positions under pushback.
+- Cognitive forcing strategies (checklists, mandatory pauses) show null results in RCTs. Only exposure to failure cases during training and confidence-level displays actually reduce complacency. Implication: the code review challenge must include PRs where the AI implementer is wrong, not just PRs with bugs.
+- Multi-station reliability is non-negotiable. OSCEs need 10-15 stations, MMI needs 7-12, and 14+ independent questions are required for 0.80 reliability. Pipe's 6-8 PR target (CR-1 in STRATEGY.md) is adapted from this — 6 PRs × 6 BARS dimensions = 36+ independent scoring data points.
+- AI-generated code has 41% higher churn than human-written code; AI-assisted developers score 17% lower on post-task comprehension quizzes. Both are capturable telemetry signals for the dev container product.
+- The grading paradox has five solutions: planted bugs with test-based ground truth (primary), comprehension transfer tests, BARS-scored explanation quality, behavioral process scoring from telemetry, and hybrid calibration with offline oracle (already the Devstral + Sonnet model in STRATEGY.md).
+
+**How this connects to what's already being built:**
+- The code review challenge (ADR-032) already implements the multi-station model. This research provides the scientific grounding.
+- The dev container assessment is a future product concept. Section 7 of the brief contains a reference design with two distinct products (A: code review challenge, B: dev container assessment) — Product A is building now, Product B is deferred.
+- The construct-to-bug-type mapping (OQ-3 → **CR-15** in STRATEGY.md) is identified as the critical next step connecting the repo catalog to challenge generation.
+
 ---
 
-## 2.3 Code audits
+## 2.5 Code audits
 
 ### Culture Agent Code Audit — 2026-04-08
 
@@ -113,7 +170,32 @@ Full file list, end-to-end flow, ADR-by-ADR delta, subtle failure modes, and a 1
 
 ---
 
-## 2.4 Planned / not yet executed research
+## 2.6 Planned / not yet executed research
+
+### Role Discovery + Repo Understanding Data Contract — **TODO**
+
+**Status:** Plan written 2026-04-10. Addresses RD-1 through RD-24 in STRATEGY.md. Resolution target: ADR-036.
+
+- **Plan:** [`outputs/.plans/role-discovery-data-contract.md`](outputs/.plans/role-discovery-data-contract.md)
+- **Execution mode:** 4 parallel researchers on Sonnet 4.6, 2 expected rounds, 60–90 sources
+- **Decision Log entry:** 2026-04-10 — two drifts flagged per ADR-033 guardrail (Role Discovery flattening + repo library has no AI reasoning layer)
+
+**What this loop must answer (11 sub-questions):**
+1. **Q1** — Role Context Document schema preserving laddering chains, stories, multi-stakeholder disagreements as first-class fields (R1)
+2. **Q2** — Team-signal extraction taxonomy from culture platforms (HireVue, Plum, Culture Amp) (R2)
+3. **Q3** — Multi-stakeholder aggregation (hiring manager vs. team member vs. recruiter per ADR-028) (R4)
+4. **Q4** — Team-specific BARS anchor calibration and its psychometric cost (R2)
+5. **Q5** — Team-specific probe generation vs. static bank with weighting (R2)
+6. **Q6** — Codebase-shape signals beyond skill keywords (MSR/ICSE literature) (R3)
+7. **Q7** — How competitors (Codility, HackerRank, CodeSignal, Woven, Prelude) pair challenges to team context (R3)
+8. **Q8** — Synthesis prompting to preserve laddering depth transcript → structured JSON (R1)
+9. **Q9** — Dealbreaker propagation as auto-fail vs HITL gate with legal defensibility (R2)
+10. **Q10** — Validation methodology for role-tailored assessment at low volumes (R4)
+11. **Q11 (load-bearing)** — 3rd AI pass architecture: offline per-repo summarization vs runtime per-(role × repo) rerank. Answer shapes two new D1 tables, new crawler `--pass3` flag, and new Worker handler between `discover.ts` and `matchRepos.ts`. (R3)
+
+**Blocks:** ADR-036 (Role Discovery + Repo Understanding Data Contract), schema migration for Role Context Document, crawler Pass 3 implementation, runtime role-fit rerank Worker handler.
+
+**When to run:** after founder review and sign-off on the 11-question scope. Parallel 4-researcher run.
 
 ### Culture Agent Scoring Architecture (PIPE-fit) — **TODO**
 
@@ -319,7 +401,7 @@ Graph construction is deferred — STRATEGY.md row IDs are the interim structure
                          ↑
                          │ ratifies / overrides
                          │
-┌─ DEEP RESEARCH OUTPUTS (design-time, drives decisions) ──┐
+┌─ DESIGN RESEARCH (design-time, drives what we build) ───┐
 │  outputs/behavioral-culture-interview-agent.md           │
 │     → BC-1..BC-45 in STRATEGY.md                         │
 │     → ADR-029/030/031                                    │
@@ -327,6 +409,19 @@ Graph construction is deferred — STRATEGY.md row IDs are the interim structure
 │  outputs/code-review-content-sourcing.md                 │
 │     → CR-1..CR-33 in STRATEGY.md                         │
 │     → ADR-032 (updates ADR-024, ADR-026)                 │
+└──────────────────────────────────────────────────────────┘
+
+┌─ BUSINESS RESEARCH (market / competitive intelligence) ─┐
+│  business/papers/ai-literacy-hiring.md                   │
+│     → informs positioning, not implementation            │
+│     → no STRATEGY.md rows yet                            │
+└──────────────────────────────────────────────────────────┘
+
+┌─ R&D RESEARCH (scientific foundations, future concepts) ┐
+│  rnd/papers/human-judgment-ai-assessment.md              │
+│     → grounds CR-1, CR-4, CR-5 (already in STRATEGY)     │
+│     → candidate HJ-* rows for new findings               │
+│     → future: dev container assessment product           │
 └──────────────────────────────────────────────────────────┘
                          ↑
                          │ informs

@@ -8,9 +8,9 @@ interface SelectInputProps {
 const inputStyle = {
   width: '100%',
   padding: '12px 16px',
-  background: 'rgba(0,0,0,0.2)',
+  background: 'var(--pipe-surface-solid)',
   border: '1px solid var(--pipe-border)',
-  color: 'var(--pipe-text, #fff)',
+  color: 'var(--pipe-text)',
   fontSize: 12,
   fontFamily: '"Space Mono", monospace',
   outline: 'none',
@@ -32,7 +32,7 @@ export function SelectInput({
       style={{
         ...inputStyle,
         cursor: 'pointer',
-        color: value ? '#fff' : 'rgba(255,255,255,0.3)',
+        color: value ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
       }}
     >
       <option value="">{placeholder}</option>

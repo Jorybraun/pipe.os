@@ -211,11 +211,11 @@ export function AgentPanel({
                     border: "none",
                     borderBottom:
                       tab === t.id
-                        ? "2px solid rgba(255,255,255,0.4)"
+                        ? "2px solid var(--pipe-text)"
                         : "2px solid transparent",
                     color:
                       tab === t.id
-                        ? "rgba(255,255,255,0.85)"
+                        ? "var(--pipe-text)"
                         : "var(--pipe-text-dim)",
                     fontSize: 9,
                     letterSpacing: "0.12em",
@@ -256,11 +256,11 @@ export function AgentPanel({
                       marginBottom: 10,
                       background:
                         m.from === "user"
-                          ? "rgba(255,255,255,0.02)"
+                          ? "var(--pipe-surface)"
                           : "rgba(139, 92, 246, 0.08)",
                       border: `1px solid ${
                         m.from === "user"
-                          ? "rgba(255,255,255,0.03)"
+                          ? "var(--pipe-surface)"
                           : "rgba(139, 92, 246, 0.15)"
                       }`,
                     }}
@@ -268,7 +268,7 @@ export function AgentPanel({
                     <p
                       style={{
                         fontSize: 11,
-                        color: "rgba(255,255,255,0.65)",
+                        color: "var(--pipe-text-muted)",
                         lineHeight: 1.6,
                         margin: 0,
                       }}
@@ -289,7 +289,7 @@ export function AgentPanel({
                     padding: "12px 16px",
                     background: "rgba(0,0,0,0.2)",
                     border: "1px solid var(--pipe-border)",
-                    color: "var(--pipe-text, #fff)",
+                    color: "var(--pipe-text)",
                     fontSize: 11,
                     fontFamily: '"Space Mono", monospace',
                     outline: "none",
@@ -301,7 +301,7 @@ export function AgentPanel({
                     padding: "12px 14px",
                     background: "rgba(139, 92, 246, 0.15)",
                     border: "1px solid rgba(139, 92, 246, 0.25)",
-                    color: "var(--pipe-text, #fff)",
+                    color: "var(--pipe-text)",
                     cursor: "pointer",
                   }}
                 >
@@ -339,13 +339,13 @@ export function AgentPanel({
                       style={{
                         fontSize: 32,
                         fontWeight: 300,
-                        color: "rgba(255,255,255,0.85)",
+                        color: "var(--pipe-text)",
                       }}
                     >
                       {progress}
                     </span>
                     <span
-                      style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}
+                      style={{ fontSize: 13, color: "var(--pipe-text-dim)" }}
                     >
                       %
                     </span>
@@ -373,13 +373,13 @@ export function AgentPanel({
                       style={{
                         fontSize: 32,
                         fontWeight: 300,
-                        color: "rgba(255,255,255,0.85)",
+                        color: "var(--pipe-text)",
                       }}
                     >
                       {completedSections}
                     </span>
                     <span
-                      style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}
+                      style={{ fontSize: 13, color: "var(--pipe-text-dim)" }}
                     >
                       /6
                     </span>
@@ -414,7 +414,7 @@ export function AgentPanel({
                       }}
                     />
                     <span
-                      style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}
+                      style={{ fontSize: 12, color: "var(--pipe-text-muted)" }}
                     >
                       {gaps.length === 0
                         ? "All complete"
@@ -448,7 +448,7 @@ export function AgentPanel({
                       }}
                     />
                     <span
-                      style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}
+                      style={{ fontSize: 12, color: "var(--pipe-text-muted)" }}
                     >
                       {progress >= 60 ? "Ready" : "Gathering"}
                     </span>
@@ -468,7 +468,7 @@ export function AgentPanel({
                   style={{
                     width: 5,
                     height: 5,
-                    background: "rgba(255,255,255,0.25)",
+                    background: "var(--pipe-border)",
                   }}
                 />
                 <span
@@ -522,7 +522,7 @@ export function AgentPanel({
                   style={{
                     width: 5,
                     height: 5,
-                    background: "rgba(255,255,255,0.25)",
+                    background: "var(--pipe-border)",
                   }}
                 />
                 <span
@@ -549,7 +549,7 @@ export function AgentPanel({
                       style={{ width: 5, height: 5, background: "#fcd34d" }}
                     />
                     <span
-                      style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}
+                      style={{ fontSize: 11, color: "var(--pipe-text-muted)" }}
                     >
                       {g}
                     </span>
@@ -575,11 +575,11 @@ export function AgentPanel({
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        input::placeholder { color: rgba(255,255,255,0.2); }
+        input::placeholder { color: var(--pipe-text-dim); }
         input:focus { border-color: rgba(139, 92, 246, 0.3) !important; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+        ::-webkit-scrollbar-thumb { background: var(--pipe-border); }
       `}</style>
     </div>
   );

@@ -36,7 +36,7 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
           if (i === visibleEndIndex && hasMore) {
              return (
                <div key="more" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                 <div style={{ color: 'rgba(255,255,255,0.2)' }}>
+                 <div style={{ color: 'var(--pipe-text-dim)' }}>
                    <MoreHorizontal size={16} />
                  </div>
                </div>
@@ -57,13 +57,13 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                     ? "rgba(16, 185, 129, 0.1)"
                     : isActive
                     ? "rgba(139, 92, 246, 0.2)"
-                    : "rgba(255,255,255,0.03)",
+                    : "var(--pipe-surface)",
                   border: `1px solid ${
                     isComplete
                       ? "rgba(16, 185, 129, 0.4)"
                       : isActive
                       ? "rgba(139, 92, 246, 0.5)"
-                      : "rgba(255,255,255,0.08)"
+                      : "var(--pipe-border)"
                   }`,
                   display: "flex",
                   alignItems: "center",
@@ -71,7 +71,7 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                   color: isComplete
                     ? "#10b981"
                     : isActive
-                    ? "#fff"
+                    ? "var(--pipe-text)"
                     : "var(--pipe-text-dim)",
                   fontSize: 10,
                   fontWeight: 700,
@@ -117,7 +117,7 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                   height: 1,
                   background: isComplete
                     ? "rgba(16, 185, 129, 0.2)"
-                    : "rgba(255,255,255,0.06)",
+                    : "var(--pipe-border-light)",
                 }}
               />
             )}

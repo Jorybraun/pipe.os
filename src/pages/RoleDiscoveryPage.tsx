@@ -45,7 +45,7 @@ const COVERAGE_LEVELS: Record<DomainCoverage, number> = {
 };
 
 const COVERAGE_COLORS: Record<DomainCoverage, string> = {
-  none: 'rgba(255,255,255,0.06)',
+  none: 'var(--pipe-border-light)',
   sparse: 'rgba(251, 191, 36, 0.4)',
   partial: 'rgba(251, 191, 36, 0.65)',
   covered: 'rgba(74, 222, 128, 0.6)',
@@ -67,8 +67,8 @@ function DomainBars({ domains }: { domains: Record<string, DomainCoverage> }): J
               style={{
                 width: 28,
                 height: 36,
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.06)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border-light)',
                 position: 'relative',
                 overflow: 'hidden',
               }}
@@ -88,7 +88,7 @@ function DomainBars({ domains }: { domains: Record<string, DomainCoverage> }): J
             <span style={{
               fontSize: 7,
               letterSpacing: '0.1em',
-              color: coverage === 'none' ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
+              color: coverage === 'none' ? 'var(--pipe-text-dim)' : 'var(--pipe-text-muted)',
               fontFamily: '"Space Mono", monospace',
             }}>
               {label}
@@ -123,7 +123,7 @@ function ThinkingIndicator({ message }: { message?: string }): JSX.Element {
         <span style={{
           fontSize: 10,
           letterSpacing: '0.1em',
-          color: 'rgba(255,255,255,0.3)',
+          color: 'var(--pipe-text-dim)',
           fontFamily: '"Space Mono", monospace',
         }}>
           {message}
@@ -171,7 +171,7 @@ function PastExchangeCard({ exchange, index, onFeedback }: {
       onClick={() => setExpanded(!expanded)}
       style={{
         padding: expanded ? '16px 20px' : '10px 20px',
-        background: 'rgba(255,255,255,0.02)',
+        background: 'var(--pipe-surface)',
         borderLeft: `2px solid ${hasFeedback ? 'rgba(251, 191, 36, 0.4)' : 'rgba(139, 92, 246, 0.2)'}`,
         cursor: 'pointer',
         transition: 'all 0.3s ease',
@@ -191,7 +191,7 @@ function PastExchangeCard({ exchange, index, onFeedback }: {
           </span>
           <span style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: expanded ? 'normal' : 'nowrap',
@@ -213,12 +213,12 @@ function PastExchangeCard({ exchange, index, onFeedback }: {
             onMouseOver={(e) => { e.currentTarget.style.opacity = '1'; }}
             onMouseOut={(e) => { e.currentTarget.style.opacity = hasFeedback ? '1' : '0.3'; }}
           >
-            <Flag size={11} color={hasFeedback ? 'rgba(251, 191, 36, 0.9)' : 'rgba(255,255,255,0.5)'} />
+            <Flag size={11} color={hasFeedback ? 'rgba(251, 191, 36, 0.9)' : 'var(--pipe-text-muted)'} />
           </div>
           <ChevronDown
             size={12}
             style={{
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               transform: expanded ? 'rotate(180deg)' : 'rotate(0)',
               transition: 'transform 0.2s ease',
             }}
@@ -229,7 +229,7 @@ function PastExchangeCard({ exchange, index, onFeedback }: {
         <div style={{ marginTop: 12 }}>
           <div style={{
             fontSize: 10,
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             marginBottom: 6,
             letterSpacing: '0.1em',
             fontFamily: '"Space Mono", monospace',
@@ -238,7 +238,7 @@ function PastExchangeCard({ exchange, index, onFeedback }: {
           </div>
           <div style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.55)',
+            color: 'var(--pipe-text-muted)',
             lineHeight: 1.6,
             fontFamily: '"Space Mono", monospace',
           }}>
@@ -270,7 +270,7 @@ function PastExchangeCard({ exchange, index, onFeedback }: {
                   padding: '10px 12px',
                   background: 'rgba(251, 191, 36, 0.04)',
                   border: '1px solid rgba(251, 191, 36, 0.15)',
-                  color: 'rgba(255,255,255,0.7)',
+                  color: 'var(--pipe-text-muted)',
                   fontSize: 11,
                   fontFamily: '"Space Mono", monospace',
                   resize: 'vertical',
@@ -284,8 +284,8 @@ function PastExchangeCard({ exchange, index, onFeedback }: {
                   marginTop: 8,
                   padding: '6px 16px',
                   background: feedbackText.trim() ? 'rgba(251, 191, 36, 0.1)' : 'transparent',
-                  border: `1px solid ${feedbackText.trim() ? 'rgba(251, 191, 36, 0.3)' : 'rgba(255,255,255,0.06)'}`,
-                  color: feedbackText.trim() ? 'rgba(251, 191, 36, 0.9)' : 'rgba(255,255,255,0.2)',
+                  border: `1px solid ${feedbackText.trim() ? 'rgba(251, 191, 36, 0.3)' : 'var(--pipe-border-light)'}`,
+                  color: feedbackText.trim() ? 'rgba(251, 191, 36, 0.9)' : 'var(--pipe-text-dim)',
                   fontSize: 9,
                   fontWeight: 700,
                   letterSpacing: '0.1em',
@@ -376,7 +376,7 @@ function QuestionInput({
       <div style={{
         marginTop: 10,
         fontSize: 9,
-        color: 'rgba(255,255,255,0.2)',
+        color: 'var(--pipe-text-dim)',
         fontFamily: '"Space Mono", monospace',
         letterSpacing: '0.1em',
       }}>
@@ -458,7 +458,7 @@ function BaselinePhase({
           <h1 style={{
             fontSize: 28,
             fontWeight: 800,
-            color: 'var(--pipe-text, #fff)',
+            color: 'var(--pipe-text)',
             letterSpacing: '-0.02em',
             margin: 0,
           }}>
@@ -475,9 +475,9 @@ function BaselinePhase({
               padding: '14px 22px',
               background: 'transparent',
               border: canSubmit
-                ? '1px solid rgba(255,255,255,0.12)'
-                : '1px solid rgba(255,255,255,0.05)',
-              color: canSubmit ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)',
+                ? '1px solid var(--pipe-border)'
+                : '1px solid var(--pipe-border-light)',
+              color: canSubmit ? 'var(--pipe-text-muted)' : 'var(--pipe-text-dim)',
               fontSize: 11,
               fontWeight: 700,
               letterSpacing: '0.15em',
@@ -503,11 +503,11 @@ function BaselinePhase({
               padding: '14px 28px',
               background: canSubmit
                 ? 'rgba(74, 222, 128, 0.08)'
-                : 'rgba(255,255,255,0.03)',
+                : 'var(--pipe-surface)',
               border: canSubmit
                 ? '1px solid rgba(74, 222, 128, 0.3)'
-                : '1px solid rgba(255,255,255,0.06)',
-              color: canSubmit ? 'rgba(74, 222, 128, 0.9)' : 'rgba(255,255,255,0.2)',
+                : '1px solid var(--pipe-border-light)',
+              color: canSubmit ? 'rgba(74, 222, 128, 0.9)' : 'var(--pipe-text-dim)',
               fontSize: 11,
               fontWeight: 700,
               letterSpacing: '0.15em',
@@ -540,10 +540,10 @@ function BaselinePhase({
               : 'transparent',
             border: didImport
               ? '1px solid rgba(74, 222, 128, 0.3)'
-              : '1px solid rgba(255,255,255,0.08)',
+              : '1px solid var(--pipe-border)',
             color: didImport
               ? 'rgba(74, 222, 128, 0.85)'
-              : 'rgba(255,255,255,0.55)',
+              : 'var(--pipe-text-muted)',
             fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.15em',
@@ -565,8 +565,8 @@ function BaselinePhase({
           style={{
             padding: '12px 18px',
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: 'rgba(255,255,255,0.55)',
+            border: '1px solid var(--pipe-border)',
+            color: 'var(--pipe-text-muted)',
             fontSize: 10,
             fontWeight: 700,
             letterSpacing: '0.15em',
@@ -773,7 +773,7 @@ function InterviewPhase({
           <div style={{
             height: 2,
             width: 200,
-            background: 'rgba(255,255,255,0.04)',
+            background: 'var(--pipe-surface)',
             position: 'relative',
             overflow: 'hidden',
           }}>
@@ -829,7 +829,7 @@ function InterviewPhase({
           {acknowledgment && (
             <div style={{
               fontSize: 12,
-              color: 'rgba(255,255,255,0.45)',
+              color: 'var(--pipe-text-dim)',
               lineHeight: 1.7,
               marginBottom: 12,
               fontFamily: '"Space Mono", monospace',
@@ -844,8 +844,8 @@ function InterviewPhase({
           ref={scrollRef}
           style={{
             padding: 32,
-            background: 'rgba(255,255,255,0.02)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border-light)',
             borderRadius: 16,
           }}
         >
@@ -853,7 +853,7 @@ function InterviewPhase({
           {acknowledgment && (
             <div style={{
               fontSize: 12,
-              color: 'rgba(255,255,255,0.45)',
+              color: 'var(--pipe-text-dim)',
               lineHeight: 1.7,
               marginBottom: 12,
               fontFamily: '"Space Mono", monospace',
@@ -864,7 +864,7 @@ function InterviewPhase({
           <div style={{
             fontSize: 18,
             fontWeight: 700,
-            color: 'var(--pipe-text, #fff)',
+            color: 'var(--pipe-text)',
             lineHeight: 1.4,
             marginBottom: 28,
             letterSpacing: '-0.01em',
@@ -885,14 +885,14 @@ function InterviewPhase({
                   background: isRecording
                     ? 'rgba(248, 113, 113, 0.15)'
                     : isTranscribing
-                      ? 'rgba(255,255,255,0.04)'
-                      : 'rgba(255,255,255,0.03)',
+                      ? 'var(--pipe-surface)'
+                      : 'var(--pipe-surface)',
                   border: isRecording
                     ? '2px solid rgba(248, 113, 113, 0.4)'
-                    : '2px solid rgba(255,255,255,0.08)',
+                    : '2px solid var(--pipe-text)',
                   color: isRecording
                     ? 'rgba(248, 113, 113, 0.9)'
-                    : 'rgba(255,255,255,0.35)',
+                    : 'var(--pipe-text-dim)',
                   cursor: isTranscribing ? 'default' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -916,7 +916,7 @@ function InterviewPhase({
               <span style={{
                 fontSize: 8,
                 letterSpacing: '0.15em',
-                color: 'rgba(255,255,255,0.15)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
               }}>
                 {isRecording ? 'TAP_TO_STOP' : isTranscribing ? 'TRANSCRIBING...' : 'TAP_TO_SPEAK'}
@@ -932,9 +932,9 @@ function InterviewPhase({
           {/* Divider */}
           {(question.input.type === 'text' || question.input.type === 'textarea') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.04)' }} />
-              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>OR_TYPE</span>
-              <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.04)' }} />
+              <div style={{ flex: 1, height: 1, background: 'var(--pipe-surface)' }} />
+              <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>OR_TYPE</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--pipe-surface)' }} />
             </div>
           )}
 
@@ -961,10 +961,10 @@ function InterviewPhase({
                   : 'transparent',
                 border: answer.trim() && !isLoading
                   ? '1px solid rgba(74, 222, 128, 0.3)'
-                  : '1px solid rgba(255,255,255,0.06)',
+                  : '1px solid var(--pipe-border-light)',
                 color: answer.trim() && !isLoading
                   ? 'rgba(74, 222, 128, 0.9)'
-                  : 'rgba(255,255,255,0.15)',
+                  : 'var(--pipe-text-dim)',
                 fontSize: 10,
                 fontWeight: 700,
                 letterSpacing: '0.15em',
@@ -1007,7 +1007,7 @@ function PersonaField({ label, children }: { label: string; children: React.Reac
       </div>
       <div style={{
         fontSize: 13,
-        color: 'rgba(255,255,255,0.85)',
+        color: 'var(--pipe-text)',
         lineHeight: 1.7,
         fontFamily: '"Space Mono", monospace',
       }}>
@@ -1019,7 +1019,7 @@ function PersonaField({ label, children }: { label: string; children: React.Reac
 
 function PersonaTagList({ items, tone }: { items: string[]; tone: 'neutral' | 'warn' | 'danger' }): JSX.Element {
   if (items.length === 0) {
-    return <span style={{ color: 'rgba(255,255,255,0.35)' }}>—</span>;
+    return <span style={{ color: 'var(--pipe-text-dim)' }}>—</span>;
   }
   const palette = {
     neutral: { bg: 'rgba(139, 92, 246, 0.12)', border: 'rgba(139, 92, 246, 0.3)', fg: 'rgba(216, 180, 254, 0.95)' },
@@ -1067,8 +1067,8 @@ function SynthesisPhase({
         style={{
           padding: '10px 18px',
           background: active ? 'rgba(139, 92, 246, 0.18)' : 'transparent',
-          border: active ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid rgba(255,255,255,0.08)',
-          color: active ? '#fff' : 'rgba(255,255,255,0.5)',
+          border: active ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid var(--pipe-border)',
+          color: active ? '#fff' : 'var(--pipe-text-muted)',
           fontSize: 9,
           letterSpacing: '0.2em',
           fontFamily: '"Space Mono", monospace',
@@ -1109,7 +1109,7 @@ function SynthesisPhase({
           <div style={{
             fontSize: 16,
             fontWeight: 700,
-            color: 'var(--pipe-text, #fff)',
+            color: 'var(--pipe-text)',
           }}>
             Role Profile
           </div>
@@ -1182,7 +1182,7 @@ function SynthesisPhase({
           ) : (
             <div style={{
               fontSize: 12,
-              color: 'rgba(255,255,255,0.45)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: '"Space Mono", monospace',
             }}>
               No persona generated.
@@ -1213,7 +1213,7 @@ function SynthesisPhase({
           {jobDescription ? (
             <div className="jd-markdown" style={{
               fontSize: 13,
-              color: 'rgba(255,255,255,0.82)',
+              color: 'var(--pipe-text)',
               lineHeight: 1.75,
               fontFamily: '"Space Mono", monospace',
             }}>
@@ -1222,7 +1222,7 @@ function SynthesisPhase({
           ) : (
             <div style={{
               fontSize: 12,
-              color: 'rgba(255,255,255,0.45)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: '"Space Mono", monospace',
             }}>
               No job description generated.
@@ -1240,7 +1240,7 @@ function SynthesisPhase({
           padding: '16px 32px',
           background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(59, 130, 246, 0.2))',
           border: '1px solid rgba(139, 92, 246, 0.4)',
-          color: '#fff',
+          color: 'var(--pipe-text)',
           fontSize: 11,
           fontWeight: 700,
           letterSpacing: '0.15em',

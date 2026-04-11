@@ -22,6 +22,19 @@ This is what we are building. Every decision traces back to these five criteria.
 
 ---
 
+## Goal — Role Discovery is the pipeline's source of truth
+
+**The Role Discovery interview is the single source of truth for the entire assessment pipeline.** Its purpose is to understand a role deeply enough that downstream agents — culture fit interviews, code review challenges, and repo selection — can produce team-specific assessments calibrated to *this* team, *this* codebase, and *this* hiring decision. Every downstream artifact (culture questions, BARS anchors, challenge PRs, scoring weights, repo matches) must be traceable back to a fact extracted during Role Discovery. The goal of the pipeline is a single thing: **find the candidate that fulfils this specific role.** Culture and technical interviews are the instruments; Role Discovery is the calibration.
+
+This goal has two halves that must land together:
+
+1. **Role Discovery produces a structured Role Context Document** (not a lossy flat persona) whose sections are purpose-built for each downstream consumer — Team Context for culture, Technical Context for challenges, Dispositional Context for scoring weights.
+2. **The repo library is enriched by its own 3rd AI pass** — an offline crawler step that writes role-agnostic engineering signals per repo, plus a runtime Worker step that reasons over those signals with the Role Context Document to produce per-(role × repo) alignment. Without this, role context on one side meets a SQL keyword join on the other side, and the richer signal dies at the boundary.
+
+See the Role Discovery findings table (RD-1 through RD-24) below and the research plan at `knowledge/outputs/.plans/role-discovery-data-contract.md`.
+
+---
+
 ## Guardrail: do not drift from this plan
 
 **If a founder request contradicts this plan, the assistant MUST pause and flag the contradiction before acting.** The research cost real tokens and real thinking. Dropping findings because they're inconvenient is how founders ship weaker products than they could have. The guardrail:
@@ -35,7 +48,7 @@ This rule exists because the founder asked for it on 2026-04-08 after noticing t
 
 ---
 
-## The three research briefs
+## The four research briefs
 
 ### Brief 1 — Code Review Content Sourcing (2026-04-08)
 
@@ -75,6 +88,23 @@ This rule exists because the founder asked for it on 2026-04-08 after noticing t
 3. 4-step wizard UX (Source → Select → Refine → Review) with three entry points
 4. Judge0 CE for multi-language code execution with resource limits
 5. Confidence scoring on AI-generated content (no competitor does this)
+
+### Brief 4 — Role Discovery + Repo Understanding Data Contract (2026-04-10)
+
+`knowledge/outputs/role-discovery-data-contract.md` · 84 cited sources · 1 round · PASS WITH NOTES
+Provenance: `knowledge/outputs/role-discovery-data-contract.provenance.md` · Verification: `knowledge/outputs/role-discovery-data-contract-verification.md`
+Research files: `*-research-methodology.md` (R1, 18 sources), `*-research-culture.md` (R2, 24), `*-research-codereview.md` (R3, 25), `*-research-validation.md` (R4, 17)
+
+**Thesis:** The Role Discovery interview is the single source of truth for the entire pipeline, but the synthesis step flattens its Knowledge State into an 8-field `CandidatePersona` and every downstream consumer reads only the flattened output. Simultaneously, the repo crawler has zero LLM calls — `matchRepos.ts` is a SQL keyword join on `persona.mustHaveSkills[]`. Two drifts, one bridge: depth-preserving Role Context Document on one side, two-stage repo understanding (offline signal extraction + runtime role-fit rerank) on the other. Both halves land together in ADR-036 because neither half is useful alone.
+
+**Five architectural pillars:**
+1. **Role Context Document** replaces CandidatePersona — hybrid qualitative schema (framework-analysis matrix + IPA evidence anchors + grounded-theory axial links + Means-End Chain laddering) preserving per-stakeholder per-domain `attribute → consequence → value` chains, structured stories, per-turn energy signals, and first-class cross-stakeholder disagreements. Persona becomes a derived cache view.
+2. **Three-layer synthesis prompting** — schema-guided generation with field-level exemplars, constrained JSON decoding via `response_format: json_schema`, and a Haiku 4.5 verification pass enforcing verbatim-quote grounding. Five named failure modes to defend against (value projection, consequence genericization, energy-signal inflation, domain-coverage collapse, stakeholder averaging).
+3. **Three-tier multi-stakeholder aggregation** — domain-authoritative anchors (HM on Why/Bar, TM on Team/Process), per-source preservation on shared domains with `conflict_flag`, explicit-formula aggregates only on genuine consensus fields. Grounded in Conway & Huffcutt (supervisor-peer ρ=.34 → 89% variance is source-unique); disagreement is its own category, not a midpoint.
+4. **Five-signal team culture profile + BARS overrides + static probe bank + HITL dealbreaker gates** — 4 OCAI archetypes (Current-culture framing) + psychological safety; universal base BARS with per-dimension RCD-derived anchor overrides; static probe bank with role-setup-time enrichment (never per-candidate dynamic generation — fails NYC LL 144 auditability and EU AI Act Article 14 interpretability); dealbreakers trigger auto-flag-then-HITL, never auto-fail (Griggs, EEOC v. iTutorGroup, Mobley v. Workday, EU AI Act Art 14).
+5. **Two-stage repo understanding architecture** — Crawler Pass 3 (offline, Cloudflare Queue consumer, Claude Haiku 4.5) writes role-*agnostic* `repo_engineering_signals` once per repo. Runtime Worker (Gemma 4 26B) reads RCD Technical Context + top-N signals per SQL candidate, writes cached per-(role × repo) `repo_role_alignment` rows. `matchRepos.ts` becomes stage-1 retriever; Worker does stage-2 rerank with per-candidate justification. Mirrors ColBERT offline/online split and AIF asynchronous preranking; validated by SWE-bench limits on query-agnostic retrieval.
+
+**Cross-cutting validation methodology:** Local criterion studies are infeasible at PIPE's volumes (r=.30 needs N≈85, r=.20 needs N≈193). Research prescribes a staged evidence ladder: N=0 face validity → N=30–50 convergent bootstrap → N=100–200 transportability case (Sackett 2022 r_op=.42; Hoffman 1999) → N=300–500 criterion-suggestive ITS. Precondition: RCD `validation_metadata` + RUC `rcd_version` / `signals_version` so old cohorts are never silently mixed with new ones after schema evolution.
 
 ---
 
@@ -273,6 +303,63 @@ Every research finding is mapped to a phase and a concrete artifact. If you disa
 | CA-18 | IRT difficulty calibration post-deployment (need n≥100 responses/item) | Part 1.5, R1-S21/S23 | Track p-value, discrimination index, distractor efficiency; Rasch 1PL estimation | CA-P5 | DEFERRED |
 | CA-19 | Larger proprietary models outperform open-source on Bloom's alignment | Part 1.2 caveat, R1-S18 | Use Claude Opus for gold-standard seed templates; pilot-test Gemma before relying on it for MCQ generation | CA-P3 | NOT STARTED |
 | CA-20 | Competitive library bar: 1K+ (HackerRank) to 300K+ (TestGorilla/Vervoe) | Part 6.1, R3 | Seed 50-75 templates via Opus across 7 role packs; scale via AI generation + recruiter contributions | CA-P1 | NOT STARTED |
+
+### RD — Role Discovery + Repo Understanding findings (24 items)
+
+> **Research plan:** `knowledge/outputs/.plans/role-discovery-data-contract.md` · 11 sub-questions · 4 researchers · 2026-04-10
+> **Research brief:** `knowledge/outputs/role-discovery-data-contract.md` · 84 cited sources · 1 round · PASS WITH NOTES (3 MAJOR patched, 0 FATAL) · 2026-04-10
+> **Provenance:** `knowledge/outputs/role-discovery-data-contract.provenance.md`
+> **ADR:** [ADR-036](../docs/decisions/ADR-036-role-discovery-data-contract.md) — Role Discovery + Repo Understanding Data Contract (2026-04-10, Proposed)
+> **Supersedes:** ADR-028 sections on `CandidatePersona` as canonical artifact
+> **Scope:** Fixes the flattening drift where the design-thinking Knowledge State is synthesized into a lossy 8-field persona AND the scraped repo library has zero AI reasoning layer between SQL candidates and final role-match ranking. The two drifts are halves of one bridge and land together in ADR-036.
+>
+> **Status:** Research complete (2026-04-10). ADR-036 drafted. Implementation not started — schema migration + synthesis rewrite is the next build decision, and split between culture-first vs. repo-first sequencing is open.
+
+**Phase key:** RD-P0 = research prep · RD-P1 = schema migration (Role Context Document) · RD-P2 = culture interview wiring · RD-P3 = code review + challenge generation wiring · RD-P4 = repo understanding (3rd AI pass + runtime role-fit re-ranker)
+
+#### Role Discovery core (RD-1 through RD-8)
+
+| # | Finding | Source | Plan action | Phase | Status |
+|---|---|---|---|---|---|
+| RD-1 | `CandidatePersona` is a lossy 8-field schema masquerading as the canonical artifact; research says Knowledge State is the artifact | `migration/dersign-thinking.md:355`, `workers/api/src/types.ts:223` | Resolved by ADR-036 Role Context Document | RD-P0 | NOT STARTED |
+| RD-2 | Knowledge State is persisted but no downstream consumer reads it | `workers/api/src/types.ts:205`, grep `knowledge_state` across `workers/api/src` | Resolved by ADR-036 Role Context Document | RD-P0 | NOT STARTED |
+| RD-3 | Laddering chains (attribute → consequence → value) collapse to flat `mustHaveSkills[]` at synthesis | `roleAgentPrompts.ts:38-43` vs. `roleAgentPrompts.ts:156-162` | Resolved by ADR-036 synthesis prompt rewrite (informed by research Q8) | RD-P0 | NOT STARTED |
+| RD-4 | Stories are raw text in `exchanges[].answer`, never structured into situation/action/outcome/moral records | `workers/api/src/types.ts:259` | Resolved by ADR-036 (story schema under Team Context) | RD-P1 | NOT STARTED |
+| RD-5 | Per-turn energy signals are used in-flight but never persisted | `roleAgentPrompts.ts:28` | Resolved by ADR-036 (energy trace under Dispositional Context) | RD-P1 | NOT STARTED |
+| RD-6 | Cross-stakeholder contradictions live only in free-text `reasoning` | `roleAgentPrompts.ts:153`, ADR-028 | Resolved by ADR-036 (structured disagreement records per Q3) | RD-P1 | NOT STARTED |
+| RD-7 | `RoleExchange.feedback` is a reserved-but-unused channel | `workers/api/src/types.ts:270` | Resolved by ADR-036 (either wire or remove) | RD-P1 | NOT STARTED |
+| RD-8 | Drift from research is not logged in the Decision Log | ADR-033 guardrail | Logged 2026-04-10 in Decision Log below | RD-P0 | **DONE** |
+
+#### Culture Fit consumers (RD-9 through RD-16)
+
+| # | Finding | Source | Plan action | Phase | Status |
+|---|---|---|---|---|---|
+| RD-9 | Culture agent reads only `persona.seniority` and `persona.archetype` from Role Discovery — every other field is invisible | `cultureRoleResolution.ts:52-74` | Wire Team Context into `cultureRoleResolution` once ADR-036 lands | RD-P2 | NOT STARTED |
+| RD-10 | Archetype → overlay via 4-keyword regex; staff-IC-who-leads gets same overlay as mid-IC-in-isolation | `cultureRoleResolution.ts:35-39` | Replace regex with Team Context structured fields | RD-P2 | NOT STARTED |
+| RD-11 | Three hardcoded overlays (`senior-ic`, `manager`, `universal`); no granularity for startup-vs-enterprise, on-call-heavy, async-first, player-coach | `cultureRoleOverlay.ts:28-84` | Replace static overlays with Team Context dimensional weights | RD-P2 | NOT STARTED |
+| RD-12 | Silent fallback to `mid + universal` on any lookup miss; default behavior when no role context exists | `cultureRoleResolution.ts:25-28` | Require Role Context Document or raise; no silent default | RD-P2 | NOT STARTED |
+| RD-13 | BARS rubric is universal (hardcoded anchors at `cultureScorer.ts:148-252`); no team-specific override; ADR-029 Phase C sync script not yet built | `cultureScorer.ts:138-140`, ADR-029 | Add BARS override mechanism reading Team Context per research Q4 | RD-P2 | NOT STARTED |
+| RD-14 | `orgBenchmark.focusDimensions` is read but never passed to the selector — dead wiring | `culture.ts:250`, `cultureQuestionBank.ts:402` | Pass Team Context focus dimensions into `pickNextQuestion` | RD-P2 | NOT STARTED |
+| RD-15 | Culture agent cannot generate team-specific probes from Knowledge State; probe bank is static | `cultureQuestionBank.ts`, `cultureProbePatterns.ts` | Add team-specific probe generation per research Q5 | RD-P2 | NOT STARTED |
+| RD-16 | Multi-stakeholder culture signal (team member perspective per ADR-028 TEAM_MEMBER variant) is the "ground truth for culture" per research but never reaches culture scoring | `roleAgentPrompts.ts:268`, `cultureRoleResolution.ts` | Plumb TEAM_MEMBER stakeholder data into Team Context | RD-P2 | NOT STARTED |
+
+#### Code Review consumers (RD-17 through RD-22)
+
+| # | Finding | Source | Plan action | Phase | Status |
+|---|---|---|---|---|---|
+| RD-17 | Challenge generation reads 5 persona fields only; Knowledge State `codebase` and `work` domains are invisible | `challengeGeneration/prompts.ts:35-39` | Refactor `challengeGeneration` to read Technical Context | RD-P3 | NOT STARTED |
+| RD-18 | Implementer agent has zero Role Discovery context; its `persona` field is `'junior' \| 'senior'` (acting persona), not `CandidatePersona` | `implementerAgent.ts:56` | Add Role Context Document to implementer input | RD-P3 | NOT STARTED |
+| RD-19 | Scorer evaluates only against `plantedBugs[]` ground truth; 6-dimension BARS rubric has no role-specific calibration | `scorerAgent.ts:54`, `scorerRubric.yaml` | Add Dispositional Context weights to scorer per research Q4 | RD-P3 | NOT STARTED |
+| RD-20 | Repo search uses skill-keyword join (`mustHaveSkills[]`) only; no pairing on codebase-shape signals | `matchRepos.ts:139-175`, `discover.ts:46-71` | Extend matchRepos with Technical Context construct signals | RD-P3 | NOT STARTED |
+| RD-21 | `repo_constructs` semantic layer exists but is not driven by Role Discovery signals | `migrations/0021_qualified_repos.sql:86-94`, `matchRepos.ts` | Join `repo_constructs` against Technical Context construct tags | RD-P3 | NOT STARTED |
+| RD-22 | Repo DB has no README embeddings; embedding-based semantic search is deferred | `migrations/0021_qualified_repos.sql` | Deferred — structured summaries via RD-23 Pass 3 are the MVP path | RD-P3 | DEFERRED |
+
+#### Repo Understanding — 3rd AI pass (RD-23 through RD-24)
+
+| # | Finding | Source | Plan action | Phase | Status |
+|---|---|---|---|---|---|
+| RD-23 | Crawler has zero LLM calls; Pass 1 + Pass 2 are deterministic. `repo_sample_prs` metadata is the richest substrate but nothing reasons over it. No 3rd AI pass exists. | `scripts/crawl-repos/index.ts`, `scripts/crawl-repos/pass2/prSample.ts:126-138` | Add crawler Pass 3 (offline, Haiku 4.5) writing to new `repo_engineering_signals` table per ADR-036 Repo Understanding Contract | RD-P4 | NOT STARTED |
+| RD-24 | `matchRepos` is SQL-only; no role-fit reasoning layer between SQL candidates and final ranking. Repo library and Role Discovery meet only at keyword join. | `matchRepos.ts:139-176`, `discover.ts:46-71` | Add Worker runtime role-fit pass (Gemma 4 26B) reading Role Context Document + `repo_engineering_signals`, writing to new `repo_role_alignment` table. `matchRepos` becomes stage-1 retriever; Worker does stage-2 rerank. | RD-P4 | NOT STARTED |
 
 ### Open questions (22 items — things research could not resolve)
 
@@ -583,6 +670,8 @@ Places where the current codebase does not match the plan. These need verificati
 | Culture scorer architecture | `cultureAgent.ts` — needs audit against plan | FSM + ReAct + scratchpad + specialist sub-agents + summarization | Audit and upgrade in Phase 1 |
 | Culture UI framing | Unknown — needs audit | "Values alignment + working style complementarity"; attitudinal not performance | Audit and reframe in Phase 1 |
 | AIVIA / EU AI Act compliance | Not built | Disclosure + consent + non-AI alternative + conformity assessment | **HARD DEADLINE 2026-08-02 for EU AI Act** |
+| **Role Discovery → downstream consumers** | Synthesis flattens Knowledge State into 8-field `CandidatePersona`. Culture reads 2 fields. Challenge generation reads 5. Repo search joins `mustHaveSkills[]` as keyword. Knowledge State is dead inventory. Research spec (`migration/dersign-thinking.md` Part 8) says Knowledge State is the canonical artifact. | Role Context Document (Team/Technical/Dispositional/Public Pitch sections) replaces persona; each downstream consumer reads its own section per ADR-036 | RD-1 through RD-22 — research plan at `knowledge/outputs/.plans/role-discovery-data-contract.md` |
+| **Repo library AI reasoning layer** | Crawler Pass 1 + Pass 2 are deterministic (zero LLM calls). `matchRepos.ts` is SQL-only CTE join. No reasoning layer reads `repo_sample_prs` + constructs + stack with a role in mind. Repo library and Role Discovery meet at keyword join. | Crawler Pass 3 (offline Haiku) writes `repo_engineering_signals` per repo. Worker runtime role-fit pass (Gemma) writes `repo_role_alignment` per (role × repo). `matchRepos` becomes stage-1; Worker stage-2 reranks. All per ADR-036. | RD-23, RD-24 — research question Q11 loads the architecture choice |
 
 The arena's v19 at 76.5% is the current best real-pipeline calibration. Every Phase 1 change should be measured against v19 as a regression baseline — if a change drops calibration below 70% it needs justification or rollback.
 
@@ -608,6 +697,10 @@ This section is append-only. Every time the plan is overridden, deferred, or cha
 | 2026-04-09 | **CR-13 DONE (Stages 1-2):** Repo discovery pipeline built | Libraries.io + GitHub quality filter in Worker. D1 migration 0018. 6 API routes. REPOS tab in Challenge Studio. `skillToPackage.ts` (120+ mappings). Stages 3-4 (stack-analyser + scc) deferred to offline scripts. | Founder + Lead |
 | 2026-04-10 | **CR-13 + CR-14 + CR-19 DONE (Stages 3-4 + refresh policy + license filter):** Offline repo crawler + graph index | Replaced real-time Libraries.io with pre-populated D1 catalog. `scripts/crawl-repos/` (Pass 1: GH Search + coarse filter; Pass 2: clone + manifest parsing + scc/lizard + construct extractors (60 slugs) + SWE-bench PR sampling). D1 schema: `qualified_repos`, `repo_skills`, `repo_constructs`, `repo_sample_prs`, `skill_aliases` (migration 0021). `matchRepos.ts` runtime — tag-graph scoring query, <50ms p95, no external API. `discover.ts` rewritten. LIBRARIES_IO_API_KEY no longer required at runtime. Weekly GH Actions cron (pass-1 Mon 02:00 UTC, pass-2 Mon 04:00 UTC). Contamination risk as soft penalty (not hard reject). Vectors deferred to Phase 2. Open questions: monorepo handling, pass-2 budget planning, extractor versioning — see plan §7.2. | Founder + Lead |
 | 2026-04-09 | **ADR-035: Global Copilot Agent built** | Conversational recruiter copilot in a side drawer. Gemma 4 on Workers AI with prompt-injected tool protocol. 6 tools (search_repos, fetch_repo_info, list_repo_prs, fetch_pr_diff, save_challenge_draft, lookup_pipeline). Skill modes: general + challenge_design. D1 session persistence. Replaces button-press repo discovery UX with conversational challenge design. | Founder + Lead |
+| 2026-04-10 | **Flag drift: Role Discovery → downstream consumers (RD-1 through RD-22)** | Research source: `migration/dersign-thinking.md:355` Part 8 ("Define Phase") specifies the Knowledge State JSON as the canonical artifact of a design-thinking intake interview. ADR-027 preserved this language; ADR-028 (multi-stakeholder) introduced `CandidatePersona` as a cached summary for repo discovery, but the cached summary became the canonical artifact by default and downstream consumers (culture, challenge generation, scorer, repo search) read only the flattened output. Knowledge State is persisted but dead. No explicit override was ever recorded. Flagged per ADR-033 guardrail rule. Research prep launched: `knowledge/outputs/.plans/role-discovery-data-contract.md` with 11 sub-questions across 4 researchers. Resolution target: ADR-036 (Role Discovery + Repo Understanding Data Contract). | Founder + Claude (guardrail flag per ADR-033) |
+| 2026-04-10 | **Flag drift: Repo library has no AI reasoning layer (RD-23, RD-24)** | The crawler's Pass 1 (GitHub search + manifest parsing) and Pass 2 (clone + SLOC/CCN + construct detection + PR sampling) are deterministic — zero LLM calls. The richest substrate (`repo_sample_prs` metadata + `repo_constructs` + stack + seniority band) is queried only by a SQL keyword join on `persona.mustHaveSkills[]` in `matchRepos.ts`. Role Discovery signal on one side meets a keyword join on the other; the richer signal dies at the boundary. This gap was not in the original CR-13 research scope (the Libraries.io brief was about *discovery*, not *understanding*) and so was not a tracked finding until now. Resolution target: ADR-036 Repo Understanding Contract section — crawler Pass 3 (offline Haiku → `repo_engineering_signals`) + runtime Worker role-fit rerank (Gemma → `repo_role_alignment`). Research question Q11 loads the offline-vs-runtime architecture choice. | Founder + Claude (guardrail flag per ADR-033) |
+| 2026-04-10 | **Research complete: Role Discovery + Repo Understanding Data Contract (RD-1 through RD-24)** | 4 parallel researchers produced 84 cited sources across R1 (methodology: framework analysis + IPA + grounded theory + Means-End Chain laddering), R2 (culture platforms + OCAI + BARS calibration + dealbreaker legal evidence base), R3 (MSR codebase signals + competitor scan + two-stage retrieval architecture), R4 (multi-stakeholder aggregation + staged validation ladder). Verifier pass resolved all 84 sources and caught 2 attribution errors. Reviewer verdict PASS WITH NOTES (0 FATAL, 3 MAJOR patched: OCAI per-archetype α values softened to reported range, SWE-bench 40% figure flagged for primary-source reconfirmation, Mobley v. Workday characterization softened from "established" to "certification analysis indicates" because the case is in active litigation). Final brief: `knowledge/outputs/role-discovery-data-contract.md`. Provenance: `knowledge/outputs/role-discovery-data-contract.provenance.md`. ADR-036 drafted 2026-04-10. | Founder + Claude (Lead Researcher) |
+| 2026-04-10 | **ADR-036 drafted: Role Discovery + Repo Understanding Data Contract (Proposed)** | Captures both halves of the bridge: Role Context Document schema (hybrid framework-matrix + IPA evidence-anchor + grounded-theory axial + Means-End Chain laddering; three-layer synthesis prompt pattern; three-tier multi-stakeholder aggregation; universal BARS base + RCD-derived overrides; static probe bank + role-setup enrichment; HITL-only dealbreaker gates) and Repo Understanding Contract (two-stage retrieval — offline Crawler Pass 3 on Haiku 4.5 writing `repo_engineering_signals`, runtime Worker on Gemma 4 writing cached `repo_role_alignment`; `matchRepos.ts` becomes stage-1 retriever). Supersedes ADR-028 sections on CandidatePersona as canonical artifact. Extends ADR-027 (Role Discovery Agent), ADR-029 (Culture Interview), ADR-031 (AI Hiring Compliance). Status Proposed pending founder decision on implementation sequencing (culture-first vs. repo-first split). | Founder + Claude (Lead Researcher) |
 
 ---
 
@@ -619,6 +712,8 @@ This section is append-only. Every time the plan is overridden, deferred, or cha
 2. ✅ **Scorer pipeline rewrite** — 2 LLM calls (Scorer A: ground truth, Scorer B: communication) replacing 3 old calls. New `ScoreReport` shape with evidence + metrics.
 3. ✅ **Repo discovery pipeline Stages 1-2** (CR-13) — Libraries.io + GitHub filter in Worker. REPOS tab in Challenge Studio. Convert accepted repos to CODE_REVIEW templates.
 4. ✅ **Repo crawler + graph index** (CR-13 Stages 3-4, CR-14, CR-19) — Offline crawler replaces Libraries.io at runtime. `scripts/crawl-repos/` with Pass 1 + Pass 2. `qualified_repos` D1 catalog. `matchRepos.ts` runtime (<50ms). Weekly GH Actions cron. SWE-bench eligible PR sampling. Contamination risk. 60-slug construct taxonomy.
+5. ✅ **Research: Role Discovery + Repo Understanding Data Contract** (RD-P0 — all 24 RD findings research-resolved, 2026-04-10) — 4 parallel researchers, 84 cited sources, PASS WITH NOTES verdict. Final brief at `knowledge/outputs/role-discovery-data-contract.md`. Provenance at `.provenance.md`. Research validated the hybrid qualitative schema, three-layer synthesis prompt pattern, three-tier multi-stakeholder aggregation, 5-signal team culture profile, universal-base BARS with RCD-derived overrides, static-base probe bank with role-setup-time enrichment, HITL-only dealbreaker gates, and two-stage repo retrieval (offline Haiku 4.5 signals + runtime Gemma 4 rerank).
+6. ✅ **ADR-036 drafted (Proposed)** — `docs/decisions/ADR-036-role-discovery-data-contract.md`. Captures both halves of the bridge (Role Context Document + Repo Understanding Contract). Full TypeScript schema sketch for RCD, full SQL DDL for `repo_engineering_signals`, `repo_role_alignment`, `role_probe_bank`. Phased rollout plan: Phase 1 (schema + synthesis rewrite) → Phase 2 (culture consumers) → Phase 3 (code review consumers) → Phase 4 (repo understanding). Phase 2 and 3 can run in either order after Phase 1 — founder decision pending on culture-first vs. repo-first sequencing.
 
 ### Next up
 

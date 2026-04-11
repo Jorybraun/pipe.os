@@ -17,7 +17,7 @@ export function RadioGroup({ value, onChange, options }: RadioGroupProps): JSX.E
               width: 16,
               height: 16,
               border: `2px solid ${
-                value === opt ? 'rgba(139, 92, 246, 0.8)' : 'rgba(255,255,255,0.3)'
+                value === opt ? 'rgba(139, 92, 246, 0.8)' : 'var(--pipe-border)'
               }`,
               display: 'flex',
               alignItems: 'center',
@@ -32,7 +32,7 @@ export function RadioGroup({ value, onChange, options }: RadioGroupProps): JSX.E
             onChange={() => onChange?.(opt)}
             style={{ display: 'none' }}
           />
-          <span style={{ fontSize: 11, color: value === opt ? '#fff' : 'rgba(255,255,255,0.5)' }}>
+          <span style={{ fontSize: 11, color: value === opt ? 'var(--pipe-text)' : 'var(--pipe-text-muted)' }}>
             {opt}
           </span>
         </label>
