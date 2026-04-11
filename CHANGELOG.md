@@ -6,6 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — ADR-036 Path B Wave 1: Pass 3 persister + copilot fit-explainer + RCD-aware challenge prompts (2026-04-10)
+
+Mechanical scaffolding lane of Path B (parallel to the in-flight Opus reranker work). Three slices land together — none touch Path A's files.
+
+- **`workers/api/scripts/crawl-repos/pass3/persist.ts`** — D1 writer for `repo_engineering_signals`. Mirrors the `pass2/persist.ts` pattern: `D1Client`-backed, `dryRun` flag, `INSERT OR REPLACE` keyed on `repo_id`. The actual content hashing happens upstream in the Pass 3 caller; this function just receives the hash and writes it.
+- **`workers/api/scripts/crawl-repos/shared/types.ts`** — adds `Pass3Data` interface (19 fields matching migration 0022's `repo_engineering_signals` columns verbatim, including the Tier 1/Tier 2 split and the `engineering_narrative` + `signal_json` payload).
+- **`workers/api/src/lib/copilotTools.ts`** — new `explain_repo_for_role` tool added to `GENERAL_TOOLS` (available in every skill mode per ADR-035). Reads `repo_role_alignment` by `(role_context_id, repo_id)`, returns structured per-signal reasoning + cache keys + provenance. ADR-031 HITL rule respected — never phrases a repo as "disqualified" or "rejected"; the trailing note explicitly says the recruiter decides.
+- **`workers/api/src/lib/challengeGeneration/prompts.ts`** — `buildGeneratorSystemPrompt`, `buildGeneratorUserMessage`, and `buildContentReviewPrompt` now accept an optional `rcd?: RoleContextDocument | null` last parameter. When present, reads `technical_context.stack` → must-have skills, `technical_context.constructs` → nice-to-have skills, `technical_context.seniority_band` → seniority, and appends `codebase_expectations`. Falls back to `CandidatePersona` when RCD is null. Prompt shape preserved — pure data-source swap. All existing call sites in `challengeGeneration/pipeline.ts` remain valid.
+
+Type check: zero new errors introduced (pre-existing baseline of 55 unchanged; none of the four files appear in the error set).
+
 #### Added — Research: Role Discovery + Repo Understanding Data Contract (2026-04-10)
 
 Deep research run completing both halves of a single bridge that had drifted in the code: the Role Discovery flattening drift (Knowledge State → 8-field `CandidatePersona`) and the repo crawler's missing 3rd AI pass (`matchRepos.ts` is a SQL keyword join with no reasoning layer). 4 parallel researchers produced 84 cited sources across methodology, culture, code review, and validation dimensions. Verdict: PASS WITH NOTES (0 FATAL, 3 MAJOR patched before delivery — OCAI α values softened to reported range, SWE-bench 40% figure flagged for primary-source reconfirmation, Mobley v. Workday characterization softened because the case is in active litigation).

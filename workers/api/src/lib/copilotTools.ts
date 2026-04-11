@@ -30,6 +30,18 @@ const GENERAL_TOOLS: LLMTool[] = [
       required: ['pipeline_id'],
     },
   },
+  {
+    name: 'explain_repo_for_role',
+    description: 'Explain why a specific repo is or isn\'t a good fit for a given role context. Reads the cached repo_role_alignment row and returns the structured per-signal reasoning. Never gates a repo as \'disqualified\' — explain fit, do not gate. The recruiter decides.',
+    parameters: {
+      type: 'object',
+      properties: {
+        repo_id: { type: 'string', description: 'Numeric repo_id from qualified_repos' },
+        role_context_id: { type: 'string', description: 'The role_context_id to look up alignment for' },
+      },
+      required: ['repo_id', 'role_context_id'],
+    },
+  },
 ];
 
 const CHALLENGE_DESIGN_TOOLS: LLMTool[] = [
@@ -156,6 +168,9 @@ export async function executeTool(
 
     case 'save_challenge_draft':
       return executeSaveChallengeDraft(args, ctx);
+
+    case 'explain_repo_for_role':
+      return executeExplainRepoForRole(args.repo_id ?? '', args.role_context_id ?? '', ctx.db);
 
     default:
       return `[Unknown tool: ${call.name}]`;
@@ -337,6 +352,58 @@ async function executeFetchPRDiff(
   };
 
   return JSON.stringify(summary, null, 2);
+}
+
+async function executeExplainRepoForRole(
+  repoIdStr: string,
+  roleContextId: string,
+  db: D1Database,
+): Promise<string> {
+  const repoId = parseInt(repoIdStr, 10);
+  if (!repoId || !roleContextId) {
+    return '[Error: repo_id and role_context_id are required]';
+  }
+
+  const alignment = await db.prepare(
+    `SELECT alignment_score, alignment_band, reasoning_json, per_signal_scores,
+            rcd_version, signals_version, generated_at, model_used
+     FROM repo_role_alignment
+     WHERE role_context_id = ?1 AND repo_id = ?2`,
+  ).bind(roleContextId, repoId).first<Record<string, string | number | null>>();
+
+  if (!alignment) {
+    return JSON.stringify({
+      status: 'no_alignment',
+      message: `No fit assessment cached for repo ${repoId} against role ${roleContextId}. Run discovery on this role first to populate the alignment cache.`,
+    }, null, 2);
+  }
+
+  const repo = await db.prepare(
+    `SELECT id, full_name, github_url, primary_language FROM qualified_repos WHERE id = ?1`,
+  ).bind(repoId).first<Record<string, string | number | null>>();
+
+  // Parse JSON columns; fall back to raw on parse error so the tool doesn't crash
+  let reasoning: unknown = alignment.reasoning_json;
+  let perSignal: unknown = alignment.per_signal_scores;
+  try { reasoning = JSON.parse(alignment.reasoning_json as string); } catch { /* keep raw */ }
+  try { perSignal = JSON.parse(alignment.per_signal_scores as string); } catch { /* keep raw */ }
+
+  return JSON.stringify({
+    repo: repo ?? { id: repoId },
+    alignment_score: alignment.alignment_score,
+    alignment_band: alignment.alignment_band,
+    reasoning,
+    per_signal_scores: perSignal,
+    cache_keys: {
+      rcd_version: alignment.rcd_version,
+      signals_version: alignment.signals_version,
+    },
+    provenance: {
+      generated_at: alignment.generated_at,
+      model_used: alignment.model_used,
+    },
+    note: 'This is a fit assessment, not a gate. The recruiter decides whether to use this repo.',
+  }, null, 2);
 }
 
 async function executeSaveChallengeDraft(

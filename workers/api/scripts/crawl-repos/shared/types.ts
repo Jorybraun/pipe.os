@@ -117,6 +117,28 @@ export interface ExtractorContext {
   rawDeps: string[];
 }
 
+// ─── Pass-3 engineering signals ───────────────────────────────────────────────
+
+export interface Pass3Data {
+  repo_id: number;
+  signals_version: string;
+  content_hash: string;
+  test_touch_rate: number | null;
+  mean_changed_files: number | null;
+  p90_changed_files: number | null;
+  issue_link_rate: number | null;
+  complexity_band: 'low' | 'medium' | 'high' | 'mixed' | null;
+  swe_bench_eligibility_rate: number | null;
+  architecture_style: 'monolith' | 'microservice' | 'modular_monolith' | 'serverless' | 'unknown' | null;
+  review_density: number | null;
+  commit_cadence: number | null;
+  satd_density: number | null;
+  engineering_narrative: string;
+  signal_json: string;
+  model_used: string;
+  model_version: string;
+}
+
 // ─── D1 write helpers ─────────────────────────────────────────────────────────
 
 export interface D1Config {

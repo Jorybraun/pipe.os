@@ -13,7 +13,7 @@
  *   - All prompts force JSON output via the provider's forceJson mode
  */
 
-import type { CandidatePersona, ChallengeTemplateType, TemplateDifficulty } from '../../types';
+import type { CandidatePersona, ChallengeTemplateType, RoleContextDocument, TemplateDifficulty } from '../../types';
 import type { RawGeneratedChallenge } from './types';
 
 // ─── Stage 1: Generator ──────────────────────────────────────────────────────
@@ -25,18 +25,28 @@ export function buildGeneratorSystemPrompt(
     count: number;
     seniority: TemplateDifficulty;
   },
+  rcd?: RoleContextDocument | null,
 ): string {
   const typeInstructions = config.types.map((t) => TYPE_GENERATION_RULES[t]).join('\n\n');
+
+  // Prefer RCD technical_context when present; fall back to CandidatePersona fields.
+  const tc = rcd?.technical_context ?? null;
+  const seniority = tc?.seniority_band ?? persona.seniority;
+  const mustHaveSkills = tc ? tc.stack : persona.mustHaveSkills;
+  const niceToHaveSkills = tc ? tc.constructs : persona.niceToHaveSkills;
+  const codebaseContext = tc?.codebase_expectations.length
+    ? `\nCodebase expectations: ${tc.codebase_expectations.join(', ')}`
+    : '';
 
   return `You are an expert technical assessment designer. Your job is to create interview challenges that accurately evaluate candidates for a specific role.
 
 ## Target Role
 
-Seniority: ${persona.seniority}
+Seniority: ${seniority}
 Archetype: ${persona.archetype}
-Must-have skills: ${persona.mustHaveSkills.join(', ')}
-Nice-to-have skills: ${persona.niceToHaveSkills.join(', ')}
-Career signal: ${persona.careerSignal}
+Must-have skills: ${mustHaveSkills.join(', ')}
+Nice-to-have skills: ${niceToHaveSkills.join(', ')}
+Career signal: ${persona.careerSignal}${codebaseContext}
 
 ## Instructions
 
@@ -95,8 +105,12 @@ const TYPE_GENERATION_RULES: Record<ChallengeTemplateType, string> = {
 
 export function buildGeneratorUserMessage(
   persona: CandidatePersona,
+  rcd?: RoleContextDocument | null,
 ): string {
-  return `Generate the challenges now. Focus on skills that matter most for this role: ${persona.mustHaveSkills.slice(0, 5).join(', ')}. The candidate should feel like these challenges were written specifically for their role, not pulled from a generic bank.`;
+  const skills = rcd?.technical_context
+    ? rcd.technical_context.stack.slice(0, 5)
+    : persona.mustHaveSkills.slice(0, 5);
+  return `Generate the challenges now. Focus on skills that matter most for this role: ${skills.join(', ')}. The candidate should feel like these challenges were written specifically for their role, not pulled from a generic bank.`;
 }
 
 // ─── Stage 2: Content Reviewer ───────────────────────────────────────────────
@@ -104,14 +118,20 @@ export function buildGeneratorUserMessage(
 export function buildContentReviewPrompt(
   challenges: RawGeneratedChallenge[],
   persona: CandidatePersona,
+  rcd?: RoleContextDocument | null,
 ): string {
+  const tc = rcd?.technical_context ?? null;
+  const seniority = tc?.seniority_band ?? persona.seniority;
+  const mustHaveSkills = tc ? tc.stack : persona.mustHaveSkills;
+  const niceToHaveSkills = tc ? tc.constructs : persona.niceToHaveSkills;
+
   return `You are a senior assessment quality reviewer. Your job is to validate AI-generated interview challenges for accuracy, fairness, and role alignment.
 
 ## Target Role
 
-Seniority: ${persona.seniority}
-Must-have skills: ${persona.mustHaveSkills.join(', ')}
-Nice-to-have skills: ${persona.niceToHaveSkills.join(', ')}
+Seniority: ${seniority}
+Must-have skills: ${mustHaveSkills.join(', ')}
+Nice-to-have skills: ${niceToHaveSkills.join(', ')}
 
 ## Challenges to Review
 
