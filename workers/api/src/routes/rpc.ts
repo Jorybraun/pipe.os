@@ -418,6 +418,7 @@ rpcAuth.post('/get-challenge', async (c) => {
       githubPrNumber: null,
       githubRepoUrl: null,
       githubPrDescription: null,
+      devContainerRepoUrl: null,
     });
   }
 
@@ -428,7 +429,8 @@ rpcAuth.post('/get-challenge', async (c) => {
   const challenges = await c.env.DB.prepare(`
     SELECT id, type, title, instructions, config,
            cached_diff_json, github_pr_title, github_pr_number,
-           github_repo_url, github_pr_description
+           github_repo_url, github_pr_description,
+           dev_container_repo_url
     FROM challenges
     WHERE stage_id = ?1
     ORDER BY sort_order ASC
@@ -509,6 +511,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     githubPrNumber: ch.github_pr_number ?? null,
     githubRepoUrl: ch.github_repo_url ?? null,
     githubPrDescription: ch.github_pr_description ?? null,
+    devContainerRepoUrl: ch.dev_container_repo_url ?? null,
   });
 });
 

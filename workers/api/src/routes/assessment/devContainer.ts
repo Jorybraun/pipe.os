@@ -80,16 +80,14 @@ devContainer.post('/launch', async (c) => {
 
   // Look up per-challenge TTL + repo metadata, if a challenge was specified.
   let challengeTtl: number | null = null;
-  let repoR2Key: string | null = null;
+  let repoGitUrl: string | null = null;
   let challengeBranch: string | null = null;
-  let baseBranch: string | null = null;
   if (challengeId) {
     const meta = await getChallengeTtlMeta(c.env.DB, challengeId);
     if (meta) {
       challengeTtl = meta.dev_container_ttl_seconds;
-      repoR2Key = meta.repo_r2_key;
+      repoGitUrl = meta.repo_git_url;
       challengeBranch = meta.challenge_branch;
-      baseBranch = meta.base_branch;
     }
   }
 
@@ -154,9 +152,8 @@ devContainer.post('/launch', async (c) => {
       ttlSeconds: effective.ttlSeconds,
       ttlSource: effective.source,
       expiresAt,
-      repoR2Key,
+      repoGitUrl,
       challengeBranch,
-      baseBranch,
     });
   } catch (err) {
     console.error('[devContainer.launch] insert failed:', err);
@@ -179,9 +176,8 @@ devContainer.post('/launch', async (c) => {
         sessionId,
         expiresAt,
         ttlSeconds: effective.ttlSeconds,
-        repoR2Key,
+        repoGitUrl,
         challengeBranch,
-        baseBranch,
       }),
     })
     .catch((err: unknown) => {

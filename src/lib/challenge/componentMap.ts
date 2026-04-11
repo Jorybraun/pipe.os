@@ -22,6 +22,7 @@ import type { ReviewRound } from '../../types/conversation';
 import { VoicePanel } from '../../components/Panels/VoicePanel';
 import { CodeEditorPanel } from '../../components/Panels/CodeEditorPanel';
 import { RunConsolePanel } from '../../components/Panels/RunConsolePanel';
+import { DevContainerPanel } from '../../components/Panels/DevContainerPanel';
 
 // Layouts
 import { WorkspaceLayout } from '../../components/Assessment/WorkspaceLayout';
@@ -430,6 +431,10 @@ const ConnectedRunConsolePanel = connectInterview(RunConsolePanel, (ctx) => {
   };
 });
 
+const ConnectedDevContainerPanel = connectInterview(DevContainerPanel, (ctx) => ({
+  challengeId: ctx.currentChallenge.id,
+}));
+
 const ConnectedCodePreviewPanel = connectInterview(PreviewPanel, (ctx) => {
   const starterFiles: VirtualFS = (ctx.currentChallenge.data.files as VirtualFS)
     ?? legacyToVFS(ctx.currentChallenge.data);
@@ -480,6 +485,7 @@ export const COMPONENT_MAP: Record<string, ComponentType<any>> = {
   'code-editor': ConnectedCodeEditorPanel,
   'console': ConnectedRunConsolePanel,
   'code-preview': ConnectedCodePreviewPanel,
+  'devcontainer': ConnectedDevContainerPanel,
 
   // Synthetic challenge panels
   'welcome': ConnectedWelcomePanel,

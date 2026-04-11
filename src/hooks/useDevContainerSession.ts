@@ -167,8 +167,8 @@ export interface UseDevContainerSessionReturn {
    * WARN_BEFORE_SECONDS left). Populated on the Cloudflare path only.
    */
   expiringSoon: boolean;
-  /** Spin up a new container */
-  launch: () => Promise<void>;
+  /** Spin up a new container. Optional `challengeId` scopes TTL + repo metadata. */
+  launch: (opts?: { challengeId?: string | null }) => Promise<void>;
   /** Tear down the running container */
   destroy: () => Promise<void>;
   /** Reset to IDLE after an error */
@@ -265,7 +265,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
     };
   }, [sessionId]);
 
-  const launch = useCallback(async () => {
+  const launch = useCallback(async (opts?: { challengeId?: string | null }) => {
     setState('LAUNCHING');
     setError(null);
     setContainerUrl(null);
@@ -273,7 +273,10 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
     setExpiringSoon(false);
 
     try {
-      const res = await launchDevContainer({}, sessionTokenRef.current);
+      const res = await launchDevContainer(
+        { challengeId: opts?.challengeId ?? null },
+        sessionTokenRef.current,
+      );
       setSessionId(res.sessionId);
       sessionIdRef.current = res.sessionId;
       setExpiresAt(res.expiresAt);
@@ -445,7 +448,7 @@ function useDevContainerSessionAppSync(): UseDevContainerSessionReturn {
 
   // ─── launch ────────────────────────────────────────────────────────────────
 
-  const launch = useCallback(async () => {
+  const launch = useCallback(async (_opts?: { challengeId?: string | null }) => {
     setState('LAUNCHING');
     setError(null);
     setContainerUrl(null);

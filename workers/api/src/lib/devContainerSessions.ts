@@ -32,9 +32,8 @@ export interface DevContainerSessionRow {
   expires_at: string;
   warned_at: string | null;
   url: string | null;
-  repo_r2_key: string | null;
+  repo_git_url: string | null;
   challenge_branch: string | null;
-  base_branch: string | null;
   started_at: string | null;
   stopped_at: string | null;
   error_message: string | null;
@@ -52,9 +51,8 @@ export interface InsertSessionInput {
   ttlSeconds: number;
   ttlSource: TtlSource;
   expiresAt: string;
-  repoR2Key: string | null;
+  repoGitUrl: string | null;
   challengeBranch: string | null;
-  baseBranch: string | null;
 }
 
 /** Insert a LAUNCHING row. */
@@ -67,8 +65,8 @@ export async function insertSession(
       `INSERT INTO dev_container_sessions (
          id, session_id, candidate_id, challenge_id, pipeline_id,
          status, instance_type, ttl_seconds, ttl_source, expires_at,
-         repo_r2_key, challenge_branch, base_branch
-       ) VALUES (?1, ?2, ?3, ?4, ?5, 'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+         repo_git_url, challenge_branch
+       ) VALUES (?1, ?2, ?3, ?4, ?5, 'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11)`,
     )
     .bind(
       input.id,
@@ -80,9 +78,8 @@ export async function insertSession(
       input.ttlSeconds,
       input.ttlSource,
       input.expiresAt,
-      input.repoR2Key,
+      input.repoGitUrl,
       input.challengeBranch,
-      input.baseBranch,
     )
     .run();
 }
@@ -256,21 +253,14 @@ export async function getSessionByPublicId(
 export interface ChallengeTtlRow {
   id: string;
   dev_container_ttl_seconds: number | null;
-  repo_r2_key: string | null;
+  repo_git_url: string | null;
   challenge_branch: string | null;
-  base_branch: string | null;
 }
 
 /**
  * Fetch the TTL + repo metadata for a challenge. Returns null when the
  * challenge does not exist (the launch handler falls through to global
  * defaults and a blank repo).
- *
- * NOTE: repo_r2_key / challenge_branch / base_branch columns may or may not
- * exist on the challenges table yet; this query uses `COALESCE(NULL, NULL)`
- * style fallbacks via a dynamic build so unknown columns do not explode.
- * For now we only read the three known-safe fields. Repo wiring lands in
- * Step 8 (Dockerfile + entrypoint).
  */
 export async function getChallengeTtlMeta(
   db: D1Database,
@@ -278,10 +268,10 @@ export async function getChallengeTtlMeta(
 ): Promise<ChallengeTtlRow | null> {
   return db
     .prepare(
-      `SELECT id, dev_container_ttl_seconds,
-              NULL AS repo_r2_key,
-              NULL AS challenge_branch,
-              NULL AS base_branch
+      `SELECT id,
+              dev_container_ttl_seconds,
+              dev_container_repo_url AS repo_git_url,
+              dev_container_challenge_branch AS challenge_branch
        FROM challenges
        WHERE id = ?1
        LIMIT 1`,

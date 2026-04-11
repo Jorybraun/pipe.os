@@ -18,6 +18,7 @@ export interface RawChallenge {
   githubRepoUrl?: string | null;
   githubPrNumber?: number | null;
   githubPrDescription?: string | null;
+  devContainerRepoUrl?: string | null;
 }
 
 export interface RawStage {
@@ -58,6 +59,19 @@ type BlueprintResolver = (config: Record<string, unknown>) => Blueprint;
  *  type-specific knowledge lives. Everything else is generic. */
 const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
   CODE_IMPLEMENTATION: (config) => {
+    // ADR-037: if the challenge has a dev-container repo URL, render the
+    // devcontainer panel instead of Monaco. NULL = legacy in-browser editor.
+    const repoUrl = config.devContainerRepoUrl;
+    if (typeof repoUrl === 'string' && repoUrl.trim() !== '') {
+      return {
+        layout: 'fullbleed',
+        panels: { center: ['devcontainer'] },
+        shells: [],
+        initialSubmission: {},
+        isComplete: () => true,
+      };
+    }
+
     const mode = (config.mode as string) ?? 'backend';
     // Normalize files: support both new VirtualFS and legacy starterCode
     const files: VirtualFS = (config.files as VirtualFS) ?? legacyToVFS(config);
@@ -195,8 +209,16 @@ const FALLBACK_BLUEPRINT: Blueprint = {
 // ---------------------------------------------------------------------------
 
 function resolveChallengeNode(raw: RawChallenge, stageTimeLimit?: number | null): ChallengeNode {
-  const config = parseConfig(raw.config);
+  const parsed = parseConfig(raw.config);
   const type = raw.type ?? 'CODE_IMPLEMENTATION';
+
+  // Inject top-level raw fields that blueprints need to inspect (e.g.
+  // devContainerRepoUrl for ADR-037) so they reach the resolver regardless
+  // of whether they live in config JSON or as their own DB columns.
+  const config: Record<string, unknown> = {
+    ...parsed,
+    ...(raw.devContainerRepoUrl ? { devContainerRepoUrl: raw.devContainerRepoUrl } : {}),
+  };
 
   // Look up blueprint from map — no switch
   const resolve = BLUEPRINT_MAP[type];

@@ -308,7 +308,10 @@ export default function DevContainerSandboxPage(): JSX.Element {
       <div style={{ display: 'flex', gap: 12, marginBottom: 32 }}>
         {(state === 'IDLE' || state === 'ERROR') && (
           <button
-            onClick={state === 'ERROR' ? reset : launch}
+            onClick={() => {
+              if (state === 'ERROR') reset();
+              else void launch();
+            }}
             style={{
               padding: '14px 28px',
               background:

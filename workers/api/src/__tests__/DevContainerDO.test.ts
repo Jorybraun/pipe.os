@@ -124,9 +124,8 @@ async function init(
     sessionId: string;
     expiresAt: string;
     ttlSeconds: number;
-    repoR2Key?: string | null;
+    repoGitUrl?: string | null;
     challengeBranch?: string | null;
-    baseBranch?: string | null;
   },
 ): Promise<Response> {
   return instance.fetch(
@@ -134,9 +133,8 @@ async function init(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        repoR2Key: null,
+        repoGitUrl: null,
         challengeBranch: null,
-        baseBranch: null,
         ...payload,
       }),
     }),

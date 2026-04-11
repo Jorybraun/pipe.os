@@ -351,7 +351,7 @@ describe('POST /rpc/dev-container/launch', () => {
     const insertCall = db.__calls.find((c) => c.sql.includes('INSERT INTO dev_container_sessions'));
     expect(insertCall).toBeTruthy();
     expect(insertCall?.ran).toBe(true);
-    // bind order: id, sessionId, candidateId, challengeId, pipelineId, instanceType, ttlSeconds, ttlSource, expiresAt, repoR2Key, challengeBranch, baseBranch
+    // bind order: id, sessionId, candidateId, challengeId, pipelineId, instanceType, ttlSeconds, ttlSource, expiresAt, repoGitUrl, challengeBranch
     expect(insertCall?.params[2]).toBe('cand_1');
     expect(insertCall?.params[3]).toBe(null);
     expect(insertCall?.params[4]).toBe('pipe_1');
@@ -368,9 +368,8 @@ describe('POST /rpc/dev-container/launch', () => {
           value: {
             id: 'chg_abc',
             dev_container_ttl_seconds: 1800,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
           },
         },
       ],
@@ -413,9 +412,8 @@ describe('POST /rpc/dev-container/launch', () => {
           value: {
             id: 'chg_huge',
             dev_container_ttl_seconds: 999_999,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
           },
         },
       ],
@@ -536,9 +534,8 @@ describe('GET /rpc/dev-container/:sessionId/status', () => {
             expires_at: expiresAt,
             warned_at: null,
             url: 'https://example.test/proxy/',
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
             started_at: null,
             stopped_at: null,
             error_message: null,
@@ -605,9 +602,8 @@ describe('GET /rpc/dev-container/:sessionId/status', () => {
             expires_at: new Date(Date.now() + 30_000).toISOString(),
             warned_at: new Date().toISOString(),
             url: null,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
             started_at: null,
             stopped_at: null,
             error_message: null,
@@ -645,9 +641,8 @@ describe('POST /rpc/dev-container/launch — per-challenge TTL (Step 12)', () =>
           value: {
             id: 'ch-1',
             dev_container_ttl_seconds: 1800,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
           },
         },
       ],
@@ -691,9 +686,8 @@ describe('POST /rpc/dev-container/launch — per-challenge TTL (Step 12)', () =>
           value: {
             id: 'ch-2',
             dev_container_ttl_seconds: 99999,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
           },
         },
       ],
@@ -850,9 +844,8 @@ describe('POST /rpc/dev-container/launch — admin TTL override (Step 13)', () =
           value: {
             id: 'ch-3',
             dev_container_ttl_seconds: 1800,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
           },
         },
       ],
@@ -946,9 +939,8 @@ describe('POST /rpc/dev-container/:sessionId/destroy', () => {
             expires_at: new Date(Date.now() + 1800_000).toISOString(),
             warned_at: null,
             url: null,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
             started_at: null,
             stopped_at: null,
             error_message: null,
@@ -999,9 +991,8 @@ describe('POST /rpc/dev-container/:sessionId/destroy', () => {
             expires_at: new Date(Date.now() + 1800_000).toISOString(),
             warned_at: null,
             url: null,
-            repo_r2_key: null,
+            repo_git_url: null,
             challenge_branch: null,
-            base_branch: null,
             started_at: null,
             stopped_at: new Date().toISOString(),
             error_message: null,

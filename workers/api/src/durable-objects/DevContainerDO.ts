@@ -23,9 +23,17 @@ interface InitPayload {
   sessionId: string;
   expiresAt: string;
   ttlSeconds: number;
-  repoR2Key: string | null;
+  repoGitUrl: string | null;
   challengeBranch: string | null;
-  baseBranch: string | null;
+}
+
+function buildEnvVars(payload: InitPayload): Record<string, string> {
+  const env: Record<string, string> = {
+    SESSION_ID: payload.sessionId,
+  };
+  if (payload.repoGitUrl) env.REPO_GIT_URL = payload.repoGitUrl;
+  if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
+  return env;
 }
 
 export class DevContainerDO extends Container<Env> {
@@ -43,7 +51,18 @@ export class DevContainerDO extends Container<Env> {
     // Everything else is a proxy passthrough to the code-server container.
     // Container.fetch forwards to containerFetch which supports HTTP + WS
     // upgrades — both ends of the socket are managed by the DO.
+    //
+    // After DO hibernation `this.envVars` is lost (instance property), so
+    // rehydrate from storage before `super.fetch()` kicks off startContainer.
+    await this.rehydrateEnvVarsIfMissing();
     return super.fetch(request);
+  }
+
+  private async rehydrateEnvVarsIfMissing(): Promise<void> {
+    if (this.envVars && Object.keys(this.envVars).length > 0) return;
+    const config = (await this.ctx.storage.get<InitPayload>('config')) ?? null;
+    if (!config) return;
+    this.envVars = buildEnvVars(config);
   }
 
   private async handleInit(request: Request): Promise<Response> {
@@ -60,6 +79,10 @@ export class DevContainerDO extends Container<Env> {
     // Persist config so future DO invocations (destroy, proxy, alarms) can
     // read it without re-querying D1.
     await this.ctx.storage.put('config', payload);
+
+    // Populate env vars for the container entrypoint. The proxy path
+    // re-hydrates this from storage after hibernation.
+    this.envVars = buildEnvVars(payload);
 
     // Pre-container-proxy (Step 7): flip the D1 row straight to READY so the
     // candidate can exit the LAUNCHING state. Step 9 adds proxy passthrough.
