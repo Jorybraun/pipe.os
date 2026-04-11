@@ -261,7 +261,18 @@ The 15 curated questions are hand-mirrored into `workers/api/src/lib/cultureQues
 
 Raw technical reference material. Early-stage; not yet integrated into a research or question bank.
 
-### 4.4 Top-level files
+### 4.4 Scorer calibration (`knowledge/calibration/`)
+
+Operational documentation for the 6-dimension BARS scorer calibration harness (CAL-1 through CAL-4 in STRATEGY.md). Not research, not a question bank — this is the runbook + methodology + cost model + decision log for the offline κ measurement that picks the production scorer model between Gemma 4 26B, Devstral Small, and Claude Sonnet 4.5.
+
+- **`calibration/README.md`** — folder index + read order
+- **`calibration/methodology.md`** — why weighted Cohen's κ, why ICC(2,1), why Sonnet acts as oracle for the three communication dimensions, where the κ ≥ 0.75 threshold comes from
+- **`calibration/runbook.md`** — the single-skill-orchestrated `/calibrate-scorer` flow: Phase A (Node script does Gemma + Devstral via REST) then Phase B (Sonnet subagent via Claude Code's Agent tool), failure modes, re-run flags
+- **`calibration/cost-and-runs.md`** — ~$0.35 out of pocket per full run because the Sonnet half goes through the Claude Code subscription not the Anthropic API; 3–5 runs before CAL-4 decides, then quarterly re-calibration
+- **`calibration/fixture-authoring.md`** — six authoring rules, the seed→variant generator pattern for scaling from 2 seed fixtures to the 30–50 target
+- **`calibration/decision-log.md`** — append-only audit trail for every CAL-4 decision
+
+### 4.5 Top-level files
 
 - **`knowledge/README.md`** — the LLM-wiki philosophy (Vannevar Bush / Memex)
 - **`knowledge/Behavioral interviews for Software Engineers How to prepare.md`** — single-article raw source. Unfiled.

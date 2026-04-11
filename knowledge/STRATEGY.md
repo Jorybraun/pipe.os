@@ -386,6 +386,8 @@ The scorer is currently set to Gemma 4 26B (`@cf/google/gemma-4-26b-a4b-it`) as 
 
 **Tracking:** See CAL-1 through CAL-4 in the task list. Decision recorded in the Decision Log below once CAL-4 completes. OQ-2 is partially subsumed by this work — the Devstral-on-behavioral-scoring question does not apply to the code-review rubric but the methodology transfers directly when we run the equivalent harness for culture.
 
+**Operational documentation:** The full runbook, cost model, fixture authoring rules, and decision log live in [`knowledge/calibration/`](calibration/README.md). That folder is the operational expansion of this section — when you are about to run the harness or revise a fixture, read the runbook there. When this paragraph and the folder disagree, this paragraph wins and the folder is wrong.
+
 #### Repo Understanding — 3rd AI pass (RD-23 through RD-24)
 
 | # | Finding | Source | Plan action | Phase | Status |
