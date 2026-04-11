@@ -22,6 +22,7 @@ import { apiError } from '../../middleware/errors';
 import { runDiscovery, runDiscoveryBySkills } from '../../lib/repoDiscovery/discover';
 import { convertRepoToChallenge } from '../../lib/repoDiscovery/convertToChallenge';
 import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
+import { createRoleAgentProvider } from '../../lib/llm/createProvider';
 import type {
   Env,
   Variables,
@@ -85,6 +86,10 @@ repoDiscovery.post('/discover', async (c) => {
     return apiError(c, 'SERVER_ERROR', 'Failed to create discovery job');
   }
 
+  // Wire the role-agent provider so discovery can run the ADR-036 §2.3
+  // RCD-aware rerank. Missing → discovery falls back to matchRepos order.
+  const rerankProvider = createRoleAgentProvider(c.env);
+
   // Run discovery in background
   const discoveryPromise = runDiscovery({
     db: c.env.DB,
@@ -93,6 +98,7 @@ repoDiscovery.post('/discover', async (c) => {
     ownerId: userId,
     jobId: jobResult.id,
     persona,
+    ...(rerankProvider ? { provider: rerankProvider } : {}),
     githubToken: c.env.GITHUB_TOKEN,
   });
 
