@@ -52,6 +52,32 @@ Deep research run completing both halves of a single bridge that had drifted in 
 
 **STRATEGY.md updates:** RD-1 through RD-24 section header now links the brief + ADR-036. Decision Log gains two entries (research complete + ADR-036 drafted). Brief 4 added to "The four research briefs" section. No code changes yet — implementation is phased across 4 sub-phases and blocked on founder decision about culture-first vs. repo-first sequencing.
 
+#### Added — ADR-036 Phase 2: culture consumer rewrite (Path A, 2026-04-10)
+
+Phase 2 of ADR-036 cuts the culture interview + scorer over to the Role Context Document (RCD) produced in Phase 1. `cultureRoleResolution.ts` stops doing the 4-keyword regex on `persona_json.archetype` and reads `rcd_json` directly, returning a full `CultureTeamContext` (team culture profile, dispositional weights, HM/TM team-domain cells, BARS overrides from the `role_contexts.bars_overrides` column, and HITL dealbreakers). The narrow `{ seniority, roleOverlayId }` return shape is preserved for backward compatibility, with `teamContext` added alongside and null during the migration window when only `persona_json` exists.
+
+**Probe bank enrichment** — new module `cultureProbeBank.ts` reads the `role_probe_bank` D1 table (migration 0022) grouped by dimension. `pickNextQuestion` gains an optional `probeBank` option that biases question selection toward dimensions with recruiter-approved enriched probes (+0.05 per probe, capped at +0.25), and `mergeEnrichedProbes` layers team-specific probes into the winner's static probe library under synthetic `enriched_N` slot keys — additive, never replacing the static library. The probe bank is loaded once per session by the route handler via `loadRoleProbeBank(db, roleContextId)` and threaded through to `startCultureInterview` + `advanceCultureInterview`. Per-candidate dynamic probe generation is explicitly avoided (NYC LL 144 + EU AI Act Art 14).
+
+**BARS overrides + dispositional weights** — `cultureScorer.ts` gains `applyBarsOverrides(dimension, staticRubric, overrides)` which substitutes approved anchor text at specific level positions (1–5) before the model sees the rubric, and `applyDispositionalWeight(rawScore, weight)` which shifts the model's raw score by `round(clamp(weight, -1, +1))` with a [1, 5] clamp — sign-preserved, cannot zero out a dimension, cannot saturate it. `CompetencyScoreResult` grows three new fields (`rawScore`, `dispositionalWeight`, `barsOverrideApplied`) for audit-trail transparency. The scorer threads `teamContext.barsOverrides` + `teamContext.dispositionalWeights[dim]` into `scoreCompetencyDimension` per-dimension.
+
+**Dealbreaker HITL gate** — `evaluateDealbreakers(dealbreakers, transcript)` runs after all dimension scoring completes and does a case-insensitive substring scan of each RCD dealbreaker `pattern` against every candidate response. Matching dealbreakers surface as `DealbreakerFlag` entries carrying the verbatim quote, `jobRelatednessNote`, `jobRelatednessStrength`, and source chain id for the Griggs business-necessity defense. The `hitlReviewRequired` boolean on `CultureScoreReport` is true when any flag matches, surfaced to recruiters via `GET /sessions/:sessionId/report`. The existing candidate-facing HITL gate (`GET /session/:token/report` blocks on `review_decision`) is preserved — never auto-fails, recruiter must confirm or override.
+
+**Files landed:**
+- `workers/api/src/lib/cultureRoleResolution.ts` — full rewrite; returns `CultureTeamContext` from RCD, falls back to legacy `persona_json` path during migration
+- `workers/api/src/lib/cultureProbeBank.ts` — NEW; `loadRoleProbeBank`, `mergeEnrichedProbes`, `enrichedProbeCount`, `RoleProbeBank` type
+- `workers/api/src/lib/cultureQuestionBank.ts` — `PickNextQuestionOptions` gains `probeBank?`; selector adds enrichment bonus + merges probes into winner
+- `workers/api/src/lib/cultureAgent.ts` — `startCultureInterview` + `advanceCultureInterview` thread `probeBank` through to `pickNextQuestion`
+- `workers/api/src/lib/cultureScorer.ts` — `applyBarsOverrides`, `applyDispositionalWeight`, `evaluateDealbreakers`; `ScoreCultureInterviewInput` gains `teamContext?`; `CompetencyScoreResult` grows `rawScore` + `dispositionalWeight` + `barsOverrideApplied`; `CultureScoreReport` grows `dealbreakerFlags` + `hitlReviewRequired`
+- `workers/api/src/routes/screening/culture.ts` — consent + respond + scoring-job paths all resolve `teamContext` and pass through to the scorer and selector
+- `workers/api/src/__tests__/culturePhase2.test.ts` — NEW; 20 BDD assertions covering the six pipeline stages (RCD resolve, persona fallback, probe bank load, selector merge, BARS override substitution, dispositional weight sign-preservation, dealbreaker match + no-match audit trail, mock-provider end-to-end)
+
+**Test status:** 77/77 culture tests green (20 new Phase 2 + 8 Phase 1 synthesis + 23 rest + 26 unit). Zero new tsc errors in the Phase 2 files.
+
+**Design notes:**
+- The BARS overrides live on a dedicated `role_contexts.bars_overrides` column (not inside `rcd_json`) because they are recruiter-approved at role-setup time — distinct from the synthesis-time draft `rcd.bars_overrides`. When the column is populated it wins; the draft is used only when the column is empty.
+- `applyDispositionalWeight` deliberately rounds to the nearest integer shift and clamps to [1, 5] so a runaway weight cannot saturate a dimension in one call. Multiple scoring passes are additive but each call is bounded.
+- Dealbreaker pattern matching is a case-insensitive substring check, not regex — this is a simpler and more auditable baseline than model-driven matching, and matches how recruiters actually write patterns ("will not relocate", "prefers to work alone"). Future iterations may add closed-vocabulary pattern expansion, but the primary defense is recruiter HITL review, not matcher precision.
+
 #### Added — ADR-036 Phase 1: RCD schema + synthesis rewrite (Path A, 2026-04-10)
 
 Phase 1 of ADR-036 lands the Role Context Document (RCD) schema, rewrites Role Discovery synthesis around it, and wires the consumer_slice derivation so legacy `CandidatePersona` readers keep working during the migration. Path A (culture-first: Phase 1 → Phase 2) was chosen per the implementation handoff; Path B (repo-first) is deferred to a parallel agent session.

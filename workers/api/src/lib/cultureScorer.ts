@@ -46,6 +46,8 @@
 import type { LLMProvider, LLMMessage } from './llm/types';
 import type { CultureTranscript } from './cultureAgent';
 import { COMPETENCY_DIMENSIONS, type CompetencyDimension } from './cultureQuestionBank';
+import type { CultureTeamContext } from './cultureRoleResolution';
+import type { BarsOverride, DealbreakerRecord } from '../types';
 import {
   buildCompetencyScorerSystemPrompt,
   buildCompetencyScorerUserMessage,
@@ -70,8 +72,18 @@ export const CULTURE_PROFILE_DIMENSIONS: readonly CultureProfileDimension[] = [
 
 export interface CompetencyScoreResult {
   dimension: CompetencyDimension;
-  /** 1–5 BARS score. A 5 requires concrete, multi-turn behavioral evidence. */
+  /**
+   * Adjusted 1–5 BARS score the recruiter UI displays. When a dispositional
+   * weight is applied, this is `rawScore` shifted by the weight delta, clamped
+   * to [1,5]. When no weight is set, `adjustedScore === rawScore`.
+   */
   score: 1 | 2 | 3 | 4 | 5;
+  /** Unmodified model-emitted score before any RCD dispositional weight. */
+  rawScore: 1 | 2 | 3 | 4 | 5;
+  /** Dispositional weight applied from the RCD (in [-1, +1]); 0 when none. */
+  dispositionalWeight: number;
+  /** True if any BARS level text was swapped for an RCD-approved override. */
+  barsOverrideApplied: boolean;
   /** Verbatim candidate quotes that ground the score (§6.5 explainability). */
   evidenceQuotes: string[];
   /** 0–1 epistemic confidence in the score given transcript coverage. */
@@ -107,9 +119,37 @@ export interface OrgCultureBenchmark {
   feedbackOrientation: 1 | 2 | 3 | 4 | 5;
 }
 
+/**
+ * HITL-gated dealbreaker flag surfaced to the recruiter when the scorer
+ * detects evidence matching an RCD-approved dealbreaker pattern. Never
+ * auto-fails a candidate (Griggs / Uniform Guidelines / EEOC v. iTutorGroup /
+ * EU AI Act Art 14). The recruiter must review and confirm or override
+ * before the session advances.
+ */
+export interface DealbreakerFlag {
+  dealbreakerId: string;
+  label: string;
+  pattern: string;
+  /** The verbatim transcript quote that ground the flag, if one was matched. */
+  matchedQuote: string | null;
+  /** Whether the pattern was actually matched against transcript turns. */
+  matched: boolean;
+  /** Copied from the RCD for the Griggs business-necessity defense. */
+  jobRelatednessNote: string;
+  jobRelatednessStrength: 'strong' | 'moderate' | 'weak';
+  /** Source stakeholder per the RCD — audit trail only, never displayed raw. */
+  sourceStakeholder: string;
+  /** Pointer into an RCD laddering chain for the audit trail. */
+  sourceChainId: string;
+}
+
 export interface CultureScoreReport {
   competencyScores: CompetencyScoreResult[];
   profileScores: CultureProfileScoreResult[];
+  /** Dealbreaker flags from the RCD — empty when no RCD or no matches. */
+  dealbreakerFlags: DealbreakerFlag[];
+  /** True when any flag was raised — blocks advancement until HITL review. */
+  hitlReviewRequired: boolean;
   synthesis: {
     headline: string;
     narrative: string;
@@ -324,6 +364,14 @@ export interface ScoreCultureInterviewInput {
   transcript: CultureTranscript;
   /** The organization's explicit culture profile benchmark for this pipeline. */
   orgBenchmark: OrgCultureBenchmark;
+  /**
+   * RCD-derived Team Context (ADR-036 Phase 2). When present, the scorer
+   * applies `bars_overrides` (anchor text substitution), `dispositionalWeights`
+   * (post-score magnitude adjustment, sign-preserved), and `dealbreakers`
+   * (HITL flag generation). Null during the migration window — the scorer
+   * degrades to the static rubric with no weights and no flags.
+   */
+  teamContext?: CultureTeamContext | null | undefined;
 }
 
 /**
@@ -339,7 +387,7 @@ export interface ScoreCultureInterviewInput {
 export async function scoreCultureInterview(
   input: ScoreCultureInterviewInput,
 ): Promise<CultureScoreReport> {
-  const { provider, transcript, orgBenchmark } = input;
+  const { provider, transcript, orgBenchmark, teamContext } = input;
 
   if (!provider) {
     return mockScoreReport(transcript, orgBenchmark);
@@ -348,7 +396,15 @@ export async function scoreCultureInterview(
   // Fire all 10 dimension calls concurrently.
   const [competencyResults, profileResults] = await Promise.all([
     Promise.all(
-      COMPETENCY_DIMENSIONS.map((dim) => scoreCompetencyDimension({ provider, dimension: dim, transcript })),
+      COMPETENCY_DIMENSIONS.map((dim) =>
+        scoreCompetencyDimension({
+          provider,
+          dimension: dim,
+          transcript,
+          barsOverrides: teamContext?.barsOverrides ?? [],
+          dispositionalWeight: teamContext?.dispositionalWeights?.[dim] ?? 0,
+        }),
+      ),
     ),
     Promise.all(
       CULTURE_PROFILE_DIMENSIONS.map((dim) =>
@@ -366,9 +422,18 @@ export async function scoreCultureInterview(
     orgBenchmark,
   });
 
+  // RCD dealbreaker HITL gate: scan the transcript for any RCD-approved
+  // dealbreaker pattern and raise a flag per match. Never auto-fails — the
+  // recruiter sees the flags and decides.
+  const dealbreakerFlags = teamContext
+    ? evaluateDealbreakers(teamContext.dealbreakers, transcript)
+    : [];
+
   return {
     competencyScores: competencyResults,
     profileScores: profileResults,
+    dealbreakerFlags,
+    hitlReviewRequired: dealbreakerFlags.some((f) => f.matched),
     synthesis,
     orgBenchmark,
     scoredAt: new Date().toISOString(),
@@ -381,6 +446,59 @@ interface ScoreCompetencyArgs {
   provider: LLMProvider;
   dimension: CompetencyDimension;
   transcript: CultureTranscript;
+  /** RCD-approved BARS anchor overrides — filtered inside to this dimension. */
+  barsOverrides?: BarsOverride[];
+  /**
+   * Per-dimension dispositional weight delta in [-1, +1]. Applied post-score
+   * as a sign-preserved magnitude shift — never zeroes a dimension, and the
+   * adjusted score is clamped to [1, 5].
+   */
+  dispositionalWeight?: number;
+}
+
+/**
+ * Apply RCD-approved BARS anchor overrides to the static rubric for one
+ * dimension. Each override replaces a single `levelN` entry. Unmatched
+ * levels keep their static text. Returns a new rubric + an `overridden`
+ * flag indicating whether any substitution actually happened.
+ */
+export function applyBarsOverrides(
+  dimension: CompetencyDimension,
+  staticRubric: BarsRubric,
+  overrides: readonly BarsOverride[],
+): { rubric: BarsRubric; overridden: boolean } {
+  const matching = overrides.filter((o) => o.dimension === dimension);
+  if (matching.length === 0) return { rubric: staticRubric, overridden: false };
+
+  const next: BarsRubric = { ...staticRubric };
+  let overridden = false;
+  for (const o of matching) {
+    if (o.anchor_level >= 1 && o.anchor_level <= 5) {
+      const key = `level${o.anchor_level}` as keyof BarsRubric;
+      next[key] = o.override_anchor_text;
+      overridden = true;
+    }
+  }
+  return { rubric: next, overridden };
+}
+
+/**
+ * Apply an RCD dispositional weight to a raw score. The weight is a
+ * magnitude shift in [-1, +1]; we add `round(weight * 1)` to the raw score
+ * and clamp to [1, 5]. Sign-preservation constraint: a weight cannot move a
+ * score across a level boundary by more than ±1 in a single scoring run,
+ * and cannot push below 1 or above 5. This prevents a single dispositional
+ * knob from zeroing out a dimension or saturating it.
+ */
+export function applyDispositionalWeight(
+  rawScore: 1 | 2 | 3 | 4 | 5,
+  weight: number,
+): 1 | 2 | 3 | 4 | 5 {
+  if (!Number.isFinite(weight) || weight === 0) return rawScore;
+  const clampedWeight = Math.max(-1, Math.min(1, weight));
+  const delta = Math.round(clampedWeight);
+  const shifted = Math.max(1, Math.min(5, rawScore + delta));
+  return shifted as 1 | 2 | 3 | 4 | 5;
 }
 
 /**
@@ -392,8 +510,15 @@ interface ScoreCompetencyArgs {
  * agent and human reviewer that this dimension was not reliably scored.
  */
 export async function scoreCompetencyDimension(args: ScoreCompetencyArgs): Promise<CompetencyScoreResult> {
-  const { provider, dimension, transcript } = args;
+  const { provider, dimension, transcript, barsOverrides = [], dispositionalWeight = 0 } = args;
   const entry = COMPETENCY_BARS_RUBRICS[dimension];
+
+  // Apply RCD-approved anchor overrides before the model sees the rubric.
+  const { rubric: effectiveRubric, overridden } = applyBarsOverrides(
+    dimension,
+    entry.rubric,
+    barsOverrides,
+  );
 
   const messages: LLMMessage[] = [
     { role: 'system', content: buildCompetencyScorerSystemPrompt() },
@@ -401,7 +526,7 @@ export async function scoreCompetencyDimension(args: ScoreCompetencyArgs): Promi
       role: 'user',
       content: buildCompetencyScorerUserMessage({
         dimension,
-        rubric: entry.rubric,
+        rubric: effectiveRubric,
         calibration: entry.calibration,
         transcript,
       }),
@@ -411,38 +536,110 @@ export async function scoreCompetencyDimension(args: ScoreCompetencyArgs): Promi
   const content = await callProvider(provider, messages, 1024);
   if (!content) {
     console.warn('[cultureScorer] Empty response for competency dimension:', dimension);
-    return competencyFallback(dimension);
+    return competencyFallback(dimension, overridden, dispositionalWeight);
   }
 
-  return parseCompetencyResponse(dimension, content);
+  return parseCompetencyResponse(dimension, content, {
+    barsOverrideApplied: overridden,
+    dispositionalWeight,
+  });
 }
 
-function parseCompetencyResponse(dimension: CompetencyDimension, content: string): CompetencyScoreResult {
+function parseCompetencyResponse(
+  dimension: CompetencyDimension,
+  content: string,
+  meta: { barsOverrideApplied: boolean; dispositionalWeight: number },
+): CompetencyScoreResult {
   try {
     const stripped = stripJsonFences(content);
     const raw = JSON.parse(stripped) as unknown;
     const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 
-    const score = parseScoreInt(r.score);
+    const rawScore = parseScoreInt(r.score);
+    const score = applyDispositionalWeight(rawScore, meta.dispositionalWeight);
     const evidenceQuotes = parseStringArray(r.evidence_quotes);
     const confidence = parseConfidence(r.confidence);
     const reasoning = typeof r.reasoning === 'string' ? r.reasoning.trim() : 'parse_failure';
 
-    return { dimension, score, evidenceQuotes, confidence, reasoning };
+    return {
+      dimension,
+      score,
+      rawScore,
+      dispositionalWeight: meta.dispositionalWeight,
+      barsOverrideApplied: meta.barsOverrideApplied,
+      evidenceQuotes,
+      confidence,
+      reasoning,
+    };
   } catch (err) {
     console.error('[cultureScorer] Failed to parse competency response for', dimension, ':', content.slice(0, 300), err);
-    return competencyFallback(dimension);
+    return competencyFallback(dimension, meta.barsOverrideApplied, meta.dispositionalWeight);
   }
 }
 
-function competencyFallback(dimension: CompetencyDimension): CompetencyScoreResult {
+function competencyFallback(
+  dimension: CompetencyDimension,
+  barsOverrideApplied = false,
+  dispositionalWeight = 0,
+): CompetencyScoreResult {
   return {
     dimension,
     score: 3,
+    rawScore: 3,
+    dispositionalWeight,
+    barsOverrideApplied,
     evidenceQuotes: [],
     confidence: 0,
     reasoning: 'parse_failure',
   };
+}
+
+// ─── Dealbreaker HITL gate ────────────────────────────────────────────────────
+
+/**
+ * Scan the transcript for RCD-approved dealbreaker patterns. Each dealbreaker
+ * in the RCD carries a `pattern` string — we search for it as a
+ * case-insensitive substring across all candidate responses. A match raises
+ * a flag with the verbatim quote for the audit trail; no match still
+ * surfaces the dealbreaker with `matched: false` so the recruiter can see
+ * what was checked.
+ *
+ * Never auto-fails. The `hitlReviewRequired` aggregate on the report is the
+ * signal the recruiter UI uses to block advancement until review.
+ */
+export function evaluateDealbreakers(
+  dealbreakers: readonly DealbreakerRecord[],
+  transcript: CultureTranscript,
+): DealbreakerFlag[] {
+  if (dealbreakers.length === 0) return [];
+
+  const candidateText = transcript.turns
+    .map((t) => t.candidateResponse ?? '')
+    .filter((t) => t.length > 0);
+
+  return dealbreakers.map((db) => {
+    const needle = db.pattern.trim().toLowerCase();
+    let matchedQuote: string | null = null;
+    if (needle.length > 0) {
+      for (const response of candidateText) {
+        if (response.toLowerCase().includes(needle)) {
+          matchedQuote = response;
+          break;
+        }
+      }
+    }
+    return {
+      dealbreakerId: db.id,
+      label: db.label,
+      pattern: db.pattern,
+      matchedQuote,
+      matched: matchedQuote !== null,
+      jobRelatednessNote: db.job_relatedness_note,
+      jobRelatednessStrength: db.job_relatedness_strength,
+      sourceStakeholder: db.source_stakeholder,
+      sourceChainId: db.source_chain_id,
+    };
+  });
 }
 
 // ─── Culture profile axis scorer ─────────────────────────────────────────────
@@ -617,6 +814,9 @@ export function mockScoreReport(
   const competencyScores: CompetencyScoreResult[] = COMPETENCY_DIMENSIONS.map((dim) => ({
     dimension: dim,
     score: 3,
+    rawScore: 3,
+    dispositionalWeight: 0,
+    barsOverrideApplied: false,
     evidenceQuotes: [],
     confidence: 0,
     reasoning: '[MOCK] Neutral midpoint — no provider.',
@@ -637,6 +837,8 @@ export function mockScoreReport(
   return {
     competencyScores,
     profileScores,
+    dealbreakerFlags: [],
+    hitlReviewRequired: false,
     synthesis: {
       headline: '[MOCK] No provider — all scores defaulted to midpoint.',
       narrative: '[MOCK] Scoring pipeline ran in mock mode. No real analysis performed.',

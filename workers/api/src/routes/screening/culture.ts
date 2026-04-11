@@ -36,6 +36,7 @@ import {
   type CultureTranscript,
 } from '../../lib/cultureAgent';
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
+import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
 import {
   scoreCultureInterview,
   type OrgCultureBenchmark,
@@ -174,9 +175,19 @@ export async function runScoringJob(env: Env, sessionId: string): Promise<void> 
     ? withCultureMetering(rawProvider, sessionId, 'scoring', db, null)
     : null;
 
+  // Resolve the RCD Team Context so the scorer can apply BARS overrides,
+  // dispositional weights, and surface dealbreakers as HITL flags. Null
+  // during the migration window — scorer degrades gracefully.
+  const roleContext = await resolveCultureRoleContext(db, session.assessment_id);
+
   let report: CultureScoreReport;
   try {
-    report = await scoreCultureInterview({ provider, transcript, orgBenchmark });
+    report = await scoreCultureInterview({
+      provider,
+      transcript,
+      orgBenchmark,
+      teamContext: roleContext.teamContext,
+    });
   } catch (err) {
     console.error('[cultureScoringJob] Scoring pipeline failed:', sessionId, err);
     await db
@@ -745,15 +756,20 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
     );
   }
 
-  // Resolve persona-derived seniority + role overlay so the selector applies
-  // dimension weights from the role context. Falls back to mid + universal on
-  // any lookup miss — never blocks the interview.
+  // Resolve Team Context (RCD-derived) so the selector applies dimension
+  // weights, enriched probes, and scorer-ready BARS/dealbreakers. Falls back
+  // to mid + universal + empty probe bank on any lookup miss — never blocks
+  // the interview.
   const roleContext = await resolveCultureRoleContext(c.env.DB, session.assessment_id);
+  const probeBank = roleContext.teamContext
+    ? await loadRoleProbeBank(c.env.DB, roleContext.teamContext.roleContextId)
+    : EMPTY_PROBE_BANK;
 
   // Seed first question
   const { transcript, nextQuestion } = startCultureInterview({
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
+    probeBank,
   });
 
   const consentAt = now();
@@ -834,9 +850,13 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     ? withCultureMetering(rawProvider, session.id, 'conversation', c.env.DB, c.executionCtx)
     : null;
 
-  // Re-resolve role context on every advance — cheap (one indexed query)
-  // and avoids storing seniority/overlay on the session row.
+  // Re-resolve Team Context + probe bank on every advance — cheap (two
+  // indexed queries) and avoids stale state if the recruiter re-runs role
+  // setup mid-session.
   const roleContext = await resolveCultureRoleContext(c.env.DB, session.assessment_id);
+  const probeBank = roleContext.teamContext
+    ? await loadRoleProbeBank(c.env.DB, roleContext.teamContext.roleContextId)
+    : EMPTY_PROBE_BANK;
 
   const result = await advanceCultureInterview({
     provider,
@@ -844,6 +864,7 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     candidateAnswer: answer.trim(),
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
+    probeBank,
   });
 
   if (result.action === 'terminate') {

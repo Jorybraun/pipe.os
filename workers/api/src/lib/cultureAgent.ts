@@ -58,6 +58,7 @@ import {
 } from './cultureAgentPrompts';
 import { coerceProbePattern } from './cultureProbePatterns';
 import type { RoleOverlayId } from './cultureRoleOverlay';
+import type { RoleProbeBank } from './cultureProbeBank';
 
 // ─── Transcript shape ────────────────────────────────────────────────────────
 // Stored as JSON in `culture_interview_sessions.transcript`. Keep this shape
@@ -133,6 +134,12 @@ export interface StartCultureInterviewInput {
    * dimension weights and tag preferences in the selector.
    */
   roleOverlayId?: RoleOverlayId | null;
+  /**
+   * RCD-derived enriched probe bank (ADR-036 Phase 2). When populated, the
+   * selector biases toward questions whose dimensions have team-specific
+   * probes and merges them into the picked question's probe library.
+   */
+  probeBank?: RoleProbeBank | undefined;
 }
 
 export interface StartCultureInterviewResult {
@@ -157,6 +164,7 @@ export function startCultureInterview(input: StartCultureInterviewInput = {}): S
     seniority: input.seniority,
     roleOverlayId: input.roleOverlayId,
     runningThemes: [],
+    probeBank: input.probeBank,
   });
   if (!first) {
     throw new Error('Culture interview bank is empty — cannot start interview.');
@@ -196,6 +204,11 @@ export interface AdvanceCultureInterviewInput {
    * from `knowledge/culture/role-overlays/{id}.md`.
    */
   roleOverlayId?: RoleOverlayId | null;
+  /**
+   * RCD-derived enriched probe bank (ADR-036 Phase 2). Threaded through from
+   * the route handler — loaded once per session by `loadRoleProbeBank`.
+   */
+  probeBank?: RoleProbeBank | undefined;
 }
 
 export type AdvanceCultureInterviewResult =
@@ -350,6 +363,7 @@ export async function advanceCultureInterview(
     seniority: input.seniority,
     roleOverlayId: input.roleOverlayId,
     runningThemes: transcript.scratchpad.runningThemes,
+    probeBank: input.probeBank,
   });
   if (!next) {
     // Bank exhausted before termination — terminate with a distinct reason

@@ -17,6 +17,11 @@
  */
 
 import { loadRoleOverlay, type RoleOverlayId } from './cultureRoleOverlay.js';
+import {
+  mergeEnrichedProbes,
+  enrichedProbeCount,
+  type RoleProbeBank,
+} from './cultureProbeBank.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -384,6 +389,13 @@ export interface PickNextQuestionOptions {
   runningThemes?: readonly string[];
   /** Discipline filter; defaults to `eng`-friendly (eng + universal only). */
   discipline?: Discipline;
+  /**
+   * RCD-derived enriched probe bank (ADR-036 Phase 2 / RD-12). When present,
+   * questions whose dimensions have team-specific probes get a small selector
+   * bonus and their probe library is merged with the enriched entries before
+   * return. Empty bank = static-only fallback (migration window).
+   */
+  probeBank?: RoleProbeBank | undefined;
 }
 
 /**
@@ -397,7 +409,9 @@ export interface PickNextQuestionOptions {
  *        + themeBonus       — +0.3 if any probe_pattern intersects runningThemes
  *        + barsBonus        — (bars_fitness − 3) × 0.1
  *        + tagPreference    — ±0.2 if tags overlap overlay preferred/deprioritized
+ *        + enrichmentBonus  — +0.05 per RCD-enriched probe on any of the question's dimensions
  *   3. Highest score wins. Stable on ties via bank order.
+ *   4. RCD-enriched probes (if any) are merged into the winner's probe library.
  */
 export function pickNextQuestion(
   optionsOrCoverage: PickNextQuestionOptions | Record<CompetencyDimension, number>,
@@ -416,6 +430,7 @@ export function pickNextQuestion(
 
   const overlay = loadRoleOverlay(opts.roleOverlayId);
   const runningThemes = opts.runningThemes ?? [];
+  const probeBank: RoleProbeBank = opts.probeBank ?? {};
   const allowedDisciplines: ReadonlySet<Discipline> = new Set<Discipline>(
     opts.discipline === 'eng' || !opts.discipline
       ? ['eng', 'universal']
@@ -461,7 +476,13 @@ export function pickNextQuestion(
     if (overlay.preferredTags.some((t) => tags.includes(t))) tagPreference += 0.2;
     if (overlay.deprioritizedTags.some((t) => tags.includes(t))) tagPreference -= 0.2;
 
-    const score = coverageGap * overlayWeight + themeBonus + barsBonus + tagPreference;
+    // RD-12: bias the selector toward questions whose dimensions already have
+    // recruiter-approved, RCD-grounded probes waiting in the bank. Capped
+    // at +0.25 so a large probe pile can't starve uncovered dimensions.
+    const enrichmentBonus = Math.min(enrichedProbeCount(probeBank, q.dimensions) * 0.05, 0.25);
+
+    const score =
+      coverageGap * overlayWeight + themeBonus + barsBonus + tagPreference + enrichmentBonus;
 
     if (score > bestScore) {
       bestScore = score;
@@ -470,5 +491,12 @@ export function pickNextQuestion(
   }
 
   // Edge case: every candidate had empty dimensions. Fall back to first non-asked.
-  return best ?? candidates[0] ?? null;
+  const winner = best ?? candidates[0] ?? null;
+  if (!winner) return null;
+
+  // Layer RCD-enriched probes over the static probe library of the winner.
+  // Static library is preserved — enriched probes are additive. If the bank
+  // is empty for this role (or for this question's dimensions), the winner
+  // is returned unchanged.
+  return mergeEnrichedProbes(winner, probeBank);
 }
