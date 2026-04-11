@@ -28,6 +28,7 @@ import {
   launchDevContainer,
   getDevContainerStatus,
   destroyDevContainer,
+  getExchangeToken,
   buildProxyIframeUrl,
   DevContainerApiError,
 } from '../lib/devContainerClient';
@@ -197,6 +198,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
 
   const sessionIdRef = useRef<string | null>(null);
   const sessionTokenRef = useRef<string | null>(sessionToken);
+  const exchangeTokenFetchedRef = useRef(false);
   useEffect(() => {
     sessionTokenRef.current = sessionToken;
   }, [sessionToken]);
@@ -219,14 +221,29 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
         setExpiringSoon(res.expiringSoon);
 
         if (res.status === 'READY' || res.status === 'SLEEPING') {
+          // Only fetch exchange token once per session — the ref survives
+          // across poll cycles without triggering effect re-runs.
+          if (!exchangeTokenFetchedRef.current) {
+            exchangeTokenFetchedRef.current = true;
+            try {
+              const { exchangeToken } = await getExchangeToken(sessionId, sessionTokenRef.current);
+              setContainerUrl(buildProxyIframeUrl(sessionId, exchangeToken));
+            } catch (err) {
+              console.error('[useDevContainerSession:cf] exchange token failed:', err);
+              exchangeTokenFetchedRef.current = false; // allow retry
+              setState('ERROR');
+              setError('Failed to get iframe access token');
+              return;
+            }
+          }
           setState('READY');
-          setContainerUrl(buildProxyIframeUrl(sessionId, sessionTokenRef.current));
         } else if (res.status === 'LAUNCHING') {
           setState((prev) => (prev === 'IDLE' || prev === 'LAUNCHING' ? 'BOOTING' : prev));
         } else if (res.status === 'STOPPED') {
           setState('IDLE');
           setSessionId(null);
           sessionIdRef.current = null;
+          exchangeTokenFetchedRef.current = false;
           setContainerUrl(null);
           setExpiresAt(null);
           setExpiringSoon(false);
@@ -234,6 +251,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
           setState('IDLE');
           setSessionId(null);
           sessionIdRef.current = null;
+          exchangeTokenFetchedRef.current = false;
           setContainerUrl(null);
           setError('Session expired.');
         } else if (res.status === 'ERROR') {
@@ -247,6 +265,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
           setState('IDLE');
           setSessionId(null);
           sessionIdRef.current = null;
+          exchangeTokenFetchedRef.current = false;
           setContainerUrl(null);
           return;
         }
@@ -269,6 +288,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
     setState('LAUNCHING');
     setError(null);
     setContainerUrl(null);
+    exchangeTokenFetchedRef.current = false;
     setExpiresAt(null);
     setExpiringSoon(false);
 
@@ -305,6 +325,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
       setState('IDLE');
       setSessionId(null);
       sessionIdRef.current = null;
+      exchangeTokenFetchedRef.current = false;
       setContainerUrl(null);
       setExpiresAt(null);
       setExpiringSoon(false);
@@ -315,6 +336,7 @@ function useDevContainerSessionCloudflare(): UseDevContainerSessionReturn {
     setState('IDLE');
     setSessionId(null);
     sessionIdRef.current = null;
+    exchangeTokenFetchedRef.current = false;
     setContainerUrl(null);
     setExpiresAt(null);
     setExpiringSoon(false);

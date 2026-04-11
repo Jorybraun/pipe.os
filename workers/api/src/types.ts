@@ -98,6 +98,15 @@ export interface Env {
   DEV_CONTAINER_WARN_BEFORE_SECONDS?: string;
   /** Shared secret required on the X-Pipe-Admin-Override header to honor a per-launch TTL override. */
   ADMIN_TTL_OVERRIDE_SECRET?: string;
+  /**
+   * Shared secret required on the X-Calibrate-Token header for the
+   * `/internal/calibrate/*` scoring endpoints. Used by the CAL-2 harness
+   * running against `wrangler dev` (and, later, staging deployments) so the
+   * harness can exercise the real `env.AI` binding instead of the flaky
+   * Cloudflare AI REST shim. Deployment without this secret set disables the
+   * endpoints entirely — absence is the kill switch.
+   */
+  CALIBRATE_TOKEN?: string;
 }
 
 /**

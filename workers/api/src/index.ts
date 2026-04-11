@@ -26,6 +26,8 @@ import { cultureRecruiter } from './routes/screening/culture';
 import { videoAuth, videoCandidate } from './routes/assessment/video';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
+// Internal tooling — scorer calibration (CAL-5 spine, ADR-036 / STRATEGY CAL-2+)
+import { calibrate } from './routes/internal/calibrate';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -122,6 +124,10 @@ app.route('/api/v1/role-contexts', roleContexts);
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);
 app.route('/rpc', rpcAuth);
+
+// Internal: scorer calibration endpoint (shared-secret auth via X-Calibrate-Token;
+// disabled entirely when CALIBRATE_TOKEN is unset in env)
+app.route('/internal/calibrate', calibrate);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

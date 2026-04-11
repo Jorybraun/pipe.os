@@ -279,3 +279,87 @@ export async function getChallengeTtlMeta(
     .bind(challengeId)
     .first<ChallengeTtlRow>();
 }
+
+// ─── Exchange tokens for iframe auth ───────────────────────────────────────
+
+const EXCHANGE_TOKEN_TTL_SECONDS = 30;
+
+export interface ExchangeTokenRow {
+  id: string;
+  token: string;
+  session_id: string;
+  candidate_id: string;
+  expires_at: string;
+  consumed_at: string | null;
+  created_at: string;
+}
+
+/**
+ * Mint a short-lived, single-use exchange token for iframe auth.
+ * The token can be embedded in the iframe URL without leaking the
+ * full candidate JWT via Referer headers.
+ */
+export async function mintExchangeToken(
+  db: D1Database,
+  sessionId: string,
+  candidateId: string,
+): Promise<{ token: string; expiresAt: string }> {
+  const id = crypto.randomUUID();
+  const token = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + EXCHANGE_TOKEN_TTL_SECONDS * 1000).toISOString();
+
+  await db
+    .prepare(
+      `INSERT INTO dev_container_exchange_tokens (id, token, session_id, candidate_id, expires_at)
+       VALUES (?1, ?2, ?3, ?4, ?5)`,
+    )
+    .bind(id, token, sessionId, candidateId, expiresAt)
+    .run();
+
+  return { token, expiresAt };
+}
+
+/**
+ * Validate and consume an exchange token. Returns the session_id + candidate_id
+ * if valid, null otherwise. Single-use: sets consumed_at on first valid use.
+ *
+ * Rejects if:
+ *   - Token does not exist
+ *   - Token is expired (expires_at < now)
+ *   - Token was already consumed (consumed_at is not null)
+ */
+export async function consumeExchangeToken(
+  db: D1Database,
+  token: string,
+): Promise<{ sessionId: string; candidateId: string } | null> {
+  const now = new Date().toISOString();
+
+  // Atomic: UPDATE only if not expired and not consumed, return the row
+  const result = await db
+    .prepare(
+      `UPDATE dev_container_exchange_tokens
+       SET consumed_at = ?1
+       WHERE token = ?2
+         AND expires_at > ?1
+         AND consumed_at IS NULL
+       RETURNING session_id, candidate_id`,
+    )
+    .bind(now, token)
+    .first<{ session_id: string; candidate_id: string }>();
+
+  if (!result) return null;
+  return { sessionId: result.session_id, candidateId: result.candidate_id };
+}
+
+/**
+ * Clean up expired exchange tokens. Call periodically (e.g., via cron)
+ * to prevent table bloat. Returns the number of rows deleted.
+ */
+export async function pruneExpiredExchangeTokens(db: D1Database): Promise<number> {
+  const now = new Date().toISOString();
+  const result = await db
+    .prepare(`DELETE FROM dev_container_exchange_tokens WHERE expires_at < ?1`)
+    .bind(now)
+    .run();
+  return result.meta.changes ?? 0;
+}

@@ -48,6 +48,9 @@ export class DevContainerDO extends Container<Env> {
     if (url.pathname === '/__init' && request.method === 'POST') {
       return this.handleInit(request);
     }
+    if (url.pathname === '/__destroy' && request.method === 'POST') {
+      return this.handleDestroy();
+    }
     // Everything else is a proxy passthrough to the code-server container.
     // Container.fetch forwards to containerFetch which supports HTTP + WS
     // upgrades — both ends of the socket are managed by the DO.
@@ -114,6 +117,35 @@ export class DevContainerDO extends Container<Env> {
 
     return new Response(
       JSON.stringify({ ok: true, sessionId: payload.sessionId }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }
+
+  /**
+   * Manual destroy handler. Called when the candidate clicks "END SESSION".
+   * Stops the container and clears storage. D1 status is already marked
+   * STOPPED by the route handler before calling this.
+   */
+  private async handleDestroy(): Promise<Response> {
+    const config = (await this.ctx.storage.get<InitPayload>('config')) ?? null;
+
+    // Stop the container if it's running. Safe to call when already stopped.
+    try {
+      await this.destroy();
+    } catch (err) {
+      console.error('[DevContainerDO.handleDestroy] destroy() failed:', err);
+      // Continue — the container may already be stopped
+    }
+
+    // Wipe storage so the DO can be garbage-collected and alarms won't refire.
+    try {
+      await this.ctx.storage.deleteAll();
+    } catch (err) {
+      console.error('[DevContainerDO.handleDestroy] deleteAll failed:', err);
+    }
+
+    return new Response(
+      JSON.stringify({ ok: true, sessionId: config?.sessionId ?? null }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     );
   }

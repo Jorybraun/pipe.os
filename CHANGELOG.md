@@ -6,6 +6,27 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Fixed — Security: exchange tokens for iframe auth, /destroy DO lifecycle, rerank cache validation (2026-04-11)
+
+Three security and correctness fixes identified during code review:
+
+1. **Exchange tokens for iframe auth** — CRITICAL. Previously, candidate JWTs were passed via query params in the iframe `src` URL, which meant the full token leaked to the code-server container (and any third-party assets it loaded) via the `Referer` header. Now: the frontend calls `POST /rpc/dev-container/:sessionId/exchange-token` to mint a short-lived (30s), single-use exchange token. The iframe URL uses this exchange token instead of the JWT. The proxy route consumes the token atomically — replay attacks fail because `consumed_at` is set on first use. Migration 0025 adds the `dev_container_exchange_tokens` table.
+
+2. **Wire /destroy to DO** — HIGH. The `/rpc/dev-container/:sessionId/destroy` route was marking the D1 row as STOPPED but never calling the Durable Object to actually stop the container. Now: the route POSTs to `/__destroy` on the DO stub, which calls `this.destroy()` (the Container base class method that kills the container) and `ctx.storage.deleteAll()` (clears alarms and config). The call is fire-and-forget with try/catch so test environments that lack `c.executionCtx.waitUntil` don't throw.
+
+3. **Rerank cache signals_version validation** — HIGH. `rerankPipeline.ts` was keying cache hits on `(role_context_id, rcd_version)` alone, ignoring `signals_version`. If a repo's engineering signals were re-crawled (new `signals_version`), stale alignment scores would be served. Now: the pipeline loads current `signals_version` for all repos in a lightweight query, and a cached alignment is only valid if its `signals_version` matches the repo's current version. Mismatches are treated as cache misses and re-scored.
+
+- **`workers/api/migrations/0025_dev_container_exchange_tokens.sql`** — NEW. Table for exchange tokens with `token`, `session_id`, `candidate_id`, `expires_at`, `consumed_at`.
+- **`workers/api/src/lib/devContainerSessions.ts`** — `mintExchangeToken`, `consumeExchangeToken`, `pruneExpiredExchangeTokens` helpers.
+- **`workers/api/src/routes/assessment/devContainer.ts`** — `POST /:sessionId/exchange-token` route, `/destroy` now calls DO, `devContainerProxyPublic` router for exchange-token-based proxy.
+- **`workers/api/src/durable-objects/DevContainerDO.ts`** — `/__destroy` handler in `fetch()`, `handleDestroy()` method.
+- **`workers/api/src/lib/repoDiscovery/rerankPipeline.ts`** — `loadSignalsVersions()` query, cache hit validation includes `signals_version` match.
+- **`workers/api/src/__tests__/rerankPipeline.test.ts`** — test stub handles new signals_version query.
+- **`src/hooks/useDevContainerSession.ts`** — fetches exchange token on READY, builds iframe URL with exchange token.
+- **`src/lib/devContainerClient.ts`** — `getExchangeToken()` method.
+
+All tests pass. Type check clean.
+
 #### Added — ADR-037 wire-up: dev containers for real CODE_IMPLEMENTATION challenges via `dev_container_repo_url` (2026-04-11)
 
 Opt-in dev container launch for CODE_IMPLEMENTATION challenges, keyed off a single nullable column on `challenges`. NULL means the existing Monaco editor path is unchanged; non-NULL routes the challenge to a Cloudflare Containers + code-server session via the existing ADR-037 runtime. Reuses the stock `codercom/code-server:4.22.1` image; the container's entrypoint now git-clones `REPO_GIT_URL` at startup (falling back to the legacy R2 tarball path if set). DO rehydrates `envVars` from `ctx.storage.config` inside the `fetch()` override so the repo URL survives DO hibernation between `/__init` and the first proxy request.

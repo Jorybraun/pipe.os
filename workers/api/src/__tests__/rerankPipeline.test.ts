@@ -161,9 +161,17 @@ function buildStubDb(initial: StubStore): StubDb {
               return { results: rows as T[], success: true, meta: {} };
             }
             if (normalized.startsWith('SELECT repo_id, signals_version, content_hash')) {
-              // repo_engineering_signals read
+              // repo_engineering_signals full read
               const repoIds = args as number[];
               const rows = store.signals.filter((s) => repoIds.includes(s.repo_id));
+              return { results: rows as T[], success: true, meta: {} };
+            }
+            if (normalized.startsWith('SELECT repo_id, signals_version FROM repo_engineering_signals')) {
+              // repo_engineering_signals lightweight version check
+              const repoIds = args as number[];
+              const rows = store.signals
+                .filter((s) => repoIds.includes(s.repo_id))
+                .map((s) => ({ repo_id: s.repo_id, signals_version: s.signals_version }));
               return { results: rows as T[], success: true, meta: {} };
             }
             return { results: [] as T[], success: true, meta: {} };

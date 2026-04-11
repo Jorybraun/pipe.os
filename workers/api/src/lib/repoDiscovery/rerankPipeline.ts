@@ -81,13 +81,23 @@ export async function rerankMatchedRepos(
   const repoIds = matchedRepos.map((r) => r.repoId);
   const alignments = new Map<number, RepoRoleAlignmentRow>();
 
-  // 1. Cache read.
+  // 1. Cache read — filtered by rcd_version only at the SQL level.
   const cached = await readCachedAlignments(db, rcd.role_context_id, rcd.rcd_version, repoIds);
+
+  // 2. Load current signals_version for all repos so we can validate cache hits.
+  //    This is a lightweight query (just repo_id + signals_version), not the full
+  //    signals row. Repos without a signals row won't appear in this map and
+  //    will be treated as cache misses that get skipped later.
+  const currentSignalsVersions = await loadSignalsVersions(db, repoIds);
 
   const missRepoIds: number[] = [];
   for (const repo of matchedRepos) {
     const hit = cached.get(repo.repoId);
-    if (hit) {
+    const currentVersion = currentSignalsVersions.get(repo.repoId);
+
+    // Cache hit is valid only if signals_version matches the repo's current version.
+    // If the repo has no signals row (currentVersion undefined), treat as miss.
+    if (hit && currentVersion && hit.signals_version === currentVersion) {
       alignments.set(repo.repoId, hit);
     } else {
       missRepoIds.push(repo.repoId);
@@ -227,6 +237,31 @@ async function readCachedAlignments(
 function normalizeBand(raw: string): AlignmentBand {
   if (raw === 'strong' || raw === 'moderate' || raw === 'weak' || raw === 'mismatch') return raw;
   return 'weak';
+}
+
+/**
+ * Load just the signals_version for each repo — lightweight check for
+ * cache validation without loading full signals rows.
+ */
+async function loadSignalsVersions(
+  db: D1Database,
+  repoIds: number[],
+): Promise<Map<number, string>> {
+  if (repoIds.length === 0) return new Map();
+  const placeholders = repoIds.map((_, i) => `?${i + 1}`).join(', ');
+  const sql = `
+    SELECT repo_id, signals_version
+    FROM repo_engineering_signals
+    WHERE repo_id IN (${placeholders})
+  `;
+  const stmt = db.prepare(sql).bind(...repoIds);
+  const result = await stmt.all<{ repo_id: number; signals_version: string }>();
+
+  const out = new Map<number, string>();
+  for (const r of result.results ?? []) {
+    out.set(r.repo_id, r.signals_version);
+  }
+  return out;
 }
 
 interface RepoSignalsD1Row {

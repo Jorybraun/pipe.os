@@ -26,6 +26,8 @@ import {
   getChallengeTtlMeta,
   getSessionByIdForCandidate,
   markStopped,
+  mintExchangeToken,
+  consumeExchangeToken,
 } from '../../lib/devContainerSessions';
 
 // ─── Defaults (used when the wrangler vars are not set) ─────────────────────
@@ -263,14 +265,82 @@ devContainer.post('/:sessionId/destroy', async (c) => {
     );
   }
 
+  // Tell the DO to stop the container and clear storage. Fire-and-forget
+  // since the D1 status is already STOPPED — even if the DO call fails,
+  // the session is logically terminated. The container will eventually
+  // time out via the TTL alarm if this fails.
+  const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+  const doStub = c.env.DEV_CONTAINER.get(doId);
+  const destroyPromise = doStub
+    .fetch('https://do.internal/__destroy', { method: 'POST' })
+    .catch((err: unknown) => {
+      console.error('[devContainer.destroy] DO destroy failed:', err);
+    });
+  // waitUntil keeps the promise alive past the response; falls back to
+  // fire-and-forget in test environments where executionCtx is not available.
+  try {
+    c.executionCtx.waitUntil(destroyPromise);
+  } catch {
+    // Test environment — no executionCtx available. The promise fires but
+    // may not complete before the test exits. Acceptable for unit tests.
+  }
+
   return c.json({ sessionId, status: 'STOPPED' }, 200);
+});
+
+// ─── POST /:sessionId/exchange-token ─────────────────────────────────────────
+//
+// Mint a short-lived, single-use exchange token for iframe auth. The client
+// calls this endpoint with the candidate JWT, then embeds the exchange token
+// in the iframe URL. This prevents the full JWT from leaking via Referer
+// headers and browser history.
+
+interface ExchangeTokenResponseBody {
+  exchangeToken: string;
+  expiresAt: string;
+}
+
+devContainer.post('/:sessionId/exchange-token', async (c) => {
+  const candidateId = c.get('candidateId');
+  const sessionId = c.req.param('sessionId');
+
+  // Verify ownership before minting a token
+  const row = await getSessionByIdForCandidate(c.env.DB, sessionId, candidateId);
+  if (!row) {
+    return c.json(
+      { error: { code: 'NOT_FOUND', message: 'Session not found.' } },
+      404,
+    );
+  }
+
+  try {
+    const { token, expiresAt } = await mintExchangeToken(
+      c.env.DB,
+      sessionId,
+      candidateId,
+    );
+    const response: ExchangeTokenResponseBody = {
+      exchangeToken: token,
+      expiresAt,
+    };
+    return c.json(response, 201);
+  } catch (err) {
+    console.error('[devContainer.exchangeToken] mint failed:', err);
+    return c.json(
+      { error: { code: 'INTERNAL_ERROR', message: 'Failed to mint exchange token.' } },
+      500,
+    );
+  }
 });
 
 // ─── ALL /:sessionId/proxy/* ─────────────────────────────────────────────────
 //
 // Transparent passthrough to the code-server container. Supports HTTP and
-// WebSocket upgrades — candidateAuth has already accepted ?token= on the
-// query string for WS, so nothing extra is needed at this layer.
+// WebSocket upgrades.
+//
+// Auth is handled in two ways:
+//   1. candidateAuth middleware has set candidateId from JWT (header or ?token=)
+//   2. ?exchangeToken= query param — consumed here, bypasses JWT requirement
 //
 // We strip the `/rpc/dev-container/:sessionId/proxy` prefix before forwarding
 // so code-server sees the path it expects (root = `/`, assets = `/static/…`).
@@ -325,6 +395,92 @@ devContainer.all('/:sessionId/proxy/*', async (c) => {
     return await doStub.fetch(forwarded);
   } catch (err) {
     console.error('[devContainer.proxy] upstream failed:', err);
+    return c.json(
+      { error: { code: 'BAD_GATEWAY', message: 'Container proxy failed.' } },
+      502,
+    );
+  }
+});
+
+// ─── Exchange-token proxy (public, no candidateAuth) ────────────────────────
+//
+// Separate router for iframe access via exchange tokens. This bypasses the
+// candidateAuth middleware entirely — the exchange token IS the auth.
+// Mounted on rpcPublic at /rpc/dev-container-proxy.
+
+export const devContainerProxyPublic = new Hono<{ Bindings: Env }>();
+
+devContainerProxyPublic.all('/:sessionId/*', async (c) => {
+  const sessionId = c.req.param('sessionId');
+  const url = new URL(c.req.url);
+  const exchangeToken = url.searchParams.get('exchangeToken');
+
+  if (!exchangeToken) {
+    return c.json(
+      { error: { code: 'UNAUTHORIZED', message: 'Missing exchangeToken.' } },
+      401,
+    );
+  }
+
+  // Consume the exchange token — single-use, validates ownership
+  const consumed = await consumeExchangeToken(c.env.DB, exchangeToken);
+  if (!consumed) {
+    return c.json(
+      { error: { code: 'UNAUTHORIZED', message: 'Invalid or expired exchange token.' } },
+      401,
+    );
+  }
+
+  // Verify the token was issued for this session
+  if (consumed.sessionId !== sessionId) {
+    return c.json(
+      { error: { code: 'FORBIDDEN', message: 'Token not valid for this session.' } },
+      403,
+    );
+  }
+
+  // Look up the session to check status (we already validated ownership via token)
+  const row = await getSessionByIdForCandidate(c.env.DB, sessionId, consumed.candidateId);
+  if (!row) {
+    return c.json(
+      { error: { code: 'NOT_FOUND', message: 'Session not found.' } },
+      404,
+    );
+  }
+
+  if (!PROXY_ALLOWED_STATUS.has(row.status)) {
+    const code =
+      row.status === 'LAUNCHING'
+        ? 'NOT_READY'
+        : row.status === 'ERROR'
+          ? 'CONTAINER_ERROR'
+          : 'SESSION_ENDED';
+    const http = row.status === 'LAUNCHING' ? 425 : 410;
+    return c.json(
+      { error: { code, message: `Session is ${row.status}.` } },
+      http,
+    );
+  }
+
+  // Rewrite URL for the DO proxy
+  const incoming = new URL(c.req.url);
+  const marker = `/${sessionId}`;
+  const markerIdx = incoming.pathname.indexOf(marker);
+  const innerPath =
+    markerIdx >= 0 ? incoming.pathname.slice(markerIdx + marker.length) || '/' : '/';
+  const innerUrl = new URL(`https://do.internal${innerPath}${incoming.search}`);
+  // Strip exchange token from forwarded request
+  innerUrl.searchParams.delete('exchangeToken');
+
+  const forwarded = new Request(innerUrl.toString(), c.req.raw);
+
+  const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+  const doStub = c.env.DEV_CONTAINER.get(doId);
+
+  try {
+    return await doStub.fetch(forwarded);
+  } catch (err) {
+    console.error('[devContainerProxyPublic] upstream failed:', err);
     return c.json(
       { error: { code: 'BAD_GATEWAY', message: 'Container proxy failed.' } },
       502,

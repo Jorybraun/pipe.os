@@ -120,16 +120,41 @@ export async function destroyDevContainer(
   return (await res.json()) as DestroyResponse;
 }
 
+export interface ExchangeTokenResponse {
+  exchangeToken: string;
+  expiresAt: string;
+}
+
 /**
- * Build the proxy URL the iframe should load. The Worker's `candidateAuth`
- * middleware accepts `?token=…` as a fallback for WebSocket upgrades, so
- * the token is embedded in the iframe src rather than an Authorization
- * header (which iframes cannot set).
+ * Request a short-lived, single-use exchange token for iframe auth.
+ * This prevents the full candidate JWT from leaking via Referer headers
+ * and browser history when embedded in the iframe URL.
  */
-export function buildProxyIframeUrl(sessionId: string, token: string | null): string {
-  const base = `${apiBase()}/rpc/dev-container/${encodeURIComponent(sessionId)}/proxy/`;
-  if (!token) return base;
+export async function getExchangeToken(
+  sessionId: string,
+  token: string | null,
+): Promise<ExchangeTokenResponse> {
+  const res = await fetch(
+    `${apiBase()}/rpc/dev-container/${encodeURIComponent(sessionId)}/exchange-token`,
+    { method: 'POST', headers: authHeaders(token) },
+  );
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as ExchangeTokenResponse;
+}
+
+/**
+ * Build the proxy URL the iframe should load. Uses a short-lived exchange
+ * token instead of the full candidate JWT to prevent token leakage via
+ * Referer headers and browser history.
+ *
+ * The exchange token is single-use and expires in 30 seconds — enough time
+ * for the iframe to load. After consumption, subsequent requests from within
+ * the iframe (WebSocket upgrades, assets) are handled by code-server's
+ * internal session, not by re-validating the exchange token.
+ */
+export function buildProxyIframeUrl(sessionId: string, exchangeToken: string): string {
+  const base = `${apiBase()}/rpc/dev-container-proxy/${encodeURIComponent(sessionId)}/`;
   const url = new URL(base);
-  url.searchParams.set('token', token);
+  url.searchParams.set('exchangeToken', exchangeToken);
   return url.toString();
 }
