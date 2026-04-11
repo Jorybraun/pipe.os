@@ -1,0 +1,139 @@
+{
+  "id": "seed-001-junior-jwt-verification-miss",
+  "description": "Junior reviewer misses a critical JWT verification bypass, focuses on naming nits, vague prioritization. Expected low bands on all technical dimensions.",
+  "tags": ["typescript", "auth", "security", "low-score-anchor"],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add auth middleware for /api/v1 routes",
+    "description": "Adds a Hono middleware that verifies the incoming Authorization header against our Clerk JWKS endpoint and attaches the decoded user to the context. Follows the pattern in the auth service doc.",
+    "instructions": "Review this PR as if you were the tech lead on the auth service. Focus on correctness, security, and maintainability. Flag any issues you'd want fixed before merge.",
+    "diff": "diff --git a/workers/api/src/middleware/auth.ts b/workers/api/src/middleware/auth.ts\n@@ -0,0 +1,48 @@\n+import type { Context, Next } from 'hono';\n+import { jwtVerify, createRemoteJWKSet } from 'jose';\n+\n+const JWKS_URL = 'https://clerk.example.com/.well-known/jwks.json';\n+const JWKS = createRemoteJWKSet(new URL(JWKS_URL));\n+\n+export async function authMiddleware(c: Context, next: Next) {\n+  const authHeader = c.req.header('Authorization');\n+  if (!authHeader) {\n+    return c.json({ error: 'missing_auth' }, 401);\n+  }\n+\n+  const token = authHeader.replace('Bearer ', '');\n+\n+  try {\n+    const decoded: any = parseJwtPayload(token);\n+    c.set('userId', decoded.sub);\n+    c.set('orgId', decoded.org_id);\n+    await next();\n+  } catch (err) {\n+    console.error('auth failed', err);\n+    return c.json({ error: 'invalid_token' }, 401);\n+  }\n+}\n+\n+function parseJwtPayload(token: string): unknown {\n+  const parts = token.split('.');\n+  if (parts.length !== 3) throw new Error('bad token shape');\n+  const payload = parts[1];\n+  const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));\n+  return JSON.parse(decoded);\n+}\n+\n+export async function verifyClerkToken(token: string) {\n+  const { payload } = await jwtVerify(token, JWKS, {\n+    issuer: 'https://clerk.example.com',\n+  });\n+  return payload;\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "workers/api/src/middleware/auth.ts",
+      "line": 16,
+      "description": "authMiddleware calls parseJwtPayload, which only base64-decodes the payload. It never calls verifyClerkToken / jwtVerify, so the signature is NEVER checked. Any attacker can forge a token with any sub/org_id and pass the middleware. verifyClerkToken is dead code."
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "workers/api/src/middleware/auth.ts",
+      "line": 15,
+      "description": "The decoded JWT is typed as `any`, defeating TypeScript strict mode. Violates project rule: no `any`, use `unknown` + type guards."
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "workers/api/src/middleware/auth.ts",
+      "line": 11,
+      "description": "authHeader.replace('Bearer ', '') does a global string replace. If the token body happens to contain the literal 'Bearer ', it gets corrupted. Should use a proper startsWith check and slice."
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "workers/api/src/middleware/auth.ts",
+      "line": 22,
+      "description": "console.error('auth failed', err) leaks error details to logs without structured context. Project convention is `[authMiddleware] what failed:` prefix."
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 101,
+            "file": "workers/api/src/middleware/auth.ts",
+            "line": 14,
+            "category": "style",
+            "severity": "nit",
+            "what": "consider renaming decoded to decodedPayload, it's clearer",
+            "why": "readability",
+            "positive": false
+          },
+          {
+            "id": 102,
+            "file": "workers/api/src/middleware/auth.ts",
+            "line": 22,
+            "category": "style",
+            "severity": "suggestion",
+            "what": "maybe add more context to the error log?",
+            "why": "debugging",
+            "positive": false
+          },
+          {
+            "id": 103,
+            "file": "workers/api/src/middleware/auth.ts",
+            "line": 31,
+            "category": "style",
+            "severity": "nit",
+            "what": "verifyClerkToken doesn't seem to be used anywhere in this file, should we export it?",
+            "why": "unused export",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "approve",
+        "reviewer_summary": "Looks good to me! Just a couple of small nits to clean up.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 101,
+            "move": "change",
+            "content": "Good call, renaming to decodedPayload.",
+            "updated_code": "const decodedPayload: any = parseJwtPayload(token);"
+          },
+          {
+            "to_comment_id": 102,
+            "move": "change",
+            "content": "Yeah sure, adding the header to the log.",
+            "updated_code": "console.error('auth failed', { authHeader, err });"
+          },
+          {
+            "to_comment_id": 103,
+            "move": "comment",
+            "content": "I'll clean that up in a follow-up, not blocking."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "LGTM with the naming nit fixed. Nice clean middleware.",
+      "submittedAt": "2026-04-11T14:32:00Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Caught 0 of 4 planted bugs. Missed the critical JWT signature bypass entirely — left only style nits. BARS level 1: 'fails to identify any meaningful issues'."
+    },
+    "prioritization": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Only commented on nits + an unused export. Prioritization is inverted: reviewer treated style renames as equal-priority to correctness. BARS level 1-2: 'inverted severity judgment'."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Reviewer accepted both revisions (logged authHeader — which now leaks the raw token — and the rename). Level 2: accepts change without noticing it made things worse. Second comment's 'fix' introduces a new token-leak bug the reviewer never flagged."
+    },
+    "reasoning_quality": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Comment 'why' fields are one-word ('readability', 'debugging', 'unused export'). No grounded argument, no tradeoff analysis, no mention of security. Level 1-2: 'assertions without reasoning'."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Zero clarifying questions. Reviewer accepted the PR without asking why verifyClerkToken exists but is never called — the exact question that would have caught the critical bug. Level 1."
+    },
+    "ai_direction": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Reviewer provided no technical guidance to the implementer; the 'change' moves were cosmetic. One of those changes introduced a new security issue (logging the authHeader) which the reviewer approved without comment. Level 1-2."
+    }
+  }
+}

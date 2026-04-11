@@ -6,6 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### Added — Scorer calibration fixture schema + seed set (CAL-1, 2026-04-11)
+
+Infrastructure + two anchor fixtures for the Gemma/Devstral/Sonnet three-way scorer calibration harness defined in `knowledge/STRATEGY.md` §"Scorer model calibration". Two fixtures is not enough for meaningful κ (CAL-3 needs n≥15 per dimension for power) but unblocks CAL-2 harness development against realistic payloads. Scaling to the target 30–50 is deferred — likely via a seed→variant generator pattern (Opus 4.6 seeds, Sonnet 4.6 variants) matching the content-pipeline routing in CLAUDE.md.
+
+- **`workers/api/fixtures/scorer-calibration/types.ts`** — NEW. `ScorerCalibrationFixture` schema: PR context + ground-truth `PlantedBug[]` + full `ReviewRound[]` transcript + human-authored `expectedBands` (min/max per dimension with rationale). Authoring rules documented in the file header — anchor-range coverage, rationale grounding, fixture-local bug IDs. Imports `PlantedBug`/`ReviewRound` from `../../src/lib/implementerAgent` so the harness can consume fixtures strictly-typed.
+- **`workers/api/fixtures/scorer-calibration/seed-001-junior-jwt-verification-miss.json`** — NEW. Low-score anchor. Junior reviewer misses a planted JWT signature-bypass (`parseJwtPayload` base64-decodes the payload but never calls `jwtVerify`, making `verifyClerkToken` dead code), focuses on naming nits, and approves a revision that introduces a new token-leak bug in the error log. Expected bands 1–2 across all six dimensions. 4 planted bugs (1 critical, 2 major, 1 minor).
+- **`workers/api/fixtures/scorer-calibration/seed-002-senior-n-plus-one-excellent.json`** — NEW. High-score anchor. Senior reviewer catches an N+1 query, a write-on-read side effect, and a missing auth guard in round 1; prioritizes correctly with an explicit positive observation; in round 2 catches a second-order cross-recruiter identity bug they themselves had missed on the first pass; acknowledges the miss while holding the line on the blocking status. Expected bands 4–5 across technical + communication dimensions. 4 planted bugs (1 critical, 2 major, 1 minor), 2 review rounds.
+
 #### Added — ADR-036 Path B Wave 3: discover.ts rerank cache injection (2026-04-11)
 
 Activation lane for the Wave 2 rerank module — nothing in Wave 2 was reachable from a live request until this wiring landed. `runDiscovery` now runs the two-stage retrieval end-to-end whenever the caller supplies an `LLMProvider` and the role context has an `rcd_json` column populated. Missing any of those → legacy `matchRepos` order, zero behavior change.
