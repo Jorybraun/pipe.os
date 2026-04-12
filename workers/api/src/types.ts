@@ -42,6 +42,12 @@ export interface Env {
   VIDEO_ROOM: DurableObjectNamespace;
   /** Durable Object binding for dev container sessions (ADR-037, Phase 3b). */
   DEV_CONTAINER: DurableObjectNamespace;
+  /** Durable Object binding for voice interview sessions. */
+  VOICE_SESSION: DurableObjectNamespace;
+  /** Selects the LiveProvider implementation. 'vertex-live' | 'openai-realtime' | 'mock'. Default: 'vertex-live'. */
+  LIVE_PROVIDER?: string;
+  /** Used to authenticate DO→Worker transcript callbacks. */
+  VOICE_SESSION_INTERNAL_SECRET?: string;
   /** Metered.ca API key for TURN credential fetching. */
   METERED_API_KEY?: string;
   /** Calendly OAuth client ID. */
@@ -107,6 +113,11 @@ export interface Env {
    * endpoints entirely — absence is the kill switch.
    */
   CALIBRATE_TOKEN?: string;
+  /**
+   * Vertex AI API key for scorer calibration (API-key auth, not OAuth).
+   * Uses the simpler `aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent?key=` endpoint.
+   */
+  VERTEX_API_KEY?: string;
 }
 
 /**

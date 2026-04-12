@@ -1,37 +1,38 @@
 /**
  * useRoleDiscovery — manages the full role discovery interview flow (ADR-028).
  *
- * State machine: IDLE → BASELINE → CALIBRATING → INTERVIEWING → COMPLETE
+ * State machine: IDLE → CALIBRATING → INTERVIEWING → COMPLETE
  *
- * Now participant-aware: tracks participantId and sends it with every request.
- * The calibration question is always first (hardcoded, not agent-generated).
+ * Delegates all conversation state to useConversation via a roleDiscoveryAdapter
+ * that implements ConversationAdapter. Role-discovery-specific fields (contextId,
+ * participantId, participantRole, baseline) are stored in refs and exposed on the
+ * returned object. The public API (UseRoleDiscoveryResult) is unchanged.
  */
 
-import { useState, useCallback } from 'react';
+import { useRef, useMemo } from 'react';
 import { useApiClient } from './useApiClient';
-import { ApiError } from '../lib/api/types';
+import { useConversation } from './useConversation';
 import type {
   RoleContextBaseline,
-  RoleContextQuestion,
-  RoleContextProgress,
+  ParticipantRole,
   CreateRoleContextResponse,
   StartRoleContextResponse,
   RespondRoleContextResponse,
   RespondSynthesisResponse,
-  ParticipantRole,
-  CandidatePersona,
-  GeneratedJobDescription,
+  RespondQuestionResponse,
 } from '../lib/api/types';
+import type {
+  ConversationAdapter,
+  AdapterConfig,
+  QuestionTurnResult,
+  SynthesisResult,
+  TurnResult,
+} from '../components/AIChat/types';
+import type { UseConversationResult } from './useConversation';
 
 export type DiscoveryPhase = 'IDLE' | 'BASELINE' | 'CALIBRATING' | 'INTERVIEWING' | 'COMPLETE';
 
-export interface PastExchange {
-  questionId: string;
-  acknowledgment: string;
-  questionText: string;
-  answer: string;
-  feedback?: string;
-}
+export type { PastExchange } from '../components/AIChat/types';
 
 export interface UseRoleDiscoveryResult {
   phase: DiscoveryPhase;
@@ -39,20 +40,23 @@ export interface UseRoleDiscoveryResult {
   participantId: string | null;
   participantRole: ParticipantRole | null;
 
+  /** The ConversationAdapter — pass directly to <AIChat adapter={...} />. */
+  adapter: ConversationAdapter;
+
   // Current turn
   acknowledgment: string | null;
-  currentQuestion: RoleContextQuestion | null;
-  progress: RoleContextProgress | null;
+  currentQuestion: UseConversationResult['currentQuestion'];
+  progress: UseConversationResult['progress'];
 
   // History
-  pastExchanges: PastExchange[];
+  pastExchanges: UseConversationResult['pastExchanges'];
 
   // Baseline (stored for pipeline creation)
   baseline: RoleContextBaseline | null;
 
   // Synthesis (when COMPLETE) — Role Discovery v2 artifacts
-  persona: CandidatePersona | null;
-  jobDescription: GeneratedJobDescription | null;
+  persona: UseConversationResult['persona'];
+  jobDescription: UseConversationResult['jobDescription'];
   /** Legacy narrative string, derived from persona.archetype. Kept for compat. */
   synthesis: string | null;
 
@@ -70,185 +74,146 @@ export interface UseRoleDiscoveryResult {
 export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const api = useApiClient();
 
-  const [phase, setPhase] = useState<DiscoveryPhase>('IDLE');
-  const [contextId, setContextId] = useState<string | null>(null);
-  const [participantId, setParticipantId] = useState<string | null>(null);
-  const [participantRole, setParticipantRole] = useState<ParticipantRole | null>(null);
-  const [acknowledgment, setAcknowledgment] = useState<string | null>(null);
-  const [currentQuestion, setCurrentQuestion] = useState<RoleContextQuestion | null>(null);
-  const [progress, setProgress] = useState<RoleContextProgress | null>(null);
-  const [pastExchanges, setPastExchanges] = useState<PastExchange[]>([]);
-  const [baseline, setBaseline] = useState<RoleContextBaseline | null>(null);
-  const [persona, setPersona] = useState<CandidatePersona | null>(null);
-  const [jobDescription, setJobDescription] = useState<GeneratedJobDescription | null>(null);
-  const [synthesis, setSynthesis] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Refs for values set once during initialize — no re-render needed; the
+  // component will re-render from useConversation's isLoading/phase state changes.
+  const contextIdRef = useRef<string | null>(null);
+  const participantIdRef = useRef<string | null>(null);
+  const participantRoleRef = useRef<ParticipantRole | null>(null);
+  const baselineRef = useRef<RoleContextBaseline | null>(null);
 
-  const handleError = (err: unknown, context: string): void => {
-    if (err instanceof ApiError) {
-      console.error(`[useRoleDiscovery] ${context}:`, err.code, err.message);
-      setError(err.message);
-    } else {
-      const message = err instanceof Error ? err.message : `Failed to ${context}`;
-      console.error(`[useRoleDiscovery] ${context}:`, message);
-      setError(message);
-    }
-  };
+  const roleDiscoveryAdapter: ConversationAdapter = useMemo<ConversationAdapter>(
+    () => ({
+      async initialize(config: AdapterConfig): Promise<QuestionTurnResult> {
+        const baseline = config.baseline as unknown as RoleContextBaseline;
+        const questionBudget = config.questionBudget ?? 10;
 
-  const createAndStart = useCallback(
-    async (baseline: RoleContextBaseline, questionBudget = 10): Promise<void> => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        // Step 1: Create (returns participantId for the creator)
+        // Step 1: Create role context — returns id + participantId for creator.
         const created = await api.post<CreateRoleContextResponse>(
           '/api/v1/role-contexts',
           { baseline, questionBudget },
         );
-        const newId = created.id;
-        const newParticipantId = created.participantId;
-        setContextId(newId);
-        setParticipantId(newParticipantId);
-        setBaseline(baseline);
+        contextIdRef.current = created.id;
+        participantIdRef.current = created.participantId;
+        baselineRef.current = baseline;
 
-        // Step 2: Start → returns the hardcoded calibration question
+        // Step 2: Start → returns the hardcoded calibration question.
         const started = await api.post<StartRoleContextResponse>(
-          `/api/v1/role-contexts/${newId}/start`,
-          { participantId: newParticipantId },
+          `/api/v1/role-contexts/${created.id}/start`,
+          { participantId: created.participantId },
         );
-        setAcknowledgment(started.acknowledgment);
-        setCurrentQuestion(started.question);
-        setProgress(started.progress);
-        setPhase('CALIBRATING');
-      } catch (err) {
-        handleError(err, 'create and start');
-        throw err;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [api],
-  );
 
-  const respond = useCallback(
-    async (answer: string, questionId: string): Promise<void> => {
-      if (!contextId || !participantId) throw new Error('No context created');
-      setIsLoading(true);
-      setError(null);
+        return {
+          type: 'question',
+          acknowledgment: started.acknowledgment,
+          question: started.question,
+          progress: started.progress,
+        };
+      },
 
-      // Archive current question before sending
-      if (currentQuestion && acknowledgment) {
-        setPastExchanges((prev) => [
-          ...prev,
-          {
-            questionId: currentQuestion.id,
-            acknowledgment,
-            questionText: currentQuestion.text,
-            answer,
-          },
-        ]);
-      }
+      async respond(answer: string, questionId: string): Promise<TurnResult> {
+        const contextId = contextIdRef.current;
+        const participantId = participantIdRef.current;
+        if (!contextId || !participantId) {
+          throw new Error('No context created');
+        }
 
-      try {
         const data = await api.post<RespondRoleContextResponse>(
           `/api/v1/role-contexts/${contextId}/respond`,
           { answer, questionId, participantId },
         );
 
-        setProgress(data.progress);
-
         if (data.status === 'COMPLETE') {
-          const synthData = data as RespondSynthesisResponse;
-          setSynthesis(synthData.synthesis);
-          setPersona(synthData.persona);
-          setJobDescription(synthData.jobDescription);
-          setCurrentQuestion(null);
-          setAcknowledgment(null);
-          setPhase('COMPLETE');
-        } else {
-          // After calibration response, the agent returns participantRole
-          if ('participantRole' in data && data.participantRole) {
-            setParticipantRole(data.participantRole);
-          }
-          setAcknowledgment(data.acknowledgment);
-          setCurrentQuestion(data.question);
-          setPhase('INTERVIEWING');
+          const synth = data as RespondSynthesisResponse;
+          const result: SynthesisResult = {
+            type: 'synthesis',
+            synthesis: synth.synthesis,
+            persona: synth.persona,
+            jobDescription: synth.jobDescription,
+            progress: synth.progress,
+          };
+          return result;
         }
-      } catch (err) {
-        handleError(err, 'respond');
-        throw err;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [api, contextId, participantId, currentQuestion, acknowledgment],
-  );
 
-  const completeEarly = useCallback(async (): Promise<void> => {
-    if (!contextId || !participantId) throw new Error('No context created');
-    setIsLoading(true);
-    setError(null);
-    try {
-      const data = await api.post<RespondSynthesisResponse>(
-        `/api/v1/role-contexts/${contextId}/complete`,
-        { participantId },
-      );
-      setSynthesis(data.synthesis);
-      setPersona(data.persona);
-      setJobDescription(data.jobDescription);
-      setProgress(data.progress);
-      setCurrentQuestion(null);
-      setAcknowledgment(null);
-      setPhase('COMPLETE');
-    } catch (err) {
-      handleError(err, 'complete');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [api, contextId, participantId]);
+        // INTERVIEWING turn — capture participantRole on first answer.
+        const question = data as RespondQuestionResponse;
+        if (question.participantRole) {
+          participantRoleRef.current = question.participantRole;
+        }
 
-  const submitFeedback = useCallback(
-    async (questionId: string, feedback: string): Promise<void> => {
-      if (!contextId || !participantId) return;
-      try {
+        const result: QuestionTurnResult = {
+          type: 'question',
+          acknowledgment: question.acknowledgment,
+          question: question.question,
+          progress: question.progress,
+        };
+        return result;
+      },
+
+      async completeEarly(): Promise<SynthesisResult> {
+        const contextId = contextIdRef.current;
+        const participantId = participantIdRef.current;
+        if (!contextId || !participantId) {
+          throw new Error('No context created');
+        }
+
+        const data = await api.post<RespondSynthesisResponse>(
+          `/api/v1/role-contexts/${contextId}/complete`,
+          { participantId },
+        );
+
+        return {
+          type: 'synthesis',
+          synthesis: data.synthesis,
+          persona: data.persona,
+          jobDescription: data.jobDescription,
+          progress: data.progress,
+        };
+      },
+
+      async submitFeedback(questionId: string, feedback: string): Promise<void> {
+        const contextId = contextIdRef.current;
+        const participantId = participantIdRef.current;
+        if (!contextId || !participantId) return;
+
         await api.post(`/api/v1/role-contexts/${contextId}/feedback`, {
-          participantId,
           questionId,
           feedback,
+          participantId,
         });
-        // Update local state to reflect feedback
-        setPastExchanges((prev) =>
-          prev.map((ex) =>
-            ex.questionId === questionId ? { ...ex, feedback } : ex,
-          ),
-        );
-      } catch (err) {
-        console.error('[useRoleDiscovery] feedback failed:', err);
-      }
-    },
-    [api, contextId, participantId],
+      },
+    }),
+    [api],
+  );
+
+  const conv = useConversation(roleDiscoveryAdapter);
+
+  const createAndStart = useMemo(
+    () =>
+      async (baseline: RoleContextBaseline, questionBudget = 10): Promise<void> => {
+        await conv.initialize({ baseline: baseline as unknown as Record<string, unknown>, questionBudget });
+      },
+    [conv],
   );
 
   return {
-    phase,
-    contextId,
-    participantId,
-    participantRole,
-    acknowledgment,
-    currentQuestion,
-    progress,
-    pastExchanges,
-    baseline,
-    persona,
-    jobDescription,
-    synthesis,
-    isLoading,
-    error,
+    phase: conv.phase as DiscoveryPhase,
+    contextId: contextIdRef.current,
+    participantId: participantIdRef.current,
+    participantRole: participantRoleRef.current,
+    adapter: roleDiscoveryAdapter,
+    acknowledgment: conv.acknowledgment,
+    currentQuestion: conv.currentQuestion,
+    progress: conv.progress,
+    pastExchanges: conv.pastExchanges,
+    baseline: baselineRef.current,
+    persona: conv.persona,
+    jobDescription: conv.jobDescription,
+    synthesis: conv.synthesis,
+    isLoading: conv.isLoading,
+    error: conv.error,
     createAndStart,
-    respond,
-    completeEarly,
-    submitFeedback,
+    respond: conv.respond,
+    completeEarly: conv.completeEarly,
+    submitFeedback: conv.submitFeedback,
   };
 }

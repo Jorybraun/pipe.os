@@ -1,0 +1,98 @@
+/**
+ * AIChat — universal conversation component contracts.
+ *
+ * ConversationAdapter decouples the <AIChat> component from any specific
+ * backend (role discovery, culture interview, candidate assessment).
+ * Each feature provides its own adapter that implements this interface.
+ */
+
+import type {
+  RoleContextQuestion,
+  RoleContextProgress,
+  CandidatePersona,
+  GeneratedJobDescription,
+} from '../../lib/api/types';
+
+// ─── Adapter config ───────────────────────────────────────────────────────────
+
+/** Passed to ConversationAdapter.initialize() when the session starts. */
+export interface AdapterConfig {
+  /** For role discovery: pre-collected baseline fields. */
+  baseline?: Record<string, unknown>;
+  questionBudget?: number;
+  /** For candidate assessment: challenge ID + session token. */
+  challengeId?: string;
+  sessionToken?: string | null;
+  /** Arbitrary extra config. */
+  [key: string]: unknown;
+}
+
+// ─── Turn results ─────────────────────────────────────────────────────────────
+
+export interface QuestionTurnResult {
+  type: 'question';
+  acknowledgment: string;
+  question: RoleContextQuestion;
+  progress: RoleContextProgress;
+}
+
+export interface SynthesisResult {
+  type: 'synthesis';
+  synthesis: string;
+  persona: CandidatePersona | null;
+  jobDescription: GeneratedJobDescription | null;
+  progress: RoleContextProgress;
+  /** Raw transcript — present for voice sessions. */
+  transcript?: Array<{ role: 'user' | 'model'; text: string }>;
+}
+
+export type TurnResult = QuestionTurnResult | SynthesisResult;
+
+// ─── PastExchange ─────────────────────────────────────────────────────────────
+
+export interface PastExchange {
+  questionId: string;
+  acknowledgment: string;
+  questionText: string;
+  answer: string;
+  feedback?: string;
+}
+
+// ─── Adapter interface ────────────────────────────────────────────────────────
+
+export interface ConversationAdapter {
+  /**
+   * One-time setup — called before the first question.
+   * Must fire the first question (via the adapter's own state).
+   */
+  initialize(config: AdapterConfig): Promise<QuestionTurnResult>;
+  /** Submit an answer, receive the next question or final synthesis. */
+  respond(answer: string, questionId: string): Promise<TurnResult>;
+  /** Trigger synthesis before the budget is exhausted. */
+  completeEarly(): Promise<SynthesisResult>;
+  /** Optional: flag a question for tuning. */
+  submitFeedback?(questionId: string, feedback: string): Promise<void>;
+}
+
+// ─── Component props ──────────────────────────────────────────────────────────
+
+export interface AIChatProps {
+  adapter: ConversationAdapter;
+  /** Null until scripted intake is complete — AIChat stays IDLE until this is set. */
+  initConfig: AdapterConfig | null;
+  /** Enable Whisper-based voice transcription. Default: true. */
+  enableVoice?: boolean;
+  /** Enable Vertex AI Gemini Live real-time voice mode. Default: false. */
+  enableLiveVoice?: boolean;
+  /** Called when the conversation reaches synthesis. */
+  onComplete?: (result: SynthesisResult) => void;
+  /** Render the synthesis result (if omitted, a default view is shown). */
+  renderSynthesis?: (result: SynthesisResult) => JSX.Element;
+  /**
+   * Render content above the conversation area.
+   * Use this for scripted intake questions, JD import buttons, etc.
+   */
+  renderHeader?: () => JSX.Element;
+  /** Show the Six Domain coverage bars during the interview. Default: false. */
+  showDomainBars?: boolean;
+}

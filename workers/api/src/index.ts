@@ -26,6 +26,8 @@ import { cultureRecruiter } from './routes/screening/culture';
 import { videoAuth, videoCandidate } from './routes/assessment/video';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
+// Voice — voice session creation, WebSocket upgrade, transcript callback
+import { voiceSessions } from './routes/voice/voiceSessions';
 // Internal tooling — scorer calibration (CAL-5 spine, ADR-036 / STRATEGY CAL-2+)
 import { calibrate } from './routes/internal/calibrate';
 // Candidate runtime entry (cross-cutting JWT layer)
@@ -121,6 +123,9 @@ app.route('/api/v1/review-sessions', reviewSessions);
 // Role Discovery Agent: AI-powered role context extraction (ADR-027)
 app.route('/api/v1/role-contexts', roleContexts);
 
+// Voice sessions: session creation, WebSocket upgrade, transcript callback
+app.route('/api/v1/voice-sessions', voiceSessions);
+
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);
 app.route('/rpc', rpcAuth);
@@ -176,4 +181,5 @@ app.notFound((c) =>
 
 export { VideoRoom } from './durable-objects/VideoRoom';
 export { DevContainerDO } from './durable-objects/DevContainerDO';
+export { VoiceSessionDO } from './durable-objects/VoiceSessionDO';
 export default app;

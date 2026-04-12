@@ -313,7 +313,16 @@ export default function CandidateAssessmentPage(): JSX.Element {
                 onNext={() => handleSubmit()}
                 isLastChallenge={isLastChallenge}
                 fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION'}
-                canAdvance={!isPreview && currentType !== 'WELCOME' && currentType !== 'LIVE_VIDEO' && (followUpReady || (!isFollowUp && currentSubmission !== null))}
+                canAdvance={
+                  !isPreview &&
+                  currentType !== 'WELCOME' &&
+                  currentType !== 'LIVE_VIDEO' &&
+                  (
+                    currentType === 'AGENT_INTERVIEW'
+                      ? currentSubmission !== null
+                      : (followUpReady || (!isFollowUp && currentSubmission !== null))
+                  )
+                }
                 isSubmitting={isLoading}
               >
                 {followUpWaiting ? (

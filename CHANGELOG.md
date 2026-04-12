@@ -6,6 +6,33 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(voice+chat): universal AIChat component, LiveProvider abstraction, VoiceSessionDO (2026-04-12)
+
+Full universal AI conversation system — scalable across users, reusable across features, provider-swappable.
+
+- `workers/api/src/lib/llm/live/` — `LiveProvider` interface + `VertexLiveProvider` (Gemini Live WSS, PCM16 audio), `MockLiveProvider`, `createLiveProvider` factory (mirrors `createRoleAgentProvider` pattern)
+- `workers/api/src/durable-objects/VoiceSessionDO.ts` — generic DO; one instance per session; WS hibernation API; proxies PCM16 audio to `LiveSession`; POSTs transcript to `completionCallbackUrl` on close
+- `workers/api/wrangler.jsonc` + `src/types.ts` — `VOICE_SESSION` DO binding, `LIVE_PROVIDER` env var, `v3` migration tag
+- `workers/api/migrations/0026_voice_sessions.sql` — `voice_sessions` table
+- `workers/api/src/routes/voice/voiceSessions.ts` — POST (init), GET /:id/ws (upgrade), POST /transcript-callback (internal)
+- `src/hooks/useConversation.ts` — generic conversation state machine; takes any `ConversationAdapter`
+- `src/hooks/useLiveSession.ts` — WebSocket + AudioWorklet PCM16 capture/playback hook
+- `src/hooks/useRoleDiscovery.ts` — refactored to delegate to `useConversation`; public API unchanged; exposes `adapter`
+- `src/lib/adapters/candidateConversationAdapter.ts` — candidate-facing `ConversationAdapter` impl
+- `src/components/AIChat/` — `types.ts`, `AIChat.tsx` (drop-in; text + live voice modes; deferred init), `PastExchangeCard`, `QuestionInput`, `ThinkingIndicator`, `DomainBars` (extracted from RoleDiscoveryPage)
+- `src/pages/RoleDiscoveryPage.tsx` — scripted Q1–Q5 controls `initConfig`; `<AIChat>` drives AI interview
+- `src/components/Assessment/AgentInterviewChallenge.tsx` — `AGENT_INTERVIEW` challenge drop-in
+- `src/lib/challenge/componentMap.ts` + `resolveStageConfig.ts` + `CandidateAssessmentPage.tsx` — `AGENT_INTERVIEW` type wired end-to-end
+
+#### feat(assessment): render AGENT_INTERVIEW challenge type with AIChat (2026-04-12)
+
+Wires the `AGENT_INTERVIEW` challenge type into the candidate assessment page using the existing `AIChat` component and `candidateConversationAdapter`.
+
+- **`src/components/Assessment/AgentInterviewChallenge.tsx`** — new connected panel; reads `challengeId` from `InterviewContext` and `sessionToken` from `SessionTokenContext`; creates a `candidateConversationAdapter` scoped to the challenge; writes transcript into submission on `onComplete` so `isComplete` resolves and the StageShell "Next" button activates.
+- **`src/lib/challenge/resolveStageConfig.ts`** — adds `AGENT_INTERVIEW` to `BLUEPRINT_MAP`; uses `fullbleed` layout with `['agent-interview']` center panel; `isComplete` checks for a non-empty `transcript` string in the submission.
+- **`src/lib/challenge/componentMap.ts`** — registers `'agent-interview'` → `AgentInterviewChallenge` in `COMPONENT_MAP`.
+- **`src/pages/CandidateAssessmentPage.tsx`** — `canAdvance` updated to gate `AGENT_INTERVIEW` on `currentSubmission !== null` (same signal as other types, without the follow-up branch).
+
 #### feat(role-discovery): expand scripted baseline to capture salary + tech stack (2026-04-12)
 
 Two new scripted questions added to the Role Discovery intake — Q4 (comp range, text) and Q5 (required technologies, tags input) — so the agent has compensation and stack data before it asks a single question.

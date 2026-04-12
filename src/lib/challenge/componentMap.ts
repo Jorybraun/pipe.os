@@ -458,6 +458,9 @@ const ConnectedWelcomePanel = connectInterview(WelcomeScreen, (ctx) => ({
 // LIVE_VIDEO challenge panel
 import { VideoInterviewStep } from '../../components/Video/VideoInterviewStep';
 
+// AGENT_INTERVIEW challenge panel
+import { AgentInterviewChallenge } from '../../components/Assessment/AgentInterviewChallenge';
+
 // ---------------------------------------------------------------------------
 // Component map — flat type → component lookup
 // ---------------------------------------------------------------------------
@@ -490,6 +493,7 @@ export const COMPONENT_MAP: Record<string, ComponentType<any>> = {
   // Synthetic challenge panels
   'welcome': ConnectedWelcomePanel,
   'video-waiting': VideoInterviewStep,
+  'agent-interview': AgentInterviewChallenge,
 
   // Layouts
   'workspace': WorkspaceLayout,

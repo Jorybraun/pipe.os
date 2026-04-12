@@ -194,6 +194,16 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
     initialSubmission: {},
     isComplete: () => false, // recruiter controls advancement
   }),
+
+  AGENT_INTERVIEW: () => ({
+    layout: 'fullbleed',
+    panels: { center: ['agent-interview'] },
+    shells: [],
+    initialSubmission: {},
+    // Becomes complete once AIChat fires onComplete and transcript is written.
+    isComplete: (s: Record<string, unknown>) =>
+      typeof s.transcript === 'string' && s.transcript.length > 0,
+  }),
 };
 
 const FALLBACK_BLUEPRINT: Blueprint = {
