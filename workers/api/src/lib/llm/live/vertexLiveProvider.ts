@@ -189,7 +189,7 @@ class VertexLiveSession implements LiveSession {
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL = 'gemini-2.0-flash-live-001';
+const DEFAULT_MODEL = 'gemini-live-2.5-flash-native-audio';
 const DEFAULT_VOICE = 'Puck';
 const WS_BASE =
   'wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent';

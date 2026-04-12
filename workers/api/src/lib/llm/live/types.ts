@@ -11,7 +11,7 @@
 
 export interface LiveSessionConfig {
   systemPrompt: string;
-  /** default: 'gemini-2.0-flash-live-001' */
+  /** default: 'gemini-live-2.5-flash-native-audio' */
   model?: string;
   /** Prebuilt voice name. default: 'Puck' */
   voice?: string;

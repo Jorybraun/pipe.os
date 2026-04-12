@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(voice): update Live API model to gemini-live-2.5-flash-native-audio (2026-04-12)
+
+`gemini-2.0-flash-live-001` was outdated. GA model is `gemini-live-2.5-flash-native-audio`. Note: Gemma 4 does not support the Live API — it is Gemini-only.
+
 #### feat(voice): sq-mode choice question + live agent owns interview (2026-04-12)
 
 - `RoleDiscoveryPage` — Q6 `sq-mode` scripted question renders two large choice buttons (Voice / Text); no text input, no SEND button; clicking a choice archives the exchange and fires `fireCreateAndStart(answers, liveMode)`. Migration applied locally: `0026_voice_sessions.sql`.
