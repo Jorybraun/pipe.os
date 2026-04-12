@@ -15,6 +15,10 @@ export const baselineSchema = z.object({
   companyName: z.string().optional(),
   companyUrl: z.string().optional(),
   location: z.string().optional(),
+  /** Compensation range captured upfront — e.g. "$150K–$180K base + equity". */
+  salaryRange: z.string().max(200).optional(),
+  /** Must-have technologies captured upfront — e.g. ["React", "TypeScript", "PostgreSQL"]. */
+  techStack: z.array(z.string().max(100)).max(20).optional(),
 });
 
 /**

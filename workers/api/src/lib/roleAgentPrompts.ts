@@ -320,8 +320,9 @@ export function buildRoleAgentUserMessage(opts: {
   knowledgeState: Record<string, unknown>;
   questionsAsked: number;
   questionBudget: number;
+  domainCoverage?: Record<string, string>;
 }): string {
-  const { baseline, exchanges, knowledgeState, questionsAsked, questionBudget } = opts;
+  const { baseline, exchanges, knowledgeState, questionsAsked, questionBudget, domainCoverage } = opts;
 
   const parts: string[] = [];
 
@@ -329,6 +330,30 @@ export function buildRoleAgentUserMessage(opts: {
   parts.push('BASELINE FORM DATA:');
   parts.push(JSON.stringify(baseline, null, 2));
   parts.push('');
+
+  // Remind the agent what was already captured so it doesn't re-ask
+  const preCollected: string[] = [];
+  if (baseline.salaryRange) {
+    preCollected.push(`compensation range ("${String(baseline.salaryRange)}")`);
+  }
+  const techStack = baseline.techStack;
+  if (Array.isArray(techStack) && techStack.length > 0) {
+    preCollected.push(`required technologies (${(techStack as string[]).join(', ')})`);
+  }
+  if (preCollected.length > 0) {
+    parts.push(`PRE-COLLECTED — do NOT re-ask: ${preCollected.join(' and ')} were captured upfront. You have this data. Reference it and build on it — never ask for it again.`);
+    parts.push('');
+  }
+
+  // Domain coverage from previous turn — tells the agent where it stands
+  if (domainCoverage && Object.keys(domainCoverage).length > 0) {
+    parts.push('YOUR CURRENT DOMAIN COVERAGE (from your last assessment):');
+    for (const [domain, level] of Object.entries(domainCoverage)) {
+      parts.push(`  ${domain}: ${level}`);
+    }
+    parts.push('Prioritize domains at "none" or "sparse". Do NOT re-ask about domains already at "covered" or "deep".');
+    parts.push('');
+  }
 
   // Shared knowledge state from other participants
   const ksContext = buildKnowledgeStateContext(knowledgeState);

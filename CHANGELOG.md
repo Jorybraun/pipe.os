@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(role-discovery): expand scripted baseline to capture salary + tech stack (2026-04-12)
+
+Two new scripted questions added to the Role Discovery intake — Q4 (comp range, text) and Q5 (required technologies, tags input) — so the agent has compensation and stack data before it asks a single question.
+
+- **`src/lib/api/types.ts`** — `RoleContextBaseline` gains `salaryRange?: string` and `techStack?: string[]`.
+- **`workers/api/src/validation/roleContexts.ts`** — `baselineSchema` already updated in prior commit; no change here.
+- **`src/pages/RoleDiscoveryPage.tsx`** — `ScriptedQuestion` gets `inputType?: 'text' | 'tags'`; SCRIPTED array extended to 5 questions; scripted card conditionally renders `TagsInput` for Q5 (Enter suppressed so it adds tags, not submits); `fireCreateAndStart` populates `salaryRange` and `techStack` from answers; tag answers formatted as comma-separated in past-exchange display.
+- **`workers/api/src/lib/roleAgentPrompts.ts`** — `buildRoleAgentUserMessage` emits a PRE-COLLECTED block when salary/stack are present, instructing the agent not to re-ask what was already captured upfront.
+
 #### Fixed — Security: exchange tokens for iframe auth, /destroy DO lifecycle, rerank cache validation (2026-04-11)
 
 Three security and correctness fixes identified during code review:

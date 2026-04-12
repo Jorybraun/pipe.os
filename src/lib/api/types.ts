@@ -247,6 +247,10 @@ export interface RoleContextBaseline {
   companyName?: string;
   companyUrl?: string;
   location?: string;
+  /** Compensation range captured upfront — e.g. "$150K–$180K base + equity". */
+  salaryRange?: string;
+  /** Must-have technologies captured upfront — e.g. ["React", "TypeScript", "PostgreSQL"]. */
+  techStack?: string[];
 }
 
 export type ParticipantRole = 'HIRING_MANAGER' | 'INTERNAL_RECRUITER' | 'EXTERNAL_RECRUITER' | 'TEAM_MEMBER';
