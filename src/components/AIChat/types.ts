@@ -84,6 +84,12 @@ export interface AIChatProps {
   enableVoice?: boolean;
   /** Enable Vertex AI Gemini Live real-time voice mode. Default: false. */
   enableLiveVoice?: boolean;
+  /**
+   * Start in live voice mode immediately when initConfig is set.
+   * When true the HTTP turn loop is skipped — the voice agent owns the
+   * conversation. Driven by the sq-mode scripted question answer.
+   */
+  defaultLiveMode?: boolean;
   /** Called when the conversation reaches synthesis. */
   onComplete?: (result: SynthesisResult) => void;
   /** Render the synthesis result (if omitted, a default view is shown). */

@@ -6,6 +6,12 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(voice): sq-mode choice question + live agent owns interview (2026-04-12)
+
+- `RoleDiscoveryPage` — Q6 `sq-mode` scripted question renders two large choice buttons (Voice / Text); no text input, no SEND button; clicking a choice archives the exchange and fires `fireCreateAndStart(answers, liveMode)`. Migration applied locally: `0026_voice_sessions.sql`.
+- `AIChat/types.ts` — `defaultLiveMode?: boolean` added to `AIChatProps`.
+- `AIChat/AIChat.tsx` — when `defaultLiveMode=true`, init `useEffect` skips the HTTP turn loop entirely and calls `handleGoLive()` directly; the voice agent owns the full conversation. GO_LIVE button removed from inside the question card — mode selection happens upfront in the scripted phase.
+
 #### feat(voice+chat): universal AIChat component, LiveProvider abstraction, VoiceSessionDO (2026-04-12)
 
 Full universal AI conversation system — scalable across users, reusable across features, provider-swappable.

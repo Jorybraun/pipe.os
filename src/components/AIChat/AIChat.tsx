@@ -43,6 +43,7 @@ export function AIChat({
   initConfig,
   enableVoice = true,
   enableLiveVoice = false,
+  defaultLiveMode = false,
   onComplete,
   renderSynthesis,
   renderHeader,
@@ -51,8 +52,11 @@ export function AIChat({
   const conv = useConversation(adapter);
   const live = useLiveSession();
 
-  // Live voice mode toggle
-  const [liveMode, setLiveMode] = useState(false);
+  // Live voice mode — starts true when defaultLiveMode is set
+  const [liveMode, setLiveMode] = useState(defaultLiveMode);
+  // Ref so the init useEffect can read the latest value without re-running
+  const defaultLiveModeRef = useRef(defaultLiveMode);
+  useEffect(() => { defaultLiveModeRef.current = defaultLiveMode; }, [defaultLiveMode]);
 
   // Text input
   const [aiAnswer, setAiAnswer] = useState('');
@@ -73,11 +77,18 @@ export function AIChat({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // ── Initialize when initConfig transitions from null to non-null ───────────
+  // In live mode: skip the HTTP agent entirely and go straight to the voice session.
+  // In text mode: initialize the HTTP conversation turn loop as normal.
 
   useEffect(() => {
     if (!initConfig) return;
-    conv.initialize(initConfig).catch(() => {});
-    // conv intentionally excluded — only re-runs when initConfig goes from null → set
+    if (defaultLiveModeRef.current) {
+      // Voice agent owns the interview — no HTTP turn loop
+      handleGoLive().catch(() => {});
+    } else {
+      conv.initialize(initConfig).catch(() => {});
+    }
+    // conv and handleGoLive intentionally excluded — only re-runs when initConfig is set
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initConfig]);
 
@@ -518,32 +529,6 @@ export function AIChat({
                 </div>
               ) : (
                 <>
-                  {/* Go live button (when enableLiveVoice) */}
-                  {enableLiveVoice && (
-                    <div style={{ marginBottom: 20 }}>
-                      <button
-                        onClick={() => { handleGoLive().catch(() => {}); }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          padding: '8px 16px',
-                          background: 'rgba(74, 222, 128, 0.06)',
-                          border: '1px solid rgba(74, 222, 128, 0.2)',
-                          color: 'rgba(74, 222, 128, 0.7)',
-                          fontSize: 9,
-                          fontWeight: 700,
-                          letterSpacing: '0.15em',
-                          fontFamily: '"Space Mono", monospace',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Radio size={11} />
-                        GO_LIVE
-                      </button>
-                    </div>
-                  )}
-
                   {/* Whisper voice button */}
                   {needsVoice && (
                     <>

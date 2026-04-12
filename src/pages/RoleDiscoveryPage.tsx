@@ -49,7 +49,8 @@ interface ScriptedQuestion {
   text: string;
   optional: boolean;
   placeholder: string;
-  inputType?: 'text' | 'tags';
+  inputType?: 'text' | 'tags' | 'choice';
+  options?: string[];
 }
 
 const SCRIPTED: ScriptedQuestion[] = [
@@ -83,6 +84,14 @@ const SCRIPTED: ScriptedQuestion[] = [
     optional: true,
     placeholder: 'e.g., React, TypeScript, PostgreSQL',
     inputType: 'tags',
+  },
+  {
+    id: 'sq-mode',
+    text: "How do you want to run this interview?",
+    optional: false,
+    placeholder: '',
+    inputType: 'choice',
+    options: ['Voice', 'Text'],
   },
 ];
 
@@ -322,9 +331,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // ── initConfig: null until scripted questions complete ──
   // Setting this triggers <AIChat> to call adapter.initialize() and start the session.
   const [initConfig, setInitConfig] = useState<AdapterConfig | null>(null);
+  // ── Whether to start in live voice mode (set by sq-mode choice) ──
+  const [defaultLiveMode, setDefaultLiveMode] = useState(false);
 
   // ── Build AdapterConfig from scripted answers and hand off to AIChat ──
-  const fireCreateAndStart = useCallback((answers: Record<string, string>): void => {
+  const fireCreateAndStart = useCallback((answers: Record<string, string>, liveMode = false): void => {
     const techTags = (answers['sq-stack'] ?? '').split('|||').filter(Boolean);
     const baseline: RoleContextBaseline = {
       title: answers['sq-title']?.trim() || '',
@@ -333,8 +344,30 @@ export default function RoleDiscoveryPage(): JSX.Element {
       ...(answers['sq-salary']?.trim() ? { salaryRange: answers['sq-salary'].trim() } : {}),
       ...(techTags.length > 0 ? { techStack: techTags } : {}),
     };
+    setDefaultLiveMode(liveMode);
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
   }, []);
+
+  // ── Choice question select (sq-mode: Voice / Text) ──
+  const handleChoiceSelect = useCallback((choice: string): void => {
+    const q = SCRIPTED[scriptedIdx];
+    if (!q) return;
+
+    setScriptedExchanges((prev) => [
+      ...prev,
+      { questionId: q.id, acknowledgment: '', questionText: q.text, answer: choice },
+    ]);
+
+    const newAnswers = { ...scriptedAnswers, [q.id]: choice };
+    setScriptedAnswers(newAnswers);
+    setScriptedAnswer('');
+
+    if (scriptedIdx < SCRIPTED.length - 1) {
+      setScriptedIdx(scriptedIdx + 1);
+    } else {
+      fireCreateAndStart(newAnswers, choice === 'Voice');
+    }
+  }, [scriptedIdx, scriptedAnswers, fireCreateAndStart]);
 
   // ── Scripted question submit ──
   const handleScriptedSubmit = useCallback((): void => {
@@ -496,60 +529,96 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 {currentScriptedQ.text}
               </div>
 
-              <div
-                style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}
-                onKeyDown={(e) => {
-                  if (currentScriptedQ.inputType === 'tags') return;
-                  if (e.key === 'Enter' && (scriptedAnswer.trim() || currentScriptedQ.optional)) {
-                    e.preventDefault();
-                    handleScriptedSubmit();
-                  }
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  {currentScriptedQ.inputType === 'tags' ? (
-                    <TagsInput
-                      value={scriptedAnswer ? scriptedAnswer.split('|||') : []}
-                      onChange={(tags) => setScriptedAnswer(tags.join('|||'))}
-                      placeholder={currentScriptedQ.placeholder}
-                    />
-                  ) : (
-                    <TextInput
-                      value={scriptedAnswer}
-                      onChange={setScriptedAnswer}
-                      placeholder={currentScriptedQ.placeholder}
-                    />
-                  )}
-                  <div style={{ marginTop: 10, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
-                    {currentScriptedQ.inputType === 'tags' ? 'SEND WHEN DONE' : `ENTER TO SEND${currentScriptedQ.optional ? ' · or SKIP' : ''}`}
+              {/* Choice input — renders two big option buttons, no text field */}
+              {currentScriptedQ.inputType === 'choice' ? (
+                <div style={{ display: 'flex', gap: 12 }}>
+                  {(currentScriptedQ.options ?? []).map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => handleChoiceSelect(opt)}
+                      style={{
+                        flex: 1,
+                        padding: '20px 24px',
+                        background: 'var(--pipe-surface)',
+                        border: '1px solid var(--pipe-border-light)',
+                        color: 'var(--pipe-text)',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        letterSpacing: '0.05em',
+                        fontFamily: '"Space Mono", monospace',
+                        cursor: 'pointer',
+                        borderRadius: 8,
+                        transition: 'border-color 0.15s ease, background 0.15s ease',
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.borderColor = 'rgba(74, 222, 128, 0.4)';
+                        e.currentTarget.style.background = 'rgba(74, 222, 128, 0.04)';
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--pipe-border-light)';
+                        e.currentTarget.style.background = 'var(--pipe-surface)';
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}
+                  onKeyDown={(e) => {
+                    if (currentScriptedQ.inputType === 'tags') return;
+                    if (e.key === 'Enter' && (scriptedAnswer.trim() || currentScriptedQ.optional)) {
+                      e.preventDefault();
+                      handleScriptedSubmit();
+                    }
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    {currentScriptedQ.inputType === 'tags' ? (
+                      <TagsInput
+                        value={scriptedAnswer ? scriptedAnswer.split('|||') : []}
+                        onChange={(tags) => setScriptedAnswer(tags.join('|||'))}
+                        placeholder={currentScriptedQ.placeholder}
+                      />
+                    ) : (
+                      <TextInput
+                        value={scriptedAnswer}
+                        onChange={setScriptedAnswer}
+                        placeholder={currentScriptedQ.placeholder}
+                      />
+                    )}
+                    <div style={{ marginTop: 10, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+                      {currentScriptedQ.inputType === 'tags' ? 'SEND WHEN DONE' : `ENTER TO SEND${currentScriptedQ.optional ? ' · or SKIP' : ''}`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                    <button
+                      onClick={handleScriptedSubmit}
+                      disabled={!scriptedAnswer.trim() && !currentScriptedQ.optional}
+                      style={{
+                        padding: '10px 20px',
+                        background: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.08)' : 'transparent',
+                        border: `1px solid ${(scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.3)' : 'var(--pipe-border-light)'}`,
+                        color: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.9)' : 'var(--pipe-text-dim)',
+                        fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace',
+                        cursor: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'pointer' : 'default',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                      }}
+                    >
+                      <ArrowRight size={12} /> SEND
+                    </button>
+                    {currentScriptedQ.optional && (
+                      <button
+                        onClick={handleScriptedSkip}
+                        style={{ padding: '6px 12px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+                      >
+                        SKIP
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-                  <button
-                    onClick={handleScriptedSubmit}
-                    disabled={!scriptedAnswer.trim() && !currentScriptedQ.optional}
-                    style={{
-                      padding: '10px 20px',
-                      background: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.08)' : 'transparent',
-                      border: `1px solid ${(scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.3)' : 'var(--pipe-border-light)'}`,
-                      color: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.9)' : 'var(--pipe-text-dim)',
-                      fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace',
-                      cursor: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'pointer' : 'default',
-                      display: 'flex', alignItems: 'center', gap: 6,
-                    }}
-                  >
-                    <ArrowRight size={12} /> SEND
-                  </button>
-                  {currentScriptedQ.optional && (
-                    <button
-                      onClick={handleScriptedSkip}
-                      style={{ padding: '6px 12px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
-                    >
-                      SKIP
-                    </button>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
@@ -560,6 +629,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
         <AIChat
           adapter={rd.adapter}
           initConfig={initConfig}
+          defaultLiveMode={defaultLiveMode}
           enableVoice
           enableLiveVoice
           showDomainBars
