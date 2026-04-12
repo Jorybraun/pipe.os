@@ -48,6 +48,8 @@ export interface Env {
   LIVE_PROVIDER?: string;
   /** Used to authenticate DO→Worker transcript callbacks. */
   VOICE_SESSION_INTERNAL_SECRET?: string;
+  /** GCP project ID for Vertex AI services. */
+  GOOGLE_CLOUD_PROJECT?: string;
   /** Metered.ca API key for TURN credential fetching. */
   METERED_API_KEY?: string;
   /** Calendly OAuth client ID. */

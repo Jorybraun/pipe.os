@@ -6,6 +6,11 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(voice): full-screen orb + live mode render path (2026-04-12)
+
+- `AIChat.tsx` — live mode now returns a top-level orb UI before the synthesis/interview branches, bypassing the question card (which was never rendered since `conv.phase` stays `IDLE` when the HTTP agent is skipped). `enableLiveVoice` gates the auto-start so the prop is meaningful.
+- `types.ts` — `GOOGLE_CLOUD_PROJECT` added to `Env`.
+
 #### fix(voice): update Live API model to gemini-live-2.5-flash-native-audio (2026-04-12)
 
 `gemini-2.0-flash-live-001` was outdated. GA model is `gemini-live-2.5-flash-native-audio`. Note: Gemma 4 does not support the Live API — it is Gemini-only.

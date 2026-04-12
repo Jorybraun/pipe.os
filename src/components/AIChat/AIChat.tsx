@@ -82,7 +82,7 @@ export function AIChat({
 
   useEffect(() => {
     if (!initConfig) return;
-    if (defaultLiveModeRef.current) {
+    if (defaultLiveModeRef.current && enableLiveVoice) {
       // Voice agent owns the interview — no HTTP turn loop
       handleGoLive().catch(() => {});
     } else {
@@ -259,6 +259,56 @@ export function AIChat({
   const needsVoice = enableVoice &&
     conv.currentQuestion !== null &&
     (conv.currentQuestion.input.type === 'text' || conv.currentQuestion.input.type === 'textarea');
+
+  // ── Live voice phase — full-screen orb, bypasses question card entirely ──────
+
+  if (liveMode) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, padding: '60px 0' }}>
+        {live.modelTranscript && (
+          <div style={{ fontSize: 13, color: 'var(--pipe-text-dim)', lineHeight: 1.7, fontFamily: '"Space Mono", monospace', textAlign: 'center', maxWidth: 480 }}>
+            {live.modelTranscript}
+          </div>
+        )}
+
+        <div style={{
+          width: 140, height: 140, borderRadius: '50%',
+          background: live.isAISpeaking ? 'rgba(74, 222, 128, 0.15)' : 'rgba(74, 222, 128, 0.05)',
+          border: `2px solid ${live.isAISpeaking ? 'rgba(74, 222, 128, 0.6)' : 'rgba(74, 222, 128, 0.2)'}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.3s ease',
+          animation: live.isAISpeaking ? 'liveOrbPulse 1.4s ease-in-out infinite' : 'none',
+        }}>
+          <Radio size={48} style={{ color: live.isAISpeaking ? 'rgba(74, 222, 128, 0.9)' : 'rgba(74, 222, 128, 0.4)' }} />
+        </div>
+
+        <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+          {live.isConnected ? (live.isAISpeaking ? 'AI_SPEAKING' : 'LISTENING...') : 'CONNECTING...'}
+        </div>
+
+        {live.userTranscript && (
+          <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace', textAlign: 'center', maxWidth: 480, opacity: 0.65 }}>
+            {live.userTranscript}
+          </div>
+        )}
+
+        {live.error && (
+          <div style={{ fontSize: 10, color: '#f87171', fontFamily: '"Space Mono", monospace', textAlign: 'center' }}>
+            {live.error}
+          </div>
+        )}
+
+        <button
+          onClick={handleEndLive}
+          style={{ marginTop: 8, padding: '10px 28px', background: 'rgba(248, 113, 113, 0.08)', border: '1px solid rgba(248, 113, 113, 0.3)', color: 'rgba(248, 113, 113, 0.9)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+        >
+          END_SESSION
+        </button>
+
+        <style>{`@keyframes liveOrbPulse { 0%,100%{transform:scale(1);opacity:0.8} 50%{transform:scale(1.08);opacity:1} }`}</style>
+      </div>
+    );
+  }
 
   // ── Synthesis phase ─────────────────────────────────────────────────────────
 
@@ -438,97 +488,7 @@ export function AIChat({
                 {conv.currentQuestion.text}
               </div>
 
-              {/* Live voice mode UI */}
-              {liveMode ? (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 16,
-                  padding: '32px 0',
-                }}>
-                  {/* Model transcript */}
-                  {live.modelTranscript && (
-                    <div style={{
-                      fontSize: 12,
-                      color: 'var(--pipe-text-dim)',
-                      lineHeight: 1.6,
-                      fontFamily: '"Space Mono", monospace',
-                      textAlign: 'center',
-                      maxWidth: 400,
-                    }}>
-                      {live.modelTranscript}
-                    </div>
-                  )}
-
-                  {/* Pulsing live orb */}
-                  <div style={{
-                    width: 120,
-                    height: 120,
-                    borderRadius: '50%',
-                    background: live.isAISpeaking
-                      ? 'rgba(74, 222, 128, 0.2)'
-                      : 'rgba(74, 222, 128, 0.06)',
-                    border: `2px solid ${live.isAISpeaking ? 'rgba(74, 222, 128, 0.7)' : 'rgba(74, 222, 128, 0.3)'}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'all 0.3s ease',
-                    animation: live.isAISpeaking ? 'liveOrbPulse 1.4s ease-in-out infinite' : 'none',
-                  }}>
-                    <Radio
-                      size={40}
-                      style={{ color: live.isAISpeaking ? 'rgba(74, 222, 128, 0.9)' : 'rgba(74, 222, 128, 0.5)' }}
-                    />
-                  </div>
-
-                  {/* User transcript */}
-                  {live.userTranscript && (
-                    <div style={{
-                      fontSize: 11,
-                      color: 'var(--pipe-text-dim)',
-                      lineHeight: 1.6,
-                      fontFamily: '"Space Mono", monospace',
-                      textAlign: 'center',
-                      maxWidth: 400,
-                      opacity: 0.7,
-                    }}>
-                      {live.userTranscript}
-                    </div>
-                  )}
-
-                  {/* Live error */}
-                  {live.error && (
-                    <div style={{
-                      fontSize: 10,
-                      color: '#f87171',
-                      fontFamily: '"Space Mono", monospace',
-                      textAlign: 'center',
-                    }}>
-                      {live.error}
-                    </div>
-                  )}
-
-                  {/* End session button */}
-                  <button
-                    onClick={handleEndLive}
-                    style={{
-                      padding: '10px 24px',
-                      background: 'rgba(248, 113, 113, 0.08)',
-                      border: '1px solid rgba(248, 113, 113, 0.3)',
-                      color: 'rgba(248, 113, 113, 0.9)',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: '0.15em',
-                      fontFamily: '"Space Mono", monospace',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    END_SESSION
-                  </button>
-                </div>
-              ) : (
-                <>
+              <>
                   {/* Whisper voice button */}
                   {needsVoice && (
                     <>
@@ -664,7 +624,6 @@ export function AIChat({
                     </button>
                   </div>
                 </>
-              )}
             </div>
           )}
         </div>
