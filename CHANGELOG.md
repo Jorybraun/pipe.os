@@ -6,6 +6,28 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(pass3): D1 wrangler auth, ADC token refresh, progress logging, timeout (2026-04-15)
+
+- **`d1Client.ts`** — rewrote to shell out to `wrangler d1 execute --remote` instead of hitting the Cloudflare REST API directly; strips `CLOUDFLARE_API_TOKEN` from subprocess env so wrangler uses its own stored OAuth credentials (cfut_ tokens fail the REST API but work for wrangler CLI).
+- **`pass3/run.ts`** — replaced stale env var token path with direct ADC credentials refresh (`~/.config/gcloud/application_default_credentials.json` → `oauth2.googleapis.com/token`); added 90s `AbortSignal.timeout` per Gemma call; added per-repo progress logs (`[N/M] repo — starting / calling Gemma / persisting`); fixed `VERTEX_AI_REGION` to `global` (MaaS model only available via global endpoint).
+- **`pass3/validate.ts`** — fixed `ReferenceError: narrativeLen is not defined` (should be `narrativeWords`).
+
+#### feat(repo-discovery): canonical RUC alignment + Vectorize hybrid recall (2026-04-14)
+
+Aligns `repo_engineering_signals` with the canonical RUC schema (ADR-036 §2) and adds semantic recall via Cloudflare Vectorize so free-form RCD prose (domain_matrix summaries, stories, BARS overrides) can reach the matcher — not just skill tags. Decision log recorded in `knowledge/STRATEGY.md` as override of RUC §2.3 SQL-only rationale.
+
+- **Migration `0028_signals_v2.sql`** — adds `test_style`, `challenge_surfaces` (JSON), `repo_searchable_profile` (400–600 word narrative), plus `open_pr_count`, `open_feature_issue_count`, `business_logic_ratio`, `cross_module_change_rate` on `qualified_repos`; remaps `architecture_style` enum to canonical (`monolith | layered_service | microservice | library | unknown`).
+- **Pass 1** — GitHub topic exclusions (`-topic:plugin -topic:tailwind -topic:ui-kit …`) and open-work counts (`is:pr is:open`, `is:issue label:enhancement`).
+- **Pass 2** — new `pathClassifier.ts` computes `business_logic_ratio` and `cross_module_change_rate` from sampled PR file paths; sample PRs now persist `changed_file_paths_json`.
+- **Pass 3** — new `testStyleClassifier.ts` + `challengeSurfaceClassifier.ts` + `deterministicStats.ts` feed Gemma as pre-computed FACTS. Gemma now narrates only (architecture_style, engineering_narrative 200–400w, repo_searchable_profile 400–600w). Validation rejects any digit in the narrative that doesn't match a FACTS value. `SIGNALS_VERSION` bumped to `v2.0.0`.
+- **Vectorize upsert** — Pass 3 persist now embeds `repo_searchable_profile` via Workers AI REST (`@cf/baai/bge-large-en-v1.5`, 1024-dim) and upserts into `repo-searchable-profiles`. Gated on SELECT-back D1 verification — SQL stays authoritative, no orphan vectors.
+- **`wrangler.jsonc`** — new Vectorize binding `REPO_INDEX → repo-searchable-profiles`.
+- **`matchRepos.ts`** — hard filter: exclude `architecture_style='library'`; challenge-ready gate (`open_pr_count > 0 OR open_feature_issue_count >= 5`). Applied to both scored path and fallback.
+- **`rcdSearchProfile.ts`** (new) — 400–600 word narrative of an RCD for embedding. Allow-list: `technical_context`, `domain_matrix[*].summary`, top-3 stories, `bars_overrides`. Excludes laddering chains, probe_bank_enrichment, dealbreakers, red_flags.
+- **`discover.ts`** — hybrid recall: SQL top-50 (`matchRepos`) ∪ Vectorize top-50 (`REPO_INDEX.query`, disqualified-filtered), dedup'd by `repo_id`, merged set feeds canonical Gemma rerank. Falls back to SQL-only if Vectorize/AI bindings absent or fail.
+- **`roleFitRerank.ts`** — new `per_signal_scores` dimensions surface for future calibration: `architecture_style_match` (hard 0.0 for library), `test_style_match` with partial-credit matrix, `review_culture_match`, `pr_size_match`, `complexity_match`, `challenge_surface_fit`. Weights in `matchRepos` unchanged (45/15/10/10/15/5).
+- **Tests** — colocated Vitest suites for `pathClassifier`, `testStyleClassifier`, `challengeSurfaceClassifier`, `rcdSearchProfile`. Existing `roleFitRerank`/`rerankPipeline` fixtures migrated to canonical enum.
+
 #### fix(voice): full-screen orb + live mode render path (2026-04-12)
 
 - `AIChat.tsx` — live mode now returns a top-level orb UI before the synthesis/interview branches, bypassing the question card (which was never rendered since `conv.phase` stays `IDLE` when the HTTP agent is skipped). `enableLiveVoice` gates the auto-start so the prop is meaningful.
