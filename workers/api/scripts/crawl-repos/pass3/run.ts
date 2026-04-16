@@ -352,10 +352,46 @@ async function processRepo(
     return { ...base, status: 'parse_error', detail: `${err instanceof Error ? err.message : String(err)} | raw: ${raw.slice(0, 200)}` };
   }
 
-  // Step 4: Validate
-  const validation = validatePass3(input, output);
+  // Step 4: Validate — retry once if it fails
+  let validation = validatePass3(input, output);
   if (!validation.valid) {
-    return { ...base, status: 'validation_failed', detail: validation.failures.join('; ') };
+    logger.warn(
+      `[pass3] ${tag} ${input.full_name} — validation failed (${validation.failures.length} issues). Retrying Gemma with corrections.`,
+    );
+    const retryPrompt =
+      `${factsPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED validation. Fix ALL of the following issues in your new response:\n` +
+      validation.failures.map((f) => `- ${f}`).join('\n');
+
+    let retryRaw: string;
+    try {
+      retryRaw = await callGemma(accessToken, projectId, system, retryPrompt);
+    } catch (err) {
+      return {
+        ...base,
+        status: 'validation_failed',
+        detail: `validation failed; retry Gemma failed: ${err instanceof Error ? err.message : String(err)} | original_failures: ${validation.failures.join('; ')}`,
+      };
+    }
+
+    try {
+      output = parseGemmaResponse(retryRaw, input, contentHash, facts);
+    } catch {
+      return {
+        ...base,
+        status: 'validation_failed',
+        detail: `validation failed; retry parse failed | original_failures: ${validation.failures.join('; ')}`,
+      };
+    }
+
+    validation = validatePass3(input, output);
+    if (!validation.valid) {
+      logger.error(
+        `[pass3] ${tag} ${input.full_name} — validation still failed after retry. Dropping. Failures: ${validation.failures.join('; ')}`,
+      );
+      return { ...base, status: 'validation_failed', detail: `after retry: ${validation.failures.join('; ')}` };
+    }
+
+    logger.info(`[pass3] ${tag} ${input.full_name} — validation passed on retry`);
   }
   if (validation.warnings.length > 0) {
     logger.warn(`[pass3] ${input.full_name} warnings: ${validation.warnings.join('; ')}`);

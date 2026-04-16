@@ -433,6 +433,64 @@ The scorer is currently set to Gemma 4 26B (`@cf/google/gemma-4-26b-a4b-it`) as 
 | RD-23 | Crawler has zero LLM calls; Pass 1 + Pass 2 are deterministic. `repo_sample_prs` metadata is the richest substrate but nothing reasons over it. No 3rd AI pass exists. | `scripts/crawl-repos/index.ts`, `scripts/crawl-repos/pass2/prSample.ts:126-138` | Add crawler Pass 3 (offline, Haiku 4.5) writing to new `repo_engineering_signals` table per ADR-036 Repo Understanding Contract | RD-P4 | **DONE — code** (`1bf7a74` — `scripts/crawl-repos/pass3/persist.ts` D1 writer with content-hash idempotency; `.claude/commands/crawl-repos-pass3.md` — Claude Code skill that orchestrates the Haiku 4.5 summarizer and writes `repo_engineering_signals`; `scripts/crawl-repos/index.ts` `--pass3` flag shells out to the skill so cron/CI has one CLI surface). **Not yet run against production D1** — queued as a manual batch operation once the Pass 1 + Pass 2 seed set is in place. Pass 3 lives as a slash command rather than a `summarize.ts` module because the Haiku call has to route through the Claude Code Agent tool path (not reachable from plain `npx tsx`), and the model-family independence rule (ADR-032) is easier to enforce when Pass 3 and the Stage-2 rerank run in entirely different execution environments. |
 | RD-24 | `matchRepos` is SQL-only; no role-fit reasoning layer between SQL candidates and final ranking. Repo library and Role Discovery meet only at keyword join. | `matchRepos.ts:139-176`, `discover.ts:46-71` | Add Worker runtime role-fit pass (Gemma 4 26B) reading Role Context Document + `repo_engineering_signals`, writing to new `repo_role_alignment` table. `matchRepos` becomes stage-1 retriever; Worker does stage-2 rerank. | RD-P4 | **DONE** (`f24f87e`, `ff639a4` — `roleFitRerank.ts` + cache-aware `rerankPipeline.ts` (key invariant `role_context_id + rcd_version + signals_version`) + `discover.ts` wiring with failure isolation. `createRoleAgentProvider` instantiated at the route boundary so the rerank fires live on `/api/v1/pipelines/:id/repo-discovery`. Missing RCD / missing signals / provider down → silent fallback to `matchRepos` order.) |
 
+#### Issue Ingestion for CODE_IMPLEMENTATION challenges (RD-43 through RD-48)
+
+> **Context:** Repo crawler fetches PRs (for CODE_REVIEW challenges) but not issues. CODE_IMPLEMENTATION challenges need real feature requests from qualified repos. Issues are volatile (can close after crawl), so architecture needs: (1) raw issue snapshot during crawl, (2) AI scoring for challenge suitability, (3) runtime state verification before assignment.
+> **Phase key:** RD-P6 = issue ingestion pipeline (cron crawler + AI scorer + runtime verifier)
+
+| # | Finding | Source | Plan action | Phase | Status |
+|---|---|---|---|---|---|
+| RD-43 | Crawler has no issue ingestion — `repo_sample_prs` exists for PRs but no equivalent for issues. CODE_IMPLEMENTATION challenges require feature requests. | `migrations/0021_qualified_repos.sql`, `scripts/crawl-repos/pass2/prSample.ts` | Add `repo_issues` table (raw snapshot) + weekly cron crawler. Store title, body, labels, comment_count, reactions, `has_merged_pr` flag. | RD-P6 | NOT STARTED |
+| RD-44 | Issue quality not assessed — raw issue count (`open_feature_issue_count` in `qualified_repos`) exists but no signal for implementability, clarity, scope, isolation. | `migrations/0028_signals_v2.sql:37` | Add `issue_challenge_signals` table with AI-scored dimensions: `implementability_score`, `clarity_score`, `scope_score`, `isolation_score`, `difficulty_band`, `disqualified` flag. Cron scorer (Gemma 4 26B) writes signals for unscored issues. | RD-P6 | NOT STARTED |
+| RD-45 | Issues are volatile — unlike merged PRs, open issues can close any time. Crawl-time state is not authoritative at assignment time. | N/A | Runtime `issueStateVerifier.ts` calls GitHub API before challenge assignment. `!stillOpen` → pick next issue. `assignedToSomeone` → warn recruiter. | RD-P6 | NOT STARTED |
+| RD-46 | PR-linked issues create confusion — issues with merged PRs are "already done" but appear in raw issue list. Candidates would be implementing something that already exists. | GitHub Issues API returns `pull_request` key for linked PRs | Filter: `has_merged_pr = 1` issues excluded from CODE_IMPLEMENTATION selection. Store the link for audit but skip at query time. | RD-P6 | NOT STARTED |
+| RD-47 | Difficulty mapping not grounded — no heuristic for which issues suit junior vs. senior candidates. | Challenge authoring brief Part 2 (difficulty calibration) | Map scores to bands: junior = high scope + high isolation + high clarity; senior = lower isolation or lower scope; staff-level = disqualified (too big for assessment). | RD-P6 | NOT STARTED |
+| RD-48 | Issue body can be huge — GitHub issues have no length limit; some are multi-thousand-word discussions. AI scoring prompt can't ingest arbitrarily large context. | N/A | Truncate issue body at 8K chars for AI scoring prompt. Store full body in D1 for candidate display. | RD-P6 | NOT STARTED |
+
+**Design decisions (confirmed 2026-04-15):**
+1. **Re-crawl frequency:** Weekly cron job refreshes `repo_issues`. Runtime still verifies before assignment.
+2. **PR-linked issues:** Skip issues with merged PRs for CODE_IMPLEMENTATION (already done). Store link but filter at query time.
+3. **Hosting:** Cloudflare Worker with Cron Trigger (not local script). Decoupled from crawler, auto-scales.
+
+**Schema sketch:**
+```sql
+CREATE TABLE repo_issues (
+  id INTEGER PRIMARY KEY,
+  repo_id INTEGER NOT NULL REFERENCES qualified_repos(id),
+  github_issue_id INTEGER NOT NULL,
+  issue_number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  author_login TEXT NOT NULL,
+  labels_json TEXT,
+  comment_count INTEGER NOT NULL DEFAULT 0,
+  reactions_total INTEGER DEFAULT 0,
+  github_created_at TEXT NOT NULL,
+  github_updated_at TEXT NOT NULL,
+  crawled_at TEXT NOT NULL,
+  state_at_crawl TEXT NOT NULL,
+  has_merged_pr INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(repo_id, issue_number)
+);
+
+CREATE TABLE issue_challenge_signals (
+  id INTEGER PRIMARY KEY,
+  issue_id INTEGER NOT NULL REFERENCES repo_issues(id) ON DELETE CASCADE,
+  implementability_score REAL,
+  clarity_score REAL,
+  scope_score REAL,
+  isolation_score REAL,
+  difficulty_band TEXT,  -- 'junior' | 'mid' | 'senior'
+  assessment_narrative TEXT,
+  disqualified INTEGER NOT NULL DEFAULT 0,
+  disqualified_reason TEXT,
+  signals_version INTEGER NOT NULL DEFAULT 1,
+  model_used TEXT NOT NULL,
+  generated_at TEXT NOT NULL,
+  UNIQUE(issue_id)
+);
+```
+
 #### Agent architecture redesign (RD-25 through RD-42)
 
 > Source: Brief 5 — `knowledge/role-discovery/role-discovery-sales-intake.md` · 247 sources · 2026-04-11
@@ -870,6 +928,7 @@ This section is append-only. Every time the plan is overridden, deferred, or cha
 | 2026-04-11 | **ADR-037 code-complete: Dev Containers on Cloudflare (Phase 3b)** | Full implementation of Cloudflare Containers replacing AWS ECS Fargate. `DevContainerDO` extends `Container` from `@cloudflare/containers` with `/__init`, `/__destroy`, proxy passthrough, and DO alarm-based TTL enforcement (warn at T-60s, expire at T). Routes: `POST /rpc/dev-container/launch`, `GET /:sid/status`, `POST /:sid/destroy`, `ALL /:sid/proxy/*`. Security fixes same day: (1) exchange tokens for iframe auth (prevents JWT leakage via Referer), (2) `/destroy` now calls DO to actually stop container, (3) rerank cache validates `signals_version`. 48 tests pass. E2E tests written. ADR-037 documented. **Blocked on deployment:** R2 not enabled on Cloudflare account. To unblock: enable R2 in Dashboard → `npx wrangler r2 bucket create pipe-assets` → `npm run deploy`. Post-deploy: flip `VITE_USE_CLOUDFLARE_DEV_CONTAINERS=true`, run E2E, 7-day soak, then teardown 5 Amplify Lambdas + ECS cluster + ALB + NAT gateway. Plan: `.claude/plans/optimized-squishing-church.md`. | Founder + Claude |
 | 2026-04-14 | **Architectural decision: candidate-facing app will be server-side rendered (SSR)** | Security boundary, not just a performance choice. With CSR the Worker must send challenge data (including planted bug metadata, scoring rubrics, correct answers) to the browser to render the UI. A candidate can open DevTools → Network and read the payload. SSR renders HTML server-side — only the rendered output reaches the browser. The candidate experience will be a separate Cloudflare Pages deployment (`interview.pipe.com`) using React Router v7 (runs natively on Cloudflare Workers). The recruiter app (`app.pipe.com`) remains CSR — it's behind Clerk auth and has no ground-truth exposure risk. Deferred to post-MVP (current CSR candidate flow is pre-launch with no real candidates). | Founder |
 | 2026-04-14 | **Override: Repo matching extensions beyond RUC §2.3 (signals_version v2.0.0)** | Extends canonical Repo Understanding Contract (`knowledge/outputs/role-discovery-data-contract.md:408-473`) to solve two problems the RUC schema does not address: library/plugin contamination in candidate pools (solved via new `architecture_style='library'` enum value — canonical addition) and no semantic bridge between free-form RCD prose (`domain_matrix[*].summary`, `stories[]`, `bars_overrides`) and repo signals. **Canonical alignment (no override needed):** add `library` and `layered_service` to `architecture_style` enum; re-map existing `modular_monolith → layered_service` and `serverless → microservice`; add canonical `test_style` field (enum `unit_only \| integration_heavy \| e2e_present \| minimal \| unknown`); tighten `engineering_narrative` to RUC's 200–400 word spec. **Extensions beyond RUC (override):** (1) Cloudflare Vectorize binding `REPO_INDEX` with 1024-dim `@cf/baai/bge-large-en-v1.5` embeddings — added as PARALLEL recall path, not a replacement. SQL hard filter and Gemma rerank both remain, preserving RUC §2.3's rejection of runtime-only cross-encoder. Vectorize does top-50 semantic recall; Gemma still makes final alignment judgments. (2) `repo_searchable_profile` (400–600 word narrative written by Gemma from a FACTS-only block — no LLM numeric estimation, validator rejects digit sequences not in the facts block). (3) `business_logic_ratio` and `cross_module_change_rate` — deterministic Pass 2 aggregates from per-PR `changed_file_paths_json` via path classifier (`src/services/** → domain_logic` etc.). (4) `challenge_surfaces` — 10 `*_potential` scores mapped 1:1 to the ADR-032:131 bug template list (off-by-one, TOCTOU race, stale cache, unvalidated input, type confusion, dangling reference, SQL injection, CORS misconfig, N+1 query, missing null check), deterministic rules over `detected_stack_json + primary_language + constructs`. (5) `open_pr_count` and `open_feature_issue_count` via Pass 1 GitHub Search API (2 calls/repo) — feed a "challenge-ready" hard filter in `matchRepos`. **Risks:** Workers 30s timeout (mitigated: Vectorize only recall, rerank still bounded); judgment inconsistency (mitigated: Gemma rerank preserved as final pass with justifications); plan drift (mitigated: this Decision Log entry). **Rationale:** contamination solved by canonical library filter alone; Vectorize solves the orthogonal problem of RCD ↔ repo matching across free-form prose that structured enum-match cannot reach. Per founder explicit decision 2026-04-14 during /plan session (plan file `.claude/plans/woolly-bubbling-owl.md`). | Founder + Claude |
+| 2026-04-15 | **RD-P6: Issue Ingestion Pipeline for CODE_IMPLEMENTATION challenges** | Crawler fetches PRs (CODE_REVIEW) but not issues. CODE_IMPLEMENTATION challenges need real feature requests. **Architecture:** (1) `repo_issues` table stores raw issue snapshot (title, body, labels, `has_merged_pr` flag), (2) `issue_challenge_signals` table stores AI-scored dimensions (implementability, clarity, scope, isolation, difficulty_band, disqualified), (3) weekly Cloudflare Cron Worker refreshes issues, (4) separate Cron Worker runs Gemma 4 26B scorer on unscored issues, (5) runtime `issueStateVerifier.ts` checks GitHub API before assignment (issues are volatile — can close after crawl). **Design decisions:** Weekly re-crawl (not on-demand). Skip issues with merged PRs for CODE_IMPLEMENTATION (already implemented). Cloudflare Worker cron (not local script). Issue body truncated to 8K for AI scoring. Difficulty mapping: junior = high scope+isolation+clarity; senior = lower isolation or scope; staff-level = disqualified (too big). **Schema:** `migrations/0029_repo_issues.sql`. **Files:** `routes/cron/issueCrawler.ts`, `routes/cron/issueScorer.ts`, `lib/repoDiscovery/issueStateVerifier.ts`, `lib/github/issueClient.ts`. Plan file: `.claude/plans/snoopy-gathering-allen.md`. | Founder + Claude |
 
 ---
 

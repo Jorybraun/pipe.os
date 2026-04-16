@@ -267,11 +267,12 @@ function renderRadio(repoId, field, options) {
   const cur = state[repoId]?.[field];
   return options.map(opt => {
     const isSel = opt.value === cur;
-    const selClass = isSel ? ' sel-' + opt.value.replace('-','') : '';
+    const selClass = isSel ? ' sel-' + opt.value.replace(/-/g,'') : '';
     return '<label class="override-label' + selClass + '" id="lbl-' + repoId + '-' + field + '-' + opt.value + '">'
       + '<input type="radio" name="' + repoId + '-' + field + '" value="' + opt.value + '"'
+      + ' data-repoid="' + repoId + '" data-field="' + field + '"'
       + (isSel ? ' checked' : '')
-      + ' onchange="onRadio(' + repoId + ','' + field + '','' + opt.value + '')">'
+      + '>'
       + opt.label
       + '</label>';
   }).join('');
@@ -429,12 +430,12 @@ function renderCard(row) {
     // Constructs
     + (constructs.length ? '<div><div class="section-title">Top constructs</div><div class="construct-list">' + constructHtml + '</div></div>' : '')
 
-    // Collapsibles
+    // Collapsibles — use data-collapse to avoid quote-escaping issues in onclick
     + '<div>'
-    + (gemNarr ? '<button class="collapse-btn" onclick="toggleCollapse('narr-' + id + '')">▶ Gemma narrative</button>' : '')
-    + (gemProf ? '<button class="collapse-btn" onclick="toggleCollapse('prof-' + id + '')">▶ Gemma profile</button>' : '')
-    + (pass1?.reasoning ? '<button class="collapse-btn" onclick="toggleCollapse('p1r-' + id + '')">▶ P1 full reasoning</button>' : '')
-    + (sonnet?.reasoning ? '<button class="collapse-btn" onclick="toggleCollapse('s-' + id + '')">▶ Sonnet reasoning</button>' : '')
+    + (gemNarr ? '<button class="collapse-btn" data-collapse="narr-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ Gemma narrative</button>' : '')
+    + (gemProf ? '<button class="collapse-btn" data-collapse="prof-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ Gemma profile</button>' : '')
+    + (pass1?.reasoning ? '<button class="collapse-btn" data-collapse="p1r-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ P1 full reasoning</button>' : '')
+    + (sonnet?.reasoning ? '<button class="collapse-btn" data-collapse="s-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ Sonnet reasoning</button>' : '')
     + (gemNarr ? '<div class="collapse-content" id="narr-' + id + '">' + esc(gemNarr) + '</div>' : '')
     + (gemProf ? '<div class="collapse-content" id="prof-' + id + '">' + esc(gemProf) + '</div>' : '')
     + (pass1?.reasoning ? '<div class="collapse-content" id="p1r-' + id + '">' + esc(pass1.reasoning) + '</div>' : '')
@@ -488,14 +489,13 @@ function onNotes(repoId, value) {
   saveState();
 }
 
-function toggleCollapse(id) {
-  const el = document.getElementById(id);
+function toggleCollapse(collapseId) {
+  const el = document.getElementById(collapseId);
   if (!el) return;
   el.classList.toggle('open');
-  const btn = el.previousElementSibling;
-  if (btn?.tagName === 'BUTTON') {
-    btn.textContent = btn.textContent.replace(/^[▶▼]/, el.classList.contains('open') ? '▼' : '▶');
-  }
+  const isOpen = el.classList.contains('open');
+  const btn = document.querySelector('[data-collapse="' + collapseId + '"]');
+  if (btn) btn.textContent = btn.textContent.replace(/^[▶▼]/, isOpen ? '▼' : '▶');
 }
 
 // ─── Filtering ─────────────────────────────────────────────────────────────
@@ -612,6 +612,14 @@ function copyDecisions() {
   const container = document.getElementById('cards-container');
   container.innerHTML = ROWS.map(renderCard).join('');
   updateStatBar();
+
+  // Delegated change listener for all radio inputs (avoids inline-handler quote issues)
+  document.addEventListener('change', function(e) {
+    const target = e.target;
+    if (target && target.type === 'radio' && target.dataset.repoid) {
+      onRadio(Number(target.dataset.repoid), target.dataset.field, target.value);
+    }
+  });
 })();
 </script>
 

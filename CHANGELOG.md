@@ -6,6 +6,21 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(crawler): issue ingestion pipeline for CODE_IMPLEMENTATION challenges (RD-P6) (2026-04-15)
+
+Issue crawler + scorer for real GitHub feature requests. Candidates will implement actual open-source issues as coding challenges.
+
+- **Migration `0029_repo_issues.sql`** (new) — `repo_issues` table (raw issue snapshot), `issue_challenge_signals` table (AI-scored suitability), `crawler_state` table (resumable batch cursor).
+- **`src/types.ts`** — new types: `RepoIssueRow`, `IssueChallengeSignalsRow`, `IssueDifficultyBand`, `IssueDisqualifiedReason`, `IssueStateCheck`.
+- **`src/lib/github/issueClient.ts`** (new) — GitHub API wrapper for issues: `fetchIssues`, `fetchIssue`, `checkLinkedMergedPR`, `batchCheckLinkedMergedPRs`.
+- **`src/lib/repoDiscovery/issueStateVerifier.ts`** (new) — runtime state verification before challenge assignment (`verifyIssueState`, `pickValidIssue`). Issues are volatile; this checks `stillOpen`, `hasNewActivity`, `assignedToSomeone` via live GitHub API.
+- **`src/routes/cron/issueCrawler.ts`** (new) — weekly cron handler fetching open issues from qualified repos. Filters PRs, checks linked merged PRs, upserts to D1.
+- **`src/routes/cron/issueScorer.ts`** (new) — weekly cron handler scoring issues with Gemma 4 26B. Four dimensions: `implementability`, `clarity`, `scope`, `isolation`. Derives `difficulty_band` (junior/mid/senior) and disqualifies unsuitable issues.
+- **`src/routes/cron/index.ts`** (new) — scheduled handler router for cron triggers.
+- **`src/index.ts`** — exported `scheduled` handler for cron triggers.
+- **`wrangler.jsonc`** — added cron triggers: `0 3 * * 0` (issue crawler, Sunday 03:00 UTC), `0 4 * * 0` (issue scorer, Sunday 04:00 UTC).
+- **`knowledge/STRATEGY.md`** — added RD-43 through RD-48 findings (Issue Ingestion for CODE_IMPLEMENTATION challenges). Design decisions logged: weekly re-crawl, skip PR-linked issues, Cloudflare Worker cron hosting.
+
 #### test(repo-discovery): eval harness, RCD fixtures, validator + profile tests (2026-04-15)
 
 - **`scripts/eval-repo-discovery.ts`** (new) — recall@K/precision@K/MRR harness for Vectorize-backed repo discovery. Loads 5 RCD fixtures, resolves gold-set repos from D1, runs `discover()`, prints per-fixture summary table. `--dry-run` validates fixtures without bindings. Exit 0 if avg recall@20 ≥ 0.6.

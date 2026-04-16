@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+// Cron — scheduled handlers for issue crawling + scoring
+import { handleScheduled, type ScheduledEvent } from './routes/cron';
 // Cockpit — recruiter config + view CRUD
 import { pipelines } from './routes/cockpit/pipelines';
 import { pipelineStages, stageOps, stageChallenges } from './routes/cockpit/stages';
@@ -182,4 +184,11 @@ app.notFound((c) =>
 export { VideoRoom } from './durable-objects/VideoRoom';
 export { DevContainerDO } from './durable-objects/DevContainerDO';
 export { VoiceSessionDO } from './durable-objects/VoiceSessionDO';
-export default app;
+
+// ─── Scheduled handler (cron triggers) ────────────────────────────────────────
+export default {
+  fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+    await handleScheduled(event, env);
+  },
+};

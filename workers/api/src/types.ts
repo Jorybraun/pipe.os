@@ -618,6 +618,97 @@ export interface RepoRoleAlignmentRow {
   model_used: string;
 }
 
+// ─── RD-P6: Issue Ingestion types ────────────────────────────────────────────
+
+/**
+ * Raw issue snapshot from GitHub, stored in repo_issues table.
+ * Issues are volatile (can close after crawl), so runtime state verification
+ * is required before challenge assignment.
+ */
+export interface RepoIssueRow {
+  id: number;
+  repo_id: number;
+
+  // GitHub identifiers
+  github_issue_id: number;
+  issue_number: number;
+
+  // Content snapshot
+  title: string;
+  body: string | null;
+  author_login: string;
+
+  // Metadata
+  labels_json: string | null;          // JSON array of label strings
+  comment_count: number;
+  reactions_total: number | null;
+
+  // Timestamps
+  github_created_at: string;
+  github_updated_at: string;
+  crawled_at: string;
+  state_at_crawl: 'open' | 'closed';
+
+  // PR linkage (for CODE_IMPLEMENTATION filtering)
+  has_merged_pr: 0 | 1;
+}
+
+/** Difficulty band for challenge assignment (junior gets easier issues). */
+export type IssueDifficultyBand = 'junior' | 'mid' | 'senior';
+
+/** Reasons an issue may be disqualified from challenge use. */
+export type IssueDisqualifiedReason =
+  | 'too_vague'
+  | 'too_large'
+  | 'requires_maintainer'
+  | 'staff_level'
+  | 'duplicate'
+  | 'stale'
+  | 'already_assigned'
+  | null;
+
+/**
+ * AI-scored challenge suitability signals for an issue.
+ * Scored by Gemma 4 26B in the issue scorer cron worker.
+ */
+export interface IssueChallengeSignalsRow {
+  id: number;
+  issue_id: number;
+
+  // AI-generated scores (0.0 - 1.0)
+  implementability_score: number | null;
+  clarity_score: number | null;
+  scope_score: number | null;
+  isolation_score: number | null;
+
+  // Derived difficulty band
+  difficulty_band: IssueDifficultyBand | null;
+
+  // AI rationale
+  assessment_narrative: string | null;
+
+  // Disqualification
+  disqualified: 0 | 1;
+  disqualified_reason: IssueDisqualifiedReason;
+
+  // Provenance
+  signals_version: number;
+  model_used: string;
+  generated_at: string;
+}
+
+/**
+ * Runtime issue state check result.
+ * Used before assigning an issue as a challenge (issues can close after crawl).
+ */
+export interface IssueStateCheck {
+  stillOpen: boolean;
+  hasNewActivity: boolean;
+  assignedToSomeone: boolean;
+  /** If state changed, the current state from GitHub. */
+  currentState?: 'open' | 'closed';
+}
+
 /**
  * Generated job description — the public-facing artifact ready to post on
  * a job board or send directly to a candidate. Derived from the persona + the
