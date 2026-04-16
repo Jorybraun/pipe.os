@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Settings,
   Phone,
-  Library,
   Bot,
   Mail,
   Database,
@@ -14,8 +13,6 @@ interface SidebarNavProps {
   activeSection?: string;
   /** Called when the user clicks the Schedule nav item */
   onScheduleClick?: () => void;
-  /** Called when the user clicks the Challenges nav item */
-  onChallengesClick?: () => void;
   /** Called when the user clicks the Sandbox nav item */
   onSandboxClick?: () => void;
   /** Called when the user clicks the Roles nav item */
@@ -35,7 +32,6 @@ interface SidebarNavProps {
 export function SidebarNav({
   activeSection = "roles",
   onScheduleClick,
-  onChallengesClick,
   onSandboxClick,
   onSettingsClick,
   onCallsClick,
@@ -267,64 +263,6 @@ export function SidebarNav({
         >
           <Mail size={20} />
           {activeSection === "outreach" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* Challenges nav item */}
-      {onChallengesClick && (
-        <button
-          onClick={onChallengesClick}
-          title="Challenge Studio"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "challenges"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "challenges" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "challenges" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "challenges"
-              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "challenges") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "challenges") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Library size={20} />
-          {activeSection === "challenges" && (
             <div
               style={{
                 position: "absolute",

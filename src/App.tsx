@@ -36,7 +36,6 @@ import SchedulingPage from "./pages/SchedulingPage";
 import OutreachPage from "./pages/OutreachPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
-import ChallengeStudioPage from "./pages/ChallengeStudioPage";
 import RepoAdminPage from "./pages/admin/RepoAdminPage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
@@ -211,15 +210,17 @@ function AppLayout(): JSX.Element {
   const [showCalls, setShowCalls] = useState(false);
   const agent = useAgentDrawer();
 
+  const agentDrawerVisible = FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT && agent.isOpen;
+
   const panelContent = showSettings
     ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
     : showCalls
       ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
-      : agent.isOpen
+      : agentDrawerVisible
         ? <AgentDrawer pipelineId={agent.pipelineId} skillMode={agent.skillMode} onClose={agent.closeAgent} onSkillModeChange={agent.setSkillMode} />
         : undefined;
 
-  const isPanelOpen = showSettings || showCalls || agent.isOpen;
+  const isPanelOpen = showSettings || showCalls || agentDrawerVisible;
 
   return (
     <SidebarPortalProvider>
@@ -234,12 +235,6 @@ function AppLayout(): JSX.Element {
             setShowSettings(false);
             setShowCalls(false);
             navigate("/");
-          }}
-          onChallengesClick={() => {
-            setActiveSection("challenges");
-            setShowSettings(false);
-            setShowCalls(false);
-            navigate("/challenges");
           }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
             ? {
@@ -283,17 +278,21 @@ function AppLayout(): JSX.Element {
             setShowCalls(false);
             navigate("/admin/repos");
           }}
-          onAgentClick={() => {
-            setShowSettings(false);
-            setShowCalls(false);
-            if (agent.isOpen) {
-              agent.closeAgent();
-              setActiveSection("roles");
-            } else {
-              agent.openAgent();
-              setActiveSection("agent");
-            }
-          }}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT
+            ? {
+                onAgentClick: () => {
+                  setShowSettings(false);
+                  setShowCalls(false);
+                  if (agent.isOpen) {
+                    agent.closeAgent();
+                    setActiveSection("roles");
+                  } else {
+                    agent.openAgent();
+                    setActiveSection("agent");
+                  }
+                },
+              }
+            : {})}
           onSettingsClick={() => {
             setShowCalls(false);
             agent.closeAgent();
@@ -398,7 +397,6 @@ function App(): JSX.Element {
                         element={<ChallengeEditorPage />}
                       />
                     )}
-                    <Route path="/challenges" element={<ChallengeStudioPage />} />
                     <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
                     <Route
                       path="/candidates/:id"

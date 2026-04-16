@@ -17,4 +17,6 @@ export const FEATURE_FLAGS = {
   FEATURE_FLAG_DEV_CONTAINER_ROUTE: false,
   /** Challenge editor page — post-MVP, challenges are read-only for MVP */
   FEATURE_FLAG_CHALLENGE_EDITOR: true,
+  /** Global copilot agent drawer (ADR-035) — parked until agentic UX is ready */
+  FEATURE_FLAG_COPILOT_AGENT: false,
 } as const;

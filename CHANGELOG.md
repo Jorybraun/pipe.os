@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### chore: remove ChallengeStudioPage + gate copilot agent behind feature flag (2026-04-16)
+
+- **`src/pages/ChallengeStudioPage.tsx`** deleted — /challenges route removed from App.tsx, nav button + prop removed from SidebarNav.
+- **`src/components/ChallengeStudio/`** deleted — ChallengeBriefWizard.tsx + ReposTab.tsx were only used by ChallengeStudioPage.
+- **`src/hooks/useChallengeStudio.ts`** deleted — only consumer was ChallengeStudioPage.
+- **`src/components/RoleDiscovery/AgentPanel.tsx`** + **`stories/AgentPanel.stories.tsx`** deleted — Phase 1A mock, never wired into routing.
+- **`src/config/featureFlags.ts`** — new `FEATURE_FLAG_COPILOT_AGENT: false` flag.
+- **`src/App.tsx`** — `onAgentClick` conditional-spread gated behind flag; `agentDrawerVisible` guard prevents drawer render when flag off.
+
 #### feat(llm+role-discovery): vertex-ai provider + end-to-end streaming (2026-04-15)
 
 Adds a Vertex AI provider alongside the existing Google AI (public API) provider, plus `completeStream` methods on both so the role discovery agent can stream tokens to the client via SSE. Fixes a prior bug where the server was sending `question` as a raw string and the client was synthesizing a fake `{ id, text, input }` envelope around it with `acknowledgment: ''` hardcoded — the full question object + `acknowledgment` now flow through natively.
