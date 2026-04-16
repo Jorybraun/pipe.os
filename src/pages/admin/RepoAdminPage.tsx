@@ -35,6 +35,7 @@ interface QualifiedRepo {
   has_tests: number;
   test_framework: string | null;
   detected_stack_json: string | null;
+  top_skills_csv: string | null;
   admin_status: AdminStatus;
   admin_reason: string | null;
   disqualified: number;
@@ -323,6 +324,27 @@ function RepoCard({
           </span>
         )}
       </div>
+
+      {/* Stack skills */}
+      {repo.top_skills_csv && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {repo.top_skills_csv.split(',').map((skill) => (
+            <span
+              key={skill}
+              style={{
+                ...mono, fontSize: 7, fontWeight: 600,
+                padding: '2px 6px', borderRadius: 3,
+                background: 'rgba(96,165,250,0.06)',
+                border: '1px solid rgba(96,165,250,0.15)',
+                color: 'var(--pipe-text-dim)',
+                letterSpacing: '0.04em',
+              }}
+            >
+              {skill}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* PR quality bar — only for non-failed */}
       {!isFailed && (

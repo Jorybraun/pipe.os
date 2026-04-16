@@ -125,11 +125,14 @@ export function AIChat({
   }, [conv.phase]); // eslint-disable-line react-hooks/exhaustive-deps
   // Intentionally depend only on phase to avoid double-firing on ref changes.
 
-  // ── Bad robot — one-click flag for AI-generated questions ─────────────────
+  // ── Bad robot — flag + skip the current question ──────────────────────────
 
   const handleBadBot = useCallback((questionId: string): void => {
-    conv.submitFeedback(questionId, '[BAD_ROBOT] User flagged this question as bad').catch(() => {});
+    if (conv.isLoading) return;
+    conv.submitFeedback(questionId, '[BAD_ROBOT] User skipped this question as bad').catch(() => {});
     setBadBotQuestionId(questionId);
+    // Skip by submitting a minimal non-answer so the server generates the next question
+    conv.respond('[Skip]', questionId).catch(() => {});
   }, [conv]);
 
   // ── Submit AI answer ────────────────────────────────────────────────────────
@@ -534,11 +537,12 @@ export function AIChat({
                 {!conv.currentQuestion.id.startsWith('sq-') && (
                   <button
                     onClick={() => handleBadBot(conv.currentQuestion!.id)}
-                    title={badBotQuestionId === conv.currentQuestion.id ? 'Reported — thanks' : 'Bad question? Report it'}
-                    style={{ flexShrink: 0, padding: '4px 8px', background: 'transparent', border: `1px solid ${badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.3)' : 'var(--pipe-border-light)'}`, color: badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.8)' : 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: badBotQuestionId === conv.currentQuestion.id ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}
+                    disabled={conv.isLoading}
+                    title="Skip this question and report it"
+                    style={{ flexShrink: 0, padding: '4px 8px', background: 'transparent', border: `1px solid ${badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.3)' : 'var(--pipe-border-light)'}`, color: badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.8)' : 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: (conv.isLoading || badBotQuestionId === conv.currentQuestion.id) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, opacity: conv.isLoading ? 0.4 : 1 }}
                   >
                     <Bot size={10} />
-                    {badBotQuestionId === conv.currentQuestion.id ? 'REPORTED' : 'BAD_BOT'}
+                    {badBotQuestionId === conv.currentQuestion.id ? 'SKIPPED' : 'SKIP_QUESTION'}
                   </button>
                 )}
               </div>

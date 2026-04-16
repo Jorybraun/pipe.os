@@ -6,6 +6,26 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(admin): show top skills on repo admin cards (2026-04-16)
+
+Repo admin cards now display up to 8 top skills from `repo_skills` (ordered by confidence)
+as small blue-tinted badges. API query updated with a correlated subquery that fetches
+`GROUP_CONCAT(skill_slug)` per repo.
+
+**Changed files:**
+- `src/pages/admin/RepoAdminPage.tsx`
+- `workers/api/src/routes/cockpit/adminRepos.ts`
+
+#### fix(role-discovery): bad robot button skips the current question (2026-04-16)
+
+Updated `handleBadBot` in `AIChat` so clicking SKIP_QUESTION on the current AI-generated
+question both flags it (`[BAD_ROBOT]` feedback) AND advances past it by submitting
+`conv.respond('[Skip]', questionId)`. Button is disabled while loading and shows SKIPPED
+after activation.
+
+**Changed files:**
+- `src/components/AIChat/AIChat.tsx`
+
 #### feat(role-discovery): resume prompt, back navigation, bad robot button (2026-04-16)
 
 **Resume prompt** — returning to `/pipeline/new` with a saved draft now shows a

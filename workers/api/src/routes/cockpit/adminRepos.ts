@@ -62,6 +62,7 @@ interface RepoRow {
   pass: number;
   crawled_at: string;
   has_signals: number;
+  top_skills_csv: string | null;
 }
 
 interface SamplePRRow {
@@ -127,7 +128,10 @@ adminRepos.get('/repos', async (c) => {
        qr.has_ci, qr.has_tests, qr.test_framework, qr.detected_stack_json,
        qr.admin_status, qr.admin_reason, qr.disqualified, qr.disqualified_reason,
        qr.pass, qr.crawled_at,
-       CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals
+       CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
+       (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
+         SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
+       )) AS top_skills_csv
      FROM qualified_repos qr
      LEFT JOIN repo_engineering_signals res ON res.repo_id = qr.id
      ${where}
