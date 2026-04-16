@@ -1,18 +1,11 @@
-import type { ChallengeTemplate } from '../content/challengeLibrary';
-
 /**
- * Discriminated union representing what the recruiter selected in ChallengePicker.
- *
- * - 'library': a static template from challengeLibrary.ts
- * - 'github': a real PR selected from the GitHub PR browser
+ * Represents a GitHub PR selected in ChallengePicker for a CODE_REVIEW challenge.
  */
-export type ChallengeSelection =
-  | { source: 'library'; template: ChallengeTemplate }
-  | {
-      source: 'github';
-      repoUrl: string;
-      prNumber: number;
-      prTitle: string;
-      prDescription: string;
-      prAuthor: string;
-    };
+export type ChallengeSelection = {
+  source: 'github';
+  repoUrl: string;
+  prNumber: number;
+  prTitle: string;
+  prDescription: string;
+  prAuthor: string;
+};

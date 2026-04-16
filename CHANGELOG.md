@@ -6,6 +6,44 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(voice): propagate Gemini WebSocket close events as errors in VertexLiveSession (2026-04-16)
+
+When Gemini closes the WebSocket with a non-1000 code (e.g. auth error, invalid setup, model unavailable), the `close` event was only being logged — it never fired the `errorHandlers`. This meant `VoiceSessionDO` never nulled out `liveSession`, never sent an error to the browser client, and the UI hung on "CONNECTING..." indefinitely. Fixed by firing `errorHandlers` on non-1000 close codes so the DO correctly cleans up and the browser sees the error message.
+
+**Changed files:**
+- `workers/api/src/lib/llm/live/vertexLiveProvider.ts`
+
+#### chore: remove challenge template library and all ADR-034 authoring infrastructure (2026-04-16)
+
+Template selection is out of scope for MVP. Removed all static templates, the D1-backed authoring system, template pack browsing, and AI generation pipeline. The GitHub PR browser (CODE_REVIEW flow) is preserved.
+
+**Deleted files:**
+- `src/content/challengeLibrary.ts` (2503 lines, ~50 static templates)
+- `src/lib/pipelinePresets.ts` (dead code)
+- `src/hooks/useTemplateLibrary.ts`
+- `src/hooks/useChallengeGeneration.ts`
+- `src/components/Pipeline/ChallengeBrowserPanel.tsx`
+- `src/components/Pipeline/ChallengePicker.tsx` (dead code — no importers)
+- `workers/api/src/routes/cockpit/challengeTemplates.ts`
+- `workers/api/src/routes/cockpit/templatePacks.ts`
+- `workers/api/src/routes/cockpit/challengeGeneration.ts`
+- `workers/api/src/lib/challengeGeneration/` (types, pipeline, prompts)
+
+**New files:**
+- `src/lib/shortAnswerUtils.ts` — extracted `normalizeShortAnswerConfig` + `ShortAnswerInputMode` from challengeLibrary before deletion
+
+**Modified:**
+- `workers/api/src/index.ts` — removed 3 route registrations (challengeTemplates, templatePacks, challengeGeneration)
+- `workers/api/src/routes/cockpit/pipelines.ts` — removed `expandPack` import and template-pack expansion block; simplified stage INSERT to drop `template_pack_id`/`template_pack_version` columns
+- `src/config/featureFlags.ts` — removed `FEATURE_FLAG_PREDEFINED_CHALLENGES`
+- `src/types/challengeSelection.ts` — removed `library` source; now github-only
+- `src/components/Pipeline/ChallengeWizard.tsx` — rewritten: removed SourceSelector, PackBrowser, LibraryBrowser, AiGenerator, DifficultyBadge, SkillTag, ConfidenceBar, GeneratedChallengeCard; kept TypeBadge + CustomCreator + StagedQueue; removed `roleContextId`/`persona` props
+- `src/components/Pipeline/InlineChallengeAdder.tsx` — removed TemplateListPicker, TemplateQuestions; removed TYPE_TO_CHALLENGE_TYPES, SHORT_ANSWER_MODES; replaced ChallengeTemplate with local StagedItem; OnlineQuestionPicker now starts in manual mode (template tab removed)
+- `src/components/StageConfigPanel.tsx` — removed challengeLibrary imports, TypeChallengePicker, TYPE_TO_CHALLENGE_TYPES; non-SCREENING stages go directly to CodeReviewPicker
+- `src/components/Editor/ShortAnswerEditor.tsx` — import normalizeShortAnswerConfig from shortAnswerUtils
+- `src/components/Assessment/ChallengeRegistry.tsx` — same
+- `src/hooks/useEditorChallenge.ts` — removed template library lookup path
+
 #### chore: remove ChallengeStudioPage + gate copilot agent behind feature flag (2026-04-16)
 
 - **`src/pages/ChallengeStudioPage.tsx`** deleted — /challenges route removed from App.tsx, nav button + prop removed from SidebarNav.

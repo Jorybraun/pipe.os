@@ -202,8 +202,6 @@ export default function ChallengesTab(): JSX.Element {
           ) : (
             <ChallengeWizard
               stageId={stageId}
-              roleContextId={shell.roleContext?.id ?? null}
-              persona={shell.roleContext?.persona ?? null}
               onClose={() => {
                 setShowAddForm(false);
                 void refetchStage();

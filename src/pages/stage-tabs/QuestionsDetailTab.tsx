@@ -111,8 +111,6 @@ export default function QuestionsDetailTab(): JSX.Element {
         {showWizard && (
           <ChallengeWizard
             stageId={stageId}
-            roleContextId={shell.roleContext?.id ?? null}
-            persona={shell.roleContext?.persona ?? null}
             onClose={() => {
               setShowWizard(false);
               void refetchStage();

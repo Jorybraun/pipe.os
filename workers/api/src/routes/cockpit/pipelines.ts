@@ -4,7 +4,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { createPipelineSchema } from '../../validation/pipelines';
 import { expandPreset } from '../../lib/presets';
-import { expandPack } from './templatePacks';
+
 import type { Env, Variables, PipelineWithCountsRow } from '../../types';
 
 const pipelines = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -115,25 +115,12 @@ pipelines.post('/', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', `Unknown presetId: "${input.presetId}".`);
   }
 
-  // Resolve template pack if a templatePackId was supplied (ADR-034).
-  let packExpansion: Awaited<ReturnType<typeof expandPack>> = null;
-  if (input.templatePackId) {
-    packExpansion = await expandPack(c.env.DB, input.templatePackId, input.templatePackVersion);
-    if (!packExpansion) {
-      return apiError(c, 'VALIDATION_ERROR', `Template pack not found: "${input.templatePackId}".`);
-    }
-  }
-
   // Generate IDs up-front so we can reference them in child inserts.
   // D1's DEFAULT clause only runs on INSERT — we need the IDs for FK references
   // in a batch, so we generate them in the worker instead.
   const pipelineId = generateId();
   const stackJson = input.stack ? JSON.stringify(input.stack) : null;
-  const creationMode = input.templatePackId
-    ? 'TEMPLATE_PACK'
-    : input.presetId
-      ? 'PRESET'
-      : (input.creationMode ?? 'BLANK');
+  const creationMode = input.presetId ? 'PRESET' : (input.creationMode ?? 'BLANK');
 
   // Build the batch of statements: pipeline + stages + challenges.
   const statements: D1PreparedStatement[] = [];
@@ -154,30 +141,23 @@ pipelines.post('/', async (c) => {
     ),
   );
 
-  // Merge stages from preset or template pack expansion.
-  const presetStages = preset?.stages ?? [];
-  const packStages = packExpansion?.stages ?? [];
-  const allStages = [...presetStages, ...packStages];
+  // Expand preset stages if provided.
+  const allStages = preset?.stages ?? [];
   let totalChallenges = 0;
 
   for (const stage of allStages) {
     const stageId = generateId();
 
-    // Template pack stages include pack tracking columns.
-    const isPackStage = packExpansion && packStages.includes(stage);
-
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO stages (id, pipeline_id, title, description, sort_order, template_pack_id, template_pack_version)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+        `INSERT INTO stages (id, pipeline_id, title, description, sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5)`,
       ).bind(
         stageId,
         pipelineId,
         stage.title,
         stage.description ?? null,
         stage.sortOrder,
-        isPackStage ? packExpansion!.pack.id : null,
-        isPackStage ? packExpansion!.pack.version : null,
       ),
     );
 

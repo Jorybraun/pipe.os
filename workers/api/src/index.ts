@@ -6,9 +6,6 @@ import { handleScheduled, type ScheduledEvent } from './routes/cron';
 import { pipelines } from './routes/cockpit/pipelines';
 import { pipelineStages, stageOps, stageChallenges } from './routes/cockpit/stages';
 import { challenges } from './routes/cockpit/challenges';
-import { challengeTemplates } from './routes/cockpit/challengeTemplates';
-import { templatePacks } from './routes/cockpit/templatePacks';
-import { challengeGeneration } from './routes/cockpit/challengeGeneration';
 import { repoDiscovery } from './routes/cockpit/repoDiscovery';
 import { adminRepos } from './routes/cockpit/adminRepos';
 import { agentRoutes } from './routes/cockpit/agent';
@@ -80,12 +77,6 @@ app.route('/api/v1/stages', stageOps);
 app.route('/api/v1/stages', stageChallenges);
 // Challenge CRUD: GET/PUT /api/v1/challenges/:id, POST /api/v1/challenges/:id/clone
 app.route('/api/v1/challenges', challenges);
-// Challenge templates: CRUD + publish + language variants (ADR-034)
-app.route('/api/v1/challenge-templates', challengeTemplates);
-// Template packs: CRUD + publish + duplicate + expand (ADR-034)
-app.route('/api/v1/template-packs', templatePacks);
-// Challenge generation: AI pipeline from role discovery persona (ADR-034 CA Phase 3)
-app.route('/api/v1/challenges/generate', challengeGeneration);
 // Repo discovery: role-matched repo discovery for code review challenges (CR-13)
 app.route('/api/v1/repos', repoDiscovery);
 // Admin: human approval of qualified_repos catalog

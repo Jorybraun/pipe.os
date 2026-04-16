@@ -10,18 +10,20 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, Mic, Type, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
-import {
-  ALL_CHALLENGE_TEMPLATES,
-  type ChallengeTemplate,
-  type ChallengeType,
-  type ShortAnswerInputMode,
-} from '../content/challengeLibrary';
 import { useChallengeMutations } from '../hooks/useChallengeMutations';
 import { useAuth as useClerkAuth } from '@clerk/react';
+
+/** Minimal shape needed to create a challenge */
+interface StagedItem {
+  type: string;
+  title: string;
+  instructions: string;
+  config: Record<string, unknown>;
+}
 import { createApiClient } from '../lib/api/client';
 import { useStageRefetch } from '../contexts/StageRefetchContext';
 import type { ScreeningFormat } from '../lib/api/types';
@@ -45,14 +47,6 @@ const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   PANEL: FileText,
 };
 
-/** Map stage types to the challenge types they should show */
-const TYPE_TO_CHALLENGE_TYPES: Record<StageType, ChallengeType[]> = {
-  SCREENING: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
-  CULTURAL: ['AGENT_INTERVIEW', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
-  TECHNICAL: ['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_SHORT_ANSWER', 'QUIZ_MCQ'],
-  CODE_REVIEW: ['CODE_REVIEW'],
-  PANEL: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
-};
 
 export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): JSX.Element {
   const { stage, isLoading, refetch } = useStageDetail(stageId);
@@ -62,7 +56,6 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
 
   const [selectedType, setSelectedType] = useState<StageType | null>(null);
   const [initialized, setInitialized] = useState(false);
-  const [showGitHubPicker, setShowGitHubPicker] = useState(false);
 
   // Pending type change awaiting confirmation when existing challenges are present
   const [pendingType, setPendingType] = useState<StageType | null>(null);
@@ -80,7 +73,6 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
   const commitSelectType = async (type: StageType): Promise<void> => {
     setSelectedType(type);
     setPendingType(null);
-    setShowGitHubPicker(false);
     const config = STAGE_TYPE_CONFIGS[type];
     try {
       await updateStage(stageId, {
@@ -108,18 +100,14 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
     setSelectedType(null);
   };
 
-  const handleBrowseGitHub = (): void => {
-    setShowGitHubPicker(true);
-  };
-
-  const handleAddChallenge = async (template: ChallengeTemplate): Promise<void> => {
+  const handleAddChallenge = async (template: StagedItem): Promise<void> => {
     const count = stage?.challenges?.length ?? 0;
     try {
       await createChallenge(stageId, {
-        type: template.type,
+        type: template.type as 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER',
         title: template.title,
         instructions: template.instructions,
-        config: template.config as Record<string, unknown>,
+        config: template.config,
         order: count,
       });
       await refetch();
@@ -224,20 +212,13 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
             existingCount={stage?.challenges?.length ?? 0}
             deleteChallenge={deleteChallenge}
           />
-        ) : showGitHubPicker ? (
+        ) : (
           <CodeReviewPicker
             key={stageId}
             stageId={stageId}
             existingCount={stage?.challenges?.length ?? 0}
-            onAdded={async () => { await refetch(); await triggerRefetch(); setShowGitHubPicker(false); }}
-            onBack={() => setShowGitHubPicker(false)}
-          />
-        ) : (
-          <TypeChallengePicker
-            stageType={selectedType}
-            onAdd={handleAddChallenge}
-            existingCount={stage?.challenges?.length ?? 0}
-            {...(selectedType === 'TECHNICAL' ? { onBrowseGitHub: handleBrowseGitHub } : {})}
+            onAdded={async () => { await refetch(); await triggerRefetch(); }}
+            onBack={onClose}
           />
         )
       ) : (
@@ -277,7 +258,7 @@ function ScreeningFormatPicker({ stageId, stage, updateStage, refetch, triggerRe
   updateStage: ReturnType<typeof useStageMutations>['updateStage'];
   refetch: () => Promise<void>;
   triggerRefetch: () => Promise<void>;
-  onAddChallenge: (template: ChallengeTemplate) => Promise<void>;
+  onAddChallenge: (template: StagedItem) => Promise<void>;
   existingCount: number;
   deleteChallenge: ReturnType<typeof useChallengeMutations>['deleteChallenge'];
 }): JSX.Element {
@@ -619,7 +600,7 @@ function ScreeningCallConfig({ format, stageId, stage, updateStage, refetch, tri
 // ── Screening question picker (online format) ───────────────────────────────
 
 function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
-  onAdd: (template: ChallengeTemplate) => Promise<void>;
+  onAdd: (template: StagedItem) => Promise<void>;
   existingCount: number;
   onBack: () => void;
 }): JSX.Element {
@@ -650,16 +631,10 @@ function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
   const handleAddQuestion = async (sq: ScreeningQuestionTemplate): Promise<void> => {
     // Convert screening question to a QUIZ_SHORT_ANSWER challenge
     const instructions = sq.text + (sq.followUps?.length ? '\n\nFollow-up prompts:\n' + sq.followUps.map((f) => `- ${f}`).join('\n') : '');
-    const template: ChallengeTemplate = {
-      id: sq.id,
+    const template: StagedItem = {
       type: 'QUIZ_SHORT_ANSWER',
       title: sq.text,
-      description: sq.purpose,
       instructions,
-      tags: [sq.category, 'screening'],
-      difficulty: 'beginner',
-      topic: 'screening',
-      estimatedMinutes: 3,
       config: { inputMode: 'text' as const, question: sq.text, placeholder: 'Type your answer...' },
     };
     await onAdd(template);
@@ -964,300 +939,6 @@ function TypeSelector({ onSelect, currentType, pendingType }: {
         </div>
       </div>
     </div>
-  );
-}
-
-// ── Step 2: Type-specific challenge picker ──────────────────────────────────
-
-const SHORT_ANSWER_MODES: { mode: ShortAnswerInputMode; label: string; description: string; Icon: typeof Type }[] = [
-  { mode: 'text', label: 'TEXT', description: 'Written response', Icon: Type },
-  { mode: 'video', label: 'VIDEO', description: 'Recorded video response', Icon: Video },
-  { mode: 'voice', label: 'VOICE', description: 'Recorded voice response', Icon: Mic },
-];
-
-function TypeChallengePicker({ stageType, onAdd, existingCount, onBrowseGitHub }: {
-  stageType: StageType;
-  onAdd: (template: ChallengeTemplate) => Promise<void>;
-  existingCount: number;
-  onBrowseGitHub?: () => void;
-}): JSX.Element {
-  const [search, setSearch] = useState('');
-  const [selectedInputMode, setSelectedInputMode] = useState<ShortAnswerInputMode | null>(null);
-  const challengeTypes = TYPE_TO_CHALLENGE_TYPES[stageType];
-  const hasShortAnswer = challengeTypes.includes('QUIZ_SHORT_ANSWER');
-  const hasOnlyShortAnswer = challengeTypes.every((t) => t === 'QUIZ_SHORT_ANSWER' || t === 'FOLLOW_UP');
-
-  // Only show mode picker for stages that are purely short-answer (CULTURAL, PANEL).
-  // TECHNICAL skips this and goes straight to the template list.
-  const showModePicker = hasOnlyShortAnswer && hasShortAnswer && selectedInputMode === null;
-
-  const filtered = useMemo(() => {
-    let templates = ALL_CHALLENGE_TEMPLATES.filter((t) =>
-      challengeTypes.includes(t.type),
-    );
-    // When a short answer input mode is selected, only show short answer + follow-up templates
-    if (selectedInputMode !== null) {
-      templates = templates.filter((t) => t.type === 'QUIZ_SHORT_ANSWER' || t.type === 'FOLLOW_UP');
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      templates = templates.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          t.description.toLowerCase().includes(q) ||
-          t.tags.some((tag) => tag.toLowerCase().includes(q)),
-      );
-    }
-    return templates;
-  }, [challengeTypes, search, selectedInputMode]);
-
-  const handleAdd = async (template: ChallengeTemplate): Promise<void> => {
-    // Override inputMode on short answer templates when a mode is selected
-    if (selectedInputMode !== null && template.type === 'QUIZ_SHORT_ANSWER') {
-      const config = { ...(template.config as Record<string, unknown>), inputMode: selectedInputMode };
-      const overridden = {
-        ...template,
-        config: config as ChallengeTemplate['config'],
-      };
-      await onAdd(overridden);
-    } else {
-      await onAdd(template);
-    }
-  };
-
-  if (showModePicker) {
-    return (
-      <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <label style={labelStyle}>RESPONSE_FORMAT</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {SHORT_ANSWER_MODES.map(({ mode, label, description, Icon }) => (
-            <button
-              key={mode}
-              onClick={() => setSelectedInputMode(mode)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '12px 14px',
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                fontFamily: '"Space Mono", monospace',
-                background: 'var(--pipe-surface)',
-                border: '1px solid var(--pipe-border)',
-                borderRadius: 4,
-                color: 'var(--pipe-text-dim)',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                textAlign: 'left',
-              }}
-            >
-              <Icon size={14} />
-              <div>
-                <div>{label}</div>
-                <div style={{
-                  fontSize: 8,
-                  fontWeight: 400,
-                  letterSpacing: '0.05em',
-                  opacity: 0.7,
-                  marginTop: 2,
-                }}>
-                  {description}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-        {!hasOnlyShortAnswer && (
-          <>
-            <div style={{
-              fontSize: 8,
-              letterSpacing: '0.1em',
-              color: 'var(--pipe-text-dim)',
-              textAlign: 'center',
-              padding: '8px 0',
-              opacity: 0.5,
-            }}>
-              OR
-            </div>
-            <button
-              onClick={() => setSelectedInputMode('text')}
-              style={{
-                padding: '10px 12px',
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                fontFamily: '"Space Mono", monospace',
-                background: 'transparent',
-                border: '1px dashed var(--pipe-border)',
-                borderRadius: 4,
-                color: 'var(--pipe-text-dim)',
-                cursor: 'pointer',
-                textAlign: 'center',
-              }}
-            >
-              BROWSE ALL CHALLENGES
-            </button>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {/* Search */}
-      <div style={{ padding: '12px 20px 0' }}>
-        {hasShortAnswer && (
-          <button
-            onClick={() => setSelectedInputMode(null)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              marginBottom: 8,
-              padding: 0,
-              background: 'none',
-              border: 'none',
-              color: 'var(--pipe-text-dim)',
-              cursor: 'pointer',
-              fontSize: 8,
-              fontFamily: '"Space Mono", monospace',
-              letterSpacing: '0.1em',
-            }}
-          >
-            <ArrowLeft size={10} />
-            {selectedInputMode !== null ? selectedInputMode.toUpperCase() + ' RESPONSE' : 'ALL'}
-          </button>
-        )}
-        <div style={{ position: 'relative' }}>
-          <Search
-            size={12}
-            style={{
-              position: 'absolute',
-              left: 10,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--pipe-text-dim)',
-            }}
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search challenges..."
-            style={{
-              width: '100%',
-              padding: '8px 10px 8px 30px',
-              fontSize: 10,
-              fontFamily: '"Space Mono", monospace',
-              background: 'transparent',
-              border: '1px solid var(--pipe-border)',
-              borderRadius: 4,
-              color: 'var(--pipe-text)',
-              outline: 'none',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Template list */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {onBrowseGitHub && (
-          <button
-            onClick={onBrowseGitHub}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 12px',
-              background: 'rgba(96,165,250,0.06)',
-              border: '1px solid rgba(96,165,250,0.25)',
-              borderRadius: 4,
-              cursor: 'pointer',
-              textAlign: 'left',
-              marginBottom: 4,
-            }}
-          >
-            <GitPullRequest size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', color: '#60a5fa' }}>
-                BROWSE GITHUB PR
-              </div>
-              <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 2 }}>
-                Pick a real pull request from your repo
-              </div>
-            </div>
-          </button>
-        )}
-        {filtered.length === 0 && (
-          <div style={{
-            padding: 20,
-            textAlign: 'center',
-            fontSize: 9,
-            color: 'var(--pipe-text-dim)',
-            letterSpacing: '0.1em',
-          }}>
-            NO_CHALLENGES_FOUND
-          </div>
-        )}
-        {filtered.map((template) => (
-          <button
-            key={template.id}
-            onClick={() => void handleAdd(template)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 12px',
-              background: 'transparent',
-              border: '1px solid var(--pipe-border)',
-              borderRadius: 4,
-              cursor: 'pointer',
-              textAlign: 'left',
-              transition: 'all 0.15s',
-              fontFamily: '"Space Mono", monospace',
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: 'var(--pipe-text)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}>
-                {template.title}
-              </div>
-              <div style={{
-                fontSize: 8,
-                color: 'var(--pipe-text-dim)',
-                marginTop: 3,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                opacity: 0.6,
-              }}>
-                {template.description}
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Footer */}
-      <div style={{
-        padding: '12px 20px',
-        borderTop: '1px solid var(--pipe-border)',
-        fontSize: 8,
-        color: 'var(--pipe-text-dim)',
-        letterSpacing: '0.1em',
-        textAlign: 'center',
-      }}>
-        {filtered.length} CHALLENGES — {existingCount} ADDED
-      </div>
-    </>
   );
 }
 

@@ -3,7 +3,7 @@ import { LiquidMetalCard, SubTitle } from '../../components';
 import { ButtonGroup } from '../ui/ButtonGroup';
 import { NumberInput } from '../ui/NumberInput';
 import { QuestionVideoRecorder } from '../Challenge/QuestionVideoRecorder';
-import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
+import { normalizeShortAnswerConfig } from '../../lib/shortAnswerUtils';
 import { FollowUpConfiguration } from './FollowUpConfiguration';
 import type { EditorFormProps } from './types';
 

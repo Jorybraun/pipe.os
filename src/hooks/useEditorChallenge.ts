@@ -2,7 +2,6 @@ import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useData } from '../providers';
 import type { DataProviderFactory } from '../providers';
-import { ALL_CHALLENGE_TEMPLATES } from '../content/challengeLibrary';
 import type { EditorChallenge } from '../components/Editor/types';
 
 // ---------------------------------------------------------------------------
@@ -53,28 +52,7 @@ export function useEditorChallenge(
     try {
       setIsLoading(true);
 
-      // 1. Template library lookup
-      const libraryTemplate = ALL_CHALLENGE_TEMPLATES.find(
-        (t) => t.id === challengeId,
-      );
-      if (libraryTemplate) {
-        const cfg = (libraryTemplate.config ?? {}) as Record<string, unknown>;
-        setChallengeRaw({
-          id: libraryTemplate.id,
-          type: libraryTemplate.type,
-          title: libraryTemplate.title,
-          instructions: libraryTemplate.instructions ?? null,
-          config: cfg,
-          serverConfig: (cfg as Record<string, unknown>).correctOptionId
-            ? { correctOptionId: (cfg as Record<string, unknown>).correctOptionId }
-            : {},
-          isTemplate: true,
-        } as EditorChallenge);
-        setIsLoading(false);
-        return;
-      }
-
-      // 2. NEW_ placeholder
+      // 1. NEW_ placeholder
       if (challengeId.startsWith('NEW_')) {
         const type = challengeId.replace('NEW_', '');
         setChallengeRaw({
@@ -99,7 +77,7 @@ export function useEditorChallenge(
         return;
       }
 
-      // 3. Fetch from DB
+      // 2. Fetch from DB
       const client = factory.createClient();
       const { data } = await client.models.Challenge.get({ id: challengeId });
       if (data) {

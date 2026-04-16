@@ -19,7 +19,7 @@ import { VoicePanel } from '../Panels/VoicePanel';
 import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
 import { VideoWaitingRoom } from '../Video/VideoWaitingRoom';
 import { WelcomeScreen, type ChallengeType } from './WelcomeScreen';
-import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
+import { normalizeShortAnswerConfig } from '../../lib/shortAnswerUtils';
 import type { FollowUpQuestion } from '../../hooks/useAssessment';
 
 import { useSessionToken } from '../../contexts/SessionTokenContext';

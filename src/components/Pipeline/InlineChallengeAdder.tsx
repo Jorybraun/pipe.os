@@ -11,7 +11,7 @@
  *        others      → response-format picker → template list
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Phone,
   Users,
@@ -26,11 +26,8 @@ import {
   Calendar,
   Clock,
   CheckCircle2,
-  ArrowLeft,
   Search,
   AlertCircle,
-  Type,
-  Mic,
   Sparkles,
   PenLine,
   X,
@@ -41,21 +38,18 @@ import { useStageMutations } from '../../hooks/useStageMutations';
 import { useStageDetail } from '../../hooks/useStageDetail';
 import { useChallengeMutations } from '../../hooks/useChallengeMutations';
 import { useStageRefetch } from '../../contexts/StageRefetchContext';
-import {
-  ALL_CHALLENGE_TEMPLATES,
-  type ChallengeTemplate,
-  type ChallengeType,
-  type ShortAnswerInputMode,
-} from '../../content/challengeLibrary';
 import type { ScreeningFormat } from '../../lib/api/types';
-import {
-  SCREENING_QUESTIONS,
-  SCREENING_CATEGORIES,
-  type ScreeningCategory,
-  type ScreeningQuestionTemplate,
-} from '../../content/screeningQuestions';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+// Minimal staged-item shape used by TemplateQuestions and the main save flow.
+interface StagedItem {
+  id: string;
+  type: string;
+  title: string;
+  instructions: string;
+  config: Record<string, unknown>;
+}
 
 const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   SCREENING: Phone,
@@ -63,14 +57,6 @@ const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   TECHNICAL: Zap,
   CODE_REVIEW: GitPullRequest,
   PANEL: FileText,
-};
-
-const TYPE_TO_CHALLENGE_TYPES: Record<StageType, ChallengeType[]> = {
-  SCREENING: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
-  CULTURAL: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
-  TECHNICAL: ['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_SHORT_ANSWER', 'QUIZ_MCQ'],
-  CODE_REVIEW: ['CODE_REVIEW'],
-  PANEL: ['QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
 };
 
 const SCREENING_FORMAT_OPTIONS: {
@@ -82,17 +68,6 @@ const SCREENING_FORMAT_OPTIONS: {
   { format: 'PHONE_CALL', label: 'PHONE CALL', description: 'Recruiter calls via Twilio', Icon: PhoneCall },
   { format: 'VIDEO_CALL', label: 'VIDEO CALL', description: 'Live video screening', Icon: Video },
   { format: 'ONLINE', label: 'ONLINE QUESTIONS', description: 'Async screening questions', Icon: MonitorPlay },
-];
-
-const SHORT_ANSWER_MODES: {
-  mode: ShortAnswerInputMode;
-  label: string;
-  description: string;
-  Icon: typeof Type;
-}[] = [
-  { mode: 'text', label: 'TEXT', description: 'Written response', Icon: Type },
-  { mode: 'video', label: 'VIDEO', description: 'Recorded video response', Icon: Video },
-  { mode: 'voice', label: 'VOICE', description: 'Recorded voice response', Icon: Mic },
 ];
 
 // ─── Shared style tokens ──────────────────────────────────────────────────────
@@ -388,7 +363,6 @@ function ScreeningSubFlow({
   refetch,
   triggerRefetch,
   onAddChallenge,
-  existingCount,
   deleteChallenge,
 }: {
   stageId: string;
@@ -396,8 +370,7 @@ function ScreeningSubFlow({
   updateStage: ReturnType<typeof useStageMutations>['updateStage'];
   refetch: () => Promise<void>;
   triggerRefetch: () => Promise<void>;
-  onAddChallenge: (template: ChallengeTemplate) => Promise<void>;
-  existingCount: number;
+  onAddChallenge: (template: StagedItem) => Promise<void>;
   deleteChallenge: ReturnType<typeof useChallengeMutations>['deleteChallenge'];
 }): JSX.Element {
   const [selectedFormat, setSelectedFormat] = useState<ScreeningFormat | null>(
@@ -560,7 +533,6 @@ function ScreeningSubFlow({
       ) : selectedFormat === 'ONLINE' ? (
         <OnlineQuestionPicker
           onAdd={onAddChallenge}
-          existingCount={existingCount}
         />
       ) : null}
     </div>
@@ -569,14 +541,13 @@ function ScreeningSubFlow({
 
 // ─── OnlineQuestionPicker — 3-mode question source selector ──────────────────
 
-type QuestionSourceMode = 'template' | 'ai' | 'manual';
+type QuestionSourceMode = 'ai' | 'manual';
 
 const QUESTION_SOURCE_MODES: {
   mode: QuestionSourceMode;
   label: string;
   Icon: typeof Search;
 }[] = [
-  { mode: 'template', label: 'TEMPLATE', Icon: FileText },
   { mode: 'ai', label: 'AI_GENERATED', Icon: Sparkles },
   { mode: 'manual', label: 'MANUAL', Icon: PenLine },
 ];
@@ -624,271 +595,10 @@ function ModeTab({
 
 // Template mode — thematic question-set cards
 
-function TemplateQuestions({
-  onAdd,
-  existingCount,
-}: {
-  onAdd: (template: ChallengeTemplate) => Promise<void>;
-  existingCount: number;
-}): JSX.Element {
-  const [expandedSet, setExpandedSet] = useState<ScreeningCategory | null>(null);
-  const [addingSet, setAddingSet] = useState<ScreeningCategory | null>(null);
-
-  const categories = Object.entries(SCREENING_CATEGORIES) as [
-    ScreeningCategory,
-    { label: string; description: string },
-  ][];
-
-  const questionsByCategory = useMemo(() => {
-    const map = new Map<ScreeningCategory, ScreeningQuestionTemplate[]>();
-    for (const sq of SCREENING_QUESTIONS) {
-      const list = map.get(sq.category) ?? [];
-      list.push(sq);
-      map.set(sq.category, list);
-    }
-    return map;
-  }, []);
-
-  const makeTemplate = (sq: ScreeningQuestionTemplate): ChallengeTemplate => {
-    const instructions =
-      sq.text +
-      (sq.followUps?.length
-        ? '\n\nFollow-up prompts:\n' + sq.followUps.map((f) => `- ${f}`).join('\n')
-        : '');
-    return {
-      id: sq.id,
-      type: 'QUIZ_SHORT_ANSWER',
-      title: sq.text,
-      description: sq.purpose,
-      instructions,
-      tags: [sq.category, 'screening'],
-      difficulty: 'beginner',
-      topic: 'screening',
-      estimatedMinutes: 3,
-      config: { inputMode: 'text' as const, question: sq.text, placeholder: 'Type your answer...' },
-    };
-  };
-
-  const handleAddAll = async (catKey: ScreeningCategory): Promise<void> => {
-    setAddingSet(catKey);
-    const questions = questionsByCategory.get(catKey) ?? [];
-    try {
-      for (const sq of questions) {
-        await onAdd(makeTemplate(sq));
-      }
-    } finally {
-      setAddingSet(null);
-    }
-  };
-
-  const totalAdded = existingCount;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {categories.map(([catKey, catInfo]) => {
-        const questions = questionsByCategory.get(catKey) ?? [];
-        if (questions.length === 0) return null;
-        const isExpanded = expandedSet === catKey;
-        const isAdding = addingSet === catKey;
-
-        return (
-          <div
-            key={catKey}
-            style={{
-              border: '1px solid var(--pipe-border)',
-              borderRadius: 8,
-              overflow: 'hidden',
-            }}
-          >
-            {/* Set header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: '12px 14px',
-                background: isExpanded ? 'var(--pipe-surface-hover)' : 'var(--pipe-surface)',
-              }}
-            >
-              {/* Expand toggle */}
-              <button
-                type="button"
-                onClick={() => setExpandedSet(isExpanded ? null : catKey)}
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  padding: 0,
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: '0.12em',
-                      color: 'var(--pipe-text)',
-                      fontFamily: '"Space Mono", monospace',
-                      marginBottom: 2,
-                    }}
-                  >
-                    {catInfo.label.toUpperCase()}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 9,
-                      color: 'var(--pipe-text-dim)',
-                      fontFamily: '"Space Mono", monospace',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {catInfo.description}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                  <span
-                    style={{
-                      fontSize: 9,
-                      color: 'var(--pipe-text-dim)',
-                      fontFamily: '"Space Mono", monospace',
-                      opacity: 0.5,
-                    }}
-                  >
-                    {questions.length} Q
-                  </span>
-                  {isExpanded ? (
-                    <ChevronUp size={12} color="var(--pipe-text-dim)" />
-                  ) : (
-                    <ChevronDown size={12} color="var(--pipe-text-dim)" />
-                  )}
-                </div>
-              </button>
-
-              {/* Add all button */}
-              <button
-                type="button"
-                onClick={() => void handleAddAll(catKey)}
-                disabled={isAdding}
-                style={{
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  padding: '5px 10px',
-                  background: 'var(--pipe-text)',
-                  border: '1px solid var(--pipe-text)',
-                  borderRadius: 4,
-                  color: 'var(--pipe-bg)',
-                  fontSize: 8,
-                  fontWeight: 800,
-                  letterSpacing: '0.12em',
-                  fontFamily: '"Space Mono", monospace',
-                  cursor: isAdding ? 'wait' : 'pointer',
-                  opacity: isAdding ? 0.6 : 1,
-                }}
-              >
-                {isAdding ? '...' : `+ ADD ALL`}
-              </button>
-            </div>
-
-            {/* Individual questions (expanded) */}
-            {isExpanded && (
-              <div
-                style={{
-                  borderTop: '1px solid var(--pipe-border)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1,
-                }}
-              >
-                {questions.map((sq) => (
-                  <button
-                    key={sq.id}
-                    onClick={() => void onAdd(makeTemplate(sq))}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      padding: '10px 14px',
-                      background: 'transparent',
-                      border: 'none',
-                      borderBottom: '1px solid var(--pipe-border-light)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontFamily: '"Space Mono", monospace',
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: 'var(--pipe-text)',
-                          lineHeight: 1.5,
-                          marginBottom: 3,
-                        }}
-                      >
-                        {sq.text}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 8,
-                          color: 'var(--pipe-text-dim)',
-                          opacity: 0.6,
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {sq.purpose}
-                      </div>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 8,
-                        color: 'var(--pipe-text-dim)',
-                        fontFamily: '"Space Mono", monospace',
-                        flexShrink: 0,
-                        marginTop: 2,
-                      }}
-                    >
-                      + ADD
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      <div
-        style={{
-          fontSize: 8,
-          color: 'var(--pipe-text-dim)',
-          letterSpacing: '0.1em',
-          textAlign: 'center',
-          fontFamily: '"Space Mono", monospace',
-          opacity: 0.4,
-          paddingTop: 4,
-        }}
-      >
-        {SCREENING_QUESTIONS.length} QUESTIONS ACROSS {categories.length} SETS — {totalAdded} ADDED
-      </div>
-    </div>
-  );
-}
-
-// AI Generated mode — placeholder for AI question generation
-
 function AiGeneratedQuestions({
   onAdd,
 }: {
-  onAdd: (template: ChallengeTemplate) => Promise<void>;
+  onAdd: (template: StagedItem) => Promise<void>;
 }): JSX.Element {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState<string[]>([]);
@@ -912,12 +622,7 @@ function AiGeneratedQuestions({
       id: `ai-${Date.now()}`,
       type: 'QUIZ_SHORT_ANSWER',
       title: text,
-      description: 'AI-generated screening question',
       instructions: text,
-      tags: ['ai-generated', 'screening'],
-      difficulty: 'intermediate',
-      topic: 'screening',
-      estimatedMinutes: 3,
       config: { inputMode: 'text' as const, question: text, placeholder: 'Type your answer...' },
     });
   };
@@ -1022,7 +727,7 @@ function AiGeneratedQuestions({
 function ManualQuestion({
   onAdd,
 }: {
-  onAdd: (template: ChallengeTemplate) => Promise<void>;
+  onAdd: (template: StagedItem) => Promise<void>;
 }): JSX.Element {
   const [question, setQuestion] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -1036,12 +741,7 @@ function ManualQuestion({
         id: `manual-${Date.now()}`,
         type: 'QUIZ_SHORT_ANSWER',
         title: text,
-        description: 'Manual screening question',
         instructions: text,
-        tags: ['manual', 'screening'],
-        difficulty: 'intermediate',
-        topic: 'screening',
-        estimatedMinutes: 3,
         config: { inputMode: 'text' as const, question: text, placeholder: 'Type your answer...' },
       });
       setQuestion('');
@@ -1124,12 +824,10 @@ function ManualQuestion({
 
 function OnlineQuestionPicker({
   onAdd,
-  existingCount,
 }: {
-  onAdd: (template: ChallengeTemplate) => Promise<void>;
-  existingCount: number;
+  onAdd: (template: StagedItem) => Promise<void>;
 }): JSX.Element {
-  const [mode, setMode] = useState<QuestionSourceMode>('template');
+  const [mode, setMode] = useState<QuestionSourceMode>('manual');
 
   return (
     <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1147,246 +845,12 @@ function OnlineQuestionPicker({
       </div>
 
       {/* Mode content */}
-      {mode === 'template' && (
-        <TemplateQuestions onAdd={onAdd} existingCount={existingCount} />
-      )}
       {mode === 'ai' && <AiGeneratedQuestions onAdd={onAdd} />}
       {mode === 'manual' && <ManualQuestion onAdd={onAdd} />}
     </div>
   );
 }
 
-// ─── TemplateListPicker ───────────────────────────────────────────────────────
-
-function TemplateListPicker({
-  stageType,
-  onAdd,
-  existingCount,
-}: {
-  stageType: StageType;
-  onAdd: (template: ChallengeTemplate) => Promise<void>;
-  existingCount: number;
-}): JSX.Element {
-  const [search, setSearch] = useState('');
-  const [selectedInputMode, setSelectedInputMode] = useState<ShortAnswerInputMode | null>(null);
-
-  const challengeTypes = TYPE_TO_CHALLENGE_TYPES[stageType];
-  const hasShortAnswer = challengeTypes.includes('QUIZ_SHORT_ANSWER');
-  const hasOnlyShortAnswer = challengeTypes.every(
-    (t) => t === 'QUIZ_SHORT_ANSWER' || t === 'FOLLOW_UP',
-  );
-  // Only show mode picker for purely short-answer stages (CULTURAL, PANEL).
-  // TECHNICAL goes straight to the template list.
-  const showModePicker = hasOnlyShortAnswer && hasShortAnswer && selectedInputMode === null;
-
-  const filtered = useMemo(() => {
-    let templates = ALL_CHALLENGE_TEMPLATES.filter((t) =>
-      challengeTypes.includes(t.type),
-    );
-    if (selectedInputMode !== null) {
-      templates = templates.filter(
-        (t) => t.type === 'QUIZ_SHORT_ANSWER' || t.type === 'FOLLOW_UP',
-      );
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      templates = templates.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          t.description.toLowerCase().includes(q) ||
-          t.tags.some((tag) => tag.toLowerCase().includes(q)),
-      );
-    }
-    return templates;
-  }, [challengeTypes, search, selectedInputMode]);
-
-  const handleAdd = async (template: ChallengeTemplate): Promise<void> => {
-    if (selectedInputMode !== null && template.type === 'QUIZ_SHORT_ANSWER') {
-      const config = {
-        ...(template.config as Record<string, unknown>),
-        inputMode: selectedInputMode,
-      };
-      await onAdd({ ...template, config: config as ChallengeTemplate['config'] });
-    } else {
-      await onAdd(template);
-    }
-  };
-
-  if (showModePicker) {
-    return (
-      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <label style={labelStyle}>RESPONSE_FORMAT</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {SHORT_ANSWER_MODES.map(({ mode, label, description, Icon }) => (
-            <button
-              key={mode}
-              onClick={() => setSelectedInputMode(mode)}
-              style={{
-                ...optionButtonBase,
-                background: 'var(--pipe-surface)',
-                border: '1px solid var(--pipe-border)',
-                color: 'var(--pipe-text-dim)',
-              }}
-            >
-              <Icon size={14} />
-              <div>
-                <div>{label}</div>
-                <div style={{ fontSize: 8, opacity: 0.7, marginTop: 2, fontWeight: 400 }}>
-                  {description}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-        {!hasOnlyShortAnswer && (
-          <button
-            onClick={() => setSelectedInputMode('text')}
-            style={{
-              padding: '8px 12px',
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              fontFamily: '"Space Mono", monospace',
-              background: 'transparent',
-              border: '1px dashed var(--pipe-border)',
-              borderRadius: 4,
-              color: 'var(--pipe-text-dim)',
-              cursor: 'pointer',
-              textAlign: 'center',
-            }}
-          >
-            BROWSE ALL CHALLENGES
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {hasShortAnswer && (
-        <button
-          onClick={() => setSelectedInputMode(null)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: 0,
-            background: 'none',
-            border: 'none',
-            color: 'var(--pipe-text-dim)',
-            cursor: 'pointer',
-            fontSize: 8,
-            fontFamily: '"Space Mono", monospace',
-            letterSpacing: '0.1em',
-          }}
-        >
-          <ArrowLeft size={10} />
-          {selectedInputMode !== null
-            ? selectedInputMode.toUpperCase() + ' RESPONSE'
-            : 'ALL'}
-        </button>
-      )}
-      <div style={{ position: 'relative' }}>
-        <Search
-          size={12}
-          style={{
-            position: 'absolute',
-            left: 10,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            color: 'var(--pipe-text-dim)',
-          }}
-        />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search challenges..."
-          style={{
-            width: '100%',
-            padding: '8px 10px 8px 30px',
-            fontSize: 10,
-            fontFamily: '"Space Mono", monospace',
-            background: 'transparent',
-            border: '1px solid var(--pipe-border)',
-            borderRadius: 4,
-            color: 'var(--pipe-text)',
-            outline: 'none',
-            boxSizing: 'border-box',
-          }}
-        />
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {filtered.length === 0 && (
-          <div
-            style={{
-              padding: 16,
-              textAlign: 'center',
-              fontSize: 9,
-              color: 'var(--pipe-text-dim)',
-              letterSpacing: '0.1em',
-              fontFamily: '"Space Mono", monospace',
-            }}
-          >
-            NO_CHALLENGES_FOUND
-          </div>
-        )}
-        {filtered.map((template) => (
-          <button
-            key={template.id}
-            onClick={() => void handleAdd(template)}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 3,
-              padding: '10px 12px',
-              background: 'transparent',
-              border: '1px solid var(--pipe-border)',
-              borderRadius: 4,
-              cursor: 'pointer',
-              textAlign: 'left',
-              fontFamily: '"Space Mono", monospace',
-            }}
-          >
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: 'var(--pipe-text)',
-                lineHeight: 1.4,
-              }}
-            >
-              {template.title}
-            </div>
-            <div
-              style={{
-                fontSize: 8,
-                color: 'var(--pipe-text-dim)',
-                opacity: 0.6,
-                lineHeight: 1.4,
-              }}
-            >
-              {template.description}
-            </div>
-          </button>
-        ))}
-      </div>
-      <div
-        style={{
-          fontSize: 8,
-          color: 'var(--pipe-text-dim)',
-          letterSpacing: '0.1em',
-          textAlign: 'center',
-          fontFamily: '"Space Mono", monospace',
-          opacity: 0.5,
-        }}
-      >
-        {filtered.length} CHALLENGES — {existingCount} ADDED
-      </div>
-    </div>
-  );
-}
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
@@ -1408,7 +872,7 @@ export function InlineChallengeAdder({
     (stage?.stageType as StageType | null) ?? null,
   );
   const [pendingType, setPendingType] = useState<StageType | null>(null);
-  const [stagedItems, setStagedItems] = useState<ChallengeTemplate[]>([]);
+  const [stagedItems, setStagedItems] = useState<StagedItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   // Sync selectedType from stage once async data arrives (stage is null on first render)
@@ -1443,7 +907,7 @@ export function InlineChallengeAdder({
   };
 
   // Stage locally — no API call yet
-  const handleStageChallenge = async (template: ChallengeTemplate): Promise<void> => {
+  const handleStageChallenge = async (template: StagedItem): Promise<void> => {
     setStagedItems((prev) => [...prev, template]);
   };
 
@@ -1461,10 +925,10 @@ export function InlineChallengeAdder({
       for (let i = 0; i < stagedItems.length; i++) {
         const template = stagedItems[i]!;
         await createChallenge(stageId, {
-          type: template.type,
+          type: template.type as 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER',
           title: template.title,
           instructions: template.instructions,
-          config: template.config as Record<string, unknown>,
+          config: template.config,
           order: existingCount + i,
         });
       }
@@ -1602,7 +1066,7 @@ export function InlineChallengeAdder({
       {/* Type-specific detail section */}
       {selectedType && (
         <div>
-          {selectedType === 'SCREENING' ? (
+          {selectedType === 'SCREENING' && (
             <ScreeningSubFlow
               stageId={stageId}
               stage={stage}
@@ -1610,14 +1074,7 @@ export function InlineChallengeAdder({
               refetch={refetch}
               triggerRefetch={triggerRefetch}
               onAddChallenge={handleStageChallenge}
-              existingCount={existingCount}
               deleteChallenge={deleteChallenge}
-            />
-          ) : (
-            <TemplateListPicker
-              stageType={selectedType}
-              onAdd={handleStageChallenge}
-              existingCount={existingCount}
             />
           )}
         </div>
