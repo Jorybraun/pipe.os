@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(admin): human approval for qualified_repos catalog (2026-04-15)
+
+Human-in-the-loop gate between the crawler output and the candidate challenge library. The crawler populates `qualified_repos`; the admin page surfaces each repo so a recruiter can approve or deny it before it becomes a challenge source.
+
+- **Migration `0030_qualified_repos_admin_status.sql`** (new) — adds `admin_status TEXT NOT NULL DEFAULT 'pending'` column to `qualified_repos`.
+- **`workers/api/src/routes/cockpit/adminRepos.ts`** (new) — Hono router mounted at `/api/v1/admin`. `GET /repos` lists with status filter + pagination (default limit 50, max 100). `PATCH /repos/:id` sets `admin_status` (zod-validated to `'pending' | 'approved' | 'denied'`). All routes require Clerk JWT.
+- **`workers/api/src/index.ts`** — registers `adminRepos` router under `/api/v1/admin`.
+- **`src/pages/admin/RepoAdminPage.tsx`** (new) — Admin UI at `/admin/repos` for approving/denying repos. Lists pending + approved + denied with disqualification reasons and repo metadata (stars, language, domain, SLOC, PR quality score).
+- **`src/App.tsx`** — registers `/admin/repos` route inside the protected recruiter routes tree.
+
 #### fix(types): resolve 81 tsc errors from Amplify→Cloudflare migration drift (2026-04-15)
 
 Restores clean `npx tsc --noEmit` on `feat/cloudflare-migration`. Errors were mechanical type mismatches under `exactOptionalPropertyTypes` + `noUncheckedIndexedAccess`, unused imports, stale hook shapes, and missing required props.

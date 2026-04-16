@@ -10,6 +10,7 @@ import { challengeTemplates } from './routes/cockpit/challengeTemplates';
 import { templatePacks } from './routes/cockpit/templatePacks';
 import { challengeGeneration } from './routes/cockpit/challengeGeneration';
 import { repoDiscovery } from './routes/cockpit/repoDiscovery';
+import { adminRepos } from './routes/cockpit/adminRepos';
 import { agentRoutes } from './routes/cockpit/agent';
 import { github } from './routes/cockpit/github';
 import { overview } from './routes/cockpit/overview';
@@ -87,6 +88,8 @@ app.route('/api/v1/template-packs', templatePacks);
 app.route('/api/v1/challenges/generate', challengeGeneration);
 // Repo discovery: role-matched repo discovery for code review challenges (CR-13)
 app.route('/api/v1/repos', repoDiscovery);
+// Admin: human approval of qualified_repos catalog
+app.route('/api/v1/admin', adminRepos);
 // Global copilot agent: recruiter assistant drawer with skill modes
 app.route('/api/v1/agent', agentRoutes);
 // GitHub PR proxy: POST /api/v1/github/pr
