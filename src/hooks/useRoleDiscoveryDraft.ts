@@ -21,6 +21,8 @@ export interface RoleDiscoveryDraft {
   scriptedExchanges: PastExchange[];
   completed: boolean;
   defaultLiveMode: boolean;
+  /** Server-side role context ID — saved after context creation to enable resume. */
+  contextId?: string;
 }
 
 // ─── Storage key ──────────────────────────────────────────────────────────────

@@ -6,6 +6,30 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(role-discovery): resume prompt, back navigation, bad robot button (2026-04-16)
+
+**Resume prompt** — returning to `/pipeline/new` with a saved draft now shows a
+"RESUME_SESSION / START_NEW" choice instead of silently restarting the interview.
+If the server context is already COMPLETE (synthesis done), `hydrateComplete()` is
+called and the synthesis view renders immediately without re-running the interview.
+`contextId` is persisted to the draft the moment it's created.
+
+**Back navigation** — scripted intake questions (Q1–Q6) now have a BACK button
+that steps to the previous question and restores the previously typed answer for
+editing. SKIP and BACK live side-by-side in the action area.
+
+**Bad robot button** — AI-generated questions (both current and past exchanges)
+now have a one-click BAD_BOT button (🤖) that sends `[BAD_ROBOT]` feedback to
+`POST /role-contexts/:id/feedback` for internal review. Turns red + shows REPORTED
+after click. The existing free-text Flag (🚩) system is preserved alongside it.
+
+**Changed files:**
+- `src/components/AIChat/PastExchangeCard.tsx`
+- `src/components/AIChat/AIChat.tsx`
+- `src/hooks/useRoleDiscoveryDraft.ts`
+- `src/hooks/useRoleDiscovery.ts`
+- `src/pages/RoleDiscoveryPage.tsx`
+
 #### feat(voice): real-time speech streaming in live voice orb (2026-04-16)
 
 `useLiveSession` now tracks per-turn live speech separately from the full transcript history.

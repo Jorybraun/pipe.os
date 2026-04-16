@@ -18,7 +18,7 @@
  * Route: /pipeline/new
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { TextInput, TagsInput } from '../components/ui/form';
@@ -30,7 +30,7 @@ import { useRoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
 import {
-  Loader2, ArrowRight, Check, MessageSquare,
+  Loader2, ArrowRight, ArrowLeft, Check, MessageSquare,
   FileUp, Sparkles, RotateCcw,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -388,6 +388,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const [initConfig, setInitConfig] = useState<AdapterConfig | null>(null);
   // ── Whether to start in live voice mode (set by sq-mode choice) ──
   const [defaultLiveMode, setDefaultLiveMode] = useState(false);
+  // ── Resume prompt — shown when a completed draft is found on mount ──
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const pendingDraftRef = useRef<import('../hooks/useRoleDiscoveryDraft').RoleDiscoveryDraft | null>(null);
 
   // ── Restore draft on mount ───────────────────────────────────────────────────
 
@@ -398,16 +401,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
     setScriptedAnswers(saved.scriptedAnswers);
     setScriptedExchanges(saved.scriptedExchanges);
     if (saved.completed) {
-      const techTags = (saved.scriptedAnswers['sq-stack'] ?? '').split('|||').filter(Boolean);
-      const baseline = {
-        title: saved.scriptedAnswers['sq-title']?.trim() || '',
-        ...(saved.scriptedAnswers['sq-company']?.trim() ? { companyName: saved.scriptedAnswers['sq-company'].trim() } : {}),
-        ...(saved.scriptedAnswers['sq-url']?.trim() ? { companyUrl: saved.scriptedAnswers['sq-url'].trim() } : {}),
-        ...(saved.scriptedAnswers['sq-salary']?.trim() ? { salaryRange: saved.scriptedAnswers['sq-salary'].trim() } : {}),
-        ...(techTags.length > 0 ? { techStack: techTags } : {}),
-      };
-      setDefaultLiveMode(saved.defaultLiveMode);
-      setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+      // Show resume prompt — don't start the AI interview automatically
+      pendingDraftRef.current = saved;
+      setShowResumePrompt(true);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -426,6 +422,15 @@ export default function RoleDiscoveryPage(): JSX.Element {
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
   }, []);
 
+  // ── Persist contextId to draft whenever it appears ──────────────────────────
+
+  useEffect(() => {
+    if (!rd.contextId) return;
+    const current = draft.load();
+    if (!current) return;
+    draft.save({ ...current, contextId: rd.contextId });
+  }, [rd.contextId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Start over — clears draft and resets to Q1 ───────────────────────────────
 
   const handleStartOver = useCallback((): void => {
@@ -436,7 +441,80 @@ export default function RoleDiscoveryPage(): JSX.Element {
     setScriptedAnswer('');
     setInitConfig(null);
     setDefaultLiveMode(false);
+    setShowResumePrompt(false);
+    pendingDraftRef.current = null;
   }, [draft]);
+
+  // ── Resume session — hydrate from server if COMPLETE, else restart interview ─
+
+  const handleResumeSession = useCallback(async (): Promise<void> => {
+    const saved = pendingDraftRef.current;
+    if (!saved) return;
+    setShowResumePrompt(false);
+
+    const techTags = (saved.scriptedAnswers['sq-stack'] ?? '').split('|||').filter(Boolean);
+    const baseline = {
+      title: saved.scriptedAnswers['sq-title']?.trim() || '',
+      ...(saved.scriptedAnswers['sq-company']?.trim() ? { companyName: saved.scriptedAnswers['sq-company'].trim() } : {}),
+      ...(saved.scriptedAnswers['sq-url']?.trim() ? { companyUrl: saved.scriptedAnswers['sq-url'].trim() } : {}),
+      ...(saved.scriptedAnswers['sq-salary']?.trim() ? { salaryRange: saved.scriptedAnswers['sq-salary'].trim() } : {}),
+      ...(techTags.length > 0 ? { techStack: techTags } : {}),
+    };
+
+    // If we have a contextId, try to hydrate from the server
+    if (saved.contextId) {
+      try {
+        const ctx = await api.get<{
+          id: string;
+          status: string;
+          baseline: RoleContextBaseline;
+          persona: CandidatePersona | null;
+          jobDescription: GeneratedJobDescription | null;
+        }>(`/api/v1/role-contexts/${saved.contextId}`);
+
+        if (ctx.persona || ctx.jobDescription) {
+          // Context is COMPLETE — hydrate directly to synthesis, skip the interview
+          rd.hydrateComplete({ id: ctx.id, baseline: ctx.baseline ?? baseline, persona: ctx.persona, jobDescription: ctx.jobDescription });
+          setDefaultLiveMode(false);
+          setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+          return;
+        }
+      } catch {
+        // Context fetch failed — fall through to normal resume
+      }
+    }
+
+    // No complete context — restart the AI interview from the saved baseline
+    setDefaultLiveMode(saved.defaultLiveMode);
+    setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+  }, [api, rd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Start new — discard draft, begin from scratch ───────────────────────────
+
+  const handleStartNew = useCallback((): void => {
+    handleStartOver();
+  }, [handleStartOver]);
+
+  // ── Go back to previous scripted question ───────────────────────────────────
+
+  const handleScriptedBack = useCallback((): void => {
+    if (scriptedIdx <= 0) return;
+    const prevIdx = scriptedIdx - 1;
+    const prevQ = SCRIPTED[prevIdx];
+    if (!prevQ) return;
+
+    const prevAnswer = scriptedAnswers[prevQ.id] ?? '';
+    const prevExchanges = scriptedExchanges.slice(0, -1);
+    const prevAnswers = { ...scriptedAnswers };
+    delete prevAnswers[prevQ.id];
+
+    setScriptedIdx(prevIdx);
+    setScriptedExchanges(prevExchanges);
+    setScriptedAnswers(prevAnswers);
+    setScriptedAnswer(prevAnswer);
+
+    draft.save({ scriptedIdx: prevIdx, scriptedAnswers: prevAnswers, scriptedExchanges: prevExchanges, completed: false, defaultLiveMode: false });
+  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft]);
 
   // ── Reset to mode selection — keeps Q1-Q5 answers, goes back to voice/text choice ──
 
@@ -654,8 +732,38 @@ export default function RoleDiscoveryPage(): JSX.Element {
         </div>
       </div>
 
+      {/* ── Resume prompt — ask user to resume or start fresh ── */}
+      {showResumePrompt && (
+        <div style={{ padding: 32, background: 'var(--pipe-surface)', border: '1px solid rgba(139, 92, 246, 0.25)', borderRadius: 16 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(139, 92, 246, 0.6)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
+            PREVIOUS_SESSION_FOUND
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 8 }}>
+            You have an unfinished role discovery.
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', lineHeight: 1.6, marginBottom: 24 }}>
+            {pendingDraftRef.current?.scriptedAnswers['sq-title'] ? `"${pendingDraftRef.current.scriptedAnswers['sq-title']}"` : 'Role details saved.'}
+            {' '}Want to pick up where you left off?
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              onClick={() => { handleResumeSession().catch(() => {}); }}
+              style={{ padding: '10px 24px', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.35)', color: 'rgba(216, 180, 254, 0.9)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+            >
+              RESUME_SESSION
+            </button>
+            <button
+              onClick={handleStartNew}
+              style={{ padding: '10px 24px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+            >
+              START_NEW
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Scripted phase — shown until initConfig is set ── */}
-      {isInScriptedPhase && (
+      {isInScriptedPhase && !showResumePrompt && (
         <div>
           {/* Past scripted exchanges */}
           {scriptedExchanges.length > 0 && (
@@ -797,14 +905,24 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     >
                       <ArrowRight size={12} /> SEND
                     </button>
-                    {currentScriptedQ.optional && (
-                      <button
-                        onClick={handleScriptedSkip}
-                        style={{ padding: '6px 12px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
-                      >
-                        SKIP
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {scriptedIdx > 0 && (
+                        <button
+                          onClick={handleScriptedBack}
+                          style={{ flex: 1, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                        >
+                          <ArrowLeft size={9} /> BACK
+                        </button>
+                      )}
+                      {currentScriptedQ.optional && (
+                        <button
+                          onClick={handleScriptedSkip}
+                          style={{ flex: 1, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+                        >
+                          SKIP
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

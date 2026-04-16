@@ -13,7 +13,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { JSX } from 'react';
-import { Mic, Square, Loader2, ArrowRight, Radio } from 'lucide-react';
+import { Mic, Square, Loader2, ArrowRight, Radio, Bot } from 'lucide-react';
 import { useConversation } from '../../hooks/useConversation';
 import { useLiveSession } from '../../hooks/useLiveSession';
 import { ThinkingIndicator } from './ThinkingIndicator';
@@ -74,6 +74,9 @@ export function AIChat({
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Bad robot — tracks which questionId has been one-click flagged
+  const [badBotQuestionId, setBadBotQuestionId] = useState<string | null>(null);
+
   // Auto-scroll ref
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -121,6 +124,13 @@ export function AIChat({
     onComplete(result);
   }, [conv.phase]); // eslint-disable-line react-hooks/exhaustive-deps
   // Intentionally depend only on phase to avoid double-firing on ref changes.
+
+  // ── Bad robot — one-click flag for AI-generated questions ─────────────────
+
+  const handleBadBot = useCallback((questionId: string): void => {
+    conv.submitFeedback(questionId, '[BAD_ROBOT] User flagged this question as bad').catch(() => {});
+    setBadBotQuestionId(questionId);
+  }, [conv]);
 
   // ── Submit AI answer ────────────────────────────────────────────────────────
 
@@ -517,15 +527,20 @@ export function AIChat({
               )}
 
               {/* Question text */}
-              <div style={{
-                fontSize: 18,
-                fontWeight: 700,
-                color: 'var(--pipe-text)',
-                lineHeight: 1.4,
-                marginBottom: 28,
-                letterSpacing: '-0.01em',
-              }}>
-                {conv.currentQuestion.text}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 28 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--pipe-text)', lineHeight: 1.4, letterSpacing: '-0.01em' }}>
+                  {conv.currentQuestion.text}
+                </div>
+                {!conv.currentQuestion.id.startsWith('sq-') && (
+                  <button
+                    onClick={() => handleBadBot(conv.currentQuestion!.id)}
+                    title={badBotQuestionId === conv.currentQuestion.id ? 'Reported — thanks' : 'Bad question? Report it'}
+                    style={{ flexShrink: 0, padding: '4px 8px', background: 'transparent', border: `1px solid ${badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.3)' : 'var(--pipe-border-light)'}`, color: badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.8)' : 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: badBotQuestionId === conv.currentQuestion.id ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5, marginTop: 4 }}
+                  >
+                    <Bot size={10} />
+                    {badBotQuestionId === conv.currentQuestion.id ? 'REPORTED' : 'BAD_BOT'}
+                  </button>
+                )}
               </div>
 
               <>

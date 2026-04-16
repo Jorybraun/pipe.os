@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { JSX } from 'react';
-import { Flag, ChevronDown } from 'lucide-react';
+import { Flag, ChevronDown, Bot } from 'lucide-react';
 import type { PastExchange } from './types';
 
 // ─── PastExchangeCard ────────────────────────────────────────────────────────
@@ -13,8 +13,17 @@ export function PastExchangeCard({ exchange, index, onFeedback }: {
   const [expanded, setExpanded] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState(exchange.feedback ?? '');
+  const [badBotSent, setBadBotSent] = useState(false);
 
   const hasFeedback = !!(exchange.feedback || feedbackText.trim());
+
+  const handleBadBot = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    if (onFeedback && !badBotSent) {
+      onFeedback(exchange.questionId, '[BAD_ROBOT] User flagged this question as bad');
+      setBadBotSent(true);
+    }
+  };
 
   const handleFlagClick = (e: React.MouseEvent): void => {
     e.stopPropagation();
@@ -62,15 +71,26 @@ export function PastExchangeCard({ exchange, index, onFeedback }: {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           {onFeedback && (
-            <div
-              onClick={handleFlagClick}
-              title={hasFeedback ? 'Flagged — click to edit' : 'Flag this question'}
-              style={{ padding: 4, cursor: 'pointer', opacity: hasFeedback ? 1 : 0.3, transition: 'opacity 0.2s ease' }}
-              onMouseOver={(e) => { e.currentTarget.style.opacity = '1'; }}
-              onMouseOut={(e) => { e.currentTarget.style.opacity = hasFeedback ? '1' : '0.3'; }}
-            >
-              <Flag size={11} color={hasFeedback ? 'rgba(251, 191, 36, 0.9)' : 'var(--pipe-text-muted)'} />
-            </div>
+            <>
+              <div
+                onClick={handleBadBot}
+                title={badBotSent ? 'Reported — thanks' : 'Bad question? Report it'}
+                style={{ padding: 4, cursor: badBotSent ? 'default' : 'pointer', opacity: badBotSent ? 1 : 0.3, transition: 'opacity 0.2s ease' }}
+                onMouseOver={(e) => { if (!badBotSent) e.currentTarget.style.opacity = '1'; }}
+                onMouseOut={(e) => { if (!badBotSent) e.currentTarget.style.opacity = '0.3'; }}
+              >
+                <Bot size={11} color={badBotSent ? 'rgba(248, 113, 113, 0.9)' : 'var(--pipe-text-muted)'} />
+              </div>
+              <div
+                onClick={handleFlagClick}
+                title={hasFeedback ? 'Flagged — click to edit' : 'Flag this question'}
+                style={{ padding: 4, cursor: 'pointer', opacity: hasFeedback ? 1 : 0.3, transition: 'opacity 0.2s ease' }}
+                onMouseOver={(e) => { e.currentTarget.style.opacity = '1'; }}
+                onMouseOut={(e) => { e.currentTarget.style.opacity = hasFeedback ? '1' : '0.3'; }}
+              >
+                <Flag size={11} color={hasFeedback ? 'rgba(251, 191, 36, 0.9)' : 'var(--pipe-text-muted)'} />
+              </div>
+            </>
           )}
           <ChevronDown
             size={12}

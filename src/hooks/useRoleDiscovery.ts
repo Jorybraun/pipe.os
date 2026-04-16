@@ -9,12 +9,14 @@
  * returned object. The public API (UseRoleDiscoveryResult) is unchanged.
  */
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState, useCallback } from 'react';
 import { useApiClient } from './useApiClient';
 import { useConversation } from './useConversation';
 import type {
   RoleContextBaseline,
   ParticipantRole,
+  CandidatePersona,
+  GeneratedJobDescription,
   CreateRoleContextResponse,
   StartRoleContextResponse,
   RespondRoleContextResponse,
@@ -73,6 +75,8 @@ export interface UseRoleDiscoveryResult {
   respond: (answer: string, questionId: string) => Promise<void>;
   completeEarly: () => Promise<void>;
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
+  /** Hydrate directly to COMPLETE phase from a server-fetched context (resume path). */
+  hydrateComplete: (data: { id: string; baseline: RoleContextBaseline; persona: CandidatePersona | null; jobDescription: GeneratedJobDescription | null }) => void;
 }
 
 export function useRoleDiscovery(): UseRoleDiscoveryResult {
@@ -84,6 +88,12 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const participantIdRef = useRef<string | null>(null);
   const participantRoleRef = useRef<ParticipantRole | null>(null);
   const baselineRef = useRef<RoleContextBaseline | null>(null);
+
+  // Override state for hydrateComplete — bypasses useConversation when resuming
+  // a COMPLETE context directly from the server without re-running the interview.
+  const [overridePhase, setOverridePhase] = useState<DiscoveryPhase | null>(null);
+  const [hydratedPersona, setHydratedPersona] = useState<CandidatePersona | null>(null);
+  const [hydratedJobDescription, setHydratedJobDescription] = useState<GeneratedJobDescription | null>(null);
 
   const roleDiscoveryAdapter: ConversationAdapter = useMemo<ConversationAdapter>(
     () => ({
@@ -252,8 +262,21 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     [conv],
   );
 
+  const hydrateComplete = useCallback((data: {
+    id: string;
+    baseline: RoleContextBaseline;
+    persona: CandidatePersona | null;
+    jobDescription: GeneratedJobDescription | null;
+  }): void => {
+    contextIdRef.current = data.id;
+    baselineRef.current = data.baseline;
+    setOverridePhase('COMPLETE');
+    setHydratedPersona(data.persona);
+    setHydratedJobDescription(data.jobDescription);
+  }, []);
+
   return {
-    phase: conv.phase as DiscoveryPhase,
+    phase: (overridePhase ?? conv.phase) as DiscoveryPhase,
     contextId: contextIdRef.current,
     participantId: participantIdRef.current,
     participantRole: participantRoleRef.current,
@@ -264,8 +287,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     pastExchanges: conv.pastExchanges,
     streamingText: conv.streamingText,
     baseline: baselineRef.current,
-    persona: conv.persona,
-    jobDescription: conv.jobDescription,
+    persona: hydratedPersona ?? conv.persona,
+    jobDescription: hydratedJobDescription ?? conv.jobDescription,
     synthesis: conv.synthesis,
     isLoading: conv.isLoading,
     error: conv.error,
@@ -273,5 +296,6 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     respond: conv.respond,
     completeEarly: conv.completeEarly,
     submitFeedback: conv.submitFeedback,
+    hydrateComplete,
   };
 }
