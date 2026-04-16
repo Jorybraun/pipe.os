@@ -1269,6 +1269,7 @@ function StageConfigToggles({ stageId, stage, updateStage, refetch }: {
   updateStage: ReturnType<typeof useStageMutations>['updateStage'];
   refetch: () => Promise<void>;
 }): JSX.Element {
+  const { triggerRefetch } = useStageRefetch();
   const [isScheduled, setIsScheduled] = useState(stage?.isScheduled ?? false);
   const [isVideoMeeting, setIsVideoMeeting] = useState(stage?.mode === 'LIVE_VIDEO');
 

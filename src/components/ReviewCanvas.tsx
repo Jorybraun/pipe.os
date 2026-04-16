@@ -58,6 +58,15 @@ export function ReviewCanvas({
   }
 
   const currentSnippet = snippets[currentSnippetIndex];
+  if (!currentSnippet) {
+    return (
+      <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
+        <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+          NO_SNIPPETS_AVAILABLE_FOR_REVIEW
+        </div>
+      </LiquidMetalCard>
+    );
+  }
 
   const handleLineClick = (line: number): void => {
     setActiveLine({ snippetId: currentSnippet.id, line });

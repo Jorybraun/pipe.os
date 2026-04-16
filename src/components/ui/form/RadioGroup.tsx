@@ -1,6 +1,6 @@
 interface RadioGroupProps {
-  value?: string;
-  onChange?: (value: string) => void;
+  value?: string | undefined;
+  onChange?: ((value: string) => void) | undefined;
   options: string[];
 }
 

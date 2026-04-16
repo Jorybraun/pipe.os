@@ -5,7 +5,6 @@ import { SessionTokenProvider } from '../contexts/SessionTokenContext';
 import { CandidateIdProvider } from '../contexts/CandidateIdContext';
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
-import { VideoShell } from '../components/Shells/VideoShell';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
@@ -249,7 +248,6 @@ export default function CandidateAssessmentPage(): JSX.Element {
   const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
-  const isLiveVideo = stageConfig.mode === 'LIVE_VIDEO';
 
   return (
     <SessionTokenProvider value={sessionToken}>

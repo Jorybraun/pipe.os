@@ -6,6 +6,22 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(types): resolve 81 tsc errors from Amplify→Cloudflare migration drift (2026-04-15)
+
+Restores clean `npx tsc --noEmit` on `feat/cloudflare-migration`. Errors were mechanical type mismatches under `exactOptionalPropertyTypes` + `noUncheckedIndexedAccess`, unused imports, stale hook shapes, and missing required props.
+
+- **Form primitives** (`TextInput`, `SelectInput`, `RadioGroup`, `TagsInput`, `TextareaInput`) — optional props now include `| undefined` explicitly to satisfy `exactOptionalPropertyTypes`.
+- **`LiquidMetalCard`** (both `components/` and `components/ui/` copies) — same `| undefined` fix on optional props.
+- **`useScheduledInterviews` / `StatusOverrideModal` / `InterviewCard`** — `updateStatus` patch fields (`scheduledAt`, `meetingUrl`, `recruiterNotes`) now consistently typed `string | undefined` across hook + modal + card.
+- **`FollowUpQuestionsPanel`** — `VoicePanel`/`VideoSubmissionPanel` now receive required `uploadUrl`/`sessionToken`/`challengeId` props (stubbed for now — these panels' upload paths are not yet wired in FollowUp flow). `OptionsPanel` receives mapped `{ id, text }` shape from the `{ id, label }` server payload.
+- **`useAssessment`** — `FollowUpQuestion` type now includes optional `options` field for `MCQ` type follow-ups.
+- **`componentMap.ts`** — `ConnectedVoicePanel` stubs required props (`uploadUrl=''`, `sessionToken=null`, `challengeId` from challenge data).
+- **Array-index narrowing** — `GitHubPRFetcher`, `IntelligenceReportBlock`, `ReviewCanvas`, `GroundTruthAnnotationEditor.test.tsx` gained optional chains + guards for `noUncheckedIndexedAccess`.
+- **`ConnectionStatusBadge`** — STATUS_CONFIG lookup now guards missing status with `REVOKED` fallback.
+- **`main.tsx`** — empty `providers` cast to `PipeProviders`; Amplify providers removed, Cloudflare providers not yet wired.
+- **Unused imports removed** — `ChallengePicker`, `FollowUpEditor`, `ShortAnswerEditor`, `CandidateAssessmentPage`, `RoleCard`, `IntelligenceReportBlock`.
+- **`PipelineCreatePage.tsx` deleted** — unreferenced orphan with stale hook shape; `RoleDiscoveryPage` is the routed entry in `App.tsx`.
+
 #### feat(crawler): issue ingestion pipeline for CODE_IMPLEMENTATION challenges (RD-P6) (2026-04-15)
 
 Issue crawler + scorer for real GitHub feature requests. Candidates will implement actual open-source issues as coding challenges.

@@ -96,7 +96,7 @@ export function FollowUpQuestionsPanel({
         return (
           <OptionsPanel
             question={currentQuestion.question}
-            options={currentQuestion.options ?? []}
+            options={(currentQuestion.options ?? []).map((o) => ({ id: o.id, text: o.label }))}
             selectedId={currentAnswer || null}
             onSelect={handleAnswerChange}
             locked={isSubmitting}
@@ -109,6 +109,9 @@ export function FollowUpQuestionsPanel({
             question={currentQuestion.question}
             transcript={currentAnswer}
             onTranscriptChange={handleAnswerChange}
+            uploadUrl=""
+            sessionToken={null}
+            challengeId={challengeId ?? currentQuestion.id}
           />
         );
 

@@ -36,7 +36,7 @@ interface RoleCardProps {
 }
 
 export function RoleCard({
-  id,
+  id: _id,
   title,
   department,
   location,

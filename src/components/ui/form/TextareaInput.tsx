@@ -1,8 +1,8 @@
 interface TextareaInputProps {
-  value?: string;
-  onChange?: (value: string) => void;
-  placeholder?: string;
-  rows?: number;
+  value?: string | undefined;
+  onChange?: ((value: string) => void) | undefined;
+  placeholder?: string | undefined;
+  rows?: number | undefined;
 }
 
 const inputStyle = {

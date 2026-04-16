@@ -1,8 +1,7 @@
-import { Shield, ChevronDown, Type, Mic, Video as VideoIcon, Settings, HelpCircle, MessageSquare } from 'lucide-react';
+import { Shield, ChevronDown, Type, Video as VideoIcon, Settings, HelpCircle, MessageSquare } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../../components';
 import { ButtonGroup } from '../ui/ButtonGroup';
 import { NumberInput } from '../ui/NumberInput';
-import { Toggle } from '../ui/Toggle';
 import { QuestionVideoRecorder } from '../Challenge/QuestionVideoRecorder';
 import { normalizeShortAnswerConfig } from '../../content/challengeLibrary';
 import { FollowUpConfiguration } from './FollowUpConfiguration';

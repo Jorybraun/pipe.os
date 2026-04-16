@@ -11,9 +11,9 @@ interface UseScheduledInterviewsResult {
     id: string,
     patch: {
       status: InterviewStatus;
-      scheduledAt?: string;
-      meetingUrl?: string;
-      recruiterNotes?: string;
+      scheduledAt?: string | undefined;
+      meetingUrl?: string | undefined;
+      recruiterNotes?: string | undefined;
     }
   ) => Promise<void>;
   refetch: () => Promise<void>;
@@ -69,7 +69,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           schedulingProvider: (r.schedulingProvider as ScheduledInterview['schedulingProvider']) ?? null,
           schedulingUrl: r.schedulingUrl,
           recruiterNotes: r.recruiterNotes,
-          syncSource: r.syncSource as ScheduledInterview['syncSource'],
+          syncSource: (r.syncSource as ScheduledInterview['syncSource']) ?? null,
           lastSyncedAt: r.lastSyncedAt,
           candidateName: r.candidateName,
           candidateEmail: r.candidateEmail,
@@ -107,9 +107,9 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       id: string,
       patch: {
         status: InterviewStatus;
-        scheduledAt?: string;
-        meetingUrl?: string;
-        recruiterNotes?: string;
+        scheduledAt?: string | undefined;
+        meetingUrl?: string | undefined;
+        recruiterNotes?: string | undefined;
       }
     ): Promise<void> => {
       try {

@@ -543,8 +543,8 @@ export function GitHubPRFetcher({
                   color: 'var(--pipe-text-dim)',
                 }}
               >
-                {prData.diff.files[0].path} (
-                {prData.diff.files[0].status.toUpperCase()})
+                {prData.diff.files[0]?.path} (
+                {prData.diff.files[0]?.status.toUpperCase()})
               </div>
 
               {/* Diff Content */}

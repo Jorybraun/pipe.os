@@ -33,7 +33,7 @@ export interface LiquidMetalCardProps {
   /**
    * Optional click handler.
    */
-  onClick?: () => void;
+  onClick?: (() => void) | undefined;
 }
 
 /**

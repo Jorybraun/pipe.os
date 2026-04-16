@@ -10,9 +10,9 @@ interface StatusOverrideModalProps {
     id: string,
     patch: {
       status: InterviewStatus;
-      scheduledAt?: string;
-      meetingUrl?: string;
-      recruiterNotes?: string;
+      scheduledAt?: string | undefined;
+      meetingUrl?: string | undefined;
+      recruiterNotes?: string | undefined;
     }
   ) => Promise<void>;
   onClose: () => void;

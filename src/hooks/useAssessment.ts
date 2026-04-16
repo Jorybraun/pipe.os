@@ -59,6 +59,8 @@ export interface FollowUpQuestion {
   type: 'SHORT_ANSWER' | 'VOICE' | 'VIDEO' | 'MCQ';
   question: string;
   context: string;
+  /** MCQ options: `{ id, label }[]` serialized by backend for MCQ-typed follow-ups. */
+  options?: Array<{ id: string; label: string }>;
 }
 
 interface AssessmentState {

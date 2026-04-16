@@ -84,7 +84,7 @@ function SkillRadarChart({ data, color }: { data: Record<string, number>, color:
   };
 
   const gridLevels = [0.25, 0.5, 0.75, 1.0];
-  const dataPoints = dims.map((d, i) => toXY(entries[i][1], d.angleDeg));
+  const dataPoints = dims.map((d, i) => toXY(entries[i]?.[1] ?? 0, d.angleDeg));
   const dataPolygon = dataPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
   return (
@@ -100,7 +100,7 @@ function SkillRadarChart({ data, color }: { data: Record<string, number>, color:
         })}
         <polygon points={dataPolygon} fill={`${color}22`} stroke={color} strokeWidth="2" strokeLinejoin="round" />
         {dataPoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="3" fill={color} />)}
-        {dims.map((d, i) => {
+        {dims.map((d) => {
           const labelPt = toXY(maxR + 25, d.angleDeg);
           return (
             <text key={d.label} x={labelPt.x} y={labelPt.y} textAnchor="middle" dominantBaseline="middle" fill="rgba(255,255,255,0.4)" fontSize="7" fontFamily="Space Mono">

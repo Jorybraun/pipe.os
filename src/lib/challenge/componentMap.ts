@@ -389,6 +389,9 @@ const ConnectedVoicePanel = connectInterview(VoicePanel, (ctx) => ({
   question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
   transcript: (ctx.submission.text as string) || '',
   onTranscriptChange: (text: string) => ctx.updateSubmission({ text, inputMode: 'voice' }),
+  uploadUrl: '',
+  sessionToken: null,
+  challengeId: (ctx.currentChallenge.data.id as string) ?? '',
 }));
 
 // CODE_IMPLEMENTATION connected panels

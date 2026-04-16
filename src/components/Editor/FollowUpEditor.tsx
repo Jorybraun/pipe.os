@@ -1,4 +1,4 @@
-import { Shield, ChevronDown, List, Settings, HelpCircle, MessageSquare, Type, Mic, Video as VideoIcon, Code, CheckSquare, Layers } from 'lucide-react';
+import { Shield, List, Settings, Type, Mic, Video as VideoIcon, Code, CheckSquare, Layers } from 'lucide-react';
 import { LiquidMetalCard, SubTitle } from '../../components';
 import type { EditorFormProps } from './types';
 

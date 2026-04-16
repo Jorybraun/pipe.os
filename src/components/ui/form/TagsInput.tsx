@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 
 interface TagsInputProps {
-  value?: string[];
-  onChange?: (value: string[]) => void;
-  placeholder?: string;
+  value?: string[] | undefined;
+  onChange?: ((value: string[]) => void) | undefined;
+  placeholder?: string | undefined;
 }
 
 const inputStyle = {

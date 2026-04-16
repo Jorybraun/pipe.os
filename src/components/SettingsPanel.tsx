@@ -14,7 +14,7 @@ type SettingsTab = 'display' | 'integrations';
 interface SettingsPanelProps {
   onClose: () => void;
   /** Which tab to open initially */
-  initialTab?: SettingsTab;
+  initialTab?: SettingsTab | undefined;
 }
 
 export function SettingsPanel({ onClose, initialTab = 'display' }: SettingsPanelProps): JSX.Element {

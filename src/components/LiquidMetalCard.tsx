@@ -2,12 +2,12 @@ import { useState, CSSProperties, ReactNode } from "react";
 
 interface LiquidMetalCardProps {
   children: ReactNode;
-  style?: CSSProperties;
-  variant?: "default" | "chrome" | "mercury" | "dark";
-  hover?: boolean;
-  className?: string;
-  onClick?: () => void;
-  "data-testid"?: string;
+  style?: CSSProperties | undefined;
+  variant?: "default" | "chrome" | "mercury" | "dark" | undefined;
+  hover?: boolean | undefined;
+  className?: string | undefined;
+  onClick?: (() => void) | undefined;
+  "data-testid"?: string | undefined;
 }
 
 export function LiquidMetalCard({

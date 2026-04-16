@@ -82,7 +82,7 @@ function TreeNodeItem({
   node: TreeNode;
   depth: number;
   selectedFile: string | null;
-  changedFiles?: Set<string>;
+  changedFiles?: Set<string> | undefined;
   onFileSelect: (path: string) => void;
   defaultOpen: boolean;
 }): JSX.Element {
