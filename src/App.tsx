@@ -277,6 +277,12 @@ function AppLayout(): JSX.Element {
             setShowCalls(false);
             navigate("/outreach");
           }}
+          onRepoAdminClick={() => {
+            setActiveSection("repo-admin");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/admin/repos");
+          }}
           onAgentClick={() => {
             setShowSettings(false);
             setShowCalls(false);

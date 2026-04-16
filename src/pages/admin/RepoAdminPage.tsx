@@ -1,17 +1,14 @@
 /**
- * RepoAdminPage — Admin page for approving/denying repos in the qualified_repos catalog.
+ * RepoAdminPage — /admin/repos
  *
- * Route: /admin/repos
- * Auth: Clerk JWT (recruiter-only)
- *
- * Shows all repos from the crawler with pending/approved/denied status.
- * The human can approve or deny each one to control what enters the challenge library.
+ * Human-in-the-loop approval for the qualified_repos catalog.
+ * Approve or deny repos from the offline crawler to control what enters
+ * the challenge library.
  */
 
-import { useState, useEffect, useCallback, type CSSProperties } from 'react';
-import { useAuth as useClerkAuth } from '@clerk/react';
-import { createApiClient } from '../../lib/api/client';
-import { ExternalLink, Check, X, Clock } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Database, ExternalLink, Check, X, Loader2, Search } from 'lucide-react';
+import { useApiClient } from '../../hooks/useApiClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,331 +30,290 @@ interface QualifiedRepo {
   admin_status: AdminStatus;
   disqualified: number;
   disqualified_reason: string | null;
-  crawled_at: string;
 }
 
 interface ReposResponse {
   repos: QualifiedRepo[];
   total: number;
-  page: number;
-  limit: number;
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const MONO: CSSProperties = { fontFamily: "'Space Mono', 'Courier New', monospace" };
+const mono: React.CSSProperties = { fontFamily: '"Space Mono", monospace' };
 
-const s = {
-  page: {
-    minHeight: '100vh',
-    background: '#0c0c0e',
-    color: '#dde0ee',
-    ...MONO,
-  } satisfies CSSProperties,
-
-  header: {
-    padding: '20px 28px 0',
-    borderBottom: '1px solid #242530',
-    paddingBottom: 0,
-  } satisfies CSSProperties,
-
-  title: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: '#dde0ee',
-    ...MONO,
-  } satisfies CSSProperties,
-
-  subtitle: {
-    fontSize: 11,
-    color: '#50546a',
-    marginTop: 4,
-    ...MONO,
-  } satisfies CSSProperties,
-
-  tabs: {
-    display: 'flex',
-    gap: 0,
-    marginTop: 16,
-  } satisfies CSSProperties,
-
-  tab: (active: boolean): CSSProperties => ({
-    padding: '8px 20px',
-    fontSize: 11,
-    fontWeight: active ? 700 : 400,
-    color: active ? '#dde0ee' : '#50546a',
-    background: 'none',
-    border: 'none',
-    borderBottom: `2px solid ${active ? '#60a5fa' : 'transparent'}`,
-    cursor: 'pointer',
-    ...MONO,
-  }),
-
-  body: {
-    padding: '20px 28px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-  } satisfies CSSProperties,
-
-  card: {
-    background: '#111214',
-    border: '1px solid #242530',
-    padding: '14px 18px',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 16,
-  } satisfies CSSProperties,
-
-  cardMain: {
-    flex: 1,
-    minWidth: 0,
-  } satisfies CSSProperties,
-
-  repoName: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: '#dde0ee',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap' as const,
-  } satisfies CSSProperties,
-
-  repoLink: {
-    color: '#60a5fa',
-    textDecoration: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    fontSize: 12,
-  } satisfies CSSProperties,
-
-  meta: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '4px 14px',
-    marginTop: 6,
-    fontSize: 11,
-    color: '#8890a8',
-    ...MONO,
-  } satisfies CSSProperties,
-
-  metaLabel: {
-    color: '#50546a',
-    fontSize: 10,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.06em',
-  } satisfies CSSProperties,
-
-  tag: (color: string): CSSProperties => ({
-    display: 'inline-block',
-    padding: '1px 7px',
-    fontSize: 10,
-    border: `1px solid ${color}44`,
-    color,
-    background: `${color}11`,
-  }),
-
-  actions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-    flexShrink: 0,
-  } satisfies CSSProperties,
-
-  btn: (variant: 'approve' | 'deny' | 'reset'): CSSProperties => {
-    const colors = {
-      approve: { bg: 'rgba(74,222,128,.1)', border: 'rgba(74,222,128,.4)', color: '#4ade80' },
-      deny:    { bg: 'rgba(248,113,113,.1)', border: 'rgba(248,113,113,.4)', color: '#f87171' },
-      reset:   { bg: 'rgba(80,84,106,.1)',   border: '#363743',              color: '#8890a8' },
-    }[variant];
-    return {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 5,
-      padding: '5px 14px',
-      fontSize: 11,
-      fontWeight: 700,
-      background: colors.bg,
-      border: `1px solid ${colors.border}`,
-      color: colors.color,
-      cursor: 'pointer',
-      ...MONO,
-    };
-  },
-
-  statusBadge: (status: AdminStatus): CSSProperties => {
-    const map = {
-      pending:  { color: '#fbbf24', border: 'rgba(251,191,36,.3)',  bg: 'rgba(251,191,36,.08)'  },
-      approved: { color: '#4ade80', border: 'rgba(74,222,128,.3)',  bg: 'rgba(74,222,128,.08)'  },
-      denied:   { color: '#f87171', border: 'rgba(248,113,113,.3)', bg: 'rgba(248,113,113,.08)' },
-    }[status];
-    return {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 4,
-      padding: '2px 9px',
-      fontSize: 10,
-      fontWeight: 700,
-      border: `1px solid ${map.border}`,
-      color: map.color,
-      background: map.bg,
-      letterSpacing: '0.04em',
-      ...MONO,
-    };
-  },
-
-  empty: {
-    padding: '48px 0',
-    textAlign: 'center' as const,
-    color: '#50546a',
-    fontSize: 12,
-    ...MONO,
-  } satisfies CSSProperties,
-
-  loading: {
-    padding: '48px 0',
-    textAlign: 'center' as const,
-    color: '#50546a',
-    fontSize: 12,
-    ...MONO,
-  } satisfies CSSProperties,
-
-  error: {
-    padding: '16px',
-    background: 'rgba(248,113,113,.08)',
-    border: '1px solid rgba(248,113,113,.3)',
-    color: '#f87171',
-    fontSize: 12,
-    marginBottom: 12,
-    ...MONO,
-  } satisfies CSSProperties,
-
-  counts: {
-    display: 'flex',
-    gap: 20,
-    fontSize: 11,
-    color: '#8890a8',
-    marginTop: 8,
-    paddingBottom: 16,
-  } satisfies CSSProperties,
-
-  countItem: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    gap: 2,
-  } satisfies CSSProperties,
-
-  countNum: {
-    fontSize: 18,
-    fontWeight: 700,
-  } satisfies CSSProperties,
-
-  countLabel: {
-    fontSize: 9,
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.08em',
-    color: '#50546a',
-  } satisfies CSSProperties,
+const SENIORITY_COLOR: Record<string, string> = {
+  junior: '#4ade80',
+  mid: '#fbbf24',
+  senior: '#f87171',
+  staff: '#a78bfa',
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const STATUS_FILTERS: Array<{ key: AdminStatus | 'all'; label: string }> = [
+  { key: 'all', label: 'ALL' },
+  { key: 'pending', label: 'PENDING' },
+  { key: 'approved', label: 'APPROVED' },
+  { key: 'denied', label: 'DENIED' },
+];
 
-function fmtStars(n: number): string {
-  return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+// ─── Pill ─────────────────────────────────────────────────────────────────────
+
+function Pill({
+  label,
+  active,
+  onClick,
+  color,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  color?: string;
+}): JSX.Element {
+  const c = color ?? 'var(--pipe-text)';
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        ...mono,
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.1em',
+        padding: '4px 10px',
+        borderRadius: 3,
+        border: `1px solid ${active ? c : 'var(--pipe-border)'}`,
+        background: active ? `${c}18` : 'transparent',
+        color: active ? c : 'var(--pipe-text-dim)',
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+      }}
+    >
+      {label}
+    </button>
+  );
 }
 
-function fmtSloc(n: number | null): string {
-  if (n == null) return '—';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-  return String(n);
+// ─── Quality bar ──────────────────────────────────────────────────────────────
+
+function QualityBar({ value, label }: { value: number; label: string }): JSX.Element {
+  const c = value >= 0.7 ? '#4ade80' : value >= 0.4 ? '#fbbf24' : '#f87171';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ ...mono, fontSize: 7, color: 'var(--pipe-text-dim)', width: 48, letterSpacing: '0.05em' }}>
+        {label}
+      </span>
+      <div style={{ flex: 1, height: 3, background: 'var(--pipe-surface)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${Math.round(value * 100)}%`, height: '100%', background: c, borderRadius: 2 }} />
+      </div>
+      <span style={{ ...mono, fontSize: 7, color: c, fontWeight: 700, width: 20, textAlign: 'right' }}>
+        {Math.round(value * 100)}
+      </span>
+    </div>
+  );
 }
 
-// ─── Repo card ───────────────────────────────────────────────────────────────
+// ─── Repo card ────────────────────────────────────────────────────────────────
 
-interface RepoCardProps {
+function RepoCard({
+  repo,
+  onApprove,
+  onDeny,
+  onReset,
+  saving,
+}: {
   repo: QualifiedRepo;
-  onStatusChange: (id: number, status: AdminStatus) => void;
-  loading: boolean;
-}
-
-function RepoCard({ repo, onStatusChange, loading }: RepoCardProps): JSX.Element {
+  onApprove: () => void;
+  onDeny: () => void;
+  onReset: () => void;
+  saving: boolean;
+}): JSX.Element {
+  const senColor = SENIORITY_COLOR[repo.seniority_band ?? ''] ?? 'var(--pipe-text-dim)';
   const ghUrl = `https://github.com/${repo.full_name}`;
   const featureIssues = repo.open_feature_issue_count ?? 0;
+  const openPrs = repo.open_pr_count ?? 0;
+
+  function fmtStars(n: number): string {
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  }
+  function fmtSloc(n: number | null): string {
+    if (n == null) return '—';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
 
   return (
-    <div style={s.card}>
-      <div style={s.cardMain}>
-        {/* Repo name + link */}
-        <div style={s.repoName}>
-          <span>{repo.full_name}</span>
-          <a href={ghUrl} target="_blank" rel="noopener noreferrer" style={s.repoLink}>
-            <ExternalLink size={11} />
-            GitHub
-          </a>
-        </div>
-
-        {/* Meta row */}
-        <div style={s.meta}>
-          <span><span style={s.metaLabel}>★ </span>{fmtStars(repo.stars)}</span>
-          <span>{repo.primary_language}</span>
-          {repo.detected_domain && <span>{repo.detected_domain}</span>}
-          {repo.seniority_band && <span>{repo.seniority_band}</span>}
-          <span><span style={s.metaLabel}>sloc </span>{fmtSloc(repo.sloc)}</span>
-          <span><span style={s.metaLabel}>pr quality </span>{repo.pr_quality_score.toFixed(2)}</span>
-          {featureIssues > 0 && (
-            <span style={{ color: '#4ade80' }}>
-              {featureIssues} feature issue{featureIssues !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-
-        {/* Tags */}
-        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-          {repo.disqualified ? (
-            <span style={s.tag('#f87171')}>disqualified{repo.disqualified_reason ? `: ${repo.disqualified_reason}` : ''}</span>
-          ) : null}
-          {featureIssues > 0 && <span style={s.tag('#4ade80')}>feature impl</span>}
-          {(repo.open_pr_count ?? 0) > 0 && <span style={s.tag('#60a5fa')}>code review</span>}
-        </div>
+    <div
+      style={{
+        padding: '16px 18px',
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 8,
+        background: 'var(--pipe-surface)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      {/* Top row: badges */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span
+          style={{
+            ...mono,
+            fontSize: 8,
+            fontWeight: 700,
+            color: '#60a5fa',
+            padding: '2px 7px',
+            borderRadius: 3,
+            background: 'rgba(96,165,250,0.1)',
+            border: '1px solid rgba(96,165,250,0.25)',
+            letterSpacing: '0.08em',
+          }}
+        >
+          {repo.primary_language.toUpperCase()}
+        </span>
+        {repo.seniority_band && (
+          <span style={{ ...mono, fontSize: 8, fontWeight: 700, color: senColor, letterSpacing: '0.1em' }}>
+            {repo.seniority_band.toUpperCase()}
+          </span>
+        )}
+        {repo.detected_domain && (
+          <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)' }}>
+            {repo.detected_domain}
+          </span>
+        )}
+        <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
+          ★ {fmtStars(repo.stars)}
+        </span>
       </div>
 
+      {/* Repo name */}
+      <div style={{ ...mono, fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', lineHeight: 1.3 }}>
+        {repo.full_name}
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)' }}>
+          SLOC {fmtSloc(repo.sloc)}
+        </span>
+        {openPrs > 0 && (
+          <span style={{ ...mono, fontSize: 8, color: '#60a5fa' }}>
+            {openPrs} PRs
+          </span>
+        )}
+        {featureIssues > 0 && (
+          <span style={{ ...mono, fontSize: 8, color: '#4ade80' }}>
+            {featureIssues} feature issues
+          </span>
+        )}
+        {repo.disqualified ? (
+          <span style={{ ...mono, fontSize: 8, color: '#f87171' }}>
+            DISQUALIFIED
+          </span>
+        ) : null}
+      </div>
+
+      {/* PR quality bar */}
+      <QualityBar value={repo.pr_quality_score} label="PR QUAL" />
+
       {/* Status + actions */}
-      <div style={s.actions}>
-        <div style={s.statusBadge(repo.admin_status)}>
-          {repo.admin_status === 'approved' && <Check size={10} />}
-          {repo.admin_status === 'denied' && <X size={10} />}
-          {repo.admin_status === 'pending' && <Clock size={10} />}
-          {repo.admin_status}
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', paddingTop: 4 }}>
+        <span
+          style={{
+            ...mono,
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: '0.1em',
+            color:
+              repo.admin_status === 'approved' ? '#4ade80' :
+              repo.admin_status === 'denied' ? '#f87171' :
+              'var(--pipe-text-dim)',
+          }}
+        >
+          {repo.admin_status.toUpperCase()}
+        </span>
+
+        <a
+          href={ghUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            ...mono,
+            fontSize: 8,
+            color: 'var(--pipe-text-dim)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 3,
+            textDecoration: 'none',
+          }}
+        >
+          <ExternalLink size={9} /> GITHUB
+        </a>
+
+        <div style={{ flex: 1 }} />
 
         {repo.admin_status !== 'approved' && (
           <button
-            style={s.btn('approve')}
-            onClick={() => onStatusChange(repo.id, 'approved')}
-            disabled={loading}
+            onClick={onApprove}
+            disabled={saving}
+            style={{
+              ...mono,
+              fontSize: 8,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              padding: '4px 10px',
+              background: 'rgba(74,222,128,0.08)',
+              border: '1px solid rgba(74,222,128,0.25)',
+              borderRadius: 3,
+              color: '#4ade80',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              opacity: saving ? 0.5 : 1,
+            }}
           >
-            <Check size={11} /> Approve
+            <Check size={9} /> APPROVE
           </button>
         )}
+
         {repo.admin_status !== 'denied' && (
           <button
-            style={s.btn('deny')}
-            onClick={() => onStatusChange(repo.id, 'denied')}
-            disabled={loading}
+            onClick={onDeny}
+            disabled={saving}
+            style={{
+              ...mono,
+              fontSize: 8,
+              padding: '4px 8px',
+              background: 'transparent',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 3,
+              color: 'var(--pipe-text-dim)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              opacity: saving ? 0.5 : 1,
+            }}
           >
-            <X size={11} /> Deny
+            <X size={9} /> DENY
           </button>
         )}
+
         {repo.admin_status !== 'pending' && (
           <button
-            style={s.btn('reset')}
-            onClick={() => onStatusChange(repo.id, 'pending')}
-            disabled={loading}
+            onClick={onReset}
+            disabled={saving}
+            style={{
+              ...mono,
+              fontSize: 8,
+              padding: '4px 8px',
+              background: 'transparent',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 3,
+              color: 'var(--pipe-text-dim)',
+              cursor: 'pointer',
+              opacity: saving ? 0.5 : 1,
+            }}
           >
-            Reset
+            RESET
           </button>
         )}
       </div>
@@ -367,25 +323,25 @@ function RepoCard({ repo, onStatusChange, loading }: RepoCardProps): JSX.Element
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type TabFilter = 'all' | 'pending' | 'approved' | 'denied';
-
 export default function RepoAdminPage(): JSX.Element {
-  const { getToken } = useClerkAuth();
-  const [tab, setTab] = useState<TabFilter>('pending');
+  const api = useApiClient();
+  const [statusFilter, setStatusFilter] = useState<AdminStatus | 'all'>('pending');
+  const [search, setSearch] = useState('');
   const [repos, setRepos] = useState<QualifiedRepo[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [saving, setSaving] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  const api = createApiClient({ getToken });
+  useEffect(() => { setMounted(true); }, []);
 
-  const load = useCallback(async (filter: TabFilter) => {
+  const load = useCallback(async (status: AdminStatus | 'all') => {
     setLoading(true);
     setError(null);
     try {
-      const statusParam = filter === 'all' ? '' : `?status=${filter}&limit=100`;
-      const res = await api.get<ReposResponse>(`/api/v1/admin/repos${statusParam || '?limit=100'}`);
+      const qs = status === 'all' ? '?limit=100' : `?status=${status}&limit=100`;
+      const res = await api.get<ReposResponse>(`/api/v1/admin/repos${qs}`);
       setRepos(res.repos);
       setTotal(res.total);
     } catch (err) {
@@ -393,90 +349,148 @@ export default function RepoAdminPage(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [api]);
 
-  useEffect(() => { void load(tab); }, [tab, load]);
+  useEffect(() => { void load(statusFilter); }, [statusFilter, load]);
 
   const handleStatusChange = async (id: number, status: AdminStatus): Promise<void> => {
-    setActionLoading(true);
+    setSaving(id);
     try {
       await api.patch(`/api/v1/admin/repos/${id}`, { admin_status: status });
-      setRepos((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, admin_status: status } : r)),
-      );
+      setRepos((prev) => prev.map((r) => r.id === id ? { ...r, admin_status: status } : r));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update repo');
+      setError(err instanceof Error ? err.message : 'Failed to update');
     } finally {
-      setActionLoading(false);
+      setSaving(null);
     }
   };
 
-  // Counts for the header
-  const approvedCount = repos.filter((r) => r.admin_status === 'approved').length;
-  const deniedCount = repos.filter((r) => r.admin_status === 'denied').length;
-  const pendingCount = repos.filter((r) => r.admin_status === 'pending').length;
+  const filtered = search.trim()
+    ? repos.filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        (r.detected_domain ?? '').toLowerCase().includes(search.toLowerCase()))
+    : repos;
 
-  const TABS: { key: TabFilter; label: string }[] = [
-    { key: 'pending', label: 'Pending' },
-    { key: 'approved', label: 'Approved' },
-    { key: 'denied', label: 'Denied' },
-    { key: 'all', label: 'All' },
-  ];
+  const counts = {
+    approved: repos.filter((r) => r.admin_status === 'approved').length,
+    denied: repos.filter((r) => r.admin_status === 'denied').length,
+    pending: repos.filter((r) => r.admin_status === 'pending').length,
+  };
 
   return (
-    <div style={s.page}>
-      <div style={s.header}>
-        <div style={s.title}>Repo Catalog</div>
-        <div style={s.subtitle}>
-          Approve or deny repos from the offline crawler to control what enters the challenge library.
+    <div
+      style={{
+        opacity: mounted ? 1 : 0,
+        transition: 'opacity 0.4s ease',
+        padding: '0 0 80px',
+        maxWidth: 1400,
+        margin: '0 auto',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+        <div>
+          <div style={{ ...mono, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 8 }}>
+            REPO_CATALOG
+          </div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text)', margin: 0 }}>
+            Repo Admin
+          </h1>
         </div>
-
-        <div style={s.counts}>
-          <div style={s.countItem}>
-            <span style={{ ...s.countNum, color: '#fbbf24' }}>{pendingCount}</span>
-            <span style={s.countLabel}>pending</span>
-          </div>
-          <div style={s.countItem}>
-            <span style={{ ...s.countNum, color: '#4ade80' }}>{approvedCount}</span>
-            <span style={s.countLabel}>approved</span>
-          </div>
-          <div style={s.countItem}>
-            <span style={{ ...s.countNum, color: '#f87171' }}>{deniedCount}</span>
-            <span style={s.countLabel}>denied</span>
-          </div>
-          <div style={s.countItem}>
-            <span style={{ ...s.countNum, color: '#8890a8' }}>{total}</span>
-            <span style={s.countLabel}>total</span>
-          </div>
-        </div>
-
-        <div style={s.tabs}>
-          {TABS.map((t) => (
-            <button key={t.key} style={s.tab(tab === t.key)} onClick={() => setTab(t.key)}>
-              {t.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 16, ...mono, fontSize: 10 }}>
+          <span style={{ color: 'var(--pipe-text-dim)' }}>{counts.pending} PENDING</span>
+          <span style={{ color: '#4ade80' }}>{counts.approved} APPROVED</span>
+          <span style={{ color: '#f87171' }}>{counts.denied} DENIED</span>
+          <span style={{ color: 'var(--pipe-text-dim)' }}>{total} TOTAL</span>
         </div>
       </div>
 
-      <div style={s.body}>
-        {error && <div style={s.error}>{error}</div>}
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {STATUS_FILTERS.map(({ key, label }) => (
+            <Pill
+              key={key}
+              label={label}
+              active={statusFilter === key}
+              onClick={() => setStatusFilter(key)}
+              color={
+                key === 'approved' ? '#4ade80' :
+                key === 'denied' ? '#f87171' :
+                key === 'pending' ? '#fbbf24' :
+                'var(--pipe-text)'
+              }
+            />
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', border: '1px solid var(--pipe-border)', borderRadius: 4 }}>
+          <Search size={12} color="var(--pipe-text-dim)" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="SEARCH..."
+            style={{
+              ...mono,
+              fontSize: 9,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--pipe-text)',
+              width: 140,
+              letterSpacing: '0.05em',
+            }}
+          />
+        </div>
+      </div>
 
-        {loading ? (
-          <div style={s.loading}>Loading repos…</div>
-        ) : repos.length === 0 ? (
-          <div style={s.empty}>No repos in this category.</div>
-        ) : (
-          repos.map((repo) => (
+      {/* Error */}
+      {error && (
+        <div style={{
+          ...mono, fontSize: 10, color: '#f87171',
+          padding: '10px 14px', border: '1px solid rgba(248,113,113,0.25)',
+          borderRadius: 6, background: 'rgba(248,113,113,0.05)', marginBottom: 16,
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <Loader2 size={18} color="var(--pipe-text-dim)" style={{ animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <Database size={28} color="var(--pipe-text-dim)" style={{ margin: '0 auto 16px' }} />
+          <div style={{ ...mono, fontSize: 12, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 8 }}>
+            No repos in this category
+          </div>
+          <div style={{ ...mono, fontSize: 10, color: 'var(--pipe-text-muted)', maxWidth: 360, margin: '0 auto', lineHeight: 1.6 }}>
+            Run the crawler to populate the catalog, then come back here to approve repos for the challenge library.
+          </div>
+        </div>
+      )}
+
+      {/* Grid */}
+      {!loading && filtered.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14 }}>
+          {filtered.map((repo) => (
             <RepoCard
               key={repo.id}
               repo={repo}
-              onStatusChange={handleStatusChange}
-              loading={actionLoading}
+              saving={saving === repo.id}
+              onApprove={() => void handleStatusChange(repo.id, 'approved')}
+              onDeny={() => void handleStatusChange(repo.id, 'denied')}
+              onReset={() => void handleStatusChange(repo.id, 'pending')}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

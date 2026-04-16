@@ -7,6 +7,7 @@ import {
   Library,
   Bot,
   Mail,
+  Database,
 } from "lucide-react";
 
 interface SidebarNavProps {
@@ -27,6 +28,8 @@ interface SidebarNavProps {
   onAgentClick?: () => void;
   /** Called when the user clicks the Outreach nav item */
   onOutreachClick?: () => void;
+  /** Called when the user clicks the Repo Admin nav item */
+  onRepoAdminClick?: () => void;
 }
 
 export function SidebarNav({
@@ -39,6 +42,7 @@ export function SidebarNav({
   onAgentClick,
   onRolesClick,
   onOutreachClick,
+  onRepoAdminClick,
 }: SidebarNavProps) {
   return (
     <nav
@@ -321,6 +325,64 @@ export function SidebarNav({
         >
           <Library size={20} />
           {activeSection === "challenges" && (
+            <div
+              style={{
+                position: "absolute",
+                left: -12,
+                width: 3,
+                height: 24,
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
+                borderRadius: "0 2px 2px 0",
+                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
+              }}
+            />
+          )}
+        </button>
+      )}
+
+      {/* Repo admin nav item */}
+      {onRepoAdminClick && (
+        <button
+          onClick={onRepoAdminClick}
+          title="Repo Catalog"
+          style={{
+            width: 48,
+            height: 48,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: activeSection === "repo-admin"
+              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
+              : "transparent",
+            border: "none",
+            borderRadius: "12px",
+            color: activeSection === "repo-admin" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
+            cursor: "pointer",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            position: "relative",
+            backdropFilter: activeSection === "repo-admin" ? "blur(20px)" : "none",
+            boxShadow: activeSection === "repo-admin"
+              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
+              : "none",
+          }}
+          onMouseEnter={(e) => {
+            if (activeSection !== "repo-admin") {
+              e.currentTarget.style.background = "var(--pipe-surface-hover)";
+              e.currentTarget.style.color = "var(--pipe-text-muted)";
+              e.currentTarget.style.transform = "translateX(4px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (activeSection !== "repo-admin") {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "var(--pipe-text-dim)";
+              e.currentTarget.style.transform = "translateX(0)";
+            }
+          }}
+        >
+          <Database size={20} />
+          {activeSection === "repo-admin" && (
             <div
               style={{
                 position: "absolute",
