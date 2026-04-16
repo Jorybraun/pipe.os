@@ -51,3 +51,6 @@ playwright/.auth/*.json
 # Vite
 vite.config.ts.timestamp-*
 workers/api/.wrangler/
+
+# Binary toolchain artifacts (keep out of repo)
+google-cloud-cli-*.tar.gz

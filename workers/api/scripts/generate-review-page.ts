@@ -19,7 +19,7 @@
  *   {run-dir}/review.html
  */
 
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -213,6 +213,16 @@ function main(): void {
 
 // ─── HTML generation ──────────────────────────────────────────────────────
 
+function htmlEsc(s: string | null | undefined): string {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function fmtNum(n: number | null | undefined): string {
+  if (n == null) return '—';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
 function gemmaText(pass3: RepoReviewData['pass3']): { narrative: string; profile: string } {
   if (!pass3?.raw_gemma_attempt1) return { narrative: '', profile: '' };
   try {
@@ -226,635 +236,567 @@ function gemmaText(pass3: RepoReviewData['pass3']): { narrative: string; profile
   }
 }
 
-function generateHtml(rows: RepoReviewData[], runDirName: string): string {
-  const dataJson = JSON.stringify(rows);
-  const runTimestamp = runDirName;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pipeline Review — ${runTimestamp}</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #0c0c0e;
-    --surface: #13141a;
-    --surface2: #1a1b22;
-    --border: #2a2b35;
-    --border2: #3a3b45;
-    --text: #e8e9f0;
-    --text2: #8889a0;
-    --text3: #5a5b6a;
-    --accent: #60a5fa;
-    --green: #4ade80;
-    --amber: #fbbf24;
-    --red: #f87171;
-    --purple: #a78bfa;
-    --font: 'Space Mono', 'Courier New', monospace;
-  }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 12px; line-height: 1.6; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-
-  /* Header */
-  .header { position: sticky; top: 0; z-index: 100; background: rgba(12,12,14,0.96); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
-  .header-title { font-size: 13px; font-weight: 700; color: var(--text); flex: 1; }
-  .header-sub { font-size: 11px; color: var(--text2); }
-  .stat-bar { display: flex; gap: 16px; }
-  .stat { display: flex; flex-direction: column; align-items: center; }
-  .stat-val { font-size: 16px; font-weight: 700; }
-  .stat-label { font-size: 10px; color: var(--text2); }
-  .export-btn { background: var(--accent); color: #000; border: none; padding: 8px 16px; font-family: var(--font); font-size: 11px; font-weight: 700; cursor: pointer; letter-spacing: 0.05em; }
-  .export-btn:hover { background: #93c5fd; }
-
-  /* Filter bar */
-  .filter-bar { padding: 8px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .filter-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; }
-  .filter-chip { background: var(--surface); border: 1px solid var(--border); color: var(--text2); padding: 3px 10px; font-size: 10px; font-family: var(--font); cursor: pointer; }
-  .filter-chip.active { border-color: var(--accent); color: var(--accent); }
-
-  /* Main grid */
-  .main { padding: 20px; display: flex; flex-direction: column; gap: 16px; max-width: 1200px; }
-
-  /* Repo card */
-  .card { background: var(--surface); border: 1px solid var(--border); padding: 0; }
-  .card.hidden { display: none; }
-  .card-header { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .card-name { font-size: 14px; font-weight: 700; }
-  .card-name a { color: var(--text); }
-  .card-name a:hover { color: var(--accent); }
-  .card-meta { font-size: 11px; color: var(--text2); display: flex; gap: 10px; flex-wrap: wrap; }
-  .card-meta span { white-space: nowrap; }
-  .card-stars { color: var(--amber); }
-  .tier-badge { margin-left: auto; }
-
-  /* Sections */
-  .card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
-  .section-title { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
-
-  /* Pipeline table */
-  .pipeline-table { width: 100%; border-collapse: collapse; }
-  .pipeline-table td { padding: 5px 8px; border: 1px solid var(--border); vertical-align: top; }
-  .pipeline-table td:first-child { width: 90px; color: var(--text2); font-size: 11px; white-space: nowrap; }
-  .pipeline-table td:nth-child(2) { width: 110px; }
-  .pipeline-table td:last-child { color: var(--text2); font-size: 10px; }
-
-  /* Badges */
-  .badge { display: inline-block; padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
-  .badge-green { background: rgba(74,222,128,0.12); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
-  .badge-red { background: rgba(248,113,113,0.12); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
-  .badge-amber { background: rgba(251,191,36,0.12); color: var(--amber); border: 1px solid rgba(251,191,36,0.3); }
-  .badge-blue { background: rgba(96,165,250,0.12); color: var(--accent); border: 1px solid rgba(96,165,250,0.3); }
-  .badge-gray { background: rgba(90,91,106,0.12); color: var(--text3); border: 1px solid var(--border); }
-
-  /* Override radios */
-  .override-group { display: flex; gap: 6px; flex-wrap: wrap; }
-  .override-label { display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 2px 8px; border: 1px solid var(--border); font-size: 10px; }
-  .override-label:hover { border-color: var(--border2); }
-  .override-label input[type=radio] { accent-color: var(--accent); }
-  .override-label.sel-keep { border-color: rgba(74,222,128,0.5); color: var(--green); }
-  .override-label.sel-deny { border-color: rgba(248,113,113,0.5); color: var(--red); }
-  .override-label.sel-investigate { border-color: rgba(251,191,36,0.5); color: var(--amber); }
-  .override-label.sel-good { border-color: rgba(74,222,128,0.5); color: var(--green); }
-  .override-label.sel-suspect { border-color: rgba(251,191,36,0.5); color: var(--amber); }
-  .override-label.sel-bad { border-color: rgba(248,113,113,0.5); color: var(--red); }
-  .override-label.sel-premium { border-color: rgba(167,139,250,0.5); color: var(--purple); }
-  .override-label.sel-standard { border-color: rgba(96,165,250,0.5); color: var(--accent); }
-  .override-label.sel-exclude { border-color: rgba(248,113,113,0.5); color: var(--red); }
-  .override-label.sel-code_review { border-color: rgba(96,165,250,0.5); color: var(--accent); }
-  .override-label.sel-feature_impl { border-color: rgba(74,222,128,0.5); color: var(--green); }
-  .override-label.sel-both { border-color: rgba(167,139,250,0.5); color: var(--purple); }
-  .override-label.sel-neither { border-color: rgba(90,91,106,0.3); color: var(--text3); }
-  .badge-teal { background: rgba(74,222,128,0.12); color: var(--green); border: 1px solid rgba(74,222,128,0.3); }
-
-  /* PR list */
-  .pr-list { display: flex; flex-direction: column; gap: 3px; }
-  .pr-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
-  .pr-num { color: var(--text3); width: 38px; flex-shrink: 0; }
-  .pr-title { color: var(--text2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 460px; }
-  .pr-chips { display: flex; gap: 4px; flex-shrink: 0; }
-  .pr-chip { font-size: 9px; padding: 1px 5px; }
-  .pr-files { color: var(--text3); font-size: 10px; width: 52px; text-align: right; flex-shrink: 0; }
-
-  /* Constructs */
-  .construct-list { display: flex; gap: 6px; flex-wrap: wrap; }
-  .construct-tag { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); padding: 2px 8px; font-size: 10px; }
-  .construct-count { color: var(--text3); }
-
-  /* Notes */
-  .notes-textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font); font-size: 11px; padding: 8px; resize: vertical; min-height: 48px; }
-  .notes-textarea:focus { outline: none; border-color: var(--accent); }
-
-  /* Collapsibles */
-  .collapse-btn { background: none; border: 1px solid var(--border); color: var(--text2); font-family: var(--font); font-size: 10px; padding: 3px 10px; cursor: pointer; margin-right: 6px; }
-  .collapse-btn:hover { border-color: var(--border2); color: var(--text); }
-  .collapse-content { display: none; margin-top: 8px; background: var(--surface2); border: 1px solid var(--border); padding: 12px; font-size: 10px; color: var(--text2); line-height: 1.7; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; }
-  .collapse-content.open { display: block; }
-
-  /* Failures list */
-  .failures { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
-  .failures li { font-size: 10px; color: var(--text2); padding-left: 12px; position: relative; }
-  .failures li::before { content: '•'; position: absolute; left: 0; color: var(--red); }
-
-  /* Export modal overlay */
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center; }
-  .modal-overlay.open { display: flex; }
-  .modal { background: var(--surface); border: 1px solid var(--border2); padding: 20px; max-width: 640px; width: 100%; max-height: 80vh; display: flex; flex-direction: column; gap: 12px; }
-  .modal-title { font-size: 13px; font-weight: 700; }
-  .modal-json { flex: 1; background: var(--bg); border: 1px solid var(--border); padding: 12px; font-family: var(--font); font-size: 10px; color: var(--text2); resize: vertical; min-height: 200px; max-height: 400px; overflow-y: auto; white-space: pre; }
-  .modal-actions { display: flex; gap: 8px; }
-  .btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font); font-size: 11px; padding: 7px 16px; cursor: pointer; }
-  .btn:hover { border-color: var(--border2); }
-  .btn-primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
-  .btn-primary:hover { background: #93c5fd; }
-  .btn-close { margin-left: auto; }
-
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: var(--border2); }
-</style>
-</head>
-<body>
-
-<div class="header">
-  <div>
-    <div class="header-title">Pipe Pipeline Review</div>
-    <div class="header-sub">${runTimestamp}</div>
-  </div>
-  <div class="stat-bar" id="stat-bar"></div>
-  <button class="export-btn" onclick="openExport()">Export Decisions</button>
-</div>
-
-<div class="filter-bar">
-  <span class="filter-label">Filter:</span>
-  <button class="filter-chip active" data-filter="all" onclick="setFilter('all',this)">All</button>
-  <button class="filter-chip" data-filter="p1-keep" onclick="setFilter('p1-keep',this)">P1 Keep</button>
-  <button class="filter-chip" data-filter="p1-deny" onclick="setFilter('p1-deny',this)">P1 Deny-list</button>
-  <button class="filter-chip" data-filter="p2-bad" onclick="setFilter('p2-bad',this)">P2 Bad</button>
-  <button class="filter-chip" data-filter="p3-fail" onclick="setFilter('p3-fail',this)">P3 Fail</button>
-  <span style="width:1px;background:var(--border);height:16px;display:inline-block;margin:0 4px"></span>
-  <button class="filter-chip" data-filter="tier-premium" onclick="setFilter('tier-premium',this)">Tier: Premium</button>
-  <button class="filter-chip" data-filter="tier-exclude" onclick="setFilter('tier-exclude',this)">Tier: Exclude</button>
-  <button class="filter-chip" data-filter="fit-feature" onclick="setFilter('fit-feature',this)">Feature impl</button>
-  <button class="filter-chip" data-filter="fit-review" onclick="setFilter('fit-review',this)">Code review</button>
-  <button class="filter-chip" data-filter="fit-both" onclick="setFilter('fit-both',this)">Both</button>
-</div>
-
-<div class="main" id="cards-container"></div>
-
-<div class="modal-overlay" id="modal-overlay" onclick="closeExport(event)">
-  <div class="modal">
-    <div class="modal-title">human-decisions.json</div>
-    <div class="modal-json" id="modal-json"></div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" onclick="downloadDecisions()">Download JSON</button>
-      <button class="btn" onclick="copyDecisions()">Copy to clipboard</button>
-      <button class="btn btn-close" onclick="closeExport()">Close</button>
-    </div>
-  </div>
-</div>
-
-<script>
-const RUN_DIR = ${JSON.stringify(runTimestamp)};
-const ROWS = ${dataJson};
-const LS_KEY = 'pipe-review-' + RUN_DIR;
-
-// ─── State ─────────────────────────────────────────────────────────────────
-
-let state = loadState();
-
-function loadState() {
-  const saved = localStorage.getItem(LS_KEY);
-  if (saved) {
-    try { return JSON.parse(saved); } catch {}
-  }
-  const initial = {};
-  for (const row of ROWS) {
-    initial[row.repo.repo_id] = {
-      pass1_override: row.pass1?.recommendation ?? null,
-      pass2_override: row.pass2?.signal_quality ?? null,
-      tier: inferDefaultTier(row),
-      challenge_fit: inferDefaultChallengeFit(row),
-      notes: '',
-    };
-  }
-  return initial;
+function renderRbtn(repoId: number, field: string, value: string, label: string): string {
+  return '<label class="rbtn">'
+    + '<input type="radio" name="' + repoId + '-' + field + '" value="' + value + '"'
+    + ' data-repoid="' + repoId + '" data-field="' + field + '">'
+    + label
+    + '</label>';
 }
 
-function inferDefaultTier(row) {
-  const p1 = row.pass1?.recommendation;
-  if (p1 === 'deny-list') return 'exclude';
-  const p2 = row.pass2?.signal_quality;
-  if (p2 === 'bad') return 'exclude';
-  const sonnetOk = row.sonnet?.approved;
-  if (p1 === 'keep' && p2 === 'good' && sonnetOk) return 'premium';
-  return 'standard';
-}
-
-function inferDefaultChallengeFit(row) {
-  const p1 = row.pass1?.recommendation;
-  if (p1 === 'deny-list') return 'neither';
-  const hasFeatureIssues = (row.repo.open_feature_issue_count ?? 0) > 0;
-  const hasPrs = (row.repo.sample_prs?.length ?? 0) >= 3;
-  const prQuality = (row.repo.pr_quality_score ?? 0) >= 0.4;
-  if (hasFeatureIssues && hasPrs && prQuality) return 'both';
-  if (hasFeatureIssues) return 'feature_impl';
-  if (hasPrs && prQuality) return 'code_review';
-  return 'code_review';
-}
-
-function saveState() {
-  localStorage.setItem(LS_KEY, JSON.stringify(state));
-  updateStatBar();
-}
-
-// ─── Render ────────────────────────────────────────────────────────────────
-
-function pBadge(value, type) {
-  if (!value) return '<span class="badge badge-gray">—</span>';
-  const map = {
-    keep: 'badge-green', 'deny-list': 'badge-red', investigate: 'badge-amber',
-    good: 'badge-green', suspect: 'badge-amber', bad: 'badge-red',
-    approved: 'badge-green', denied: 'badge-red', pass: 'badge-green', fail: 'badge-red',
-    skipped: 'badge-gray',
-  };
-  const cls = map[value] ?? 'badge-gray';
-  return '<span class="badge ' + cls + '">' + esc(value) + '</span>';
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function fmtNum(n) {
-  if (n == null) return '—';
-  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
-  return String(n);
-}
-
-function renderRadio(repoId, field, options) {
-  const cur = state[repoId]?.[field];
-  return options.map(opt => {
-    const isSel = opt.value === cur;
-    const selClass = isSel ? ' sel-' + opt.value.replace(/-/g,'') : '';
-    return '<label class="override-label' + selClass + '" id="lbl-' + repoId + '-' + field + '-' + opt.value + '">'
-      + '<input type="radio" name="' + repoId + '-' + field + '" value="' + opt.value + '"'
-      + ' data-repoid="' + repoId + '" data-field="' + field + '"'
-      + (isSel ? ' checked' : '')
-      + '>'
-      + opt.label
-      + '</label>';
-  }).join('');
-}
-
-function renderCard(row) {
+function buildCard(row: RepoReviewData): string {
   const { repo, pass1, pass2, pass3, sonnet } = row;
   const id = repo.repo_id;
-  const p3pipe = pass3?.pipeline;
-  const p3valid = p3pipe?.validation_attempt1;
-  const p3judge = p3pipe?.judge_attempt1;
-  const p3gem = p3pipe?.gemma_attempt1;
-
-  // Pipeline table rows
-  const p1Rec = pass1?.recommendation ?? null;
-  const p2Qual = pass2?.signal_quality ?? null;
-  const p3ValidStr = !p3valid ? null : p3valid.valid ? 'pass' : 'fail';
-  const p3MistralStr = !p3judge ? 'skipped' : p3judge.approved ? 'approved' : 'denied';
-  const sonnetStr = !sonnet ? null : sonnet.approved ? 'approved' : 'denied';
-
-  const p3ValidDetail = p3valid?.failures?.slice(0,2).join(' · ') ?? '';
-  const p3MistralDetail = p3judge?.failures?.slice(0,2).join(' · ') ?? (p3judge ? '' : 'validate failed');
-  const p3SonnetDetail = sonnet ? [
-    sonnet.constraint_pass ? '' : 'constraint',
-    sonnet.accuracy_pass ? '' : 'accuracy',
-    sonnet.architecture_pass ? '' : 'arch',
-    sonnet.completeness_pass ? '' : 'complete',
-  ].filter(Boolean).join(' · ') : '';
-
-  const wordInfo = p3gem ? (p3gem.narrative_words + 'w narr / ' + p3gem.profile_words + 'w prof') : '';
+  const { narrative } = gemmaText(pass3);
 
   // PRs
   const prs = (repo.sample_prs ?? []).slice(0, 12);
-  const prHtml = prs.map(pr => {
-    const testChip = pr.modifies_tests ? '<span class="badge badge-green pr-chip">test</span>' : '';
-    const issueChip = pr.resolves_issue_number ? '<span class="badge badge-blue pr-chip">issue</span>' : '';
-    const sweChip = pr.swe_bench_eligible ? '<span class="badge badge-purple pr-chip">swe</span>' : '';
-    return '<div class="pr-item">'
+  const prHtml = prs.map((pr) => {
+    const testTag = pr.modifies_tests ? '<span class="badge badge-green pr-chip">test</span>' : '';
+    const issueTag = pr.resolves_issue_number ? '<span class="badge badge-blue pr-chip">issue</span>' : '';
+    return '<div class="pr-row">'
       + '<span class="pr-num">#' + pr.pr_number + '</span>'
-      + '<span class="pr-title">' + esc(pr.title ?? '(no title)') + '</span>'
-      + '<span class="pr-chips">' + testChip + issueChip + sweChip + '</span>'
+      + '<span class="pr-title">' + htmlEsc(pr.title ?? '(no title)') + '</span>'
+      + '<span class="pr-badges">' + testTag + issueTag + '</span>'
       + '<span class="pr-files">' + pr.changed_file_count + ' files</span>'
       + '</div>';
   }).join('');
 
-  // Constructs
-  const constructs = (repo.constructs ?? []).slice(0, 12);
-  const constructHtml = constructs.map(c =>
-    '<span class="construct-tag">' + esc(c.slug) + ' <span class="construct-count">(' + c.evidence_count + ')</span></span>'
-  ).join('');
+  // Pipeline debug data
+  const p1Rec = pass1?.recommendation ?? null;
+  const p2Qual = pass2?.signal_quality ?? null;
+  const p3pipe = pass3?.pipeline;
+  const p3valid = p3pipe?.validation_attempt1;
+  const p3judge = p3pipe?.judge_attempt1;
+  const p3gem = p3pipe?.gemma_attempt1;
+  const p3ValidStr = !p3valid ? '—' : p3valid.valid ? 'pass' : 'fail';
+  const p3MistralStr = !p3judge ? 'skipped' : p3judge.approved ? 'approved' : 'denied';
+  const sonnetStr = !sonnet ? '—' : sonnet.approved ? 'approved' : 'denied';
+  const wordInfo = p3gem ? (p3gem.narrative_words + 'w narr / ' + p3gem.profile_words + 'w prof') : '—';
+  const featureIssues = repo.open_feature_issue_count ?? 0;
+  const p1concerns = (pass1?.concerns ?? []).map((c) => '<li>' + htmlEsc(c) + '</li>').join('');
+  const p2issues = (pass2?.issues ?? []).map((i) => '<li>' + htmlEsc(i) + '</li>').join('');
 
-  // Gemma raw output
-  let gemNarr = '', gemProf = '';
-  if (pass3?.raw_gemma_attempt1) {
-    try {
-      const parsed = JSON.parse(pass3.raw_gemma_attempt1);
-      gemNarr = parsed.engineering_narrative ?? '';
-      gemProf = parsed.repo_searchable_profile ?? '';
-    } catch { gemNarr = pass3.raw_gemma_attempt1; }
-  }
+  return '<div class="card" id="card-' + id + '" data-id="' + id + '">'
 
-  const p1Concerns = (pass1?.concerns ?? []).map(c => '<li>' + esc(c) + '</li>').join('');
-  const p2Issues = (pass2?.issues ?? []).map(i => '<li>' + esc(i) + '</li>').join('');
-
-  const tierCur = state[id]?.tier ?? 'standard';
-  const tierBadgeClass = tierCur === 'premium' ? 'badge-purple' : tierCur === 'exclude' ? 'badge-red' : 'badge-blue';
-  const fitCur = state[id]?.challenge_fit ?? 'code_review';
-  const fitBadgeClass = fitCur === 'feature_impl' ? 'badge-teal' : fitCur === 'both' ? 'badge-purple' : fitCur === 'neither' ? 'badge-gray' : 'badge-blue';
-  const fitLabel = { code_review: 'code review', feature_impl: 'feature impl', both: 'both', neither: 'neither' }[fitCur] ?? fitCur;
-
-  return '<div class="card" id="card-' + id + '" data-repo-id="' + id + '"'
-    + ' data-p1="' + (p1Rec ?? '') + '"'
-    + ' data-p2="' + (p2Qual ?? '') + '"'
-    + ' data-p3valid="' + (p3ValidStr ?? '') + '"'
-    + ' data-tier="' + tierCur + '"'
-    + ' data-fit="' + fitCur + '">'
-
-    // Header
-    + '<div class="card-header">'
-    + '<div class="card-name"><a href="https://github.com/' + esc(repo.full_name) + '" target="_blank">' + esc(repo.full_name) + '</a></div>'
-    + '<div class="card-meta">'
-    + '<span class="card-stars">★ ' + fmtNum(repo.stars) + '</span>'
-    + '<span>' + esc(repo.primary_language) + '</span>'
-    + '<span>' + esc(repo.detected_domain ?? '—') + '</span>'
-    + '<span>' + esc(repo.seniority_band ?? '—') + '</span>'
+    // ── Card top ──
+    + '<div class="card-top">'
+    + '<div>'
+    + '<div class="repo-name">'
+    + '<a href="https://github.com/' + htmlEsc(repo.full_name) + '" target="_blank" rel="noopener">' + htmlEsc(repo.full_name) + '</a>'
+    + '</div>'
+    + '<div class="repo-meta">'
+    + '<span class="meta-star">&#9733; ' + fmtNum(repo.stars) + '</span>'
+    + '<span>' + htmlEsc(repo.primary_language) + '</span>'
+    + (repo.detected_domain ? '<span>' + htmlEsc(repo.detected_domain) + '</span>' : '')
     + '<span>SLOC ' + fmtNum(repo.sloc) + '</span>'
-    + '<span>files ' + fmtNum(repo.file_count) + '</span>'
-    + (repo.pr_quality_score != null ? '<span>PRq ' + repo.pr_quality_score.toFixed(2) + '</span>' : '')
+    + (featureIssues > 0 ? '<span class="feat-issues">' + featureIssues + ' feature issues</span>' : '')
     + '</div>'
-    + '<div class="tier-badge" style="display:flex;gap:6px;">'
-    + '<span class="badge ' + tierBadgeClass + '" id="tier-badge-' + id + '">' + tierCur + '</span>'
-    + '<span class="badge ' + fitBadgeClass + '" id="fit-badge-' + id + '">' + fitLabel + '</span>'
+    + '</div>'
+    + '<div class="card-badges">'
+    + '<span class="badge badge-outline" id="dec-badge-' + id + '">undecided</span>'
+    + '<span class="badge badge-outline" id="fit-badge-' + id + '">code review</span>'
+    + '<span class="badge badge-outline" id="tier-badge-' + id + '">standard</span>'
     + '</div>'
     + '</div>'
 
-    // Body
+    // ── Card body ──
     + '<div class="card-body">'
 
-    // Pipeline decisions table
-    + '<div><div class="section-title">Pipeline decisions + overrides</div>'
-    + '<table class="pipeline-table">'
-    + '<tr><td>Pass 1</td><td>' + pBadge(p1Rec, 'p1') + '</td><td>'
-    + '<div class="override-group">' + renderRadio(id, 'pass1_override', [
-        {value:'keep',label:'keep'}, {value:'deny-list',label:'deny-list'}, {value:'investigate',label:'investigate'}
-      ]) + '</div>'
-    + (p1Concerns ? '<ul class="failures" style="margin-top:4px">' + p1Concerns + '</ul>' : '')
-    + (pass1?.reasoning ? '<div style="margin-top:4px;font-size:10px;color:var(--text3)">' + esc(pass1.reasoning) + '</div>' : '')
-    + '</td></tr>'
-    + '<tr><td>Pass 2</td><td>' + pBadge(p2Qual, 'p2') + '</td><td>'
-    + '<div class="override-group">' + renderRadio(id, 'pass2_override', [
-        {value:'good',label:'good'}, {value:'suspect',label:'suspect'}, {value:'bad',label:'bad'}
-      ]) + '</div>'
-    + (p2Issues ? '<ul class="failures" style="margin-top:4px">' + p2Issues + '</ul>' : '')
-    + (pass2?.reasoning ? '<div style="margin-top:4px;font-size:10px;color:var(--text3)">' + esc(pass2.reasoning) + '</div>' : '')
-    + '</td></tr>'
-    + '<tr><td>P3 Validate</td><td>' + pBadge(p3ValidStr, 'p3') + '</td><td>'
-    + (wordInfo ? '<div style="font-size:10px;color:var(--text3)">' + wordInfo + '</div>' : '')
-    + (p3ValidDetail ? '<ul class="failures" style="margin-top:2px"><li>' + esc(p3ValidDetail) + '</li></ul>' : '')
-    + '</td></tr>'
-    + '<tr><td>P3 Mistral</td><td>' + pBadge(p3MistralStr, 'p3') + '</td><td>'
-    + (p3MistralDetail ? '<span style="font-size:10px;color:var(--text3)">' + esc(p3MistralDetail) + '</span>' : '')
-    + '</td></tr>'
-    + '<tr><td>P3 Sonnet</td><td>' + pBadge(sonnetStr, 'p3') + '</td><td>'
-    + (sonnet ? '<span style="font-size:10px;color:var(--text2)">'
-        + (sonnet.constraint_pass ? '✓' : '✗') + ' constraint  '
-        + (sonnet.accuracy_pass ? '✓' : '✗') + ' accuracy  '
-        + (sonnet.architecture_pass ? '✓' : '✗') + ' arch  '
-        + (sonnet.completeness_pass ? '✓' : '✗') + ' complete'
-        + '</span>' : '<span style="font-size:10px;color:var(--text3)">no data</span>')
-    + '</td></tr>'
-    + '</table></div>'
+    // About (Gemma narrative)
+    + '<div class="section">'
+    + '<div class="sec-label">About this repo</div>'
+    + (narrative
+      ? '<div class="about-text">' + htmlEsc(narrative) + '</div>'
+      : '<div class="no-desc">No AI description available (validation failed during calibration — re-run to generate)</div>')
+    + '</div>'
 
-    // Tier + challenge fit + notes row
-    + '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'
-    + '<div><div class="section-title">Quality tier</div>'
-    + '<div class="override-group">' + renderRadio(id, 'tier', [
-        {value:'premium',label:'premium'}, {value:'standard',label:'standard'}, {value:'exclude',label:'exclude'}
-      ]) + '</div></div>'
-    + '<div><div class="section-title">Challenge fit</div>'
-    + '<div class="override-group">' + renderRadio(id, 'challenge_fit', [
-        {value:'code_review',label:'code review'}, {value:'feature_impl',label:'feature impl'}, {value:'both',label:'both'}, {value:'neither',label:'neither'}
-      ]) + '</div>'
-    + '<div style="font-size:10px;color:var(--text3);margin-top:4px">'
-    + 'open issues: ' + (repo.open_feature_issue_count != null ? repo.open_feature_issue_count : '—')
-    + ' · open PRs: ' + (repo.open_pr_count != null ? repo.open_pr_count : '—')
-    + '</div></div>'
-    + '<div style="flex:1;min-width:220px"><div class="section-title">Notes</div>'
-    + '<textarea class="notes-textarea" id="notes-' + id + '" placeholder="Why is this premium? What kind of challenge would work? Override rationale…" oninput="onNotes(' + id + ',this.value)">' + esc(state[id]?.notes ?? '') + '</textarea>'
+    // Pull requests
+    + (prs.length
+      ? '<div class="section">'
+        + '<div class="sec-label">Recent pull requests'
+        + (repo.sample_prs.length > prs.length ? ' (' + prs.length + ' of ' + repo.sample_prs.length + ')' : '')
+        + '</div>'
+        + '<div class="pr-list">' + prHtml + '</div>'
+        + (featureIssues > 0
+          ? '<div class="feature-issue-line"><span class="feature-issue-count">' + featureIssues + '</span> open feature issues — suitable for implementation challenge</div>'
+          : '')
+        + '</div>'
+      : '')
+
+    // Your decision
+    + '<div class="section">'
+    + '<div class="sec-label">Your decision</div>'
+    + '<div class="decision-grid">'
+    + '<div class="decision-col">'
+    + '<div class="decision-col-label">Include in database?</div>'
+    + '<div class="radio-group">'
+    + renderRbtn(id, 'decision', 'approve', 'Approve')
+    + renderRbtn(id, 'decision', 'skip', 'Skip')
+    + renderRbtn(id, 'decision', 'undecided', 'Undecided')
+    + '</div>'
     + '</div>'
     + '</div>'
 
-    // Sample PRs
-    + (prs.length ? '<div><div class="section-title">Sample PRs (' + repo.sample_prs.length + ' total, showing first ' + prs.length + ')</div><div class="pr-list">' + prHtml + '</div></div>' : '')
+    // Approved-only: challenge fit + tier
+    + '<div class="approved-opts hidden" id="approved-opts-' + id + '">'
+    + '<div class="decision-col">'
+    + '<div class="decision-col-label">Challenge type</div>'
+    + '<div class="radio-group">'
+    + renderRbtn(id, 'fit', 'code_review', 'Code review')
+    + renderRbtn(id, 'fit', 'feature_impl', 'Feature impl')
+    + renderRbtn(id, 'fit', 'both', 'Both')
+    + '</div>'
+    + '</div>'
+    + '<div class="decision-col">'
+    + '<div class="decision-col-label">Tier</div>'
+    + '<div class="radio-group">'
+    + renderRbtn(id, 'tier', 'premium', 'Premium')
+    + renderRbtn(id, 'tier', 'standard', 'Standard')
+    + '</div>'
+    + '</div>'
+    + '</div>'
 
-    // Constructs
-    + (constructs.length ? '<div><div class="section-title">Top constructs</div><div class="construct-list">' + constructHtml + '</div></div>' : '')
+    // Notes
+    + '<div class="notes-wrap">'
+    + '<div class="notes-label">Notes</div>'
+    + '<textarea class="notes-ta" data-repoid="' + id + '" placeholder="Why approve or skip? What challenge type would work best? Any concerns..."></textarea>'
+    + '</div>'
+    + '</div>' // section: your decision
 
-    // Collapsibles — use data-collapse to avoid quote-escaping issues in onclick
-    + '<div>'
-    + (gemNarr ? '<button class="collapse-btn" data-collapse="narr-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ Gemma narrative</button>' : '')
-    + (gemProf ? '<button class="collapse-btn" data-collapse="prof-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ Gemma profile</button>' : '')
-    + (pass1?.reasoning ? '<button class="collapse-btn" data-collapse="p1r-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ P1 full reasoning</button>' : '')
-    + (sonnet?.reasoning ? '<button class="collapse-btn" data-collapse="s-' + id + '" onclick="toggleCollapse(this.dataset.collapse)">▶ Sonnet reasoning</button>' : '')
-    + (gemNarr ? '<div class="collapse-content" id="narr-' + id + '">' + esc(gemNarr) + '</div>' : '')
-    + (gemProf ? '<div class="collapse-content" id="prof-' + id + '">' + esc(gemProf) + '</div>' : '')
-    + (pass1?.reasoning ? '<div class="collapse-content" id="p1r-' + id + '">' + esc(pass1.reasoning) + '</div>' : '')
-    + (sonnet?.reasoning ? '<div class="collapse-content" id="s-' + id + '">' + esc(sonnet.reasoning) + '</div>' : '')
+    // Pipeline details (collapsed)
+    + '<div class="section">'
+    + '<button class="debug-toggle" id="debug-btn-' + id + '" onclick="toggleDebug(' + id + ')">&#9658; Pipeline details</button>'
+    + '<div class="debug-body" id="debug-' + id + '">'
+    + '<div class="debug-row"><span class="debug-key">Pass 1</span><span>' + htmlEsc(p1Rec ?? '—') + '</span></div>'
+    + (p1concerns ? '<ul class="debug-issues">' + p1concerns + '</ul>' : '')
+    + (pass1?.reasoning ? '<div class="debug-row"><span class="debug-key"></span><span style="color:var(--text3);font-style:italic">' + htmlEsc(pass1.reasoning) + '</span></div>' : '')
+    + '<div class="debug-row"><span class="debug-key">Pass 2</span><span>' + htmlEsc(p2Qual ?? '—') + '</span></div>'
+    + (p2issues ? '<ul class="debug-issues">' + p2issues + '</ul>' : '')
+    + (pass2?.reasoning ? '<div class="debug-row"><span class="debug-key"></span><span style="color:var(--text3);font-style:italic">' + htmlEsc(pass2.reasoning) + '</span></div>' : '')
+    + '<div class="debug-row"><span class="debug-key">P3 Validate</span><span>' + p3ValidStr + '</span></div>'
+    + (p3valid?.failures?.length ? '<ul class="debug-issues">' + p3valid.failures.map((f) => '<li>' + htmlEsc(f) + '</li>').join('') + '</ul>' : '')
+    + '<div class="debug-row"><span class="debug-key">P3 Words</span><span>' + wordInfo + '</span></div>'
+    + '<div class="debug-row"><span class="debug-key">P3 Mistral</span><span>' + p3MistralStr + '</span></div>'
+    + (p3judge?.failures?.length ? '<ul class="debug-issues">' + p3judge.failures.map((f) => '<li>' + htmlEsc(f) + '</li>').join('') + '</ul>' : '')
+    + '<div class="debug-row"><span class="debug-key">P3 Sonnet</span><span>' + sonnetStr + (sonnet ? (' &mdash; '
+      + (sonnet.constraint_pass ? '&#10003;' : '&#10007;') + ' constraint '
+      + (sonnet.accuracy_pass ? '&#10003;' : '&#10007;') + ' accuracy '
+      + (sonnet.architecture_pass ? '&#10003;' : '&#10007;') + ' arch '
+      + (sonnet.completeness_pass ? '&#10003;' : '&#10007;') + ' complete'
+    ) : '') + '</span></div>'
+    + '</div>'
     + '</div>'
 
     + '</div>' // card-body
     + '</div>'; // card
 }
 
-// ─── Interactions ──────────────────────────────────────────────────────────
+function generateHtml(rows: RepoReviewData[], runDirName: string): string {
+  const dataJson = JSON.stringify(rows);
+  const cardsHtml = rows.map(buildCard).join('\n');
 
-function onRadio(repoId, field, value) {
-  state[repoId] = state[repoId] ?? {};
-  state[repoId][field] = value;
-  saveState();
-  // Re-apply selected styling to radio labels
-  const options = { pass1_override: ['keep','deny-list','investigate'], pass2_override: ['good','suspect','bad'], tier: ['premium','standard','exclude'], challenge_fit: ['code_review','feature_impl','both','neither'] };
-  for (const opt of (options[field] ?? [])) {
-    const lbl = document.getElementById('lbl-' + repoId + '-' + field + '-' + opt);
-    if (!lbl) continue;
-    const sel = opt === value;
-    lbl.className = 'override-label' + (sel ? ' sel-' + opt.replace('-','') : '');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repo Review — ${runDirName}</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0c0e;--surface:#111214;--surface2:#18191f;
+  --border:#242530;--border2:#363743;
+  --text:#dde0ee;--text2:#8890a8;--text3:#50546a;
+  --green:#4ade80;--red:#f87171;--amber:#fbbf24;--blue:#60a5fa;--purple:#a78bfa;
+  --font:'Space Mono','Courier New',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.7}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* sticky header */
+.topbar{position:sticky;top:0;z-index:50;background:rgba(12,12,14,.96);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;gap:16px}
+.topbar-title{font-size:13px;font-weight:700;flex:1}
+.topbar-sub{font-size:10px;color:var(--text3)}
+.tally{display:flex;gap:20px}
+.tally-item{display:flex;flex-direction:column;align-items:center;gap:1px}
+.tally-num{font-size:18px;font-weight:700}
+.tally-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
+.export-btn{background:var(--blue);color:#000;border:none;padding:8px 18px;
+  font-family:var(--font);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.05em}
+.export-btn:hover{background:#93c5fd}
+
+/* filter */
+.filters{padding:8px 24px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filter-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-right:4px}
+.fchip{background:none;border:1px solid var(--border);color:var(--text2);font-family:var(--font);
+  font-size:10px;padding:3px 12px;cursor:pointer}
+.fchip:hover{border-color:var(--border2)}
+.fchip.on{border-color:var(--blue);color:var(--blue)}
+
+/* page layout */
+.page{max-width:920px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+
+/* card */
+.card{background:var(--surface);border:1px solid var(--border);overflow:hidden}
+.card.hidden{display:none}
+
+/* card top bar */
+.card-top{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.repo-name{font-size:16px;font-weight:700;flex:1}
+.repo-meta{font-size:11px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}
+.meta-star{color:var(--amber)}
+.feat-issues{color:var(--green)}
+.card-badges{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap}
+
+/* badges */
+.badge{display:inline-block;padding:2px 9px;font-size:10px;font-weight:700;letter-spacing:.04em;white-space:nowrap;border:1px solid}
+.badge-green{background:rgba(74,222,128,.1);color:var(--green);border-color:rgba(74,222,128,.3)}
+.badge-red{background:rgba(248,113,113,.1);color:var(--red);border-color:rgba(248,113,113,.3)}
+.badge-amber{background:rgba(251,191,36,.1);color:var(--amber);border-color:rgba(251,191,36,.3)}
+.badge-blue{background:rgba(96,165,250,.1);color:var(--blue);border-color:rgba(96,165,250,.3)}
+.badge-purple{background:rgba(167,139,250,.1);color:var(--purple);border-color:rgba(167,139,250,.3)}
+.badge-outline{background:none;color:var(--text3);border-color:var(--border)}
+
+/* sections */
+.card-body{padding:0}
+.section{padding:16px 20px;border-bottom:1px solid var(--border)}
+.section:last-child{border-bottom:none}
+.sec-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+
+/* about */
+.about-text{color:var(--text2);font-size:12px;line-height:1.8;white-space:pre-wrap;word-break:break-word}
+.no-desc{color:var(--text3);font-size:11px;font-style:italic}
+
+/* pr list */
+.pr-list{display:flex;flex-direction:column;gap:4px}
+.pr-row{display:flex;align-items:center;gap:8px;font-size:11px}
+.pr-num{color:var(--text3);width:38px;flex-shrink:0;font-size:10px}
+.pr-title{color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pr-badges{display:flex;gap:4px;flex-shrink:0}
+.pr-chip{font-size:9px;padding:1px 5px}
+.pr-files{color:var(--text3);font-size:10px;width:56px;text-align:right;flex-shrink:0}
+.feature-issue-line{margin-top:10px;font-size:11px;color:var(--text2)}
+.feature-issue-count{color:var(--green);font-weight:700}
+
+/* decision */
+.decision-grid{display:flex;gap:20px;flex-wrap:wrap}
+.decision-col{display:flex;flex-direction:column;gap:8px}
+.decision-col-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em}
+.radio-group{display:flex;gap:6px;flex-wrap:wrap}
+.rbtn{display:flex;align-items:center;gap:5px;cursor:pointer;
+  border:1px solid var(--border);padding:5px 14px;font-family:var(--font);font-size:11px;color:var(--text2)}
+.rbtn:hover{border-color:var(--border2)}
+.rbtn input{accent-color:var(--blue)}
+.rbtn.sel-approve{border-color:rgba(74,222,128,.5);color:var(--green);background:rgba(74,222,128,.05)}
+.rbtn.sel-skip{border-color:rgba(248,113,113,.5);color:var(--red);background:rgba(248,113,113,.05)}
+.rbtn.sel-undecided{border-color:rgba(251,191,36,.4);color:var(--amber)}
+.rbtn.sel-code_review{border-color:rgba(96,165,250,.5);color:var(--blue)}
+.rbtn.sel-feature_impl{border-color:rgba(74,222,128,.5);color:var(--green)}
+.rbtn.sel-both{border-color:rgba(167,139,250,.5);color:var(--purple)}
+.rbtn.sel-premium{border-color:rgba(167,139,250,.5);color:var(--purple)}
+.rbtn.sel-standard{border-color:var(--border2);color:var(--text2)}
+
+/* approved-only options — hidden when not approved */
+.approved-opts{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);
+  display:flex;gap:20px;flex-wrap:wrap}
+.approved-opts.hidden{display:none}
+
+/* notes */
+.notes-wrap{margin-top:14px}
+.notes-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
+.notes-ta{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);
+  font-family:var(--font);font-size:12px;padding:10px;resize:vertical;min-height:96px;line-height:1.6}
+.notes-ta:focus{outline:none;border-color:var(--blue)}
+.notes-ta::placeholder{color:var(--text3)}
+
+/* pipeline details */
+.debug-toggle{background:none;border:none;color:var(--text3);font-family:var(--font);font-size:10px;cursor:pointer;padding:0}
+.debug-toggle:hover{color:var(--text2)}
+.debug-body{display:none;margin-top:10px;background:var(--surface2);border:1px solid var(--border);padding:12px;font-size:10px;color:var(--text2)}
+.debug-body.open{display:block}
+.debug-row{display:flex;gap:8px;margin-bottom:4px;align-items:baseline;flex-wrap:wrap}
+.debug-key{color:var(--text3);width:90px;flex-shrink:0}
+.debug-issues{margin-top:4px;padding-left:12px;list-style:none}
+.debug-issues li::before{content:"• ";color:var(--text3)}
+.debug-issues li{margin-bottom:2px}
+
+/* modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border2);padding:20px;width:100%;max-width:640px;max-height:80vh;display:flex;flex-direction:column;gap:12px}
+.modal-title{font-size:13px;font-weight:700}
+.modal-pre{flex:1;background:var(--bg);border:1px solid var(--border);padding:12px;
+  font-size:10px;color:var(--text2);overflow:auto;white-space:pre;max-height:380px}
+.modal-actions{display:flex;gap:8px}
+.mbtn{background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:11px;padding:7px 16px;cursor:pointer}
+.mbtn:hover{border-color:var(--border2)}
+.mbtn-primary{background:var(--blue);border-color:var(--blue);color:#000;font-weight:700}
+.mbtn-primary:hover{background:#93c5fd}
+.mbtn-close{margin-left:auto}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">Pipe Repo Review</div>
+    <div class="topbar-sub">${runDirName}</div>
+  </div>
+  <div class="tally" id="tally"></div>
+  <button class="export-btn" onclick="openModal()">Export decisions</button>
+</div>
+
+<div class="filters">
+  <span class="filter-label">Show:</span>
+  <button class="fchip on" data-f="all" onclick="setFilter(this)">All (${rows.length})</button>
+  <button class="fchip" data-f="approve" onclick="setFilter(this)">Approved</button>
+  <button class="fchip" data-f="skip" onclick="setFilter(this)">Skipped</button>
+  <button class="fchip" data-f="undecided" onclick="setFilter(this)">Undecided</button>
+  <button class="fchip" data-f="feature_impl" onclick="setFilter(this)">Feature impl</button>
+  <button class="fchip" data-f="both" onclick="setFilter(this)">Both types</button>
+</div>
+
+<div class="page" id="page">
+${cardsHtml}
+</div>
+
+<div class="modal-bg" id="modal-bg" onclick="bgClick(event)">
+  <div class="modal">
+    <div class="modal-title">human-decisions.json</div>
+    <pre class="modal-pre" id="modal-pre"></pre>
+    <div class="modal-actions">
+      <button class="mbtn mbtn-primary" onclick="download()">Download</button>
+      <button class="mbtn" onclick="copyJson()">Copy</button>
+      <button class="mbtn mbtn-close" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const RUN_DIR = ${JSON.stringify(runDirName)};
+const ROWS = ${dataJson};
+const LS = "pipe-review-" + RUN_DIR;
+
+// ── state ──────────────────────────────────────────────────────────────────
+function defaultState(row) {
+  if (!row || !row.repo) return { decision: "undecided", fit: "code_review", tier: "standard", notes: "" };
+  const p1 = row.pass1 ? row.pass1.recommendation : null;
+  const p2 = row.pass2 ? row.pass2.signal_quality : null;
+  const sonnetOk = row.sonnet ? row.sonnet.approved : false;
+  const featureIssues = row.repo.open_feature_issue_count || 0;
+  const hasPrs = row.repo.sample_prs && row.repo.sample_prs.length >= 3;
+  const goodPrs = (row.repo.pr_quality_score || 0) >= 0.4;
+
+  let decision = "undecided";
+  if (p1 === "deny-list") decision = "skip";
+  else if (p1 === "keep" && (p2 === "good" || p2 === "suspect")) decision = "approve";
+
+  let fit = "code_review";
+  if (featureIssues > 0 && hasPrs && goodPrs) fit = "both";
+  else if (featureIssues > 0) fit = "feature_impl";
+
+  let tier = "standard";
+  if (p1 === "keep" && p2 === "good" && sonnetOk) tier = "premium";
+
+  return { decision: decision, fit: fit, tier: tier, notes: "" };
+}
+
+let state = (function () {
+  const saved = localStorage.getItem(LS);
+  if (saved) { try { return JSON.parse(saved); } catch {} }
+  const s = {};
+  for (const row of ROWS) { s[row.repo.repo_id] = defaultState(row); }
+  return s;
+})();
+
+function save() {
+  localStorage.setItem(LS, JSON.stringify(state));
+  renderTally();
+}
+
+// ── tally ───────────────────────────────────────────────────────────────────
+function renderTally() {
+  let approved = 0, skipped = 0, undecided = 0;
+  for (const row of ROWS) {
+    const d = (state[row.repo.repo_id] || {}).decision;
+    if (d === "approve") approved++;
+    else if (d === "skip") skipped++;
+    else undecided++;
   }
-  // Update header badges
-  if (field === 'tier') {
-    const badge = document.getElementById('tier-badge-' + repoId);
-    if (badge) {
-      badge.textContent = value;
-      badge.className = 'badge ' + (value === 'premium' ? 'badge-purple' : value === 'exclude' ? 'badge-red' : 'badge-blue');
-    }
-    const card = document.getElementById('card-' + repoId);
-    if (card) card.dataset.tier = value;
-  }
-  if (field === 'challenge_fit') {
-    const fitLabels = { code_review: 'code review', feature_impl: 'feature impl', both: 'both', neither: 'neither' };
-    const badge = document.getElementById('fit-badge-' + repoId);
-    if (badge) {
-      badge.textContent = fitLabels[value] ?? value;
-      badge.className = 'badge ' + (value === 'feature_impl' ? 'badge-teal' : value === 'both' ? 'badge-purple' : value === 'neither' ? 'badge-gray' : 'badge-blue');
-    }
-    const card = document.getElementById('card-' + repoId);
-    if (card) card.dataset.fit = value;
-  }
-  applyFilter();
+  document.getElementById("tally").innerHTML =
+    tItem(approved, "approved", "color:var(--green)") +
+    tItem(skipped, "skipped", "color:var(--red)") +
+    tItem(undecided, "undecided", "color:var(--amber)");
+}
+function tItem(n, label, style) {
+  return "<div class=\\"tally-item\\"><span class=\\"tally-num\\" style=\\"" + style + "\\">" + n +
+    "</span><span class=\\"tally-label\\">" + label + "</span></div>";
 }
 
-function onNotes(repoId, value) {
-  state[repoId] = state[repoId] ?? {};
-  state[repoId].notes = value;
-  saveState();
-}
-
-function toggleCollapse(collapseId) {
-  const el = document.getElementById(collapseId);
-  if (!el) return;
-  el.classList.toggle('open');
-  const isOpen = el.classList.contains('open');
-  const btn = document.querySelector('[data-collapse="' + collapseId + '"]');
-  if (btn) btn.textContent = btn.textContent.replace(/^[▶▼]/, isOpen ? '▼' : '▶');
-}
-
-// ─── Filtering ─────────────────────────────────────────────────────────────
-
-let activeFilter = 'all';
-
-function setFilter(filter, btn) {
-  activeFilter = filter;
-  document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  applyFilter();
-}
-
-function applyFilter() {
-  document.querySelectorAll('.card').forEach(card => {
-    const p1 = card.dataset.p1;
-    const p2 = card.dataset.p2;
-    const p3 = card.dataset.p3valid;
-    const tier = card.dataset.tier;
+// ── filter ──────────────────────────────────────────────────────────────────
+let activeFilter = "all";
+function setFilter(btn) {
+  activeFilter = btn.dataset.f;
+  document.querySelectorAll(".fchip").forEach(function (b) { b.classList.remove("on"); });
+  btn.classList.add("on");
+  document.querySelectorAll(".card").forEach(function (card) {
+    const id = Number(card.dataset.id);
+    const s = state[id] || {};
     let show = true;
-    const fit = card.dataset.fit;
-    if (activeFilter === 'p1-keep') show = p1 === 'keep';
-    else if (activeFilter === 'p1-deny') show = p1 === 'deny-list';
-    else if (activeFilter === 'p2-bad') show = p2 === 'bad';
-    else if (activeFilter === 'p3-fail') show = p3 === 'fail';
-    else if (activeFilter === 'tier-premium') show = tier === 'premium';
-    else if (activeFilter === 'tier-exclude') show = tier === 'exclude';
-    else if (activeFilter === 'fit-feature') show = fit === 'feature_impl' || fit === 'both';
-    else if (activeFilter === 'fit-review') show = fit === 'code_review' || fit === 'both';
-    else if (activeFilter === 'fit-both') show = fit === 'both';
-    card.classList.toggle('hidden', !show);
+    if (activeFilter === "approve") show = s.decision === "approve";
+    else if (activeFilter === "skip") show = s.decision === "skip";
+    else if (activeFilter === "undecided") show = s.decision === "undecided";
+    else if (activeFilter === "feature_impl") show = s.fit === "feature_impl" || s.fit === "both";
+    else if (activeFilter === "both") show = s.fit === "both";
+    card.classList.toggle("hidden", !show);
   });
 }
 
-// ─── Stat bar ──────────────────────────────────────────────────────────────
+// ── radio interactions ───────────────────────────────────────────────────────
+document.addEventListener("change", function (e) {
+  const t = e.target;
+  if (!t || t.type !== "radio" || !t.dataset.repoid) return;
+  const id = Number(t.dataset.repoid);
+  const field = t.dataset.field;
+  const val = t.value;
+  if (!state[id]) state[id] = defaultState(ROWS.find(function (r) { return r.repo.repo_id === id; }));
+  state[id][field] = val;
+  save();
+  refreshCard(id);
+});
 
-function updateStatBar() {
-  const total = ROWS.length;
-  let keep = 0, deny = 0, premium = 0, exclude = 0, featureImpl = 0, both = 0;
-  for (const row of ROWS) {
-    const s = state[row.repo.repo_id];
-    if (s?.pass1_override === 'keep') keep++;
-    if (s?.pass1_override === 'deny-list') deny++;
-    if (s?.tier === 'premium') premium++;
-    if (s?.tier === 'exclude') exclude++;
-    if (s?.challenge_fit === 'feature_impl') featureImpl++;
-    if (s?.challenge_fit === 'both') both++;
+document.addEventListener("input", function (e) {
+  const t = e.target;
+  if (!t || !t.classList.contains("notes-ta")) return;
+  const id = Number(t.dataset.repoid);
+  if (!state[id]) return;
+  state[id].notes = t.value;
+  save();
+});
+
+function refreshCard(id) {
+  const s = state[id] || {};
+  const card = document.getElementById("card-" + id);
+  if (!card) return;
+
+  card.dataset.decision = s.decision;
+  card.dataset.fit = s.fit;
+
+  // decision badge
+  const decBadge = document.getElementById("dec-badge-" + id);
+  if (decBadge) {
+    if (s.decision === "approve") { decBadge.className = "badge badge-green"; decBadge.textContent = "approved"; }
+    else if (s.decision === "skip") { decBadge.className = "badge badge-red"; decBadge.textContent = "skipped"; }
+    else { decBadge.className = "badge badge-outline"; decBadge.textContent = "undecided"; }
   }
-  const bar = document.getElementById('stat-bar');
-  if (!bar) return;
-  bar.innerHTML = [
-    {val: total, label: 'repos', cls: ''},
-    {val: keep, label: 'keep', cls: 'color:var(--green)'},
-    {val: deny, label: 'deny', cls: 'color:var(--red)'},
-    {val: premium, label: 'premium', cls: 'color:var(--purple)'},
-    {val: featureImpl + both, label: 'feat impl', cls: 'color:var(--green)'},
-    {val: exclude, label: 'exclude', cls: 'color:var(--text3)'},
-  ].map(s => '<div class="stat"><span class="stat-val" style="' + s.cls + '">' + s.val + '</span><span class="stat-label">' + s.label + '</span></div>').join('');
+
+  // fit badge
+  const fitBadge = document.getElementById("fit-badge-" + id);
+  if (fitBadge) {
+    const fitLabel = { code_review: "code review", feature_impl: "feature impl", both: "both" };
+    const fitCls = { code_review: "badge-blue", feature_impl: "badge-green", both: "badge-purple" };
+    fitBadge.className = "badge " + (fitCls[s.fit] || "badge-outline");
+    fitBadge.textContent = fitLabel[s.fit] || s.fit || "code review";
+  }
+
+  // tier badge
+  const tierBadge = document.getElementById("tier-badge-" + id);
+  if (tierBadge) {
+    tierBadge.className = "badge " + (s.tier === "premium" ? "badge-purple" : "badge-outline");
+    tierBadge.textContent = s.tier || "standard";
+  }
+
+  // show/hide approved-only options
+  const approvedOpts = document.getElementById("approved-opts-" + id);
+  if (approvedOpts) {
+    approvedOpts.classList.toggle("hidden", s.decision !== "approve");
+  }
+
+  // radio label highlights
+  ["decision", "fit", "tier"].forEach(function (field) {
+    document.querySelectorAll("[data-repoid=\\"" + id + "\\"][data-field=\\"" + field + "\\"]").forEach(function (radio) {
+      const lbl = radio.closest(".rbtn");
+      if (!lbl) return;
+      const isSel = radio.value === s[field];
+      lbl.className = "rbtn" + (isSel ? " sel-" + radio.value : "");
+    });
+  });
+
+  // sync notes textarea from saved state (on page load)
+  const ta = document.querySelector(".notes-ta[data-repoid=\\"" + id + "\\"]");
+  if (ta && ta.value !== (s.notes || "")) ta.value = s.notes || "";
+
+  // re-apply filter
+  if (activeFilter !== "all") {
+    const show =
+      activeFilter === "approve" ? s.decision === "approve" :
+      activeFilter === "skip" ? s.decision === "skip" :
+      activeFilter === "undecided" ? s.decision === "undecided" :
+      activeFilter === "feature_impl" ? (s.fit === "feature_impl" || s.fit === "both") :
+      activeFilter === "both" ? s.fit === "both" : true;
+    card.classList.toggle("hidden", !show);
+  }
 }
 
-// ─── Export ────────────────────────────────────────────────────────────────
+// ── collapse ─────────────────────────────────────────────────────────────────
+function toggleDebug(id) {
+  const el = document.getElementById("debug-" + id);
+  const btn = document.getElementById("debug-btn-" + id);
+  if (!el || !btn) return;
+  el.classList.toggle("open");
+  btn.textContent = el.classList.contains("open") ? "\\u25BC Pipeline details" : "\\u25BA Pipeline details";
+}
 
-function buildDecisionsJson() {
-  const repos = ROWS.map(row => {
+// ── export ───────────────────────────────────────────────────────────────────
+function buildJson() {
+  const repos = ROWS.map(function (row) {
     const id = row.repo.repo_id;
-    const s = state[id] ?? {};
+    const s = state[id] || defaultState(row);
     return {
       repo_id: id,
       full_name: row.repo.full_name,
-      pass1_override: s.pass1_override ?? null,
-      pass2_override: s.pass2_override ?? null,
-      tier: s.tier ?? 'standard',
-      challenge_fit: s.challenge_fit ?? 'code_review',
+      decision: s.decision,
+      challenge_fit: s.fit,
+      tier: s.tier,
       notes: s.notes || null,
     };
   });
-  return JSON.stringify({ source_run_dir: RUN_DIR, generated_at: new Date().toISOString(), repos }, null, 2);
+  return JSON.stringify({ source_run_dir: RUN_DIR, generated_at: new Date().toISOString(), repos: repos }, null, 2);
 }
 
-function openExport() {
-  document.getElementById('modal-json').textContent = buildDecisionsJson();
-  document.getElementById('modal-overlay').classList.add('open');
+function openModal() {
+  document.getElementById("modal-pre").textContent = buildJson();
+  document.getElementById("modal-bg").classList.add("open");
 }
-
-function closeExport(e) {
-  if (!e || e.target === document.getElementById('modal-overlay')) {
-    document.getElementById('modal-overlay').classList.remove('open');
-  }
-}
-
-function downloadDecisions() {
-  const json = buildDecisionsJson();
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'human-decisions.json';
+function closeModal() { document.getElementById("modal-bg").classList.remove("open"); }
+function bgClick(e) { if (e.target === document.getElementById("modal-bg")) closeModal(); }
+function download() {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buildJson()], { type: "application/json" }));
+  a.download = "human-decisions.json";
   a.click();
-  URL.revokeObjectURL(url);
+}
+function copyJson() {
+  navigator.clipboard.writeText(buildJson());
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = "Copied!";
+  setTimeout(function () { btn.textContent = orig; }, 1500);
 }
 
-function copyDecisions() {
-  navigator.clipboard.writeText(buildDecisionsJson()).then(() => {
-    const btn = event.target;
-    const orig = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
-  });
-}
-
-// ─── Init ──────────────────────────────────────────────────────────────────
-
+// ── init ──────────────────────────────────────────────────────────────────────
 (function init() {
-  const container = document.getElementById('cards-container');
-  container.innerHTML = ROWS.map(renderCard).join('');
-  updateStatBar();
-
-  // Delegated change listener for all radio inputs (avoids inline-handler quote issues)
-  document.addEventListener('change', function(e) {
-    const target = e.target;
-    if (target && target.type === 'radio' && target.dataset.repoid) {
-      onRadio(Number(target.dataset.repoid), target.dataset.field, target.value);
-    }
-  });
+  renderTally();
+  for (const row of ROWS) { refreshCard(row.repo.repo_id); }
 })();
 </script>
-
 </body>
 </html>`;
 }
