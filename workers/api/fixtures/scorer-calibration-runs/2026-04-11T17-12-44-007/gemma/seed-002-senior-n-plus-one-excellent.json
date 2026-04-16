@@ -1,0 +1,11 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "meta": {
+    "wall_clock_ms": 110485,
+    "attempts": 5,
+    "status": "failed",
+    "error": "[calibrate] Cloudflare AI 503: {\"errors\":[{\"message\":\"AiError: AiError: Max retries exhausted (85bc8256-f326-44bf-959c-9f9cc41287b6)\",\"code\":3050}],\"success\":false,\"result\":{},\"messages\":[]}"
+  }
+}

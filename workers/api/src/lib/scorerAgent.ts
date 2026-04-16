@@ -42,7 +42,7 @@ import {
 
 export type { PlantedBug, BarsDimensionScores, EffectivenessScore };
 
-export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic';
+export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic' | 'vertex-ai' | 'google-ai';
 
 export interface ScorerInput {
   apiKey: string;
@@ -220,6 +220,88 @@ async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: 
 }
 
 /**
+ * Vertex AI via OpenAI-compatible chat/completions endpoint.
+ * Uses Gemma 4 26B MaaS with Bearer token auth.
+ * Endpoint: https://aiplatform.googleapis.com/v1/projects/{projectId}/locations/global/endpoints/openapi/chat/completions
+ */
+async function callVertexAI(
+  accessToken: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens = 2048,
+): Promise<string> {
+  // Project ID is required for this endpoint
+  const projectId = 'gen-lang-client-0669733210';
+  const url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      model: 'google/gemma-4-26b-a4b-it-maas',
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[scorerAgent] Vertex AI error', { status: response.status, body: errorText });
+    throw new Error(`[scorerAgent] Vertex AI ${response.status}: ${errorText.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return data.choices?.[0]?.message?.content?.trim() ?? '';
+}
+
+/**
+ * Google AI (Gemma) via generativelanguage.googleapis.com — API key auth.
+ * Different from Vertex AI. Uses Gemma 3 27B which doesn't support systemInstruction,
+ * so we merge the system prompt into the user message.
+ */
+async function callGoogleAI(
+  apiKey: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens = 2048,
+): Promise<string> {
+  const model = 'gemma-4-31b-it';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  // Gemma doesn't support systemInstruction — merge into user message
+  const combinedMessage = `${systemPrompt}\n\n---\n\n${userMessage}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: combinedMessage }] }],
+      generationConfig: { maxOutputTokens: maxTokens },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[scorerAgent] Google AI error', { status: response.status, body: errorText });
+    throw new Error(`[scorerAgent] Google AI ${response.status}: ${errorText.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  return parts.map((p) => p.text ?? '').join('').trim();
+}
+
+/**
  * Workers AI scorer model — ADR-036 Phase 3 provisional pick.
  *
  * Must be a different family than the implementer (Qwen 2.5-Coder 32B) for
@@ -232,19 +314,67 @@ async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: 
  * Gemma vs Devstral vs Sonnet κ on a 30–50 fixture set, we keep whichever
  * model clears κ ≥ 0.75 cheapest. See STRATEGY.md "Scorer calibration".
  */
-const SCORER_WORKERS_AI_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+// Qwen 2.5 Coder 32B — trying this instead of Gemma 4 26B which is unreliable
+const SCORER_WORKERS_AI_MODEL = '@cf/qwen/qwen2.5-coder-32b-instruct';
+const SCORER_WORKERS_AI_FALLBACK = '@cf/qwen/qwen3-30b-a3b-fp8';
 
 async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
-  const response = await ai.run(
-    SCORER_WORKERS_AI_MODEL,
-    {
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      max_tokens: maxTokens,
-    },
-  );
+  console.log('[callWorkersAI] calling ai.run with model:', SCORER_WORKERS_AI_MODEL, 'prompt lengths:', systemPrompt.length, userMessage.length);
+
+  let response: unknown;
+  let modelUsed = SCORER_WORKERS_AI_MODEL;
+
+  try {
+    response = await ai.run(
+      SCORER_WORKERS_AI_MODEL as Parameters<typeof ai.run>[0],
+      {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        max_tokens: maxTokens,
+      },
+    );
+  } catch (err) {
+    // Fallback to smaller model on 3050 (max retries exhausted) or similar errors
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes('3050') || errMsg.includes('Max retries')) {
+      console.warn('[callWorkersAI] Primary model failed, falling back to:', SCORER_WORKERS_AI_FALLBACK);
+      modelUsed = SCORER_WORKERS_AI_FALLBACK;
+      try {
+        response = await ai.run(
+          SCORER_WORKERS_AI_FALLBACK as Parameters<typeof ai.run>[0],
+          {
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userMessage },
+            ],
+            max_tokens: maxTokens,
+          },
+        );
+      } catch (fallbackErr) {
+        console.error('[callWorkersAI] Fallback model also failed:', fallbackErr);
+        throw fallbackErr;
+      }
+    } else {
+      console.error('[callWorkersAI] ai.run threw:', err);
+      console.error('[callWorkersAI] error type:', typeof err);
+      console.error('[callWorkersAI] error constructor:', (err as object)?.constructor?.name);
+      if (err instanceof Error) {
+        console.error('[callWorkersAI] error.message:', err.message);
+        console.error('[callWorkersAI] error.cause:', (err as Error & { cause?: unknown }).cause);
+      }
+      throw err;
+    }
+  }
+
+  console.log('[callWorkersAI] using model:', modelUsed);
+
+  // Debug: log the raw response shape
+  console.log('[callWorkersAI] response type:', typeof response);
+  console.log('[callWorkersAI] response instanceof ReadableStream:', response instanceof ReadableStream);
+  console.log('[callWorkersAI] response keys:', response ? Object.keys(response as object) : 'null/undefined');
+  console.log('[callWorkersAI] response preview:', JSON.stringify(response)?.slice(0, 500));
 
   if (response instanceof ReadableStream) {
     const reader = response.getReader();
@@ -267,13 +397,23 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, 
   return '';
 }
 
-/** Stored reference to AI binding, set by scoreReviewSession */
-let _ai: Ai | undefined;
-
-async function callLLM(apiKey: string, provider: LLMProvider, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
+async function callLLM(
+  apiKey: string,
+  provider: LLMProvider,
+  ai: Ai | undefined,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens = 2048,
+): Promise<string> {
   if (provider === 'workers-ai') {
-    if (!_ai) throw new Error('[scorerAgent] Workers AI binding not available.');
-    return callWorkersAI(_ai, systemPrompt, userMessage, maxTokens);
+    if (!ai) throw new Error('[scorerAgent] Workers AI binding not available.');
+    return callWorkersAI(ai, systemPrompt, userMessage, maxTokens);
+  }
+  if (provider === 'vertex-ai') {
+    return callVertexAI(apiKey, systemPrompt, userMessage, maxTokens);
+  }
+  if (provider === 'google-ai') {
+    return callGoogleAI(apiKey, systemPrompt, userMessage, maxTokens);
   }
   return provider === 'anthropic'
     ? callAnthropic(apiKey, systemPrompt, userMessage, maxTokens)
@@ -349,13 +489,10 @@ Write the hiring assessment narrative. Return JSON with: { "narrative": "...", "
  */
 export async function scoreReviewSession(input: ScorerInput): Promise<ScoreReport> {
   const {
-    apiKey, provider = 'workers-ai', ai, transcript, groundTruth,
+    apiKey, provider = 'mistral', ai, transcript, groundTruth,
     diff, prTitle, prDescription, instructions, level = 'mid',
     dispositionalWeights,
   } = input;
-
-  // Store AI binding for use in callLLM
-  _ai = ai;
 
   // Return mock score report when API key is not configured (for testing)
   if (!apiKey && provider !== 'workers-ai') {
@@ -367,7 +504,7 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
     throw new Error('[scorerAgent] Workers AI binding not available.');
   }
   if (provider !== 'workers-ai' && !apiKey) {
-    throw new Error('[scorerAgent] No API key configured. Set MISTRAL_API_KEY or ANTHROPIC_API_KEY.');
+    throw new Error('[scorerAgent] No API key configured. Set GOOGLE_AI_API_KEY, MISTRAL_API_KEY, or ANTHROPIC_API_KEY.');
   }
 
   const prContext = [
@@ -378,34 +515,43 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
 
   // Run Scorer A + Scorer B in parallel
   const [scorerARaw, scorerBRaw] = await Promise.all([
-    callLLM(apiKey, provider, SCORER_A_PROMPT, buildScorerAUserMessage(transcript, groundTruth, prContext, diff), 3000),
-    callLLM(apiKey, provider, SCORER_B_PROMPT, buildScorerBUserMessage(transcript), 2048),
+    callLLM(apiKey, provider, ai, SCORER_A_PROMPT, buildScorerAUserMessage(transcript, groundTruth, prContext, diff), 3000),
+    callLLM(apiKey, provider, ai, SCORER_B_PROMPT, buildScorerBUserMessage(transcript), 2048),
   ]);
+
+  // Debug: log raw LLM output before parsing (helps diagnose truncation)
+  if (provider === 'workers-ai') {
+    console.log('[scorerAgent] Scorer A raw length:', scorerARaw.length, 'last 200 chars:', JSON.stringify(scorerARaw.slice(-200)));
+    console.log('[scorerAgent] Scorer B raw length:', scorerBRaw.length, 'last 200 chars:', JSON.stringify(scorerBRaw.slice(-200)));
+  }
 
   // Parse scorer outputs
   const scorerA = extractJson<Record<string, unknown>>(scorerARaw);
   const scorerB = extractJson<Record<string, unknown>>(scorerBRaw);
 
   // Extract dimension scores (1-5, default to 3 = midpoint)
+  // Handle both flat format and nested format (scores.dimension_name)
+  const scoresA = (scorerA.scores ?? scorerA) as Record<string, unknown>;
+  const scoresB = (scorerB.scores ?? scorerB) as Record<string, unknown>;
   const dimensions: BarsDimensionScores = {
-    issue_identification: clampScore(Number(scorerA.issue_identification) || 3),
-    prioritization: clampScore(Number(scorerA.prioritization) || 3),
-    revision_evaluation: clampScore(Number(scorerA.revision_evaluation) || 3),
-    reasoning_quality: clampScore(Number(scorerB.reasoning_quality) || 3),
-    question_formation: clampScore(Number(scorerB.question_formation) || 3),
-    ai_direction: clampScore(Number(scorerB.ai_direction) || 3),
+    issue_identification: clampScore(Number(scoresA.issue_identification) || 3),
+    prioritization: clampScore(Number(scoresA.prioritization) || 3),
+    revision_evaluation: clampScore(Number(scoresA.revision_evaluation) || 3),
+    reasoning_quality: clampScore(Number(scoresB.reasoning_quality) || 3),
+    question_formation: clampScore(Number(scoresB.question_formation) || 3),
+    ai_direction: clampScore(Number(scoresB.ai_direction) || 3),
   };
 
   // Extract evidence
   const scorerAEvidence = (scorerA.evidence ?? {}) as Record<string, string>;
   const scorerBEvidence = (scorerB.evidence ?? {}) as Record<string, string>;
   const evidence: ScorerEvidence = {
-    issue_identification_evidence: scorerAEvidence.issue_identification_evidence,
-    prioritization_evidence: scorerAEvidence.prioritization_evidence,
-    revision_evaluation_evidence: scorerAEvidence.revision_evaluation_evidence,
-    reasoning_quality_evidence: scorerBEvidence.reasoning_quality_evidence,
-    question_formation_evidence: scorerBEvidence.question_formation_evidence,
-    ai_direction_evidence: scorerBEvidence.ai_direction_evidence,
+    issue_identification_evidence: scorerAEvidence.issue_identification_evidence ?? '',
+    prioritization_evidence: scorerAEvidence.prioritization_evidence ?? '',
+    revision_evaluation_evidence: scorerAEvidence.revision_evaluation_evidence ?? '',
+    reasoning_quality_evidence: scorerBEvidence.reasoning_quality_evidence ?? '',
+    question_formation_evidence: scorerBEvidence.question_formation_evidence ?? '',
+    ai_direction_evidence: scorerBEvidence.ai_direction_evidence ?? '',
   };
 
   // Extract metrics from Scorer A
@@ -437,7 +583,7 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   const scorerBSummary = typeof scorerB.summary === 'string' ? scorerB.summary : '';
 
   const synthRaw = await callLLM(
-    apiKey, provider, SYNTHESIZER_PROMPT,
+    apiKey, provider, ai, SYNTHESIZER_PROMPT,
     buildSynthesizerUserMessage(dimensions, effectiveness, scorerASummary, scorerBSummary),
     1024,
   );

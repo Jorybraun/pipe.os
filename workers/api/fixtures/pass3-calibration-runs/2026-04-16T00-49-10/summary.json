@@ -1,0 +1,80 @@
+{
+  "run_timestamp": "2026-04-16T00-49-10",
+  "total_repos": 10,
+  "gemma_attempt1_success_rate": 100,
+  "validation_attempt1_pass_rate": 0,
+  "judge_attempt1_approval_rate": 0,
+  "judge_approval_after_retry_rate": 0,
+  "final_approval_rate": 0,
+  "status_distribution": {
+    "validation_failed": 10
+  },
+  "judge_dimension_failure_rates": {
+    "constraint_pass": 0,
+    "accuracy_pass": 0,
+    "architecture_pass": 0,
+    "completeness_pass": 0
+  },
+  "most_common_validation_failures": [
+    "(10x) repo_searchable_profile too short: N words (min N)",
+    "(4x) engineering_narrative too short: N words (min N)",
+    "(3x) repo_searchable_profile contains invented numbers not in FACTS block: N, N, N, N, N",
+    "(3x) repo_searchable_profile contains invented numbers not in FACTS block: N, N, N, N.N, N.N",
+    "(1x) repo_searchable_profile contains invented numbers not in FACTS block: N, N.N, N, N, N"
+  ],
+  "most_common_judge_failures": [],
+  "avg_narrative_words_attempt1": 204,
+  "avg_profile_words_attempt1": 210,
+  "repos": [
+    {
+      "repo_id": 1673,
+      "full_name": "mui/base-ui",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1676,
+      "full_name": "nhost/nhost",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1677,
+      "full_name": "iib0011/omni-tools",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1679,
+      "full_name": "uber/baseweb",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1683,
+      "full_name": "rsuite/rsuite",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1686,
+      "full_name": "getsentry/sentry-javascript",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1687,
+      "full_name": "Hacker0x01/react-datepicker",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1688,
+      "full_name": "garmeeh/next-seo",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1689,
+      "full_name": "Shopify/react-native-skia",
+      "final_status": "validation_failed"
+    },
+    {
+      "repo_id": 1693,
+      "full_name": "davidjerleke/embla-carousel",
+      "final_status": "validation_failed"
+    }
+  ]
+}

@@ -5,12 +5,13 @@
  * Usage:
  *   npx tsx scripts/crawl-repos/index.ts --pass1 [--dry-run] [--limit 50]
  *   npx tsx scripts/crawl-repos/index.ts --pass2 [--dry-run] [--limit 200]
+ *   npx tsx scripts/crawl-repos/index.ts --pass3 [--dry-run] [--limit 200]
  *   npx tsx scripts/crawl-repos/index.ts --pass1 --pass2
  *
  * Required env vars:
- *   GITHUB_TOKEN               — GitHub personal access token
+ *   GITHUB_TOKEN               — GitHub personal access token (Pass 1/2)
  *   CLOUDFLARE_ACCOUNT_ID      — Cloudflare account ID
- *   CLOUDFLARE_API_TOKEN       — Cloudflare API token (D1 write permissions)
+ *   CLOUDFLARE_API_TOKEN       — Cloudflare API token (D1 + AI write permissions)
  *   CLOUDFLARE_D1_DATABASE_ID  — D1 database ID
  *
  * Optional env vars:
@@ -19,8 +20,16 @@
  *   LOG_LEVEL            — debug|info|warn|error (default info)
  */
 
+import dotenv from 'dotenv';
 import { parseArgs } from 'node:util';
-import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const apiRoot = resolve(__dirname, '../..');
+
+// Load .dev.vars from workers/api (wrangler convention)
+dotenv.config({ path: resolve(apiRoot, '.dev.vars') });
 import { GitHubClient } from './shared/githubClient.js';
 import { D1Client, loadD1Config } from './shared/d1Client.js';
 import { logger } from './shared/logger.js';
@@ -44,40 +53,64 @@ import type { Pass1Row, Pass2Data } from './shared/types.js';
 
 const { values: args } = parseArgs({
   options: {
-    pass1:     { type: 'boolean', default: false },
-    pass2:     { type: 'boolean', default: false },
-    'dry-run': { type: 'boolean', default: false },
-    limit:     { type: 'string' },
-    queries:   { type: 'string' }, // limit number of search queries (for testing)
-    help:      { type: 'boolean', default: false },
+    pass1:         { type: 'boolean', default: false },
+    pass2:         { type: 'boolean', default: false },
+    pass3:         { type: 'boolean', default: false },
+    'dry-run':     { type: 'boolean', default: false },
+    limit:         { type: 'string' },
+    'repo-id':     { type: 'string' }, // pass3: run on a single repo by D1 ID
+    concurrency:   { type: 'string' }, // pass3: parallel repo processing (default 5)
+    queries:       { type: 'string' }, // limit number of search queries (for testing)
+    help:          { type: 'boolean', default: false },
   },
 });
 
-if (args.help || (!args.pass1 && !args.pass2)) {
+if (args.help || (!args.pass1 && !args.pass2 && !args.pass3)) {
   console.log(`
 Usage:
   npx tsx scripts/crawl-repos/index.ts --pass1 [--dry-run] [--limit N]
   npx tsx scripts/crawl-repos/index.ts --pass2 [--dry-run] [--limit N]
+  npx tsx scripts/crawl-repos/index.ts --pass3 [--dry-run] [--limit N]
   npx tsx scripts/crawl-repos/index.ts --pass1 --pass2
 
 Options:
-  --pass1     Run Pass 1 (search + coarse filter, no clone)
-  --pass2     Run Pass 2 (clone + deep analysis)
-  --dry-run   Print actions without writing to D1
-  --limit N   Override batch size
-  --help      Show this help
+  --pass1       Run Pass 1 (search + coarse filter, no clone)
+  --pass2       Run Pass 2 (clone + deep analysis)
+  --pass3       Run Pass 3 (offline AI signal extraction via Vertex AI Gemma)
+  --dry-run     Print actions without writing to D1
+  --limit N     Override batch size
+  --repo-id N   Pass 3: run on a single repo by D1 ID
+  --help        Show this help
 `);
   process.exit(0);
 }
 
 const DRY_RUN = args['dry-run'] ?? false;
 const LIMIT = args.limit ? parseInt(args.limit, 10) : undefined;
+const REPO_ID = args['repo-id'] ? parseInt(args['repo-id'], 10) : undefined;
+const CONCURRENCY = args.concurrency ? parseInt(args.concurrency, 10) : undefined;
 const MAX_QUERIES = args.queries ? parseInt(args.queries, 10) : undefined;
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  logger.info('[crawler] Starting', { pass1: args.pass1, pass2: args.pass2, dryRun: DRY_RUN, limit: LIMIT });
+  logger.info('[crawler] Starting', {
+    pass1: args.pass1,
+    pass2: args.pass2,
+    pass3: args.pass3,
+    dryRun: DRY_RUN,
+    limit: LIMIT,
+  });
+
+  // Pass 3 is a TypeScript module that calls Vertex AI Gemma for summarization.
+  // It uses D1Client directly (same as Pass 1/2).
+  if (args.pass3) {
+    await runPass3();
+    if (!args.pass1 && !args.pass2) {
+      logger.info('[crawler] Done');
+      return;
+    }
+  }
 
   const githubToken = process.env['GITHUB_TOKEN'];
   if (!githubToken) {
@@ -98,6 +131,21 @@ async function main(): Promise<void> {
   }
 
   logger.info('[crawler] Done');
+}
+
+// ─── Pass 3 ───────────────────────────────────────────────────────────────────
+//
+// Pass 3 calls Vertex AI Gemma 4 26B for offline AI signal extraction.
+// TypeScript orchestrator in ./pass3/run.ts.
+
+async function runPass3(): Promise<void> {
+  const { run } = await import('./pass3/run.js');
+  await run({
+    limit: LIMIT,
+    repoId: REPO_ID,
+    dryRun: DRY_RUN,
+    concurrency: CONCURRENCY,
+  });
 }
 
 // ─── Pass 1 ───────────────────────────────────────────────────────────────────
@@ -141,9 +189,25 @@ async function runPass1(github: GitHubClient, d1: D1Client | null): Promise<void
       const manifestSkills = await extractManifestSkills(github, owner, repoName);
       const topicSkills = extractTopicSkills(repo.topics ?? []);
 
+      // Open-work counts drive the "challenge-ready" hard filter in matchRepos.
+      // ~2 extra API calls per repo; best-effort — fall back to null on failure.
+      let openCounts: { open_pr_count: number | null; open_feature_issue_count: number | null } = {
+        open_pr_count: null,
+        open_feature_issue_count: null,
+      };
+      try {
+        openCounts = await github.getOpenWorkCounts(owner, repoName);
+      } catch (err) {
+        logger.warn('[pass1] Open-work counts failed', {
+          full_name: repo.full_name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       const now = new Date().toISOString();
       allRows.push({
         ...base,
+        ...openCounts,
         manifest_skills: [...manifestSkills, ...topicSkills],
         pass: 1,
         crawled_at: now,
@@ -197,7 +261,7 @@ async function runPass2(github: GitHubClient, d1: D1Client | null): Promise<void
     SELECT id, full_name, description, primary_language
     FROM qualified_repos
     WHERE pass = 1 AND disqualified = 0
-    ORDER BY stars DESC
+    ORDER BY RANDOM()
     LIMIT ?
   `, [batchSize]);
 
@@ -299,11 +363,15 @@ async function processPass2Repo(
     // ── PR sampling ───────────────────────────────────────────────────────
     let samplePrs: import('./shared/types.js').SamplePR[] = [];
     let prQualityScore = 0;
+    let businessLogicRatio: number | null = null;
+    let crossModuleChangeRate: number | null = null;
 
     if (!disqualified) {
-      const prResult = await samplePRs(github, owner, repoName, extractorCtx);
+      const prResult = await samplePRs(github, owner, repoName, extractorCtx, primaryLanguage);
       samplePrs = prResult.samplePrs;
       prQualityScore = prResult.prQualityScore;
+      businessLogicRatio = prResult.businessLogicRatio;
+      crossModuleChangeRate = prResult.crossModuleChangeRate;
       if (prResult.disqualified) {
         disqualified = 1;
         disqualifiedReason = prResult.disqualifiedReason;
@@ -326,6 +394,8 @@ async function processPass2Repo(
       detected_stack_json: detectedStackJson,
       disqualified,
       disqualified_reason: disqualifiedReason,
+      business_logic_ratio: businessLogicRatio,
+      cross_module_change_rate: crossModuleChangeRate,
       skills: [...resolvedSkills.entries()].map(([slug, meta]) => ({
         slug,
         source: meta.source,

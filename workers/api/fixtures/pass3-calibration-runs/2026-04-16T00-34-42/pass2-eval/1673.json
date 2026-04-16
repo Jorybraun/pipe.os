@@ -1,0 +1,9 @@
+{
+  "repo_id": 1673,
+  "full_name": "mui/base-ui",
+  "signal_quality": "good",
+  "issues": [
+    "pr_quality_score: 0.578 reads slightly low — 7 of 8 PRs modify tests and all titles describe specific, real component-level fixes (RTL positioning, hydration warnings, keyboard rounding); a score in the 0.65–0.75 range would be more consistent"
+  ],
+  "reasoning": "Domain, stack, and test signals are tightly consistent with a major headless React UI library; seniority_band=staff is well-supported by SLOC and file count; PR sample is high-quality real engineering work, making the 0.578 pr_quality_score a mild underestimate."
+}

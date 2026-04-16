@@ -1,0 +1,12 @@
+{
+  "repo_id": 1689,
+  "full_name": "Shopify/react-native-skia",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "React Native graphics rendering library wrapping the Skia C++ engine — a specialized native graphics SDK",
+    "Requires deep knowledge of Skia internals, React Native JSI bridging, and GPU rendering concepts",
+    "Mobile + native graphics is a niche domain not representative of general software engineering hiring"
+  ],
+  "reasoning": "react-native-skia is a low-level native graphics library bridging Skia to React Native, making it a specialized vendor wrapper rather than a general-purpose application."
+}

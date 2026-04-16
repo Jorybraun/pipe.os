@@ -31,6 +31,7 @@ import { auditSignals } from './audit.js';
 import { classifyTestStyle } from './testStyleClassifier.js';
 import { classifyChallengeSurfaces } from './challengeSurfaceClassifier.js';
 import { computeDeterministicStats, computeComplexityBand } from './deterministicStats.js';
+import { judgeOutput } from './judge.js';
 import type { Pass3Input, FetchOptions } from './types.js';
 import type { Pass3Data, ArchitectureStyle } from '../shared/types.js';
 
@@ -49,7 +50,7 @@ interface VertexAIResponse {
   error?: { code: number; message: string };
 }
 
-async function callGemma(
+export async function callGemma(
   accessToken: string,
   projectId: string,
   systemPrompt: string,
@@ -62,7 +63,7 @@ async function callGemma(
   const combinedPrompt = `${systemPrompt}\n\n---\n\n${userPrompt}`;
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
-    generationConfig: { maxOutputTokens: 2048, responseMimeType: 'application/json' },
+    generationConfig: { maxOutputTokens: 4096, responseMimeType: 'application/json' },
   });
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -107,7 +108,7 @@ async function callGemma(
 // invented or rewritten — the validator enforces that every digit in the
 // narrative corresponds to a FACTS value.
 
-interface PromptFacts {
+export interface PromptFacts {
   test_touch_rate: number | null;
   mean_changed_files: number | null;
   p90_changed_files: number | null;
@@ -126,7 +127,7 @@ function fmt(n: number | null): string {
   return n === null ? 'unknown' : String(n);
 }
 
-function buildSummarizerPrompt(
+export function buildSummarizerPrompt(
   input: Pass3Input,
   facts: PromptFacts,
 ): { system: string; user: string } {
@@ -228,7 +229,7 @@ const ARCHITECTURE_ENUM = new Set<ArchitectureStyle>([
   'unknown',
 ]);
 
-function parseGemmaResponse(
+export function parseGemmaResponse(
   raw: string,
   input: Pass3Input,
   contentHash: string,
@@ -277,7 +278,7 @@ function parseGemmaResponse(
 interface RepoResult {
   repo_id: number;
   full_name: string;
-  status: 'cache_hit' | 'written' | 'gemma_error' | 'parse_error' | 'validation_failed' | 'persist_failed';
+  status: 'cache_hit' | 'written' | 'gemma_error' | 'parse_error' | 'validation_failed' | 'judge_failed' | 'persist_failed';
   detail?: string;
   narrative_len?: number;
 }
@@ -334,14 +335,14 @@ async function processRepo(
 
   // Step 2b: Call Gemma
   logger.info(`[pass3] ${tag} ${input.full_name} — calling Gemma`);
+  const { system, user: factsPrompt } = buildSummarizerPrompt(input, facts);
   let raw: string;
   try {
-    const { system, user } = buildSummarizerPrompt(input, facts);
-    raw = await callGemma(accessToken, projectId, system, user);
+    raw = await callGemma(accessToken, projectId, system, factsPrompt);
   } catch (err) {
     return { ...base, status: 'gemma_error', detail: err instanceof Error ? err.message : String(err) };
   }
-  logger.info(`[pass3] ${tag} ${input.full_name} — Gemma done, persisting`);
+  logger.info(`[pass3] ${tag} ${input.full_name} — Gemma done`);
 
   // Step 3: Parse
   let output: Pass3Data;
@@ -358,6 +359,86 @@ async function processRepo(
   }
   if (validation.warnings.length > 0) {
     logger.warn(`[pass3] ${input.full_name} warnings: ${validation.warnings.join('; ')}`);
+  }
+
+  // Step 4.5: Devstral judge gate
+  const mistralKey = process.env['MISTRAL_API_KEY'];
+  if (mistralKey) {
+    logger.info(`[pass3] ${tag} ${input.full_name} — running judge`);
+    let judgeResult = await judgeOutput({
+      factsBlock: factsPrompt,
+      narrative: output.engineering_narrative,
+      profile: output.repo_searchable_profile,
+      architectureStyle: output.architecture_style,
+      apiKey: mistralKey,
+    });
+
+    if (!judgeResult.approved) {
+      logger.warn(
+        `[pass3] ${tag} ${input.full_name} — judge denied (${judgeResult.failures.length} failures). Retrying Gemma with corrections.`,
+      );
+      const retryPrompt =
+        `${factsPrompt}\n\n---\nPREVIOUS ATTEMPT REJECTED by quality gate. Fix ALL of the following issues in your new response:\n` +
+        judgeResult.failures.map((f) => `- ${f}`).join('\n');
+
+      let retryRaw: string;
+      try {
+        retryRaw = await callGemma(accessToken, projectId, system, retryPrompt);
+      } catch (err) {
+        return {
+          ...base,
+          status: 'judge_failed',
+          detail: `judge denied; retry Gemma failed: ${err instanceof Error ? err.message : String(err)} | judge_failures: ${judgeResult.failures.join('; ')}`,
+        };
+      }
+
+      let retryOutput: Pass3Data;
+      try {
+        retryOutput = parseGemmaResponse(retryRaw, input, contentHash, facts);
+      } catch {
+        return {
+          ...base,
+          status: 'judge_failed',
+          detail: `judge denied; retry parse failed | judge_failures: ${judgeResult.failures.join('; ')}`,
+        };
+      }
+
+      const retryValidation = validatePass3(input, retryOutput);
+      if (!retryValidation.valid) {
+        return {
+          ...base,
+          status: 'judge_failed',
+          detail: `judge denied; retry validation failed: ${retryValidation.failures.join('; ')} | judge_failures: ${judgeResult.failures.join('; ')}`,
+        };
+      }
+
+      judgeResult = await judgeOutput({
+        factsBlock: factsPrompt,
+        narrative: retryOutput.engineering_narrative,
+        profile: retryOutput.repo_searchable_profile,
+        architectureStyle: retryOutput.architecture_style,
+        apiKey: mistralKey,
+      });
+
+      if (!judgeResult.approved) {
+        logger.error(
+          `[pass3] ${tag} ${input.full_name} — judge denied after retry. Dropping repo. Failures: ${judgeResult.failures.join('; ')}`,
+        );
+        return {
+          ...base,
+          status: 'judge_failed',
+          detail: `judge denied after retry | failures: ${judgeResult.failures.join('; ')} | reasoning: ${judgeResult.reasoning.slice(0, 200)}`,
+        };
+      }
+
+      // Retry passed — use the improved output
+      output = retryOutput;
+      logger.info(`[pass3] ${tag} ${input.full_name} — judge approved on retry`);
+    } else {
+      logger.info(`[pass3] ${tag} ${input.full_name} — judge approved`);
+    }
+  } else {
+    logger.warn(`[pass3] ${tag} ${input.full_name} — MISTRAL_API_KEY not set, skipping judge gate`);
   }
 
   // Step 5: Persist
@@ -398,10 +479,11 @@ interface RunStats {
   written: number;
   validationFailed: number;
   gemmaErrors: number;
+  judgeFailed: number;
   persistFailed: number;
 }
 
-async function getAccessToken(): Promise<string> {
+export async function getAccessToken(): Promise<string> {
   // Read ADC credentials file and exchange refresh_token for an access token.
   // This avoids needing gcloud in the subprocess PATH.
   const { readFileSync } = await import('node:fs');
@@ -469,6 +551,7 @@ export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?:
     written: 0,
     validationFailed: 0,
     gemmaErrors: 0,
+    judgeFailed: 0,
     persistFailed: 0,
   };
 
@@ -501,6 +584,11 @@ export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?:
         logger.error(`[pass3] repo_id=${result.repo_id} full_name=${result.full_name} status=validation_failed failures=${result.detail}`);
         failures.push({ repo_id: result.repo_id, full_name: result.full_name, reason: `validation: ${result.detail}` });
         break;
+      case 'judge_failed':
+        stats.judgeFailed++;
+        logger.error(`[pass3] repo_id=${result.repo_id} full_name=${result.full_name} status=judge_failed detail=${result.detail}`);
+        failures.push({ repo_id: result.repo_id, full_name: result.full_name, reason: `judge: ${result.detail}` });
+        break;
       case 'persist_failed':
         stats.persistFailed++;
         logger.error(`[pass3] repo_id=${result.repo_id} full_name=${result.full_name} status=persist_unverified ${result.detail}`);
@@ -516,6 +604,7 @@ export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?:
   console.log(`  Written:         ${stats.written}`);
   console.log(`  Validation fail: ${stats.validationFailed}`);
   console.log(`  Gemma errors:    ${stats.gemmaErrors}`);
+  console.log(`  Judge failed:    ${stats.judgeFailed}`);
   console.log(`  Persist fail:    ${stats.persistFailed}`);
   console.log(`signals_version:   ${SIGNALS_VERSION}`);
   console.log(`model_used:        ${SUMMARIZER_MODEL}`);

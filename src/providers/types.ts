@@ -125,11 +125,8 @@ export type QueryOperation<
 /**
  * DataProvider — the main data access interface.
  *
- * `models` mirrors `client.models.*` from Amplify's generated client.
- * `mutations` and `queries` mirror `client.mutations.*` / `client.queries.*`.
- *
- * All model names are sourced from `amplify/data/resource.ts` and must
- * stay in sync with the Schema definition.
+ * `models` exposes CRUD + observe operations per model.
+ * `mutations` and `queries` expose custom operations defined by the backend.
  */
 export interface DataProvider {
   models: {
@@ -213,10 +210,9 @@ export interface StorageProvider {
 /**
  * The set of providers injected at the root of the app via PipeProviderRoot.
  *
- * `auth` is optional at the root level because the AuthProvider for Amplify
- * must live inside the <Authenticator> boundary. It is provided by
- * AmplifyAuthWrapper (a child component) after the auth boundary is mounted.
- * useAuth() throws if accessed before the auth provider is wired in.
+ * `auth` is optional at the root level because ClerkAuthWrapper registers it
+ * from inside the signed-in boundary once Clerk's user state resolves.
+ * useAuth() returns a loading stub before the auth provider is wired in.
  */
 export interface PipeProviders {
   data: DataProviderFactory;

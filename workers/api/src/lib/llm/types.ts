@@ -70,4 +70,10 @@ export interface LLMProvider {
   readonly name: string;
   readonly supportsTools: boolean;
   complete(messages: LLMMessage[], options?: CompleteOptions): Promise<LLMCompletion>;
+  /**
+   * Stream text tokens as they are generated. Yields raw string chunks.
+   * Optional — providers that do not support streaming omit this method.
+   * Callers should check for its existence before using it.
+   */
+  completeStream?(messages: LLMMessage[], options?: CompleteOptions): AsyncGenerator<string>;
 }

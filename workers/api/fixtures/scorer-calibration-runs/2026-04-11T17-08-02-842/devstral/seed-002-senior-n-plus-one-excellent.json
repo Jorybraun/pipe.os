@@ -1,0 +1,54 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "This candidate is an adequate code reviewer with consistent but not exceptional performance across all dimensions. Their strongest area is reasoning and explanation, where they provided detailed failure mechanisms and proposed fixes with trade-offs, as noted by Scorer B. The most important area for growth is issue identification, as reflected in the low effectiveness score (30/100), indicating they missed critical bugs. While they demonstrate solid judgment in evaluating fixes and directing AI suggestions, their ability to detect meaningful issues needs improvement. With targeted coaching, they could develop into a stronger reviewer.",
+      "strengths": [
+        "Provides clear and detailed explanations for issues, including failure mechanisms and trade-offs",
+        "Exercises good judgment in evaluating fixes and AI suggestions",
+        "Communicates proposed fixes effectively"
+      ],
+      "growth_areas": [
+        "Needs to improve bug detection, as shown by the low effectiveness score (30/100)",
+        "Should ask more probing questions to uncover deeper design issues",
+        "Could better distinguish between critical and minor issues in prioritization"
+      ]
+    },
+    "scorer_a_summary": "",
+    "scorer_b_summary": "The reviewer demonstrated high-quality reasoning and explanation, consistently providing detailed failure mechanisms and proposing fixes with trade-offs. The reviewer occasionally asked superficial questions but did not probe deeply into design rationale. The reviewer effectively directed and evaluated implementer proposals, demonstrating strong judgment in accepting or rejecting suggestions based on their merit."
+  },
+  "meta": {
+    "wall_clock_ms": 10768,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

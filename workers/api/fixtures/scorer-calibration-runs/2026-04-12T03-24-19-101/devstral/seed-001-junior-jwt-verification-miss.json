@@ -1,0 +1,61 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 2,
+      "question_formation": 1,
+      "ai_direction": 1
+    },
+    "evidence": {
+      "issue_identification_evidence": "",
+      "prioritization_evidence": "",
+      "revision_evaluation_evidence": "",
+      "reasoning_quality_evidence": "",
+      "question_formation_evidence": "",
+      "ai_direction_evidence": ""
+    },
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 0,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": true,
+      "cave_ratio": 1,
+      "fix_verifications": 0
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 33,
+      "band": "weak",
+      "narrative": "This candidate demonstrates an adequate but inconsistent ability to review code, with room for significant improvement in communication and critical thinking. Their strongest area is efficiency, as they completed the review quickly, but this speed came at the cost of depth—they missed key issues and failed to verify fixes thoroughly. The most critical growth area is their lack of engagement with the code’s context; they didn’t ask questions to clarify intent or challenge assumptions, which led to shallow feedback. While they show potential in identifying some issues, their reviews lack the rigor and collaboration needed for high-impact contributions. With targeted coaching on communication and analytical depth, they could develop into a more effective reviewer.",
+      "strengths": [
+        "Efficient in completing reviews quickly",
+        "Able to identify some surface-level issues",
+        "Consistent in basic prioritization of findings"
+      ],
+      "growth_areas": [
+        "Asking clarifying questions to understand context",
+        "Providing detailed explanations for why issues matter",
+        "Evaluating and directing AI-generated suggestions critically"
+      ]
+    },
+    "scorer_a_summary": "",
+    "scorer_b_summary": "The reviewer's communication quality is low across all dimensions. The explanations provided are surface-level and lack depth, no clarifying questions were asked to understand the context or design intent, and there was no evidence of evaluating or directing AI-generated code or implementer proposals. This results in scores of 2 for reasoning quality, 1 for question formation, and 1 for AI direction."
+  },
+  "meta": {
+    "wall_clock_ms": 10792,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

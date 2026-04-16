@@ -96,6 +96,28 @@ export class GitHubClient {
     return this.get(`/search/repositories?q=${q}&per_page=100&page=${page}`);
   }
 
+  /**
+   * Returns open PR + open enhancement-labelled issue counts for a single repo.
+   * Used by Pass 1 to drive the "challenge-ready" hard filter in matchRepos.
+   * Two API calls per repo (search/issues with is:pr and is:issue+label:enhancement).
+   */
+  async getOpenWorkCounts(owner: string, repo: string): Promise<{
+    open_pr_count: number;
+    open_feature_issue_count: number;
+  }> {
+    const repoQ = encodeURIComponent(`repo:${owner}/${repo} is:open`);
+    const prResp = await this.get<{ total_count: number }>(
+      `/search/issues?q=${repoQ}+is:pr&per_page=1`,
+    );
+    const issueResp = await this.get<{ total_count: number }>(
+      `/search/issues?q=${repoQ}+is:issue+label:enhancement&per_page=1`,
+    );
+    return {
+      open_pr_count: prResp.total_count,
+      open_feature_issue_count: issueResp.total_count,
+    };
+  }
+
   async getMergedPRs(owner: string, repo: string, page = 1): Promise<GitHubPR[]> {
     return this.get<GitHubPR[]>(
       `/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=${page}`,

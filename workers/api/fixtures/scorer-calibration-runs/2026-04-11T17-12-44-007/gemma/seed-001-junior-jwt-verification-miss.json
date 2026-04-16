@@ -1,0 +1,53 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 0,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 0
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "The candidate is a weak reviewer who struggles to identify critical risks within the code. While they demonstrate a consistent ability to engage with developers through questioning, their feedback is often limited to superficial style preferences rather than core functionality. Most importantly, they failed to detect a major security vulnerability, indicating a significant need to improve their ability to prioritize high-impact defects over minor cosmetic issues.",
+      "strengths": [
+        "Maintains a consistent pattern of engaging with developers through questioning.",
+        "Attentive to minor coding conventions and stylistic consistency."
+      ],
+      "growth_areas": [
+        "Ability to identify and prioritize critical security and functional risks.",
+        "Developing the technical judgment required to challenge implementers rather than accepting changes reflexively.",
+        "Moving beyond superficial feedback to analyze the actual impact of code on the system."
+      ]
+    },
+    "scorer_a_summary": "The reviewer failed significantly across all dimensions. They missed all critical and major security/functional defects, focusing instead on trivial naming and logging style issues. Most importantly, they approved a PR that contains a critical security vulnerability (no JWT signature verification), representing a complete failure of the code review process. They provided a rubber-stamp approval that ignored the primary purpose of the middleware: secure authentication.",
+    "scorer_b_summary": "The reviewer provided a standard, low-depth review focused primarily on stylistic 'nits'. Reasoning was surface-level, offering preferences (e.g., 'it's clearer') rather than technical failure mechanisms or impact analysis. While the reviewer did use questions, they were superficial suggestions rather than probes into design rationale. Regarding AI/Implementer direction, the reviewer accepted the implementer's changes reflexively without demonstrating high-level judgment, merit-based evaluation, or the ability to push back on proposals."
+  },
+  "meta": {
+    "wall_clock_ms": 57624,
+    "attempts": 2,
+    "status": "ok"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "repo_id": 1686,
+  "full_name": "getsentry/sentry-javascript",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "Vendor SDK / client library for the Sentry error-monitoring platform",
+    "Engineering work is heavily specialized around browser instrumentation, tracing internals, and SDK compatibility shims",
+    "Not a general application — candidates would need deep Sentry-platform knowledge to meaningfully contribute"
+  ],
+  "reasoning": "sentry-javascript is the official Sentry SDK for JavaScript platforms, making it a vendor client library rather than an application and therefore unsuitable for general SWE assessment."
+}

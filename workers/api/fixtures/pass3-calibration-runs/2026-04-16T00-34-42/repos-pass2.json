@@ -1,0 +1,880 @@
+[
+  {
+    "repo_id": 1673,
+    "full_name": "mui/base-ui",
+    "primary_language": "typescript",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs/package.json\",\"count\":70},{\"file\":\"examples/tanstack-start-tailwind-css/package.json\",\"count\":24},{\"file\":\"examples/vite-css/package.json\",\"count\":15},{\"file\":\"package.json\",\"count\":44},{\"file\":\"packages/react/package.json\",\"count\":25}],\"totalDeps\":126}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "seniority_band": "staff",
+    "sloc": 191700,
+    "file_count": 1917,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.577659574468085,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 308
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 31
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 13
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 6
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 3100,
+        "title": "[popups] Lock full-width touch popups",
+        "changed_file_count": 14,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4409,
+        "title": "[autocomplete] Own part exports and docs metadata",
+        "changed_file_count": 37,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4452,
+        "title": "[select] Uncaught TypeError: Converting circular structure to JSON",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4469,
+        "title": "[avatar] Fix flash when image is cached",
+        "changed_file_count": 4,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4482,
+        "title": "[switch][checkbox][radio][select][combobox] Add suppressHydrationWarning to hidden inputs",
+        "changed_file_count": 7,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 4531,
+        "title": "[select] Fix RTL aligned popup positioning",
+        "changed_file_count": 4,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4548,
+        "title": "[slider] Fix keyboard floating-point rounding",
+        "changed_file_count": 4,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4551,
+        "title": "[switch][checkbox] Prevent input state changes in readOnly mode",
+        "changed_file_count": 4,
+        "modifies_tests": 1
+      }
+    ]
+  },
+  {
+    "repo_id": 1676,
+    "full_name": "nhost/nhost",
+    "primary_language": "typescript",
+    "detected_domain": "web-backend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"cli/cmd/project/templates/init/functions/package.json\",\"count\":0},{\"file\":\"cli/examples/myproject/functions/package.json\",\"count\":5},{\"file\":\"cli/examples/mysvc/package.json\",\"count\":1},{\"file\":\"dashboard/package.json\",\"count\":143},{\"file\":\"docs/package.json\",\"count\":22},{\"file\":\"go.mod\",\"count\":204}],\"totalDeps\":375}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "seniority_band": "staff",
+    "sloc": 356900,
+    "file_count": 3569,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.48333333333333334,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 323
+      },
+      {
+        "slug": "sql-queries",
+        "evidence_count": 188
+      },
+      {
+        "slug": "rest-api-design",
+        "evidence_count": 181
+      },
+      {
+        "slug": "migrations",
+        "evidence_count": 91
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 40
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 773,
+        "title": "Sync the Nhost services versions within the repository",
+        "changed_file_count": 14,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 1522,
+        "title": "fix(dashboard): correct redeployment button",
+        "changed_file_count": 9,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 2272,
+        "title": "chore(docs): minor fix to performance documentation",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 2384,
+        "title": "fix: update auth version and webauthn origins",
+        "changed_file_count": 9,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 2461,
+        "title": "feat (dashboard): set redirectTo during sign-in with twitter to support preview environments",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 2521,
+        "title": "feat: add elevate workflow to react-apollo and vue-apollo example projects",
+        "changed_file_count": 27,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 2567,
+        "title": "fix(dashboard): show correct message when sending invite fails",
+        "changed_file_count": 4,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 2575,
+        "title": "feat: dashboard: add healthcheck config to run services",
+        "changed_file_count": 7,
+        "modifies_tests": 0
+      }
+    ]
+  },
+  {
+    "repo_id": 1677,
+    "full_name": "iib0011/omni-tools",
+    "primary_language": "typescript",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":99}],\"totalDeps\":99}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "seniority_band": "staff",
+    "sloc": 57500,
+    "file_count": 575,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.46216216216216216,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 71
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 41
+      },
+      {
+        "slug": "react-context",
+        "evidence_count": 7
+      },
+      {
+        "slug": "async-error-handling",
+        "evidence_count": 6
+      },
+      {
+        "slug": "test-doubles",
+        "evidence_count": 5
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 22,
+        "title": "rot13 tool, testCases then updated index file",
+        "changed_file_count": 14,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 298,
+        "title": "Fix pdf plural",
+        "changed_file_count": 12,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 307,
+        "title": "Feat/Fix: Fix/Improve search tool",
+        "changed_file_count": 23,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 310,
+        "title": "Improve clarity for List Group tool (issue #308)",
+        "changed_file_count": 5,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 312,
+        "title": "feat: byte conversion across systems (SI, IEC) feature",
+        "changed_file_count": 7,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 317,
+        "title": "Add Discord Timestamp Generator tool",
+        "changed_file_count": 7,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 322,
+        "title": "    feat: add slug generator tool",
+        "changed_file_count": 7,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 326,
+        "title": "chore: TSV tool moved to csv folder since similar for consistency",
+        "changed_file_count": 26,
+        "modifies_tests": 0
+      }
+    ]
+  },
+  {
+    "repo_id": 1679,
+    "full_name": "uber/baseweb",
+    "primary_language": "typescript",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":76},{\"file\":\"packages/baseui-codemods/package.json\",\"count\":11},{\"file\":\"packages/baseweb-vscode-extension/package.json\",\"count\":16},{\"file\":\"packages/eslint-plugin-baseui/package.json\",\"count\":5}],\"totalDeps\":97}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "seniority_band": "staff",
+    "sloc": 246200,
+    "file_count": 2462,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.35526315789473684,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 155
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 19
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 9
+      },
+      {
+        "slug": "snapshot-tests",
+        "evidence_count": 5
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 3679,
+        "title": "fix(tether): fix popper position on update (#3678)",
+        "changed_file_count": 4,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 5346,
+        "title": "File uploader blog post",
+        "changed_file_count": 8,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 5350,
+        "title": "add new recommendations for color and typography",
+        "changed_file_count": 10,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 5351,
+        "title": "chore(docs): add docs for dialog component",
+        "changed_file_count": 7,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 5352,
+        "title": "Move file uploader basic stories to proper folder",
+        "changed_file_count": 11,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 5355,
+        "title": "Update file uploader code",
+        "changed_file_count": 14,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 5356,
+        "title": "Add file uploader stories",
+        "changed_file_count": 9,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 5357,
+        "title": "Add dynamic loading to file uploader documentation",
+        "changed_file_count": 30,
+        "modifies_tests": 1
+      }
+    ]
+  },
+  {
+    "repo_id": 1683,
+    "full_name": "rsuite/rsuite",
+    "primary_language": "typescript",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs/package.json\",\"count\":61},{\"file\":\"examples/create-react-app/package.json\",\"count\":11},{\"file\":\"examples/custom-i18n/package.json\",\"count\":16},{\"file\":\"examples/custom-multiple-themes/package.json\",\"count\":51},{\"file\":\"examples/with-babel-preset-rsuite/package.json\",\"count\":19}],\"totalDeps\":116}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": null,
+    "seniority_band": "staff",
+    "sloc": 173600,
+    "file_count": 1736,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.5810810810810811,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 387
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 290
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 34
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 6
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 4425,
+        "title": "docs(jsonld): add breadcrumb structured data",
+        "changed_file_count": 5,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 4429,
+        "title": "fix(Breadcrumb): move default size to css and update docs",
+        "changed_file_count": 11,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4430,
+        "title": "fix(DatePicker): align OK button to right when no ranges",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4436,
+        "title": "docs(guide): upgrading from v5 to v6",
+        "changed_file_count": 6,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 4443,
+        "title": "feat(DateInput): support AM/PM toggle with 'a' and 'p' keys",
+        "changed_file_count": 5,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4445,
+        "title": "feat(build): export SCSS source files to npm package",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4446,
+        "title": "fix(CheckTree): allow parent nodes to be selected when all children are disabled",
+        "changed_file_count": 9,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 4448,
+        "title": "fix(Checkbox): set indeterminate property for screen reader support",
+        "changed_file_count": 4,
+        "modifies_tests": 1
+      }
+    ]
+  },
+  {
+    "repo_id": 1686,
+    "full_name": "getsentry/sentry-javascript",
+    "primary_language": "typescript",
+    "detected_domain": "other",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"dev-packages/browser-integration-tests/package.json\",\"count\":14},{\"file\":\"dev-packages/bundle-analyzer-scenarios/browser-basic/package.json\",\"count\":0},{\"file\":\"dev-packages/bundle-analyzer-scenarios/package.json\",\"count\":4},{\"file\":\"dev-packages/bundler-tests/package.json\",\"count\":6},{\"file\":\"dev-packages/clear-cache-gh-action/package.json\",\"count\":3}],\"totalDeps\":21}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "seniority_band": "staff",
+    "sloc": 650300,
+    "file_count": 6503,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.4,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 1073
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 59
+      },
+      {
+        "slug": "error-types",
+        "evidence_count": 27
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 24
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 20
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 14981,
+        "title": "feat(browser): Add View Hierarchy integration",
+        "changed_file_count": 8,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 19373,
+        "title": " feat(cloudflare): Split alarms into multiple traces and link them",
+        "changed_file_count": 11,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 20108,
+        "title": "feat(node): Include global scope for `eventLoopBlockIntegration`",
+        "changed_file_count": 5,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 20128,
+        "title": "fix(deno): Avoid inferring invalid span op from Deno tracer",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 20181,
+        "title": "feat(core): Add `enableTruncation` option to Anthropic AI integration",
+        "changed_file_count": 7,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 20182,
+        "title": "feat(core): Add `enableTruncation` option to LangChain integration",
+        "changed_file_count": 8,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 20183,
+        "title": "feat(core): Add `enableTruncation` option to LangGraph integration",
+        "changed_file_count": 5,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 20184,
+        "title": "feat(core): Add enableTruncation option to Google GenAI integration",
+        "changed_file_count": 5,
+        "modifies_tests": 0
+      }
+    ]
+  },
+  {
+    "repo_id": 1687,
+    "full_name": "Hacker0x01/react-datepicker",
+    "primary_language": "typescript",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs-site/package.json\",\"count\":26},{\"file\":\"examples/hello-world/package.json\",\"count\":4},{\"file\":\"package.json\",\"count\":66}],\"totalDeps\":75}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "seniority_band": "senior",
+    "sloc": 20800,
+    "file_count": 208,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.7315789473684211,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 43
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 12
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 6
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 4
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 6008,
+        "title": "fix: Add inline mode support to `CalendarComponent` component with correct accessibility attrs",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 6009,
+        "title": "Add coverage tests for calendar interactions",
+        "changed_file_count": 11,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 6025,
+        "title": "Add tests for month and year logic and improve coverage",
+        "changed_file_count": 9,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 6053,
+        "title": "Remove flushSync usage in ShadowRoot component",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 6058,
+        "title": "fix: reset monthSelectedIn when changeMonth is called in custom header",
+        "changed_file_count": 4,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 6067,
+        "title": "feat: add formatMultipleDates prop to DatePicker",
+        "changed_file_count": 5,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 6073,
+        "title": "fix: prevent in-selecting-range highlight for days outside current month",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 6079,
+        "title": "fix: support time selection with selectsRange for showTimeInput",
+        "changed_file_count": 3,
+        "modifies_tests": 1
+      }
+    ]
+  },
+  {
+    "repo_id": 1688,
+    "full_name": "garmeeh/next-seo",
+    "primary_language": "typescript",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"examples/app-router-showcase/package.json\",\"count\":11},{\"file\":\"package.json\",\"count\":24}],\"totalDeps\":29}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "seniority_band": "senior",
+    "sloc": 24300,
+    "file_count": 243,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.179,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 62
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 31
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 4
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 4
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 3
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 1479,
+        "title": "feat: Allow QAPage to set URL for author",
+        "changed_file_count": 6,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 1511,
+        "title": "gijsbotje:Feature/offers-hasMerchantReturnPolicy",
+        "changed_file_count": 6,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 1597,
+        "title": "Release: Version Packages",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 1608,
+        "title": "Release: Version Packages",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 1610,
+        "title": "Add review and aggregateRating support to OrganizationJsonLd",
+        "changed_file_count": 8,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 1611,
+        "title": "Release: Version Packages",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      }
+    ]
+  },
+  {
+    "repo_id": 1689,
+    "full_name": "Shopify/react-native-skia",
+    "primary_language": "typescript",
+    "detected_domain": "mobile",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"apps/docs/package.json\",\"count\":28},{\"file\":\"apps/example/package.json\",\"count\":45},{\"file\":\"apps/headless/package.json\",\"count\":9},{\"file\":\"apps/remotion/package.json\",\"count\":45},{\"file\":\"apps/web-app/package.json\",\"count\":19}],\"totalDeps\":103}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "seniority_band": "staff",
+    "sloc": 81400,
+    "file_count": 814,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.3125,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 86
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 63
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 57
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 49
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 10
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 3682,
+        "title": "fix(\ud83d\udcf9): update frame after seek while paused",
+        "changed_file_count": 14,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 3697,
+        "title": "fix(\ud83d\uddd1\ufe0f): add back dispose() on native for GPU bound resources",
+        "changed_file_count": 28,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 3701,
+        "title": "fix JSError  [Worklets] Tried to synchronously call a non-worklet function `_temp` on the UI thread",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 3702,
+        "title": "fix: Avoid nullptr dereference if `makeRasterImage(...)` returns null",
+        "changed_file_count": 9,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 3703,
+        "title": "fix: Reuse `MTLDevice` for `CVPixelBuffer` APIs",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 3705,
+        "title": "fix: Schedule deletion only if object was GC'd - allow `dispose()` fast path",
+        "changed_file_count": 3,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 3709,
+        "title": "fix: update memory pressure after disposing",
+        "changed_file_count": 14,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 3716,
+        "title": "fix(\ud83c\udfde\ufe0f):  revert bogus use of executeOnUIRuntimeSync",
+        "changed_file_count": 14,
+        "modifies_tests": 0
+      }
+    ]
+  },
+  {
+    "repo_id": 1693,
+    "full_name": "davidjerleke/embla-carousel",
+    "primary_language": "typescript",
+    "detected_domain": "other",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":21},{\"file\":\"packages/embla-carousel/package.json\",\"count\":7},{\"file\":\"packages/embla-carousel-accessibility/package.json\",\"count\":8},{\"file\":\"packages/embla-carousel-auto-height/package.json\",\"count\":8},{\"file\":\"packages/embla-carousel-auto-scroll/package.json\",\"count\":8}],\"totalDeps\":26}",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "seniority_band": "staff",
+    "sloc": 212900,
+    "file_count": 2129,
+    "mean_ccn": 3.5,
+    "pr_quality_score": 0.3131578947368421,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 41
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 32
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 4
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 805,
+        "title": "[Bug]: Render when slides are wider than view size",
+        "changed_file_count": 7,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 836,
+        "title": "chore(docs): note about reactive options",
+        "changed_file_count": 8,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 875,
+        "title": "[Feat]: Add slideFocus event",
+        "changed_file_count": 9,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 880,
+        "title": "[Feat]: Fade in pairs",
+        "changed_file_count": 7,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 883,
+        "title": "[Bug]: Slide hanging if overdragged/scrolled ",
+        "changed_file_count": 11,
+        "modifies_tests": 1
+      },
+      {
+        "pr_number": 901,
+        "title": "[Feat]: Add TypeScript moduleResolution: bundler support",
+        "changed_file_count": 11,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 912,
+        "title": "[Bug]: Add nodenext compatibility for ESM imports",
+        "changed_file_count": 22,
+        "modifies_tests": 0
+      },
+      {
+        "pr_number": 926,
+        "title": "[Feat]: Remove animation offset location",
+        "changed_file_count": 14,
+        "modifies_tests": 1
+      }
+    ]
+  }
+]

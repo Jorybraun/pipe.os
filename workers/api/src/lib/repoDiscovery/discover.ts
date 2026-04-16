@@ -14,6 +14,7 @@
 
 import { matchRepos, type MatchedRepo } from './matchRepos';
 import { rerankMatchedRepos } from './rerankPipeline';
+import { buildRcdSearchProfile } from './rcdSearchProfile';
 import type { CandidatePersona, RoleContextDocument, RepoRoleAlignmentRow } from '../../types';
 import type { LLMProvider } from '../llm/types';
 
@@ -32,6 +33,14 @@ export interface DiscoverOptions {
    * legacy persona-only path (existing behavior).
    */
   provider?: LLMProvider;
+  /**
+   * Optional Vectorize + AI bindings for hybrid recall (STRATEGY Decision Log
+   * 2026-04-14 extension). When BOTH are present plus an RCD, runDiscovery
+   * augments SQL-matched repos with semantic recall from REPO_INDEX. SQL hard
+   * filter and Gemma rerank still run — Vectorize is additive recall only.
+   */
+  vectorize?: VectorizeIndex;
+  ai?: Ai;
   /** Unused — kept for interface compatibility during transition. Will be removed. */
   librariesIoApiKey?: string | undefined;
   githubToken?: string | undefined;
@@ -71,26 +80,39 @@ export async function runDiscovery(opts: DiscoverOptions): Promise<void> {
     const domain = deriveDomain(persona);
     const seniority = (persona.seniority ?? 'mid').toLowerCase() as 'junior' | 'mid' | 'senior' | 'staff';
 
-    const matched = await matchRepos(db, {
+    // Load RCD once — shared by Vectorize recall and Gemma rerank.
+    const rcd = await loadRcd(db, roleContextId);
+
+    const sqlMatched = await matchRepos(db, {
       mustHaveSkills: skills,
       niceToHaveSkills: persona.niceToHaveSkills ?? [],
       seniority,
       domain,
       primaryLanguage,
-      limit: 20,
+      limit: 50,
     });
+
+    // ── Hybrid recall (STRATEGY Decision Log 2026-04-14) ─────────────────
+    // SQL gives skill-tag precision; Vectorize gives narrative-prose recall.
+    // Merged set feeds the canonical §2.3 Gemma rerank below. Failure to
+    // vectorize falls back to SQL-only, discovery never blocks on it.
+    const vectorMatched = await vectorizeRecall({
+      db, rcd,
+      vectorize: opts.vectorize,
+      ai: opts.ai,
+    });
+    const matched = mergeCandidates(sqlMatched, vectorMatched);
 
     await db.prepare(
       `UPDATE discovery_jobs SET total_candidates = ?1 WHERE id = ?2`,
     ).bind(matched.length, jobId).run();
 
     // ── RCD-aware rerank (ADR-036 §2.3) ───────────────────────────────────
-    // When the role context has an RCD and a provider is wired in, score
-    // each matched repo against the RCD's technical_context + domain cells.
-    // The alignment scores reorder + annotate the insert below; failures
-    // fall back to matchRepos ordering so discovery never blocks on rerank.
+    // Canonical SQL+Gemma rerank preserved: Gemma scores each candidate
+    // against the RCD's technical_context + domain cells, reorders + annotates
+    // the insert below. Failures fall back to recall ordering.
     const aligned = await rerankWithRcd({
-      db, provider, roleContextId, matched,
+      db, provider, rcd, matched,
     });
     const orderedMatched = aligned.orderedMatched;
     const alignmentByRepoId = aligned.alignmentByRepoId;
@@ -292,7 +314,7 @@ export async function runDiscoveryBySkills(opts: DiscoverBySkillsOptions): Promi
 interface RerankStepInput {
   db: D1Database;
   provider: LLMProvider | undefined;
-  roleContextId: string;
+  rcd: RoleContextDocument | null;
   matched: MatchedRepo[];
 }
 
@@ -308,18 +330,15 @@ interface RerankStepResult {
  * matchRepos ordering with an empty alignment map.
  */
 async function rerankWithRcd(input: RerankStepInput): Promise<RerankStepResult> {
-  const { db, provider, roleContextId, matched } = input;
+  const { db, provider, rcd, matched } = input;
   const empty: RerankStepResult = {
     orderedMatched: matched,
     alignmentByRepoId: new Map(),
   };
 
-  if (!provider || matched.length === 0) return empty;
+  if (!provider || !rcd || matched.length === 0) return empty;
 
   try {
-    const rcd = await loadRcd(db, roleContextId);
-    if (!rcd) return empty;
-
     const matchedRepos = matched.map((m) => ({ repoId: m.id, fullName: m.fullName }));
     const rerank = await rerankMatchedRepos({
       db, provider, rcd, matchedRepos,
@@ -365,6 +384,108 @@ async function loadRcd(db: D1Database, roleContextId: string): Promise<RoleConte
     console.error(`[discover] failed to parse rcd_json for role_context ${roleContextId}:`, msg);
     return null;
   }
+}
+
+// ─── Vectorize recall (STRATEGY Decision Log 2026-04-14) ──────────────────
+// Additive path — embeds the RCD narrative, queries REPO_INDEX for top-50
+// semantic neighbors, and hydrates them from qualified_repos. Hard filters
+// (disqualified, library, challenge-ready) applied in the SQL hydration so
+// Vectorize can't smuggle a filtered-out repo back in. Best-effort: any
+// failure (missing bindings, API error, empty profile) returns empty and
+// the caller falls back to SQL-only.
+
+interface VectorizeRecallInput {
+  db: D1Database;
+  rcd: RoleContextDocument | null;
+  vectorize: VectorizeIndex | undefined;
+  ai: Ai | undefined;
+}
+
+async function vectorizeRecall(input: VectorizeRecallInput): Promise<MatchedRepo[]> {
+  const { db, rcd, vectorize, ai } = input;
+  if (!rcd || !vectorize || !ai) return [];
+
+  try {
+    const profile = buildRcdSearchProfile(rcd);
+    if (!profile || profile.trim().length === 0) return [];
+
+    const embedResult = (await ai.run('@cf/baai/bge-large-en-v1.5', {
+      text: [profile],
+    })) as { data?: number[][] };
+    const vector = embedResult?.data?.[0];
+    if (!vector || !Array.isArray(vector)) return [];
+
+    const queryResult = await vectorize.query(vector, {
+      topK: 50,
+      filter: { disqualified: 0 },
+    });
+    if (!queryResult?.matches || queryResult.matches.length === 0) return [];
+
+    const repoIds: number[] = [];
+    for (const m of queryResult.matches) {
+      const match = m.id.match(/^repo_(\d+)$/);
+      if (match?.[1]) repoIds.push(Number(match[1]));
+    }
+    if (repoIds.length === 0) return [];
+
+    const placeholders = repoIds.map(() => '?').join(', ');
+    const { results } = await db.prepare(`
+      SELECT r.id, r.full_name, r.github_url, r.description, r.seniority_band,
+             r.detected_domain, r.pr_quality_score, r.stars, r.primary_language
+      FROM qualified_repos r
+      LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id
+      WHERE r.id IN (${placeholders})
+        AND r.disqualified = 0
+        AND (es.architecture_style IS NULL OR es.architecture_style != 'library')
+        AND NOT (COALESCE(r.open_pr_count, 0) = 0 AND COALESCE(r.open_feature_issue_count, 0) < 5)
+    `).bind(...repoIds).all<{
+      id: number;
+      full_name: string;
+      github_url: string;
+      description: string | null;
+      seniority_band: string;
+      detected_domain: string;
+      pr_quality_score: number;
+      stars: number;
+      primary_language: string;
+    }>();
+
+    return (results ?? []).map((r) => ({
+      id: r.id,
+      fullName: r.full_name,
+      githubUrl: r.github_url,
+      description: r.description,
+      seniorityBand: r.seniority_band,
+      detectedDomain: r.detected_domain,
+      prQualityScore: r.pr_quality_score,
+      stars: r.stars,
+      primaryLanguage: r.primary_language,
+      score: 0,
+      matchedMustSkills: [],
+      matchedNiceSkills: [],
+      matchedConstructs: [],
+      samplePrs: [],
+    }));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[discover] vectorize recall failed, SQL-only:', msg);
+    return [];
+  }
+}
+
+/**
+ * Merge SQL and Vectorize candidate lists, deduping by repo id. SQL entries
+ * win on collision so we preserve their populated matchedMustSkills /
+ * matchedConstructs / samplePrs — those fields are empty on vector-only
+ * matches.
+ */
+function mergeCandidates(sqlMatched: MatchedRepo[], vectorMatched: MatchedRepo[]): MatchedRepo[] {
+  const byId = new Map<number, MatchedRepo>();
+  for (const r of sqlMatched) byId.set(r.id, r);
+  for (const r of vectorMatched) {
+    if (!byId.has(r.id)) byId.set(r.id, r);
+  }
+  return [...byId.values()];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

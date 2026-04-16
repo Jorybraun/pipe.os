@@ -9,6 +9,8 @@ export interface SearchQuery {
   lang: string;
   topics: string[];
   minStars: number;
+  /** Upper star cap — keeps mega-famous repos out of the pool. Default: 10000. */
+  maxStars?: number;
   /** Optional domain hint — used to pre-classify before pass-2 domain inference */
   domainHint?: string;
 }
@@ -17,36 +19,36 @@ export interface SearchQuery {
 
 export const SEARCH_QUERIES: SearchQuery[] = [
   // TypeScript / React ecosystem
-  { lang: 'typescript', topics: ['react'],           minStars: 100 },
-  { lang: 'typescript', topics: ['nextjs'],          minStars: 100 },
-  { lang: 'typescript', topics: ['graphql'],         minStars: 100 },
-  { lang: 'typescript', topics: ['tailwindcss'],     minStars: 100 },
-  { lang: 'typescript', topics: ['prisma'],          minStars: 100 },
-  { lang: 'typescript', topics: ['trpc'],            minStars: 100 },
-  { lang: 'typescript', topics: ['nestjs'],          minStars: 100 },
-  { lang: 'typescript', topics: ['hono'],            minStars:  50 },
-  { lang: 'typescript', topics: ['testing'],         minStars: 100 },
+  { lang: 'typescript', topics: ['react'],           minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['nextjs'],          minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['graphql'],         minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['tailwindcss'],     minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['prisma'],          minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['trpc'],            minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['nestjs'],          minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['hono'],            minStars:  50, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['testing'],         minStars: 100, maxStars: 10_000 },
   // Python ecosystem
-  { lang: 'python',     topics: ['fastapi'],         minStars: 100 },
-  { lang: 'python',     topics: ['django'],          minStars: 100 },
-  { lang: 'python',     topics: ['flask'],           minStars: 100 },
-  { lang: 'python',     topics: ['sqlalchemy'],      minStars: 100 },
-  { lang: 'python',     topics: ['pytest'],          minStars: 100 },
-  { lang: 'python',     topics: ['pydantic'],        minStars: 100 },
+  { lang: 'python',     topics: ['fastapi'],         minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['django'],          minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['flask'],           minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['sqlalchemy'],      minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['pytest'],          minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['pydantic'],        minStars: 100, maxStars: 10_000 },
   // Go ecosystem
-  { lang: 'go',         topics: ['api'],             minStars: 100 },
-  { lang: 'go',         topics: ['gin'],             minStars: 100 },
-  { lang: 'go',         topics: ['rest-api'],        minStars: 100 },
-  { lang: 'go',         topics: ['microservices'],   minStars: 100 },
+  { lang: 'go',         topics: ['api'],             minStars: 100, maxStars: 10_000 },
+  { lang: 'go',         topics: ['gin'],             minStars: 100, maxStars: 10_000 },
+  { lang: 'go',         topics: ['rest-api'],        minStars: 100, maxStars: 10_000 },
+  { lang: 'go',         topics: ['microservices'],   minStars: 100, maxStars: 10_000 },
   // Rust ecosystem
-  { lang: 'rust',       topics: ['axum'],            minStars:  50 },
-  { lang: 'rust',       topics: ['actix-web'],       minStars:  50 },
-  { lang: 'rust',       topics: ['tokio'],           minStars: 100 },
+  { lang: 'rust',       topics: ['axum'],            minStars:  50, maxStars: 10_000 },
+  { lang: 'rust',       topics: ['actix-web'],       minStars:  50, maxStars: 10_000 },
+  { lang: 'rust',       topics: ['tokio'],           minStars: 100, maxStars: 10_000 },
   // Java ecosystem
-  { lang: 'java',       topics: ['spring-boot'],     minStars: 100 },
-  { lang: 'kotlin',     topics: ['spring-boot'],     minStars:  50 },
+  { lang: 'java',       topics: ['spring-boot'],     minStars: 100, maxStars: 10_000 },
+  { lang: 'kotlin',     topics: ['spring-boot'],     minStars:  50, maxStars: 10_000 },
   // Ruby
-  { lang: 'ruby',       topics: ['rails'],           minStars: 100 },
+  { lang: 'ruby',       topics: ['rails'],           minStars: 100, maxStars: 10_000 },
 ];
 
 // ─── License allowlist ────────────────────────────────────────────────────────
@@ -101,6 +103,17 @@ export function computeSeniorityBand(
   return 'junior';
 }
 
+// ─── Repo deny-list ───────────────────────────────────────────────────────────
+
+/**
+ * Exact `full_name` values that must never enter the pipeline.
+ * Add repos here when they cause validation noise (SDK monorepos, infra libs,
+ * vendor dependencies, etc.) or are semantically wrong for assessment use.
+ */
+export const REPO_FULL_NAME_DENYLIST = new Set<string>([
+  'aws-amplify/amplify-js',     // vendor SDK — pre-migration dep, not an assessment target
+]);
+
 // ─── Domain deny-list ─────────────────────────────────────────────────────────
 
 /** Topic keywords that signal domain-specific repos unsuitable for general assessment. */
@@ -116,7 +129,7 @@ export const PASS2_BATCH_SIZE = parseInt(process.env['PASS2_BATCH_SIZE'] ?? '200
 export const PASS2_CONCURRENCY = parseInt(process.env['PASS2_CONCURRENCY'] ?? '4', 10);
 export const PASS2_PR_SCAN_LIMIT = 200;
 export const PASS2_PR_ELIGIBLE_LIMIT = 20;
-export const PASS2_MIN_ELIGIBLE_PRS = 3;
+export const PASS2_MIN_ELIGIBLE_PRS = 1;
 
 // ─── Staleness gate ───────────────────────────────────────────────────────────
 

@@ -1,0 +1,7 @@
+{
+  "repo_id": 1687,
+  "full_name": "Hacker0x01/react-datepicker",
+  "signal_quality": "good",
+  "issues": [],
+  "reasoning": "All signals are internally consistent: domain=web-frontend and stack match a focused React datepicker library, has_tests=1/jest is confirmed by 8 of 8 PRs modifying tests with explicit test-coverage PR titles, seniority_band=senior is appropriate for 20,800 SLOC, and pr_quality_score=0.732 accurately reflects a high-quality PR sample with real accessibility, logic, and UX fixes."
+}

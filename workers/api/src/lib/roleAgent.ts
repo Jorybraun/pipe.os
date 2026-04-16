@@ -13,16 +13,34 @@
  * Falls back to mock responses when no provider key is configured.
  */
 
-import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage, buildSynthesisPrompt } from './roleAgentPrompts';
+import {
+  buildRoleAgentSystemPrompt,
+  buildRoleAgentUserMessage,
+  buildSynthesisPrompt,
+  selectPhasePrompt,
+} from './roleAgentPrompts';
 import type { LLMProvider, LLMMessage, LLMToolCall } from './llm/types';
 import type {
   RoleExchange,
   DomainCoverage,
   CandidatePersona,
   GeneratedJobDescription,
+  PhaseDirective,
+  ConversationContext,
+  RecruitmentBrief,
 } from '../types';
 
-export type { CandidatePersona, GeneratedJobDescription } from '../types';
+export type {
+  CandidatePersona,
+  GeneratedJobDescription,
+  PhaseDirective,
+  ConversationContext,
+  ConversationPhase,
+  EvpCategory,
+  ExtractedStory,
+  QualificationStatus,
+  RecruitmentBrief,
+} from '../types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +75,8 @@ export interface RoleAgentSynthesisResponse {
    * use `persona` and `jobDescription`.
    */
   synthesis: string;
+  /** Structured recruiter outreach brief (RD-P5, RD-39). Present when the EVP/friction phase completed. */
+  recruitmentBrief?: RecruitmentBrief;
   knowledgeStateUpdate: Record<string, Record<string, unknown>>;
   domainCoverage: Record<string, DomainCoverage>;
   toolsUsed: string[];
@@ -73,6 +93,12 @@ export interface CallRoleAgentInput {
   questionBudget: number;
   /** ADR-028: participant role for adaptive prompt variants. */
   participantRole?: string;
+  /** Previous turn's domain coverage assessment — fed back so the agent doesn't repeat. */
+  domainCoverage?: Record<string, string>;
+  /** RD-P5: phase directive from the deterministic controller. When present, selects the phase-specific system prompt. */
+  phaseDirective?: PhaseDirective;
+  /** RD-P5: full conversation context assembled by the controller. */
+  conversationContext?: ConversationContext;
 }
 
 
@@ -153,7 +179,7 @@ async function fetchAndExtract(url: string, maxChars = 3000): Promise<string> {
 async function executeToolCall(call: LLMToolCall): Promise<{ result: string; label: string }> {
   const args = call.arguments as Record<string, string>;
 
-  switch (call.function.name) {
+  switch (call.name) {
     case 'research_company': {
       const url = args.url ?? '';
       const focus = args.focus ?? 'about';
@@ -203,7 +229,7 @@ async function executeToolCall(call: LLMToolCall): Promise<{ result: string; lab
     }
 
     default:
-      return { result: `[Unknown tool: ${call.function.name}]`, label: 'Thinking...' };
+      return { result: `[Unknown tool: ${call.name}]`, label: 'Thinking...' };
   }
 }
 
@@ -214,6 +240,7 @@ const MAX_TOOL_ROUNDS = 3;
 async function callProviderWithTools(
   provider: LLMProvider,
   messages: LLMMessage[],
+  maxTokens = 1024,
 ): Promise<{ content: string; toolsUsed: string[] }> {
   const toolsUsed: string[] = [];
   let currentMessages = [...messages];
@@ -221,10 +248,11 @@ async function callProviderWithTools(
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const isLastRound = round === MAX_TOOL_ROUNDS - 1;
 
+    const useTools = !isLastRound && provider.supportsTools;
     const completion = await provider.complete(currentMessages, {
-      tools: (!isLastRound && provider.supportsTools) ? AGENT_TOOLS : undefined,
+      ...(useTools ? { tools: AGENT_TOOLS } : {}),
       forceJson: isLastRound || !provider.supportsTools,
-      maxTokens: 1024,
+      maxTokens,
     });
 
     // No tool calls — we have the final answer
@@ -232,15 +260,17 @@ async function callProviderWithTools(
       return { content: completion.content?.trim() ?? '', toolsUsed };
     }
 
-    // Execute tool calls and append results
+    // Execute tool calls in parallel — each is an independent fetch
     currentMessages.push({
       role: 'assistant',
       content: completion.content,
       toolCalls: completion.toolCalls,
     });
 
-    for (const call of completion.toolCalls) {
-      const { result, label } = await executeToolCall(call);
+    const toolResults = await Promise.all(completion.toolCalls.map((call) => executeToolCall(call)));
+    for (let i = 0; i < completion.toolCalls.length; i++) {
+      const call = completion.toolCalls[i]!;
+      const { result, label } = toolResults[i]!;
       toolsUsed.push(label);
       currentMessages.push({
         role: 'tool',
@@ -250,7 +280,7 @@ async function callProviderWithTools(
       });
     }
 
-    console.log(`[roleAgent] Tool round ${round + 1} (${provider.name}): executed ${completion.toolCalls.length} tool(s)`);
+    console.log(`[roleAgent] Tool round ${round + 1} (${provider.name}): executed ${completion.toolCalls.length} tool(s) in parallel`);
   }
 
   return { content: '', toolsUsed };
@@ -274,7 +304,7 @@ function getMockQuestionResponse(questionsAsked: number): RoleAgentQuestionRespo
       input: {
         type: questionNum === 1 ? 'radio' : 'textarea',
         ...(questionNum === 1 ? { options: ['I\'m the hiring manager', 'I\'m recruiting for someone else'] } : {}),
-        placeholder: questionNum === 1 ? undefined : 'Describe a typical week...',
+        ...(questionNum === 1 ? {} : { placeholder: 'Describe a typical week...' }),
       },
     },
     knowledgeStateUpdate: {},
@@ -463,7 +493,7 @@ function parseSynthesisResponse(parsed: Record<string, unknown>, toolsUsed: stri
  * so the frontend can show what the agent researched.
  */
 export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgentResponse> {
-  const { provider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole } = input;
+  const { provider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole, domainCoverage, phaseDirective } = input;
 
   const budgetExhausted = questionsAsked >= questionBudget;
 
@@ -474,22 +504,37 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
       : getMockQuestionResponse(questionsAsked);
   }
 
-  const systemPrompt = buildRoleAgentSystemPrompt(participantRole);
+  // RD-P5: use phase-specific system prompt when a directive is available;
+  // fall back to the monolithic prompt for backwards compatibility.
+  const systemPrompt = phaseDirective
+    ? selectPhasePrompt(phaseDirective.phase, participantRole)
+    : buildRoleAgentSystemPrompt(participantRole);
+
+  if (phaseDirective) {
+    console.log(`[roleAgent] Phase: ${phaseDirective.phase} | Goal: ${phaseDirective.focusGoal}`);
+  }
   const userMessage = budgetExhausted
     ? buildSynthesisPrompt({ baseline, exchanges, knowledgeState })
-    : buildRoleAgentUserMessage({ baseline, exchanges, knowledgeState, questionsAsked, questionBudget });
+    : buildRoleAgentUserMessage({ baseline, exchanges, knowledgeState, questionsAsked, questionBudget, ...(domainCoverage ? { domainCoverage } : {}) });
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
   ];
 
+  // Question turns produce compact JSON (~200-400 tokens); synthesis needs full
+  // persona + JD markdown (~600-1200 tokens). Keeping question ceiling tight
+  // cuts generation time by ~30-40% per turn.
+  const maxTokens = budgetExhausted ? 1536 : 640;
+
   let content: string;
   let toolsUsed: string[];
+  console.log(`[roleAgent] Calling provider: ${provider.name}`);
   try {
-    const result = await callProviderWithTools(provider, messages);
+    const result = await callProviderWithTools(provider, messages, maxTokens);
     content = result.content;
     toolsUsed = result.toolsUsed;
+    console.log(`[roleAgent] Provider ${provider.name} responded, ${content.length} chars`);
   } catch (err) {
     console.error(`[roleAgent] ${provider.name} call failed:`, err);
     return budgetExhausted
@@ -521,6 +566,79 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
   }
 
   return parseQuestionResponse(parsed, questionsAsked, toolsUsed);
+}
+
+// ─── Streaming variant ──────────────────────────────────────────────────────
+
+/**
+ * Streaming variant of callRoleAgent.
+ *
+ * Yields text chunks from the model as they arrive, then a final done event
+ * with the parsed response. Falls back to a single done event (no chunks)
+ * when the provider doesn't support streaming.
+ */
+export async function* callRoleAgentStream(
+  input: CallRoleAgentInput,
+): AsyncGenerator<
+  | { event: 'chunk'; text: string }
+  | { event: 'done'; result: RoleAgentResponse }
+> {
+  const { provider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole, domainCoverage, phaseDirective } = input;
+  const budgetExhausted = questionsAsked >= questionBudget;
+
+  // No provider or no streaming support — fall back to non-streaming
+  if (!provider?.completeStream) {
+    const result = await callRoleAgent(input);
+    yield { event: 'done', result };
+    return;
+  }
+
+  // Build prompts (same logic as callRoleAgent)
+  const systemPrompt = phaseDirective
+    ? selectPhasePrompt(phaseDirective.phase, participantRole)
+    : buildRoleAgentSystemPrompt(participantRole);
+
+  const userMessage = budgetExhausted
+    ? buildSynthesisPrompt({ baseline, exchanges, knowledgeState })
+    : buildRoleAgentUserMessage({ baseline, exchanges, knowledgeState, questionsAsked, questionBudget, ...(domainCoverage ? { domainCoverage } : {}) });
+
+  const messages: LLMMessage[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
+  ];
+  const maxTokens = budgetExhausted ? 1536 : 640;
+
+  // Stream the response
+  const accumulated: string[] = [];
+  try {
+    for await (const token of provider.completeStream(messages, { forceJson: true, maxTokens })) {
+      accumulated.push(token);
+      yield { event: 'chunk', text: token };
+    }
+  } catch (err) {
+    console.error('[roleAgent] Streaming failed:', err);
+    yield { event: 'done', result: budgetExhausted ? getMockSynthesisResponse(baseline) : getMockQuestionResponse(questionsAsked) };
+    return;
+  }
+
+  // Parse the accumulated content
+  const content = accumulated.join('').trim();
+  const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonText) as Record<string, unknown>;
+  } catch {
+    console.error('[roleAgent] Failed to parse streamed JSON:', jsonText.slice(0, 300));
+    yield { event: 'done', result: budgetExhausted ? getMockSynthesisResponse(baseline) : getMockQuestionResponse(questionsAsked) };
+    return;
+  }
+
+  const result = budgetExhausted || typeof parsed.synthesis === 'string'
+    ? parseSynthesisResponse(parsed, [])
+    : parseQuestionResponse(parsed, questionsAsked, []);
+
+  yield { event: 'done', result };
 }
 
 /**

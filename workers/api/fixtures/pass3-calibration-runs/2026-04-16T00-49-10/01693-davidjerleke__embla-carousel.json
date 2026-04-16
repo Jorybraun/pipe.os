@@ -1,0 +1,32 @@
+{
+  "repo_id": 1693,
+  "full_name": "davidjerleke/embla-carousel",
+  "run_timestamp": "2026-04-16T00:49:41.786Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 241,
+      "profile_words": 259
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "repo_searchable_profile too short: 259 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 90, 0.31, 0.50, 0.40, 0.30"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1693,
+    "full_name": "davidjerleke/embla-carousel",
+    "primary_language": "typescript",
+    "stars": 8163,
+    "has_tests": true,
+    "detected_domain": "other"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The embla-carousel repository is a sophisticated TypeScript-based library designed for modular carousel functionality. The architecture follows a multi-package structure, distributing core logic and specialized plugins like accessibility, auto-height, and auto-scroll into distinct packages, which suggests a highly decoupled and extensible design. The complexity profile is categorized as medium, supported by a substantial codebase of 212900 SLOC and 2127 files. Despite the complexity, the cyclomatic complexity remains manageable with a mean CCN of 3.5, indicating that while the logic is dense, individual units of code remain readable. The engineering culture places a significant emphasis on stability through unit testing, utilizing the Jest framework. However, the test discipline shows a specific focus, with a test style limited to unit-only tests and a test touch rate of 0.35, meaning roughly 35% of changes involve test modifications. The review and contribution culture is characterized by moderate-sized pull requests; the mean number of changed files is 10.15, though the p90 value reaches 22, suggesting that certain architectural or compatibility updates—such as ESM import fixes or animation smoothness improvements—require broad sweeping changes across the codebase. Notable PR patterns include a mix of bug fixes and feature additions, such as adding slideFocus events or resolving rendering issues when slides exceed view size. While many PRs modify tests, a significant portion of feature additions and documentation chores do not, reflecting a workflow where core logic changes are strictly verified while configuration or API updates may follow different validation paths.\",\n  \"repo_searchable_profile\": \"The embla-carousel repository is an open-source library focused on providing highly customizable carousel functionality for web applications. The project is built primarily using TypeScript and utilizes a multi-package monorepo structure, as evidenced by the presence of various package.json files across packages such as embla-carousel, embla-carousel-accessibility, embla-carousel-auto-height, and embla-carousel-auto-scroll. The technical stack is centered around modern TypeScript patterns, including support for moduleResolution: bundler and ESM imports. Observations of the PR shapes reveal that most contributions involve moderate file modifications, with a mean of 10.15 changed files per PR. However, high-impact changes can be quite large, with the p90 of changed files reaching 22. This indicates that while most tasks are granular, infrastructure or compatibility updates require significant cross-package coordination. The test and review culture is grounded in automated CI workflows and unit testing via Jest. The test touch rate stands at 0.35, suggesting that test updates are frequent but not universal to every single change. The pr_quality_score is 0.31, and the swe_bench_eligibility_rate is 0.05, indicating a codebase that is highly specialized and perhaps more difficult for automated agents to navigate compared to simpler repositories. The top three technical challenge surfaces identified for this project are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30, which aligns with the complexities of managing precise animations and responsive layouts. Top constructs within the repository frequently involve unit-tests, responsive-layout, and refactoring-extraction. Regarding contribution readiness, the open pr count and the open feature-issue count are unknown, making it difficult to quantitatively assess the current backlog or the immediate availability of tasks for new contributors.\"\n}"
+}

@@ -1,0 +1,61 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {
+      "issue_identification_evidence": "",
+      "prioritization_evidence": "",
+      "revision_evaluation_evidence": "",
+      "reasoning_quality_evidence": "",
+      "question_formation_evidence": "",
+      "ai_direction_evidence": ""
+    },
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "This candidate is an adequate code reviewer with consistent performance across all dimensions, though there is room for improvement in depth and impact. Their strongest area is reasoning and explanation quality, as noted by their detailed breakdowns of failure mechanisms and proposed fixes. However, their most critical growth area is issue identification, as evidenced by the low effectiveness score (30/100), indicating they missed a significant number of bugs. With additional focus on thoroughness, they could become a more reliable reviewer.",
+      "strengths": [
+        "Provides clear and detailed explanations for identified issues",
+        "Evaluates revisions carefully to ensure fixes are properly implemented",
+        "Exercises good judgment when assessing AI-generated suggestions"
+      ],
+      "growth_areas": [
+        "Needs to improve bug detection—missed many issues in the assessment",
+        "Should ask more probing questions to uncover deeper design or logic flaws",
+        "Could better distinguish between critical and minor issues to prioritize effectively"
+      ]
+    },
+    "scorer_a_summary": "The reviewer demonstrated exceptional performance across all dimensions. They identified all planted bugs (100% coverage) with accurate categorization and no false positives. Severity labels were perfectly aligned with actual impact, and the verdict correctly gated merge on unresolved critical/major issues. During revision evaluation, the reviewer verified every claimed fix and caught a deeper issue (identity scoping) in the implementer's pushback, demonstrating rigorous follow-through. This is a model review.",
+    "scorer_b_summary": "The reviewer demonstrated high reasoning quality with detailed explanations of failure mechanisms and proposed fixes. Question formation was moderate, with some superficial questions but no deep probing of design rationale. AI direction was strong, with merit-based evaluation of implementer proposals and constructive pushback."
+  },
+  "meta": {
+    "wall_clock_ms": 11464,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

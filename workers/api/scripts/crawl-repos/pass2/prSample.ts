@@ -11,6 +11,7 @@ import type { GitHubClient } from '../shared/githubClient.js';
 import type { SamplePR } from '../shared/types.js';
 import type { ExtractorContext } from '../shared/types.js';
 import { constructsForFiles } from './constructs.js';
+import { aggregatePathStats } from './pathClassifier.js';
 import { logger } from '../shared/logger.js';
 import { PASS2_PR_SCAN_LIMIT, PASS2_PR_ELIGIBLE_LIMIT, PASS2_MIN_ELIGIBLE_PRS } from '../config.js';
 
@@ -37,6 +38,10 @@ export interface PrSampleResult {
   prQualityScore: number;
   disqualified: boolean;
   disqualifiedReason: string | null;
+  /** Fraction of sampled PRs touching ≥1 `domain_logic` path. Null if empty sample. */
+  businessLogicRatio: number | null;
+  /** Fraction of sampled PRs spanning ≥2 top-level dirs. Null if empty sample. */
+  crossModuleChangeRate: number | null;
 }
 
 /**
@@ -47,6 +52,7 @@ export async function samplePRs(
   owner: string,
   repo: string,
   ctx: ExtractorContext,
+  primaryLanguage: string,
 ): Promise<PrSampleResult> {
   const eligible: SamplePR[] = [];
   let totalScanned = 0;
@@ -135,6 +141,7 @@ export async function samplePRs(
         deletions,
         construct_slugs_json: JSON.stringify(constructSlugs),
         swe_bench_eligible: sweBenchEligible,
+        changed_file_paths_json: JSON.stringify(changedFilePaths),
       });
     }
   }
@@ -155,12 +162,23 @@ export async function samplePRs(
   // Disqualify if fewer than 3 SWE-bench eligible PRs
   const disqualified = swebenchEligibleCount < PASS2_MIN_ELIGIBLE_PRS;
 
+  // Path-based aggregates (feed Pass 3 facts block + roleFitRerank).
+  const prFilePaths = eligible.map(
+    (p) => JSON.parse(p.changed_file_paths_json) as string[],
+  );
+  const { business_logic_ratio, cross_module_change_rate } = aggregatePathStats(
+    prFilePaths,
+    primaryLanguage,
+  );
+
   logger.debug('[pass2/prSample] PR sampling complete', {
     owner, repo,
     totalScanned,
     eligible: eligible.length,
     sweBenchEligible: swebenchEligibleCount,
     prQualityScore: prQualityScore.toFixed(3),
+    businessLogicRatio: business_logic_ratio?.toFixed(3) ?? null,
+    crossModuleChangeRate: cross_module_change_rate?.toFixed(3) ?? null,
     disqualified,
   });
 
@@ -169,5 +187,7 @@ export async function samplePRs(
     prQualityScore,
     disqualified,
     disqualifiedReason: disqualified ? 'insufficient_sample_prs' : null,
+    businessLogicRatio: business_logic_ratio,
+    crossModuleChangeRate: cross_module_change_rate,
   };
 }

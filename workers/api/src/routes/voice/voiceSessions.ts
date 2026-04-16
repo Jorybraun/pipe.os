@@ -13,7 +13,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { buildRoleAgentSystemPrompt } from '../../lib/roleAgentPrompts';
+import { buildVoiceSystemPrompt } from '../../lib/roleAgentPrompts';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation schemas ───────────────────────────────────────────────────────
@@ -23,6 +23,8 @@ const createSessionSchema = z.object({
   contextId: z.string().optional(),
   challengeId: z.string().optional(),
   systemPrompt: z.string().optional(),
+  /** Inline baseline for role-discovery sessions when no contextId is available. */
+  baseline: z.record(z.unknown()).optional(),
 });
 
 const transcriptEntrySchema = z.object({
@@ -147,7 +149,7 @@ voiceSessions.post('/', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed.');
   }
 
-  const { type, contextId, challengeId, systemPrompt: customSystemPrompt } = parsed.data;
+  const { type, contextId, challengeId, systemPrompt: customSystemPrompt, baseline: inlineBaseline } = parsed.data;
 
   // ── Generate session ID ─────────────────────────────────────────────────────
   const sessionId = crypto.randomUUID();
@@ -174,14 +176,9 @@ voiceSessions.post('/', async (c) => {
         // Malformed baseline — fall through to the generic prompt.
       }
 
-      // buildRoleAgentSystemPrompt without a participantRole = recruiter voice session
-      const base = buildRoleAgentSystemPrompt();
-      // Embed the baseline context so the agent is grounded in this specific role.
-      const baselineSection =
-        Object.keys(baseline).length > 0
-          ? `\n\n## Role Context\n\`\`\`json\n${JSON.stringify(baseline, null, 2)}\n\`\`\``
-          : '';
-      systemPrompt = base + baselineSection;
+      // RD-P5: use multi-phase voice prompt (all 5 phases encoded; Vertex Live
+      // cannot update system prompt mid-session so all phases must be in one prompt).
+      systemPrompt = buildVoiceSystemPrompt(baseline);
     } else {
       // Context not found or not owned — use generic fallback, do not 404
       // (session creation should still succeed; the DO will run with the generic prompt).
@@ -191,6 +188,9 @@ voiceSessions.post('/', async (c) => {
       );
       systemPrompt = 'You are a helpful AI interviewer. Conduct a structured interview.';
     }
+  } else if (type === 'role-discovery' && inlineBaseline) {
+    // Baseline supplied inline (no persisted context yet — voice-first flow).
+    systemPrompt = buildVoiceSystemPrompt(inlineBaseline);
   } else {
     systemPrompt = 'You are a helpful AI interviewer. Conduct a structured interview.';
   }

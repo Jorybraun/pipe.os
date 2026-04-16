@@ -41,7 +41,7 @@ async function buildContextSnapshot(db: D1Database, pipelineId: string): Promise
     ctx.pipelineTitle = pipeline.title;
     ctx.pipelineLevel = pipeline.level;
     ctx.pipelineStack = parseJson<string[]>(pipeline.stack, []);
-    ctx.pipelineDescription = pipeline.description ?? undefined;
+    if (pipeline.description !== null) ctx.pipelineDescription = pipeline.description;
   }
 
   // Role context (persona + JD)
@@ -88,7 +88,7 @@ agentRoutes.post('/chat', async (c) => {
     message?: string;
     pipelineId?: string;
     skillMode?: string;
-  }>().catch(() => ({}));
+  }>().catch(() => ({} as { message?: string; pipelineId?: string; skillMode?: string }));
 
   if (!body.message?.trim()) {
     return apiError(c, 'BAD_REQUEST', 'message is required');
@@ -174,8 +174,8 @@ agentRoutes.post('/chat', async (c) => {
     toolCtx: {
       db: c.env.DB,
       ownerId: userId,
-      githubToken: c.env.GITHUB_TOKEN,
-      librariesIoApiKey: c.env.LIBRARIES_IO_API_KEY,
+      ...(c.env.GITHUB_TOKEN !== undefined ? { githubToken: c.env.GITHUB_TOKEN } : {}),
+      ...(c.env.LIBRARIES_IO_API_KEY !== undefined ? { librariesIoApiKey: c.env.LIBRARIES_IO_API_KEY } : {}),
     },
   });
 

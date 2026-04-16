@@ -22,7 +22,7 @@ import { getMockComprehensionScoreReport } from './mockResponses';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic';
+export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic' | 'google-ai';
 
 export interface KeyInsight {
   id: number;
@@ -120,11 +120,34 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, 
   return '';
 }
 
+async function callGoogleAI(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
+  const model = 'gemma-4-31b-it';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const combinedPrompt = `${systemPrompt}\n\n---\n\n${userMessage}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
+      generationConfig: { maxOutputTokens: maxTokens, responseMimeType: 'application/json' },
+    }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[comprehensionScorer] Google AI error', { status: response.status, body: errorText });
+    throw new Error(`[comprehensionScorer] Google AI ${response.status}: ${errorText.slice(0, 200)}`);
+  }
+  const data = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> };
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  return parts.filter((p) => !p.thought).map((p) => p.text ?? '').join('').trim();
+}
+
 async function callLLM(apiKey: string, provider: LLMProvider, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
   if (provider === 'workers-ai') {
     if (!_ai) throw new Error('[comprehensionScorer] Workers AI binding not available.');
     return callWorkersAI(_ai, systemPrompt, userMessage, maxTokens);
   }
+  if (provider === 'google-ai') return callGoogleAI(apiKey, systemPrompt, userMessage, maxTokens);
   return provider === 'anthropic'
     ? callAnthropic(apiKey, systemPrompt, userMessage, maxTokens)
     : callMistral(apiKey, systemPrompt, userMessage, maxTokens);

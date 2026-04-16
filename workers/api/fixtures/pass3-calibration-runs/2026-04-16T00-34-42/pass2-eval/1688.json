@@ -1,0 +1,13 @@
+{
+  "repo_id": 1688,
+  "full_name": "garmeeh/next-seo",
+  "signal_quality": "bad",
+  "issues": [
+    "PR sample quality: 3 of 6 sampled PRs are automated 'Release: Version Packages' changesets bot PRs — this is a >40% bot-PR contamination rate in the sample, which is severe",
+    "pr_quality_score: 0.179 is plausible given bot contamination but becomes unreliable as a signal of engineering PR quality because the sample is not representative; the score reflects bot noise, not engineer behavior",
+    "test signal: has_tests=1 with vitest is plausible (62 unit-test evidence counts, integration and e2e tests detected), and the 3 real engineering PRs all modify tests — this part is consistent",
+    "seniority_band: senior is defensible for 24,300 SLOC but the actual engineering complexity in next-seo (JSON-LD component props, SEO tag generation) is mid-level; senior is the upper bound",
+    "sample size: only 6 PRs in the sample vs. the expected 8 — minor but worth noting"
+  ],
+  "reasoning": "Three of six sampled PRs are automated changesets release bot PRs, making the pr_quality_score of 0.179 a measurement of bot contamination rather than engineering quality, and the sample size shortfall compounds the unreliability."
+}

@@ -27,6 +27,7 @@ import type {
   QuestionTurnResult,
   SynthesisResult,
   TurnResult,
+  StreamEvent,
 } from '../components/AIChat/types';
 import type { UseConversationResult } from './useConversation';
 
@@ -50,6 +51,9 @@ export interface UseRoleDiscoveryResult {
 
   // History
   pastExchanges: UseConversationResult['pastExchanges'];
+
+  // Streaming
+  streamingText: UseConversationResult['streamingText'];
 
   // Baseline (stored for pipeline creation)
   baseline: RoleContextBaseline | null;
@@ -149,6 +153,62 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
         return result;
       },
 
+      async *respondStream(answer: string, questionId: string): AsyncGenerator<StreamEvent> {
+        const contextId = contextIdRef.current;
+        const participantId = participantIdRef.current;
+        if (!contextId || !participantId) {
+          yield { event: 'error', message: 'No context created' };
+          return;
+        }
+
+        // Type for the streaming done payload (matches backend SSE done event)
+        interface StreamDonePayload {
+          participantId: string;
+          synthesis?: string;
+          persona?: RespondSynthesisResponse['persona'];
+          jobDescription?: string;
+          question?: string;
+          knowledgeState?: Record<string, unknown>;
+          progress: RespondRoleContextResponse['progress'];
+        }
+
+        for await (const event of api.postStream<StreamDonePayload>(
+          `/api/v1/role-contexts/${contextId}/respond`,
+          { answer, questionId, participantId },
+        )) {
+          if (event.event === 'chunk') {
+            yield { event: 'chunk', text: event.text };
+          } else if (event.event === 'done') {
+            const data = event.data;
+            // Check if synthesis (has synthesis field) or question (has question field)
+            if (data.synthesis !== undefined) {
+              const result: SynthesisResult = {
+                type: 'synthesis',
+                synthesis: data.synthesis,
+                persona: data.persona ?? null,
+                jobDescription: data.jobDescription ?? null,
+                progress: data.progress,
+              };
+              yield { event: 'done', result };
+            } else {
+              const result: QuestionTurnResult = {
+                type: 'question',
+                acknowledgment: '', // Streaming doesn't send separate acknowledgment
+                question: {
+                  id: `q-${Date.now()}`,
+                  text: data.question ?? '',
+                  input: { type: 'textarea' },
+                },
+                progress: data.progress,
+              };
+              yield { event: 'done', result };
+            }
+          } else if (event.event === 'error') {
+            yield { event: 'error', message: event.message };
+          }
+        }
+      },
+
       async completeEarly(): Promise<SynthesisResult> {
         const contextId = contextIdRef.current;
         const participantId = participantIdRef.current;
@@ -205,6 +265,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     currentQuestion: conv.currentQuestion,
     progress: conv.progress,
     pastExchanges: conv.pastExchanges,
+    streamingText: conv.streamingText,
     baseline: baselineRef.current,
     persona: conv.persona,
     jobDescription: conv.jobDescription,

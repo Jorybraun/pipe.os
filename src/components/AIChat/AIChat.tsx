@@ -84,7 +84,7 @@ export function AIChat({
     if (!initConfig) return;
     if (defaultLiveModeRef.current && enableLiveVoice) {
       // Voice agent owns the interview — no HTTP turn loop
-      handleGoLive().catch(() => {});
+      handleGoLive(initConfig.baseline as Record<string, unknown>).catch(() => {});
     } else {
       conv.initialize(initConfig).catch(() => {});
     }
@@ -211,7 +211,7 @@ export function AIChat({
 
   // ── Live voice: start session ───────────────────────────────────────────────
 
-  const handleGoLive = useCallback(async (): Promise<void> => {
+  const handleGoLive = useCallback(async (baseline?: Record<string, unknown>): Promise<void> => {
     try {
       const clerkWindow = window as ClerkWindow;
       const token = await clerkWindow.Clerk?.session?.getToken();
@@ -226,7 +226,10 @@ export function AIChat({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ type: 'role-discovery', systemPrompt: '' }),
+        body: JSON.stringify({
+          type: 'role-discovery',
+          ...(baseline && Object.keys(baseline).length > 0 ? { baseline } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -442,17 +445,37 @@ export function AIChat({
         )}
 
         <div ref={scrollRef}>
-          {/* Loading indicator */}
+          {/* Loading indicator — shows streaming text when available */}
           {conv.isLoading && (
-            <ThinkingIndicator
-              message={
-                conv.phase === 'IDLE'
-                  ? 'Starting your interview...'
-                  : conv.pastExchanges.length === 0
-                    ? 'Preparing your first question...'
-                    : 'Thinking...'
-              }
-            />
+            conv.streamingText ? (
+              <div style={{
+                padding: 24,
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border-light)',
+                borderRadius: 16,
+              }}>
+                <div style={{
+                  fontSize: 13,
+                  color: 'var(--pipe-text)',
+                  lineHeight: 1.7,
+                  fontFamily: '"Space Mono", monospace',
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  {conv.streamingText}
+                  <span style={{ opacity: 0.5, animation: 'blink 1s infinite' }}>▊</span>
+                </div>
+              </div>
+            ) : (
+              <ThinkingIndicator
+                message={
+                  conv.phase === 'IDLE'
+                    ? 'Starting your interview...'
+                    : conv.pastExchanges.length === 0
+                      ? 'Preparing your first question...'
+                      : 'Thinking...'
+                }
+              />
+            )
           )}
 
           {/* Current AI question card */}

@@ -1,0 +1,28 @@
+{
+  "run_dir": "workers/api/fixtures/scorer-calibration-runs/2026-04-11T22-12-15-702",
+  "started_at": "2026-04-11T22:13:40.784Z",
+  "updated_at": "2026-04-11T22:13:40.784Z",
+  "endpoint": "http://127.0.0.1:8787/internal/calibrate/score",
+  "fixtures": [
+    {
+      "id": "seed-001-junior-jwt-verification-miss",
+      "seniority": "junior",
+      "tags": [
+        "typescript",
+        "auth",
+        "security",
+        "low-score-anchor"
+      ]
+    }
+  ],
+  "phase_a": {
+    "providers": [
+      "gemma"
+    ],
+    "ok_count": 0,
+    "failed_count": 1,
+    "models": {
+      "gemma": "@cf/google/gemma-4-26b-a4b-it"
+    }
+  }
+}

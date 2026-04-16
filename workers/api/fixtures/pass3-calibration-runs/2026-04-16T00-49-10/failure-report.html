@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pass 3 Calibration — Failure Report</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0c0c0e; color: #e2e8f0; padding: 32px; line-height: 1.6; }
+  h1 { font-family: "Space Mono", monospace; font-size: 20px; color: #f8fafc;
+       margin-bottom: 6px; letter-spacing: -0.5px; }
+  .subtitle { font-size: 13px; color: #64748b; margin-bottom: 36px; }
+  .repo { background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px;
+          margin-bottom: 28px; overflow: hidden; }
+  .repo-header { display: flex; align-items: center; gap: 14px; padding: 16px 20px;
+                 background: #16161f; border-bottom: 1px solid #1e1e2e; }
+  .repo-name { font-family: "Space Mono", monospace; font-size: 15px; font-weight: 600;
+               color: #f1f5f9; }
+  .repo-id { font-size: 11px; color: #475569; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px; }
+  .badge-fail { background: #3b0a0a; color: #f87171; }
+  .badge-pass { background: #052e16; color: #4ade80; }
+  .stats { display: flex; gap: 24px; padding: 14px 20px;
+           border-bottom: 1px solid #1e1e2e; font-size: 13px; }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { color: #64748b; font-size: 11px; text-transform: uppercase;
+                letter-spacing: 0.5px; }
+  .stat-value { font-family: "Space Mono", monospace; font-size: 14px; }
+  .stat-value.bad { color: #f87171; }
+  .stat-value.ok  { color: #4ade80; }
+  .stat-value.warn { color: #fbbf24; }
+  .failures { padding: 16px 20px; }
+  .fail-group { margin-bottom: 18px; }
+  .fail-group:last-child { margin-bottom: 0; }
+  .fail-label { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                letter-spacing: 0.8px; margin-bottom: 8px; }
+  .fail-label.length { color: #fb923c; }
+  .fail-label.numbers { color: #a78bfa; }
+  .fail-item { font-size: 13px; background: #1a1a27; border-left: 3px solid #f87171;
+               border-radius: 0 6px 6px 0; padding: 8px 12px; margin-bottom: 6px; color: #fca5a5; }
+  .num-trace { margin-top: 6px; }
+  .num-row { display: flex; gap: 12px; align-items: baseline; margin-bottom: 4px; }
+  .num-val { font-family: "Space Mono", monospace; font-size: 12px; font-weight: 700;
+             color: #c084fc; min-width: 52px; }
+  .num-ctx { font-size: 12px; color: #94a3b8; font-style: italic; }
+  mark { background: #4c1d95; color: #e9d5ff; padding: 1px 3px; border-radius: 3px; }
+  .gemma-output { padding: 0 20px 20px; }
+  details summary { cursor: pointer; font-size: 12px; color: #475569; padding: 10px 0;
+                    user-select: none; }
+  details summary:hover { color: #94a3b8; }
+  .output-text { font-size: 12px; color: #94a3b8; background: #0f0f18;
+                 border: 1px solid #1e1e2e; border-radius: 6px; padding: 14px;
+                 white-space: pre-wrap; line-height: 1.7; margin-top: 8px; }
+  .divider { width: 100%; height: 1px; background: #1e1e2e; margin: 4px 0; }
+  .summary-bar { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px;
+                 background: #13131a; border: 1px solid #1e1e2e; border-radius: 10px;
+                 padding: 20px; margin-bottom: 36px; }
+  .summary-cell { text-align: center; }
+  .summary-num { font-family: "Space Mono", monospace; font-size: 32px; font-weight: 700; }
+  .summary-num.red { color: #f87171; }
+  .summary-num.amber { color: #fbbf24; }
+  .summary-num.green { color: #4ade80; }
+  .summary-desc { font-size: 12px; color: #64748b; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Pass 3 Calibration — Failure Report</h1>
+<p class="subtitle">Run: 2026-04-16T00-49-10 &nbsp;·&nbsp; 10 repos &nbsp;·&nbsp; 0/10 passed validation</p>
+
+<div class="summary-bar">
+  <div class="summary-cell">
+    <div class="summary-num red">10/10</div>
+    <div class="summary-desc">profile too short</div>
+  </div>
+  <div class="summary-cell">
+    <div class="summary-num amber">4/10</div>
+    <div class="summary-desc">narrative too short</div>
+  </div>
+  <div class="summary-cell">
+    <div class="summary-num amber">8/10</div>
+    <div class="summary-desc">invented numbers flagged</div>
+  </div>
+  <div class="summary-cell">
+    <div class="summary-num red">210</div>
+    <div class="summary-desc">avg profile words (need 400–600)</div>
+  </div>
+</div>
+
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">mui/base-ui</div>
+      <div class="repo-id">repo_id=1673 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value bad">172 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">232 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">3</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">engineering_narrative too short: 172 words (min 200)</div>
+      <div class="fail-item">repo_searchable_profile too short: 232 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 44, 24, 15, 126, 90<div class="num-trace">
+        <div class="num-row"><span class="num-val">44</span><span class="num-ctx">…ns, including docs (70), the main root (<mark>44</mark>), packages/react (25), and specific exa…</span></div>
+        <div class="num-row"><span class="num-val">24</span><span class="num-ctx">…mples like tanstack-start-tailwind-css (<mark>24</mark>) and vite-css (15), totaling 126 depend…</span></div>
+        <div class="num-row"><span class="num-val">15</span><span class="num-ctx">…k-start-tailwind-css (24) and vite-css (<mark>15</mark>), totaling 126 dependencies. Observatio…</span></div>
+        <div class="num-row"><span class="num-val">126</span><span class="num-ctx">…nd-css (24) and vite-css (15), totaling <mark>126</mark> dependencies. Observations of PR-shapes…</span></div>
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">…ce of larger structural work where the p<mark>90</mark>_changed_files hits 19. The test and rev…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (172 words)</p>
+      <div class="output-text">The mui/base-ui repository functions as a specialized library within the web-frontend domain, primarily authored in typescript. Its architecture is designed for modular consumption, focusing on high-reusability components. The engineering culture exhibits a sophisticated test discipline, utilizing vitest to maintain a high test_touch_rate of 0.7. The repository relies heavily on unit-tests, which are a core construct, alongside specialized focuses on accessibility-aria and react-hooks. The complexity profile is categorized as medium, which is consistent with a large-scale codebase of 191700 SLOC and 1917 files. The review culture and contribution patterns suggest a staff-level seniority band, where pull requests often involve coordinated changes across multiple files. Notable PR-sample patterns include targeted bug fixes, such as resolving TypeErrors or positioning issues, frequently modifying tests to ensure regression safety. We observe that while many PRs are small, the p90_changed_files reaches 19, indicating that certain structural improvements or multi-component updates require significant cross-file coordination. The presence of CI workflows and a dedicated focus on refactoring-extraction demonstrates a commitment to long-term maintainability and architectural health within the typescript ecosystem.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (232 words)</p>
+      <div class="output-text">This repository is a library designed for web-frontend development, specifically serving as a foundational component suite. The primary language utilized throughout the project is typescript. The detected stack is characterized by a significant number of dependencies, with package.json files appearing in various locations, including docs (70), the main root (44), packages/react (25), and specific examples like tanstack-start-tailwind-css (24) and vite-css (15), totaling 126 dependencies. Observations of PR-shapes reveal a high degree of technical specificity; many contributions address discrete component behaviors such as popups, select, or slider functionality. While many PRs are concise, the mean_changed_files is 8.7, and there is evidence of larger structural work where the p90_changed_files hits 19. The test and review culture is highly structured, evidenced by the use of vitest and a high test_touch_rate of 0.7. A significant portion of the PR samples shown involve modifying tests to validate fixes. The quality of contributions is measured by a pr_quality_score of 0.58, and the project maintains a professional rigor suitable for a staff-level seniority band. The top three challenge surfaces identified through analysis are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the open_pr_count and open_feature_issue_count are unknown, making it difficult to quantitatively assess the current volume of pending work. However, the repository's high star count of 9169 and its robust CI integration suggest a well-established and active ecosystem for contributors interested in frontend infrastructure.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">nhost/nhost</div>
+      <div class="repo-id">repo_id=1676 &nbsp;·&nbsp; architecture_style=layered_service</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value ok">203 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">193 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">2</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">repo_searchable_profile too short: 193 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 90, 0.48, 323, 188, 181<div class="num-trace">
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">…hanged files count is 11.85, while the p<mark>90</mark> value is 33. Many PRs focus on dashboar…</span></div>
+        <div class="num-row"><span class="num-val">0.48</span><span class="num-ctx">…versight, despite a PR quality score of <mark>0.48</mark>. The repository's complexity is classif…</span></div>
+        <div class="num-row"><span class="num-val">323</span><span class="num-ctx">…cal surface areas involving unit tests (<mark>323</mark>), SQL queries (188), and REST API desig…</span></div>
+        <div class="num-row"><span class="num-val">188</span><span class="num-ctx">…nvolving unit tests (323), SQL queries (<mark>188</mark>), and REST API design (181). The top th…</span></div>
+        <div class="num-row"><span class="num-val">181</span><span class="num-ctx">…SQL queries (188), and REST API design (<mark>181</mark>). The top three challenge surfaces for …</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (203 words)</p>
+      <div class="output-text">The nhost/nhost repository represents a sophisticated web-backend ecosystem characterized by a medium complexity profile. Utilizing TypeScript as its primary language, the codebase demonstrates a layered service approach, evidenced by the significant presence of dashboard components, CLI tools, and backend service templates. The engineering culture appears to prioritize rapid iteration and feature delivery, though the test discipline is heavily concentrated on unit tests via Vitest. While CI is present, the test touch rate of 0.35 and the observation that sample pull requests frequently do not modify existing tests suggest a culture where functional correctness is addressed through targeted unit verification rather than broad regression suites. The review culture is managed at a staff-level seniority band, which is necessary given the significant breadth of changes; the mean number of changed files per PR is 11.85, with a p90 reaching as high as 33 files. This indicates that most engineering work involves cross-component adjustments rather than isolated logic tweaks. Notable PR patterns involve dashboard enhancements, version synchronization across services, and configuration fixes, often spanning multiple files to maintain consistency across the stack. The architecture must manage complex interactions between SQL queries, REST API designs, and database migrations, necessitating a disciplined approach to state and schema management.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (193 words)</p>
+      <div class="output-text">This repository is a web-backend project serving as a foundational platform for developer services. The primary language is TypeScript, supported by a diverse stack that includes Go (as seen in go.mod), React-related dependencies within the dashboard, and various CLI utilities. Observations of the PR shape reveal a high-velocity development environment where individual contributions often impact multiple files simultaneously; the mean changed files count is 11.85, while the p90 value is 33. Many PRs focus on dashboard fixes, documentation updates, and service synchronization, frequently without direct modification of tests. The test and review culture is defined by the use of Vitest for unit testing, with a test touch rate of 0.35. The presence of a staff-level seniority band suggests a high bar for architectural oversight, despite a PR quality score of 0.48. The repository's complexity is classified as medium, with significant technical surface areas involving unit tests (323), SQL queries (188), and REST API design (181). The top three challenge surfaces for contributors are type confusion potential at 0.50, off-by-one potential at 0.40, and TOCTOU race potential at 0.30. Regarding contribution readiness, the open PR count and the open feature-issue count are currently unknown.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">iib0011/omni-tools</div>
+      <div class="repo-id">repo_id=1677 &nbsp;·&nbsp; architecture_style=monolith</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value ok">223 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">193 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">2</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">repo_searchable_profile too short: 193 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 99, 90, 71, 0.46, 0.50<div class="num-trace">
+        <div class="num-row"><span class="num-val">99</span><span class="num-ctx">…ipt, supported by a stack that includes <mark>99</mark> dependencies and significant use of Rea…</span></div>
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">… request modifies 10.45 files, and the p<mark>90</mark> value for changed files is 23. This sug…</span></div>
+        <div class="num-row"><span class="num-val">71</span><span class="num-ctx">…e of vitest for unit-only testing, with <mark>71</mark> unit-tests recorded in the top construc…</span></div>
+        <div class="num-row"><span class="num-val">0.46</span><span class="num-ctx">…ch rate of 0.4, the pr_quality_score of <mark>0.46</mark> and an issue_link_rate of 0.35 suggest …</span></div>
+        <div class="num-row"><span class="num-val">0.50</span><span class="num-ctx">…odebase are type_confusion_potential at <mark>0.50</mark>, off_by_one_potential at 0.40, and toct…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (223 words)</p>
+      <div class="output-text">The omni-tools repository functions as a monolithic web-frontend application, managing a medium complexity profile across approximately 57500 lines of code and 575 files. Developed primarily in typescript, the codebase leverages a stack centered around React constructs, including 41 instances of react-hooks and 7 instances of react-context. The engineering culture exhibits a strong emphasis on modularity within a single deployment, though the architecture relies heavily on client-side logic and UI components. Test discipline is characterized by a unit-only approach using the vitest framework; while there is a presence of 71 unit-tests and 4 e2e-tests, the test touch rate is 0.4, suggesting that testing coverage is targeted rather than exhaustive across all changes. The review and contribution culture appears somewhat loose, reflected in a pr_quality_score of 0.46 and an issue_link_rate of 0.35. PR-sample patterns reveal a tendency toward broad-impact changes; the mean_changed_files is 10.45, with a p90_changed_files reaching 23, indicating that even standard feature additions or refactors often touch a significant portion of the file tree. For example, PR 326 involved 26 changed files for a structural reorganization, and PR 307 touched 23 files for a search tool improvement. While the repository maintains CI, the low swe_bench_eligibility_rate of 0.1 suggests that many contributions are focused on UI/UX or minor utility adjustments rather than deep algorithmic or complex logic changes that satisfy strict automated benchmarking criteria.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (193 words)</p>
+      <div class="output-text">The omni-tools repository is a web-frontend application designed to provide a suite of various online tools. The primary language utilized is typescript, supported by a stack that includes 99 dependencies and significant use of React-based patterns such as react-hooks and react-context, alongside async-error-handling and client-routing. Observations of PR shapes indicate a high degree of file churn per contribution; the average pull request modifies 10.45 files, and the p90 value for changed files is 23. This suggests that contributions frequently span multiple modules or require significant updates to directory structures and index files. The test and review culture is defined by the use of vitest for unit-only testing, with 71 unit-tests recorded in the top constructs. While the repository has a test touch rate of 0.4, the pr_quality_score of 0.46 and an issue_link_rate of 0.35 suggest a workflow where issue traceability and high-standard code review may be inconsistent. The top three challenge surfaces identified in the codebase are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the number of open PRs and the count of open feature-issues are currently unknown, preventing a quantitative assessment of the current maintenance backlog.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">uber/baseweb</div>
+      <div class="repo-id">repo_id=1679 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value ok">207 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">202 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">2</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">repo_searchable_profile too short: 202 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 76, 11, 16, 97, 90<div class="num-trace">
+        <div class="num-row"><span class="num-val">76</span><span class="num-ctx">…mplex multi-package stack, evidenced by <mark>76</mark> package.json files in the main director…</span></div>
+        <div class="num-row"><span class="num-val">11</span><span class="num-ctx">…ckage.json files in the main directory, <mark>11</mark> in the codemods package, 16 in the vsco…</span></div>
+        <div class="num-row"><span class="num-val">16</span><span class="num-ctx">… directory, 11 in the codemods package, <mark>16</mark> in the vscode-extension package, and 5 …</span></div>
+        <div class="num-row"><span class="num-val">97</span><span class="num-ctx">… in the eslint-plugin package, totaling <mark>97</mark> dependencies. PR-shape observations rev…</span></div>
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">…mber of changed files is 10.1, with the <mark>90</mark>th percentile reaching 19 files per pull…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (207 words)</p>
+      <div class="output-text">The uber/baseweb repository serves as a highly structured design system library, primarily authored in typescript. Given its nature as a collection of modular UI components and developer tooling—including codemods and ESLint plugins—the architecture follows a library pattern designed for external consumption. The codebase exhibits a medium complexity profile, supported by a large scale of 246200 SLOC across 2462 files. Engineering discipline is centered around a unit-only test strategy using the jest framework, with a test touch rate of 0.45, indicating that nearly half of the modified code in contributions is accompanied by testing changes. The review culture appears to manage significant breadth, as evidenced by a mean of 10.1 changed files per PR and a p90 of 19, suggesting that updates often span multiple component modules or internal dependencies. Notable PR-sample patterns include a mix of focused bug fixes, such as tethering and popper positioning, and broader documentation or story updates. While the repository maintains a staff-level seniority band, the pr_quality_score of 0.36 and a relatively low swe_bench_eligibility_rate of 0.05 suggest that many contributions are centered on documentation, asset management, or component orchestration rather than core algorithmic logic or complex state machines. The engineering effort is heavily concentrated on maintaining component consistency, accessibility-aria standards, and react-hooks integration.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (202 words)</p>
+      <div class="output-text">The uber/baseweb repository is a web-frontend library designed to provide foundational UI components and design system tooling. The project is primarily built using typescript and features a complex multi-package stack, evidenced by 76 package.json files in the main directory, 11 in the codemods package, 16 in the vscode-extension package, and 5 in the eslint-plugin package, totaling 97 dependencies. PR-shape observations reveal a high degree of multi-file modification; the mean number of changed files is 10.1, with the 90th percentile reaching 19 files per pull request. This suggests that changes frequently require synchronized updates across various parts of the component ecosystem. The test and review culture is defined by a unit-only testing approach via jest, characterized by a test touch rate of 0.45. While the repository has a high star count of 8959, the pr_quality_score is 0.36, and the issue_link_rate is relatively low at 0.05, indicating that many PRs may be chore-related or documentation-heavy rather than strictly tied to existing issue tracking. The top three challenge surfaces identified for this codebase are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the open_pr_count and open_feature_issue_count are currently unknown, making it difficult to quantify the immediate backlog for new contributors.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">rsuite/rsuite</div>
+      <div class="repo-id">repo_id=1683 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value ok">205 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">242 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">2</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">repo_searchable_profile too short: 242 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 18, 116, 0.58, 90, 0.40<div class="num-trace">
+        <div class="num-row"><span class="num-val">18</span><span class="num-ctx">…ations for create-react-app and custom i<mark>18</mark>n and theme implementations, with a tota…</span></div>
+        <div class="num-row"><span class="num-val">116</span><span class="num-ctx">…tions, with a total dependency count of <mark>116</mark>. Observation of PR shapes shows that de…</span></div>
+        <div class="num-row"><span class="num-val">0.58</span><span class="num-ctx">…oach, and while the pr_quality_score is <mark>0.58</mark>, the integration of automated CI workfl…</span></div>
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">…ile the mean_changed_files is 6.6, the p<mark>90</mark>_changed_files reaches 13, indicating th…</span></div>
+        <div class="num-row"><span class="num-val">0.40</span><span class="num-ctx">…ential at 0.50, off_by_one_potential at <mark>0.40</mark>, and toctou_race_potential at 0.30. The…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (205 words)</p>
+      <div class="output-text">The rsuite repository functions as a highly structured UI library developed primarily in typescript. The architecture is designed for modularity and consumption by external web-frontend applications, characterized by a medium complexity profile and a high file count of 1736. The engineering culture demonstrates a disciplined approach to maintenance, particularly evident in the testing practices. While the test style is strictly limited to unit_only, the test_touch_rate of 0.5 indicates that a significant portion of development cycles involves modifying or updating the test suite to maintain stability. The codebase maintains a mean_ccn of 3.5, suggesting that while the logic is non-trivial, individual functions remain relatively digestible. Review culture and contribution patterns reveal a focus on component-level precision; notable PR-sample patterns include localized fixes for accessibility (such as screen reader support in Checkbox) and functional enhancements like keyboard support in Tree components. Pull requests frequently involve a moderate degree of change, with a mean_changed_files of 6.6 and a p90_changed_files of 13, suggesting that even small feature additions or bug fixes often require updates across multiple files, likely to maintain consistency between component logic, styles, and documentation. The presence of CI workflows ensures that these changes are validated, supporting a stable release cycle for a library with 8695 stars.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (242 words)</p>
+      <div class="output-text">This repository is a web-frontend library designed to provide a suite of UI components for application developers. The primary language utilized is typescript, and the detected stack is centered around a robust ecosystem of dependencies, including several example configurations for create-react-app and custom i18n and theme implementations, with a total dependency count of 116. Observation of PR shapes shows that development is often focused on discrete component updates or documentation improvements. For instance, recent changes range from adding structured data to docs to fixing specific component behaviors like DatePicker alignment or Checkbox indeterminate properties. Many pull requests involve modifying tests, which aligns with the observed test_touch_rate of 0.5. The test culture is characterized by a unit_only approach, and while the pr_quality_score is 0.58, the integration of automated CI workflows suggests a structured validation process. A notable pattern in the contribution history is the tendency for PRs to touch multiple files; while the mean_changed_files is 6.6, the p90_changed_files reaches 13, indicating that complex fixes or features often necessitate broad changes across the component structure. The top three challenge surfaces identified for this codebase are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. These metrics suggest that developers should be particularly cautious regarding type safety and logical boundary conditions within the component logic. Regarding contribution readiness, the number of open PRs and the count of open feature-related issues are currently unknown, making it difficult to quantify the immediate backlog for new contributors.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">getsentry/sentry-javascript</div>
+      <div class="repo-id">repo_id=1686 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value bad">195 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">190 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">3</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">engineering_narrative too short: 195 words (min 200)</div>
+      <div class="fail-item">repo_searchable_profile too short: 190 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 21, 90, 1073, 0.50, 0.40<div class="num-trace">
+        <div class="num-row"><span class="num-val">21</span><span class="num-ctx">…dle-analyzer-scenarios, with a total of <mark>21</mark> detected dependencies. Observations of …</span></div>
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">…from 3 up to 13, which aligns with the p<mark>90</mark> of 13 changed files. Many feature-based…</span></div>
+        <div class="num-row"><span class="num-val">1073</span><span class="num-ctx">…ing strategy using vitest, evidenced by <mark>1073</mark> unit-test constructs and a test touch r…</span></div>
+        <div class="num-row"><span class="num-val">0.50</span><span class="num-ctx">…ibutors are type_confusion_potential at <mark>0.50</mark>, off_by_one_potential at 0.40, and toct…</span></div>
+        <div class="num-row"><span class="num-val">0.40</span><span class="num-ctx">…ential at 0.50, off_by_one_potential at <mark>0.40</mark>, and toctou_race_potential at 0.30. Reg…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (195 words)</p>
+      <div class="output-text">The getsentry/sentry-javascript repository is a substantial TypeScript library designed for deep integration across diverse runtime environments. Given its role as a foundational SDK, the architecture follows a library pattern, focusing on modularity to support various platforms such as browser, Node, and Deno. The engineering culture exhibits a medium complexity profile, managing a significant codebase of 650300 SLOC across 6503 files. Test discipline is characterized by a unit-only test style utilizing the vitest framework, with a test touch rate of 0.3. While the repository maintains high-level CI workflows, the complexity of the codebase is managed through a staff-level seniority band, suggesting rigorous internal standards. Review culture and PR patterns indicate that changes often involve multi-file modifications, with a mean of 7.3 changed files and a p90 of 13. Notable PR patterns show a recurring theme of feature expansions, such as adding integration options for various AI services like Anthropic, LangChain, and Google GenAI, often requiring modifications to core logic. The presence of 1073 unit-test constructs highlights the emphasis on ensuring correctness within the TypeScript ecosystem. Although the pr_quality_score is 0.40, the structural maturity is evident in the way the library handles diverse integrations and environmental nuances.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (190 words)</p>
+      <div class="output-text">This repository is a library used for software monitoring and error tracking integrations. The primary language used is typescript, and the detected stack includes various development packages for browser-integration-tests, bundler-tests, and bundle-analyzer-scenarios, with a total of 21 detected dependencies. Observations of PR shapes reveal that contributions frequently involve multi-file changes; for instance, sample PRs show file counts ranging from 3 up to 13, which aligns with the p90 of 13 changed files. Many feature-based PRs, such as those adding truncation options to core integrations, modify between 5 and 13 files, while some fixes and e2e improvements touch up to 10 files. The test and review culture is grounded in a unit-only testing strategy using vitest, evidenced by 1073 unit-test constructs and a test touch rate of 0.3. The repository maintains continuous integration via ci-workflows. The top three challenge surfaces for contributors are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the open pr_count and open feature_issue_count are currently unknown, so a quantitative assessment of current workload cannot be provided. The repository is a large-scale project with 8618 stars and a significant footprint of 6503 files.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">Hacker0x01/react-datepicker</div>
+      <div class="repo-id">repo_id=1687 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value ok">210 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">177 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">2</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">repo_searchable_profile too short: 177 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 75, 10, 100, 0.73, 0.40<div class="num-trace">
+        <div class="num-row"><span class="num-val">75</span><span class="num-ctx">…cript, with a detected stack comprising <mark>75</mark> total dependencies across the main pack…</span></div>
+        <div class="num-row"><span class="num-val">10</span><span class="num-ctx">…de functional changes; out of the first <mark>10</mark> sample PRs, 100% modified tests. The PR…</span></div>
+        <div class="num-row"><span class="num-val">100</span><span class="num-ctx">…hanges; out of the first 10 sample PRs, <mark>100</mark>% modified tests. The PRs range in scope…</span></div>
+        <div class="num-row"><span class="num-val">0.73</span><span class="num-ctx">…h rate of 0.9 and a pr_quality_score of <mark>0.73</mark>. While the project maintains strong tes…</span></div>
+        <div class="num-row"><span class="num-val">0.40</span><span class="num-ctx">…ential at 0.50, off_by_one_potential at <mark>0.40</mark>, and toctou_race_potential at 0.30. Reg…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (210 words)</p>
+      <div class="output-text">The Hacker0x01/react-datepicker repository is a specialized TypeScript library designed for web-frontend integration, functioning primarily as a reusable component ecosystem rather than a standalone service. The architecture follows a library pattern where the core logic is exposed via props and hooks for consumption by external React applications. The complexity profile is classified as medium, characterized by a tight coupling between component state and date-logic calculations, which is evident in the presence of 208 files and 20800 SLOC. The engineering culture exhibits a high degree of test discipline; the project utilizes Jest for unit-only testing, and the test touch rate is a significant 0.9, indicating that nearly all code changes are accompanied by corresponding test modifications. Review culture and contribution patterns suggest a focus on stability and correctness, with a PR quality score of 0.73. Notable PR-sample patterns include frequent extensions to component props (such as adding formatMultipleDates or renderCustomDayName) and essential bug fixes that often require modifying multiple files to maintain logic consistency. PRs typically involve a moderate scope of change, with a mean of 5.1 changed files, though high-impact updates or coverage improvements can reach up to 11 changed files. The presence of 43 unit-test constructs and integration of react-hooks further underscores a modern, modular approach to building frontend primitives.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (177 words)</p>
+      <div class="output-text">This repository is a web-frontend library providing date selection components for React applications. The primary language is typescript, with a detected stack comprising 75 total dependencies across the main package, documentation site, and hello-world examples. Observations of PR shapes reveal a highly consistent pattern where developers frequently modify tests alongside functional changes; out of the first 10 sample PRs, 100% modified tests. The PRs range in scope from 3 to 11 changed files, with a mean of 5.1 files per PR and a p90 of 11 files. The test and review culture is robust and highly disciplined, evidenced by a high test touch rate of 0.9 and a pr_quality_score of 0.73. While the project maintains strong testing rigor through Jest, the test style is limited to unit_only. The top three challenge surfaces identified for developers are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the number of open PRs and the count of open feature-issues are unknown, making it difficult to quantitatively assess the immediate backlog of work available for new contributors.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">garmeeh/next-seo</div>
+      <div class="repo-id">repo_id=1688 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value bad">194 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">201 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">3</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">engineering_narrative too short: 194 words (min 200)</div>
+      <div class="fail-item">repo_searchable_profile too short: 201 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 29, 90, 62, 31, 0.40<div class="num-trace">
+        <div class="num-row"><span class="num-val">29</span><span class="num-ctx">…tack includes a dependency footprint of <mark>29</mark> total dependencies, including manifests…</span></div>
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">… mean changed files is 4.83, while the p<mark>90</mark> changed files is 8. Feature-based PRs, …</span></div>
+        <div class="num-row"><span class="num-val">62</span><span class="num-ctx">…t, with a heavy emphasis on unit tests (<mark>62</mark>) compared to integration tests (31), e2…</span></div>
+        <div class="num-row"><span class="num-val">31</span><span class="num-ctx">…sts (62) compared to integration tests (<mark>31</mark>), e2e tests (4), and snapshot tests (1)…</span></div>
+        <div class="num-row"><span class="num-val">0.40</span><span class="num-ctx">…ential at 0.50, off_by_one_potential at <mark>0.40</mark>, and toctou_race_potential at 0.30. Con…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (194 words)</p>
+      <div class="output-text">The garmeeh/next-seo repository is structured as a specialized library designed for the web-frontend domain, specifically targeting SEO metadata management. Written primarily in typescript, the codebase maintains a medium complexity profile across 243 files and 24300 SLOC. The architecture is strictly that of a library, intended to be integrated into external Next.js applications rather than serving as a standalone runtime. Engineering discipline is characterized by a robust unit-testing focus using the vitest framework, with 62 unit-tests identified in the top constructs. While the test touch rate is 0.5, the testing style remains focused on unit-level validation rather than broad integration or e2e coverage, which are less prevalent. The repository demonstrates a mature review and release culture, evidenced by frequent versioning PRs and a senior seniority band. PR-sample patterns suggest that feature additions, such as expanding OrganizationJsonLd support, typically involve moderate file churn, with the p90 changed files reaching 8. Notable patterns include a tendency for feature PRs to modify tests simultaneously, ensuring that new metadata schema support is immediately validated. The complexity is managed through clear type definitions, though the medium complexity band suggests that careful handling of schema transitions is required to maintain stability.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (201 words)</p>
+      <div class="output-text">This repository is a library focused on web-frontend SEO optimization. Its primary language is typescript, and the detected stack includes a dependency footprint of 29 total dependencies, including manifests for app-router showcases and core package configurations. PR-shape observations indicate a moderate scope of change per contribution; the mean changed files is 4.83, while the p90 changed files is 8. Feature-based PRs, such as adding support for review and aggregateRating, frequently modify tests and resolve associated issues, whereas release-related PRs typically modify 3 files and do not touch the test suite. The test and review culture is centered around vitest, with a heavy emphasis on unit tests (62) compared to integration tests (31), e2e tests (4), and snapshot tests (1). The presence of CI workflows (4) supports a disciplined integration process. The top three challenge surfaces for contributors are identified as type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Contribution readiness is difficult to quantify fully as the open pr count and open feature-issue count are unknown; however, the repository maintains a high visibility with 8352 stars. The issue link rate is 0.167 and the swe_bench_eligibility_rate is 0.167, suggesting specific subsets of tasks are highly suitable for automated engineering benchmarks.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">Shopify/react-native-skia</div>
+      <div class="repo-id">repo_id=1689 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value bad">193 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">215 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">3</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">engineering_narrative too short: 193 words (min 200)</div>
+      <div class="fail-item">repo_searchable_profile too short: 215 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 103, 90, 86, 63, 49<div class="num-trace">
+        <div class="num-row"><span class="num-val">103</span><span class="num-ctx">…emotion, and a web-app, with a total of <mark>103</mark> dependencies. Observations of PR shapes…</span></div>
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">…mean_changed_files is 10.95, while the p<mark>90</mark>_changed_files reaches 28. This suggests…</span></div>
+        <div class="num-row"><span class="num-val">86</span><span class="num-ctx">…is anchored by the jest framework, with <mark>86</mark> unit-tests, 63 e2e-tests, and 49 integr…</span></div>
+        <div class="num-row"><span class="num-val">63</span><span class="num-ctx">…the jest framework, with 86 unit-tests, <mark>63</mark> e2e-tests, and 49 integration-tests ide…</span></div>
+        <div class="num-row"><span class="num-val">49</span><span class="num-ctx">…, with 86 unit-tests, 63 e2e-tests, and <mark>49</mark> integration-tests identified in the con…</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (193 words)</p>
+      <div class="output-text">The Shopify/react-native-skia repository is a specialized mobile graphics library implemented primarily in typescript. The architecture follows a library pattern designed for integration into larger mobile ecosystems, featuring a medium complexity profile that interfaces with low-level graphics primitives. The engineering culture is characterized by high-seniority staff-level contributions, focusing heavily on performance-critical fixes and memory management. While the repository maintains a robust test suite utilizing the jest framework, the current test style is described as minimal, with a test touch rate of 0.25. Review culture appears focused on correctness in high-stakes areas like GPU resource management and threading, though the pr_quality_score of 0.31 suggests a rigorous or highly selective threshold for merging. Notable PR-sample patterns involve addressing critical low-level failures, such as nullptr dereferences and worklet synchronization issues. A significant portion of the work involves managing complex lifecycles, such as disposing of GPU-bound resources or handling memory pressure. While the repository utilizes unit-tests (86) and integration-tests (49) to maintain stability, the pull requests frequently modify a high number of files—evidenced by a mean_changed_files of 10.95 and a p90_changed_files of 28—suggesting that changes often ripple through the bridge between the typescript layer and underlying native implementations.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (215 words)</p>
+      <div class="output-text">This repository is a mobile-domain library intended for high-performance graphics rendering within the React Native ecosystem. The primary language is typescript, and the detected stack includes a variety of supporting applications such as docs, example, headless, remotion, and a web-app, with a total of 103 dependencies. Observations of PR shapes indicate a high degree of structural impact per change; the mean_changed_files is 10.95, while the p90_changed_files reaches 28. This suggests that even small bug fixes often necessitate wide-reaching adjustments across the codebase. The PR samples also reveal a pattern where many fixes do not immediately modify tests, highlighting a potential tension between rapid bug resolution and test coverage expansion. The test and review culture is anchored by the jest framework, with 86 unit-tests, 63 e2e-tests, and 49 integration-tests identified in the constructs. However, the test_touch_rate is 0.25 and the test_style is minimal, indicating that test updates are not always a default accompaniment to code changes. The senior-level engineering expertise is reflected in the complexity of the issues addressed. The top three challenge surfaces for contributors are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30, representing significant technical hurdles in graphics and concurrency. Regarding contribution readiness, the open_pr_count and open_feature_issue_count are unknown, so the current volume of active community work cannot be quantitatively determined.</div>
+    </details>
+  </div>
+</div>
+<div class="repo">
+  <div class="repo-header">
+    <div>
+      <div class="repo-name">davidjerleke/embla-carousel</div>
+      <div class="repo-id">repo_id=1693 &nbsp;·&nbsp; architecture_style=library</div>
+    </div>
+    <span class="badge badge-fail">VALIDATION FAILED</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-label">Narrative</span>
+      <span class="stat-value ok">241 words &nbsp;<small style="opacity:.6">(need 200–400)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Profile</span>
+      <span class="stat-value bad">259 words &nbsp;<small style="opacity:.6">(need 400–600)</small></span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Failure count</span>
+      <span class="stat-value bad">2</span>
+    </div>
+  </div>
+
+  <div class="failures">
+    <div class="fail-group">
+      <div class="fail-label length">⚠ Length violations</div>
+      <div class="fail-item">repo_searchable_profile too short: 259 words (min 400)</div>
+    </div>
+    <div class="fail-group">
+      <div class="fail-label numbers">⚠ Numbers not in FACTS block</div>
+      <div class="fail-item">repo_searchable_profile contains invented numbers not in FACTS block: 90, 0.31, 0.50, 0.40, 0.30<div class="num-trace">
+        <div class="num-row"><span class="num-val">90</span><span class="num-ctx">…t changes can be quite large, with the p<mark>90</mark> of changed files reaching 22. This indi…</span></div>
+        <div class="num-row"><span class="num-val">0.31</span><span class="num-ctx">… single change. The pr_quality_score is <mark>0.31</mark>, and the swe_bench_eligibility_rate is …</span></div>
+        <div class="num-row"><span class="num-val">0.50</span><span class="num-ctx">…project are type_confusion_potential at <mark>0.50</mark>, off_by_one_potential at 0.40, and toct…</span></div>
+        <div class="num-row"><span class="num-val">0.40</span><span class="num-ctx">…ential at 0.50, off_by_one_potential at <mark>0.40</mark>, and toctou_race_potential at 0.30, whi…</span></div>
+        <div class="num-row"><span class="num-val">0.30</span><span class="num-ctx">…l at 0.40, and toctou_race_potential at <mark>0.30</mark>, which aligns with the complexities of …</span></div>
+      </div></div>
+    </div>
+  </div>
+  <div class="gemma-output">
+    <details>
+      <summary>▶ View Gemma output</summary>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">engineering_narrative (241 words)</p>
+      <div class="output-text">The embla-carousel repository is a sophisticated TypeScript-based library designed for modular carousel functionality. The architecture follows a multi-package structure, distributing core logic and specialized plugins like accessibility, auto-height, and auto-scroll into distinct packages, which suggests a highly decoupled and extensible design. The complexity profile is categorized as medium, supported by a substantial codebase of 212900 SLOC and 2127 files. Despite the complexity, the cyclomatic complexity remains manageable with a mean CCN of 3.5, indicating that while the logic is dense, individual units of code remain readable. The engineering culture places a significant emphasis on stability through unit testing, utilizing the Jest framework. However, the test discipline shows a specific focus, with a test style limited to unit-only tests and a test touch rate of 0.35, meaning roughly 35% of changes involve test modifications. The review and contribution culture is characterized by moderate-sized pull requests; the mean number of changed files is 10.15, though the p90 value reaches 22, suggesting that certain architectural or compatibility updates—such as ESM import fixes or animation smoothness improvements—require broad sweeping changes across the codebase. Notable PR patterns include a mix of bug fixes and feature additions, such as adding slideFocus events or resolving rendering issues when slides exceed view size. While many PRs modify tests, a significant portion of feature additions and documentation chores do not, reflecting a workflow where core logic changes are strictly verified while configuration or API updates may follow different validation paths.</div>
+      <p style="font-size:11px;color:#64748b;margin:8px 0 4px">repo_searchable_profile (259 words)</p>
+      <div class="output-text">The embla-carousel repository is an open-source library focused on providing highly customizable carousel functionality for web applications. The project is built primarily using TypeScript and utilizes a multi-package monorepo structure, as evidenced by the presence of various package.json files across packages such as embla-carousel, embla-carousel-accessibility, embla-carousel-auto-height, and embla-carousel-auto-scroll. The technical stack is centered around modern TypeScript patterns, including support for moduleResolution: bundler and ESM imports. Observations of the PR shapes reveal that most contributions involve moderate file modifications, with a mean of 10.15 changed files per PR. However, high-impact changes can be quite large, with the p90 of changed files reaching 22. This indicates that while most tasks are granular, infrastructure or compatibility updates require significant cross-package coordination. The test and review culture is grounded in automated CI workflows and unit testing via Jest. The test touch rate stands at 0.35, suggesting that test updates are frequent but not universal to every single change. The pr_quality_score is 0.31, and the swe_bench_eligibility_rate is 0.05, indicating a codebase that is highly specialized and perhaps more difficult for automated agents to navigate compared to simpler repositories. The top three technical challenge surfaces identified for this project are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30, which aligns with the complexities of managing precise animations and responsive layouts. Top constructs within the repository frequently involve unit-tests, responsive-layout, and refactoring-extraction. Regarding contribution readiness, the open pr count and the open feature-issue count are unknown, making it difficult to quantitatively assess the current backlog or the immediate availability of tasks for new contributors.</div>
+    </details>
+  </div>
+</div>
+
+<div style="margin-top:32px;padding:20px;background:#13131a;border:1px solid #1e1e2e;border-radius:10px;font-size:13px;color:#94a3b8">
+  <p style="font-weight:600;color:#f1f5f9;margin-bottom:10px">Root causes</p>
+  <p><strong style="color:#fb923c">1. maxOutputTokens=2048 is too low.</strong> Every profile stops at ~200 words because Gemma runs out of tokens before finishing the 400-600 word profile. Fix: raise to 4096 in <code>callGemma()</code>.</p>
+  <p style="margin-top:8px"><strong style="color:#a78bfa">2. Validator allow-list is incomplete.</strong> Numbers that ARE in the FACTS block — <code>pr_quality_score</code>, construct evidence counts, challenge surface scores, and <code>detected_stack_json</code> dependency counts — are not in <code>allowedNumericStrings()</code>. The regex also extracts "90" from "p90" (word-boundary fix needed).</p>
+</div>
+</body></html>

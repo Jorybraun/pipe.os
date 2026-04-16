@@ -126,8 +126,8 @@ This resolves **RD-1 through RD-7**: every field that was lost in the flat perso
 The synthesis step rewrites around a three-layer pattern drawn from the constrained-decoding and schema-guided generation literature (R1):
 
 1. **Schema-guided generation with field-level exemplars.** The system prompt contains the full RCD JSON schema plus one worked exemplar per field type (a laddering_chain, a story, a conflict, a dealbreaker). The model sees examples of shape, not just the shape itself. Grounded in Chain-of-Density (Adams et al. 2023) and schema-in-prompt patterns (PARSE: Dong et al. 2024 reports 34% extraction accuracy improvement from description enhancement + 55% from structural reorganization = 89% combined).
-2. **Constrained JSON decoding** via the Anthropic API `response_format: json_schema` parameter (equivalent to Outlines / jsonformer / llguidance on open-source paths). The model physically cannot emit fields outside the schema. Failure-mode elimination is at the token level, not the retry level.
-3. **Haiku 4.5 verification pass.** After the primary synthesis call (Gemma 4 26B on Workers AI), a second Haiku 4.5 call reads the RCD and the original transcript and checks that every `attribute_quote` field contains text that appears verbatim in the referenced exchange, every `consequence` is grounded in a stated consequence (not projected), and every `value` is not a generic HR platitude ("collaboration", "growth"). Cells that fail verification are either regenerated or downgraded to `confidence: low` with an inspector tag.
+2. **Constrained JSON decoding** via `response_format: json_schema` or equivalent structured output mode. The model physically cannot emit fields outside the schema. Failure-mode elimination is at the token level, not the retry level.
+3. **Verification pass.** After the primary synthesis call (Gemma 4 26B on Workers AI), a second Gemma 4 12B call reads the RCD and the original transcript and checks that every `attribute_quote` field contains text that appears verbatim in the referenced exchange, every `consequence` is grounded in a stated consequence (not projected), and every `value` is not a generic HR platitude ("collaboration", "growth"). Cells that fail verification are either regenerated or downgraded to `confidence: low` with an inspector tag.
 
 **Load-bearing rule: bottom-up ordering.** The synthesis prompt must instruct the model to extract `attribute_quote` → `consequence` → `value` in that order, not the reverse. The Means-End Chain directionality is preserved by the prompt structure, not by hope. Reversing the order causes **value projection** — the model leads with generic values ("they care about quality") and back-fills evidence to fit, producing plausible-but-fabricated ladders.
 
@@ -277,13 +277,13 @@ The single most architecturally load-bearing question in the research run resolv
 
 **Stage 0 — Existing SQL retriever.** `matchRepos.ts` stays as the stage-0 filter: the existing CTE join on `qualified_repos ← repo_skills ← repo_constructs` with hard filters + weighted scoring. Returns the top-N SQL candidates (default N=20) fast, cheap, and deterministic. No changes to the existing query.
 
-**Stage 1 — Offline Pass 3 on Claude Haiku 4.5.** A new crawler pass (`scripts/crawl-repos/pass3/`) runs as a background Cloudflare Queue consumer when Pass 2 completes for a repo. For each repo it reads `repo_sample_prs` metadata + `repo_constructs` + Pass 2 signals and calls Haiku 4.5 to produce one `repo_engineering_signals` row, **role-agnostic by design**. Output is a structured JSON blob describing the repo's engineering culture on the five Tier-1 signals (expanding to nine as Tier-2 ships), plus a short narrative summary in `engineering_narrative`. Re-run on crawler re-crawl. Content-hashed so unchanged repos aren't re-summarized. Estimated token cost: ~500 tokens per repo × 5,000 repos = 2.5M tokens, one-time. At Haiku 4.5 pricing this is under $5 per full library refresh. Haiku 4.5 matches CLAUDE.md AI routing: offline batch, cost-sensitive, "build-time bulk tagging" pattern.
+**Stage 1 — Offline Pass 3 on Vertex AI Gemma 4 26B.** A new crawler pass (`scripts/crawl-repos/pass3/run.ts`) runs as a batch job. For each repo it reads `repo_sample_prs` metadata + `repo_constructs` + Pass 2 signals and calls Gemma 4 26B to produce one `repo_engineering_signals` row, **role-agnostic by design**. Output is a structured JSON blob describing the repo's engineering culture on the five Tier-1 signals (expanding to nine as Tier-2 ships), plus a short narrative summary in `engineering_narrative`. Re-run on crawler re-crawl. Content-hashed so unchanged repos aren't re-summarized. Cost is near-zero (Vertex AI Gemma free tier).
 
 **Stage 2 — Runtime role-fit rerank on Gemma 4 26B.** A new Worker handler (`workers/api/src/lib/repoDiscovery/roleFitRerank.ts`) sits between `discover.ts` and the final ranked result. After `matchRepos` returns its 20 stage-0 candidates, the Worker reads the RCD Technical Context + the Pass 3 `repo_engineering_signals` for each candidate, calls Gemma 4 26B on Workers AI to produce per-candidate alignment scores with structured reasoning, and persists to a new `repo_role_alignment` table. Keyed by `(role_context_id, repo_id)` with `rcd_version` + `signals_version` as explicit invalidation columns. Subsequent recruits to the same role read the cached row rather than re-paying the LLM call. Gemma 4 26B matches CLAUDE.md routing: real-time hot path, per-discovery latency budget, Workers AI daily quota compatible (rerank is low-volume vs. culture interview turns).
 
 **Data flow is acyclic.** Role Discovery writes RCD → Worker reads it. Crawler Pass 3 writes `repo_engineering_signals` → Worker reads it. Worker writes `repo_role_alignment` → app reads it. No component writes to a table another component also writes to.
 
-**Model-family independence** (per CLAUDE.md routing rule): Haiku for enrichment (offline signal extraction), Gemma for matching (runtime rerank). Never the same family on both halves — the matching layer has an independent read on the substrate it consumes, consistent with the implementer/classifier separation principle from ADR-032.
+**Model routing:** Gemma 4 26B for both Pass 3 (offline signal extraction via Vertex AI) and runtime rerank (via Workers AI). Originally designed with different model families for independent error detection, but the current implementation accepts same-family routing for the initial library build.
 
 This resolves **RD-23** (crawler Pass 3) and **RD-24** (Worker runtime role-fit pass).
 
@@ -311,7 +311,7 @@ CREATE TABLE repo_engineering_signals (
   satd_density REAL,                   -- SATD markers per KLOC
 
   -- Narrative output
-  engineering_narrative TEXT NOT NULL, -- ~200-word structured summary from Haiku 4.5
+  engineering_narrative TEXT NOT NULL, -- ~200-word structured summary from Gemma 4 26B
   signal_json TEXT NOT NULL,           -- full structured output blob for future signals
 
   -- Provenance
@@ -385,13 +385,13 @@ Per CLAUDE.md AI routing principles and research Q8/Q11:
 |---|---|---|---|
 | Role Discovery live interview (turn FSM) | `@cf/google/gemma-4-26b-a4b-it` | Workers AI | Unchanged from existing ADR-027 migration off Mistral. |
 | RCD synthesis primary call | `@cf/google/gemma-4-26b-a4b-it` | Workers AI | Real-time hot path; structured JSON output; constrained decoding via `response_format`. |
-| RCD synthesis verification pass | Claude Haiku 4.5 (via Agent tool) | Anthropic | Offline, bulk-eligible, cost-sensitive; matches existing build-time tagging pattern. |
-| BARS override generation (role setup time) | Claude Sonnet 4.6 (via Agent tool) | Anthropic | Quality-sensitive, offline, recruiter reviews output before persistence. Matches CLAUDE.md Content Pipeline variant-generation slot. |
-| Probe bank enrichment (role setup time) | Claude Sonnet 4.6 (via Agent tool) | Anthropic | Same reasoning as BARS overrides — offline, recruiter-gated. |
-| Crawler Pass 3 (offline per-repo signal summarization) | Claude Haiku 4.5 (via Agent tool) | Anthropic | Offline batch, cost-sensitive, 5,000 repos × ~500 tokens ≈ under $5 per library refresh. |
+| RCD synthesis verification pass | Gemma 4 12B | Workers AI | Offline, bulk-eligible, cost-sensitive. |
+| BARS override generation (role setup time) | Gemma 4 26B | Vertex AI | Quality-sensitive, offline, recruiter reviews output before persistence. |
+| Probe bank enrichment (role setup time) | Gemma 4 26B | Vertex AI | Same reasoning as BARS overrides — offline, recruiter-gated. |
+| Crawler Pass 3 (offline per-repo signal summarization) | `gemma-4-26b-a4b-it-maas` | Vertex AI | Offline batch, cost-sensitive, structured JSON output. Same model family as rerank (deviation accepted — see note). |
 | Worker runtime role-fit rerank | `@cf/google/gemma-4-26b-a4b-it` | Workers AI | Real-time, per-(role × repo), cached in `repo_role_alignment` after first run per role. |
 
-**Load-bearing rule:** Pass 3 (Haiku) and runtime rerank (Gemma) **must be different model families**. The rerank has an independent read on the substrate the enrichment produced, consistent with the implementer/classifier separation principle from ADR-032. Never Haiku reranking Haiku-generated signals.
+**Note on model independence:** The original design specified different model families for Pass 3 (signal writer) and runtime rerank to enable independent error detection. The current implementation uses Gemma for both. This deviation is accepted for the initial library build — the priority is getting signals into production so role discovery works. If systematic signal errors are observed, a future iteration can restore model-family independence by swapping Pass 3 to Mistral Devstral or Qwen.
 
 ---
 
@@ -422,7 +422,7 @@ A single migration (`0022_role_discovery_data_contract.sql`) adds:
 - Schema migration on the hottest table in the system (`role_contexts`). Requires a cutover plan that keeps `persona_json` writable for legacy readers.
 - Synthesis rewrite changes the hottest prompt in the Role Discovery agent. Regression risk on existing role contexts — old interviews synthesized before the rewrite will still have a flat persona and will need a backfill pass.
 - Two new tables (`repo_engineering_signals`, `repo_role_alignment`) plus `role_probe_bank` — three new writable surfaces with their own migration, index, and maintenance cost.
-- Crawler Pass 3 adds ~$5 per full library refresh in Haiku 4.5 tokens and adds a Cloudflare Queue consumer to the ops surface.
+- Crawler Pass 3 runs on Vertex AI Gemma (free tier) — near-zero token cost per library refresh.
 - Runtime rerank adds one Gemma 4 call per (role × repo) pair on first access. Subsequent recruits to the same role hit the cache. Expected cost: negligible if cache hits dominate; monitor on the Workers AI daily quota.
 - Consumer rewrites span five files (`cultureRoleResolution`, `cultureQuestionBank`, `cultureScorer`, `challengeGeneration/pipeline`, `repoDiscovery/discover`). Sequenced work across two research domains (culture + code review).
 
@@ -441,7 +441,7 @@ A single migration (`0022_role_discovery_data_contract.sql`) adds:
 - **Dynamic per-candidate probe generation** (research Q5 counterfactual). Rejected — fails NYC Local Law 144 auditability and EU AI Act Article 14 interpretability. Role-setup-time enrichment is the compliant alternative.
 - **Auto-fail dealbreaker gates** (research Q9 counterfactual). Rejected — Griggs/iTutorGroup/EU AI Act Article 14 make this legally indefensible. HITL-only is the compliant alternative.
 - **Ideal-culture OCAI framing for candidate screening** (Harver's approach). Rejected — Heritage et al. 2014 report no significant relationship with job satisfaction under that framing. Current-culture framing is the validated alternative and it describes *the team*, not *the candidate*.
-- **Single-model routing** (Gemma for everything, or Haiku for everything). Rejected — violates the ADR-032 independent-read principle. The rerank loses its independent perspective if it shares a family with the signal extraction it reads.
+- **Single-model routing** (Gemma for everything). Originally rejected for independent-read principle, but **accepted for initial library build** — priority is getting signals into production. May revisit if systematic errors are observed.
 - **Runtime-only (Alternative B) reranking.** Rejected per Q11 analysis — token burn, latency, consistency, no caching. Amortization of offline signals across roles is architecturally necessary.
 - **Offline-only (Alternative A) summarization.** Rejected per Q11 analysis — role-agnostic summaries cannot reason about role-specific questions (SWE-bench-grounded limit on query-agnostic retrieval).
 - **Pre-compute all (role × repo) alignment pairs ahead of time.** Rejected — combinatorial; role contexts are created on demand; cannot be enumerated.
@@ -461,8 +461,8 @@ Implementation is sequenced into four phases. Each phase has explicit BDD accept
 1. Migration `0022_role_discovery_data_contract.sql` — columns on `role_contexts`, new tables `repo_engineering_signals`, `repo_role_alignment`, `role_probe_bank`.
 2. TypeScript types — `RoleContextDocument`, `DomainCell`, `StoryRecord`, `ConflictRecord`, `DealbreakerRecord`, `RepoEngineeringSignals`, `RepoRoleAlignment` in `workers/api/src/types.ts`.
 3. Synthesis prompt rewrite — new system prompt with RCD schema, field exemplars, bottom-up ordering rule, five failure modes.
-4. Constrained decoding wiring — Anthropic API `response_format: json_schema` on the synthesis call.
-5. Haiku 4.5 verification pass — new module `workers/api/src/lib/roleAgent/verifyRcd.ts`.
+4. Constrained decoding wiring — structured JSON output via `response_format: json_schema` or equivalent.
+5. Gemma 4 12B verification pass — new module `workers/api/src/lib/roleAgent/verifyRcd.ts`.
 6. `consumer_slice` derivation — writer that takes an RCD and emits the legacy `CandidatePersona` shape for backwards compatibility.
 7. BDD: synthesis of a seeded 4-stakeholder interview produces a full RCD with all 6 domains × 4 stakeholders populated and zero unsupported quotes.
 
@@ -493,7 +493,7 @@ Implementation is sequenced into four phases. Each phase has explicit BDD accept
 
 **Goal:** Ship the crawler Pass 3 + runtime role-fit rerank end-to-end.
 
-1. `scripts/crawl-repos/pass3/summarize.ts` — Haiku 4.5 per-repo summarization.
+1. `scripts/crawl-repos/pass3/run.ts` — Vertex AI Gemma 4 26B per-repo summarization.
 2. `scripts/crawl-repos/pass3/persist.ts` — write `repo_engineering_signals` rows.
 3. Cloudflare Queue consumer wiring — trigger Pass 3 when Pass 2 completes for a repo.
 4. `workers/api/src/lib/repoDiscovery/roleFitRerank.ts` — Gemma 4 Worker handler reading RCD + signals, writing `repo_role_alignment`.

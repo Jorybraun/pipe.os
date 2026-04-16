@@ -1,0 +1,53 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 0,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 0
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "Overall, this candidate is a strong technical reviewer who is highly effective at catching and verifying critical flaws. They show exceptional skill in reasoning, specifically by explaining how technical errors can lead to real-world problems like security risks or data corruption. To grow, they should focus on asking more clarifying questions to understand the context of a task before providing feedback. Developing this inquisitive approach will help them move from a directive communication style to a more collaborative one.",
+      "strengths": [
+        "Explaining the business and security consequences of technical issues",
+        "Rigorous verification of code fixes to ensure they are robust",
+        "High accuracy in identifying and prioritizing critical defects"
+      ],
+      "growth_areas": [
+        "Asking clarifying questions to understand design intent and context",
+        "Transitioning from a directive to a more collaborative communication style"
+      ]
+    },
+    "scorer_a_summary": "The reviewer performed at an expert level. They identified 100% of the planted defects, correctly prioritized them as blocking, and most importantly, demonstrated high-quality revision evaluation. Rather than caving to implementer pushback regarding the 'write-on-read' side effect, the reviewer dug deeper to uncover a critical data-scoping flaw, ensuring the final solution was robust and correct.",
+    "scorer_b_summary": "The reviewer provides top-tier technical reasoning, identifying not just the 'what' but the specific failure mechanisms and business consequences (e.g., p95 latency impact, analytics corruption, and security enumeration) for every finding. They also demonstrate high-level judgment in the AI Direction dimension by effectively evaluating the implementer's pushback, correctly identifying that the implementer's concern (write volume) was secondary to the actual issue (lack of identity scoping). However, the reviewer scored a 1 in Question Formation because they relied entirely on directive feedback and asked no questions to probe the design intent or historical context (e.g., the analytics team's requirements) before critiquing the implementation."
+  },
+  "meta": {
+    "wall_clock_ms": 62996,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

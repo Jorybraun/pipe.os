@@ -5,10 +5,9 @@
  * Consumer components and hooks call useData(), useStorage(), useAuth()
  * without any knowledge of the underlying provider implementation.
  *
- * Auth note: The Amplify AuthProvider must live inside the <Authenticator>
- * boundary (because useAuthenticator requires it). To bridge this,
- * AmplifyAuthWrapper (in providers/amplify/auth.tsx) fills the auth slot
- * from inside the boundary. useAuth() throws if called before auth is set.
+ * Auth note: the `auth` slot is optional at the root because ClerkAuthWrapper
+ * registers it from inside the signed-in boundary. useAuth() returns a loading
+ * stub until auth is wired in.
  */
 
 import { createContext, useContext, useState, useCallback } from 'react';
@@ -33,7 +32,7 @@ const PipeProviderContext = createContext<PipeContextValue | null>(null);
  * auth boundary that needs to access providers.
  *
  * The `auth` slot in `providers` is optional here; it is filled by
- * AmplifyAuthWrapper from inside the <Authenticator> boundary.
+ * ClerkAuthWrapper from inside the signed-in boundary.
  */
 export function PipeProviderRoot({
   providers,
@@ -92,7 +91,7 @@ export function useStorage(): StorageProvider {
  * useAuth — returns the AuthProvider.
  *
  * Must be called within a component tree wrapped by <PipeProviderRoot>
- * and within an auth boundary (e.g. inside <AmplifyAuthWrapper>).
+ * and within an auth boundary (e.g. inside <ClerkAuthWrapper>).
  */
 export function useAuth(): AuthProvider {
   const ctx = useContext(PipeProviderContext);
@@ -110,7 +109,7 @@ export function useAuth(): AuthProvider {
 }
 
 /**
- * Internal hook — used by AmplifyAuthWrapper to fill the auth slot.
+ * Internal hook — used by ClerkAuthWrapper to fill the auth slot.
  * Not exported from the providers barrel; only used by auth implementations.
  */
 export function useSetAuth(): (auth: AuthProvider) => void {

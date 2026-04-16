@@ -1,0 +1,12 @@
+{
+  "repo_id": 1689,
+  "full_name": "Shopify/react-native-skia",
+  "signal_quality": "suspect",
+  "issues": [
+    "test signal: has_tests=1 with jest is plausible (86 unit-test + 63 e2e + 49 integration evidence counts), but 7 of 8 sample PRs do not modify tests — the test infrastructure exists but engineering PRs in this sample are overwhelmingly native-layer fixes (MTLDevice reuse, nullptr dereference, memory pressure, GPU disposal) that live outside the JS test harness; the has_tests signal is accurate but misleading about test coverage of active change areas",
+    "pr_quality_score: 0.313 may be slightly low — the 8 PRs are all genuine, substantive engineering fixes (Metal GPU APIs, worklet thread safety, memory management) with clear real-world impact; the score is depressed by the 7/8 no-test-modification rate, but the PR titles themselves are high-quality",
+    "domain accuracy: detected_domain=mobile is correct and well-supported",
+    "seniority_band: staff is appropriate given the native GPU/Metal/Skia rendering complexity, even at 81,400 SLOC"
+  ],
+  "reasoning": "The core signals are directionally correct for a native-layer graphics library, but the near-zero test modification rate in the PR sample (7/8) creates a misleading has_tests signal — tests exist but the active engineering work happens in native C++/Objective-C/Kotlin layers that JS test suites don't cover."
+}

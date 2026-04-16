@@ -1,0 +1,12 @@
+{
+  "repo_id": 1676,
+  "full_name": "nhost/nhost",
+  "signal_quality": "suspect",
+  "issues": [
+    "test signal: has_tests=1 with test_framework=vitest, but 0 of 8 sample PRs modify tests — strong indicator that tests exist somewhere in the monorepo but are not touched by typical PR work, inflating the has_tests signal",
+    "pr_quality_score: 0.483 may be inflated — the 8-PR sample contains 3 docs/chore PRs (minor fix to performance documentation, sync versions, webauthn origins update) and 0 test modifications, pointing toward a lower score",
+    "domain accuracy: detected_domain=web-backend is a simplification for a BaaS monorepo (Nhost includes Hasura config, auth service, dashboard frontend, SDK packages); backend-dominant is plausible but the frontend dashboard surface is significant",
+    "seniority_band: staff is defensible on SLOC/file_count alone but the sample PRs skew toward dashboard UI fixes and version bumps rather than deep backend or infra work"
+  ],
+  "reasoning": "The zero test-modification rate across all 8 sampled PRs directly conflicts with has_tests=1 and vitest framework detection, and the PR sample is dominated by low-complexity dashboard fixes and chores, making both the test signal and pr_quality_score suspect for a repo of this size."
+}

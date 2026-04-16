@@ -9,6 +9,11 @@ export interface Env {
   STORAGE: R2Bucket;
   /** Workers AI binding — Qwen, Nemotron, etc. No API key needed. */
   AI: Ai;
+  /**
+   * Vectorize index binding for repo_searchable_profile embeddings.
+   * Used in discover.ts hybrid recall (STRATEGY Decision Log 2026-04-14).
+   */
+  REPO_INDEX: VectorizeIndex;
   /** Clerk secret key for JWT verification. Set via .dev.vars in dev. */
   CLERK_SECRET_KEY: string;
   /** Session token secret for candidate JWT signing/verification. */
@@ -257,6 +262,8 @@ export interface RoleContextRow {
   validation_metadata: string | null;
   /** BarsOverride[] JSON (stringified). Populated at role-setup time per ADR-036 §1.5. */
   bars_overrides: string | null;
+  /** RecruitmentBrief JSON (stringified). Null until synthesis runs. (RD-P5) */
+  recruitment_brief_json: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -548,6 +555,20 @@ export interface RoleContextDocument {
 // runtime Gemma 4 rerank (per role × repo, cached) writes RepoRoleAlignment.
 // Phase 4 work — types land in Phase 1 to keep the type surface coherent.
 
+export type RepoArchitectureStyle =
+  | 'monolith'
+  | 'layered_service'
+  | 'microservice'
+  | 'library'
+  | 'unknown';
+
+export type RepoTestStyle =
+  | 'unit_only'
+  | 'integration_heavy'
+  | 'e2e_present'
+  | 'minimal'
+  | 'unknown';
+
 export interface RepoEngineeringSignalsRow {
   repo_id: number;
   signals_version: string;
@@ -562,10 +583,17 @@ export interface RepoEngineeringSignalsRow {
   swe_bench_eligibility_rate: number | null;
 
   // Tier 2 — needs Pass 2 extension
-  architecture_style: 'monolith' | 'microservice' | 'modular_monolith' | 'serverless' | 'unknown' | null;
+  architecture_style: RepoArchitectureStyle | null;
   review_density: number | null;
   commit_cadence: number | null;
   satd_density: number | null;
+
+  // RUC §2.0 canonical alignment + STRATEGY Decision Log 2026-04-14 extensions
+  test_style: RepoTestStyle | null;
+  /** JSON-stringified ChallengeSurfaces (10 *_potential keys). */
+  challenge_surfaces: string | null;
+  /** 400–600 word Gemma-narrated profile (embedded into Vectorize REPO_INDEX). */
+  repo_searchable_profile: string;
 
   engineering_narrative: string;
   signal_json: string;                 // JSON-stringified full blob
@@ -623,6 +651,105 @@ export interface RoleExchange {
 
 /** Six Domains coverage levels. */
 export type DomainCoverage = 'none' | 'sparse' | 'partial' | 'covered' | 'deep';
+
+// ─── RD-P5: Phase-switching agent types ──────────────────────────────────────
+
+/** The five posture-specific conversation phases for role discovery (RD-P5). */
+export type ConversationPhase =
+  | 'CONTEXT'
+  | 'DISCOVERY'
+  | 'PRIORITIZE'
+  | 'EVP_FRICTION'
+  | 'QUALIFY_CLOSE';
+
+/** Gartner five-category Employer Value Proposition dimensions (RD-37). */
+export type EvpCategory =
+  | 'Rewards'
+  | 'Opportunity'
+  | 'Work'
+  | 'People'
+  | 'Organisation';
+
+/** A concrete story record extracted during discovery (RD-31). */
+export interface ExtractedStory {
+  protagonist: string;
+  situation: string;
+  stakes: string;
+  resolution: string;
+  moral: string;
+  sourceTurn: number;
+  retellabilityScore: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+/** MEDDIC qualification state tracked by the controller (RD-36). */
+export interface QualificationStatus {
+  economicBuyerIdentified: boolean;
+  championIdentified: boolean;
+  decisionProcessMapped: boolean;
+  budgetApproved: boolean;
+  timelineUrgency: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+}
+
+/**
+ * Full conversation context assembled from knowledgeState each turn.
+ * Passed to the deterministic controller (RD-41, RD-42).
+ */
+export interface ConversationContext {
+  phase: ConversationPhase;
+  domainCoverage: Record<string, DomainCoverage>;
+  evpCoverage: Record<EvpCategory, DomainCoverage>;
+  storiesExtracted: ExtractedStory[];
+  qualificationStatus: QualificationStatus;
+  mustHavesPrioritized: boolean;
+  frictionProbed: boolean;
+  dayInLifeProbed: boolean;
+}
+
+/**
+ * Output of the deterministic phase controller.
+ * Passed to callRoleAgent() to select the phase-specific system prompt (RD-25, RD-26).
+ */
+export interface PhaseDirective {
+  phase: ConversationPhase;
+  /** One-line directive for the phase agent. */
+  focusGoal: string;
+  /** Specific gaps the agent should address this turn. */
+  urgentGaps: string[];
+  /**
+   * True when all forcing-function gates are met (RD-42).
+   * Informational only — budget exhaustion still triggers synthesis regardless.
+   */
+  synthesisAllowed: boolean;
+  /** Why this phase/directive was chosen. Persisted to knowledge_state._phase for debugging. */
+  reasoning: string;
+}
+
+/**
+ * Structured artifact for recruiter outreach (RD-39).
+ * Sits alongside the RoleContextDocument (which serves the scorecard).
+ * Different consumers: RCD = internal assessment; RecruitmentBrief = candidate pitch.
+ */
+export interface RecruitmentBrief {
+  evpCoverage: Record<EvpCategory, DomainCoverage>;
+  compensationNarrative: {
+    rangeText: string;
+    marketAlignment: 'AT_MARKET' | 'BELOW' | 'ABOVE' | 'UNKNOWN';
+    rangeShared: boolean;
+  };
+  stories: ExtractedStory[];
+  transparentFriction: Array<{
+    rawFriction: string;
+    framing: string;
+    sourceTurn: number;
+  }>;
+  demandSidePitch: {
+    pushFromCurrent: string;
+    pullToUs: string;
+    anxietyMitigators: string;
+    habitBreakers: string;
+  };
+  qualification: QualificationStatus;
+}
 
 /** Progress snapshot returned with each turn. */
 export interface RoleAgentProgress {

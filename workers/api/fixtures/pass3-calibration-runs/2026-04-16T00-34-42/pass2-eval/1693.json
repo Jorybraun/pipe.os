@@ -1,0 +1,12 @@
+{
+  "repo_id": 1693,
+  "full_name": "davidjerleke/embla-carousel",
+  "signal_quality": "suspect",
+  "issues": [
+    "domain accuracy: detected_domain=other is inaccurate — embla-carousel is a web-frontend carousel library with React/Vue/Svelte/Vanilla integrations; the same classifier gap seen in repo 1686 (no carousel/widget/UI-library sub-category) is causing a fallback to 'other' where 'web-frontend' is clearly correct",
+    "seniority_band: staff is overstated — 212,900 SLOC sounds large but this repo is a monorepo with many framework-specific packages that are largely parallel copies of the same carousel logic; the core algorithmic complexity is mid-senior level, not staff",
+    "PR sample quality: 5 of 8 PRs do not modify tests, and several are docs or tooling PRs (note about reactive options, TypeScript moduleResolution bundler support, nodenext ESM compatibility) — the sample is mixed quality",
+    "pr_quality_score: 0.313 is plausible given the mixed sample but the actual bug-fix PRs (slide hanging, slides wider than view) are substantive carousel physics work; the score may underweight those"
+  ],
+  "reasoning": "The domain=other classification is a clear false negative for a frontend carousel library (same gap as repo 1686), and seniority_band=staff is inflated for what is largely parallel framework-adapter code built on a single core engine."
+}

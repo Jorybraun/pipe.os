@@ -1,0 +1,54 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "This candidate is an adequate code reviewer with consistent but not exceptional performance across all dimensions. Their strongest skill is reasoning and explanation quality, as noted by their ability to provide detailed explanations for issues and propose fixes with clear trade-offs. However, their most critical area for improvement is issue identification, as reflected in the low effectiveness score (30/100), indicating they missed significant bugs. While they demonstrate solid judgment in evaluating fixes and AI suggestions, their overall impact would benefit from sharper attention to spotting real problems. With targeted coaching, they could develop into a more effective reviewer.",
+      "strengths": [
+        "Provides clear and detailed explanations for issues",
+        "Evaluates fixes and AI suggestions with good judgment",
+        "Proposes solutions with well-considered trade-offs"
+      ],
+      "growth_areas": [
+        "Needs to improve ability to identify real bugs (low effectiveness score)",
+        "Could ask more clarifying questions before critiquing",
+        "Should better distinguish between critical and minor issues"
+      ]
+    },
+    "scorer_a_summary": "",
+    "scorer_b_summary": "The reviewer demonstrated excellent reasoning and explanation quality, consistently providing detailed explanations for each issue and proposing fixes with stated trade-offs. The reviewer's question formation was adequate but could have been improved by asking more clarifying questions before critiquing. The reviewer showed strong AI direction, correctly evaluating implementer proposals and providing reasoned feedback."
+  },
+  "meta": {
+    "wall_clock_ms": 11991,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

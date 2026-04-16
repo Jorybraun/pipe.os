@@ -1,0 +1,53 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 0,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 0
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "The candidate is a weak reviewer who tends to focus on minor stylistic details rather than critical technical risks. While they demonstrate a baseline ability to engage through question-asking, they missed a major security flaw during the review. Most importantly, they struggled to verify if previous mistakes were actually fixed, leading them to approve incomplete or flawed work. To be effective, they must shift their focus from superficial presentation to deep functional accuracy.",
+      "strengths": [
+        "Engages with the work by asking clarifying questions.",
+        "Maintains a consistent focus on code readability and style."
+      ],
+      "growth_areas": [
+        "Identifying high-priority security and logic errors.",
+        "Thoroughly validating that proposed fixes are actually effective.",
+        "Providing deeper, more meaningful technical reasoning for feedback."
+      ]
+    },
+    "scorer_a_summary": "The review was highly ineffective. The reviewer focused almost entirely on superficial style nits (renaming variables, logging context) while completely missing a critical security flaw where the JWT signature is never verified. Furthermore, the reviewer failed to actually verify the implementer's changes, approving a 'fix' that still contained a major type-safety violation ('any').",
+    "scorer_b_summary": "The reviewer's communication was primarily focused on low-severity stylistic 'nits'. The reasoning provided for these changes was surface-level, relying on vague justifications like 'readability' and 'debugging' rather than explaining technical failure mechanisms or invariants. While the reviewer did ask questions, they were superficial (e.g., asking if something should be exported) rather than probing the underlying design rationale or constraints. Finally, the reviewer did not demonstrate any capacity for merit-based evaluation, as they approved the changes without engaging with or scrutinizing the implementer's specific resolutions."
+  },
+  "meta": {
+    "wall_clock_ms": 80876,
+    "attempts": 3,
+    "status": "ok"
+  }
+}

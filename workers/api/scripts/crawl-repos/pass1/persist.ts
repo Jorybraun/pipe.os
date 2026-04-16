@@ -8,6 +8,7 @@
 import type { D1Client } from '../shared/d1Client.js';
 import type { Pass1Row } from '../shared/types.js';
 import { logger } from '../shared/logger.js';
+import { REPO_FULL_NAME_DENYLIST } from '../config.js';
 
 export interface Pass1PersistResult {
   repoId: number;
@@ -28,6 +29,11 @@ export async function persistPass1Row(
   row: Pass1Row,
   dryRun = false,
 ): Promise<Pass1PersistResult> {
+  if (REPO_FULL_NAME_DENYLIST.has(row.full_name)) {
+    logger.info('[pass1/persist] Skipping deny-listed repo', { full_name: row.full_name });
+    return { repoId: -1, inserted: false };
+  }
+
   if (dryRun) {
     logger.info('[pass1/persist] DRY RUN — would upsert', { full_name: row.full_name });
     return { repoId: -1, inserted: false };
@@ -43,17 +49,20 @@ export async function persistPass1Row(
       github_url, full_name, description, homepage,
       primary_language, license_spdx, stars, last_pushed_at,
       is_archived, is_fork, contamination_risk,
+      open_pr_count, open_feature_issue_count,
       pass, disqualified, crawled_at, refreshed_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
     ON CONFLICT(github_url) DO UPDATE SET
-      description        = excluded.description,
-      homepage           = excluded.homepage,
-      stars              = excluded.stars,
-      last_pushed_at     = excluded.last_pushed_at,
-      is_archived        = excluded.is_archived,
-      is_fork            = excluded.is_fork,
-      contamination_risk = excluded.contamination_risk,
-      refreshed_at       = excluded.refreshed_at
+      description              = excluded.description,
+      homepage                 = excluded.homepage,
+      stars                    = excluded.stars,
+      last_pushed_at           = excluded.last_pushed_at,
+      is_archived              = excluded.is_archived,
+      is_fork                  = excluded.is_fork,
+      contamination_risk       = excluded.contamination_risk,
+      open_pr_count            = excluded.open_pr_count,
+      open_feature_issue_count = excluded.open_feature_issue_count,
+      refreshed_at             = excluded.refreshed_at
     WHERE qualified_repos.pass = 1
   `;
 
@@ -69,6 +78,8 @@ export async function persistPass1Row(
     row.is_archived,
     row.is_fork,
     row.contamination_risk,
+    row.open_pr_count,
+    row.open_feature_issue_count,
     now,
     now,
   ]);

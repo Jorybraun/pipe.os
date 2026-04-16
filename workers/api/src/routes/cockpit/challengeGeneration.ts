@@ -98,7 +98,11 @@ challengeGeneration.post('/', async (c) => {
 
   // Run the 4-stage generation pipeline
   try {
-    const result = await runGenerationPipeline(c.env, persona, { types, count, seniority }, rcd);
+    const result = await runGenerationPipeline(c.env, persona, {
+      ...(types !== undefined ? { types } : {}),
+      ...(count !== undefined ? { count } : {}),
+      ...(seniority !== undefined ? { seniority } : {}),
+    }, rcd);
     return c.json(result);
   } catch (err) {
     console.error('[challengeGeneration] Pipeline failed:', err);

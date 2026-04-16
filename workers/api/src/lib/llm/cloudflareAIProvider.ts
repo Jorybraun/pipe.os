@@ -162,4 +162,73 @@ export class CloudflareAIProvider implements LLMProvider {
 
     return { content };
   }
+
+  /**
+   * Stream text tokens from Workers AI. Workers AI returns SSE data when
+   * stream: true is set. Each data event has the shape {"response":"token"}.
+   * Final event is [DONE].
+   *
+   * Falls back to yielding the full response as one chunk when the model
+   * returns a non-stream result (some models ignore stream: true).
+   */
+  async *completeStream(messages: LLMMessage[], options: CompleteOptions = {}): AsyncGenerator<string> {
+    const forceJson = options.forceJson === true;
+    const cfMessages = toCFMessages(messages, forceJson);
+
+    const input = {
+      messages: cfMessages,
+      max_tokens: options.maxTokens ?? 1024,
+      stream: true,
+    };
+
+    let result: unknown;
+    try {
+      result = await this.ai.run(
+        this.model as Parameters<typeof this.ai.run>[0],
+        input as unknown as Parameters<typeof this.ai.run>[1],
+      );
+    } catch (err) {
+      console.error('[cloudflareAIProvider] completeStream ai.run failed:', err);
+      throw new Error(
+        `Cloudflare Workers AI streaming call failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Workers AI returns a ReadableStream when stream: true is honoured.
+    // Some models fall back to returning the complete response object instead.
+    if (!(result instanceof ReadableStream)) {
+      const response = (result as { response?: string }).response ?? '';
+      if (response) yield forceJson ? stripJsonFences(response.trim()) : response.trim();
+      return;
+    }
+
+    const reader = (result as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE lines end with \n; process all complete lines
+      let newlineIdx: number;
+      while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIdx).trimEnd();
+        buffer = buffer.slice(newlineIdx + 1);
+
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') return;
+
+        try {
+          const event = JSON.parse(payload) as { response?: string };
+          if (event.response) yield event.response;
+        } catch {
+          // Ignore malformed SSE chunks
+        }
+      }
+    }
+  }
 }

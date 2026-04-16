@@ -348,8 +348,9 @@ review.post('/submit', async (c) => {
     ch.github_pr_title ??
     ch.instructions ??
     'Implement the described feature.';
-  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
-  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  // Implementer stays on Workers AI Qwen — different model family from Gemma scorer (ADR-032)
+  const llmProvider = 'workers-ai' as const;
+  const apiKey = '';
 
   // ── Bug-finding mode ───────────────────────────────────────────────────
   const annotations = body.annotations;
@@ -524,8 +525,9 @@ review.post('/:sessionId/respond', async (c) => {
     ch?.github_pr_title ??
     ch?.instructions ??
     'Implement the described feature.';
-  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
-  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  // Implementer stays on Workers AI Qwen — different model family from Gemma scorer (ADR-032)
+  const llmProvider = 'workers-ai' as const;
+  const apiKey = '';
 
   // ── Bug-finding conversation ──────────────────────────────────────────
 
@@ -723,8 +725,8 @@ review.post('/ask', async (c) => {
   const cachedDiffJson = parseJsonColumn<unknown>(ch.cached_diff_json);
   const prDiff = extractDiffText(cachedDiffJson);
   const prBrief = ch.github_pr_description ?? ch.github_pr_title ?? ch.instructions ?? '';
-  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
-  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  const llmProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : 'workers-ai' as const;
+  const apiKey = c.env.GOOGLE_AI_API_KEY ?? '';
   const serverConfig = parseJsonColumn<Record<string, unknown>>(ch.server_config);
   const repoKnowledge = (serverConfig?.repoKnowledge as RepoKnowledgeInput | undefined) ?? null;
 
@@ -879,8 +881,8 @@ review.post('/:sessionId/ask', async (c) => {
   const cachedDiffJson = parseJsonColumn<unknown>(ch?.cached_diff_json ?? null);
   const prDiff = extractDiffText(cachedDiffJson);
   const prBrief = ch?.github_pr_description ?? ch?.github_pr_title ?? ch?.instructions ?? '';
-  const llmProvider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
-  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  const llmProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : 'workers-ai' as const;
+  const apiKey = c.env.GOOGLE_AI_API_KEY ?? '';
   const serverConfig = parseJsonColumn<Record<string, unknown>>(ch?.server_config ?? null);
   const repoKnowledge = (serverConfig?.repoKnowledge as RepoKnowledgeInput | undefined) ?? null;
 
@@ -987,9 +989,10 @@ review.post('/:sessionId/verdict', async (c) => {
     .run();
 
   // Trigger async scoring (fire-and-forget via waitUntil)
-  const apiKey = c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  // Scorer uses Google AI Gemma 4 31B — different family from Qwen implementer (ADR-032)
+  const scorerApiKey = c.env.GOOGLE_AI_API_KEY ?? c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
   const hasAI = !!c.env.AI;
-  if (hasAI || apiKey) {
+  if (hasAI || scorerApiKey) {
     const scoringPromise = (async () => {
       try {
         // Load challenge data for ground truth + PR context
@@ -1025,7 +1028,7 @@ review.post('/:sessionId/verdict', async (c) => {
           .bind(new Date().toISOString(), sessionId)
           .run();
 
-        const provider = c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
+        const scorerProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
 
         // ADR-036 Phase 3: dispositional weights reshape the scorer's 6-dim
         // composite weighting (clamped to [0.5, 1.5], renormalized, sign-preserved).
@@ -1033,8 +1036,8 @@ review.post('/:sessionId/verdict', async (c) => {
         const dispositionalWeightsScore = rcdScore?.technical_context?.dispositional_weights;
 
         const scoreReport = await scoreReviewSession({
-          apiKey,
-          provider,
+          apiKey: scorerApiKey,
+          provider: scorerProvider,
           ai: c.env.AI,
           transcript,
           groundTruth: plantedBugs,
@@ -1058,8 +1061,8 @@ review.post('/:sessionId/verdict', async (c) => {
               : { mode: 'comprehension', keyInsights: [], idealVerdict: 'approve', idealRationale: '' };
 
             const compReport = await scoreComprehensionSession({
-              apiKey,
-              provider,
+              apiKey: scorerApiKey,
+              provider: scorerProvider,
               ai: c.env.AI,
               transcript: { mode: 'comprehension', exchanges: transcript.explainer_exchanges },
               groundTruth: comprehensionGroundTruth,

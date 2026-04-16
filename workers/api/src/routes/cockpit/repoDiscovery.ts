@@ -46,7 +46,7 @@ function parseJsonColumn<T>(raw: string | null | undefined, fallback: T): T {
 
 repoDiscovery.post('/discover', async (c) => {
   const userId = c.var.userId;
-  const body = await c.req.json<{ pipelineId?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ pipelineId?: string }>().catch(() => ({} as { pipelineId?: string }));
 
   if (!body.pipelineId) {
     return apiError(c, 'BAD_REQUEST', 'pipelineId is required');
@@ -99,6 +99,8 @@ repoDiscovery.post('/discover', async (c) => {
     jobId: jobResult.id,
     persona,
     ...(rerankProvider ? { provider: rerankProvider } : {}),
+    vectorize: c.env.REPO_INDEX,
+    ai: c.env.AI,
     githubToken: c.env.GITHUB_TOKEN,
   });
 
@@ -180,7 +182,7 @@ repoDiscovery.patch('/:repoId', async (c) => {
   const body = await c.req.json<{
     status?: 'ACCEPTED' | 'REJECTED';
     rejectionReason?: string;
-  }>().catch(() => ({}));
+  }>().catch(() => ({} as { status?: 'ACCEPTED' | 'REJECTED'; rejectionReason?: string }));
 
   if (!body.status || !['ACCEPTED', 'REJECTED'].includes(body.status)) {
     return apiError(c, 'BAD_REQUEST', 'status must be ACCEPTED or REJECTED');
@@ -218,7 +220,7 @@ repoDiscovery.post('/:repoId/convert', async (c) => {
   const userId = c.var.userId;
   const repoId = c.req.param('repoId');
 
-  const body = await c.req.json<{ prNumber?: number }>().catch(() => ({}));
+  const body = await c.req.json<{ prNumber?: number }>().catch(() => ({} as { prNumber?: number }));
 
   const repo = await c.env.DB.prepare(
     `SELECT * FROM discovered_repos WHERE id = ?1 AND owner_id = ?2`,
@@ -234,8 +236,8 @@ repoDiscovery.post('/:repoId/convert', async (c) => {
 
   try {
     const result = await convertRepoToChallenge(c.env.DB, repo, {
-      prNumber: body.prNumber,
-      githubToken: c.env.GITHUB_TOKEN,
+      ...(body.prNumber !== undefined ? { prNumber: body.prNumber } : {}),
+      ...(c.env.GITHUB_TOKEN !== undefined ? { githubToken: c.env.GITHUB_TOKEN } : {}),
     });
 
     return c.json(result, 201);
@@ -249,7 +251,7 @@ repoDiscovery.post('/:repoId/convert', async (c) => {
 
 repoDiscovery.post('/discover-by-skills', async (c) => {
   const userId = c.var.userId;
-  const body = await c.req.json<{ skills?: string[] }>().catch(() => ({}));
+  const body = await c.req.json<{ skills?: string[] }>().catch(() => ({} as { skills?: string[] }));
 
   if (!body.skills?.length) {
     return apiError(c, 'BAD_REQUEST', 'skills array is required and must not be empty');
@@ -299,7 +301,7 @@ interface GitHubPRItem {
 repoDiscovery.post('/:repoId/brief', async (c) => {
   const userId = c.var.userId;
   const repoId = c.req.param('repoId');
-  const body = await c.req.json<{ skills?: string[] }>().catch(() => ({}));
+  const body = await c.req.json<{ skills?: string[] }>().catch(() => ({} as { skills?: string[] }));
 
   const repo = await c.env.DB.prepare(
     `SELECT * FROM discovered_repos WHERE id = ?1 AND owner_id = ?2`,
@@ -389,7 +391,7 @@ interface BriefSaveItem {
 
 repoDiscovery.post('/briefs/save', async (c) => {
   const userId = c.var.userId;
-  const body = await c.req.json<{ briefs?: BriefSaveItem[] }>().catch(() => ({}));
+  const body = await c.req.json<{ briefs?: BriefSaveItem[] }>().catch(() => ({} as { briefs?: BriefSaveItem[] }));
 
   if (!body.briefs?.length) {
     return apiError(c, 'BAD_REQUEST', 'briefs array is required');

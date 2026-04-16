@@ -37,7 +37,7 @@ export interface ComprehensionExchange {
   answer: ExplainerResponse;
 }
 
-export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic';
+export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic' | 'google-ai';
 
 export interface CallExplainerAgentInput {
   apiKey: string;
@@ -155,6 +155,33 @@ async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: 
   return data.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
 }
 
+async function callGoogleAI(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
+  const model = 'gemma-4-31b-it';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const combinedPrompt = `${systemPrompt}\n\n---\n\n${userMessage}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
+      generationConfig: { maxOutputTokens: 4096, responseMimeType: 'application/json' },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[explainerAgent] Google AI error', { status: response.status, body: errorText });
+    return '';
+  }
+
+  const data = (await response.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
+  };
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  return parts.filter((p) => !p.thought).map((p) => p.text ?? '').join('').trim();
+}
+
 // ─── User message builder ───────────────────────────────────────────────────
 
 function buildUserMessage(
@@ -218,6 +245,8 @@ export async function callExplainerAgent(
   try {
     if (provider === 'workers-ai') {
       raw = await callWorkersAI(ai!, systemPrompt, userMessage);
+    } else if (provider === 'google-ai') {
+      raw = await callGoogleAI(apiKey, systemPrompt, userMessage);
     } else if (provider === 'anthropic') {
       raw = await callAnthropic(apiKey, systemPrompt, userMessage);
     } else {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Video, ExternalLink, RefreshCw } from 'lucide-react';
+import { Video, RefreshCw } from 'lucide-react';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';

@@ -1,0 +1,247 @@
+{
+  "rcd_version": "2.0.0",
+  "role_context_id": "fixture-rcd-spg-001",
+  "pipeline_id": "fixture-pipeline-spg-001",
+  "created_at": "2026-04-14T10:00:00.000Z",
+
+  "technical_context": {
+    "stack": ["Go", "Kubernetes", "gRPC", "Prometheus", "Helm", "Terraform", "Envoy"],
+    "constructs": [
+      "service mesh configuration",
+      "gRPC interface design",
+      "Kubernetes operator patterns",
+      "SLO definition and alerting",
+      "distributed tracing",
+      "Helm chart authoring",
+      "e2e integration testing",
+      "infrastructure as code"
+    ],
+    "seniority_band": "staff",
+    "codebase_expectations": [
+      "All services expose gRPC interfaces with proto files under version control; breaking changes require a new major version",
+      "Kubernetes deployments are Helm-managed; raw kubectl apply to production is disallowed",
+      "Every service has an SLO defined and a corresponding alert in Prometheus; on-call is paged on SLO burn rate, not on individual errors",
+      "E2E tests run against a real k8s cluster in CI; unit tests cover proto serialization and individual handlers",
+      "Terraform manages all cloud infrastructure; manual console changes are rolled back on next apply"
+    ],
+    "dispositional_weights": {
+      "ownership": 0.20,
+      "system_design": 0.15,
+      "communication": 0.10
+    }
+  },
+
+  "domain_matrix": {
+    "HIRING_MANAGER": {
+      "work": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "The platform team is the paved road — if we are not reliable, every product team slows down. Staff engineers here own the reliability of the whole thing, not just one service.",
+            "source_exchange_id": "q-work-01",
+            "consequence": "Platform reliability is a cross-cutting concern; staff engineers must think in terms of system-wide SLOs rather than individual service health",
+            "value": "Platform reliability as a force multiplier — when platform is solid, every product team ships faster",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["platform_reliability", "slo_ownership", "paved_road", "cross_team_impact"],
+        "axial_links": [
+          { "from_code": "platform_reliability", "to_code": "cross_team_impact", "relation": "enables" },
+          { "from_code": "slo_ownership", "to_code": "platform_reliability", "relation": "causes" }
+        ],
+        "stories": [
+          {
+            "situation": "A product team rolled out a new service that did not set resource limits, causing a noisy-neighbour memory spike that triggered OOMKills across three unrelated services on the same node pool.",
+            "action": "The staff platform engineer investigated the blast radius, added admission webhooks that enforce resource limit annotations on all non-system namespaces, and wrote a runbook for the platform team to handle similar incidents.",
+            "outcome": "Zero noisy-neighbour OOMKill incidents in the following quarter; the admission webhook is now part of the standard cluster bootstrap.",
+            "moral": "Staff engineers on this team are expected to find the systemic fix, not the per-incident fix. Patching one service is insufficient; the constraint must be enforced at the cluster level.",
+            "source_exchange_id": "q-work-01"
+          }
+        ],
+        "summary": "The platform team builds and operates the internal developer platform: Kubernetes clusters, service mesh, CI/CD pipelines, and the internal tooling that product teams use. Staff engineers are expected to own the reliability of the platform holistically — they set SLOs, respond to SLO burn, and proactively find systemic fixes rather than incident-by-incident patches. The team runs Go services communicating over gRPC, with Prometheus-based observability and Helm for all Kubernetes rollouts."
+      },
+      "codebase": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "We have a graveyard of one-off scripts from before we had Terraform — that era is over. If it touches infrastructure, it is code, it is reviewed, it is tested.",
+            "source_exchange_id": "q-codebase-01",
+            "consequence": "Infrastructure drift caused by unreviewed console changes is a class of incident the team has eliminated; staff engineers must enforce this boundary with product engineers who want shortcuts",
+            "value": "Reproducibility and auditability of infrastructure state as a reliability foundation",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["infrastructure_as_code", "no_drift", "terraform_first", "code_review_infra"],
+        "axial_links": [
+          { "from_code": "infrastructure_as_code", "to_code": "no_drift", "relation": "enables" },
+          { "from_code": "terraform_first", "to_code": "code_review_infra", "relation": "causes" }
+        ],
+        "stories": [],
+        "summary": "The codebase is Go services with gRPC interfaces, Helm charts for every service, and Terraform for all cloud resource management. E2E tests run against a real ephemeral Kubernetes cluster in CI — the platform team considers this non-negotiable because unit tests cannot catch Kubernetes admission webhook interactions or Envoy routing misconfigurations. The proto files are the API contract; any breaking change requires a new version namespace and a migration plan."
+      },
+      "bar": {
+        "primary_authority": true,
+        "coverage": "covered",
+        "laddering_chains": [
+          {
+            "attribute_quote": "Staff here means you are setting the direction, not waiting for it. I need someone who will identify the next architectural problem before I do.",
+            "source_exchange_id": "q-bar-01",
+            "consequence": "The staff engineer role requires proactive technical leadership, not reactive execution; candidates who excel at execution but wait for direction will underperform at this level",
+            "value": "Technical foresight as a staff-level differentiator",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["staff_scope", "proactive_architecture", "technical_leadership", "direction_setting"],
+        "axial_links": [
+          { "from_code": "staff_scope", "to_code": "technical_leadership", "relation": "enables" },
+          { "from_code": "proactive_architecture", "to_code": "direction_setting", "relation": "causes" }
+        ],
+        "stories": [],
+        "summary": "The bar for staff is genuinely staff-level: the candidate must demonstrate they have identified and solved a multi-team architectural problem that others had not yet framed. They need to show experience owning a platform component used by multiple teams, handling the organizational friction that comes with deprecating old patterns, and setting technical direction that outlasts their direct involvement."
+      },
+      "process": {
+        "primary_authority": false,
+        "coverage": "partial",
+        "laddering_chains": [],
+        "open_codes": ["rfc_process", "async_design_review", "adr_required"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "Significant platform changes go through an RFC process with async review. Architecture Decision Records are required for any decision that affects more than one team. Design reviews are async-first to accommodate distributed team members."
+      },
+      "why": {
+        "primary_authority": false,
+        "coverage": "partial",
+        "laddering_chains": [],
+        "open_codes": ["developer_experience_mission", "platform_as_product"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "The platform team treats developer experience as a product — internal teams are their customers. The mission is to reduce the cognitive load of operating software at scale so product engineers can focus on user-facing work."
+      },
+      "team": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["distributed_team", "on_call_rotation"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "Distributed team of eight, including two staff and one principal. On-call rotation shared across the platform team; staff engineers are expected to participate and to help reduce on-call load through automation."
+      }
+    }
+  },
+
+  "conflicts": [],
+
+  "team_culture_profile": {
+    "per_stakeholder": {
+      "HIRING_MANAGER": {
+        "clan_affinity": 2,
+        "adhocracy_affinity": 4,
+        "market_affinity": 3,
+        "hierarchy_affinity": 2,
+        "psychological_safety": 4
+      }
+    }
+  },
+
+  "bars_overrides": [
+    {
+      "dimension": "system_design",
+      "anchor_level": 5,
+      "base_anchor_text": "Designs systems that are reliable, scalable, and observable.",
+      "override_anchor_text": "Designs platform components with multi-team blast radius in mind: admission webhooks that enforce invariants cluster-wide, SLO burn-rate alerting that pages on trend not on point errors, and gRPC interface versioning that allows rolling upgrades without downtime. Documents the design in an ADR with explicit trade-off analysis.",
+      "source_chain_id": "q-work-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "ownership",
+      "anchor_level": 5,
+      "base_anchor_text": "Owns outcomes across a broad surface area including other teams' use of their work.",
+      "override_anchor_text": "Owns the reliability of platform primitives used by other teams: monitors SLO burn rate across all consumers, proactively reaches out when a product team's workload pattern threatens platform SLOs, and depreciates old patterns with migration support rather than leaving consumers stranded.",
+      "source_chain_id": "q-bar-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "infrastructure",
+      "anchor_level": 4,
+      "base_anchor_text": "Manages infrastructure with code and understands the operational footprint.",
+      "override_anchor_text": "Treats every infrastructure change as code: Terraform plan reviewed in PR, Helm values diffed before apply, no console changes. Has enforced this culture on product engineers through tooling (admission webhooks, CI gates) rather than just policy documentation.",
+      "source_chain_id": "q-codebase-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    }
+  ],
+
+  "probe_bank_enrichment": {
+    "static_base_version": "v1.0.0",
+    "enriched_probes": [
+      {
+        "dimension": "system_design",
+        "probe_text": "Tell me about the last platform architectural decision you drove. What problem were you solving, who were the stakeholders, and how did you build consensus?",
+        "source_chain_id": "q-bar-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      },
+      {
+        "dimension": "ownership",
+        "probe_text": "Describe a time you found a systemic reliability problem that was causing intermittent incidents no one had connected into a single root cause. How did you frame and fix it?",
+        "source_chain_id": "q-work-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      }
+    ]
+  },
+
+  "dealbreakers": [
+    {
+      "id": "db-spg-001",
+      "label": "No experience with Kubernetes in production",
+      "pattern": "Candidate has never operated a Kubernetes cluster in production or cannot explain pod disruption budgets, resource limits, or namespace isolation",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-work-01",
+      "job_relatedness_note": "The platform team's primary product is a Kubernetes-based internal platform. Lack of Kubernetes production experience means the candidate cannot perform the core job function from day one.",
+      "job_relatedness_strength": "strong",
+      "evidence_quote": "The platform team is the paved road — if we are not reliable, every product team slows down."
+    }
+  ],
+
+  "red_flags": [
+    {
+      "id": "rf-spg-001",
+      "label": "Has only worked in fully managed platform environments",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-codebase-01",
+      "evidence_quote": "We have a graveyard of one-off scripts from before we had Terraform — that era is over. If it touches infrastructure, it is code."
+    }
+  ],
+
+  "consumer_slice": {
+    "seniority": "Staff, 8–12 years",
+    "archetype": "Platform engineer with Kubernetes and Go depth, SLO-driven reliability mindset, experienced with multi-team infrastructure ownership",
+    "mustHaveSkills": ["Go", "Kubernetes", "gRPC", "Prometheus", "Helm", "Terraform", "infrastructure as code"],
+    "niceToHaveSkills": ["Envoy", "service mesh", "distributed tracing", "Kubernetes operators", "eBPF"],
+    "disposition": [
+      "Sets technical direction proactively without waiting for permission",
+      "Finds systemic fixes rather than per-incident patches",
+      "Enforces platform invariants through tooling, not just documentation"
+    ],
+    "careerSignal": "Has owned a platform component used by multiple product teams and driven a deprecation cycle with migration support",
+    "redFlags": ["Has only executed on direction set by others without demonstrating architectural ownership"],
+    "dealbreakers": ["Cannot explain Kubernetes resource limits, pod disruption budgets, or has never operated k8s in production"]
+  },
+
+  "validation_metadata": {
+    "schema_version": "2.0.0",
+    "synthesis_model": "fixture-synthetic-v1",
+    "synthesis_prompt_version": "v2.0.0",
+    "verification_pass_model": "fixture-synthetic-v1",
+    "face_validity_reviewed_at": "2026-04-14T10:00:00.000Z",
+    "face_validity_reviewer": "fixture-author"
+  }
+}

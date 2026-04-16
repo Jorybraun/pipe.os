@@ -60,6 +60,12 @@ export interface PastExchange {
 
 // ─── Adapter interface ────────────────────────────────────────────────────────
 
+/** Event emitted by respondStream */
+export type StreamEvent =
+  | { event: 'chunk'; text: string }
+  | { event: 'done'; result: TurnResult }
+  | { event: 'error'; message: string };
+
 export interface ConversationAdapter {
   /**
    * One-time setup — called before the first question.
@@ -68,6 +74,11 @@ export interface ConversationAdapter {
   initialize(config: AdapterConfig): Promise<QuestionTurnResult>;
   /** Submit an answer, receive the next question or final synthesis. */
   respond(answer: string, questionId: string): Promise<TurnResult>;
+  /**
+   * Optional: streaming version of respond. Yields chunk events as tokens arrive,
+   * then a done event with the final result. Falls back to respond if not implemented.
+   */
+  respondStream?(answer: string, questionId: string): AsyncGenerator<StreamEvent>;
   /** Trigger synthesis before the budget is exhausted. */
   completeEarly(): Promise<SynthesisResult>;
   /** Optional: flag a question for tuning. */

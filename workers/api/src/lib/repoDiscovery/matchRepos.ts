@@ -155,10 +155,15 @@ export async function matchRepos(
       FROM qualified_repos r
       LEFT JOIN repo_skills rs ON rs.repo_id = r.id
       LEFT JOIN repo_constructs rc ON rc.repo_id = r.id
+      LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id
       WHERE r.disqualified = 0
         AND r.primary_language = ?
         AND r.seniority_band IN (${bandPlaceholders})
         AND r.last_pushed_at >= ?
+        -- Canonical RUC: library repos never make it into the candidate pool.
+        AND (es.architecture_style IS NULL OR es.architecture_style != 'library')
+        -- Challenge-ready gate: skip repos that can't host a meaningful challenge.
+        AND NOT (COALESCE(r.open_pr_count, 0) = 0 AND COALESCE(r.open_feature_issue_count, 0) < 5)
       GROUP BY r.id
       HAVING must_hits = ?
     )
@@ -321,14 +326,17 @@ async function fallbackTopRepos(
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
   const { results } = await db.prepare(`
-    SELECT id, full_name, github_url, description, seniority_band,
-           detected_domain, pr_quality_score, contamination_risk, stars, primary_language,
-           pr_quality_score * 0.15 + (1 - contamination_risk) * 0.05 AS score
-    FROM qualified_repos
-    WHERE disqualified = 0
-      AND primary_language = ?
-      AND seniority_band IN (${bandPlaceholders})
-      AND last_pushed_at >= ?
+    SELECT r.id, r.full_name, r.github_url, r.description, r.seniority_band,
+           r.detected_domain, r.pr_quality_score, r.contamination_risk, r.stars, r.primary_language,
+           r.pr_quality_score * 0.15 + (1 - r.contamination_risk) * 0.05 AS score
+    FROM qualified_repos r
+    LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id
+    WHERE r.disqualified = 0
+      AND r.primary_language = ?
+      AND r.seniority_band IN (${bandPlaceholders})
+      AND r.last_pushed_at >= ?
+      AND (es.architecture_style IS NULL OR es.architecture_style != 'library')
+      AND NOT (COALESCE(r.open_pr_count, 0) = 0 AND COALESCE(r.open_feature_issue_count, 0) < 5)
     ORDER BY score DESC
     LIMIT ?
   `).bind(lang, ...bands, sixMonthsAgo.toISOString(), limit)

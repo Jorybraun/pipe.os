@@ -1,0 +1,12 @@
+{
+  "repo_id": 1686,
+  "full_name": "getsentry/sentry-javascript",
+  "signal_quality": "suspect",
+  "issues": [
+    "domain accuracy: detected_domain=other is too vague for getsentry/sentry-javascript — this is unambiguously an observability/monitoring SDK; the domain classifier appears to have no category for SDK/tooling/observability and falls back to 'other', which is a classifier gap rather than a true unknown",
+    "stack accuracy: responsive-layout has 24 evidence counts, which is implausible for a JavaScript SDK with no UI rendering layer — this is almost certainly a false-positive pattern match (e.g. CSS class strings in test fixtures or documentation snippets)",
+    "pr_quality_score: 0.4 is plausible — the 8-PR sample is all genuine feature/fix engineering work (Cloudflare alarms tracing, Deno span op fix, AI integration truncation options) but 4 of 8 do not modify tests, which explains the mid-range score; the score is internally consistent",
+    "seniority_band: staff is well-supported by 650,300 SLOC and 6,503 files"
+  ],
+  "reasoning": "The domain=other classification is a known classifier gap (no observability/SDK category), and the 24 responsive-layout evidence counts are a false-positive for a pure JavaScript SDK — both are extraction artifacts, but the core test and PR signals are internally consistent."
+}

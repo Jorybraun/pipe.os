@@ -13,6 +13,27 @@ import { logger } from '../shared/logger.js';
 const MAX_RESULTS_PER_QUERY = 300; // 3 pages × 100
 
 /**
+ * Topic negations applied to every Pass 1 search.
+ *
+ * Strategy: keep library/utility/UI-kit repos out of the candidate pool BEFORE
+ * Pass 2 even clones them. Saves ~30% of clone bandwidth on a typical run and
+ * removes an entire class of contamination (Tailwind plugins, React hooks
+ * libraries, starter kits) that the canonical-RUC `architecture_style='library'`
+ * hard filter would otherwise have to reject post-Pass-3.
+ *
+ * Centralized here so the 26 SearchQuery rows in config.ts stay declarative.
+ */
+const EXCLUDED_TOPICS = [
+  'plugin',
+  'tailwind',
+  'ui-kit',
+  'starter-kit',
+  'hook',
+  'component',
+  'utility',
+] as const;
+
+/**
  * Runs a single search query and returns all matching repos.
  * Handles pagination up to MAX_RESULTS_PER_QUERY.
  */
@@ -22,10 +43,15 @@ export async function searchReposForQuery(
   sixMonthCutoff: string,
 ): Promise<GitHubRepoBasic[]> {
   const topicClause = query.topics.map((t) => `topic:${t}`).join(' ');
+  const excludedTopicsClause = EXCLUDED_TOPICS.map((t) => `-topic:${t}`).join(' ');
+  const starsClause = query.maxStars
+    ? `stars:${query.minStars}..${query.maxStars}`
+    : `stars:>=${query.minStars}`;
   const q = [
     `language:${query.lang}`,
     topicClause,
-    `stars:>=${query.minStars}`,
+    excludedTopicsClause,
+    starsClause,
     `pushed:>=${sixMonthCutoff}`,
     'fork:false',
     'archived:false',

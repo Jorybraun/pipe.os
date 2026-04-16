@@ -1,0 +1,15 @@
+{
+  "repo_id": 1686,
+  "full_name": "getsentry/sentry-javascript",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 190 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: dependency count of 21 and unit-test construct count of 1073 are not present in the FACTS block; challenge surface scores 0.50/0.40/0.30 are not FACTS-grounded"
+  ],
+  "reasoning": "The profile is ~190 words, approximately 210 words short of the minimum — a clear constraint_pass failure. Additionally, the profile cites '21 detected dependencies' and '1073 unit-test constructs' as if they are FACTS-derived; neither figure appears in the FACTS block. The 1073 count appears in the narrative as well, suggesting Gemma consistently treated it as a fact without FACTS-block grounding. Accuracy is solid: TypeScript is correctly identified as primary language for the Sentry JavaScript SDK, vitest unit testing is correctly described and consistent with has_tests=true, and the monitoring/error-tracking nature of the project is well-described. The detected_domain='other' is consistent with the output not claiming a specific web-frontend or backend domain — no contradiction. architecture_style='library' is correct — sentry-javascript is a multi-package SDK designed for distribution and integration, not a deployed service. All five completeness dimensions are addressed: repo type (SDK for error tracking), language/stack (TypeScript, multi-runtime), PR shapes (mean 7.3, p90 13), test/review culture (vitest unit-only, 0.3 touch rate), and contribution readiness (open counts unknown). Three of four dimensions pass, yielding approved=true."
+}

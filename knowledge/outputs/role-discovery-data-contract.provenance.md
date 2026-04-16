@@ -30,7 +30,7 @@
   - `knowledge/outputs/role-discovery-data-contract-research-validation.md` (R4)
 - **Draft:** `knowledge/outputs/.drafts/role-discovery-data-contract-draft.md`
 - **Cited brief:** `knowledge/outputs/role-discovery-data-contract-brief.md`
-- **Reviewer report:** `knowledge/outputs/role-discovery-data-contract-verification.md`
+- **Reviewer findings:** patched directly into the brief; no standalone report file written (3 MAJOR — OCAI α range, SWE-bench 40 % figure, Mobley v. Workday characterization — fixed inline before delivery)
 - **Final deliverable:** `knowledge/outputs/role-discovery-data-contract.md`
 
 ## Workflow notes

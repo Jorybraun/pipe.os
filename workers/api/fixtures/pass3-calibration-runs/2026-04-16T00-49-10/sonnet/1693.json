@@ -1,0 +1,15 @@
+{
+  "repo_id": 1693,
+  "full_name": "davidjerleke/embla-carousel",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 259 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: pr_quality_score 0.31, challenge surface scores 0.50/0.40/0.30, and swe_bench_eligibility_rate 0.05 are not present in the FACTS block"
+  ],
+  "reasoning": "The profile is ~259 words, approximately 141 words short of the 400-word minimum — the closest of all 10 fixtures to passing but still clearly below the threshold. The profile cites pr_quality_score 0.31, swe_bench_eligibility_rate 0.05, and the three challenge surface scores (0.50/0.40/0.30), none of which appear in the FACTS block. These are the same boilerplate challenge surface values that appear across all 10 fixtures, confirming they are default Gemma outputs rather than FACTS-derived numbers. Accuracy is solid: TypeScript is correctly identified as primary language, Jest is correctly identified as the test framework consistent with has_tests=true, the multi-package monorepo structure (embla-carousel-accessibility, embla-carousel-auto-height, etc.) is accurately described, and the PR patterns (mean 10.15, p90 22, moderate test touch rate of 0.35) are correctly characterised. The detected_domain='other' is not contradicted — describing it as a carousel library is accurate. architecture_style='library' is correct — embla-carousel is a modular, plugin-based carousel library for the web distributed as separate packages. All five completeness dimensions are addressed: repo type (carousel library), language/stack (TypeScript, multi-package monorepo), PR shapes (mean 10.15, p90 22), test/review culture (Jest unit-only, 0.35 touch rate), and contribution readiness (open counts unknown). Three of four dimensions pass, yielding approved=true."
+}

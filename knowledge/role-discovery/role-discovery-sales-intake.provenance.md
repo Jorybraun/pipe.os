@@ -1,0 +1,25 @@
+# Provenance: Role Discovery as Dual-Purpose Sales Intake
+
+- **Date:** 2026-04-11
+- **Rounds:** 1 (all four researchers completed in a single parallel round)
+- **Sources consulted:** 210+ across all research files
+  - R1-sales: 36 sources (sales frameworks — SPIN, MEDDIC, Challenger, Gap Selling, Sandler, NEAT, GPCT)
+  - R2-intake: 60 sources (recruiter intake playbooks — retained, contingency, in-house TA)
+  - R3-evp: 34 sources (EVP extraction, dual-purpose probes, Realistic Job Previews)
+  - R4-jtbd: 80 sources (JTBD, design thinking, narrative transportation, empathy mapping)
+- **Sources accepted:** All survived citation verification (247 inline citations added)
+- **Sources rejected:** 0 dead links (45 URLs spot-checked)
+- **Verification:** PASS WITH NOTES
+  - 1 MAJOR citation fix applied (M1: 41%/38% statistic attribution corrected)
+  - 2 MAJOR notes acknowledged (M2: LLM transfer assumption; M3: code audit overstatement)
+  - 3 MINOR issues accepted (22x statistic, IDEO fidelity, purple squirrel sourcing)
+- **Plan:** `knowledge/outputs/.plans/role-discovery-sales-intake.md`
+- **Research files:**
+  - `knowledge/outputs/role-discovery-sales-intake-research-sales.md`
+  - `knowledge/outputs/role-discovery-sales-intake-research-intake.md`
+  - `knowledge/outputs/role-discovery-sales-intake-research-evp.md`
+  - `knowledge/outputs/role-discovery-sales-intake-research-jtbd.md`
+- **Draft:** `knowledge/outputs/.drafts/role-discovery-sales-intake-draft.md`
+- **Cited brief:** `knowledge/outputs/role-discovery-sales-intake-brief.md`
+- **Reviewer report:** `knowledge/role-discovery/role-discovery-sales-intake-verification.md`
+- **Final deliverable:** `knowledge/role-discovery/role-discovery-sales-intake.md`

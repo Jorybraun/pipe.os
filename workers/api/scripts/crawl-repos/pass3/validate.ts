@@ -82,7 +82,7 @@ function wordCount(s: string): number {
  * the values from the pre-filled FACTS block; otherwise the LLM invented a
  * statistic and the row is rejected.
  */
-function allowedNumericStrings(input: Pass3Input, output: Pass3Data): Set<string> {
+export function allowedNumericStrings(input: Pass3Input, output: Pass3Data): Set<string> {
   const allowed = new Set<string>();
   const push = (n: number | null | undefined): void => {
     if (n === null || n === undefined) return;
@@ -97,6 +97,7 @@ function allowedNumericStrings(input: Pass3Input, output: Pass3Data): Set<string
     allowed.add(String(Math.round(n * 100)));
   };
 
+  // Output-derived stats (computed deterministically before Gemma call)
   push(output.test_touch_rate);
   push(output.mean_changed_files);
   push(output.p90_changed_files);
@@ -105,7 +106,40 @@ function allowedNumericStrings(input: Pass3Input, output: Pass3Data): Set<string
   push(output.review_density);
   push(output.commit_cadence);
   push(output.satd_density);
+
+  // Input-derived FACTS block values (sent verbatim to Gemma in the prompt)
   push(input.file_count);
+  push(input.sloc);
+  push(input.stars);
+  push(input.mean_ccn);
+  push(input.pr_quality_score);
+  push(input.business_logic_ratio);
+  push(input.cross_module_change_rate);
+  push(input.open_pr_count);
+  push(input.open_feature_issue_count);
+
+  // Construct evidence counts (shown as "slug (N)" in the FACTS top-constructs line)
+  for (const c of input.constructs) {
+    push(c.evidence_count);
+  }
+
+  // Sample PR fields (shown in the sample_prs JSON array in FACTS)
+  for (const pr of input.sample_prs) {
+    push(pr.pr_number);
+    push(pr.changed_file_count);
+  }
+
+  // Challenge surface scores (shown as "surface=0.80" in FACTS top-3 line)
+  try {
+    const surfaces = (
+      typeof output.challenge_surfaces === 'string'
+        ? JSON.parse(output.challenge_surfaces)
+        : output.challenge_surfaces
+    ) as Record<string, number>;
+    for (const score of Object.values(surfaces)) {
+      push(score);
+    }
+  } catch { /* ignore parse errors — surface scores just won't be in the allow-list */ }
 
   // Single-digit numerals are always allowed (they appear in any coherent prose).
   for (let i = 0; i <= 9; i++) allowed.add(String(i));
@@ -151,7 +185,7 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
 
   if (profileWords > 0) {
     const allowed = allowedNumericStrings(input, output);
-    const digitRuns = profile.match(/\d+(?:\.\d+)?/g) ?? [];
+    const digitRuns = profile.match(/\b\d+(?:\.\d+)?\b/g) ?? [];
     const invented = digitRuns.filter((d) => !allowed.has(d));
     if (invented.length > 0) {
       failures.push(

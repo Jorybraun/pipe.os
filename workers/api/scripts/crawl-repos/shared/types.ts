@@ -52,6 +52,10 @@ export interface Pass1Row {
   is_archived: 0 | 1;
   is_fork: 0 | 1;
   contamination_risk: number;
+  /** Open PRs (any state). Drives challenge-readiness gate in matchRepos. */
+  open_pr_count: number | null;
+  /** Open issues with `enhancement` label. Drives challenge-readiness gate. */
+  open_feature_issue_count: number | null;
   /** Skills detected from manifest only (no clone) */
   manifest_skills: Array<{ slug: string; source: 'manifest' | 'topic'; confidence: number }>;
   pass: 1;
@@ -79,6 +83,10 @@ export interface Pass2Data {
   detected_stack_json: string;
   disqualified: 0 | 1;
   disqualified_reason: string | null;
+  /** Fraction of sampled PRs touching ≥1 path classified as `domain_logic`. */
+  business_logic_ratio: number | null;
+  /** Fraction of sampled PRs spanning ≥2 distinct top-level dirs. */
+  cross_module_change_rate: number | null;
   skills: Array<{ slug: string; source: 'manifest' | 'import' | 'topic' | 'readme'; confidence: number }>;
   constructs: Array<{ slug: string; evidence_count: number }>;
   sample_prs: SamplePR[];
@@ -96,6 +104,8 @@ export interface SamplePR {
   deletions: number;
   construct_slugs_json: string;
   swe_bench_eligible: 0 | 1;
+  /** JSON array of changed file paths. Feeds Pass-2 path classifier (business_logic_ratio, cross_module_change_rate). */
+  changed_file_paths_json: string;
 }
 
 // ─── Construct extractor ──────────────────────────────────────────────────────
@@ -119,6 +129,38 @@ export interface ExtractorContext {
 
 // ─── Pass-3 engineering signals ───────────────────────────────────────────────
 
+export type ArchitectureStyle =
+  | 'monolith'
+  | 'layered_service'
+  | 'microservice'
+  | 'library'
+  | 'unknown';
+
+export type TestStyle =
+  | 'unit_only'
+  | 'integration_heavy'
+  | 'e2e_present'
+  | 'minimal'
+  | 'unknown';
+
+/**
+ * Bug-template-aligned challenge surface scores (0–1 each), keyed 1:1 to the
+ * 10 ADR-032:131 templates. Computed deterministically in Pass 3 from
+ * detected_stack + primary_language + constructs (never LLM-estimated).
+ */
+export interface ChallengeSurfaces {
+  off_by_one_potential: number;
+  toctou_race_potential: number;
+  stale_cache_potential: number;
+  unvalidated_input_potential: number;
+  type_confusion_potential: number;
+  dangling_reference_potential: number;
+  sql_injection_potential: number;
+  cors_misconfig_potential: number;
+  n_plus_one_potential: number;
+  missing_null_check_potential: number;
+}
+
 export interface Pass3Data {
   repo_id: number;
   signals_version: string;
@@ -129,10 +171,16 @@ export interface Pass3Data {
   issue_link_rate: number | null;
   complexity_band: 'low' | 'medium' | 'high' | 'mixed' | null;
   swe_bench_eligibility_rate: number | null;
-  architecture_style: 'monolith' | 'microservice' | 'modular_monolith' | 'serverless' | 'unknown' | null;
+  architecture_style: ArchitectureStyle | null;
   review_density: number | null;
   commit_cadence: number | null;
   satd_density: number | null;
+  /** Deterministic classifier output from test_touch_rate + detected_stack. */
+  test_style: TestStyle | null;
+  /** JSON-serialized ChallengeSurfaces. Deterministic, fed to Gemma as facts. */
+  challenge_surfaces: string | null;
+  /** 400–600 word Gemma-narrated profile, embedded into Vectorize REPO_INDEX. */
+  repo_searchable_profile: string;
   engineering_narrative: string;
   signal_json: string;
   model_used: string;

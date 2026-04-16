@@ -6,6 +6,32 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### test(repo-discovery): eval harness, RCD fixtures, validator + profile tests (2026-04-15)
+
+- **`scripts/eval-repo-discovery.ts`** (new) — recall@K/precision@K/MRR harness for Vectorize-backed repo discovery. Loads 5 RCD fixtures, resolves gold-set repos from D1, runs `discover()`, prints per-fixture summary table. `--dry-run` validates fixtures without bindings. Exit 0 if avg recall@20 ≥ 0.6.
+- **`scripts/eval-repo-discovery.README.md`** (new) — methodology documentation.
+- **`fixtures/repo-discovery/`** (new) — 5 synthetic RCD JSON fixtures spanning seniority/stack/architecture + `expected-top-repos.json` gold set with rationale.
+- **`src/lib/repoDiscovery/__tests__/rcdSearchProfile.test.ts`** (new) — 9 tests for `buildRcdSearchProfile`: word count bounds [400,600], seniority_band presence, stack token verbatim, story dedup ≤3, domain summary dedup, deterministic output.
+- **`scripts/crawl-repos/pass3/validate.test.ts`** (new) — 27 tests for `validatePass3` + `allowedNumericStrings`: digit-regex FACTS enforcement, length gates, enum gates, language fingerprint aliases.
+
+#### feat(crawler): unified /calibrate-pipeline skill covering all 3 passes (2026-04-15)
+
+- **`.claude/commands/calibrate-pipeline.md`** (new) — `/calibrate-pipeline` skill. Evaluates pass 1 (target quality), pass 2 (signal accuracy), and pass 3 (narrative quality) on the same repo sample in one run. Pass 1 and pass 2 Sonnet sub-agents launch concurrently while pass 3 Phase A tsx script runs. Pass 3 Phase B Sonnet sub-agent runs after Phase A. Produces a unified per-repo table and aggregate stats with action items (deny-list candidates, signal quality issues, prompt tuning guidance). Supports `--limit`, `--repo-id`, `--skip-pass3`, `--pass3-only` flags.
+
+#### feat(pass3): deny-list, calibrate-pass3 skill, judge switched to mistral-small (2026-04-15)
+
+- **`config.ts`** — added `REPO_FULL_NAME_DENYLIST` (`aws-amplify/amplify-js` is the first entry); vendor SDK repos that aren't assessment targets are blocked at both insertion (pass 1) and fetch (pass 3).
+- **`pass1/persist.ts`** — skips any repo whose `full_name` is in `REPO_FULL_NAME_DENYLIST` before the D1 upsert.
+- **`pass3/fetch.ts`** — builds a `NOT IN (...)` SQL clause from `REPO_FULL_NAME_DENYLIST` so denied repos are excluded from every pass 3 run.
+- **`pass3/judge.ts`** — switched judge model from `devstral-small-2505` to `mistral-small-latest`.
+- **`.claude/commands/calibrate-pass3.md`** (new) — `/calibrate-pass3` skill. Phase A runs the `calibrate-pass3.ts` tsx script (Gemma + validate + Mistral-small judge); Phase B launches a Sonnet sub-agent that independently applies the same 4-dimension rubric to the same Gemma outputs. After both phases, computes a 3-way comparison table (validate / Mistral-small / Sonnet) including agreement rate. Flags the user if approval rate is low and points at `buildSummarizerPrompt()` to tune.
+
+#### feat(pass3): Devstral judge quality gate + calibration harness (2026-04-15)
+
+- **`pass3/judge.ts`** (new) — Devstral quality gate using `devstral-small-2505` via Mistral API. Evaluates Gemma outputs on 4 dimensions (constraint_pass, accuracy_pass, architecture_pass, completeness_pass); requires ≥3/4 to approve. Gracefully approves on Devstral failure/parse error so it never blocks the pipeline.
+- **`pass3/run.ts`** — wired judge gate between Step 4 (validate) and Step 5 (persist). On denial, retries Gemma once with the failure reasons appended to the prompt. If retry also fails, returns `judge_failed` and skips the repo. Adds `judgeFailed` counter to run stats and final report. Exports `callGemma`, `buildSummarizerPrompt`, `parseGemmaResponse`, `getAccessToken`, `PromptFacts` for reuse by the calibration harness.
+- **`scripts/calibrate-pass3.ts`** (new) — Karpathy-style calibration harness. Fetches a sample of repos, runs the full pipeline (Gemma + validate + judge) with retry logic, skips D1 persistence, writes per-repo JSON traces and a `summary.json` to `fixtures/pass3-calibration-runs/{timestamp}/`. Prints aggregate stats: Gemma success rate, validation pass rate, judge approval rates (first attempt and after retry), dimension failure rates, top failure patterns, average word counts.
+
 #### fix(pass3): D1 wrangler auth, ADC token refresh, progress logging, timeout (2026-04-15)
 
 - **`d1Client.ts`** — rewrote to shell out to `wrangler d1 execute --remote` instead of hitting the Cloudflare REST API directly; strips `CLOUDFLARE_API_TOKEN` from subprocess env so wrangler uses its own stored OAuth credentials (cfut_ tokens fail the REST API but work for wrangler CLI).

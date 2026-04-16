@@ -43,6 +43,9 @@ export interface UseConversationResult {
   // History
   pastExchanges: PastExchange[];
 
+  // Streaming (populated while response is being streamed)
+  streamingText: string;
+
   // Synthesis outputs (populated when phase === 'COMPLETE')
   persona: CandidatePersona | null;
   jobDescription: GeneratedJobDescription | null;
@@ -72,6 +75,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
   const [synthesis, setSynthesis] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState('');
 
   // ─── Error handling ──────────────────────────────────────────────────────
 
@@ -124,6 +128,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     async (answer: string, questionId: string): Promise<void> => {
       setIsLoading(true);
       setError(null);
+      setStreamingText('');
 
       // Archive the current question before firing the network request so the
       // UI can optimistically reflect the submitted answer immediately.
@@ -138,22 +143,45 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
       }
 
       try {
-        const result = await adapter.respond(answer, questionId);
-
-        if (result.type === 'synthesis') {
-          applySynthesis(result.synthesis, result.persona, result.jobDescription, result.progress);
+        // Use streaming if available
+        if (adapter.respondStream) {
+          for await (const event of adapter.respondStream(answer, questionId)) {
+            if (event.event === 'chunk') {
+              setStreamingText((prev) => prev + event.text);
+            } else if (event.event === 'done') {
+              setStreamingText('');
+              const result = event.result;
+              if (result.type === 'synthesis') {
+                applySynthesis(result.synthesis, result.persona, result.jobDescription, result.progress);
+              } else {
+                setAcknowledgment(result.acknowledgment);
+                setCurrentQuestion(result.question);
+                setProgress(result.progress);
+                setPhase('INTERVIEWING');
+              }
+            } else if (event.event === 'error') {
+              setError(event.message);
+            }
+          }
         } else {
-          // result.type === 'question'
-          setAcknowledgment(result.acknowledgment);
-          setCurrentQuestion(result.question);
-          setProgress(result.progress);
-          setPhase('INTERVIEWING');
+          // Non-streaming fallback
+          const result = await adapter.respond(answer, questionId);
+
+          if (result.type === 'synthesis') {
+            applySynthesis(result.synthesis, result.persona, result.jobDescription, result.progress);
+          } else {
+            setAcknowledgment(result.acknowledgment);
+            setCurrentQuestion(result.question);
+            setProgress(result.progress);
+            setPhase('INTERVIEWING');
+          }
         }
       } catch (err) {
         handleError(err, 'respond');
         throw err;
       } finally {
         setIsLoading(false);
+        setStreamingText('');
       }
     },
     [adapter, currentQuestion, acknowledgment],
@@ -199,6 +227,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     acknowledgment,
     progress,
     pastExchanges,
+    streamingText,
     persona,
     jobDescription,
     synthesis,

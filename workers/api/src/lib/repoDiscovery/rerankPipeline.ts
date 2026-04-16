@@ -278,6 +278,9 @@ interface RepoSignalsD1Row {
   review_density: number | null;
   commit_cadence: number | null;
   satd_density: number | null;
+  test_style: string | null;
+  challenge_surfaces: string | null;
+  repo_searchable_profile: string | null;
   engineering_narrative: string;
   signal_json: string;
   generated_at: string;
@@ -296,6 +299,7 @@ async function loadEngineeringSignals(
            test_touch_rate, mean_changed_files, p90_changed_files, issue_link_rate,
            complexity_band, swe_bench_eligibility_rate,
            architecture_style, review_density, commit_cadence, satd_density,
+           test_style, challenge_surfaces, repo_searchable_profile,
            engineering_narrative, signal_json,
            generated_at, model_used, model_version
     FROM repo_engineering_signals
@@ -320,6 +324,9 @@ async function loadEngineeringSignals(
       review_density: r.review_density,
       commit_cadence: r.commit_cadence,
       satd_density: r.satd_density,
+      test_style: narrowTestStyle(r.test_style),
+      challenge_surfaces: r.challenge_surfaces,
+      repo_searchable_profile: r.repo_searchable_profile ?? '',
       engineering_narrative: r.engineering_narrative,
       signal_json: r.signal_json,
       generated_at: r.generated_at,
@@ -342,9 +349,22 @@ function narrowArchitecture(
 ): RepoEngineeringSignalsRow['architecture_style'] {
   if (
     v === 'monolith' ||
+    v === 'layered_service' ||
     v === 'microservice' ||
-    v === 'modular_monolith' ||
-    v === 'serverless' ||
+    v === 'library' ||
+    v === 'unknown'
+  ) return v;
+  return null;
+}
+
+function narrowTestStyle(
+  v: string | null,
+): RepoEngineeringSignalsRow['test_style'] {
+  if (
+    v === 'unit_only' ||
+    v === 'integration_heavy' ||
+    v === 'e2e_present' ||
+    v === 'minimal' ||
     v === 'unknown'
   ) return v;
   return null;

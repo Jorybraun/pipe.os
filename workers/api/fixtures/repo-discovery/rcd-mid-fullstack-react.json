@@ -1,0 +1,236 @@
+{
+  "rcd_version": "2.0.0",
+  "role_context_id": "fixture-rcd-mfs-react-001",
+  "pipeline_id": "fixture-pipeline-mfs-react-001",
+  "created_at": "2026-04-14T10:00:00.000Z",
+
+  "technical_context": {
+    "stack": ["TypeScript", "React", "Node.js", "Express", "PostgreSQL", "Tailwind CSS"],
+    "constructs": [
+      "React component composition",
+      "server-side rendering",
+      "form validation",
+      "REST API consumption",
+      "state management",
+      "unit testing with React Testing Library",
+      "database query optimisation",
+      "accessibility markup"
+    ],
+    "seniority_band": "mid",
+    "codebase_expectations": [
+      "React components are colocated with their unit tests using React Testing Library",
+      "Express routes have typed request/response interfaces; no implicit any on req.body",
+      "PostgreSQL queries go through the shared query builder; raw SQL only in reviewed migration files",
+      "Tailwind class names follow the project's token convention; no arbitrary values without a design review comment",
+      "Every new page-level component has a Storybook story before it merges"
+    ],
+    "dispositional_weights": {
+      "communication": 0.10,
+      "pragmatism": 0.15,
+      "ownership": 0.05
+    }
+  },
+
+  "domain_matrix": {
+    "HIRING_MANAGER": {
+      "work": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "Mid engineers here ship features end to end — they don't hand off a PR to someone else to deploy. If you built it, you see it through to production.",
+            "source_exchange_id": "q-work-01",
+            "consequence": "Feature ownership at the mid level requires comfort with the full vertical slice: React UI, Express route, database query, and the deploy itself",
+            "value": "End-to-end ownership reduces handoff friction and speeds time-to-production",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["full_stack_ownership", "end_to_end_deploy", "no_handoff_culture", "vertical_slice"],
+        "axial_links": [
+          { "from_code": "full_stack_ownership", "to_code": "end_to_end_deploy", "relation": "enables" },
+          { "from_code": "no_handoff_culture", "to_code": "vertical_slice", "relation": "instantiates" }
+        ],
+        "stories": [
+          {
+            "situation": "A mid engineer finished a React feature and submitted the PR but marked it as blocked, waiting for a backend engineer to create the API route it needed.",
+            "action": "The tech lead paired with them to show how to create the Express route with typed interfaces, write the migration, and deploy the full feature together in one day.",
+            "outcome": "The engineer shipped their next three features end-to-end without pairing; velocity increased significantly over the following sprint.",
+            "moral": "The team invests in helping mid engineers grow into the full vertical slice; candidates who are not curious about the backend half of the stack will plateau faster here than they might expect.",
+            "source_exchange_id": "q-work-01"
+          }
+        ],
+        "summary": "The team is building a B2B SaaS product as a Rails-style monolith using Node.js and React. Mid engineers own full features vertically: React component, API route, database change, and deployment. The codebase is straightforward enough that a focused mid engineer can hold the whole feature in their head without a platform team abstracting away the infrastructure. This makes onboarding fast but also means there is nowhere to hide — the candidate must be comfortable in both the UI and the database."
+      },
+      "codebase": {
+        "primary_authority": true,
+        "coverage": "covered",
+        "laddering_chains": [
+          {
+            "attribute_quote": "We write tests the same day as the code — it's not a separate phase. If you can't test it the day you write it, the feature isn't done.",
+            "source_exchange_id": "q-codebase-01",
+            "consequence": "TDD or same-day test writing is a team norm, not a preference; PRs without tests are returned",
+            "value": "Test coverage as a confidence multiplier for the single-monolith architecture",
+            "energy_signal": "medium",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["same_day_tests", "rtl_preferred", "storybook_required", "test_as_done_criteria"],
+        "axial_links": [
+          { "from_code": "same_day_tests", "to_code": "test_as_done_criteria", "relation": "causes" }
+        ],
+        "stories": [],
+        "summary": "The codebase is a TypeScript monolith: React on the frontend, Express on the backend, sharing types through a shared package. Unit tests use React Testing Library for components and Jest for business logic. Storybook stories are required for page-level components before merging. The monolith is intentional — the team believes premature service extraction costs more than it saves at their current scale."
+      },
+      "bar": {
+        "primary_authority": true,
+        "coverage": "covered",
+        "laddering_chains": [
+          {
+            "attribute_quote": "I want someone who is honest about what they don't know but curious enough to figure it out rather than blocking. Mid-level here means resourceful, not expert.",
+            "source_exchange_id": "q-bar-01",
+            "consequence": "The team values intellectual curiosity and resourcefulness over depth in any single area; candidates who block on gaps rather than researching them will feel friction",
+            "value": "Learning velocity as a differentiator for mid-level impact",
+            "energy_signal": "medium",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["learning_velocity", "resourceful_not_blocked", "honest_about_gaps", "curious_mindset"],
+        "axial_links": [
+          { "from_code": "learning_velocity", "to_code": "resourceful_not_blocked", "relation": "enables" }
+        ],
+        "stories": [],
+        "summary": "The bar for mid-level is productive competence, not mastery: the candidate should be able to pick up a ticket in an unfamiliar part of the stack, research what they need, and deliver a working solution without requiring daily pairing. Accessibility is an explicit bar item — the team ships to enterprise customers who have WCAG 2.1 AA requirements in their contracts, so candidates who have never written aria attributes or tested with a screen reader will need to demonstrate they can learn quickly."
+      },
+      "process": {
+        "primary_authority": false,
+        "coverage": "partial",
+        "laddering_chains": [],
+        "open_codes": ["weekly_sprints", "pr_review_same_day", "no_separate_qa_phase"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "Weekly sprints with same-day PR review as a team norm. No separate QA phase — engineers own quality end to end. Accessibility review is part of the PR checklist."
+      },
+      "why": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["early_stage_growth", "product_market_fit_phase"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "The company is in active growth, shipping features at high velocity. Engineers have significant product influence at this stage — ideas surfaced in engineering are regularly incorporated into the roadmap."
+      },
+      "team": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["small_team", "high_trust", "direct_communication"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "A team of four engineers, one designer, and one PM. Small enough that everyone knows what everyone else is working on; direct enough that feedback in PR comments is never softened to the point of ambiguity."
+      }
+    }
+  },
+
+  "conflicts": [],
+
+  "team_culture_profile": {
+    "per_stakeholder": {
+      "HIRING_MANAGER": {
+        "clan_affinity": 4,
+        "adhocracy_affinity": 3,
+        "market_affinity": 3,
+        "hierarchy_affinity": 1,
+        "psychological_safety": 4
+      }
+    }
+  },
+
+  "bars_overrides": [
+    {
+      "dimension": "ownership",
+      "anchor_level": 3,
+      "base_anchor_text": "Takes ownership of features from assignment to merge.",
+      "override_anchor_text": "Takes ownership of features from design to production deploy: creates the React component, the Express route, the migration, and deploys. Does not hand off to a backend engineer mid-feature. Asks for help when blocked rather than waiting silently.",
+      "source_chain_id": "q-work-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "code_quality",
+      "anchor_level": 3,
+      "base_anchor_text": "Writes readable, tested code that follows the team's conventions.",
+      "override_anchor_text": "Writes tests alongside the code on the same day — not as a follow-up PR. React Testing Library for component tests, Storybook story for any page-level component. Accessibility markup (aria-label, role, focus management) is part of the component, not an afterthought.",
+      "source_chain_id": "q-codebase-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    }
+  ],
+
+  "probe_bank_enrichment": {
+    "static_base_version": "v1.0.0",
+    "enriched_probes": [
+      {
+        "dimension": "ownership",
+        "probe_text": "Walk me through the last feature you shipped end-to-end. What did the frontend change look like, what API route did you create or modify, and how did you deploy it?",
+        "source_chain_id": "q-work-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      },
+      {
+        "dimension": "code_quality",
+        "probe_text": "Describe how you test a React component that fetches data from an API. What do you mock, what do you test for, and where does the Storybook story fit?",
+        "source_chain_id": "q-codebase-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      }
+    ]
+  },
+
+  "dealbreakers": [
+    {
+      "id": "db-mfs-react-001",
+      "label": "Only comfortable with frontend; avoids backend work",
+      "pattern": "Candidate consistently hands off API and database work to backend-labelled engineers and has not independently shipped a database-touching route in recent experience",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-work-01",
+      "job_relatedness_note": "The role requires shipping full vertical slices without handoff; a candidate who avoids backend work cannot perform the core function of this mid-level role.",
+      "job_relatedness_strength": "strong",
+      "evidence_quote": "Mid engineers here ship features end to end — they don't hand off a PR to someone else to deploy."
+    }
+  ],
+
+  "red_flags": [
+    {
+      "id": "rf-mfs-react-001",
+      "label": "Has never worked with accessibility requirements",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-bar-01",
+      "evidence_quote": "Accessibility review is part of the PR checklist; enterprise customers have WCAG 2.1 AA in their contracts."
+    }
+  ],
+
+  "consumer_slice": {
+    "seniority": "Mid, 3–5 years",
+    "archetype": "Fullstack engineer comfortable in both React and Node.js, with enough PostgreSQL depth to write and deploy their own database changes",
+    "mustHaveSkills": ["TypeScript", "React", "Node.js", "PostgreSQL", "REST APIs", "unit testing"],
+    "niceToHaveSkills": ["Tailwind CSS", "React Testing Library", "Storybook", "Express", "accessibility/WCAG"],
+    "disposition": [
+      "Ships features end-to-end without splitting the work along frontend/backend lines",
+      "Writes tests the same day as the code",
+      "Honest about gaps and researches independently rather than blocking"
+    ],
+    "careerSignal": "Has shipped multiple full-stack features in a TypeScript monolith including the database migration and deploy",
+    "redFlags": ["Only comfortable with the frontend half of a fullstack feature"],
+    "dealbreakers": ["Refuses or is unable to write database-touching backend code"]
+  },
+
+  "validation_metadata": {
+    "schema_version": "2.0.0",
+    "synthesis_model": "fixture-synthetic-v1",
+    "synthesis_prompt_version": "v2.0.0",
+    "verification_pass_model": "fixture-synthetic-v1",
+    "face_validity_reviewed_at": "2026-04-14T10:00:00.000Z",
+    "face_validity_reviewer": "fixture-author"
+  }
+}

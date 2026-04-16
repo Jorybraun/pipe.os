@@ -1,0 +1,32 @@
+{
+  "repo_id": 1676,
+  "full_name": "nhost/nhost",
+  "run_timestamp": "2026-04-16T00:49:14.591Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 203,
+      "profile_words": 193
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "repo_searchable_profile too short: 193 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 90, 0.48, 323, 188, 181"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1676,
+    "full_name": "nhost/nhost",
+    "primary_language": "typescript",
+    "stars": 9124,
+    "has_tests": true,
+    "detected_domain": "web-backend"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"layered_service\",\n  \"engineering_narrative\": \"The nhost/nhost repository represents a sophisticated web-backend ecosystem characterized by a medium complexity profile. Utilizing TypeScript as its primary language, the codebase demonstrates a layered service approach, evidenced by the significant presence of dashboard components, CLI tools, and backend service templates. The engineering culture appears to prioritize rapid iteration and feature delivery, though the test discipline is heavily concentrated on unit tests via Vitest. While CI is present, the test touch rate of 0.35 and the observation that sample pull requests frequently do not modify existing tests suggest a culture where functional correctness is addressed through targeted unit verification rather than broad regression suites. The review culture is managed at a staff-level seniority band, which is necessary given the significant breadth of changes; the mean number of changed files per PR is 11.85, with a p90 reaching as high as 33 files. This indicates that most engineering work involves cross-component adjustments rather than isolated logic tweaks. Notable PR patterns involve dashboard enhancements, version synchronization across services, and configuration fixes, often spanning multiple files to maintain consistency across the stack. The architecture must manage complex interactions between SQL queries, REST API designs, and database migrations, necessitating a disciplined approach to state and schema management.\",\n  \"repo_searchable_profile\": \"This repository is a web-backend project serving as a foundational platform for developer services. The primary language is TypeScript, supported by a diverse stack that includes Go (as seen in go.mod), React-related dependencies within the dashboard, and various CLI utilities. Observations of the PR shape reveal a high-velocity development environment where individual contributions often impact multiple files simultaneously; the mean changed files count is 11.85, while the p90 value is 33. Many PRs focus on dashboard fixes, documentation updates, and service synchronization, frequently without direct modification of tests. The test and review culture is defined by the use of Vitest for unit testing, with a test touch rate of 0.35. The presence of a staff-level seniority band suggests a high bar for architectural oversight, despite a PR quality score of 0.48. The repository's complexity is classified as medium, with significant technical surface areas involving unit tests (323), SQL queries (188), and REST API design (181). The top three challenge surfaces for contributors are type confusion potential at 0.50, off-by-one potential at 0.40, and TOCTOU race potential at 0.30. Regarding contribution readiness, the open PR count and the open feature-issue count are currently unknown.\"\n}"
+}

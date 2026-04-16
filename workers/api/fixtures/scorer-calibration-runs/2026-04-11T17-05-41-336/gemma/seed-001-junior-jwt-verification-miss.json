@@ -1,0 +1,11 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "meta": {
+    "wall_clock_ms": 45153,
+    "attempts": 3,
+    "status": "failed",
+    "error": "[calibrate] Cloudflare AI 503: {\"errors\":[{\"message\":\"AiError: AiError: Max retries exhausted (984e338a-c42a-4dfd-b582-d439f0ee1bf6)\",\"code\":3050}],\"success\":false,\"result\":{},\"messages\":[]}"
+  }
+}

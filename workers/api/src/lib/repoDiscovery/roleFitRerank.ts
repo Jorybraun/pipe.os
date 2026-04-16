@@ -105,7 +105,15 @@ function buildSystemPrompt(): string {
     '  - reasoning.matches: 1-3 short bullets naming concrete signal-to-RCD links. Each bullet MUST quote at least one verbatim token from the RCD\'s technical_context.stack OR technical_context.codebase_expectations.',
     '  - reasoning.mismatches: 0-3 short bullets naming concrete misalignments.',
     '  - reasoning.summary: one sentence (≤ 30 words) explaining the overall fit. Must also reference at least one RCD technical_context token verbatim.',
-    '  - per_signal_scores: object with up to 6 keys (test_touch_rate, complexity_band, architecture_style, review_density, swe_bench_eligibility_rate, language_match), each a number in [0.0, 1.0].',
+    '  - per_signal_scores: object with the following keys, each a number in [0.0, 1.0]:',
+    '      • test_touch_rate, complexity_band, architecture_style, review_density, swe_bench_eligibility_rate, language_match (legacy dimensions)',
+    '      • architecture_style_match — how well repo\'s architecture_style fits the codebase_expectations and constructs tokens. If repo.architecture_style = "library" score 0.0 (hard mismatch).',
+    '      • test_style_match — repo.test_style vs what the RCD implies about testing. Partial credit: unit_only↔integration_heavy = 0.5; minimal↔anything_not_minimal = 0.2; e2e_present expected and present = 1.0.',
+    '      • review_culture_match — repo.review_density bucketed (rigorous ≥ 2.0 comments/PR, lightweight 1–2, solo < 1) vs RCD\'s implied review culture (infer from codebase_expectations language — e.g., "thorough review", "trunk-based", "ship fast").',
+    '      • pr_size_match — repo.p90_changed_files bucketed (small < 10, medium 10–30, large > 30) vs RCD\'s implied PR size band.',
+    '      • complexity_match — repo.complexity_band vs RCD\'s implied complexity_tolerance (infer from seniority_band + codebase_expectations).',
+    '      • challenge_surface_fit — repo.challenge_surfaces (10 *_potential floats in [0,1]) cosine-aligned to the surfaces the RCD\'s must_have skills imply. If challenge_surfaces is null, return 0.5.',
+    '    Use null for any dimension you genuinely cannot judge. Do NOT fabricate scores.',
     '',
     'Hard rules:',
     '  - Do not invent signals that are not in the candidate input.',
@@ -211,6 +219,9 @@ function formatCandidate(c: RerankCandidate, idx: number): string {
     `  review_density: ${formatNum(s.review_density)}`,
     `  commit_cadence: ${formatNum(s.commit_cadence)}`,
     `  satd_density: ${formatNum(s.satd_density)}`,
+    'canonical_alignment_signals:',
+    `  test_style: ${s.test_style ?? 'unknown'}`,
+    `  challenge_surfaces: ${s.challenge_surfaces ?? 'null'}`,
   ].join('\n');
 }
 

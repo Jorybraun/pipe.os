@@ -17,7 +17,7 @@ export default defineConfig({
     setupFiles: './src/test/setup.ts',
     exclude: [
       '**/node_modules/**',
-      'amplify/functions/**',
+      'amplify/**',
       'e2e/**',
       '.claude/**',
     ],

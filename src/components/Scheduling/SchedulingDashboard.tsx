@@ -71,7 +71,7 @@ export function SchedulingDashboard(): JSX.Element {
     const groups = new Map<TimelineGroup, ScheduledInterview[]>();
 
     interviews.forEach((iv) => {
-      const group = getTimelineGroup(iv.scheduledAt);
+      const group = getTimelineGroup(iv.scheduledAt ?? null);
       if (!groups.has(group)) {
         groups.set(group, []);
       }
@@ -192,7 +192,7 @@ export function SchedulingDashboard(): JSX.Element {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {
                   const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.candidateId;
-                  const candidateEmail = iv.candidateEmail;
+                  const candidateEmail = iv.candidateEmail ?? null;
                   const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId;
                   const stageTitle = iv.stageTitle ?? iv.stageId;
 

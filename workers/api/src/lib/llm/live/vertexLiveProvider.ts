@@ -79,8 +79,8 @@ interface VertexServerMessage {
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const array = new Uint8Array(buffer);
   let binary = '';
-  for (let i = 0; i < array.length; i++) {
-    binary += String.fromCharCode(array[i]);
+  for (const byte of array) {
+    binary += String.fromCharCode(byte);
   }
   return btoa(binary);
 }
@@ -100,8 +100,8 @@ class VertexLiveSession implements LiveSession {
 
   constructor(ws: WebSocket) {
     this.ws = ws;
-    this.ws.addEventListener('message', (event: MessageEvent<string>) => {
-      this.handleMessage(event.data);
+    this.ws.addEventListener('message', (event: MessageEvent) => {
+      this.handleMessage(event.data as string);
     });
     this.ws.addEventListener('error', () => {
       const err = new Error('[VertexLiveSession] WebSocket error');
@@ -226,6 +226,23 @@ export class VertexLiveProvider implements LiveProvider {
         },
       };
       ws.send(JSON.stringify(setup));
+
+      // Gemini Live is reactive — send an opening prompt so the agent speaks first.
+      // Without this, the agent waits silently for user audio.
+      setTimeout(() => {
+        const openingTurn = {
+          clientContent: {
+            turns: [
+              {
+                role: 'user',
+                parts: [{ text: 'Hello. Please introduce yourself briefly and begin the interview with your first question.' }],
+              },
+            ],
+            turnComplete: true,
+          },
+        };
+        ws.send(JSON.stringify(openingTurn));
+      }, 100); // Small delay to ensure setup is processed first
     });
 
     return session;

@@ -1,0 +1,15 @@
+{
+  "repo_id": 1687,
+  "full_name": "Hacker0x01/react-datepicker",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 177 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: total dependency count of 75, the '10 sample PRs' observation count, the derived '100%' test-modification rate, pr_quality_score 0.73, and challenge surface score 0.40 are not present in the FACTS block"
+  ],
+  "reasoning": "The profile is ~177 words, roughly 223 words short of the 400-word minimum. The profile also injects several invented figures: 75 total dependencies, '10 sample PRs' as a sample frame count, a derived '100%' test-modification rate, and pr_quality_score 0.73 — none appear in the FACTS block. The 100% derived rate is a particularly clear example of Gemma computing a ratio from invented inputs. Accuracy is strong: TypeScript is correctly named as the primary language, Jest is correctly identified as the testing framework consistent with has_tests=true, the web-frontend library nature is well-described, and the high test discipline (test_touch_rate 0.9, pr_quality_score character) aligns with the repo's reputation as a mature library with strong regression coverage. architecture_style='library' is correct — react-datepicker is a single-purpose React component library. All five completeness dimensions are present: repo type (date picker component library), language/stack (TypeScript + React), PR shapes (mean 5.1, p90 11), test/review culture (Jest unit-only, 0.9 touch rate), and contribution readiness (open counts unknown). Three of four dimensions pass, yielding approved=true."
+}

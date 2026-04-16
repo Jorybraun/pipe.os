@@ -34,6 +34,12 @@
 	"ai": {
 		"binding": "AI"
 	},
+	"vectorize": [
+		{
+			"binding": "REPO_INDEX",
+			"index_name": "repo-searchable-profiles"
+		}
+	],
 	"containers": [
 		{
 			"class_name": "DevContainerDO",

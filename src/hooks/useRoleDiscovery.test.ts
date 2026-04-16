@@ -1,416 +1,269 @@
 /**
  * useRoleDiscovery Hook Tests
  *
- * Tests for the role discovery client hook.
- * Uses PipeProviderRoot with mock providers instead of mocking aws-amplify/data
- * directly, since the hook calls useData() from the provider abstraction layer.
+ * Tests for the role discovery client hook (v2 — Cloudflare Workers API).
+ * Mocks useApiClient to avoid real HTTP calls.
+ *
+ * The adapter's respond() path goes through respondStream (adapter.respondStream
+ * is defined, so useConversation always takes the streaming branch). The mock for
+ * postStream must therefore return a real async generator. We queue up stream
+ * payloads alongside the non-streaming post mocks.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
-import React from 'react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useRoleDiscovery } from './useRoleDiscovery';
-import { PipeProviderRoot } from '../providers/DataContext';
-import type { PipeProviders, DataProvider, ModelOperations } from '../providers/types';
-import type { Baseline } from '../types/discovery';
-import { v4 as uuid } from 'uuid';
+import type { ApiClient, StreamEvent } from '../lib/api/client';
+import type {
+  CreateRoleContextResponse,
+  StartRoleContextResponse,
+  RespondSynthesisResponse,
+  CandidatePersona,
+  RoleContextProgress,
+  RoleContextBaseline,
+} from '../lib/api/types';
 
-// ─── Shared mock handles ──────────────────────────────────────────────────────
+// ─── Async generator helper ───────────────────────────────────────────────────
 
-const mocks = vi.hoisted(() => {
-  return {
-    mockGenerateQuestions: vi.fn(),
-    mockGenerateJobDescription: vi.fn(),
-    mockRoleContextCreate: vi.fn(),
-  };
-});
-
-// ─── Mock factory helpers ─────────────────────────────────────────────────────
-
-function createMockModelOps(): ModelOperations {
-  return {
-    get: vi.fn().mockResolvedValue({ data: null }),
-    list: vi.fn().mockResolvedValue({ data: [] }),
-    create: vi.fn().mockResolvedValue({ data: null }),
-    update: vi.fn().mockResolvedValue({ data: null }),
-    delete: vi.fn().mockResolvedValue({ data: null }),
-    observeQuery: vi.fn().mockReturnValue({
-      subscribe: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
-    }),
-  };
+/**
+ * Wraps a single value as an async generator that yields one `done` event.
+ * This matches the shape postStream emits: { event: 'done', data: T }.
+ */
+async function* singleDoneStream<T>(data: T): AsyncGenerator<StreamEvent<T>> {
+  yield { event: 'done', data };
 }
 
-function createMockDataProvider(): DataProvider {
-  const modelNames = [
-    'Pipeline', 'Stage', 'Candidate', 'Challenge', 'ChallengeSubmission',
-    'Assessment', 'CodeArtifact', 'VideoSession', 'VideoSignal',
-    'CandidateMedia', 'ScheduledInterview', 'SchedulingConnection',
-    'RoleContext', 'RepoTemplate', 'DevContainerSession',
-  ] as const;
+// ─── Mock useApiClient ────────────────────────────────────────────────────────
 
-  const models = {} as DataProvider['models'];
-  for (const name of modelNames) {
-    (models as Record<string, ModelOperations>)[name] = createMockModelOps();
-  }
+const mocks = vi.hoisted(() => ({
+  mockPost: vi.fn(),
+  mockGet: vi.fn(),
+  mockPostStream: vi.fn(),
+}));
 
-  // Wire RoleContext.create to the shared mock handle
-  (models.RoleContext as unknown as { create: ReturnType<typeof vi.fn> }).create =
-    mocks.mockRoleContextCreate;
+vi.mock('./useApiClient', () => ({
+  useApiClient: (): ApiClient => ({
+    get: mocks.mockGet,
+    post: mocks.mockPost,
+    patch: vi.fn(),
+    put: vi.fn(),
+    del: vi.fn(),
+    postStream: mocks.mockPostStream as ApiClient['postStream'],
+  }),
+}));
 
-  return {
-    models,
-    mutations: {
-      generateQuestions: mocks.mockGenerateQuestions,
-      generateJobDescription: mocks.mockGenerateJobDescription,
-    },
-    queries: {},
-  };
-}
+// Guard against Clerk's useAuth being called transitively.
+vi.mock('@clerk/react', () => ({
+  useAuth: () => ({ getToken: vi.fn().mockResolvedValue('test-token') }),
+}));
 
-function createWrapper() {
-  const mockProvider = createMockDataProvider();
-  const providers: PipeProviders = {
-    data: {
-      createClient: () => mockProvider,
-      createPublicClient: () => mockProvider,
-      createSessionClient: () => mockProvider,
-    },
-    storage: {
-      upload: vi.fn().mockResolvedValue({ path: '' }),
-      getUrl: vi.fn().mockResolvedValue({ url: new URL('https://example.com') }),
-    },
-  };
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(PipeProviderRoot, { providers, children });
-  };
-}
-
-// ─── Mock response builders ───────────────────────────────────────────────────
-
-function makeQuestionsResponse(overrides: Record<string, unknown> = {}) {
-  return {
-    data: {
-      updatedContext: {},
-      newExchanges: [],
-      nextSection: {
-        id: uuid(),
-        title: 'SUCCESS_CRITERIA',
-        description: 'Let me understand what success looks like for this role.',
-        questions: [
-          {
-            id: uuid(),
-            text: 'What would this person need to accomplish in their first 90 days?',
-            type: 'textarea',
-            placeholder: 'Specific projects, milestones, or outcomes...',
-          },
-        ],
-      },
-      status: 'exploring',
-      gaps: ['success_criteria', 'challenges', 'culture'],
-      reasoning: 'Need to understand success metrics and role challenges.',
-      costTracking: {
-        sessionCost: 0.02,
-        remainingBudget: 0.48,
-        callCount: 1,
-      },
-      processingTime: 10,
-      ...overrides,
-    },
-    errors: undefined,
-  };
-}
-
-function makeReadyResponse(firstQuestionId: string) {
-  return {
-    data: {
-      updatedContext: {
-        success_criteria: 'Ship payment API v2, reduce latency by 40%',
-      },
-      newExchanges: [
-        {
-          id: uuid(),
-          questionId: firstQuestionId,
-          agentQuestion: 'What would this person need to accomplish in their first 90 days?',
-          userResponse: 'Detailed response',
-          extractedFacts: ['90-day goal: ship payment API v2'],
-          timestamp: Date.now(),
-        },
-      ],
-      nextSection: null,
-      status: 'ready',
-      gaps: [],
-      reasoning: 'I now have enough context to generate a job description.',
-      costTracking: {
-        sessionCost: 0.15,
-        remainingBudget: 0.35,
-        callCount: 5,
-      },
-      processingTime: 10,
-    },
-    errors: undefined,
-  };
-}
-
-function makeJobDescriptionResponse() {
-  return {
-    data: {
-      jobDescription: {
-        title: 'Senior Backend Engineer',
-        summary: 'Lead backend engineering efforts for our payment platform.',
-        responsibilities: [
-          'Design and implement payment API v2',
-          'Optimize system latency and throughput',
-          'Mentor junior engineers',
-        ],
-        requirements: {
-          required: [
-            '5+ years backend engineering experience',
-            'Strong Node.js/TypeScript skills',
-            'Experience with payment systems',
-          ],
-          preferred: [
-            'AWS architecture experience',
-            'System design expertise',
-          ],
-        },
-        successIndicators: [
-          '90 days: Ship payment API v2',
-          '1 year: Reduce latency by 40%',
-        ],
-        teamContext: '5-person platform team, async-first culture.',
-        growthOpportunity: 'Path to Staff Engineer or Engineering Manager.',
-        rawMarkdown: '# Senior Backend Engineer\n\n...',
-      },
-      candidateFilters: [],
-      suggestedStages: [],
-      processingTime: 10,
-    },
-    errors: undefined,
-  };
-}
-
-// ─── Test data ────────────────────────────────────────────────────────────────
-
-const mockBaseline: Baseline = {
+const mockBaseline: RoleContextBaseline = {
   title: 'Senior Backend Engineer',
-  level: 'senior',
   department: 'Engineering',
-  workModel: 'remote',
-  teamSize: '5 engineers',
-  reportsTo: 'Engineering Manager',
-  stack: ['TypeScript', 'Node.js', 'PostgreSQL'],
 };
+
+function makeProgress(): RoleContextProgress {
+  return {
+    asked: 0,
+    budget: 10,
+    domains: {},
+  };
+}
+
+function makeCreateResponse(): CreateRoleContextResponse {
+  return {
+    id: 'ctx-1',
+    participantId: 'part-1',
+    status: 'BASELINE',
+    baseline: mockBaseline,
+    questionBudget: 10,
+    questionsAsked: 0,
+  };
+}
+
+function makeStartResponse(): StartRoleContextResponse {
+  return {
+    participantId: 'part-1',
+    acknowledgment: 'Got it.',
+    question: {
+      id: 'q-1',
+      text: 'What does success look like in 90 days?',
+      input: { type: 'textarea' },
+    },
+    progress: makeProgress(),
+    status: 'CALIBRATING',
+  };
+}
+
+function makeSynthesisResponse(): RespondSynthesisResponse {
+  const persona: CandidatePersona = {
+    seniority: 'senior',
+    archetype: 'Backend Engineer',
+    mustHaveSkills: ['Node.js', 'PostgreSQL'],
+    niceToHaveSkills: [],
+    disposition: [],
+    careerSignal: '',
+    redFlags: [],
+    dealbreakers: [],
+  };
+  return {
+    participantId: 'part-1',
+    synthesis: 'Strong candidate for senior backend role.',
+    persona,
+    jobDescription: '# Senior Backend Engineer\n\nLead our payment platform.',
+    knowledgeState: {},
+    progress: { asked: 10, budget: 10, domains: {} },
+    status: 'COMPLETE',
+  };
+}
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('useRoleDiscovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.mockRoleContextCreate.mockResolvedValue({ data: null });
   });
 
-  it('should initialize with baseline status', () => {
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
+  it('initializes with IDLE phase and no loading state', () => {
+    const { result } = renderHook(() => useRoleDiscovery());
 
-    expect(result.current.roleContext.status).toBe('baseline');
-    expect(result.current.roleContext.baseline).toBeNull();
-    expect(result.current.isReady).toBe(false);
+    expect(result.current.phase).toBe('IDLE');
     expect(result.current.isLoading).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.contextId).toBeNull();
+    expect(result.current.baseline).toBeNull();
+    expect(result.current.currentQuestion).toBeNull();
   });
 
-  it('should update status after baseline submission', async () => {
-    mocks.mockGenerateQuestions.mockResolvedValue(makeQuestionsResponse());
+  it('exposes adapter, createAndStart, respond, completeEarly, submitFeedback', () => {
+    const { result } = renderHook(() => useRoleDiscovery());
 
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
+    expect(typeof result.current.adapter).toBe('object');
+    expect(typeof result.current.createAndStart).toBe('function');
+    expect(typeof result.current.respond).toBe('function');
+    expect(typeof result.current.completeEarly).toBe('function');
+    expect(typeof result.current.submitFeedback).toBe('function');
+  });
+
+  it('calls POST /role-contexts and /start, then transitions to CALIBRATING', async () => {
+    mocks.mockPost
+      .mockResolvedValueOnce(makeCreateResponse())
+      .mockResolvedValueOnce(makeStartResponse());
+
+    const { result } = renderHook(() => useRoleDiscovery());
 
     await act(async () => {
-      await result.current.submitBaseline(mockBaseline);
+      await result.current.createAndStart(mockBaseline);
     });
 
     await waitFor(() => {
-      expect(result.current.roleContext.status).toBe('exploring');
-      expect(result.current.roleContext.baseline).toEqual(mockBaseline);
-      expect(result.current.currentSection).not.toBeNull();
+      expect(result.current.phase).toBe('CALIBRATING');
     });
+
+    expect(result.current.currentQuestion?.id).toBe('q-1');
+
+    expect(mocks.mockPost).toHaveBeenCalledWith(
+      '/api/v1/role-contexts',
+      expect.objectContaining({ baseline: mockBaseline }),
+    );
+    expect(mocks.mockPost).toHaveBeenCalledWith(
+      '/api/v1/role-contexts/ctx-1/start',
+      expect.objectContaining({ participantId: 'part-1' }),
+    );
   });
 
-  it('should track cost over multiple operations', async () => {
-    mocks.mockGenerateQuestions.mockResolvedValue(makeQuestionsResponse());
+  it('calls POST /respond and advances to next question', async () => {
+    mocks.mockPost
+      .mockResolvedValueOnce(makeCreateResponse())
+      .mockResolvedValueOnce(makeStartResponse());
+    // The respond path goes through respondStream → api.postStream (streaming branch).
+    // Stream done payload uses question as a string (the text), not the full object.
+    mocks.mockPostStream.mockReturnValueOnce(
+      singleDoneStream({
+        participantId: 'part-1',
+        question: 'Tell me about the team.',
+        progress: { asked: 1, budget: 10, domains: {} },
+      }),
+    );
 
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
+    const { result } = renderHook(() => useRoleDiscovery());
 
     await act(async () => {
-      await result.current.submitBaseline(mockBaseline);
+      await result.current.createAndStart(mockBaseline);
+    });
+
+    await waitFor(() => expect(result.current.currentQuestion?.id).toBe('q-1'));
+
+    await act(async () => {
+      await result.current.respond('Ship payment API v2.', 'q-1');
     });
 
     await waitFor(() => {
-      expect(result.current.costTracking.sessionCost).toBeGreaterThan(0);
-      expect(result.current.costTracking.callCount).toBeGreaterThan(0);
-      expect(result.current.costTracking.remainingBudget).toBeLessThan(0.50);
+      expect(result.current.currentQuestion?.text).toBe('Tell me about the team.');
     });
+
+    expect(mocks.mockPostStream).toHaveBeenCalledWith(
+      '/api/v1/role-contexts/ctx-1/respond',
+      expect.objectContaining({ answer: 'Ship payment API v2.', questionId: 'q-1' }),
+    );
   });
 
-  it('should submit responses and update context', async () => {
-    mocks.mockGenerateQuestions.mockResolvedValueOnce(makeQuestionsResponse());
+  it('transitions to COMPLETE and sets persona when synthesis is returned', async () => {
+    mocks.mockPost
+      .mockResolvedValueOnce(makeCreateResponse())
+      .mockResolvedValueOnce(makeStartResponse());
+    // Synthesis comes through the streaming path.
+    const synthData = makeSynthesisResponse();
+    mocks.mockPostStream.mockReturnValueOnce(
+      singleDoneStream({
+        participantId: synthData.participantId,
+        synthesis: synthData.synthesis,
+        persona: synthData.persona,
+        jobDescription: synthData.jobDescription,
+        knowledgeState: synthData.knowledgeState,
+        progress: synthData.progress,
+      }),
+    );
 
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.submitBaseline(mockBaseline);
-    });
-
-    const firstSection = result.current.currentSection;
-    expect(firstSection).not.toBeNull();
-
-    if (firstSection) {
-      const firstQuestionId = firstSection.questions[0]!.id;
-      mocks.mockGenerateQuestions.mockResolvedValueOnce(makeReadyResponse(firstQuestionId));
-
-      await act(async () => {
-        await result.current.submitResponses([
-          {
-            questionId: firstQuestionId,
-            response: 'Ship payment API v2 and reduce latency by 40%',
-          },
-        ]);
-      });
-
-      await waitFor(() => {
-        expect(result.current.roleContext.exchanges.length).toBeGreaterThan(0);
-      });
-    }
-  });
-
-  it('should become ready after sufficient exploration', async () => {
-    mocks.mockGenerateQuestions.mockResolvedValueOnce(makeQuestionsResponse());
-
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
+    const { result } = renderHook(() => useRoleDiscovery());
 
     await act(async () => {
-      await result.current.submitBaseline(mockBaseline);
+      await result.current.createAndStart(mockBaseline);
     });
 
-    const firstQuestionId = result.current.currentSection?.questions[0]?.id ?? '';
-    mocks.mockGenerateQuestions.mockResolvedValueOnce(makeReadyResponse(firstQuestionId));
+    await waitFor(() => expect(result.current.currentQuestion?.id).toBe('q-1'));
 
     await act(async () => {
-      await result.current.submitResponses([
-        {
-          questionId: firstQuestionId,
-          response: 'Detailed response',
-        },
-      ]);
+      await result.current.respond('Detailed answer covering all domains.', 'q-1');
     });
 
     await waitFor(() => {
-      expect(result.current.isReady).toBe(true);
-      expect(result.current.roleContext.status).toBe('ready');
+      expect(result.current.phase).toBe('COMPLETE');
     });
+
+    expect(result.current.persona?.archetype).toBe('Backend Engineer');
+    expect(result.current.synthesis).toBe('Strong candidate for senior backend role.');
   });
 
-  it('should throw error when generating JD before ready', async () => {
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
+  it('sets error state when createAndStart API call fails', async () => {
+    mocks.mockPost.mockRejectedValue(new Error('Network failure'));
 
-    await expect(async () => {
-      await act(async () => {
-        await result.current.generateJobDescription();
-      });
-    }).rejects.toThrow('Not ready to generate job description');
-  });
-
-  it('should generate job description when ready and persist to RoleContext', async () => {
-    mocks.mockGenerateQuestions.mockResolvedValueOnce(makeQuestionsResponse());
-
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
-
-    // Submit baseline to get to exploring state
-    await act(async () => {
-      await result.current.submitBaseline(mockBaseline);
-    });
-
-    const firstQuestionId = result.current.currentSection?.questions[0]?.id ?? '';
-    mocks.mockGenerateQuestions.mockResolvedValueOnce(makeReadyResponse(firstQuestionId));
-
-    // Submit responses to reach ready state
-    await act(async () => {
-      await result.current.submitResponses([
-        { questionId: firstQuestionId, response: 'Detailed response' },
-      ]);
-    });
-
-    await waitFor(() => expect(result.current.isReady).toBe(true));
-
-    mocks.mockGenerateJobDescription.mockResolvedValueOnce(makeJobDescriptionResponse());
-
-    let jdResult: Awaited<ReturnType<typeof result.current.generateJobDescription>> | undefined;
-    await act(async () => {
-      jdResult = await result.current.generateJobDescription();
-    });
-
-    expect(jdResult?.jobDescription.title).toBe('Senior Backend Engineer');
-    expect(mocks.mockRoleContextCreate).toHaveBeenCalledOnce();
-  });
-
-  it('should reset to initial state', async () => {
-    mocks.mockGenerateQuestions.mockResolvedValue(makeQuestionsResponse());
-
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
+    const { result } = renderHook(() => useRoleDiscovery());
 
     await act(async () => {
-      await result.current.submitBaseline(mockBaseline);
-    });
-
-    const idBeforeReset = result.current.roleContext.id;
-
-    await act(async () => {
-      result.current.reset();
-    });
-
-    expect(result.current.roleContext.status).toBe('baseline');
-    expect(result.current.roleContext.baseline).toBeNull();
-    expect(result.current.roleContext.id).not.toBe(idBeforeReset);
-    expect(result.current.currentSection).toBeNull();
-    expect(result.current.costTracking.sessionCost).toBe(0);
-  });
-
-  it('should handle errors gracefully when submitResponses called without baseline', async () => {
-    // generateQuestions will throw because roleContext has no baseline context
-    // but the hook catches errors and sets error state without re-throwing
-    mocks.mockGenerateQuestions.mockRejectedValue(new Error('No baseline provided'));
-
-    const { result } = renderHook(() => useRoleDiscovery(), {
-      wrapper: createWrapper(),
-    });
-
-    await act(async () => {
+      // initialize rethrows after setting error — catch to prevent unhandled rejection
       try {
-        await result.current.submitResponses([
-          { questionId: 'invalid', response: 'test' },
-        ]);
+        await result.current.createAndStart(mockBaseline);
       } catch {
-        // submitResponses catches internally — should not reach here
+        // expected
       }
     });
 
-    // Hook should still be functional
-    expect(result.current.roleContext.status).toBe('baseline');
-    expect(result.current.error).not.toBeNull();
+    await waitFor(() => {
+      expect(result.current.error).not.toBeNull();
+      expect(result.current.isLoading).toBe(false);
+    });
   });
 });

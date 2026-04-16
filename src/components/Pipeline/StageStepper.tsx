@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Plus, Phone, Users, Zap, FileText } from 'lucide-react';
+import { Home, Plus, Phone, Users, Zap, FileText, GitPullRequest } from 'lucide-react';
 import type { OverviewStage, OverviewCandidate } from '../../lib/api/types';
 import type { StageType } from '../../lib/stageTemplates';
 
@@ -19,6 +19,7 @@ const STAGE_TYPE_ICON: Record<StageType, typeof Phone> = {
   SCREENING: Phone,
   CULTURAL: Users,
   TECHNICAL: Zap,
+  CODE_REVIEW: GitPullRequest,
   PANEL: FileText,
 };
 

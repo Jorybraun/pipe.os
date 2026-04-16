@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { callRoleAgent, mergeKnowledgeState } from '../lib/roleAgent';
 import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage } from '../lib/roleAgentPrompts';
+import { MistralProvider } from '../lib/llm/mistralProvider';
 
 // ─── Mock fetch ─────────────────────────────────────────────────────────────
 
@@ -167,7 +168,7 @@ describe('buildRoleAgentUserMessage', () => {
 describe('callRoleAgent', () => {
   it('returns mock question when no API key', async () => {
     const result = await callRoleAgent({
-      apiKey: '',
+      provider: null,
       baseline: { title: 'Designer' },
       exchanges: [],
       knowledgeState: {},
@@ -182,7 +183,7 @@ describe('callRoleAgent', () => {
 
   it('returns mock synthesis when budget exhausted and no API key', async () => {
     const result = await callRoleAgent({
-      apiKey: '',
+      provider: null,
       baseline: { title: 'Designer' },
       exchanges: [],
       knowledgeState: {},
@@ -204,7 +205,7 @@ describe('callRoleAgent', () => {
     mockFetch.mockResolvedValueOnce(mistralResponse(agentJson));
 
     await callRoleAgent({
-      apiKey: 'test-key',
+      provider: new MistralProvider('test-key'),
       baseline: { title: 'Engineer' },
       exchanges: [],
       knowledgeState: {},
@@ -214,7 +215,9 @@ describe('callRoleAgent', () => {
     });
 
     // Verify the system prompt sent to Mistral includes the HM section
-    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    const firstCall = mockFetch.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const callBody = JSON.parse((firstCall as Parameters<typeof fetch>)[1]!.body as string);
     const systemMsg = callBody.messages.find((m: { role: string }) => m.role === 'system');
     expect(systemMsg.content).toContain('Your Interviewee: Hiring Manager');
   });
@@ -231,7 +234,7 @@ describe('callRoleAgent', () => {
     mockFetch.mockResolvedValueOnce(mistralResponse(agentJson));
 
     const result = await callRoleAgent({
-      apiKey: 'test-key',
+      provider: new MistralProvider('test-key'),
       baseline: { title: 'Backend Engineer' },
       exchanges: [{ questionId: 'q-1', acknowledgment: 'Hi', question: 'What does your team build?', input: { type: 'textarea' }, answer: 'A messaging platform' }],
       knowledgeState: {},
@@ -252,7 +255,7 @@ describe('callRoleAgent', () => {
     mockFetch.mockResolvedValueOnce(new Response('Internal Server Error', { status: 500 }));
 
     const result = await callRoleAgent({
-      apiKey: 'test-key',
+      provider: new MistralProvider('test-key'),
       baseline: { title: 'Engineer' },
       exchanges: [],
       knowledgeState: {},
@@ -268,7 +271,7 @@ describe('callRoleAgent', () => {
     mockFetch.mockResolvedValueOnce(mistralResponse('not valid json {{{'));
 
     const result = await callRoleAgent({
-      apiKey: 'test-key',
+      provider: new MistralProvider('test-key'),
       baseline: { title: 'Engineer' },
       exchanges: [],
       knowledgeState: {},

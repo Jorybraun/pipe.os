@@ -24,21 +24,23 @@ export async function persistPass2(
   // 1. Update the main qualified_repos row
   await db.query(`
     UPDATE qualified_repos SET
-      sloc                = ?,
-      file_count          = ?,
-      mean_ccn            = ?,
-      has_ci              = ?,
-      has_tests           = ?,
-      test_framework      = ?,
-      seniority_band      = ?,
-      detected_domain     = ?,
-      domain_confidence   = ?,
-      pr_quality_score    = ?,
-      detected_stack_json = ?,
-      pass                = 2,
-      disqualified        = ?,
-      disqualified_reason = ?,
-      refreshed_at        = ?
+      sloc                     = ?,
+      file_count               = ?,
+      mean_ccn                 = ?,
+      has_ci                   = ?,
+      has_tests                = ?,
+      test_framework           = ?,
+      seniority_band           = ?,
+      detected_domain          = ?,
+      domain_confidence        = ?,
+      pr_quality_score         = ?,
+      detected_stack_json      = ?,
+      business_logic_ratio     = ?,
+      cross_module_change_rate = ?,
+      pass                     = 2,
+      disqualified             = ?,
+      disqualified_reason      = ?,
+      refreshed_at             = ?
     WHERE id = ?
   `, [
     data.sloc,
@@ -52,6 +54,8 @@ export async function persistPass2(
     data.domain_confidence,
     data.pr_quality_score,
     data.detected_stack_json,
+    data.business_logic_ratio,
+    data.cross_module_change_rate,
     data.disqualified,
     data.disqualified_reason,
     now,
@@ -98,8 +102,9 @@ export async function persistPass2(
         INSERT OR REPLACE INTO repo_sample_prs (
           repo_id, pr_number, pr_url, title, merged_at,
           resolves_issue_number, changed_file_count, modifies_tests,
-          additions, deletions, construct_slugs_json, swe_bench_eligible
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          additions, deletions, construct_slugs_json, swe_bench_eligible,
+          changed_file_paths_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       params: [
         data.repo_id,
@@ -114,6 +119,7 @@ export async function persistPass2(
         pr.deletions,
         pr.construct_slugs_json,
         pr.swe_bench_eligible,
+        pr.changed_file_paths_json,
       ] as (string | number | null)[],
     }));
     await db.upsertChunked(prStmts, 30);

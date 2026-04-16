@@ -1,0 +1,12 @@
+{
+  "repo_id": 1679,
+  "full_name": "uber/baseweb",
+  "signal_quality": "suspect",
+  "issues": [
+    "pr_quality_score: 0.355 appears low relative to the PR sample — 5 of 8 PRs modify tests and the one clear engineering PR (tether/popper position fix) is high quality; the drag toward 0.355 suggests the scorer is penalizing the 3 docs/blog PRs heavily, which is reasonable, but the score should reflect that the non-docs PRs are strong",
+    "PR sample quality: 3 of 8 PRs are docs/blog/storybook-only (file uploader blog post, new recommendations for color and typography, docs for dialog component) — sample is partially contaminated with content work rather than engineering PRs, which suppresses the score but also means the sample is not representative of the engineering quality in this codebase",
+    "stack accuracy: snapshot-tests construct is detected but test_framework=jest — consistent and plausible; no issues",
+    "seniority_band: staff is borderline — 246,200 SLOC is large but Baseweb is a design system with high file count from generated/story files; senior is arguably more accurate for the engineering challenge complexity"
+  ],
+  "reasoning": "The 0.355 pr_quality_score is pulled down by a docs-heavy PR sample that is not representative of Uber Baseweb's actual engineering PRs, making this a sampling artifact rather than a true signal of low PR quality."
+}

@@ -1,0 +1,33 @@
+{
+  "repo_id": 1688,
+  "full_name": "garmeeh/next-seo",
+  "run_timestamp": "2026-04-16T00:49:34.995Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 194,
+      "profile_words": 201
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "engineering_narrative too short: 194 words (min 200)",
+        "repo_searchable_profile too short: 201 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 29, 90, 62, 31, 0.40"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1688,
+    "full_name": "garmeeh/next-seo",
+    "primary_language": "typescript",
+    "stars": 8352,
+    "has_tests": true,
+    "detected_domain": "web-frontend"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The garmeeh/next-seo repository is structured as a specialized library designed for the web-frontend domain, specifically targeting SEO metadata management. Written primarily in typescript, the codebase maintains a medium complexity profile across 243 files and 24300 SLOC. The architecture is strictly that of a library, intended to be integrated into external Next.js applications rather than serving as a standalone runtime. Engineering discipline is characterized by a robust unit-testing focus using the vitest framework, with 62 unit-tests identified in the top constructs. While the test touch rate is 0.5, the testing style remains focused on unit-level validation rather than broad integration or e2e coverage, which are less prevalent. The repository demonstrates a mature review and release culture, evidenced by frequent versioning PRs and a senior seniority band. PR-sample patterns suggest that feature additions, such as expanding OrganizationJsonLd support, typically involve moderate file churn, with the p90 changed files reaching 8. Notable patterns include a tendency for feature PRs to modify tests simultaneously, ensuring that new metadata schema support is immediately validated. The complexity is managed through clear type definitions, though the medium complexity band suggests that careful handling of schema transitions is required to maintain stability.\",\n  \"repo_searchable_profile\": \"This repository is a library focused on web-frontend SEO optimization. Its primary language is typescript, and the detected stack includes a dependency footprint of 29 total dependencies, including manifests for app-router showcases and core package configurations. PR-shape observations indicate a moderate scope of change per contribution; the mean changed files is 4.83, while the p90 changed files is 8. Feature-based PRs, such as adding support for review and aggregateRating, frequently modify tests and resolve associated issues, whereas release-related PRs typically modify 3 files and do not touch the test suite. The test and review culture is centered around vitest, with a heavy emphasis on unit tests (62) compared to integration tests (31), e2e tests (4), and snapshot tests (1). The presence of CI workflows (4) supports a disciplined integration process. The top three challenge surfaces for contributors are identified as type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Contribution readiness is difficult to quantify fully as the open pr count and open feature-issue count are unknown; however, the repository maintains a high visibility with 8352 stars. The issue link rate is 0.167 and the swe_bench_eligibility_rate is 0.167, suggesting specific subsets of tasks are highly suitable for automated engineering benchmarks.\"\n}"
+}

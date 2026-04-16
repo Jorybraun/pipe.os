@@ -16,7 +16,7 @@ import { signJwt, verifyJwt } from '../lib/jwt';
 import { candidateAuth, type CandidateVariables } from '../middleware/candidateAuth';
 import { review } from './assessment/review';
 import { repo } from './assessment/repo';
-import { devContainer } from './assessment/devContainer';
+import { devContainer, devContainerProxyPublic } from './assessment/devContainer';
 import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import type { Env } from '../types';
@@ -981,5 +981,12 @@ rpcAuth.route('/dev-container', devContainer);
 // middleware doesn't intercept before the route handler reads its own token.
 // Each handler calls verifyJwt internally. See screening/culture.ts.
 rpcPublic.route('/culture', cultureCandidate);
+
+// ─── Mount dev-container exchange-token proxy (public) ────────────────────────
+// The iframe proxy accepts exchange tokens instead of JWTs to prevent token
+// leakage via Referer headers. Exchange tokens are single-use, 30-second TTL.
+// The client calls POST /rpc/dev-container/:sessionId/exchange-token (authed)
+// to get a token, then loads the iframe at /rpc/dev-container-proxy/:sessionId/?exchangeToken=...
+rpcPublic.route('/dev-container-proxy', devContainerProxyPublic);
 
 export { rpcPublic, rpcAuth };

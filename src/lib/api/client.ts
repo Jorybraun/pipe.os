@@ -34,9 +34,17 @@ export interface ApiClientConfig {
 
 // ─── Client ───────────────────────────────────────────────────────────────────
 
+/** SSE event emitted by postStream */
+export type StreamEvent<T> =
+  | { event: 'chunk'; text: string }
+  | { event: 'done'; data: T }
+  | { event: 'error'; message: string };
+
 export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
+  /** POST with SSE streaming. Yields chunk events as they arrive, then a done event with parsed JSON. */
+  postStream<T>(path: string, body: unknown): AsyncGenerator<StreamEvent<T>>;
   patch<T>(path: string, body: unknown): Promise<T>;
   put<T>(path: string, body: unknown): Promise<T>;
   del(path: string): Promise<void>;
@@ -123,6 +131,87 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     return handleResponse<T>(response);
   }
 
+  /**
+   * POST with SSE streaming. Returns an async generator that yields:
+   * - { event: 'chunk', text: string } for each token
+   * - { event: 'done', data: T } with the final parsed JSON
+   * - { event: 'error', message: string } on failure
+   */
+  async function* postStream<T>(path: string, body: unknown): AsyncGenerator<StreamEvent<T>> {
+    const headers = await authHeader();
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      let errorBody: ApiErrorBody | null = null;
+      try {
+        errorBody = (await response.json()) as ApiErrorBody;
+      } catch {
+        // Response body is not JSON
+      }
+      const message =
+        errorBody?.error?.message ?? `HTTP ${response.status}: ${response.statusText}`;
+      yield { event: 'error', message };
+      return;
+    }
+
+    if (!response.body) {
+      yield { event: 'error', message: 'No response body' };
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE lines
+      let newlineIdx: number;
+      while ((newlineIdx = buffer.indexOf('\n\n')) !== -1) {
+        const chunk = buffer.slice(0, newlineIdx);
+        buffer = buffer.slice(newlineIdx + 2);
+
+        // Parse SSE format: "event: X\ndata: Y"
+        const lines = chunk.split('\n');
+        let eventType = '';
+        let data = '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            data = line.slice(6);
+          }
+        }
+
+        if (eventType === 'chunk') {
+          yield { event: 'chunk', text: data };
+        } else if (eventType === 'done') {
+          try {
+            const parsed = JSON.parse(data) as T;
+            yield { event: 'done', data: parsed };
+          } catch {
+            yield { event: 'error', message: 'Failed to parse done event' };
+          }
+        } else if (eventType === 'error') {
+          yield { event: 'error', message: data };
+        }
+      }
+    }
+  }
+
   async function patch<T>(path: string, body: unknown): Promise<T> {
     const headers = await authHeader();
     const response = await fetch(`${baseUrl}${path}`, {
@@ -161,5 +250,5 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     await handleResponse<void>(response);
   }
 
-  return { get, post, patch, put, del };
+  return { get, post, postStream, patch, put, del };
 }
