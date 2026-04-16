@@ -18,7 +18,7 @@
  * Route: /pipeline/new
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { TextInput, TagsInput } from '../components/ui/form';
@@ -26,11 +26,12 @@ import { JobDescriptionImportModal } from '../components/RoleDiscovery/JobDescri
 import { AIChat } from '../components/AIChat/AIChat';
 import { DomainBars } from '../components/AIChat';
 import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
+import { useRoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
 import {
   Loader2, ArrowRight, Check, MessageSquare,
-  FileUp, Sparkles,
+  FileUp, Sparkles, RotateCcw,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type {
@@ -43,6 +44,56 @@ import type { AdapterConfig } from '../components/AIChat/types';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_BUDGET = 15;
+
+// ─── Quick-start presets ──────────────────────────────────────────────────────
+
+interface RolePreset {
+  label: string;
+  answers: Partial<Record<string, string>>;
+}
+
+const ROLE_PRESETS: RolePreset[] = [
+  {
+    label: 'Sr. Frontend Eng',
+    answers: {
+      'sq-title': 'Senior Frontend Engineer',
+      'sq-company': 'Acme Corp',
+      'sq-url': 'https://acme.com',
+      'sq-salary': '$150K–$180K + equity',
+      'sq-stack': 'React|||TypeScript|||Next.js|||CSS',
+    },
+  },
+  {
+    label: 'Sr. Backend Eng',
+    answers: {
+      'sq-title': 'Senior Backend Engineer',
+      'sq-company': 'Acme Corp',
+      'sq-url': 'https://acme.com',
+      'sq-salary': '$150K–$180K + equity',
+      'sq-stack': 'Node.js|||TypeScript|||PostgreSQL|||Redis',
+    },
+  },
+  {
+    label: 'Head of Product',
+    answers: {
+      'sq-title': 'Head of Product',
+      'sq-company': 'Acme Corp',
+      'sq-url': 'https://acme.com',
+      'sq-salary': '$180K–$220K + equity',
+      'sq-stack': '',
+    },
+  },
+  {
+    label: 'Staff Eng',
+    answers: {
+      'sq-title': 'Staff Engineer',
+      'sq-company': 'Acme Corp',
+      'sq-url': 'https://acme.com',
+      'sq-salary': '$200K–$240K + equity',
+      'sq-stack': 'TypeScript|||Go|||Kubernetes|||Terraform',
+    },
+  },
+];
 
 interface ScriptedQuestion {
   id: string;
@@ -94,6 +145,9 @@ const SCRIPTED: ScriptedQuestion[] = [
     options: ['Voice', 'Text'],
   },
 ];
+
+// Index of the mode question — presets skip to here
+const MODE_Q_IDX = SCRIPTED.findIndex((q) => q.id === 'sq-mode');
 
 // ─── PersonaField / PersonaTagList ────────────────────────────────────────────
 
@@ -320,6 +374,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const api = useApiClient();
   const rd = useRoleDiscovery();
   const { create: createPipeline, isCreating } = usePipelineCreate();
+  const draft = useRoleDiscoveryDraft();
 
   // ── Scripted phase state ──
   const [scriptedIdx, setScriptedIdx] = useState(0);
@@ -334,40 +389,131 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // ── Whether to start in live voice mode (set by sq-mode choice) ──
   const [defaultLiveMode, setDefaultLiveMode] = useState(false);
 
+  // ── Restore draft on mount ───────────────────────────────────────────────────
+
+  useEffect(() => {
+    const saved = draft.load();
+    if (!saved) return;
+    setScriptedIdx(saved.scriptedIdx);
+    setScriptedAnswers(saved.scriptedAnswers);
+    setScriptedExchanges(saved.scriptedExchanges);
+    if (saved.completed) {
+      const techTags = (saved.scriptedAnswers['sq-stack'] ?? '').split('|||').filter(Boolean);
+      const baseline = {
+        title: saved.scriptedAnswers['sq-title']?.trim() || '',
+        ...(saved.scriptedAnswers['sq-company']?.trim() ? { companyName: saved.scriptedAnswers['sq-company'].trim() } : {}),
+        ...(saved.scriptedAnswers['sq-url']?.trim() ? { companyUrl: saved.scriptedAnswers['sq-url'].trim() } : {}),
+        ...(saved.scriptedAnswers['sq-salary']?.trim() ? { salaryRange: saved.scriptedAnswers['sq-salary'].trim() } : {}),
+        ...(techTags.length > 0 ? { techStack: techTags } : {}),
+      };
+      setDefaultLiveMode(saved.defaultLiveMode);
+      setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Build AdapterConfig from scripted answers and hand off to AIChat ──
   const fireCreateAndStart = useCallback((answers: Record<string, string>, liveMode = false): void => {
-    const techTags = (answers['sq-stack'] ?? '').split('|||').filter(Boolean);
-    const baseline: RoleContextBaseline = {
+    const baseline = {
       title: answers['sq-title']?.trim() || '',
       ...(answers['sq-company']?.trim() ? { companyName: answers['sq-company'].trim() } : {}),
       ...(answers['sq-url']?.trim() ? { companyUrl: answers['sq-url'].trim() } : {}),
       ...(answers['sq-salary']?.trim() ? { salaryRange: answers['sq-salary'].trim() } : {}),
-      ...(techTags.length > 0 ? { techStack: techTags } : {}),
+      ...((answers['sq-stack'] ?? '').split('|||').filter(Boolean).length > 0
+        ? { techStack: (answers['sq-stack'] ?? '').split('|||').filter(Boolean) }
+        : {}),
     };
     setDefaultLiveMode(liveMode);
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
   }, []);
+
+  // ── Start over — clears draft and resets to Q1 ───────────────────────────────
+
+  const handleStartOver = useCallback((): void => {
+    draft.clear();
+    setScriptedIdx(0);
+    setScriptedAnswers({});
+    setScriptedExchanges([]);
+    setScriptedAnswer('');
+    setInitConfig(null);
+    setDefaultLiveMode(false);
+  }, [draft]);
+
+  // ── Reset to mode selection — keeps Q1-Q5 answers, goes back to voice/text choice ──
+
+  const handleResetToMode = useCallback((): void => {
+    // Keep scripted answers but remove sq-mode
+    const keptAnswers = { ...scriptedAnswers };
+    delete keptAnswers['sq-mode'];
+
+    // Keep exchanges for Q1-Q5, remove sq-mode
+    const keptExchanges = scriptedExchanges.filter((ex) => ex.questionId !== 'sq-mode');
+
+    setScriptedIdx(MODE_Q_IDX);
+    setScriptedAnswers(keptAnswers);
+    setScriptedExchanges(keptExchanges);
+    setScriptedAnswer('');
+    setInitConfig(null);
+    setDefaultLiveMode(false);
+
+    // Update draft to reflect reset state
+    draft.save({
+      scriptedIdx: MODE_Q_IDX,
+      scriptedAnswers: keptAnswers,
+      scriptedExchanges: keptExchanges,
+      completed: false,
+      defaultLiveMode: false,
+    });
+  }, [scriptedAnswers, scriptedExchanges, draft]);
+
+  // ── Preset select — fills Q1–Q5 and jumps to mode question ──────────────────
+
+  const handlePresetSelect = useCallback((preset: RolePreset): void => {
+    const exchanges: PastExchange[] = SCRIPTED
+      .filter((q) => q.id !== 'sq-mode')
+      .map((q) => {
+        const raw = preset.answers[q.id] ?? '';
+        const display = q.inputType === 'tags'
+          ? (raw.split('|||').filter(Boolean).join(', ') || '(skipped)')
+          : (raw.trim() || '(skipped)');
+        return { questionId: q.id, acknowledgment: '', questionText: q.text, answer: display };
+      });
+
+    const answers: Record<string, string> = {};
+    SCRIPTED.filter((q) => q.id !== 'sq-mode').forEach((q) => {
+      answers[q.id] = preset.answers[q.id] ?? '';
+    });
+
+    setScriptedAnswers(answers);
+    setScriptedExchanges(exchanges);
+    setScriptedIdx(MODE_Q_IDX);
+    setScriptedAnswer('');
+    draft.save({ scriptedIdx: MODE_Q_IDX, scriptedAnswers: answers, scriptedExchanges: exchanges, completed: false, defaultLiveMode: false });
+  }, [draft]);
 
   // ── Choice question select (sq-mode: Voice / Text) ──
   const handleChoiceSelect = useCallback((choice: string): void => {
     const q = SCRIPTED[scriptedIdx];
     if (!q) return;
 
-    setScriptedExchanges((prev) => [
-      ...prev,
+    const newExchanges: PastExchange[] = [
+      ...scriptedExchanges,
       { questionId: q.id, acknowledgment: '', questionText: q.text, answer: choice },
-    ]);
-
+    ];
     const newAnswers = { ...scriptedAnswers, [q.id]: choice };
+
+    setScriptedExchanges(newExchanges);
     setScriptedAnswers(newAnswers);
     setScriptedAnswer('');
 
     if (scriptedIdx < SCRIPTED.length - 1) {
-      setScriptedIdx(scriptedIdx + 1);
+      const nextIdx = scriptedIdx + 1;
+      setScriptedIdx(nextIdx);
+      draft.save({ scriptedIdx: nextIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: false, defaultLiveMode: false });
     } else {
+      draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: choice === 'Voice' });
       fireCreateAndStart(newAnswers, choice === 'Voice');
     }
-  }, [scriptedIdx, scriptedAnswers, fireCreateAndStart]);
+  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart]);
 
   // ── Scripted question submit ──
   const handleScriptedSubmit = useCallback((): void => {
@@ -379,41 +525,49 @@ export default function RoleDiscoveryPage(): JSX.Element {
       ? (scriptedAnswer.split('|||').filter(Boolean).join(', ') || '(skipped)')
       : (scriptedAnswer.trim() || '(skipped)');
 
-    setScriptedExchanges((prev) => [
-      ...prev,
+    const newExchanges: PastExchange[] = [
+      ...scriptedExchanges,
       { questionId: q.id, acknowledgment: '', questionText: q.text, answer: displayAnswer },
-    ]);
-
+    ];
     const newAnswers = { ...scriptedAnswers, [q.id]: scriptedAnswer };
+
+    setScriptedExchanges(newExchanges);
     setScriptedAnswers(newAnswers);
     setScriptedAnswer('');
 
     if (scriptedIdx < SCRIPTED.length - 1) {
-      setScriptedIdx(scriptedIdx + 1);
+      const nextIdx = scriptedIdx + 1;
+      setScriptedIdx(nextIdx);
+      draft.save({ scriptedIdx: nextIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: false, defaultLiveMode: false });
     } else {
+      draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: false });
       fireCreateAndStart(newAnswers);
     }
-  }, [scriptedIdx, scriptedAnswer, scriptedAnswers, fireCreateAndStart]);
+  }, [scriptedIdx, scriptedAnswer, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart]);
 
   const handleScriptedSkip = useCallback((): void => {
     const q = SCRIPTED[scriptedIdx];
     if (!q?.optional) return;
 
-    setScriptedExchanges((prev) => [
-      ...prev,
+    const newExchanges: PastExchange[] = [
+      ...scriptedExchanges,
       { questionId: q.id, acknowledgment: '', questionText: q.text, answer: '(skipped)' },
-    ]);
-
+    ];
     const newAnswers = { ...scriptedAnswers, [q.id]: '' };
+
+    setScriptedExchanges(newExchanges);
     setScriptedAnswers(newAnswers);
     setScriptedAnswer('');
 
     if (scriptedIdx < SCRIPTED.length - 1) {
-      setScriptedIdx(scriptedIdx + 1);
+      const nextIdx = scriptedIdx + 1;
+      setScriptedIdx(nextIdx);
+      draft.save({ scriptedIdx: nextIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: false, defaultLiveMode: false });
     } else {
+      draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: false });
       fireCreateAndStart(newAnswers);
     }
-  }, [scriptedIdx, scriptedAnswers, fireCreateAndStart]);
+  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart]);
 
   // ── JD import — skip scripted questions, fire immediately ──
   const handleJDImport = useCallback((parsed: ParseJDResponse['parsed']): void => {
@@ -438,6 +592,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
   }, []);
 
+  // ── Live session ended — return to Voice/Text choice without losing answers ──
+  const handleLiveEnd = handleResetToMode;
+
   // ── Pipeline creation ──
   const handleCreatePipeline = async (): Promise<void> => {
     try {
@@ -453,6 +610,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           console.error('[RoleDiscoveryPage] Failed to link role context:', err);
         });
       }
+      draft.clear();
       navigate(`/pipeline/${pipelineId}`);
     } catch {
       // surfaced via pipeline hook
@@ -467,6 +625,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
   const isInScriptedPhase = initConfig === null;
   const currentScriptedQ = isInScriptedPhase ? SCRIPTED[scriptedIdx] ?? null : null;
+  const hasDraftProgress = scriptedIdx > 0 || Object.keys(scriptedAnswers).length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 40 }}>
@@ -481,7 +640,18 @@ export default function RoleDiscoveryPage(): JSX.Element {
             New Role
           </h1>
         </div>
-        <StepIndicator active={currentStep} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {isInScriptedPhase && hasDraftProgress && (
+            <button
+              onClick={handleStartOver}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
+            >
+              <RotateCcw size={9} />
+              START OVER
+            </button>
+          )}
+          <StepIndicator active={currentStep} />
+        </div>
       </div>
 
       {/* ── Scripted phase — shown until initConfig is set ── */}
@@ -491,7 +661,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           {scriptedExchanges.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               {scriptedExchanges.map((ex, i) => (
-                <div key={ex.questionId} style={{
+                <div key={`${ex.questionId}-${i}`} style={{
                   padding: '16px 24px',
                   background: 'transparent',
                   borderLeft: '2px solid var(--pipe-border)',
@@ -512,16 +682,35 @@ export default function RoleDiscoveryPage(): JSX.Element {
           {/* Current scripted question card */}
           {currentScriptedQ && (
             <div style={{ padding: 32, background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border-light)', borderRadius: 16 }}>
-              {/* JD import — only on first question */}
+
+              {/* Top toolbar — JD import + quick-start presets (first question only) */}
               {scriptedIdx === 0 && (
-                <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
                   <button
                     onClick={() => setIsJDModalOpen(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'transparent', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-muted)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: 'transparent', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-muted)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
                   >
                     <FileUp size={10} />
                     IMPORT_FROM_JD
                   </button>
+
+                  <div style={{ width: 1, height: 20, background: 'var(--pipe-border)', flexShrink: 0 }} />
+
+                  <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em', flexShrink: 0 }}>
+                    QUICK START:
+                  </span>
+
+                  {ROLE_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      onClick={() => handlePresetSelect(preset)}
+                      style={{ padding: '6px 12px', background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.25)', color: 'rgba(216, 180, 254, 0.8)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4, whiteSpace: 'nowrap' }}
+                      onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.14)'; e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.45)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.06)'; e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.25)'; }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
               )}
 
@@ -633,6 +822,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           enableVoice
           enableLiveVoice
           showDomainBars
+          onLiveEnd={handleLiveEnd}
           onComplete={() => {
             // Phase transition is tracked in rd (useRoleDiscovery → useConversation).
             // The SynthesisPhase block below re-renders when rd.phase === 'COMPLETE'.

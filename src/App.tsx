@@ -37,6 +37,7 @@ import OutreachPage from "./pages/OutreachPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import RepoAdminPage from "./pages/admin/RepoAdminPage";
+import RepoSearchPage from "./pages/admin/RepoSearchPage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
@@ -421,6 +422,7 @@ function App(): JSX.Element {
                       element={<CandidateReportPrototype />}
                     />
                     <Route path="/admin/repos" element={<RepoAdminPage />} />
+                    <Route path="/admin/repos/search" element={<RepoSearchPage />} />
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

@@ -2,23 +2,29 @@
  * Factory — creates the correct LLMProvider from environment variables.
  *
  * Config via env vars:
- *   ROLE_AGENT_PROVIDER    = 'cloudflare-ai' | 'mistral' | 'google-ai' (default: 'cloudflare-ai')
- *   CULTURE_AGENT_PROVIDER = 'cloudflare-ai' | 'mistral' | 'google-ai' (default: 'cloudflare-ai')
- *   MISTRAL_API_KEY        = your Mistral API key (used as Role Agent fallback)
- *   GOOGLE_AI_API_KEY      = your Google AI Studio key
+ *   ROLE_AGENT_PROVIDER    = 'cloudflare-ai' | 'mistral' | 'vertex-ai' (default: 'cloudflare-ai')
+ *   CULTURE_AGENT_PROVIDER = 'cloudflare-ai' | 'mistral' | 'vertex-ai' (default: 'cloudflare-ai')
+ *   MISTRAL_API_KEY        = your Mistral API key
+ *   VERTEX_SA_KEY_JSON     = GCP service account JSON string (for vertex-ai)
+ *   VERTEX_AI_PROJECT_ID   = GCP project ID (optional — read from SA JSON if omitted)
+ *   VERTEX_AI_REGION       = GCP region (default: us-central1)
+ *   VERTEX_AI_MODEL        = model ID (default: gemma-4-26b-a4b-it)
  *   (cloudflare-ai uses env.AI binding — no key required)
  *
- * Routing rationale: Role Discovery and Culture both use Workers AI Gemma 4
- * as primary because it's strong at structured JSON output, runs at the edge
- * with no per-call API key cost, and avoids burning Mistral budget on
- * non-evaluative tasks. Mistral is reserved for the code-review scoring panel
- * (Devstral) where evaluative quality matters more than cost.
+ * DO NOT set *_PROVIDER=google-ai — Cloudflare edge IPs are geo-blocked by
+ * generativelanguage.googleapis.com. Use vertex-ai or cloudflare-ai instead.
+ *
+ * Routing rationale: Role Discovery and Culture both default to Workers AI Gemma 4
+ * (cloudflare-ai) — edge-native binding, no external network, free tier. Use
+ * vertex-ai when you need higher throughput or the full 31B model via a dedicated
+ * Vertex endpoint.
  */
 
 import { MistralProvider } from './mistralProvider';
 import { GoogleAIProvider } from './googleAIProvider';
 import { CloudflareAIProvider } from './cloudflareAIProvider';
 import { VertexAIProvider } from './vertexAIProvider';
+import type { ServiceAccountKey } from './vertexAIProvider';
 import type { LLMProvider } from './types';
 
 export type ProviderName = 'mistral' | 'google-ai' | 'cloudflare-ai' | 'vertex-ai';
@@ -26,7 +32,9 @@ export type ProviderName = 'mistral' | 'google-ai' | 'cloudflare-ai' | 'vertex-a
 interface ProviderEnv {
   MISTRAL_API_KEY?: string;
   GOOGLE_AI_API_KEY?: string;
-  VERTEX_AI_ACCESS_TOKEN?: string;
+  /** GCP service account JSON string — used by VertexAIProvider for self-refreshing JWT auth. */
+  VERTEX_SA_KEY_JSON?: string;
+  /** Optional — if omitted, project_id is read from VERTEX_SA_KEY_JSON. */
   VERTEX_AI_PROJECT_ID?: string;
   VERTEX_AI_REGION?: string;
   VERTEX_AI_MODEL?: string;
@@ -36,6 +44,27 @@ interface ProviderEnv {
   AI?: Ai;
   /** When 'true', culture agent returns null provider and uses deterministic mock path. */
   MOCK_AI?: string;
+}
+
+/** Parse and validate VERTEX_SA_KEY_JSON. Returns null if missing or malformed. */
+function parseServiceAccount(env: ProviderEnv): ServiceAccountKey | null {
+  const raw = env.VERTEX_SA_KEY_JSON;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.private_key !== 'string' || typeof parsed.client_email !== 'string') {
+      console.error('[createProvider] VERTEX_SA_KEY_JSON missing private_key or client_email');
+      return null;
+    }
+    return {
+      private_key: parsed.private_key,
+      client_email: parsed.client_email,
+      project_id: typeof parsed.project_id === 'string' ? parsed.project_id : (env.VERTEX_AI_PROJECT_ID ?? ''),
+    };
+  } catch {
+    console.error('[createProvider] Failed to parse VERTEX_SA_KEY_JSON');
+    return null;
+  }
 }
 
 export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
@@ -56,12 +85,9 @@ export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
   }
 
   if (providerName === 'vertex-ai') {
-    const accessToken = env.VERTEX_AI_ACCESS_TOKEN ?? '';
-    const projectId = env.VERTEX_AI_PROJECT_ID ?? '';
-    if (!accessToken || !projectId) return null;
-    const region = env.VERTEX_AI_REGION ?? 'us-central1';
-    const model = env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it-maas';
-    return new VertexAIProvider(accessToken, projectId, region, model);
+    const sa = parseServiceAccount(env);
+    if (!sa || !sa.project_id) return null;
+    return new VertexAIProvider(sa, sa.project_id, env.VERTEX_AI_REGION ?? 'us-central1', env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it');
   }
 
   // Explicit 'mistral' selection
@@ -85,6 +111,12 @@ export function createCultureAgentProvider(env: ProviderEnv): LLMProvider | null
   if (providerName === 'cloudflare-ai') {
     if (!env.AI) return null;
     return new CloudflareAIProvider(env.AI);
+  }
+
+  if (providerName === 'vertex-ai') {
+    const sa = parseServiceAccount(env);
+    if (!sa || !sa.project_id) return null;
+    return new VertexAIProvider(sa, sa.project_id, env.VERTEX_AI_REGION ?? 'us-central1', env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it');
   }
 
   if (providerName === 'google-ai') {
@@ -114,6 +146,12 @@ export function createCopilotProvider(env: ProviderEnv): LLMProvider | null {
   if (providerName === 'cloudflare-ai') {
     if (!env.AI) return null;
     return new CloudflareAIProvider(env.AI);
+  }
+
+  if (providerName === 'vertex-ai') {
+    const sa = parseServiceAccount(env);
+    if (!sa || !sa.project_id) return null;
+    return new VertexAIProvider(sa, sa.project_id, env.VERTEX_AI_REGION ?? 'us-central1', env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it');
   }
 
   if (providerName === 'mistral') {

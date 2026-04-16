@@ -97,7 +97,7 @@ export class D1Client {
       );
     } catch (err: unknown) {
       const e = err as { stdout?: string; stderr?: string; message?: string };
-      const detail = e.stderr ?? e.stdout ?? e.message ?? String(err);
+      const detail = e.stderr || e.stdout || e.message || String(err);
       throw new Error(`D1 exec failed: ${detail}`);
     }
 

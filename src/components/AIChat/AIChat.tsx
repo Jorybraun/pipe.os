@@ -48,6 +48,7 @@ export function AIChat({
   renderSynthesis,
   renderHeader,
   showDomainBars = false,
+  onLiveEnd,
 }: AIChatProps): JSX.Element {
   const conv = useConversation(adapter);
   const live = useLiveSession();
@@ -250,7 +251,8 @@ export function AIChat({
   const handleEndLive = useCallback((): void => {
     live.stop();
     setLiveMode(false);
-  }, [live]);
+    onLiveEnd?.();
+  }, [live, onLiveEnd]);
 
   // ── Computed ────────────────────────────────────────────────────────────────
 
@@ -266,14 +268,20 @@ export function AIChat({
   // ── Live voice phase — full-screen orb, bypasses question card entirely ──────
 
   if (liveMode) {
+    const showUserSpeech = live.currentUserSpeech && !live.isAISpeaking;
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, padding: '60px 0' }}>
-        {live.modelTranscript && (
-          <div style={{ fontSize: 13, color: 'var(--pipe-text-dim)', lineHeight: 1.7, fontFamily: '"Space Mono", monospace', textAlign: 'center', maxWidth: 480 }}>
-            {live.modelTranscript}
-          </div>
-        )}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, padding: '60px 0' }}>
 
+        {/* AI current turn — what the interviewer is saying / just said */}
+        <div style={{ minHeight: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', maxWidth: 520, width: '100%' }}>
+          {live.currentModelSpeech && (
+            <div style={{ fontSize: 14, color: 'var(--pipe-text)', lineHeight: 1.75, fontFamily: '"Space Mono", monospace', textAlign: 'center' }}>
+              {live.currentModelSpeech}
+            </div>
+          )}
+        </div>
+
+        {/* Orb */}
         <div style={{
           width: 140, height: 140, borderRadius: '50%',
           background: live.isAISpeaking ? 'rgba(74, 222, 128, 0.15)' : 'rgba(74, 222, 128, 0.05)',
@@ -289,11 +297,17 @@ export function AIChat({
           {live.isConnected ? (live.isAISpeaking ? 'AI_SPEAKING' : 'LISTENING...') : 'CONNECTING...'}
         </div>
 
-        {live.userTranscript && (
-          <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace', textAlign: 'center', maxWidth: 480, opacity: 0.65 }}>
-            {live.userTranscript}
-          </div>
-        )}
+        {/* Live user speech — streams in real time as the user speaks */}
+        <div style={{ minHeight: 48, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', maxWidth: 520, width: '100%' }}>
+          {showUserSpeech ? (
+            <div style={{ fontSize: 13, color: 'var(--pipe-text-dim)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace', textAlign: 'center', opacity: 0.8 }}>
+              {live.currentUserSpeech}
+              <span style={{ animation: 'liveCursor 1s step-start infinite', opacity: 0.6 }}>▊</span>
+            </div>
+          ) : (
+            <div style={{ height: 20 }} />
+          )}
+        </div>
 
         {live.error && (
           <div style={{ fontSize: 10, color: '#f87171', fontFamily: '"Space Mono", monospace', textAlign: 'center' }}>
@@ -308,7 +322,10 @@ export function AIChat({
           END_SESSION
         </button>
 
-        <style>{`@keyframes liveOrbPulse { 0%,100%{transform:scale(1);opacity:0.8} 50%{transform:scale(1.08);opacity:1} }`}</style>
+        <style>{`
+          @keyframes liveOrbPulse { 0%,100%{transform:scale(1);opacity:0.8} 50%{transform:scale(1.08);opacity:1} }
+          @keyframes liveCursor { 0%,100%{opacity:1} 50%{opacity:0} }
+        `}</style>
       </div>
     );
   }

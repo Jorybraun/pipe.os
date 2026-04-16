@@ -6,6 +6,69 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(voice): real-time speech streaming in live voice orb (2026-04-16)
+
+`useLiveSession` now tracks per-turn live speech separately from the full transcript history.
+`currentUserSpeech` accumulates `inputTranscription` segments as they arrive and clears when
+the AI starts responding (first audio chunk). `currentModelSpeech` accumulates AI transcript
+segments and clears when the user speaks next. The live orb in `AIChat` shows `currentModelSpeech`
+above the orb (what the interviewer just said) and `currentUserSpeech` below it with a blinking
+cursor — giving a real-time subtitles effect during voice interviews.
+
+**Changed files:**
+- `src/hooks/useLiveSession.ts`
+- `src/components/AIChat/AIChat.tsx`
+
+#### feat(providers): Vertex AI MaaS global endpoint routing (2026-04-16)
+
+`VertexAIProvider.buildUrl()` now detects models with a `-maas` suffix and routes them to the
+global `aiplatform.googleapis.com` host. MaaS models return `FAILED_PRECONDITION` on regional
+hosts. Custom/regional model deployments continue using `{region}-aiplatform.googleapis.com`.
+
+**Changed files:**
+- `workers/api/src/lib/llm/vertexAIProvider.ts`
+
+#### feat(providers): Vertex AI JWT auth — self-refreshing service account tokens (2026-04-16)
+
+Replaced the broken `gcloud auth print-access-token` approach (short-lived, manual, dev-only)
+with a self-refreshing JWT flow using the Web Crypto API. The provider signs a JWT from a
+`VERTEX_SA_KEY_JSON` Worker secret, exchanges it for an OAuth2 access token via
+`oauth2.googleapis.com/token`, and caches the result in module-level state for ~55 minutes.
+No npm dependencies. Set `ROLE_AGENT_PROVIDER=vertex-ai` to activate.
+
+Also switched to the regional `{region}-aiplatform.googleapis.com` endpoint (more reliable for
+MaaS models than the global endpoint). Default model updated to `gemma-4-26b-a4b-it` (confirmed
+Vertex AI MaaS). `VERTEX_AI_ACCESS_TOKEN` is removed — use `VERTEX_SA_KEY_JSON` instead.
+
+**Changed files:**
+- `workers/api/src/lib/llm/vertexAIProvider.ts`
+- `workers/api/src/lib/llm/createProvider.ts`
+- `workers/api/.dev.vars.example`
+
+#### fix(providers): document google-ai geo-block from Workers in .dev.vars.example (2026-04-16)
+
+`generativelanguage.googleapis.com` geo-blocks Cloudflare edge IPs (confirmed Google bug, no fix).
+Setting `ROLE_AGENT_PROVIDER=google-ai` causes >60s hangs or "Network connection lost" errors in
+both wrangler dev and production. Role/culture/copilot agents should always use `cloudflare-ai`
+(Workers AI binding, the default). `GOOGLE_AI_API_KEY` is only for the Live Voice WebSocket provider.
+
+**Changed files:**
+- `workers/api/.dev.vars.example`
+
+#### fix(role-discovery): calibration answer silently swallowed when client requests SSE streaming (2026-04-16)
+
+The `/respond` endpoint's calibration block returned plain JSON unconditionally even when the
+client sent `Accept: text/event-stream`. `postStream()` on the client received JSON, found no
+SSE `\n\n` separators, yielded no events, and exited silently — leaving the calibration question
+still visible. On the second submit attempt the server had already advanced past calibration,
+producing "questionId 'q-calibration' does not match the current question."
+
+Fixed by moving the streaming check before the calibration check and handling calibration inside
+the SSE handler. The non-streaming path is preserved unchanged for non-SSE clients.
+
+**Changed files:**
+- `workers/api/src/routes/discovery/roleContexts.ts`
+
 #### fix(voice): propagate Gemini WebSocket close events as errors in VertexLiveSession (2026-04-16)
 
 When Gemini closes the WebSocket with a non-1000 code (e.g. auth error, invalid setup, model unavailable), the `close` event was only being logged — it never fired the `errorHandlers`. This meant `VoiceSessionDO` never nulled out `liveSession`, never sent an error to the browser client, and the UI hung on "CONNECTING..." indefinitely. Fixed by firing `errorHandlers` on non-1000 close codes so the DO correctly cleans up and the browser sees the error message.

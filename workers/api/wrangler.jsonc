@@ -9,10 +9,7 @@
 		{
 			"binding": "DB",
 			"database_name": "pipe-dev",
-			// Placeholder: wrangler dev uses local SQLite automatically.
-			// Replace with your real database_id after running:
-			//   npx wrangler d1 create pipe-dev
-			"database_id": "local",
+			"database_id": "15afd1c5-640f-4ffc-b675-82d58c0eb548",
 			"migrations_dir": "migrations"
 		},
 		{
@@ -25,9 +22,6 @@
 	"r2_buckets": [
 		{
 			"binding": "STORAGE",
-			// Wrangler dev emulates R2 locally — no bucket needs to exist.
-			// For production, create the bucket first:
-			//   npx wrangler r2 bucket create pipe-assets
 			"bucket_name": "pipe-assets"
 		}
 	],

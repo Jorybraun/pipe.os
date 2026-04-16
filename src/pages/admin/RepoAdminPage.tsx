@@ -2,17 +2,20 @@
  * RepoAdminPage — /admin/repos
  *
  * Human-in-the-loop approval for the qualified_repos catalog.
- * Approve or deny repos from the offline crawler to control what enters
- * the challenge library.
+ * Shows pass-2 repos with their sample PRs. Approve to send to pass 3
+ * (Gemma summarization + Vectorize upsert). Review failed repos.
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Database, ExternalLink, Check, X, Loader2, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Database, ExternalLink, Check, X, Loader2, Search, ChevronDown, ChevronRight, Sparkles, GitPullRequest, RefreshCcw } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AdminStatus = 'pending' | 'approved' | 'denied';
+type FilterKey = AdminStatus | 'failed' | 'all';
+type PassFilter = '1' | '2' | 'all';
 
 interface QualifiedRepo {
   id: number;
@@ -24,17 +27,42 @@ interface QualifiedRepo {
   seniority_band: string | null;
   sloc: number | null;
   file_count: number | null;
+  mean_ccn: number | null;
   pr_quality_score: number;
   open_feature_issue_count: number | null;
   open_pr_count: number | null;
+  has_ci: number;
+  has_tests: number;
+  test_framework: string | null;
+  detected_stack_json: string | null;
   admin_status: AdminStatus;
+  admin_reason: string | null;
   disqualified: number;
   disqualified_reason: string | null;
+  pass: number;
+  has_signals: number;
+}
+
+interface SamplePR {
+  pr_number: number;
+  pr_url: string;
+  title: string | null;
+  merged_at: string;
+  changed_file_count: number;
+  modifies_tests: number;
+  swe_bench_eligible: number;
+  additions: number | null;
+  deletions: number | null;
+  resolves_issue_number: number | null;
 }
 
 interface ReposResponse {
   repos: QualifiedRepo[];
   total: number;
+}
+
+interface PRsResponse {
+  prs: SamplePR[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -48,11 +76,18 @@ const SENIORITY_COLOR: Record<string, string> = {
   staff: '#a78bfa',
 };
 
-const STATUS_FILTERS: Array<{ key: AdminStatus | 'all'; label: string }> = [
-  { key: 'all', label: 'ALL' },
-  { key: 'pending', label: 'PENDING' },
-  { key: 'approved', label: 'APPROVED' },
-  { key: 'denied', label: 'DENIED' },
+const STATUS_FILTERS: Array<{ key: FilterKey; label: string; color: string }> = [
+  { key: 'pending',  label: 'PENDING',  color: '#fbbf24' },
+  { key: 'failed',   label: 'FAILED',   color: '#f87171' },
+  { key: 'approved', label: 'APPROVED', color: '#4ade80' },
+  { key: 'denied',   label: 'DENIED',   color: 'var(--pipe-text-dim)' },
+  { key: 'all',      label: 'ALL',      color: 'var(--pipe-text)' },
+];
+
+const PASS_FILTERS: Array<{ key: PassFilter; label: string }> = [
+  { key: 'all', label: 'ALL PASSES' },
+  { key: '1',   label: 'PASS 1' },
+  { key: '2',   label: 'PASS 2' },
 ];
 
 // ─── Pill ─────────────────────────────────────────────────────────────────────
@@ -66,9 +101,8 @@ function Pill({
   label: string;
   active: boolean;
   onClick: () => void;
-  color?: string;
+  color: string;
 }): JSX.Element {
-  const c = color ?? 'var(--pipe-text)';
   return (
     <button
       onClick={onClick}
@@ -79,9 +113,9 @@ function Pill({
         letterSpacing: '0.1em',
         padding: '4px 10px',
         borderRadius: 3,
-        border: `1px solid ${active ? c : 'var(--pipe-border)'}`,
-        background: active ? `${c}18` : 'transparent',
-        color: active ? c : 'var(--pipe-text-dim)',
+        border: `1px solid ${active ? color : 'var(--pipe-border)'}`,
+        background: active ? `${color}18` : 'transparent',
+        color: active ? color : 'var(--pipe-text-dim)',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
       }}
@@ -110,6 +144,56 @@ function QualityBar({ value, label }: { value: number; label: string }): JSX.Ele
   );
 }
 
+// ─── PR row ───────────────────────────────────────────────────────────────────
+
+function PRRow({ pr }: { pr: SamplePR }): JSX.Element {
+  const ghUrl = pr.pr_url;
+  const addDel = (pr.additions !== null && pr.deletions !== null)
+    ? `+${pr.additions}/-${pr.deletions}`
+    : `${pr.changed_file_count} files`;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        padding: '6px 0',
+        borderBottom: '1px solid var(--pipe-border)',
+      }}
+    >
+      <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', width: 32, flexShrink: 0 }}>
+        #{pr.pr_number}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ ...mono, fontSize: 9, color: 'var(--pipe-text)', lineHeight: 1.4, wordBreak: 'break-word' }}>
+          {pr.title ?? '(no title)'}
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+          <span style={{ ...mono, fontSize: 7, color: 'var(--pipe-text-dim)' }}>{addDel}</span>
+          {pr.modifies_tests === 1 && (
+            <span style={{ ...mono, fontSize: 7, color: '#4ade80' }}>tests</span>
+          )}
+          {pr.resolves_issue_number !== null && (
+            <span style={{ ...mono, fontSize: 7, color: '#60a5fa' }}>fixes #{pr.resolves_issue_number}</span>
+          )}
+          {pr.swe_bench_eligible === 1 && (
+            <span style={{ ...mono, fontSize: 7, color: '#a78bfa' }}>swe-bench</span>
+          )}
+        </div>
+      </div>
+      <a
+        href={ghUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'var(--pipe-text-dim)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+      >
+        <ExternalLink size={9} />
+      </a>
+    </div>
+  );
+}
+
 // ─── Repo card ────────────────────────────────────────────────────────────────
 
 function RepoCard({
@@ -117,18 +201,33 @@ function RepoCard({
   onApprove,
   onDeny,
   onReset,
+  onRequeue,
+  onRunPass3,
   saving,
+  requeueing,
+  runningPass3,
 }: {
   repo: QualifiedRepo;
-  onApprove: () => void;
-  onDeny: () => void;
+  onApprove: (reason: string) => void;
+  onDeny: (reason: string) => void;
   onReset: () => void;
+  onRequeue: () => void;
+  onRunPass3: () => void;
   saving: boolean;
+  requeueing: boolean;
+  runningPass3: boolean;
 }): JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const [prs, setPrs] = useState<SamplePR[] | null>(null);
+  const [loadingPRs, setLoadingPRs] = useState(false);
+  const [reason, setReason] = useState(repo.admin_reason ?? '');
+  const api = useApiClient();
+
   const senColor = SENIORITY_COLOR[repo.seniority_band ?? ''] ?? 'var(--pipe-text-dim)';
   const ghUrl = `https://github.com/${repo.full_name}`;
   const featureIssues = repo.open_feature_issue_count ?? 0;
   const openPrs = repo.open_pr_count ?? 0;
+  const isFailed = repo.disqualified === 1;
 
   function fmtStars(n: number): string {
     return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
@@ -139,30 +238,48 @@ function RepoCard({
     return String(n);
   }
 
+  const toggleExpand = async (): Promise<void> => {
+    if (!expanded && prs === null) {
+      setLoadingPRs(true);
+      try {
+        const res = await api.get<PRsResponse>(`/api/v1/admin/repos/${repo.id}/prs`);
+        setPrs(res.prs);
+      } catch {
+        setPrs([]);
+      } finally {
+        setLoadingPRs(false);
+      }
+    }
+    setExpanded((e) => !e);
+  };
+
+  const borderColor = isFailed
+    ? 'rgba(248,113,113,0.2)'
+    : repo.admin_status === 'approved'
+      ? 'rgba(74,222,128,0.2)'
+      : repo.admin_status === 'denied'
+        ? 'rgba(255,255,255,0.04)'
+        : 'var(--pipe-border)';
+
   return (
     <div
       style={{
-        padding: '16px 18px',
-        border: '1px solid var(--pipe-border)',
+        padding: '14px 16px',
+        border: `1px solid ${borderColor}`,
         borderRadius: 8,
         background: 'var(--pipe-surface)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        gap: 9,
       }}
     >
       {/* Top row: badges */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span
           style={{
-            ...mono,
-            fontSize: 8,
-            fontWeight: 700,
-            color: '#60a5fa',
-            padding: '2px 7px',
-            borderRadius: 3,
-            background: 'rgba(96,165,250,0.1)',
-            border: '1px solid rgba(96,165,250,0.25)',
+            ...mono, fontSize: 8, fontWeight: 700, color: '#60a5fa',
+            padding: '2px 7px', borderRadius: 3,
+            background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)',
             letterSpacing: '0.08em',
           }}
         >
@@ -178,7 +295,7 @@ function RepoCard({
             {repo.detected_domain}
           </span>
         )}
-        <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
+        <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', marginLeft: 'auto' }}>
           ★ {fmtStars(repo.stars)}
         </span>
       </div>
@@ -194,54 +311,116 @@ function RepoCard({
           SLOC {fmtSloc(repo.sloc)}
         </span>
         {openPrs > 0 && (
-          <span style={{ ...mono, fontSize: 8, color: '#60a5fa' }}>
-            {openPrs} PRs
-          </span>
+          <span style={{ ...mono, fontSize: 8, color: '#60a5fa' }}>{openPrs} open PRs</span>
         )}
         {featureIssues > 0 && (
-          <span style={{ ...mono, fontSize: 8, color: '#4ade80' }}>
-            {featureIssues} feature issues
+          <span style={{ ...mono, fontSize: 8, color: '#4ade80' }}>{featureIssues} feature issues</span>
+        )}
+        <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)' }}>pass {repo.pass}</span>
+        {repo.has_signals === 1 && (
+          <span style={{ ...mono, fontSize: 8, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 3 }}>
+            <Sparkles size={8} /> SIGNALS
           </span>
         )}
-        {repo.disqualified ? (
-          <span style={{ ...mono, fontSize: 8, color: '#f87171' }}>
-            DISQUALIFIED
-          </span>
-        ) : null}
       </div>
 
-      {/* PR quality bar */}
-      <QualityBar value={repo.pr_quality_score} label="PR QUAL" />
+      {/* PR quality bar — only for non-failed */}
+      {!isFailed && (
+        <QualityBar value={repo.pr_quality_score} label="PR QUAL" />
+      )}
 
-      {/* Status + actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', paddingTop: 4 }}>
-        <span
+      {/* Disqualified reason */}
+      {isFailed && repo.disqualified_reason && (
+        <div style={{
+          ...mono, fontSize: 8, color: '#f87171',
+          padding: '6px 8px', borderRadius: 4,
+          background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)',
+          lineHeight: 1.5,
+        }}>
+          {repo.disqualified_reason}
+        </div>
+      )}
+
+      {/* Expand PRs toggle */}
+      {!isFailed && (
+        <button
+          onClick={() => void toggleExpand()}
           style={{
-            ...mono,
-            fontSize: 8,
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            color:
-              repo.admin_status === 'approved' ? '#4ade80' :
-              repo.admin_status === 'denied' ? '#f87171' :
-              'var(--pipe-text-dim)',
+            ...mono, fontSize: 8, color: 'var(--pipe-text-dim)',
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 5, padding: 0,
+            textAlign: 'left',
           }}
         >
-          {repo.admin_status.toUpperCase()}
-        </span>
+          {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          <GitPullRequest size={9} />
+          SAMPLE PRS
+          {loadingPRs && <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} />}
+          {prs !== null && !loadingPRs && (
+            <span style={{ color: 'var(--pipe-text-dim)' }}>({prs.length})</span>
+          )}
+        </button>
+      )}
+
+      {/* PR list */}
+      {expanded && prs !== null && prs.length > 0 && (
+        <div style={{
+          borderTop: '1px solid var(--pipe-border)',
+          paddingTop: 8,
+          maxHeight: 260,
+          overflowY: 'auto',
+        }}>
+          {prs.map((pr) => <PRRow key={pr.pr_number} pr={pr} />)}
+        </div>
+      )}
+      {expanded && prs !== null && prs.length === 0 && (
+        <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', paddingTop: 4 }}>
+          No sample PRs stored.
+        </div>
+      )}
+
+      {/* Reason input — shown for non-failed repos */}
+      {!isFailed && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason for decision (optional — used for training)"
+            rows={2}
+            style={{
+              ...mono, fontSize: 8,
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 3, color: 'var(--pipe-text)',
+              padding: '5px 7px', resize: 'vertical', width: '100%',
+              outline: 'none', lineHeight: 1.5,
+              letterSpacing: '0.03em',
+            }}
+          />
+        </div>
+      )}
+
+      {/* Status + actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', paddingTop: 4, flexWrap: 'wrap' }}>
+        {!isFailed && (
+          <span style={{
+            ...mono, fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+            color:
+              repo.admin_status === 'approved' ? '#4ade80' :
+              repo.admin_status === 'denied' ? 'var(--pipe-text-dim)' :
+              '#fbbf24',
+          }}>
+            {repo.admin_status.toUpperCase()}
+          </span>
+        )}
 
         <a
           href={ghUrl}
           target="_blank"
           rel="noopener noreferrer"
           style={{
-            ...mono,
-            fontSize: 8,
-            color: 'var(--pipe-text-dim)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 3,
-            textDecoration: 'none',
+            ...mono, fontSize: 8, color: 'var(--pipe-text-dim)',
+            display: 'flex', alignItems: 'center', gap: 3, textDecoration: 'none',
           }}
         >
           <ExternalLink size={9} /> GITHUB
@@ -249,24 +428,59 @@ function RepoCard({
 
         <div style={{ flex: 1 }} />
 
-        {repo.admin_status !== 'approved' && (
+        {/* Pass 3 button — only on approved, pass-2 repos without signals */}
+        {!isFailed && repo.admin_status === 'approved' && repo.pass >= 2 && repo.has_signals === 0 && (
           <button
-            onClick={onApprove}
+            onClick={onRunPass3}
+            disabled={runningPass3 || saving}
+            style={{
+              ...mono, fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+              padding: '4px 10px',
+              background: 'rgba(167,139,250,0.08)',
+              border: '1px solid rgba(167,139,250,0.25)',
+              borderRadius: 3, color: '#a78bfa', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4,
+              opacity: runningPass3 ? 0.6 : 1,
+            }}
+          >
+            {runningPass3
+              ? <><Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} /> RUNNING...</>
+              : <><Sparkles size={9} /> RUN PASS 3</>
+            }
+          </button>
+        )}
+
+        {/* Re-run pass 3 if signals exist */}
+        {!isFailed && repo.admin_status === 'approved' && repo.pass >= 2 && repo.has_signals === 1 && (
+          <button
+            onClick={onRunPass3}
+            disabled={runningPass3 || saving}
+            style={{
+              ...mono, fontSize: 8, padding: '4px 8px',
+              background: 'transparent', border: '1px solid rgba(167,139,250,0.2)',
+              borderRadius: 3, color: 'rgba(167,139,250,0.5)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4,
+              opacity: runningPass3 ? 0.5 : 1,
+            }}
+          >
+            {runningPass3
+              ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} />
+              : <Sparkles size={9} />
+            }
+            RE-RUN
+          </button>
+        )}
+
+        {!isFailed && repo.admin_status !== 'approved' && (
+          <button
+            onClick={() => onApprove(reason)}
             disabled={saving}
             style={{
-              ...mono,
-              fontSize: 8,
-              fontWeight: 700,
-              letterSpacing: '0.1em',
+              ...mono, fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
               padding: '4px 10px',
-              background: 'rgba(74,222,128,0.08)',
-              border: '1px solid rgba(74,222,128,0.25)',
-              borderRadius: 3,
-              color: '#4ade80',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
+              background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)',
+              borderRadius: 3, color: '#4ade80', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4,
               opacity: saving ? 0.5 : 1,
             }}
           >
@@ -274,22 +488,15 @@ function RepoCard({
           </button>
         )}
 
-        {repo.admin_status !== 'denied' && (
+        {!isFailed && repo.admin_status !== 'denied' && (
           <button
-            onClick={onDeny}
+            onClick={() => onDeny(reason)}
             disabled={saving}
             style={{
-              ...mono,
-              fontSize: 8,
-              padding: '4px 8px',
-              background: 'transparent',
-              border: '1px solid var(--pipe-border)',
-              borderRadius: 3,
-              color: 'var(--pipe-text-dim)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
+              ...mono, fontSize: 8, padding: '4px 8px',
+              background: 'transparent', border: '1px solid var(--pipe-border)',
+              borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4,
               opacity: saving ? 0.5 : 1,
             }}
           >
@@ -297,23 +504,40 @@ function RepoCard({
           </button>
         )}
 
-        {repo.admin_status !== 'pending' && (
+        {!isFailed && repo.admin_status !== 'pending' && (
           <button
             onClick={onReset}
             disabled={saving}
             style={{
-              ...mono,
-              fontSize: 8,
-              padding: '4px 8px',
-              background: 'transparent',
-              border: '1px solid var(--pipe-border)',
-              borderRadius: 3,
-              color: 'var(--pipe-text-dim)',
-              cursor: 'pointer',
+              ...mono, fontSize: 8, padding: '4px 8px',
+              background: 'transparent', border: '1px solid var(--pipe-border)',
+              borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: 'pointer',
               opacity: saving ? 0.5 : 1,
             }}
           >
             RESET
+          </button>
+        )}
+
+        {/* Requeue — sends the repo back to pass 1 for re-crawling */}
+        {!isFailed && (
+          <button
+            onClick={onRequeue}
+            disabled={requeueing || saving}
+            title="Reset to pass 1 and re-crawl"
+            style={{
+              ...mono, fontSize: 8, padding: '4px 8px',
+              background: 'transparent', border: '1px solid var(--pipe-border)',
+              borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 4,
+              opacity: requeueing ? 0.5 : 1,
+            }}
+          >
+            {requeueing
+              ? <Loader2 size={9} style={{ animation: 'spin 1s linear infinite' }} />
+              : <RefreshCcw size={9} />
+            }
+            REQUEUE
           </button>
         )}
       </div>
@@ -325,23 +549,28 @@ function RepoCard({
 
 export default function RepoAdminPage(): JSX.Element {
   const api = useApiClient();
-  const [statusFilter, setStatusFilter] = useState<AdminStatus | 'all'>('pending');
+  const navigate = useNavigate();
+  const [statusFilter, setStatusFilter] = useState<FilterKey>('pending');
+  const [passFilter, setPassFilter] = useState<PassFilter>('all');
   const [search, setSearch] = useState('');
   const [repos, setRepos] = useState<QualifiedRepo[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<number | null>(null);
+  const [requeueing, setRequeueing] = useState<number | null>(null);
+  const [runningPass3, setRunningPass3] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
-  const load = useCallback(async (status: AdminStatus | 'all') => {
+  const load = useCallback(async (status: FilterKey, pass: PassFilter) => {
     setLoading(true);
     setError(null);
     try {
-      const qs = status === 'all' ? '?limit=100' : `?status=${status}&limit=100`;
-      const res = await api.get<ReposResponse>(`/api/v1/admin/repos${qs}`);
+      const qs = new URLSearchParams({ status, limit: '100' });
+      if (pass !== 'all') qs.set('pass', pass);
+      const res = await api.get<ReposResponse>(`/api/v1/admin/repos?${qs.toString()}`);
       setRepos(res.repos);
       setTotal(res.total);
     } catch (err) {
@@ -351,13 +580,18 @@ export default function RepoAdminPage(): JSX.Element {
     }
   }, [api]);
 
-  useEffect(() => { void load(statusFilter); }, [statusFilter, load]);
+  useEffect(() => { void load(statusFilter, passFilter); }, [statusFilter, passFilter, load]);
 
-  const handleStatusChange = async (id: number, status: AdminStatus): Promise<void> => {
+  const handleStatusChange = async (id: number, status: AdminStatus, reason: string): Promise<void> => {
     setSaving(id);
     try {
-      await api.patch(`/api/v1/admin/repos/${id}`, { admin_status: status });
-      setRepos((prev) => prev.map((r) => r.id === id ? { ...r, admin_status: status } : r));
+      await api.patch(`/api/v1/admin/repos/${id}`, {
+        admin_status: status,
+        ...(reason.trim() ? { admin_reason: reason.trim() } : {}),
+      });
+      setRepos((prev) => prev.map((r) =>
+        r.id === id ? { ...r, admin_status: status, admin_reason: reason.trim() || r.admin_reason } : r,
+      ));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update');
     } finally {
@@ -365,8 +599,35 @@ export default function RepoAdminPage(): JSX.Element {
     }
   };
 
+  const handleRequeue = async (id: number): Promise<void> => {
+    setRequeueing(id);
+    setError(null);
+    try {
+      await api.post(`/api/v1/admin/repos/${id}/requeue`, {});
+      setRepos((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Requeue failed');
+    } finally {
+      setRequeueing(null);
+    }
+  };
+
+  const handleRunPass3 = async (id: number): Promise<void> => {
+    setRunningPass3(id);
+    setError(null);
+    try {
+      await api.post(`/api/v1/admin/repos/${id}/pass3`, {});
+      setRepos((prev) => prev.map((r) => r.id === id ? { ...r, has_signals: 1 } : r));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pass 3 failed');
+    } finally {
+      setRunningPass3(null);
+    }
+  };
+
   const filtered = search.trim()
-    ? repos.filter((r) => r.full_name.toLowerCase().includes(search.toLowerCase()) ||
+    ? repos.filter((r) =>
+        r.full_name.toLowerCase().includes(search.toLowerCase()) ||
         (r.detected_domain ?? '').toLowerCase().includes(search.toLowerCase()))
     : repos;
 
@@ -374,6 +635,7 @@ export default function RepoAdminPage(): JSX.Element {
     approved: repos.filter((r) => r.admin_status === 'approved').length,
     denied: repos.filter((r) => r.admin_status === 'denied').length,
     pending: repos.filter((r) => r.admin_status === 'pending').length,
+    failed: repos.filter((r) => r.disqualified === 1).length,
   };
 
   return (
@@ -386,6 +648,8 @@ export default function RepoAdminPage(): JSX.Element {
         margin: '0 auto',
       }}
     >
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
         <div>
@@ -396,29 +660,57 @@ export default function RepoAdminPage(): JSX.Element {
             Repo Admin
           </h1>
         </div>
-        <div style={{ display: 'flex', gap: 16, ...mono, fontSize: 10 }}>
-          <span style={{ color: 'var(--pipe-text-dim)' }}>{counts.pending} PENDING</span>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', ...mono, fontSize: 10 }}>
+          <span style={{ color: '#fbbf24' }}>{counts.pending} PENDING</span>
+          <span style={{ color: '#f87171' }}>{counts.failed} FAILED</span>
           <span style={{ color: '#4ade80' }}>{counts.approved} APPROVED</span>
-          <span style={{ color: '#f87171' }}>{counts.denied} DENIED</span>
+          <span style={{ color: 'var(--pipe-text-dim)' }}>{counts.denied} DENIED</span>
           <span style={{ color: 'var(--pipe-text-dim)' }}>{total} TOTAL</span>
+          <button
+            onClick={() => navigate('/admin/repos/search')}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--pipe-border, #242530)',
+              color: '#60a5fa',
+              padding: '6px 12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 10,
+              borderRadius: 4,
+              letterSpacing: '0.08em',
+              ...mono,
+            }}
+          >
+            <Search size={11} />
+            SEMANTIC_SEARCH
+          </button>
         </div>
       </div>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 4 }}>
-          {STATUS_FILTERS.map(({ key, label }) => (
+          {STATUS_FILTERS.map(({ key, label, color }) => (
             <Pill
               key={key}
               label={label}
               active={statusFilter === key}
               onClick={() => setStatusFilter(key)}
-              color={
-                key === 'approved' ? '#4ade80' :
-                key === 'denied' ? '#f87171' :
-                key === 'pending' ? '#fbbf24' :
-                'var(--pipe-text)'
-              }
+              color={color}
+            />
+          ))}
+        </div>
+        <div style={{ width: 1, height: 16, background: 'var(--pipe-border)' }} />
+        <div style={{ display: 'flex', gap: 4 }}>
+          {PASS_FILTERS.map(({ key, label }) => (
+            <Pill
+              key={key}
+              label={label}
+              active={passFilter === key}
+              onClick={() => setPassFilter(key)}
+              color="var(--pipe-text-muted)"
             />
           ))}
         </div>
@@ -431,14 +723,9 @@ export default function RepoAdminPage(): JSX.Element {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="SEARCH..."
             style={{
-              ...mono,
-              fontSize: 9,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: 'var(--pipe-text)',
-              width: 140,
-              letterSpacing: '0.05em',
+              ...mono, fontSize: 9,
+              background: 'transparent', border: 'none', outline: 'none',
+              color: 'var(--pipe-text)', width: 140, letterSpacing: '0.05em',
             }}
           />
         </div>
@@ -459,7 +746,6 @@ export default function RepoAdminPage(): JSX.Element {
       {loading && (
         <div style={{ textAlign: 'center', padding: 40 }}>
           <Loader2 size={18} color="var(--pipe-text-dim)" style={{ animation: 'spin 1s linear infinite', margin: '0 auto' }} />
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
 
@@ -471,22 +757,28 @@ export default function RepoAdminPage(): JSX.Element {
             No repos in this category
           </div>
           <div style={{ ...mono, fontSize: 10, color: 'var(--pipe-text-muted)', maxWidth: 360, margin: '0 auto', lineHeight: 1.6 }}>
-            Run the crawler to populate the catalog, then come back here to approve repos for the challenge library.
+            {statusFilter === 'failed'
+              ? 'No crawler-rejected repos found.'
+              : 'Run the crawler to populate the catalog, then come back here to approve repos.'}
           </div>
         </div>
       )}
 
       {/* Grid */}
       {!loading && filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
           {filtered.map((repo) => (
             <RepoCard
               key={repo.id}
               repo={repo}
               saving={saving === repo.id}
-              onApprove={() => void handleStatusChange(repo.id, 'approved')}
-              onDeny={() => void handleStatusChange(repo.id, 'denied')}
-              onReset={() => void handleStatusChange(repo.id, 'pending')}
+              requeueing={requeueing === repo.id}
+              runningPass3={runningPass3 === repo.id}
+              onApprove={(reason) => void handleStatusChange(repo.id, 'approved', reason)}
+              onDeny={(reason) => void handleStatusChange(repo.id, 'denied', reason)}
+              onReset={() => void handleStatusChange(repo.id, 'pending', '')}
+              onRequeue={() => void handleRequeue(repo.id)}
+              onRunPass3={() => void handleRunPass3(repo.id)}
             />
           ))}
         </div>

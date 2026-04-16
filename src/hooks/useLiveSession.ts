@@ -25,10 +25,14 @@ export interface UseLiveSessionResult {
   stop: () => void;
   isConnected: boolean;
   isAISpeaking: boolean;
-  /** Concatenated user speech segments, space-joined as they arrive. */
+  /** Full transcript of all user speech this session (completed turns only). */
   userTranscript: string;
-  /** Concatenated model speech segments, space-joined as they arrive. */
+  /** Full transcript of all model speech this session (completed turns only). */
   modelTranscript: string;
+  /** Live current utterance being spoken by the user — resets when AI starts responding. */
+  currentUserSpeech: string;
+  /** Live current utterance being spoken by the AI — resets when user starts speaking. */
+  currentModelSpeech: string;
   error: string | null;
 }
 
@@ -119,7 +123,14 @@ export function useLiveSession(): UseLiveSessionResult {
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [userTranscript, setUserTranscript] = useState('');
   const [modelTranscript, setModelTranscript] = useState('');
+  const [currentUserSpeech, setCurrentUserSpeech] = useState('');
+  const [currentModelSpeech, setCurrentModelSpeech] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  // Refs mirror current-turn state so flush logic in handleMessage can read
+  // latest values without stale closures.
+  const currentUserSpeechRef = useRef('');
+  const currentModelSpeechRef = useRef('');
 
   // WebSocket
   const wsRef = useRef<WebSocket | null>(null);
@@ -259,14 +270,38 @@ export function useLiveSession(): UseLiveSessionResult {
 
       switch (msg.type) {
         case 'audio':
+          // AI audio starting → flush current user speech to history, clear live display
+          if (currentUserSpeechRef.current) {
+            const flushed = currentUserSpeechRef.current;
+            currentUserSpeechRef.current = '';
+            setCurrentUserSpeech('');
+            setUserTranscript((prev) => (prev ? `${prev}\n${flushed}` : flushed));
+          }
           enqueueAudio(msg.data);
           break;
 
         case 'transcript':
           if (msg.role === 'user') {
-            setUserTranscript((prev) => (prev ? `${prev} ${msg.text}` : msg.text));
+            // User speaking → flush any completed model turn to history
+            if (currentModelSpeechRef.current) {
+              const flushed = currentModelSpeechRef.current;
+              currentModelSpeechRef.current = '';
+              setCurrentModelSpeech('');
+              setModelTranscript((prev) => (prev ? `${prev}\n${flushed}` : flushed));
+            }
+            // Append to live current-user display
+            const nextUser = currentUserSpeechRef.current
+              ? `${currentUserSpeechRef.current} ${msg.text}`
+              : msg.text;
+            currentUserSpeechRef.current = nextUser;
+            setCurrentUserSpeech(nextUser);
           } else {
-            setModelTranscript((prev) => (prev ? `${prev} ${msg.text}` : msg.text));
+            // Model transcript segment arriving
+            const nextModel = currentModelSpeechRef.current
+              ? `${currentModelSpeechRef.current} ${msg.text}`
+              : msg.text;
+            currentModelSpeechRef.current = nextModel;
+            setCurrentModelSpeech(nextModel);
           }
           break;
 
@@ -305,6 +340,10 @@ export function useLiveSession(): UseLiveSessionResult {
       setError(null);
       setUserTranscript('');
       setModelTranscript('');
+      setCurrentUserSpeech('');
+      setCurrentModelSpeech('');
+      currentUserSpeechRef.current = '';
+      currentModelSpeechRef.current = '';
 
       const url = `${WS_BASE}/api/v1/voice-sessions/${sessionId}/ws?token=${encodeURIComponent(authToken)}`;
       console.log('[useLiveSession] Connecting to', url);
@@ -359,6 +398,8 @@ export function useLiveSession(): UseLiveSessionResult {
     isAISpeaking,
     userTranscript,
     modelTranscript,
+    currentUserSpeech,
+    currentModelSpeech,
     error,
   };
 }

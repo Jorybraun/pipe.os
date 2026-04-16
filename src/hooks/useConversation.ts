@@ -144,6 +144,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
 
       try {
         // Use streaming if available
+        console.log('[useConversation] respondStream available:', !!adapter.respondStream);
         if (adapter.respondStream) {
           for await (const event of adapter.respondStream(answer, questionId)) {
             if (event.event === 'chunk') {

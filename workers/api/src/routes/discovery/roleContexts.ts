@@ -446,95 +446,86 @@ roleContexts.post('/:id/respond', async (c) => {
   }
   lastExchange.answer = answer;
 
-  // ── Calibration response: set participant_role, then call agent for first real question ──
-  if (questionId === 'q-calibration') {
-    const participantRole = resolveParticipantRole(answer);
-
-    const baseline = parseJsonColumn<Record<string, unknown>>(row.baseline, {});
-    const sharedKnowledgeState = parseJsonColumn<Record<string, Record<string, unknown>>>(row.knowledge_state, {});
-    const provider = createRoleAgentProvider(c.env);
-
-    const agentResponse = await callRoleAgent({
-      provider,
-      baseline,
-      exchanges: [], // Fresh start for agent — calibration was hardcoded
-      knowledgeState: sharedKnowledgeState,
-      questionsAsked: 0,
-      questionBudget: participant.question_budget,
-      participantRole,
-    });
-
-    if (agentResponse.type !== 'question') {
-      return apiError(c, 'INTERNAL_ERROR', 'Agent did not return a question for the opening turn.');
-    }
-
-    const newExchange: RoleExchange = {
-      questionId: agentResponse.question.id,
-      acknowledgment: agentResponse.acknowledgment,
-      question: agentResponse.question.text,
-      input: agentResponse.question.input,
-    };
-    exchanges.push(newExchange);
-
-    await c.env.DB.prepare(
-      `UPDATE role_context_participants
-       SET participant_role = ?1, status = 'INTERVIEWING', exchanges = ?2, updated_at = ?3
-       WHERE id = ?4`,
-    )
-      .bind(participantRole, JSON.stringify(exchanges), now(), participant.id)
-      .run();
-
-    return c.json({
-      participantId: participant.id,
-      participantRole,
-      acknowledgment: agentResponse.acknowledgment,
-      question: agentResponse.question,
-      progress: {
-        asked: 0,
-        budget: participant.question_budget,
-        domains: agentResponse.domainCoverage,
-      },
-      status: 'INTERVIEWING' as const,
-      toolsUsed: agentResponse.toolsUsed,
-    });
-  }
-
-  // ── Normal interview response ──
-  const questionsAsked = participant.questions_asked + 1;
-  const budgetExhausted = questionsAsked >= participant.question_budget;
-
+  // ── Shared setup (used by both calibration and normal paths) ──
   const baseline = parseJsonColumn<Record<string, unknown>>(row.baseline, {});
   const sharedKnowledgeState = parseJsonColumn<Record<string, Record<string, unknown>>>(row.knowledge_state, {});
   const provider = createRoleAgentProvider(c.env);
 
-  // Filter exchanges: only answered ones for the agent (skip calibration)
-  const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
-
-  // Extract previous domain coverage from knowledge state (stored on prior turn)
-  const previousCoverage = (sharedKnowledgeState as Record<string, unknown>)['_coverage'] as Record<string, string> | undefined;
-
-  // RD-P5: build conversation context and phase directive (deterministic, no LLM call)
-  const conversationContext = buildConversationContext(sharedKnowledgeState as Record<string, unknown>, agentExchanges);
-  const phaseDirective = buildPhaseDirective(conversationContext, questionsAsked, participant.question_budget);
-  // Persist phase directive for debugging and next-turn context
-  (sharedKnowledgeState as Record<string, unknown>)['_phase'] = phaseDirective;
-
-  const agentInput = {
-    provider,
-    baseline,
-    exchanges: agentExchanges,
-    knowledgeState: sharedKnowledgeState,
-    questionsAsked,
-    questionBudget: participant.question_budget,
-    phaseDirective,
-    conversationContext,
-    ...(previousCoverage ? { domainCoverage: previousCoverage } : {}),
-    ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
-  };
-
   // ── Streaming path: SSE for real-time token delivery ──
-  if (c.req.header('Accept') === 'text/event-stream') {
+  // Must be checked BEFORE the calibration block so that calibration answers
+  // are returned as SSE events when the client requests streaming. Previously
+  // the calibration block returned JSON unconditionally, which caused postStream
+  // on the client to receive JSON it couldn't parse as SSE, silently discard the
+  // response, and leave the calibration question visible — triggering a second
+  // submission that hit the "questionId does not match" error on the server.
+  const acceptHeader = c.req.header('Accept');
+  console.log('[roleContexts] Accept header:', acceptHeader);
+  if (acceptHeader === 'text/event-stream') {
     return streamSSE(c, async (stream) => {
+      // ── Calibration in streaming path ──
+      if (questionId === 'q-calibration') {
+        const participantRole = resolveParticipantRole(answer);
+        const calAgentResponse = await callRoleAgent({
+          provider,
+          baseline,
+          exchanges: [],
+          knowledgeState: sharedKnowledgeState,
+          questionsAsked: 0,
+          questionBudget: participant.question_budget,
+          participantRole,
+        });
+        if (calAgentResponse.type !== 'question') {
+          await stream.writeSSE({ event: 'error', data: 'Agent did not return a question for the opening turn.' });
+          return;
+        }
+        const calExchange: RoleExchange = {
+          questionId: calAgentResponse.question.id,
+          acknowledgment: calAgentResponse.acknowledgment,
+          question: calAgentResponse.question.text,
+          input: calAgentResponse.question.input,
+        };
+        exchanges.push(calExchange);
+        await c.env.DB.prepare(
+          `UPDATE role_context_participants
+           SET participant_role = ?1, status = 'INTERVIEWING', exchanges = ?2, updated_at = ?3
+           WHERE id = ?4`,
+        ).bind(participantRole, JSON.stringify(exchanges), now(), participant.id).run();
+        await stream.writeSSE({
+          event: 'done',
+          data: JSON.stringify({
+            participantId: participant.id,
+            participantRole,
+            acknowledgment: calAgentResponse.acknowledgment,
+            question: calAgentResponse.question,
+            progress: { asked: 0, budget: participant.question_budget, domains: calAgentResponse.domainCoverage },
+            status: 'INTERVIEWING' as const,
+            toolsUsed: calAgentResponse.toolsUsed,
+          }),
+        });
+        return;
+      }
+
+      // ── Normal question in streaming path ──
+      const questionsAsked = participant.questions_asked + 1;
+      const budgetExhausted = questionsAsked >= participant.question_budget;
+      const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
+      const previousCoverage = (sharedKnowledgeState as Record<string, unknown>)['_coverage'] as Record<string, string> | undefined;
+      const conversationContext = buildConversationContext(sharedKnowledgeState as Record<string, unknown>, agentExchanges);
+      const phaseDirective = buildPhaseDirective(conversationContext, questionsAsked, participant.question_budget);
+      (sharedKnowledgeState as Record<string, unknown>)['_phase'] = phaseDirective;
+      const agentInput = {
+        provider,
+        baseline,
+        exchanges: agentExchanges,
+        knowledgeState: sharedKnowledgeState,
+        questionsAsked,
+        questionBudget: participant.question_budget,
+        phaseDirective,
+        conversationContext,
+        ...(previousCoverage ? { domainCoverage: previousCoverage } : {}),
+        ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
+      };
+
       let agentResponse: RoleAgentResponse | null = null;
 
       for await (const event of callRoleAgentStream(agentInput)) {
@@ -612,8 +603,16 @@ roleContexts.post('/:id/respond', async (c) => {
             },
           }),
         });
-      } else {
-        // Question response
+      } else if (agentResponse.type === 'question') {
+        // Question response — append new exchange before persisting
+        const newExchange: RoleExchange = {
+          questionId: agentResponse.question.id,
+          acknowledgment: agentResponse.acknowledgment,
+          question: agentResponse.question.text,
+          input: agentResponse.question.input,
+        };
+        exchanges.push(newExchange);
+
         await c.env.DB.batch([
           c.env.DB.prepare(
             `UPDATE role_context_participants
@@ -621,16 +620,16 @@ roleContexts.post('/:id/respond', async (c) => {
              WHERE id = ?4`,
           ).bind(JSON.stringify(exchanges), questionsAsked, now(), participant.id),
           c.env.DB.prepare(
-            `UPDATE role_contexts SET knowledge_state = ?1, questions_asked = questions_asked + ?2, updated_at = ?3 WHERE id = ?4`,
-          ).bind(JSON.stringify(updatedKnowledgeState), questionsAsked, now(), id),
+            `UPDATE role_contexts SET knowledge_state = ?1, updated_at = ?2 WHERE id = ?3`,
+          ).bind(JSON.stringify(updatedKnowledgeState), now(), id),
         ]);
 
         await stream.writeSSE({
           event: 'done',
           data: JSON.stringify({
             participantId: participant.id,
-            acknowledgment: agentResponse.type === 'question' ? agentResponse.acknowledgment : '',
-            question: agentResponse.type === 'question' ? agentResponse.question : null,
+            acknowledgment: agentResponse.acknowledgment,
+            question: agentResponse.question,
             knowledgeState: updatedKnowledgeState,
             progress: {
               asked: questionsAsked,
@@ -643,7 +642,83 @@ roleContexts.post('/:id/respond', async (c) => {
     });
   }
 
-  // ── Non-streaming path (existing) ──
+  // ── Non-streaming: calibration ──
+  if (questionId === 'q-calibration') {
+    const participantRole = resolveParticipantRole(answer);
+
+    const agentResponse = await callRoleAgent({
+      provider,
+      baseline,
+      exchanges: [],
+      knowledgeState: sharedKnowledgeState,
+      questionsAsked: 0,
+      questionBudget: participant.question_budget,
+      participantRole,
+    });
+
+    if (agentResponse.type !== 'question') {
+      return apiError(c, 'INTERNAL_ERROR', 'Agent did not return a question for the opening turn.');
+    }
+
+    const newExchange: RoleExchange = {
+      questionId: agentResponse.question.id,
+      acknowledgment: agentResponse.acknowledgment,
+      question: agentResponse.question.text,
+      input: agentResponse.question.input,
+    };
+    exchanges.push(newExchange);
+
+    await c.env.DB.prepare(
+      `UPDATE role_context_participants
+       SET participant_role = ?1, status = 'INTERVIEWING', exchanges = ?2, updated_at = ?3
+       WHERE id = ?4`,
+    )
+      .bind(participantRole, JSON.stringify(exchanges), now(), participant.id)
+      .run();
+
+    return c.json({
+      participantId: participant.id,
+      participantRole,
+      acknowledgment: agentResponse.acknowledgment,
+      question: agentResponse.question,
+      progress: {
+        asked: 0,
+        budget: participant.question_budget,
+        domains: agentResponse.domainCoverage,
+      },
+      status: 'INTERVIEWING' as const,
+      toolsUsed: agentResponse.toolsUsed,
+    });
+  }
+
+  // ── Non-streaming: normal interview response ──
+  const questionsAsked = participant.questions_asked + 1;
+  const budgetExhausted = questionsAsked >= participant.question_budget;
+
+  // Filter exchanges: only answered ones for the agent (skip calibration)
+  const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
+
+  // Extract previous domain coverage from knowledge state (stored on prior turn)
+  const previousCoverage = (sharedKnowledgeState as Record<string, unknown>)['_coverage'] as Record<string, string> | undefined;
+
+  // RD-P5: build conversation context and phase directive (deterministic, no LLM call)
+  const conversationContext = buildConversationContext(sharedKnowledgeState as Record<string, unknown>, agentExchanges);
+  const phaseDirective = buildPhaseDirective(conversationContext, questionsAsked, participant.question_budget);
+  (sharedKnowledgeState as Record<string, unknown>)['_phase'] = phaseDirective;
+
+  const agentInput = {
+    provider,
+    baseline,
+    exchanges: agentExchanges,
+    knowledgeState: sharedKnowledgeState,
+    questionsAsked,
+    questionBudget: participant.question_budget,
+    phaseDirective,
+    conversationContext,
+    ...(previousCoverage ? { domainCoverage: previousCoverage } : {}),
+    ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
+  };
+
   const agentResponse = await callRoleAgent(agentInput);
 
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);

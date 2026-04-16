@@ -112,4 +112,10 @@ export interface AIChatProps {
   renderHeader?: () => JSX.Element;
   /** Show the Six Domain coverage bars during the interview. Default: false. */
   showDomainBars?: boolean;
+  /**
+   * Called when the user ends a live voice session early (taps END SESSION).
+   * Use to navigate back to the Voice/Text mode selector without losing prior
+   * scripted intake answers.
+   */
+  onLiveEnd?: () => void;
 }

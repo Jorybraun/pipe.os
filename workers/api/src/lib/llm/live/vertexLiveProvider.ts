@@ -107,6 +107,17 @@ class VertexLiveSession implements LiveSession {
       const err = new Error('[VertexLiveSession] WebSocket error');
       this.errorHandlers.forEach((h) => h(err));
     });
+    this.ws.addEventListener('close', (event: CloseEvent) => {
+      const code = event.code;
+      const reason = event.reason || '(none)';
+      console.error('[VertexLiveSession] WebSocket closed — code:', code, 'reason:', reason);
+      // Propagate non-normal closes as errors so callers (VoiceSessionDO) can
+      // null out liveSession and notify browser clients.
+      if (code !== 1000) {
+        const err = new Error(`[VertexLiveSession] closed code=${code} reason=${reason}`);
+        this.errorHandlers.forEach((h) => h(err));
+      }
+    });
   }
 
   sendAudio(chunk: ArrayBuffer): void {
@@ -189,10 +200,12 @@ class VertexLiveSession implements LiveSession {
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL = 'gemini-live-2.5-flash-native-audio';
+// Gemini Developer API — auth via ?key= (GOOGLE_AI_API_KEY from AI Studio)
+// To switch to Vertex AI: change WS_BASE to the Vertex endpoint and handle OAuth.
+const DEFAULT_MODEL = 'gemini-2.0-flash-live-001';
 const DEFAULT_VOICE = 'Puck';
 const WS_BASE =
-  'wss://us-central1-aiplatform.googleapis.com/ws/google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent';
+  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
 export class VertexLiveProvider implements LiveProvider {
   readonly name = 'vertex-live';

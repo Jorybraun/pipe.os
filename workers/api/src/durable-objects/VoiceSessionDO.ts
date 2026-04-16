@@ -154,11 +154,14 @@ export class VoiceSessionDO {
 
     session.onError((err) => {
       console.error('[VoiceSessionDO] LiveSession error:', err.message);
+      // Null out so handleWebSocket returns 409 if browser connects after this fires
+      this.liveSession = null;
       const clients = this.state.getWebSockets('client');
       const payload = JSON.stringify({ type: 'error', message: err.message });
       for (const ws of clients) {
         try {
           ws.send(payload);
+          ws.close(1011, 'Live provider error');
         } catch {
           // Client may have already closed
         }
