@@ -6,6 +6,30 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(llm+role-discovery): vertex-ai provider + end-to-end streaming (2026-04-15)
+
+Adds a Vertex AI provider alongside the existing Google AI (public API) provider, plus `completeStream` methods on both so the role discovery agent can stream tokens to the client via SSE. Fixes a prior bug where the server was sending `question` as a raw string and the client was synthesizing a fake `{ id, text, input }` envelope around it with `acknowledgment: ''` hardcoded — the full question object + `acknowledgment` now flow through natively.
+
+- **`workers/api/src/lib/llm/createProvider.ts`** — new `'vertex-ai'` provider name; env vars `VERTEX_AI_ACCESS_TOKEN`, `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_REGION`, `VERTEX_AI_MODEL` (defaults: `us-central1`, `gemma-4-26b-a4b-it-maas`).
+- **`workers/api/src/lib/llm/vertexAIProvider.ts`** — new `completeStream` method using `streamGenerateContent` SSE endpoint on aiplatform.googleapis.com.
+- **`workers/api/src/lib/llm/googleAIProvider.ts`** — new `completeStream` method using the generativelanguage.googleapis.com `streamGenerateContent?alt=sse` endpoint.
+- **`workers/api/src/routes/discovery/roleContexts.ts`** — SSE payload now includes `acknowledgment` and the full `question` object (or `null` when the turn is not a question).
+- **`src/hooks/useRoleDiscovery.ts`** — consumes `acknowledgment` + `question` directly; drops the client-side synthesis of fake question envelopes.
+
+#### feat(admin): sidebar nav entry for /admin/repos + page refinements (2026-04-15)
+
+Wires the Repo Catalog admin page into the recruiter sidebar so it's reachable without typing the URL. The page itself got substantial iteration (layout, filters, metadata display).
+
+- **`src/components/SidebarNav.tsx`** — new Repo Admin nav button (Database icon) with `onRepoAdminClick` optional prop; active state styled to match existing nav chips.
+- **`src/App.tsx`** — wires `onRepoAdminClick` to `navigate('/admin/repos')` and tracks `activeSection: 'repo-admin'`.
+- **`src/pages/admin/RepoAdminPage.tsx`** — rewrite of layout + controls (744-line diff).
+
+#### refactor(crawler): rewrite review-page generator for admin overrides (2026-04-15)
+
+Full rewrite of `workers/api/scripts/generate-review-page.ts` — the per-run calibration review HTML. Output now supports human overrides of pipeline decisions, tier assignments, and free-text notes so a reviewer can pre-seed the next calibration. Also adds `htmlEsc` + `fmtNum` helpers to eliminate scattered inline escaping.
+
+- **`.gitignore`** — excludes `google-cloud-cli-*.tar.gz` (56MB binary tarball that shouldn't ship with the repo).
+
 #### feat(admin): human approval for qualified_repos catalog (2026-04-15)
 
 Human-in-the-loop gate between the crawler output and the candidate challenge library. The crawler populates `qualified_repos`; the admin page surfaces each repo so a recruiter can approve or deny it before it becomes a challenge source.

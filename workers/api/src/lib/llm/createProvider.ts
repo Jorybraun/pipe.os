@@ -18,13 +18,18 @@
 import { MistralProvider } from './mistralProvider';
 import { GoogleAIProvider } from './googleAIProvider';
 import { CloudflareAIProvider } from './cloudflareAIProvider';
+import { VertexAIProvider } from './vertexAIProvider';
 import type { LLMProvider } from './types';
 
-export type ProviderName = 'mistral' | 'google-ai' | 'cloudflare-ai';
+export type ProviderName = 'mistral' | 'google-ai' | 'cloudflare-ai' | 'vertex-ai';
 
 interface ProviderEnv {
   MISTRAL_API_KEY?: string;
   GOOGLE_AI_API_KEY?: string;
+  VERTEX_AI_ACCESS_TOKEN?: string;
+  VERTEX_AI_PROJECT_ID?: string;
+  VERTEX_AI_REGION?: string;
+  VERTEX_AI_MODEL?: string;
   ROLE_AGENT_PROVIDER?: string;
   CULTURE_AGENT_PROVIDER?: string;
   COPILOT_AGENT_PROVIDER?: string;
@@ -48,6 +53,15 @@ export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
     const key = env.GOOGLE_AI_API_KEY ?? '';
     if (!key) return null;
     return new GoogleAIProvider(key);
+  }
+
+  if (providerName === 'vertex-ai') {
+    const accessToken = env.VERTEX_AI_ACCESS_TOKEN ?? '';
+    const projectId = env.VERTEX_AI_PROJECT_ID ?? '';
+    if (!accessToken || !projectId) return null;
+    const region = env.VERTEX_AI_REGION ?? 'us-central1';
+    const model = env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it-maas';
+    return new VertexAIProvider(accessToken, projectId, region, model);
   }
 
   // Explicit 'mistral' selection

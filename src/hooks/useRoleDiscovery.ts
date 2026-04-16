@@ -167,7 +167,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
           synthesis?: string;
           persona?: RespondSynthesisResponse['persona'];
           jobDescription?: string;
-          question?: string;
+          acknowledgment?: string;
+          question?: RespondQuestionResponse['question'];
           knowledgeState?: Record<string, unknown>;
           progress: RespondRoleContextResponse['progress'];
         }
@@ -190,15 +191,11 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
                 progress: data.progress,
               };
               yield { event: 'done', result };
-            } else {
+            } else if (data.question) {
               const result: QuestionTurnResult = {
                 type: 'question',
-                acknowledgment: '', // Streaming doesn't send separate acknowledgment
-                question: {
-                  id: `q-${Date.now()}`,
-                  text: data.question ?? '',
-                  input: { type: 'textarea' },
-                },
+                acknowledgment: data.acknowledgment ?? '',
+                question: data.question,
                 progress: data.progress,
               };
               yield { event: 'done', result };

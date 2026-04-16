@@ -125,6 +125,73 @@ export class VertexAIProvider implements LLMProvider {
 
     return { content };
   }
+
+  /**
+   * Stream text tokens from Vertex AI. Uses streamGenerateContent endpoint.
+   */
+  async *completeStream(messages: LLMMessage[], options: CompleteOptions = {}): AsyncGenerator<string> {
+    const contents = toVertexAIContents(messages);
+
+    const body: Record<string, unknown> = {
+      contents,
+      generationConfig: {
+        maxOutputTokens: options.maxTokens ?? 1024,
+        ...(options.forceJson ? { responseMimeType: 'application/json' } : {}),
+      },
+    };
+
+    const url = `https://aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${this.region}/publishers/google/models/${this.model}:streamGenerateContent?alt=sse`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Vertex AI ${res.status}: ${err}`);
+    }
+
+    if (!res.body) {
+      throw new Error('Vertex AI returned no body for stream');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE lines
+      let newlineIdx: number;
+      while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIdx).trim();
+        buffer = buffer.slice(newlineIdx + 1);
+
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') return;
+
+        try {
+          const chunk = JSON.parse(payload) as VertexAIResponse;
+          const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+          for (const part of parts) {
+            if (part.text) yield part.text;
+          }
+        } catch {
+          // Ignore malformed chunks
+        }
+      }
+    }
+  }
 }
 
 /**

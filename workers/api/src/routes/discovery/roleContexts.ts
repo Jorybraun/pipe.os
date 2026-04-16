@@ -629,7 +629,8 @@ roleContexts.post('/:id/respond', async (c) => {
           event: 'done',
           data: JSON.stringify({
             participantId: participant.id,
-            question: agentResponse.type === 'question' ? agentResponse.question : '',
+            acknowledgment: agentResponse.type === 'question' ? agentResponse.acknowledgment : '',
+            question: agentResponse.type === 'question' ? agentResponse.question : null,
             knowledgeState: updatedKnowledgeState,
             progress: {
               asked: questionsAsked,
