@@ -8,9 +8,9 @@
  * prices, including failed sessions.
  */
 
-import { useEffect, useState, useCallback, type CSSProperties } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Activity, Loader2 } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
-import { LiquidMetalCard } from '../../components/ui/LiquidMetalCard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,28 +59,9 @@ interface SessionsResponse {
   sessions: SessionRow[];
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const FONT_MONO: CSSProperties = { fontFamily: '"Space Mono", monospace' };
-
-const LABEL_STYLE: CSSProperties = {
-  fontSize: 9,
-  fontWeight: 700,
-  letterSpacing: '0.14em',
-  color: 'var(--pipe-text-dim)',
-  textTransform: 'uppercase',
-  ...FONT_MONO,
-};
-
-const VALUE_STYLE: CSSProperties = {
-  fontSize: 22,
-  fontWeight: 800,
-  color: 'var(--pipe-text)',
-  letterSpacing: '-0.01em',
-  ...FONT_MONO,
-};
-
-// ─── Feature labels ───────────────────────────────────────────────────────────
+const mono: React.CSSProperties = { fontFamily: '"Space Mono", monospace' };
 
 const FEATURE_LABELS: Record<string, string> = {
   role_discovery: 'ROLE DISCOVERY',
@@ -97,21 +78,58 @@ function featureLabel(feature: string): string {
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, subtitle }: {
+function StatCard({
+  label,
+  value,
+  subtitle,
+  accent,
+}: {
   label: string;
   value: string;
   subtitle?: string;
+  accent?: string;
 }): JSX.Element {
   return (
-    <LiquidMetalCard variant="dark" style={{ borderRadius: 8, padding: '20px 24px', flex: 1, minWidth: 180 }}>
-      <div style={LABEL_STYLE}>{label}</div>
-      <div style={{ ...VALUE_STYLE, marginTop: 8 }}>{value}</div>
+    <div
+      style={{
+        flex: 1,
+        minWidth: 180,
+        padding: '14px 16px',
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 8,
+        background: 'var(--pipe-surface)',
+      }}
+    >
+      <div
+        style={{
+          ...mono,
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: '0.14em',
+          color: 'var(--pipe-text-dim)',
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          ...mono,
+          fontSize: 22,
+          fontWeight: 800,
+          color: accent ?? 'var(--pipe-text)',
+          letterSpacing: '-0.01em',
+          marginTop: 6,
+        }}
+      >
+        {value}
+      </div>
       {subtitle && (
-        <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginTop: 4, ...FONT_MONO }}>
+        <div style={{ ...mono, fontSize: 9, color: 'var(--pipe-text-dim)', marginTop: 4 }}>
           {subtitle}
         </div>
       )}
-    </LiquidMetalCard>
+    </div>
   );
 }
 
@@ -125,6 +143,9 @@ export default function AiUsagePage(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [featureFilter, setFeatureFilter] = useState<string>('all');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -149,248 +170,285 @@ export default function AiUsagePage(): JSX.Element {
     void load();
   }, [load]);
 
-  if (loading && !summary) {
-    return (
-      <div style={{ padding: 40, color: 'var(--pipe-text-dim)', ...FONT_MONO, fontSize: 11 }}>
-        LOADING…
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={{ padding: 40, color: '#f87171', ...FONT_MONO, fontSize: 11 }}>
-        {error}
-      </div>
-    );
-  }
-
   const monthly = summary?.monthly ?? { eventCount: 0, sessionCount: 0, failedCount: 0, totalCost: 0 };
   const features = summary?.features ?? [];
 
   return (
     <div
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 24,
-        padding: '32px 40px',
-        background: '#0c0c0e',
-        minHeight: '100vh',
-        color: 'var(--pipe-text)',
-        ...FONT_MONO,
+        opacity: mounted ? 1 : 0,
+        transition: 'opacity 0.4s ease',
+        padding: '0 0 80px',
+        maxWidth: 1400,
+        margin: '0 auto',
       }}
     >
-      <div>
-        <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, letterSpacing: '0.02em', ...FONT_MONO }}>
-          AI USAGE · CURRENT MONTH
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 10, color: 'var(--pipe-text-dim)', letterSpacing: '0.04em' }}>
-          Real tokens · real prices · includes failed sessions
-        </p>
-      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* Totals strip */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <StatCard
-          label="Total spend"
-          value={`$${monthly.totalCost.toFixed(4)}`}
-          subtitle="USD month-to-date"
-        />
-        <StatCard
-          label="Sessions"
-          value={String(monthly.sessionCount)}
-          subtitle="unique ref_ids"
-        />
-        <StatCard
-          label="API calls"
-          value={String(monthly.eventCount)}
-          subtitle="across all features"
-        />
-        <StatCard
-          label="Failed calls"
-          value={String(monthly.failedCount)}
-          subtitle="errored but still billed"
-        />
-      </div>
-
-      {/* Feature breakdown */}
-      <LiquidMetalCard variant="default" style={{ borderRadius: 8, padding: '20px 24px' }}>
-        <div
-          style={{
-            fontSize: 9,
-            fontWeight: 800,
-            letterSpacing: '0.18em',
-            color: 'var(--pipe-text-dim)',
-            textTransform: 'uppercase',
-            borderBottom: '1px solid var(--pipe-border)',
-            paddingBottom: 8,
-            marginBottom: 16,
-          }}
-        >
-          Per-feature breakdown
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+        <div>
+          <div style={{ ...mono, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={11} />
+            AI_USAGE
+          </div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text)', margin: 0 }}>
+            AI Usage
+          </h1>
+          <div style={{ ...mono, fontSize: 10, color: 'var(--pipe-text-dim)', marginTop: 6 }}>
+            Real tokens · real prices · includes failed sessions
+          </div>
         </div>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', ...mono, fontSize: 10 }}>
+          <span style={{ color: 'var(--pipe-text)' }}>${monthly.totalCost.toFixed(4)} MTD</span>
+          <span style={{ color: 'var(--pipe-text-dim)' }}>{monthly.sessionCount} SESSIONS</span>
+          <span style={{ color: 'var(--pipe-text-dim)' }}>{monthly.eventCount} CALLS</span>
+          <span style={{ color: monthly.failedCount > 0 ? '#f87171' : 'var(--pipe-text-dim)' }}>
+            {monthly.failedCount} FAILED
+          </span>
+        </div>
+      </div>
 
-        {features.length === 0 ? (
-          <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--pipe-text-dim)', fontSize: 11 }}>
-            No usage data yet this month.
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead>
-              <tr>
-                {['Feature', 'Sessions', 'Calls', 'Failed', 'Avg / session', 'Total', 'Text tokens', 'Audio tokens'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: 'left',
-                      padding: '4px 8px',
-                      fontSize: 9,
-                      fontWeight: 700,
-                      letterSpacing: '0.1em',
-                      color: 'var(--pipe-text-dim)',
-                      borderBottom: '1px solid var(--pipe-border)',
-                    }}
-                  >
-                    {h.toUpperCase()}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {features.map((row) => (
-                <tr key={row.feature}>
-                  <td style={{ padding: '8px', fontWeight: 700 }}>{featureLabel(row.feature)}</td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)' }}>{row.sessionCount}</td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)' }}>{row.eventCount}</td>
-                  <td style={{ padding: '8px', color: row.failedCount > 0 ? '#f87171' : 'var(--pipe-text-dim)' }}>
-                    {row.failedCount}
-                  </td>
-                  <td style={{ padding: '8px', fontWeight: 700 }}>${row.avgCostPerSession.toFixed(4)}</td>
-                  <td style={{ padding: '8px', fontWeight: 700 }}>${row.totalCost.toFixed(4)}</td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
-                    {(row.totalInputTokens + row.totalOutputTokens).toLocaleString()}
-                  </td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
-                    {(row.totalInputAudioTokens + row.totalOutputAudioTokens).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </LiquidMetalCard>
+      {/* Error */}
+      {error && (
+        <div style={{
+          ...mono, fontSize: 10, color: '#f87171',
+          padding: '10px 14px', border: '1px solid rgba(248,113,113,0.25)',
+          borderRadius: 6, background: 'rgba(248,113,113,0.05)', marginBottom: 16,
+        }}>
+          {error}
+        </div>
+      )}
 
-      {/* Session drill-down */}
-      <LiquidMetalCard variant="default" style={{ borderRadius: 8, padding: '20px 24px' }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid var(--pipe-border)',
-            paddingBottom: 8,
-            marginBottom: 16,
-            gap: 12,
-          }}
-        >
-          <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.18em', color: 'var(--pipe-text-dim)', textTransform: 'uppercase' }}>
-            Recent sessions (top 50)
+      {/* Loading */}
+      {loading && !summary && (
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <Loader2 size={18} color="var(--pipe-text-dim)" style={{ animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+        </div>
+      )}
+
+      {/* Content */}
+      {summary && (
+        <>
+          {/* Stat cards */}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+            <StatCard label="Total spend"  value={`$${monthly.totalCost.toFixed(4)}`} subtitle="USD month-to-date" />
+            <StatCard label="Sessions"     value={String(monthly.sessionCount)}       subtitle="unique ref_ids" />
+            <StatCard label="API calls"    value={String(monthly.eventCount)}         subtitle="across all features" />
+            {monthly.failedCount > 0 ? (
+              <StatCard
+                label="Failed calls"
+                value={String(monthly.failedCount)}
+                subtitle="errored but still billed"
+                accent="#f87171"
+              />
+            ) : (
+              <StatCard
+                label="Failed calls"
+                value="0"
+                subtitle="none yet this month"
+              />
+            )}
           </div>
-          <select
-            value={featureFilter}
-            onChange={(e) => setFeatureFilter(e.target.value)}
+
+          {/* Feature breakdown */}
+          <div
             style={{
-              background: 'rgba(255,255,255,0.03)',
+              padding: '14px 16px',
               border: '1px solid var(--pipe-border)',
-              color: 'var(--pipe-text)',
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.1em',
-              padding: '4px 8px',
-              borderRadius: 4,
-              ...FONT_MONO,
+              borderRadius: 8,
+              background: 'var(--pipe-surface)',
+              marginBottom: 20,
             }}
           >
-            <option value="all">ALL FEATURES</option>
-            {Object.keys(FEATURE_LABELS).map((key) => (
-              <option key={key} value={key}>{FEATURE_LABELS[key]}</option>
-            ))}
-          </select>
-        </div>
+            <div
+              style={{
+                ...mono,
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: '0.18em',
+                color: 'var(--pipe-text-dim)',
+                textTransform: 'uppercase',
+                borderBottom: '1px solid var(--pipe-border)',
+                paddingBottom: 8,
+                marginBottom: 12,
+              }}
+            >
+              Per-feature breakdown
+            </div>
 
-        {sessions.length === 0 ? (
-          <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--pipe-text-dim)', fontSize: 11 }}>
-            No sessions yet.
+            {features.length === 0 ? (
+              <div style={{ ...mono, padding: '20px 0', textAlign: 'center', color: 'var(--pipe-text-dim)', fontSize: 11 }}>
+                No usage data yet this month.
+              </div>
+            ) : (
+              <table style={{ ...mono, width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    {['Feature', 'Sessions', 'Calls', 'Failed', 'Avg / session', 'Total', 'Text tokens', 'Audio tokens'].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          textAlign: 'left',
+                          padding: '4px 8px',
+                          fontSize: 8,
+                          fontWeight: 700,
+                          letterSpacing: '0.12em',
+                          color: 'var(--pipe-text-dim)',
+                          borderBottom: '1px solid var(--pipe-border)',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {features.map((row) => (
+                    <tr key={row.feature}>
+                      <td style={{ padding: '8px', fontWeight: 700, color: 'var(--pipe-text)' }}>{featureLabel(row.feature)}</td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)' }}>{row.sessionCount}</td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)' }}>{row.eventCount}</td>
+                      <td style={{ padding: '8px', color: row.failedCount > 0 ? '#f87171' : 'var(--pipe-text-dim)' }}>
+                        {row.failedCount}
+                      </td>
+                      <td style={{ padding: '8px', fontWeight: 700, color: 'var(--pipe-text)' }}>${row.avgCostPerSession.toFixed(4)}</td>
+                      <td style={{ padding: '8px', fontWeight: 700, color: 'var(--pipe-text)' }}>${row.totalCost.toFixed(4)}</td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
+                        {(row.totalInputTokens + row.totalOutputTokens).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
+                        {(row.totalInputAudioTokens + row.totalOutputAudioTokens).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead>
-              <tr>
-                {['Feature', 'Session', 'Status', 'Calls', 'Text tokens', 'Audio tokens', 'Audio sec', 'Cost', 'Last'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: 'left',
-                      padding: '4px 8px',
-                      fontSize: 9,
-                      fontWeight: 700,
-                      letterSpacing: '0.1em',
-                      color: 'var(--pipe-text-dim)',
-                      borderBottom: '1px solid var(--pipe-border)',
-                    }}
-                  >
-                    {h.toUpperCase()}
-                  </th>
+
+          {/* Session drill-down */}
+          <div
+            style={{
+              padding: '14px 16px',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 8,
+              background: 'var(--pipe-surface)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderBottom: '1px solid var(--pipe-border)',
+                paddingBottom: 8,
+                marginBottom: 12,
+                gap: 12,
+              }}
+            >
+              <div style={{ ...mono, fontSize: 9, fontWeight: 800, letterSpacing: '0.18em', color: 'var(--pipe-text-dim)', textTransform: 'uppercase' }}>
+                Recent sessions (top 50)
+              </div>
+              <select
+                value={featureFilter}
+                onChange={(e) => setFeatureFilter(e.target.value)}
+                style={{
+                  ...mono,
+                  background: 'transparent',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text)',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  padding: '4px 8px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="all">ALL FEATURES</option>
+                {Object.keys(FEATURE_LABELS).map((key) => (
+                  <option key={key} value={key}>{FEATURE_LABELS[key]}</option>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((row, i) => (
-                <tr
-                  key={`${row.feature}-${row.refId}-${i}`}
-                  style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)' }}
-                  title={row.lastError ?? undefined}
-                >
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>{featureLabel(row.feature)}</td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10, fontFamily: 'monospace' }}>
-                    {row.refId ? row.refId.slice(0, 14) + '…' : '—'}
-                  </td>
-                  <td style={{ padding: '8px' }}>
-                    <span
-                      style={{
-                        fontSize: 9,
-                        fontWeight: 700,
-                        letterSpacing: '0.08em',
-                        padding: '2px 7px',
-                        borderRadius: 3,
-                        background: row.success ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
-                        color: row.success ? '#4ade80' : '#f87171',
-                      }}
+              </select>
+            </div>
+
+            {sessions.length === 0 ? (
+              <div style={{ ...mono, padding: '20px 0', textAlign: 'center', color: 'var(--pipe-text-dim)', fontSize: 11 }}>
+                No sessions yet.
+              </div>
+            ) : (
+              <table style={{ ...mono, width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    {['Feature', 'Session', 'Status', 'Calls', 'Text tokens', 'Audio tokens', 'Audio sec', 'Cost', 'Last'].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          textAlign: 'left',
+                          padding: '4px 8px',
+                          fontSize: 8,
+                          fontWeight: 700,
+                          letterSpacing: '0.12em',
+                          color: 'var(--pipe-text-dim)',
+                          borderBottom: '1px solid var(--pipe-border)',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.map((row, i) => (
+                    <tr
+                      key={`${row.feature}-${row.refId}-${i}`}
+                      style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.018)' }}
+                      title={row.lastError ?? undefined}
                     >
-                      {row.success ? 'OK' : 'FAIL'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>{row.eventCount}</td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
-                    {(row.inputTokens + row.outputTokens).toLocaleString()}
-                  </td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
-                    {(row.inputAudioTokens + row.outputAudioTokens).toLocaleString()}
-                  </td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
-                    {row.audioSeconds > 0 ? row.audioSeconds.toFixed(1) : '—'}
-                  </td>
-                  <td style={{ padding: '8px', fontWeight: 700 }}>${row.totalCost.toFixed(4)}</td>
-                  <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
-                    {new Date(row.lastEventAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </LiquidMetalCard>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>{featureLabel(row.feature)}</td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
+                        {row.refId ? row.refId.slice(0, 14) + '…' : '—'}
+                      </td>
+                      <td style={{ padding: '8px' }}>
+                        <span
+                          style={{
+                            fontSize: 8,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            padding: '2px 7px',
+                            borderRadius: 3,
+                            background: row.success ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
+                            color: row.success ? '#4ade80' : '#f87171',
+                          }}
+                        >
+                          {row.success ? 'OK' : 'FAIL'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>{row.eventCount}</td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
+                        {(row.inputTokens + row.outputTokens).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
+                        {(row.inputAudioTokens + row.outputAudioTokens).toLocaleString()}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
+                        {row.audioSeconds > 0 ? row.audioSeconds.toFixed(1) : '—'}
+                      </td>
+                      <td style={{ padding: '8px', fontWeight: 700, color: 'var(--pipe-text)' }}>${row.totalCost.toFixed(4)}</td>
+                      <td style={{ padding: '8px', color: 'var(--pipe-text-dim)', fontSize: 10 }}>
+                        {new Date(row.lastEventAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

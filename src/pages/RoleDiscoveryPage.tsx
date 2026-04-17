@@ -31,8 +31,8 @@ import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
 import { FEATURE_FLAGS } from '../config/featureFlags';
+import { useRoleDiscoveryDraft, type RoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
 import { useScriptedPhase, buildBaseline, type RolePreset } from '../hooks/useScriptedPhase';
-import type { RoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
 import {
   Loader2, ArrowRight, ArrowLeft, Check, MessageSquare,
   FileUp, Sparkles, RotateCcw, RotateCw, Volume2, VolumeX,
@@ -320,11 +320,6 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const { create: createPipeline, isCreating } = usePipelineCreate();
   const draft = useRoleDiscoveryDraft();
 
-  // ── Scripted phase state ──
-  const [scriptedIdx, setScriptedIdx] = useState(0);
-  const [scriptedAnswer, setScriptedAnswer] = useState('');
-  const [scriptedAnswers, setScriptedAnswers] = useState<Record<string, string>>({});
-  const [scriptedExchanges, setScriptedExchanges] = useState<PastExchange[]>([]);
   const [isJDModalOpen, setIsJDModalOpen] = useState(false);
 
   // ── initConfig: null until scripted questions complete ──
@@ -334,9 +329,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const [defaultLiveMode, setDefaultLiveMode] = useState(false);
   // ── Resume prompt — shown when a completed draft is found on mount ──
   const [showResumePrompt, setShowResumePrompt] = useState(false);
-  const pendingDraftRef = useRef<import('../hooks/useRoleDiscoveryDraft').RoleDiscoveryDraft | null>(null);
+  const pendingDraftRef = useRef<RoleDiscoveryDraft | null>(null);
 
-  // ── Scripted-phase TTS (must be declared before handlers that call it) ──
+  // ── Scripted-phase TTS (must be declared before the hook that calls cancel) ──
   const [scriptedVoiceOn, setScriptedVoiceOn] = useState(true);
   const scriptedTTS = useTTS(scriptedVoiceOn);
   const handleScriptedVoiceToggle = useCallback((): void => {
@@ -346,44 +341,37 @@ export default function RoleDiscoveryPage(): JSX.Element {
     });
   }, [scriptedTTS]);
 
-  // ── Restore draft on mount ───────────────────────────────────────────────────
+  // ── Clears page-owned interview state — invoked by the hook on reset/startOver ──
+  const clearInterview = useCallback((): void => {
+    setInitConfig(null);
+    setDefaultLiveMode(false);
+  }, []);
 
-  useEffect(() => {
-    const saved = draft.load();
-    if (!saved) return;
-    // Migrate drafts written before the live-voice feature flag landed: strip
-    // sq-mode remnants and clamp scriptedIdx so we can't point at a question
-    // that no longer exists in SCRIPTED.
-    const migratedAnswers = { ...saved.scriptedAnswers };
-    if (!FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE) delete migratedAnswers['sq-mode'];
-    const migratedExchanges = FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE
-      ? saved.scriptedExchanges
-      : saved.scriptedExchanges.filter((ex) => ex.questionId !== 'sq-mode');
-    const clampedIdx = Math.min(saved.scriptedIdx, Math.max(0, SCRIPTED.length - 1));
-    setScriptedIdx(clampedIdx);
-    setScriptedAnswers(migratedAnswers);
-    setScriptedExchanges(migratedExchanges);
-    if (saved.completed) {
-      // Show resume prompt — don't start the AI interview automatically
-      pendingDraftRef.current = { ...saved, scriptedIdx: clampedIdx, scriptedAnswers: migratedAnswers, scriptedExchanges: migratedExchanges };
-      setShowResumePrompt(true);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Build AdapterConfig from scripted answers and hand off to AIChat ──
-  const fireCreateAndStart = useCallback((answers: Record<string, string>, liveMode = false): void => {
-    const baseline = {
-      title: answers['sq-title']?.trim() || '',
-      ...(answers['sq-company']?.trim() ? { companyName: answers['sq-company'].trim() } : {}),
-      ...(answers['sq-url']?.trim() ? { companyUrl: answers['sq-url'].trim() } : {}),
-      ...(answers['sq-salary']?.trim() ? { salaryRange: answers['sq-salary'].trim() } : {}),
-      ...((answers['sq-stack'] ?? '').split('|||').filter(Boolean).length > 0
-        ? { techStack: (answers['sq-stack'] ?? '').split('|||').filter(Boolean) }
-        : {}),
-    };
+  // ── Hook callback: fire the AI interview with the finalised answers ──
+  const handleFire = useCallback((answers: Record<string, string>, liveMode: boolean): void => {
     setDefaultLiveMode(liveMode);
+    setInitConfig({ baseline: buildBaseline(answers) as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+  }, []);
+
+  // ── Hook callback: JD import delivered a baseline — start the interview ──
+  const handleJdImport = useCallback((baseline: RoleContextBaseline): void => {
+    setDefaultLiveMode(false);
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
   }, []);
+
+  // ── Hook callback: completed draft found on mount — show resume prompt ──
+  const handleResumeDraftFound = useCallback((savedDraft: RoleDiscoveryDraft): void => {
+    pendingDraftRef.current = savedDraft;
+    setShowResumePrompt(true);
+  }, []);
+
+  const scripted = useScriptedPhase({
+    onFire: handleFire,
+    onJdImport: handleJdImport,
+    ttsCancel: scriptedTTS.cancel,
+    clearInterview,
+    onResumeDraftFound: handleResumeDraftFound,
+  });
 
   // ── Persist contextId to draft whenever it appears ──────────────────────────
 
@@ -397,16 +385,10 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // ── Start over — clears draft and resets to Q1 ───────────────────────────────
 
   const handleStartOver = useCallback((): void => {
-    draft.clear();
-    setScriptedIdx(0);
-    setScriptedAnswers({});
-    setScriptedExchanges([]);
-    setScriptedAnswer('');
-    setInitConfig(null);
-    setDefaultLiveMode(false);
+    scripted.startOver();
     setShowResumePrompt(false);
     pendingDraftRef.current = null;
-  }, [draft]);
+  }, [scripted]);
 
   // ── Resume session — hydrate from server if COMPLETE, else restart interview ─
 
@@ -415,14 +397,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
     if (!saved) return;
     setShowResumePrompt(false);
 
-    const techTags = (saved.scriptedAnswers['sq-stack'] ?? '').split('|||').filter(Boolean);
-    const baseline = {
-      title: saved.scriptedAnswers['sq-title']?.trim() || '',
-      ...(saved.scriptedAnswers['sq-company']?.trim() ? { companyName: saved.scriptedAnswers['sq-company'].trim() } : {}),
-      ...(saved.scriptedAnswers['sq-url']?.trim() ? { companyUrl: saved.scriptedAnswers['sq-url'].trim() } : {}),
-      ...(saved.scriptedAnswers['sq-salary']?.trim() ? { salaryRange: saved.scriptedAnswers['sq-salary'].trim() } : {}),
-      ...(techTags.length > 0 ? { techStack: techTags } : {}),
-    };
+    const baseline = buildBaseline(saved.scriptedAnswers);
 
     // If we have a contextId, try to hydrate from the server
     if (saved.contextId) {
@@ -450,202 +425,16 @@ export default function RoleDiscoveryPage(): JSX.Element {
     // No complete context — restart the AI interview from the saved baseline
     setDefaultLiveMode(saved.defaultLiveMode);
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
-  }, [api, rd]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, rd]);
 
-  // ── Start new — discard draft, begin from scratch ───────────────────────────
-
-  const handleStartNew = useCallback((): void => {
-    handleStartOver();
-  }, [handleStartOver]);
-
-  // ── Go back to previous scripted question ───────────────────────────────────
-
-  const handleScriptedBack = useCallback((): void => {
-    if (scriptedIdx <= 0) return;
-    const prevIdx = scriptedIdx - 1;
-    const prevQ = SCRIPTED[prevIdx];
-    if (!prevQ) return;
-
-    const prevAnswer = scriptedAnswers[prevQ.id] ?? '';
-    const prevExchanges = scriptedExchanges.slice(0, -1);
-    const prevAnswers = { ...scriptedAnswers };
-    delete prevAnswers[prevQ.id];
-
-    setScriptedIdx(prevIdx);
-    setScriptedExchanges(prevExchanges);
-    setScriptedAnswers(prevAnswers);
-    setScriptedAnswer(prevAnswer);
-
-    draft.save({ scriptedIdx: prevIdx, scriptedAnswers: prevAnswers, scriptedExchanges: prevExchanges, completed: false, defaultLiveMode: false });
-  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft]);
-
-  // ── Reset to mode selection — keeps Q1-Q5 answers, goes back to voice/text choice ──
-
-  const handleResetToMode = useCallback((): void => {
-    // Keep scripted answers but remove sq-mode
-    const keptAnswers = { ...scriptedAnswers };
-    delete keptAnswers['sq-mode'];
-
-    // Keep exchanges for Q1-Q5, remove sq-mode
-    const keptExchanges = scriptedExchanges.filter((ex) => ex.questionId !== 'sq-mode');
-
-    setScriptedIdx(MODE_Q_IDX);
-    setScriptedAnswers(keptAnswers);
-    setScriptedExchanges(keptExchanges);
-    setScriptedAnswer('');
-    setInitConfig(null);
-    setDefaultLiveMode(false);
-
-    // Update draft to reflect reset state
-    draft.save({
-      scriptedIdx: MODE_Q_IDX,
-      scriptedAnswers: keptAnswers,
-      scriptedExchanges: keptExchanges,
-      completed: false,
-      defaultLiveMode: false,
-    });
-  }, [scriptedAnswers, scriptedExchanges, draft]);
-
-  // ── Preset select — fills Q1–Q5 and jumps to mode question ──────────────────
-
-  const handlePresetSelect = useCallback((preset: RolePreset): void => {
-    const exchanges: PastExchange[] = SCRIPTED
-      .filter((q) => q.id !== 'sq-mode')
-      .map((q) => {
-        const raw = preset.answers[q.id] ?? '';
-        const display = q.inputType === 'tags'
-          ? (raw.split('|||').filter(Boolean).join(', ') || '(skipped)')
-          : (raw.trim() || '(skipped)');
-        return { questionId: q.id, acknowledgment: '', questionText: q.text, answer: display };
-      });
-
-    const answers: Record<string, string> = {};
-    SCRIPTED.filter((q) => q.id !== 'sq-mode').forEach((q) => {
-      answers[q.id] = preset.answers[q.id] ?? '';
-    });
-
-    setScriptedAnswers(answers);
-    setScriptedExchanges(exchanges);
-    setScriptedAnswer('');
-
-    if (FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE) {
-      // Jump to the Voice/Text picker — user still decides mode.
-      setScriptedIdx(MODE_Q_IDX);
-      draft.save({ scriptedIdx: MODE_Q_IDX, scriptedAnswers: answers, scriptedExchanges: exchanges, completed: false, defaultLiveMode: false });
-    } else {
-      // No mode picker — fire the interview straight away in text mode.
-      draft.save({ scriptedIdx: SCRIPTED.length - 1, scriptedAnswers: answers, scriptedExchanges: exchanges, completed: true, defaultLiveMode: false });
-      fireCreateAndStart(answers, false);
-    }
-  }, [draft, fireCreateAndStart]);
-
-  // ── Choice question select (sq-mode: Voice / Text) ──
-  const handleChoiceSelect = useCallback((choice: string): void => {
-    const q = SCRIPTED[scriptedIdx];
-    if (!q) return;
-    scriptedTTS.cancel();
-
-    const newExchanges: PastExchange[] = [
-      ...scriptedExchanges,
-      { questionId: q.id, acknowledgment: '', questionText: q.text, answer: choice },
-    ];
-    const newAnswers = { ...scriptedAnswers, [q.id]: choice };
-
-    setScriptedExchanges(newExchanges);
-    setScriptedAnswers(newAnswers);
-    setScriptedAnswer('');
-
-    if (scriptedIdx < SCRIPTED.length - 1) {
-      const nextIdx = scriptedIdx + 1;
-      setScriptedIdx(nextIdx);
-      draft.save({ scriptedIdx: nextIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: false, defaultLiveMode: false });
-    } else {
-      draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: choice === 'Voice' });
-      fireCreateAndStart(newAnswers, choice === 'Voice');
-    }
-  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart, scriptedTTS]);
-
-  // ── Scripted question submit ──
-  const handleScriptedSubmit = useCallback((): void => {
-    const q = SCRIPTED[scriptedIdx];
-    if (!q) return;
-    if (!q.optional && !scriptedAnswer.trim()) return;
-    scriptedTTS.cancel();
-
-    const displayAnswer = q.inputType === 'tags'
-      ? (scriptedAnswer.split('|||').filter(Boolean).join(', ') || '(skipped)')
-      : (scriptedAnswer.trim() || '(skipped)');
-
-    const newExchanges: PastExchange[] = [
-      ...scriptedExchanges,
-      { questionId: q.id, acknowledgment: '', questionText: q.text, answer: displayAnswer },
-    ];
-    const newAnswers = { ...scriptedAnswers, [q.id]: scriptedAnswer };
-
-    setScriptedExchanges(newExchanges);
-    setScriptedAnswers(newAnswers);
-    setScriptedAnswer('');
-
-    if (scriptedIdx < SCRIPTED.length - 1) {
-      const nextIdx = scriptedIdx + 1;
-      setScriptedIdx(nextIdx);
-      draft.save({ scriptedIdx: nextIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: false, defaultLiveMode: false });
-    } else {
-      draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: false });
-      fireCreateAndStart(newAnswers);
-    }
-  }, [scriptedIdx, scriptedAnswer, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart, scriptedTTS]);
-
-  const handleScriptedSkip = useCallback((): void => {
-    const q = SCRIPTED[scriptedIdx];
-    if (!q?.optional) return;
-    scriptedTTS.cancel();
-
-    const newExchanges: PastExchange[] = [
-      ...scriptedExchanges,
-      { questionId: q.id, acknowledgment: '', questionText: q.text, answer: '(skipped)' },
-    ];
-    const newAnswers = { ...scriptedAnswers, [q.id]: '' };
-
-    setScriptedExchanges(newExchanges);
-    setScriptedAnswers(newAnswers);
-    setScriptedAnswer('');
-
-    if (scriptedIdx < SCRIPTED.length - 1) {
-      const nextIdx = scriptedIdx + 1;
-      setScriptedIdx(nextIdx);
-      draft.save({ scriptedIdx: nextIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: false, defaultLiveMode: false });
-    } else {
-      draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: false });
-      fireCreateAndStart(newAnswers);
-    }
-  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart, scriptedTTS]);
-
-  // ── JD import — skip scripted questions, fire immediately ──
+  // ── JD import modal — closes the modal then hands parsed payload to the hook ──
   const handleJDImport = useCallback((parsed: ParseJDResponse['parsed']): void => {
     setIsJDModalOpen(false);
-    const title = parsed.title ?? '';
-    const companyName = parsed.companyName ?? '';
-    const companyUrl = parsed.companyUrl ?? '';
-
-    const exchanges: PastExchange[] = [];
-    if (title) exchanges.push({ questionId: 'sq-title', acknowledgment: '', questionText: SCRIPTED[0]!.text, answer: title });
-    if (companyName) exchanges.push({ questionId: 'sq-company', acknowledgment: '', questionText: SCRIPTED[1]!.text, answer: companyName });
-    if (companyUrl) exchanges.push({ questionId: 'sq-url', acknowledgment: '', questionText: SCRIPTED[2]!.text, answer: companyUrl });
-    setScriptedExchanges(exchanges);
-
-    const baseline: RoleContextBaseline = {
-      title,
-      ...(companyName ? { companyName } : {}),
-      ...(companyUrl ? { companyUrl } : {}),
-      ...(parsed.department ? { department: parsed.department } : {}),
-      ...(parsed.location ? { location: parsed.location } : {}),
-    };
-    setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
-  }, []);
+    scripted.jdImport(parsed);
+  }, [scripted]);
 
   // ── Live session ended — return to Voice/Text choice without losing answers ──
-  const handleLiveEnd = handleResetToMode;
+  const handleLiveEnd = scripted.resetToMode;
 
   // ── Pipeline creation ──
   const handleCreatePipeline = async (): Promise<void> => {
@@ -676,8 +465,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
     'role';
 
   const isInScriptedPhase = initConfig === null;
-  const currentScriptedQ = isInScriptedPhase ? SCRIPTED[scriptedIdx] ?? null : null;
-  const hasDraftProgress = scriptedIdx > 0 || Object.keys(scriptedAnswers).length > 0;
+  const currentScriptedQ = isInScriptedPhase ? scripted.currentQuestion : null;
 
   // Speak each scripted question — covers radio/select intake questions too.
   useEffect(() => {
@@ -700,7 +488,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           </h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          {isInScriptedPhase && hasDraftProgress && (
+          {isInScriptedPhase && scripted.hasProgress && (
             <button
               onClick={handleStartOver}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
@@ -734,7 +522,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
               RESUME_SESSION
             </button>
             <button
-              onClick={handleStartNew}
+              onClick={handleStartOver}
               style={{ padding: '10px 24px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
             >
               START_NEW
@@ -747,9 +535,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
       {isInScriptedPhase && !showResumePrompt && (
         <div>
           {/* Past scripted exchanges */}
-          {scriptedExchanges.length > 0 && (
+          {scripted.exchanges.length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              {scriptedExchanges.map((ex, i) => (
+              {scripted.exchanges.map((ex, i) => (
                 <div key={`${ex.questionId}-${i}`} style={{
                   padding: '16px 24px',
                   background: 'transparent',
@@ -773,7 +561,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
             <div style={{ padding: 32, background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border-light)', borderRadius: 16 }}>
 
               {/* Top toolbar — JD import + quick-start presets (first question only) */}
-              {scriptedIdx === 0 && (
+              {scripted.idx === 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
                   <button
                     onClick={() => setIsJDModalOpen(true)}
@@ -792,7 +580,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   {ROLE_PRESETS.map((preset) => (
                     <button
                       key={preset.label}
-                      onClick={() => handlePresetSelect(preset)}
+                      onClick={() => scripted.presetSelect(preset)}
                       style={{ padding: '6px 12px', background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.25)', color: 'rgba(216, 180, 254, 0.8)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4, whiteSpace: 'nowrap' }}
                       onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.14)'; e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.45)'; }}
                       onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.06)'; e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.25)'; }}
@@ -834,7 +622,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   {(currentScriptedQ.options ?? []).map((opt) => (
                     <button
                       key={opt}
-                      onClick={() => handleChoiceSelect(opt)}
+                      onClick={() => scripted.choiceSelect(opt)}
                       style={{
                         flex: 1,
                         padding: '20px 24px',
@@ -867,23 +655,23 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}
                   onKeyDown={(e) => {
                     if (currentScriptedQ.inputType === 'tags') return;
-                    if (e.key === 'Enter' && (scriptedAnswer.trim() || currentScriptedQ.optional)) {
+                    if (e.key === 'Enter' && (scripted.answer.trim() || currentScriptedQ.optional)) {
                       e.preventDefault();
-                      handleScriptedSubmit();
+                      scripted.submit();
                     }
                   }}
                 >
                   <div style={{ flex: 1 }}>
                     {currentScriptedQ.inputType === 'tags' ? (
                       <TagsInput
-                        value={scriptedAnswer ? scriptedAnswer.split('|||') : []}
-                        onChange={(tags) => setScriptedAnswer(tags.join('|||'))}
+                        value={scripted.answer ? scripted.answer.split('|||') : []}
+                        onChange={(tags) => scripted.setAnswer(tags.join('|||'))}
                         placeholder={currentScriptedQ.placeholder}
                       />
                     ) : (
                       <TextInput
-                        value={scriptedAnswer}
-                        onChange={setScriptedAnswer}
+                        value={scripted.answer}
+                        onChange={scripted.setAnswer}
                         placeholder={currentScriptedQ.placeholder}
                       />
                     )}
@@ -893,24 +681,24 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
                     <button
-                      onClick={handleScriptedSubmit}
-                      disabled={!scriptedAnswer.trim() && !currentScriptedQ.optional}
+                      onClick={scripted.submit}
+                      disabled={!scripted.answer.trim() && !currentScriptedQ.optional}
                       style={{
                         padding: '10px 20px',
-                        background: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.08)' : 'transparent',
-                        border: `1px solid ${(scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.3)' : 'var(--pipe-border-light)'}`,
-                        color: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.9)' : 'var(--pipe-text-dim)',
+                        background: (scripted.answer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.08)' : 'transparent',
+                        border: `1px solid ${(scripted.answer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.3)' : 'var(--pipe-border-light)'}`,
+                        color: (scripted.answer.trim() || currentScriptedQ.optional) ? 'rgba(74, 222, 128, 0.9)' : 'var(--pipe-text-dim)',
                         fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace',
-                        cursor: (scriptedAnswer.trim() || currentScriptedQ.optional) ? 'pointer' : 'default',
+                        cursor: (scripted.answer.trim() || currentScriptedQ.optional) ? 'pointer' : 'default',
                         display: 'flex', alignItems: 'center', gap: 6,
                       }}
                     >
                       <ArrowRight size={12} /> SEND
                     </button>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      {scriptedIdx > 0 && (
+                      {scripted.idx > 0 && (
                         <button
-                          onClick={handleScriptedBack}
+                          onClick={scripted.back}
                           style={{ flex: 1, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                         >
                           <ArrowLeft size={9} /> BACK
@@ -918,7 +706,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                       )}
                       {currentScriptedQ.optional && (
                         <button
-                          onClick={handleScriptedSkip}
+                          onClick={scripted.skip}
                           style={{ flex: 1, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
                         >
                           SKIP

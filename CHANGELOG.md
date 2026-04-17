@@ -6,6 +6,52 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(admin): align /admin/ai-usage with sibling admin page layout (2026-04-17)
+
+`AiUsagePage` was styled like `CultureCostDashboard` — a self-contained
+surface with its own `background: #0c0c0e; minHeight: 100vh` wrapper and
+`LiquidMetalCard` content. Dropped into `AppLayout` (which already provides
+the dark chrome) the page rendered as a dark box inside a dark box with a
+different inner-card treatment than the rest of the admin section.
+
+Rewrote to match `RepoAdminPage`, the sibling routed via the same sidebar:
+
+- Outer wrapper: `padding: '0 0 80px', maxWidth: 1400, margin: '0 auto'` —
+  no self-background, lets `AppLayout` own the chrome.
+- Header: eyebrow (`Activity` icon + `AI_USAGE`) + proper-case `<h1>AI Usage</h1>`
+  at fontSize 24 + inline metric chips, matching `REPO_CATALOG` /
+  `Repo Admin` + counter strip.
+- Cards: plain `<div>` with `background: var(--pipe-surface)` +
+  `border: 1px solid var(--pipe-border)`; no `LiquidMetalCard`.
+- Removed the standalone `StatCard` glass treatment in favour of the same
+  surface primitive used across `RepoAdminPage`.
+
+**Changed files:**
+- `src/pages/admin/AiUsagePage.tsx`
+
+#### refactor(role-discovery): wire useScriptedPhase hook into RoleDiscoveryPage (2026-04-17)
+
+`RoleDiscoveryPage` was a 982-line component with ~230 lines of inline state
+machine for the scripted-question flow. The hook already existed as
+`src/hooks/useScriptedPhase.ts`, but the page never consumed it. Wired it up
+so the page owns rendering + cross-phase orchestration (initConfig,
+defaultLiveMode, resume prompt, TTS) and the hook owns the scripted-phase
+state machine + draft persistence.
+
+- Removed from page: `scriptedIdx`, `scriptedAnswer`, `scriptedAnswers`,
+  `scriptedExchanges` local state; restore-draft effect; `handleScriptedBack`,
+  `handleResetToMode`, `handlePresetSelect`, `handleChoiceSelect`,
+  `handleScriptedSubmit`, `handleScriptedSkip`; `fireCreateAndStart`;
+  duplicate `buildBaseline` logic; local `MODE_Q_IDX`.
+- Page now passes four callbacks into the hook: `onFire`, `onJdImport`,
+  `ttsCancel`, `clearInterview`, `onResumeDraftFound`.
+- Page drops from 982 → 764 lines. Hook unchanged (371 lines).
+- No behavioural changes: type-check clean, existing
+  `useRoleDiscovery.test.ts` still passes.
+
+**Changed files:**
+- `src/pages/RoleDiscoveryPage.tsx`
+
 #### feat(admin): AI usage dashboard + unified cost metering (2026-04-17)
 
 Every AI call in the system now writes one row to `ai_usage_events` — role
