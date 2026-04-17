@@ -17,6 +17,16 @@ export interface LiveSessionConfig {
   voice?: string;
 }
 
+// ─── Usage accounting ─────────────────────────────────────────────────────────
+
+/** Cumulative token counts reported by the provider over the session's lifetime. */
+export interface LiveUsageTotals {
+  inputTextTokens: number;
+  outputTextTokens: number;
+  inputAudioTokens: number;
+  outputAudioTokens: number;
+}
+
 // ─── Session interface ────────────────────────────────────────────────────────
 
 export interface LiveSession {
@@ -30,6 +40,10 @@ export interface LiveSession {
   onError(handler: (err: Error) => void): void;
   /** Close the session and release resources. */
   close(): void;
+  /** Cumulative token usage reported by the provider. Zero for providers that don't emit usageMetadata. */
+  getUsageTotals(): LiveUsageTotals;
+  /** Canonical pricing key for `MODEL_PRICING` lookups. */
+  getModelKey(): string;
 }
 
 // ─── Provider interface ───────────────────────────────────────────────────────

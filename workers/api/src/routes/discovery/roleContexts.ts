@@ -22,6 +22,8 @@ import { createRoleContextSchema, respondSchema, inviteSchema, PARTICIPANT_ROLES
 import { callRoleAgent, callRoleAgentStream, mergeKnowledgeState, type RoleAgentResponse } from '../../lib/roleAgent';
 import { buildConversationContext, buildPhaseDirective } from '../../lib/roleAgentPrompts';
 import { createRoleAgentProvider } from '../../lib/llm/createProvider';
+import { VertexAIProvider } from '../../lib/llm/vertexAIProvider';
+import { recordAiUsage } from '../../lib/aiUsage';
 import { parseJobDescription } from '../../lib/jdParser';
 import { sendNotificationEmail } from '../../lib/email';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole } from '../../types';
@@ -50,6 +52,34 @@ function parseJsonColumn<T>(raw: string | null, fallback: T): T {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Log role-discovery AI usage to ai_usage_events. Reads token counts from the
+ * Vertex provider's `getLastUsage()` after a call. Safe to call even when the
+ * provider is null, a non-Vertex provider, or the call errored — it just
+ * writes whatever it knows, flipping `success=0` when appropriate.
+ */
+function logRoleAgentUsage(
+  c: { env: Env; executionCtx: ExecutionContext },
+  provider: ReturnType<typeof createRoleAgentProvider>,
+  refs: { roleContextId: string; participantId: string },
+  opts: { success: boolean; errorMessage?: string } = { success: true },
+): void {
+  if (!(provider instanceof VertexAIProvider)) return;
+  const usage = provider.getLastUsage();
+  if (!usage && opts.success) return; // nothing to log
+
+  recordAiUsage(c.env.DB, c.executionCtx, {
+    feature: 'role_discovery',
+    refId: refs.roleContextId,
+    subRefId: refs.participantId,
+    provider: 'vertex-ai',
+    model: provider.getModelKey(),
+    usage: usage ?? {},
+    success: opts.success,
+    ...(opts.errorMessage ? { errorMessage: opts.errorMessage } : {}),
+  });
 }
 
 /** The hardcoded calibration question — always first, never agent-generated. */
@@ -465,15 +495,22 @@ roleContexts.post('/:id/respond', async (c) => {
       // ── Calibration in streaming path ──
       if (questionId === 'q-calibration') {
         const participantRole = resolveParticipantRole(answer);
-        const calAgentResponse = await callRoleAgent({
-          provider,
-          baseline,
-          exchanges: [],
-          knowledgeState: sharedKnowledgeState,
-          questionsAsked: 0,
-          questionBudget: participant.question_budget,
-          participantRole,
-        });
+        let calAgentResponse;
+        try {
+          calAgentResponse = await callRoleAgent({
+            provider,
+            baseline,
+            exchanges: [],
+            knowledgeState: sharedKnowledgeState,
+            questionsAsked: 0,
+            questionBudget: participant.question_budget,
+            participantRole,
+          });
+        } catch (err) {
+          logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+          throw err;
+        }
+        logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
         if (calAgentResponse.type !== 'question') {
           await stream.writeSSE({ event: 'error', data: 'Agent did not return a question for the opening turn.' });
           return;
@@ -528,13 +565,19 @@ roleContexts.post('/:id/respond', async (c) => {
 
       let agentResponse: RoleAgentResponse | null = null;
 
-      for await (const event of callRoleAgentStream(agentInput)) {
-        if (event.event === 'chunk') {
-          await stream.writeSSE({ event: 'chunk', data: event.text });
-        } else if (event.event === 'done') {
-          agentResponse = event.result;
+      try {
+        for await (const event of callRoleAgentStream(agentInput)) {
+          if (event.event === 'chunk') {
+            await stream.writeSSE({ event: 'chunk', data: event.text });
+          } else if (event.event === 'done') {
+            agentResponse = event.result;
+          }
         }
+      } catch (err) {
+        logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+        throw err;
       }
+      logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
 
       if (!agentResponse) {
         await stream.writeSSE({ event: 'error', data: 'No response from agent' });
@@ -646,15 +689,22 @@ roleContexts.post('/:id/respond', async (c) => {
   if (questionId === 'q-calibration') {
     const participantRole = resolveParticipantRole(answer);
 
-    const agentResponse = await callRoleAgent({
-      provider,
-      baseline,
-      exchanges: [],
-      knowledgeState: sharedKnowledgeState,
-      questionsAsked: 0,
-      questionBudget: participant.question_budget,
-      participantRole,
-    });
+    let agentResponse;
+    try {
+      agentResponse = await callRoleAgent({
+        provider,
+        baseline,
+        exchanges: [],
+        knowledgeState: sharedKnowledgeState,
+        questionsAsked: 0,
+        questionBudget: participant.question_budget,
+        participantRole,
+      });
+    } catch (err) {
+      logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
 
     if (agentResponse.type !== 'question') {
       return apiError(c, 'INTERNAL_ERROR', 'Agent did not return a question for the opening turn.');
@@ -719,7 +769,14 @@ roleContexts.post('/:id/respond', async (c) => {
     ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
   };
 
-  const agentResponse = await callRoleAgent(agentInput);
+  let agentResponse;
+  try {
+    agentResponse = await callRoleAgent(agentInput);
+  } catch (err) {
+    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+    throw err;
+  }
+  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
 
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
   // Persist domain coverage so the agent receives it on the next turn
@@ -883,15 +940,22 @@ roleContexts.post('/:id/complete', async (c) => {
   const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
 
   const provider = createRoleAgentProvider(c.env);
-  const agentResponse = await callRoleAgent({
-    provider,
-    baseline,
-    exchanges: agentExchanges,
-    knowledgeState: sharedKnowledgeState,
-    questionsAsked: participant.question_budget, // Force budget-exhausted
-    questionBudget: participant.question_budget,
-    ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
-  });
+  let agentResponse;
+  try {
+    agentResponse = await callRoleAgent({
+      provider,
+      baseline,
+      exchanges: agentExchanges,
+      knowledgeState: sharedKnowledgeState,
+      questionsAsked: participant.question_budget, // Force budget-exhausted
+      questionBudget: participant.question_budget,
+      ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
+    });
+  } catch (err) {
+    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+    throw err;
+  }
+  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
 
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
   const synthesis = agentResponse.type === 'synthesis' ? agentResponse.synthesis : '';

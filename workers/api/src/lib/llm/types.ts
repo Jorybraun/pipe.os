@@ -48,6 +48,10 @@ export interface LLMTool {
 export interface LLMUsage {
   inputTokens?: number;
   outputTokens?: number;
+  /** Audio input tokens (Live API only). */
+  inputAudioTokens?: number;
+  /** Audio output tokens (Live API only). */
+  outputAudioTokens?: number;
 }
 
 export interface LLMCompletion {

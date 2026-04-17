@@ -38,6 +38,7 @@ import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import RepoAdminPage from "./pages/admin/RepoAdminPage";
 import RepoSearchPage from "./pages/admin/RepoSearchPage";
+import AiUsagePage from "./pages/admin/AiUsagePage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
@@ -279,6 +280,12 @@ function AppLayout(): JSX.Element {
             setShowCalls(false);
             navigate("/admin/repos");
           }}
+          onAiUsageClick={() => {
+            setActiveSection("ai-usage");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/admin/ai-usage");
+          }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT
             ? {
                 onAgentClick: () => {
@@ -423,6 +430,7 @@ function App(): JSX.Element {
                     />
                     <Route path="/admin/repos" element={<RepoAdminPage />} />
                     <Route path="/admin/repos/search" element={<RepoSearchPage />} />
+                    <Route path="/admin/ai-usage" element={<AiUsagePage />} />
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

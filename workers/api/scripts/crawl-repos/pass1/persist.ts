@@ -108,31 +108,3 @@ export async function persistPass1Row(
   return { repoId, inserted: true };
 }
 
-/**
- * Batch-persist multiple pass-1 rows.
- */
-export async function persistPass1Batch(
-  db: D1Client,
-  rows: Pass1Row[],
-  dryRun = false,
-): Promise<void> {
-  logger.info('[pass1/persist] Persisting batch', { count: rows.length, dryRun });
-
-  let ok = 0;
-  let failed = 0;
-
-  for (const row of rows) {
-    try {
-      await persistPass1Row(db, row, dryRun);
-      ok++;
-    } catch (err) {
-      failed++;
-      logger.error('[pass1/persist] Row failed', {
-        full_name: row.full_name,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  logger.info('[pass1/persist] Batch complete', { ok, failed });
-}

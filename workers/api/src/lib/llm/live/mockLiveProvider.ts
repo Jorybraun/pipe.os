@@ -12,7 +12,7 @@
  *  - close()             → clear all handler lists; subsequent calls are no-ops.
  */
 
-import type { LiveProvider, LiveSession, LiveSessionConfig } from './types.js';
+import type { LiveProvider, LiveSession, LiveSessionConfig, LiveUsageTotals } from './types.js';
 
 // ─── Silent PCM16 stub ────────────────────────────────────────────────────────
 
@@ -75,6 +75,14 @@ export class MockLiveSession implements LiveSession {
     this.audioHandlers = [];
     this.transcriptHandlers = [];
     this.errorHandlers = [];
+  }
+
+  getUsageTotals(): LiveUsageTotals {
+    return { inputTextTokens: 0, outputTextTokens: 0, inputAudioTokens: 0, outputAudioTokens: 0 };
+  }
+
+  getModelKey(): string {
+    return 'mock/live';
   }
 
   // ─── Test-only escape hatch ──────────────────────────────────────────────────

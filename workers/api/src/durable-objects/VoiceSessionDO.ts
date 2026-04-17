@@ -26,6 +26,7 @@
 import type { DurableObjectState } from '@cloudflare/workers-types';
 import type { LiveSession } from '../lib/llm/live/types';
 import { createLiveProvider } from '../lib/llm/live/createLiveProvider';
+import { logAiUsage } from '../lib/aiUsage';
 import type { Env } from '../types';
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -82,6 +83,18 @@ export class VoiceSessionDO {
   private transcript: Array<{ role: 'user' | 'model'; text: string }> = [];
   private config: VoiceSessionConfig | null = null;
 
+  // Flipped true when the Live session fires onError so `close()` can mark the
+  // usage event as failed. Also set when /__init fails before a session exists.
+  private errored = false;
+  private errorMessage: string | null = null;
+
+  // Set at /__init so we can log usage even when the Live session failed to open.
+  private modelKey: string | null = null;
+  // Wall-clock start time (ms) so we can record approximate session duration.
+  private startedAtMs: number | null = null;
+  // Prevent double-logging when webSocketClose + explicit close() both fire.
+  private usageLogged = false;
+
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
@@ -132,17 +145,34 @@ export class VoiceSessionDO {
       return new Response('Live provider unavailable', { status: 503 });
     }
 
+    this.startedAtMs = Date.now();
+
     let session: LiveSession;
     try {
       session = await provider.openSession({ systemPrompt: config.systemPrompt });
     } catch (err) {
-      console.error('[VoiceSessionDO] openSession failed:', err instanceof Error ? err.message : err);
+      // Log a failure event so the dashboard reflects "interview attempted, session failed to open"
+      // — this is the main reason we track both successful and failed calls.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[VoiceSessionDO] openSession failed:', msg);
+      await logAiUsage(this.env.DB, {
+        feature: 'voice_interview',
+        refId: config.sessionId,
+        provider: 'vertex-live',
+        // Model key unknown until the session constructs — use a placeholder
+        // that exists in MODEL_PRICING so cost stays at $0 instead of throwing.
+        model: 'vertex/gemini-live-2.5-flash-native-audio',
+        usage: {},
+        success: false,
+        errorMessage: msg,
+      });
       return new Response(
         JSON.stringify({ error: err instanceof Error ? err.message : 'openSession failed' }),
         { status: 500, headers: { 'Content-Type': 'application/json' } },
       );
     }
     this.liveSession = session;
+    this.modelKey = session.getModelKey();
 
     // Transcript accumulation — also forwarded to the WS client once connected.
     // onAudio is wired per-connection in handleWebSocket so the handler always
@@ -163,6 +193,8 @@ export class VoiceSessionDO {
 
     session.onError((err) => {
       console.error('[VoiceSessionDO] LiveSession error:', err.message);
+      this.errored = true;
+      this.errorMessage = err.message;
       // Null out so handleWebSocket returns 409 if browser connects after this fires
       this.liveSession = null;
       const clients = this.state.getWebSockets('client');
@@ -273,10 +305,37 @@ export class VoiceSessionDO {
    * liveSession null-check.
    */
   private async close(ws: WebSocket): Promise<void> {
+    // Capture cumulative usage BEFORE closing — once we call close() the
+    // underlying WebSocket may release and getUsageTotals would return zeros.
+    const finalUsage = this.liveSession?.getUsageTotals() ?? null;
+    const finalModelKey = this.liveSession?.getModelKey() ?? this.modelKey;
+
     // Close the AI session once, regardless of how many times close() is called
     if (this.liveSession) {
       this.liveSession.close();
       this.liveSession = null;
+    }
+
+    // Log usage exactly once per session. Both successful and failed sessions
+    // are logged so the dashboard totals reflect real spend including aborts.
+    if (!this.usageLogged && this.config && finalModelKey) {
+      this.usageLogged = true;
+      const durationSeconds = this.startedAtMs ? (Date.now() - this.startedAtMs) / 1000 : null;
+      await logAiUsage(this.env.DB, {
+        feature: 'voice_interview',
+        refId: this.config.sessionId,
+        provider: 'vertex-live',
+        model: finalModelKey,
+        usage: {
+          inputTokens: finalUsage?.inputTextTokens ?? 0,
+          outputTokens: finalUsage?.outputTextTokens ?? 0,
+          inputAudioTokens: finalUsage?.inputAudioTokens ?? 0,
+          outputAudioTokens: finalUsage?.outputAudioTokens ?? 0,
+          ...(durationSeconds !== null ? { audioSeconds: durationSeconds } : {}),
+        },
+        success: !this.errored,
+        ...(this.errorMessage ? { errorMessage: this.errorMessage } : {}),
+      });
     }
 
     // Attempt to close the WebSocket cleanly (may already be closed)

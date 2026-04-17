@@ -17,4 +17,6 @@ export const FEATURE_FLAGS = {
   FEATURE_FLAG_CHALLENGE_EDITOR: true,
   /** Global copilot agent drawer (ADR-035) — parked until agentic UX is ready */
   FEATURE_FLAG_COPILOT_AGENT: false,
+  /** Real-time voice interview (Vertex AI Live WebSocket) — off by default due to cost. */
+  FEATURE_FLAG_LIVE_VOICE: false,
 } as const;

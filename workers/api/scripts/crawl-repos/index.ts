@@ -37,7 +37,7 @@ import { SEARCH_QUERIES, PASS2_BATCH_SIZE, PASS2_CONCURRENCY, staleCutoff } from
 import { searchReposForQuery } from './pass1/search.js';
 import { extractManifestSkills, extractTopicSkills } from './pass1/graphqlDeps.js';
 import { coarseFilter, extractPass1Data } from './pass1/coarseFilter.js';
-import { persistPass1Batch } from './pass1/persist.js';
+import { persistPass1Row } from './pass1/persist.js';
 import { withClone } from './pass2/clone.js';
 import { analyseStack } from './pass2/stackAnalyse.js';
 import { measureComplexity } from './pass2/complexity.js';
@@ -154,9 +154,11 @@ async function runPass1(github: GitHubClient, d1: D1Client | null): Promise<void
   logger.info('[pass1] Starting', { queryCount: SEARCH_QUERIES.length });
 
   const cutoff = staleCutoff().split('T')[0]!; // YYYY-MM-DD for GitHub query
-  const allRows: Pass1Row[] = [];
   const seen = new Set<string>(); // deduplicate across queries
   const queries = MAX_QUERIES ? SEARCH_QUERIES.slice(0, MAX_QUERIES) : SEARCH_QUERIES;
+
+  let totalPersisted = 0;
+  let totalFailed = 0;
 
   for (const query of queries) {
     let repos;
@@ -205,39 +207,47 @@ async function runPass1(github: GitHubClient, d1: D1Client | null): Promise<void
       }
 
       const now = new Date().toISOString();
-      allRows.push({
+      const row: Pass1Row = {
         ...base,
         ...openCounts,
         manifest_skills: [...manifestSkills, ...topicSkills],
         pass: 1,
         crawled_at: now,
-      });
+      };
+
+      // Write immediately — don't accumulate. Keeps partial progress across OAuth/network blips
+      // and makes the D1 write load steady instead of a thundering herd at the end.
+      if (d1) {
+        try {
+          await persistPass1Row(d1, row, DRY_RUN);
+          totalPersisted++;
+        } catch (err) {
+          totalFailed++;
+          logger.error('[pass1/persist] Row failed', {
+            full_name: row.full_name,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } else {
+        logger.info('[pass1] → repo (dry-run)', {
+          full_name: row.full_name,
+          lang: row.primary_language,
+          stars: row.stars,
+          license: row.license_spdx,
+          contamination_risk: row.contamination_risk,
+          skills: row.manifest_skills.map((s) => `${s.slug}(${s.source})`),
+        });
+      }
     }
 
     logger.info('[pass1] Query processed', {
       query: { lang: query.lang, topics: query.topics },
-      accumulated: allRows.length,
+      persisted: totalPersisted,
+      failed: totalFailed,
     });
   }
 
-  logger.info('[pass1] All queries done', { total: allRows.length });
-
-  if (d1) {
-    await persistPass1Batch(d1, allRows, DRY_RUN);
-  } else {
-    logger.info('[pass1] DRY RUN — would persist', { count: allRows.length });
-    // Print a preview of what would be written
-    for (const row of allRows) {
-      logger.info('[pass1] → repo', {
-        full_name: row.full_name,
-        lang: row.primary_language,
-        stars: row.stars,
-        license: row.license_spdx,
-        contamination_risk: row.contamination_risk,
-        skills: row.manifest_skills.map((s) => `${s.slug}(${s.source})`),
-      });
-    }
-  }
+  logger.info('[pass1] Done', { persisted: totalPersisted, failed: totalFailed });
 }
 
 // ─── Pass 2 ───────────────────────────────────────────────────────────────────

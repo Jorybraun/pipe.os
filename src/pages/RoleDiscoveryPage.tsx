@@ -28,9 +28,11 @@ import { DomainBars } from '../components/AIChat';
 import { EQVisualizer } from '../components/AIChat/EQVisualizer';
 import { useTTS } from '../hooks/useTTS';
 import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
-import { useRoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
+import { FEATURE_FLAGS } from '../config/featureFlags';
+import { useScriptedPhase, buildBaseline, type RolePreset } from '../hooks/useScriptedPhase';
+import type { RoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
 import {
   Loader2, ArrowRight, ArrowLeft, Check, MessageSquare,
   FileUp, Sparkles, RotateCcw, RotateCw, Volume2, VolumeX,
@@ -40,7 +42,6 @@ import type {
   RoleContextBaseline, RoleContextProgress,
   ParseJDResponse, CandidatePersona, GeneratedJobDescription,
 } from '../lib/api/types';
-import type { PastExchange } from '../hooks/useRoleDiscovery';
 import type { AdapterConfig } from '../components/AIChat/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -48,11 +49,6 @@ import type { AdapterConfig } from '../components/AIChat/types';
 const DEFAULT_BUDGET = 15;
 
 // ─── Quick-start presets ──────────────────────────────────────────────────────
-
-interface RolePreset {
-  label: string;
-  answers: Partial<Record<string, string>>;
-}
 
 const ROLE_PRESETS: RolePreset[] = [
   {
@@ -96,60 +92,6 @@ const ROLE_PRESETS: RolePreset[] = [
     },
   },
 ];
-
-interface ScriptedQuestion {
-  id: string;
-  text: string;
-  optional: boolean;
-  placeholder: string;
-  inputType?: 'text' | 'tags' | 'choice';
-  options?: string[];
-}
-
-const SCRIPTED: ScriptedQuestion[] = [
-  {
-    id: 'sq-title',
-    text: "What role are you hiring for?",
-    optional: false,
-    placeholder: 'e.g., Senior Backend Engineer, Head of Product...',
-  },
-  {
-    id: 'sq-company',
-    text: "What company is this for?",
-    optional: true,
-    placeholder: 'Acme Corp',
-  },
-  {
-    id: 'sq-url',
-    text: "Got a company website? I'll research it before asking questions.",
-    optional: true,
-    placeholder: 'https://acme.com',
-  },
-  {
-    id: 'sq-salary',
-    text: "What's the comp range?",
-    optional: true,
-    placeholder: 'e.g., $150K–$180K base + equity',
-  },
-  {
-    id: 'sq-stack',
-    text: "What technologies do they need on day one?",
-    optional: true,
-    placeholder: 'e.g., React, TypeScript, PostgreSQL',
-    inputType: 'tags',
-  },
-  {
-    id: 'sq-mode',
-    text: "How do you want to run this interview?",
-    optional: false,
-    placeholder: '',
-    inputType: 'choice',
-    options: ['Voice', 'Text'],
-  },
-];
-
-// Index of the mode question — presets skip to here
-const MODE_Q_IDX = SCRIPTED.findIndex((q) => q.id === 'sq-mode');
 
 // ─── PersonaField / PersonaTagList ────────────────────────────────────────────
 
@@ -409,12 +351,21 @@ export default function RoleDiscoveryPage(): JSX.Element {
   useEffect(() => {
     const saved = draft.load();
     if (!saved) return;
-    setScriptedIdx(saved.scriptedIdx);
-    setScriptedAnswers(saved.scriptedAnswers);
-    setScriptedExchanges(saved.scriptedExchanges);
+    // Migrate drafts written before the live-voice feature flag landed: strip
+    // sq-mode remnants and clamp scriptedIdx so we can't point at a question
+    // that no longer exists in SCRIPTED.
+    const migratedAnswers = { ...saved.scriptedAnswers };
+    if (!FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE) delete migratedAnswers['sq-mode'];
+    const migratedExchanges = FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE
+      ? saved.scriptedExchanges
+      : saved.scriptedExchanges.filter((ex) => ex.questionId !== 'sq-mode');
+    const clampedIdx = Math.min(saved.scriptedIdx, Math.max(0, SCRIPTED.length - 1));
+    setScriptedIdx(clampedIdx);
+    setScriptedAnswers(migratedAnswers);
+    setScriptedExchanges(migratedExchanges);
     if (saved.completed) {
       // Show resume prompt — don't start the AI interview automatically
-      pendingDraftRef.current = saved;
+      pendingDraftRef.current = { ...saved, scriptedIdx: clampedIdx, scriptedAnswers: migratedAnswers, scriptedExchanges: migratedExchanges };
       setShowResumePrompt(true);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -575,10 +526,18 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
     setScriptedAnswers(answers);
     setScriptedExchanges(exchanges);
-    setScriptedIdx(MODE_Q_IDX);
     setScriptedAnswer('');
-    draft.save({ scriptedIdx: MODE_Q_IDX, scriptedAnswers: answers, scriptedExchanges: exchanges, completed: false, defaultLiveMode: false });
-  }, [draft]);
+
+    if (FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE) {
+      // Jump to the Voice/Text picker — user still decides mode.
+      setScriptedIdx(MODE_Q_IDX);
+      draft.save({ scriptedIdx: MODE_Q_IDX, scriptedAnswers: answers, scriptedExchanges: exchanges, completed: false, defaultLiveMode: false });
+    } else {
+      // No mode picker — fire the interview straight away in text mode.
+      draft.save({ scriptedIdx: SCRIPTED.length - 1, scriptedAnswers: answers, scriptedExchanges: exchanges, completed: true, defaultLiveMode: false });
+      fireCreateAndStart(answers, false);
+    }
+  }, [draft, fireCreateAndStart]);
 
   // ── Choice question select (sq-mode: Voice / Text) ──
   const handleChoiceSelect = useCallback((choice: string): void => {
@@ -981,7 +940,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           initConfig={initConfig}
           defaultLiveMode={defaultLiveMode}
           enableVoice
-          enableLiveVoice
+          enableLiveVoice={FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE}
           enableTTS
           greeting="Hi, I'm Pipe's interview assistant. I'll ask you a few questions to help define the role you're building for. Let's get started."
           showDomainBars

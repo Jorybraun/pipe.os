@@ -19,7 +19,7 @@
  *   VERTEX_AI_MODEL      — model ID (default: gemma-4-26b-a4b-it)
  */
 
-import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions } from './types';
+import type { LLMProvider, LLMMessage, LLMCompletion, LLMUsage, CompleteOptions } from './types';
 
 // ─── Service account shape ───────────────────────────────────────────────────
 
@@ -127,11 +127,18 @@ interface VertexAIContent {
   parts: VertexAIPart[];
 }
 
+interface VertexUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
 interface VertexAIResponse {
   candidates?: Array<{
     content?: { parts?: VertexAIPart[] };
     finishReason?: string;
   }>;
+  usageMetadata?: VertexUsageMetadata;
   error?: { code: number; message: string };
 }
 
@@ -165,6 +172,15 @@ function toVertexAIContents(messages: LLMMessage[]): VertexAIContent[] {
   return contents;
 }
 
+/** Map Vertex AI usageMetadata to our standard LLMUsage shape. */
+function toLLMUsage(meta: VertexUsageMetadata | undefined): LLMUsage | null {
+  if (!meta) return null;
+  const usage: LLMUsage = {};
+  if (typeof meta.promptTokenCount === 'number') usage.inputTokens = meta.promptTokenCount;
+  if (typeof meta.candidatesTokenCount === 'number') usage.outputTokens = meta.candidatesTokenCount;
+  return Object.keys(usage).length > 0 ? usage : null;
+}
+
 function extractText(response: VertexAIResponse): string | null {
   if (response.error) {
     throw new Error(`Vertex AI error ${response.error.code}: ${response.error.message}`);
@@ -180,12 +196,28 @@ export class VertexAIProvider implements LLMProvider {
   readonly name = 'vertex-ai';
   readonly supportsTools = false;
 
+  /**
+   * Last usage reported by the provider. Populated after every `complete()`
+   * and at the end of every `completeStream()`. Metering layers read this
+   * after the call to log actual token counts.
+   */
+  private _lastUsage: LLMUsage | null = null;
+
   constructor(
     private readonly serviceAccount: ServiceAccountKey,
     private readonly projectId: string,
     private readonly region = 'us-central1',
     private readonly model = 'gemma-4-26b-a4b-it',
   ) {}
+
+  getLastUsage(): LLMUsage | null {
+    return this._lastUsage;
+  }
+
+  /** Canonical pricing key for `MODEL_PRICING` lookups. */
+  getModelKey(): string {
+    return `vertex/${this.model}`;
+  }
 
   private buildUrl(method: 'generateContent' | 'streamGenerateContent'): string {
     // MaaS models (suffix -maas) are only available via the global endpoint host.
@@ -228,10 +260,15 @@ export class VertexAIProvider implements LLMProvider {
     const data = (await res.json()) as VertexAIResponse;
     const content = extractText(data);
     if (!content) throw new Error('Vertex AI returned empty response');
-    return { content };
+    const usage = toLLMUsage(data.usageMetadata);
+    this._lastUsage = usage;
+    return usage ? { content, usage } : { content };
   }
 
   async *completeStream(messages: LLMMessage[], options: CompleteOptions = {}): AsyncGenerator<string> {
+    // Reset per-stream so stale usage from a previous call can't be logged.
+    this._lastUsage = null;
+
     const token = await getAccessToken(this.serviceAccount);
     const contents = toVertexAIContents(messages);
 
@@ -281,6 +318,10 @@ export class VertexAIProvider implements LLMProvider {
         try {
           const chunk = JSON.parse(payload) as VertexAIResponse;
           if (chunk.error) throw new Error(`Vertex AI stream error ${chunk.error.code}: ${chunk.error.message}`);
+          // usageMetadata typically arrives in the final chunk. Capture it so
+          // the metering layer can read it via getLastUsage() after the stream.
+          const maybeUsage = toLLMUsage(chunk.usageMetadata);
+          if (maybeUsage) this._lastUsage = maybeUsage;
           const parts = chunk.candidates?.[0]?.content?.parts ?? [];
           for (const part of parts) {
             if (part.text) yield part.text;

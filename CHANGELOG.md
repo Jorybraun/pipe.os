@@ -6,6 +6,97 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(admin): AI usage dashboard + unified cost metering (2026-04-17)
+
+Every AI call in the system now writes one row to `ai_usage_events` — role
+discovery (Vertex AI), culture interview (Workers AI Gemma), voice interview
+(Vertex Live: text tokens + audio tokens + audio-seconds), copilot, etc. Both
+successful and failed calls are logged so the dashboard shows true total
+spend, not just billable-on-success. Admins can see "what did this interview
+cost me" at `/admin/ai-usage`.
+
+- New migration `0032_ai_usage_events.sql` — feature-agnostic schema with
+  `feature`, `ref_id`, `provider`, `model`, `input_tokens`, `output_tokens`,
+  `input_audio_tokens`, `output_audio_tokens`, `audio_seconds`, `usd_cost`,
+  `success`, `error_message`, and indexes on `(feature, created_at)` and
+  `(feature, ref_id)`.
+- `workers/api/src/lib/llm/pricing.ts` — single source of truth for USD
+  pricing. Adds `ModelPrice` + `TokenUsage` types with Live API audio token
+  rates (Gemini 2.5 Flash Live: $3/M input audio, $12/M output audio). Vertex
+  Gemma free tier ended 2026-04-16; standard rates in effect.
+- `workers/api/src/lib/aiUsage.ts` — `logAiUsage` / `recordAiUsage` helpers.
+  Pricing lookup failures log + bill $0 rather than dropping the event.
+  `recordAiUsage` schedules via `ctx.waitUntil` so metering never blocks the
+  response.
+- `VoiceSessionDO` aggregates per-turn Vertex Live `usageMetadata` into a
+  session total (text in/out + audio in/out, split via `promptTokensDetails`)
+  and writes a single `voice_interview` row at session close — with
+  `success=0` + error message on abnormal disconnects.
+- New admin route `/admin/ai-usage` — `AiUsagePage` renders totals by feature,
+  cost-per-interview histogram, and recent failed calls. Sidebar nav entry
+  uses the `Activity` lucide icon.
+
+**Changed files:**
+- `workers/api/migrations/0032_ai_usage_events.sql` (new)
+- `workers/api/src/lib/aiUsage.ts` (new)
+- `workers/api/src/lib/llm/pricing.ts` (new)
+- `workers/api/src/durable-objects/VoiceSessionDO.ts`
+- `workers/api/src/lib/llm/vertexAIProvider.ts`
+- `workers/api/src/lib/llm/live/vertexLiveProvider.ts`
+- `workers/api/src/routes/discovery/roleContexts.ts`
+- `src/App.tsx`
+- `src/components/SidebarNav.tsx`
+- `src/pages/admin/AiUsagePage.tsx` (new)
+
+#### fix(crawler): stop using wrangler OAuth for D1; write pass1 rows immediately (2026-04-17)
+
+Long pass1 and pass2 runs were failing with escalating Cloudflare auth errors
+(`code 10000`, then `code 7403`, then `fetch failed`, then wrangler crashes
+with empty stdout). Root cause: `shared/d1Client.ts` spawned `wrangler d1
+execute --remote` per statement and relied on wrangler's stored OAuth session;
+that session goes stale mid-run, so thousands of per-row writes over hours
+would hit the expiry window and fail permanently (no retry logic).
+
+- Rewrote `shared/d1Client.ts` to call the Cloudflare D1 REST API directly
+  (`POST /accounts/:id/d1/database/:id/query`) with a scoped API token. Adds
+  exponential backoff + jitter, up to 6 attempts, for transient classes:
+  HTTP 429/5xx, Cloudflare codes 10000/7403/7500/9999, and network errors
+  (`fetch failed`, `ECONNRESET`, `ETIMEDOUT`). Requires `CLOUDFLARE_ACCOUNT_ID`,
+  `CLOUDFLARE_API_TOKEN` (with `D1:Edit`), `CLOUDFLARE_D1_DATABASE_ID`.
+- Changed pass1 to write each row the moment it's discovered instead of
+  accumulating all ~2000+ rows in memory and persisting at the end. Partial
+  progress is now preserved if the run is interrupted, and D1 write load is
+  steady instead of a thundering herd after search.
+- Removed `persistPass1Batch` from `pass1/persist.ts` — callers now use
+  `persistPass1Row` directly inside the search loop.
+
+**Changed files:**
+- `workers/api/scripts/crawl-repos/shared/d1Client.ts`
+- `workers/api/scripts/crawl-repos/pass1/persist.ts`
+- `workers/api/scripts/crawl-repos/index.ts`
+
+#### feat(role-discovery): feature-flag real-time voice interview (2026-04-17)
+
+Hid the "How do you want to run this interview? Voice/Text" picker behind
+`FEATURE_FLAG_LIVE_VOICE` (default `false`). Vertex AI Live is too expensive
+to run in production today, so the interview now always runs in text mode.
+The live-voice code path (Vertex Live WS, `useLiveSession`, `VoiceSessionDO`,
+orb UI) remains intact — flipping the flag to `true` restores the picker and
+the voice path without further code changes.
+
+Scope changes in `src/pages/RoleDiscoveryPage.tsx`:
+- `SCRIPTED` is now composed from `BASELINE_SCRIPTED + MODE_QUESTION` only
+  when the flag is on; otherwise the mode picker is omitted entirely.
+- `handlePresetSelect` fires `createAndStart` immediately in text mode when
+  the flag is off (no mode picker to jump to).
+- `<AIChat enableLiveVoice={FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE}>`.
+- Draft restore migrates pre-flag drafts: strips `sq-mode` answers/exchanges
+  and clamps `scriptedIdx` so stale drafts can't point at a removed question.
+
+**Changed files:**
+- `src/config/featureFlags.ts`
+- `src/pages/RoleDiscoveryPage.tsx`
+
 #### fix(role-discovery): single-source-of-truth conv state, unblock CREATE_PIPELINE after synthesis (2026-04-17)
 
 `RoleDiscoveryPage` and `<AIChat>` each instantiated their own `useConversation`

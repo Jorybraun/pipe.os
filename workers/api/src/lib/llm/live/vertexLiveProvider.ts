@@ -12,7 +12,7 @@
  * shared getAccessToken() helper from vertexAIProvider.ts (cached ~55 min).
  */
 
-import type { LiveProvider, LiveSession, LiveSessionConfig } from './types';
+import type { LiveProvider, LiveSession, LiveSessionConfig, LiveUsageTotals } from './types';
 import { getAccessToken } from '../vertexAIProvider';
 import type { ServiceAccountKey } from '../vertexAIProvider';
 
@@ -62,6 +62,20 @@ interface VertexPart {
   inlineData?: VertexInlineData;
 }
 
+interface VertexLiveUsageModalityDetail {
+  /** "TEXT" | "AUDIO" | "IMAGE" | "VIDEO" — we only care about TEXT / AUDIO. */
+  modality?: string;
+  tokenCount?: number;
+}
+
+interface VertexLiveUsageMetadata {
+  promptTokenCount?: number;
+  responseTokenCount?: number;
+  totalTokenCount?: number;
+  promptTokensDetails?: VertexLiveUsageModalityDetail[];
+  responseTokensDetails?: VertexLiveUsageModalityDetail[];
+}
+
 interface VertexServerMessage {
   setupComplete?: unknown;
   serverContent?: {
@@ -72,6 +86,8 @@ interface VertexServerMessage {
   inputTranscription?: {
     text: string;
   };
+  /** Emitted periodically by the Live API. Per-turn; we accumulate. */
+  usageMetadata?: VertexLiveUsageMetadata;
   error?: {
     code?: number;
     message?: string;
@@ -99,9 +115,20 @@ function base64ToArrayBuffer(b64: string): ArrayBuffer {
 
 class VertexLiveSession implements LiveSession {
   private readonly ws: WebSocket;
+  private readonly modelKey: string;
   private audioHandlers: Array<(chunk: ArrayBuffer) => void> = [];
   private transcriptHandlers: Array<(text: string, role: 'user' | 'model') => void> = [];
   private errorHandlers: Array<(err: Error) => void> = [];
+
+  // Cumulative usage across all turns. Updated every time the server emits
+  // `usageMetadata` (Live API sends it once per completed turn). VoiceSessionDO
+  // reads these at session close via getUsageTotals().
+  private usageTotals: LiveUsageTotals = {
+    inputTextTokens: 0,
+    outputTextTokens: 0,
+    inputAudioTokens: 0,
+    outputAudioTokens: 0,
+  };
 
   // Buffer audio chunks sent before the WS open event fires.
   // Cloudflare Workers throw if ws.send() is called while readyState === CONNECTING.
@@ -110,7 +137,8 @@ class VertexLiveSession implements LiveSession {
 
   // alreadyOpen=true when constructed from fetch()+Upgrade+accept() — the socket
   // is already in OPEN state and the open event may not fire.
-  constructor(ws: WebSocket, alreadyOpen = false) {
+  constructor(ws: WebSocket, modelKey: string, alreadyOpen = false) {
+    this.modelKey = modelKey;
     this.ws = ws;
     this.wsOpen = alreadyOpen;
 
@@ -193,6 +221,38 @@ class VertexLiveSession implements LiveSession {
     this.ws.close();
   }
 
+  getUsageTotals(): LiveUsageTotals {
+    return { ...this.usageTotals };
+  }
+
+  getModelKey(): string {
+    return this.modelKey;
+  }
+
+  private recordUsage(meta: VertexLiveUsageMetadata): void {
+    // Prefer the detailed per-modality breakdown when present.
+    if (meta.promptTokensDetails) {
+      for (const detail of meta.promptTokensDetails) {
+        if (!detail.tokenCount) continue;
+        if (detail.modality === 'AUDIO') this.usageTotals.inputAudioTokens += detail.tokenCount;
+        else this.usageTotals.inputTextTokens += detail.tokenCount;
+      }
+    } else if (typeof meta.promptTokenCount === 'number') {
+      // Fall back to bucketing everything as text when modality details aren't provided.
+      this.usageTotals.inputTextTokens += meta.promptTokenCount;
+    }
+
+    if (meta.responseTokensDetails) {
+      for (const detail of meta.responseTokensDetails) {
+        if (!detail.tokenCount) continue;
+        if (detail.modality === 'AUDIO') this.usageTotals.outputAudioTokens += detail.tokenCount;
+        else this.usageTotals.outputTextTokens += detail.tokenCount;
+      }
+    } else if (typeof meta.responseTokenCount === 'number') {
+      this.usageTotals.outputTextTokens += meta.responseTokenCount;
+    }
+  }
+
   private handleMessage(raw: string): void {
     let parsed: VertexServerMessage;
     try {
@@ -206,6 +266,10 @@ class VertexLiveSession implements LiveSession {
     if ('setupComplete' in parsed && parsed.setupComplete !== undefined) {
       console.log('[VertexLiveSession] Setup confirmed by server');
       return;
+    }
+
+    if (parsed.usageMetadata !== undefined) {
+      this.recordUsage(parsed.usageMetadata);
     }
 
     if (parsed.error !== undefined) {
@@ -289,7 +353,7 @@ export class VertexLiveProvider implements LiveProvider {
 
     // alreadyOpen=true: fetch()+accept() leaves the socket in OPEN state;
     // the open event may not fire, so we mark it open immediately.
-    const session = new VertexLiveSession(ws, true);
+    const session = new VertexLiveSession(ws, `vertex/${model}`, true);
 
     const setup: VertexSetupMessage = {
       setup: {
