@@ -359,8 +359,8 @@ export function useLiveSession(): UseLiveSessionResult {
 
       ws.onmessage = handleMessage;
 
-      ws.onclose = () => {
-        console.log('[useLiveSession] WebSocket closed');
+      ws.onclose = (ev: CloseEvent) => {
+        console.log('[useLiveSession] WebSocket closed — code:', ev.code, 'reason:', ev.reason);
         setIsConnected(false);
         stopMic();
       };

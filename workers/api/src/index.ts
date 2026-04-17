@@ -28,6 +28,8 @@ import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
 import { voiceSessions } from './routes/voice/voiceSessions';
+// TTS — Google Cloud Text-to-Speech proxy
+import { ttsRouter } from './routes/tts';
 // Internal tooling — scorer calibration (CAL-5 spine, ADR-036 / STRATEGY CAL-2+)
 import { calibrate } from './routes/internal/calibrate';
 // Candidate runtime entry (cross-cutting JWT layer)
@@ -121,6 +123,9 @@ app.route('/api/v1/role-contexts', roleContexts);
 
 // Voice sessions: session creation, WebSocket upgrade, transcript callback
 app.route('/api/v1/voice-sessions', voiceSessions);
+
+// TTS: Google Cloud Neural2 voice synthesis
+app.route('/api/v1/tts', ttsRouter);
 
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);

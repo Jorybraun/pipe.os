@@ -179,11 +179,18 @@ describe('useRoleDiscovery', () => {
       .mockResolvedValueOnce(makeCreateResponse())
       .mockResolvedValueOnce(makeStartResponse());
     // The respond path goes through respondStream → api.postStream (streaming branch).
-    // Stream done payload uses question as a string (the text), not the full object.
+    // Stream done payload matches the backend shape: `question` is the full object
+    // (id + text + input), not a bare string. The adapter forwards it verbatim
+    // into the question turn result so `currentQuestion.text` must be available.
     mocks.mockPostStream.mockReturnValueOnce(
       singleDoneStream({
         participantId: 'part-1',
-        question: 'Tell me about the team.',
+        acknowledgment: 'Got it.',
+        question: {
+          id: 'q-2',
+          text: 'Tell me about the team.',
+          input: { type: 'textarea' },
+        },
         progress: { asked: 1, budget: 10, domains: {} },
       }),
     );

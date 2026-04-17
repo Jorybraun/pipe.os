@@ -132,7 +132,16 @@ export class VoiceSessionDO {
       return new Response('Live provider unavailable', { status: 503 });
     }
 
-    const session = provider.openSession({ systemPrompt: config.systemPrompt });
+    let session: LiveSession;
+    try {
+      session = await provider.openSession({ systemPrompt: config.systemPrompt });
+    } catch (err) {
+      console.error('[VoiceSessionDO] openSession failed:', err instanceof Error ? err.message : err);
+      return new Response(
+        JSON.stringify({ error: err instanceof Error ? err.message : 'openSession failed' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
     this.liveSession = session;
 
     // Transcript accumulation — also forwarded to the WS client once connected.
@@ -161,7 +170,7 @@ export class VoiceSessionDO {
       for (const ws of clients) {
         try {
           ws.send(payload);
-          ws.close(1011, 'Live provider error');
+          ws.close(1011, err.message.slice(0, 123));
         } catch {
           // Client may have already closed
         }

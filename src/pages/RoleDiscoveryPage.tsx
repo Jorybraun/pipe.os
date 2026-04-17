@@ -25,13 +25,15 @@ import { TextInput, TagsInput } from '../components/ui/form';
 import { JobDescriptionImportModal } from '../components/RoleDiscovery/JobDescriptionImportModal';
 import { AIChat } from '../components/AIChat/AIChat';
 import { DomainBars } from '../components/AIChat';
+import { EQVisualizer } from '../components/AIChat/EQVisualizer';
+import { useTTS } from '../hooks/useTTS';
 import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
 import { useRoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
 import {
   Loader2, ArrowRight, ArrowLeft, Check, MessageSquare,
-  FileUp, Sparkles, RotateCcw,
+  FileUp, Sparkles, RotateCcw, RotateCw, Volume2, VolumeX,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type {
@@ -392,6 +394,16 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const pendingDraftRef = useRef<import('../hooks/useRoleDiscoveryDraft').RoleDiscoveryDraft | null>(null);
 
+  // ── Scripted-phase TTS (must be declared before handlers that call it) ──
+  const [scriptedVoiceOn, setScriptedVoiceOn] = useState(true);
+  const scriptedTTS = useTTS(scriptedVoiceOn);
+  const handleScriptedVoiceToggle = useCallback((): void => {
+    setScriptedVoiceOn((prev) => {
+      if (prev) scriptedTTS.cancel();
+      return !prev;
+    });
+  }, [scriptedTTS]);
+
   // ── Restore draft on mount ───────────────────────────────────────────────────
 
   useEffect(() => {
@@ -572,6 +584,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const handleChoiceSelect = useCallback((choice: string): void => {
     const q = SCRIPTED[scriptedIdx];
     if (!q) return;
+    scriptedTTS.cancel();
 
     const newExchanges: PastExchange[] = [
       ...scriptedExchanges,
@@ -591,13 +604,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
       draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: choice === 'Voice' });
       fireCreateAndStart(newAnswers, choice === 'Voice');
     }
-  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart]);
+  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart, scriptedTTS]);
 
   // ── Scripted question submit ──
   const handleScriptedSubmit = useCallback((): void => {
     const q = SCRIPTED[scriptedIdx];
     if (!q) return;
     if (!q.optional && !scriptedAnswer.trim()) return;
+    scriptedTTS.cancel();
 
     const displayAnswer = q.inputType === 'tags'
       ? (scriptedAnswer.split('|||').filter(Boolean).join(', ') || '(skipped)')
@@ -621,11 +635,12 @@ export default function RoleDiscoveryPage(): JSX.Element {
       draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: false });
       fireCreateAndStart(newAnswers);
     }
-  }, [scriptedIdx, scriptedAnswer, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart]);
+  }, [scriptedIdx, scriptedAnswer, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart, scriptedTTS]);
 
   const handleScriptedSkip = useCallback((): void => {
     const q = SCRIPTED[scriptedIdx];
     if (!q?.optional) return;
+    scriptedTTS.cancel();
 
     const newExchanges: PastExchange[] = [
       ...scriptedExchanges,
@@ -645,7 +660,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
       draft.save({ scriptedIdx, scriptedAnswers: newAnswers, scriptedExchanges: newExchanges, completed: true, defaultLiveMode: false });
       fireCreateAndStart(newAnswers);
     }
-  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart]);
+  }, [scriptedIdx, scriptedAnswers, scriptedExchanges, draft, fireCreateAndStart, scriptedTTS]);
 
   // ── JD import — skip scripted questions, fire immediately ──
   const handleJDImport = useCallback((parsed: ParseJDResponse['parsed']): void => {
@@ -704,6 +719,13 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const isInScriptedPhase = initConfig === null;
   const currentScriptedQ = isInScriptedPhase ? SCRIPTED[scriptedIdx] ?? null : null;
   const hasDraftProgress = scriptedIdx > 0 || Object.keys(scriptedAnswers).length > 0;
+
+  // Speak each scripted question — covers radio/select intake questions too.
+  useEffect(() => {
+    if (!currentScriptedQ || !scriptedVoiceOn) return;
+    scriptedTTS.speak(currentScriptedQ.text);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentScriptedQ?.id, scriptedVoiceOn]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 40 }}>
@@ -822,8 +844,29 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 </div>
               )}
 
-              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--pipe-text)', lineHeight: 1.4, marginBottom: 28, letterSpacing: '-0.01em' }}>
-                {currentScriptedQ.text}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 28 }}>
+                <div style={{ flex: 1, fontSize: 18, fontWeight: 700, color: 'var(--pipe-text)', lineHeight: 1.4, letterSpacing: '-0.01em' }}>
+                  {currentScriptedQ.text}
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginTop: 2 }}>
+                  {scriptedVoiceOn && (
+                    <button
+                      onClick={() => scriptedTTS.speak(currentScriptedQ.text)}
+                      title={scriptedTTS.isPlaying ? 'AI speaking…' : 'Replay question'}
+                      disabled={scriptedTTS.isPlaying}
+                      style={{ padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', cursor: scriptedTTS.isPlaying ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, height: 28, borderRadius: 4 }}
+                    >
+                      {scriptedTTS.isPlaying ? <EQVisualizer analyserRef={scriptedTTS.analyserRef} maxHeight={18} /> : <RotateCw size={13} />}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleScriptedVoiceToggle}
+                    title={scriptedVoiceOn ? 'Mute voice' : 'Unmute voice'}
+                    style={{ padding: '6px 10px', background: scriptedVoiceOn ? 'transparent' : 'rgba(248,113,113,0.08)', border: `1px solid ${scriptedVoiceOn ? 'var(--pipe-border-light)' : 'rgba(248,113,113,0.3)'}`, color: scriptedVoiceOn ? 'var(--pipe-text-dim)' : 'rgba(248,113,113,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 28, borderRadius: 4 }}
+                  >
+                    {scriptedVoiceOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                  </button>
+                </div>
               </div>
 
               {/* Choice input — renders two big option buttons, no text field */}
@@ -934,22 +977,23 @@ export default function RoleDiscoveryPage(): JSX.Element {
       {/* ── AI phase — shown once scripted questions complete, until synthesis ── */}
       {initConfig !== null && rd.phase !== 'COMPLETE' && (
         <AIChat
-          adapter={rd.adapter}
+          conv={rd.conv}
           initConfig={initConfig}
           defaultLiveMode={defaultLiveMode}
           enableVoice
           enableLiveVoice
+          enableTTS
+          greeting="Hi, I'm Pipe's interview assistant. I'll ask you a few questions to help define the role you're building for. Let's get started."
           showDomainBars
           onLiveEnd={handleLiveEnd}
-          onComplete={() => {
-            // Phase transition is tracked in rd (useRoleDiscovery → useConversation).
-            // The SynthesisPhase block below re-renders when rd.phase === 'COMPLETE'.
-          }}
         />
       )}
 
-      {/* ── Synthesis — shown when AI interview is complete ── */}
-      {rd.phase === 'COMPLETE' && (rd.persona || rd.jobDescription) && (
+      {/* ── Synthesis — shown when AI interview is complete ──
+          Rendered even when persona/JD are both null so the user always has
+          a path forward (CREATE_PIPELINE). SynthesisPhase handles empty
+          sub-sections gracefully. */}
+      {rd.phase === 'COMPLETE' && (
         <SynthesisPhase
           persona={rd.persona}
           jobDescription={rd.jobDescription}

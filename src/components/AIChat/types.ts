@@ -87,8 +87,16 @@ export interface ConversationAdapter {
 
 // ─── Component props ──────────────────────────────────────────────────────────
 
+import type { UseConversationResult } from '../../hooks/useConversation';
+
 export interface AIChatProps {
-  adapter: ConversationAdapter;
+  /**
+   * Shared conversation state. The caller owns the `useConversation(adapter)`
+   * instance and passes it in — AIChat never creates its own. This keeps the
+   * page and the chat component reading the same phase/persona/synthesis so
+   * the synthesis handoff (onComplete + SynthesisPhase) can't desync.
+   */
+  conv: UseConversationResult;
   /** Null until scripted intake is complete — AIChat stays IDLE until this is set. */
   initConfig: AdapterConfig | null;
   /** Enable Whisper-based voice transcription. Default: true. */
@@ -112,6 +120,14 @@ export interface AIChatProps {
   renderHeader?: () => JSX.Element;
   /** Show the Six Domain coverage bars during the interview. Default: false. */
   showDomainBars?: boolean;
+  /** Auto-read AI questions aloud using Google Cloud TTS. Default: false. */
+  enableTTS?: boolean;
+  /**
+   * Opening line spoken by the AI when the interview starts (before the first
+   * question). Only plays in text/hybrid mode — skipped in live voice mode.
+   * Example: "Hi, I'm Pipe's interview assistant. Let's get started."
+   */
+  greeting?: string;
   /**
    * Called when the user ends a live voice session early (taps END SESSION).
    * Use to navigate back to the Voice/Text mode selector without losing prior

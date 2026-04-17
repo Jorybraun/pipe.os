@@ -6,6 +6,90 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(role-discovery): single-source-of-truth conv state, unblock CREATE_PIPELINE after synthesis (2026-04-17)
+
+`RoleDiscoveryPage` and `<AIChat>` each instantiated their own `useConversation`
+over the same adapter, so the synthesis that landed inside `AIChat`'s state
+never reached `rd.phase`. The page stayed gated on `rd.phase !== 'COMPLETE'`,
+`SynthesisPhase` never rendered, and the user was stuck on a dead-end screen
+with no way to save or create a pipeline.
+
+Fix: `useRoleDiscovery` now exposes its `conv` on the returned object, and
+`<AIChat>` takes `conv` as a prop instead of calling `useConversation(adapter)`
+internally. A single state instance is shared between the page and the chat
+component, so `rd.phase`, `rd.persona`, and `rd.jobDescription` all flip to
+the synthesis result the moment the interview completes.
+
+Related quality fixes:
+- `SynthesisPhase` now renders whenever `rd.phase === 'COMPLETE'` (previously
+  silently hidden when both persona and jobDescription were null — the user
+  would see a blank page on partial API failure).
+- `createAndStart` now clears hydrated persona / jobDescription / overridePhase
+  so a second interview on the same hook instance can't inherit stale state
+  from a prior COMPLETE session.
+- `AgentInterviewChallenge` now owns its own `useConversation(adapter)` and
+  passes `conv` into `<AIChat>`, keeping AIChat's contract uniform.
+- Fixed pre-existing bug in `useRoleDiscovery.test.ts` — stream payload now
+  passes a full question object (id, text, input) instead of a bare string,
+  matching the backend SSE contract.
+
+**Changed files:**
+- `src/hooks/useRoleDiscovery.ts`
+- `src/hooks/useRoleDiscovery.test.ts`
+- `src/components/AIChat/AIChat.tsx`
+- `src/components/AIChat/types.ts`
+- `src/components/Assessment/AgentInterviewChallenge.tsx`
+- `src/pages/RoleDiscoveryPage.tsx`
+
+#### fix(voice): fix Vertex AI Live WS wiring — fetch+Upgrade, audio buffering, model config (2026-04-16)
+
+Rewrote `VertexLiveProvider.openSession` to use `fetch()` + `Upgrade: websocket` +
+`Authorization: Bearer` header (the stable Cloudflare Workers pattern for outbound WebSocket
+with custom auth headers). Previously used `new WebSocket(url?access_token=)` which put the
+token in the URL and had timing issues. Fixed: `https://` URL for `fetch()` + Upgrade (was
+`wss://`); `ws.accept()` called after `fetch()`; `alreadyOpen=true` passed to `VertexLiveSession`
+so `sendAudio` doesn't block waiting for an `open` event that may not fire. Added audio
+buffering for pre-open chunks. API endpoint now uses `v1` (not `v1beta1`). Default model is
+`gemini-live-2.5-flash-native-audio` (GA). Added `VERTEX_AI_LIVE_MODEL` env var for override.
+Close reason now surfaces the actual Vertex AI error message for debugging.
+
+**Root cause of remaining failure:** Vertex AI Live API models are not enabled for project
+`pipe-493116`. All three models tried return `Publisher Model ... was not found or is not
+supported for bidiGenerateContent`. Requires enabling the Live API in GCP Console.
+
+**Changed files:**
+- `workers/api/src/lib/llm/live/vertexLiveProvider.ts`
+- `workers/api/src/lib/llm/live/createLiveProvider.ts`
+- `workers/api/src/lib/llm/live/types.ts`
+- `workers/api/src/durable-objects/VoiceSessionDO.ts`
+- `workers/api/src/types.ts`
+- `src/hooks/useLiveSession.ts` (close code/reason logging)
+- `src/components/AIChat/AIChat.tsx` (error body logging)
+
+#### fix(voice): migrate VertexLiveProvider to real Vertex AI endpoint + SA auth (2026-04-16)
+
+Replaced the Gemini Developer API (`generativelanguage.googleapis.com`) with the
+actual Vertex AI WebSocket endpoint (`{region}-aiplatform.googleapis.com`). Auth
+now uses the shared service account JWT from `VERTEX_SA_KEY_JSON` (same token cache
+as `VertexAIProvider`) instead of a `GOOGLE_AI_API_KEY`. `LiveProvider.openSession`
+is now async to accommodate the token fetch. `MockLiveProvider` updated accordingly.
+`createLiveProvider` now reads `VERTEX_SA_KEY_JSON` / `VERTEX_AI_REGION`; the
+`GOOGLE_AI_API_KEY` path is removed. Missing fields added to the global `Env` type.
+
+Default model changed to `gemini-2.0-flash-exp` — Vertex AI uses this ID, not the
+`-live-001` suffix which is Gemini Developer API naming. WebSocket opens non-blocking
+(token fetched first, then `new WebSocket(url?access_token=)`) so `/__init` returns
+fast. Error handling added to `VoiceSessionDO.handleInit` for surfacing failures.
+
+**Changed files:**
+- `workers/api/src/lib/llm/live/vertexLiveProvider.ts`
+- `workers/api/src/lib/llm/live/createLiveProvider.ts`
+- `workers/api/src/lib/llm/live/types.ts`
+- `workers/api/src/lib/llm/live/mockLiveProvider.ts`
+- `workers/api/src/lib/llm/vertexAIProvider.ts`
+- `workers/api/src/durable-objects/VoiceSessionDO.ts`
+- `workers/api/src/types.ts`
+
 #### feat(admin): show top skills on repo admin cards (2026-04-16)
 
 Repo admin cards now display up to 8 top skills from `repo_skills` (ordered by confidence)

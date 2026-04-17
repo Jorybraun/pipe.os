@@ -3,10 +3,14 @@
  *
  * State machine: IDLE → CALIBRATING → INTERVIEWING → COMPLETE
  *
- * Delegates all conversation state to useConversation via a roleDiscoveryAdapter
- * that implements ConversationAdapter. Role-discovery-specific fields (contextId,
- * participantId, participantRole, baseline) are stored in refs and exposed on the
- * returned object. The public API (UseRoleDiscoveryResult) is unchanged.
+ * Owns the single useConversation instance for a role discovery session and
+ * exposes it as `conv` so that `<AIChat conv={rd.conv} />` reads the SAME
+ * state — if two hooks call `useConversation` over the same adapter they end
+ * up with two disconnected copies of `phase`/`persona`/etc., which silently
+ * breaks the synthesis handoff.
+ *
+ * Role-discovery-specific fields (contextId, participantId, participantRole,
+ * baseline) are stored in refs on this hook and exposed on the returned object.
  */
 
 import { useRef, useMemo, useState, useCallback } from 'react';
@@ -43,8 +47,14 @@ export interface UseRoleDiscoveryResult {
   participantId: string | null;
   participantRole: ParticipantRole | null;
 
-  /** The ConversationAdapter — pass directly to <AIChat adapter={...} />. */
+  /** The ConversationAdapter — stable identity for the session. */
   adapter: ConversationAdapter;
+
+  /**
+   * Shared conversation state. Pass to `<AIChat conv={rd.conv} />` so the
+   * component and the page read/write the same instance — never duplicate.
+   */
+  conv: UseConversationResult;
 
   // Current turn
   acknowledgment: string | null;
@@ -254,11 +264,15 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
 
   const conv = useConversation(roleDiscoveryAdapter);
 
-  const createAndStart = useMemo(
-    () =>
-      async (baseline: RoleContextBaseline, questionBudget = 10): Promise<void> => {
-        await conv.initialize({ baseline: baseline as unknown as Record<string, unknown>, questionBudget });
-      },
+  const createAndStart = useCallback(
+    async (baseline: RoleContextBaseline, questionBudget = 10): Promise<void> => {
+      // Starting a fresh interview — clear any prior hydration so stale persona
+      // from a previous COMPLETE session can't leak into the new one.
+      setOverridePhase(null);
+      setHydratedPersona(null);
+      setHydratedJobDescription(null);
+      await conv.initialize({ baseline: baseline as unknown as Record<string, unknown>, questionBudget });
+    },
     [conv],
   );
 
@@ -281,6 +295,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     participantId: participantIdRef.current,
     participantRole: participantRoleRef.current,
     adapter: roleDiscoveryAdapter,
+    conv,
     acknowledgment: conv.acknowledgment,
     currentQuestion: conv.currentQuestion,
     progress: conv.progress,

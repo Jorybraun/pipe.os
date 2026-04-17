@@ -95,7 +95,7 @@ export class MockLiveSession implements LiveSession {
 export class MockLiveProvider implements LiveProvider {
   readonly name = 'mock';
 
-  openSession(_config: LiveSessionConfig): MockLiveSession {
-    return new MockLiveSession();
+  openSession(_config: LiveSessionConfig): Promise<MockLiveSession> {
+    return Promise.resolve(new MockLiveSession());
   }
 }

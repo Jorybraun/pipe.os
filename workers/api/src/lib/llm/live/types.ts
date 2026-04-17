@@ -11,7 +11,7 @@
 
 export interface LiveSessionConfig {
   systemPrompt: string;
-  /** default: 'gemini-live-2.5-flash-native-audio' */
+  /** default: 'gemini-2.0-flash-exp' (Vertex AI naming — not the Gemini Developer API -live-001 suffix) */
   model?: string;
   /** Prebuilt voice name. default: 'Puck' */
   voice?: string;
@@ -36,5 +36,5 @@ export interface LiveSession {
 
 export interface LiveProvider {
   readonly name: string;
-  openSession(config: LiveSessionConfig): LiveSession;
+  openSession(config: LiveSessionConfig): Promise<LiveSession>;
 }

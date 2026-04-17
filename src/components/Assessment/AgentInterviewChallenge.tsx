@@ -14,6 +14,7 @@ import { useState, useMemo } from 'react';
 import type { JSX } from 'react';
 import { useInterview } from '../../contexts/InterviewContext';
 import { useSessionToken } from '../../contexts/SessionTokenContext';
+import { useConversation } from '../../hooks/useConversation';
 import { AIChat } from '../AIChat';
 import { createCandidateConversationAdapter } from '../../lib/adapters/candidateConversationAdapter';
 import type { SynthesisResult } from '../AIChat/types';
@@ -34,6 +35,10 @@ export function AgentInterviewChallenge(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentChallenge.id],
   );
+
+  // Own the conversation state here so <AIChat> reads the same instance as
+  // any future side-panels (transcript, coach overlay, etc.) on this page.
+  const conv = useConversation(adapter);
 
   const initConfig = useMemo(
     () => ({
@@ -74,7 +79,7 @@ export function AgentInterviewChallenge(): JSX.Element {
 
   return (
     <AIChat
-      adapter={adapter}
+      conv={conv}
       initConfig={initConfig}
       enableVoice
       enableLiveVoice={false}

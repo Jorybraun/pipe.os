@@ -79,7 +79,7 @@ async function signJwt(key: CryptoKey, payload: Record<string, unknown>): Promis
 
 // ─── Access token (with cache) ────────────────────────────────────────────────
 
-async function getAccessToken(sa: ServiceAccountKey): Promise<string> {
+export async function getAccessToken(sa: ServiceAccountKey): Promise<string> {
   const now = Date.now();
   if (_tokenCache && _tokenCache.expiresAt > now) return _tokenCache.token;
 

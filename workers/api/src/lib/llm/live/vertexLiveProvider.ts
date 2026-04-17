@@ -5,11 +5,16 @@
  * bidirectional audio sessions. Uses PCM16 16kHz input and receives PCM16
  * 24kHz audio output alongside transcript segments.
  *
- * Endpoint: wss://us-central1-aiplatform.googleapis.com/ws/
- *           google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent
+ * Endpoint: wss://{region}-aiplatform.googleapis.com/ws/
+ *           google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent
+ *
+ * Auth: GCP service account (VERTEX_SA_KEY_JSON). Token is obtained via the
+ * shared getAccessToken() helper from vertexAIProvider.ts (cached ~55 min).
  */
 
 import type { LiveProvider, LiveSession, LiveSessionConfig } from './types';
+import { getAccessToken } from '../vertexAIProvider';
+import type { ServiceAccountKey } from '../vertexAIProvider';
 
 // ─── Internal wire types ──────────────────────────────────────────────────────
 
@@ -98,10 +103,40 @@ class VertexLiveSession implements LiveSession {
   private transcriptHandlers: Array<(text: string, role: 'user' | 'model') => void> = [];
   private errorHandlers: Array<(err: Error) => void> = [];
 
-  constructor(ws: WebSocket) {
+  // Buffer audio chunks sent before the WS open event fires.
+  // Cloudflare Workers throw if ws.send() is called while readyState === CONNECTING.
+  private pendingAudio: ArrayBuffer[] = [];
+  private wsOpen: boolean;
+
+  // alreadyOpen=true when constructed from fetch()+Upgrade+accept() — the socket
+  // is already in OPEN state and the open event may not fire.
+  constructor(ws: WebSocket, alreadyOpen = false) {
     this.ws = ws;
+    this.wsOpen = alreadyOpen;
+
+    this.ws.addEventListener('open', () => {
+      if (!this.wsOpen) {
+        this.wsOpen = true;
+        // Flush any audio that arrived before the connection was ready
+        for (const chunk of this.pendingAudio) {
+          this.sendAudioNow(chunk);
+        }
+        this.pendingAudio = [];
+      }
+    });
+
     this.ws.addEventListener('message', (event: MessageEvent) => {
-      this.handleMessage(event.data as string);
+      const data = event.data;
+      if (data instanceof Blob) {
+        data.text().then((text) => this.handleMessage(text)).catch(() => {
+          const err = new Error('[VertexLiveSession] Failed to read Blob message');
+          this.errorHandlers.forEach((h) => h(err));
+        });
+      } else if (data instanceof ArrayBuffer) {
+        this.handleMessage(new TextDecoder().decode(data));
+      } else {
+        this.handleMessage(data as string);
+      }
     });
     this.ws.addEventListener('error', () => {
       const err = new Error('[VertexLiveSession] WebSocket error');
@@ -111,8 +146,6 @@ class VertexLiveSession implements LiveSession {
       const code = event.code;
       const reason = event.reason || '(none)';
       console.error('[VertexLiveSession] WebSocket closed — code:', code, 'reason:', reason);
-      // Propagate non-normal closes as errors so callers (VoiceSessionDO) can
-      // null out liveSession and notify browser clients.
       if (code !== 1000) {
         const err = new Error(`[VertexLiveSession] closed code=${code} reason=${reason}`);
         this.errorHandlers.forEach((h) => h(err));
@@ -121,6 +154,14 @@ class VertexLiveSession implements LiveSession {
   }
 
   sendAudio(chunk: ArrayBuffer): void {
+    if (!this.wsOpen) {
+      this.pendingAudio.push(chunk);
+      return;
+    }
+    this.sendAudioNow(chunk);
+  }
+
+  private sendAudioNow(chunk: ArrayBuffer): void {
     const data = arrayBufferToBase64(chunk);
     const msg: VertexRealtimeInputMessage = {
       realtimeInput: {
@@ -146,7 +187,9 @@ class VertexLiveSession implements LiveSession {
     const msg: VertexTurnCompleteMessage = {
       clientContent: { turnComplete: true },
     };
-    this.ws.send(JSON.stringify(msg));
+    if (this.wsOpen) {
+      this.ws.send(JSON.stringify(msg));
+    }
     this.ws.close();
   }
 
@@ -160,13 +203,11 @@ class VertexLiveSession implements LiveSession {
       return;
     }
 
-    // Setup acknowledgement — nothing to forward to callers
     if ('setupComplete' in parsed && parsed.setupComplete !== undefined) {
       console.log('[VertexLiveSession] Setup confirmed by server');
       return;
     }
 
-    // API-level error
     if (parsed.error !== undefined) {
       const { code, message, status } = parsed.error;
       const err = new Error(
@@ -176,7 +217,6 @@ class VertexLiveSession implements LiveSession {
       return;
     }
 
-    // Model audio / transcript parts
     const parts = parsed.serverContent?.modelTurn?.parts;
     if (parts !== undefined) {
       for (const part of parts) {
@@ -190,7 +230,6 @@ class VertexLiveSession implements LiveSession {
       }
     }
 
-    // User speech transcription (STT result echoed back by the server)
     if (parsed.inputTranscription?.text !== undefined) {
       const text = parsed.inputTranscription.text;
       this.transcriptHandlers.forEach((h) => h(text, 'user'));
@@ -200,63 +239,91 @@ class VertexLiveSession implements LiveSession {
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
-// Gemini Developer API — auth via ?key= (GOOGLE_AI_API_KEY from AI Studio)
-// To switch to Vertex AI: change WS_BASE to the Vertex endpoint and handle OAuth.
-const DEFAULT_MODEL = 'gemini-2.0-flash-live-001';
+// Vertex AI Live API — GA model (2025-2026). Override via LiveSessionConfig.model if needed.
+// Requires Vertex AI Live API to be enabled for the project in GCP Console.
+const DEFAULT_MODEL = 'gemini-live-2.5-flash-native-audio';
 const DEFAULT_VOICE = 'Puck';
-const WS_BASE =
-  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
 export class VertexLiveProvider implements LiveProvider {
   readonly name = 'vertex-live';
 
-  constructor(private readonly apiKey: string) {}
+  constructor(
+    private readonly serviceAccount: ServiceAccountKey,
+    private readonly projectId: string,
+    private readonly region = 'us-central1',
+    private readonly defaultModel = DEFAULT_MODEL,
+  ) {}
 
-  openSession(config: LiveSessionConfig): LiveSession {
-    const model = config.model ?? DEFAULT_MODEL;
+  async openSession(config: LiveSessionConfig): Promise<LiveSession> {
+    // Fetch token first (cached after first call — ~0 ms on warm isolate).
+    const token = await getAccessToken(this.serviceAccount);
+    const model = config.model ?? this.defaultModel;
     const voice = config.voice ?? DEFAULT_VOICE;
 
-    const url = `${WS_BASE}?key=${this.apiKey}`;
-    const ws = new WebSocket(url);
+    const modelPath = `projects/${this.projectId}/locations/${this.region}/publishers/google/models/${model}`;
+    // fetch() + Upgrade requires https:// not wss:// — Cloudflare Workers translate
+    // the Upgrade header to a WebSocket handshake internally.
+    const wsUrl =
+      `https://${this.region}-aiplatform.googleapis.com/ws/` +
+      `google.cloud.aiplatform.v1beta1.LlmBidiService/BidiGenerateContent`;
 
-    const session = new VertexLiveSession(ws);
+    // Use fetch() + Upgrade pattern — the only stable way to set Authorization
+    // headers on an outbound WebSocket in Cloudflare Workers.
+    const resp = await fetch(wsUrl, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Upgrade: 'websocket',
+      },
+    });
 
-    ws.addEventListener('open', () => {
-      const setup: VertexSetupMessage = {
-        setup: {
-          model: `models/${model}`,
-          systemInstruction: {
-            parts: [{ text: config.systemPrompt }],
-          },
-          generationConfig: {
-            responseModalities: ['AUDIO'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: voice },
-              },
+    const ws = resp.webSocket;
+    if (!ws) {
+      const body = await resp.text().catch(() => '(unreadable)');
+      throw new Error(
+        `[VertexLiveProvider] Vertex AI did not return a WebSocket (status ${resp.status}): ${body}`,
+      );
+    }
+
+    // Required before any send() or addEventListener() with the fetch() pattern.
+    ws.accept();
+
+    // alreadyOpen=true: fetch()+accept() leaves the socket in OPEN state;
+    // the open event may not fire, so we mark it open immediately.
+    const session = new VertexLiveSession(ws, true);
+
+    const setup: VertexSetupMessage = {
+      setup: {
+        model: modelPath,
+        systemInstruction: {
+          parts: [{ text: config.systemPrompt }],
+        },
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice },
             },
           },
         },
-      };
-      ws.send(JSON.stringify(setup));
+      },
+    };
+    ws.send(JSON.stringify(setup));
 
-      // Gemini Live is reactive — send an opening prompt so the agent speaks first.
-      // Without this, the agent waits silently for user audio.
-      setTimeout(() => {
-        const openingTurn = {
-          clientContent: {
-            turns: [
-              {
-                role: 'user',
-                parts: [{ text: 'Hello. Please introduce yourself briefly and begin the interview with your first question.' }],
-              },
-            ],
-            turnComplete: true,
-          },
-        };
-        ws.send(JSON.stringify(openingTurn));
-      }, 100); // Small delay to ensure setup is processed first
-    });
+    // Opening turn — sent after setup; server processes them in order.
+    setTimeout(() => {
+      const openingTurn = {
+        clientContent: {
+          turns: [
+            {
+              role: 'user',
+              parts: [{ text: 'Hello. Please introduce yourself briefly and begin the interview with your first question.' }],
+            },
+          ],
+          turnComplete: true,
+        },
+      };
+      ws.send(JSON.stringify(openingTurn));
+    }, 100);
 
     return session;
   }
