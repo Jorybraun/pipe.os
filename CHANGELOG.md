@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(admin): bulk approve + ingest button for suitable+hold repos (2026-04-18)
+
+One-shot batch endpoint and UI to vectorize all Pass-3-analyzed repos where Gemma flagged `challenge_suitability_verdict IN ('suitable','hold')` and `vectorized_at IS NULL`. Explicitly approved by founder as a per-repo-gate override (ADR-033, 2026-04-17).
+
+Backend: `POST /api/v1/admin/repos/bulk-ingest` accepts `{ verdicts, limit, feedback_text }` (zod-validated), queries D1 for un-vectorized suitable+hold targets, caps at 200 (Workers subrequest budget), then for each repo: sets `admin_verdict='approved'` + calls existing `vectorizeAndMark` helper (BGE-large embed → REPO_INDEX upsert). Per-repo errors are caught and recorded without aborting the batch. Returns `{ ok, total, ok_count, failed_count, results[] }`.
+
+Frontend: amber "BULK INGEST SUITABLE+HOLD" button in the `/admin/repos` header strip. Click expands an inline confirmation ("Overrides per-repo gate.") with CONFIRM / CANCEL. On confirm, shows a spinner, then a dismissible result banner with ok/failed counts. Reloads the repo list on success. No new primitives — inline expand pattern, project color tokens only.
+
+Files: `workers/api/src/routes/cockpit/adminRepos.ts`, `src/pages/admin/RepoAdminPage.tsx`.
+
 #### feat(admin): suitability filter + pagination on repo admin list (2026-04-18)
 
 `/admin/repos` was loading 5000 repos in one shot to dodge a 100-row cap — OK for a few hundred, untenable once Pass 1 + Pass 2 balloon past 2000. Added: (1) a suitability filter driven by Gemma's `challenge_suitability_verdict` column (any | suitable | hold | reject) with matching pill in the filter strip, (2) server-side pagination at 50/page with prev/next controls + "PAGE X / Y · N TOTAL" readout, (3) suitability badge on each card's top row colored green/amber/red, (4) filter change resets to page 1. Backend: `GET /api/v1/admin/repos` now accepts `suitability` query param, returns `challenge_suitability_verdict` in each row, per-page limit hard-capped at 500 (was 5000). Files: `src/pages/admin/RepoAdminPage.tsx`, `workers/api/src/routes/cockpit/adminRepos.ts`.

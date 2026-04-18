@@ -823,6 +823,161 @@ adminRepos.post('/repos/:id/pass3/ingest', async (c) => {
   return c.json({ ok: true, id, vectorized_at: vectorizedAt });
 });
 
+// ─── POST /api/v1/admin/repos/bulk-ingest ────────────────────────────────────
+//
+// One-shot batch endpoint: approve + vectorize all Pass-3-analyzed repos where
+// Gemma flagged challenge_suitability_verdict IN ('suitable','hold') and
+// vectorized_at IS NULL.
+//
+// Human-gated-vectorization override notice (ADR-033, 2026-04-17):
+//   The per-repo ingest gate exists to ensure a human reviews each Gemma verdict
+//   before it enters REPO_INDEX. This endpoint is an explicit one-shot override
+//   approved by the founder on 2026-04-18. It applies only to repos that already
+//   carry a Gemma verdict; no Gemma re-analysis is performed. The 200-repo hard
+//   cap and the `suitable|hold`-only default preserve human accountability for the
+//   reject category.
+
+interface BulkIngestTarget {
+  repo_id: number;
+  full_name: string;
+  challenge_suitability_verdict: string;
+  repo_searchable_profile: string;
+}
+
+interface BulkIngestReportRow {
+  repo_id: number;
+  full_name: string;
+  verdict: string;
+  status: 'ok' | 'failed';
+  message: string;
+  vectorized_at: string | null;
+}
+
+const bulkIngestSchema = z.object({
+  verdicts: z.array(z.enum(['suitable', 'hold', 'reject'])).min(1).default(['suitable', 'hold']),
+  limit: z.number().int().positive().max(500).optional(),
+  feedback_text: z.string().max(200).default('bulk ingest 2026-04-18'),
+});
+
+adminRepos.post('/repos/bulk-ingest', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'invalid JSON body');
+  }
+
+  const parsed = bulkIngestSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'invalid body');
+  }
+
+  const { verdicts, limit, feedback_text } = parsed.data;
+
+  // Build parameterized IN clause for the verdict filter
+  const placeholders = verdicts.map(() => '?').join(', ');
+  const { results: allTargets } = await c.env.DB.prepare(
+    `SELECT res.repo_id, qr.full_name, res.challenge_suitability_verdict, res.repo_searchable_profile
+     FROM repo_engineering_signals res
+     JOIN qualified_repos qr ON qr.id = res.repo_id
+     WHERE res.challenge_suitability_verdict IN (${placeholders})
+       AND res.vectorized_at IS NULL
+       AND res.repo_searchable_profile IS NOT NULL
+       AND res.repo_searchable_profile != ''
+     ORDER BY res.repo_id`,
+  ).bind(...verdicts).all<BulkIngestTarget>();
+
+  const HARD_CAP = 200;
+  if (allTargets.length > HARD_CAP) {
+    console.warn(
+      `[adminRepos/bulk-ingest] found ${allTargets.length} targets, capping at ${HARD_CAP}. Run again to ingest the remainder.`,
+    );
+  }
+
+  const requestedLimit = limit !== undefined ? Math.min(limit, HARD_CAP) : HARD_CAP;
+  const targets = allTargets.slice(0, requestedLimit);
+  const total = targets.length;
+
+  const results: BulkIngestReportRow[] = [];
+  let okCount = 0;
+  let failedCount = 0;
+  const verdictAt = new Date().toISOString();
+
+  for (const target of targets) {
+    if (!target.repo_searchable_profile) {
+      // Guard against the empty_profile case even though the SQL filters it
+      results.push({
+        repo_id: target.repo_id,
+        full_name: target.full_name,
+        verdict: target.challenge_suitability_verdict,
+        status: 'failed',
+        message: 'empty_profile',
+        vectorized_at: null,
+      });
+      failedCount++;
+      continue;
+    }
+
+    try {
+      // Step 1: approve the verdict in repo_engineering_signals
+      await c.env.DB.prepare(
+        `UPDATE repo_engineering_signals
+           SET admin_verdict = 'approved', verdict_at = ?, admin_feedback_text = ?
+         WHERE repo_id = ?`,
+      ).bind(verdictAt, feedback_text, target.repo_id).run();
+
+      // Step 2: embed + upsert to REPO_INDEX
+      const { vectorized, vectorizedAt } = await vectorizeAndMark(
+        c.env,
+        target.repo_id,
+        target.repo_searchable_profile,
+      );
+
+      if (!vectorized) {
+        results.push({
+          repo_id: target.repo_id,
+          full_name: target.full_name,
+          verdict: target.challenge_suitability_verdict,
+          status: 'failed',
+          message: 'vectorize_failed',
+          vectorized_at: null,
+        });
+        failedCount++;
+      } else {
+        results.push({
+          repo_id: target.repo_id,
+          full_name: target.full_name,
+          verdict: target.challenge_suitability_verdict,
+          status: 'ok',
+          message: 'ingested',
+          vectorized_at: vectorizedAt,
+        });
+        okCount++;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[adminRepos/bulk-ingest] repo ${target.repo_id} failed:`, message);
+      results.push({
+        repo_id: target.repo_id,
+        full_name: target.full_name,
+        verdict: target.challenge_suitability_verdict,
+        status: 'failed',
+        message,
+        vectorized_at: null,
+      });
+      failedCount++;
+    }
+  }
+
+  return c.json({
+    ok: true,
+    total,
+    ok_count: okCount,
+    failed_count: failedCount,
+    results,
+  });
+});
+
 // ─── POST /api/v1/admin/repos/:id/pass3 ──────────────────────────────────────
 // Back-compat one-shot: analyze → auto-approve verdict → ingest.
 // Gated on the legacy admin_status = 'approved' check so the existing approval

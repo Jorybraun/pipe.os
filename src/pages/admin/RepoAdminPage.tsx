@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, ExternalLink, Check, X, Loader2, Search, ChevronDown, ChevronRight, Sparkles, GitPullRequest, RefreshCcw, ChevronLeft } from 'lucide-react';
+import { Database, ExternalLink, Check, X, Loader2, Search, ChevronDown, ChevronRight, Sparkles, GitPullRequest, RefreshCcw, ChevronLeft, PackageOpen } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -70,6 +70,23 @@ interface ReposResponse {
 
 interface PRsResponse {
   prs: SamplePR[];
+}
+
+interface BulkIngestReportRow {
+  repo_id: number;
+  full_name: string;
+  verdict: string;
+  status: 'ok' | 'failed';
+  message: string;
+  vectorized_at: string | null;
+}
+
+interface BulkIngestResponse {
+  ok: boolean;
+  total: number;
+  ok_count: number;
+  failed_count: number;
+  results: BulkIngestReportRow[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -627,6 +644,9 @@ export default function RepoAdminPage(): JSX.Element {
   const [runningPass3, setRunningPass3] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkIngesting, setBulkIngesting] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkIngestResponse | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -708,6 +728,26 @@ export default function RepoAdminPage(): JSX.Element {
     }
   };
 
+  const handleBulkIngest = async (): Promise<void> => {
+    setBulkConfirm(false);
+    setBulkIngesting(true);
+    setBulkResult(null);
+    setError(null);
+    try {
+      const res = await api.post<BulkIngestResponse>('/api/v1/admin/repos/bulk-ingest', {
+        verdicts: ['suitable', 'hold'],
+        feedback_text: 'bulk ingest 2026-04-18',
+      });
+      setBulkResult(res);
+      // Reload the current view so vectorized repos reflect their updated state
+      void load(statusFilter, passFilter, suitabilityFilter, page);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Bulk ingest failed');
+    } finally {
+      setBulkIngesting(false);
+    }
+  };
+
   const filtered = search.trim()
     ? repos.filter((r) =>
         r.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -769,8 +809,118 @@ export default function RepoAdminPage(): JSX.Element {
             <Search size={11} />
             SEMANTIC_SEARCH
           </button>
+
+          {/* Bulk ingest button — one-shot override for suitable+hold repos with vectorized_at IS NULL */}
+          {!bulkConfirm && !bulkIngesting && (
+            <button
+              onClick={() => setBulkConfirm(true)}
+              style={{
+                background: 'rgba(251,191,36,0.08)',
+                border: '1px solid rgba(251,191,36,0.3)',
+                color: '#fbbf24',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 10,
+                borderRadius: 4,
+                letterSpacing: '0.08em',
+                ...mono,
+              }}
+            >
+              <PackageOpen size={11} />
+              BULK INGEST SUITABLE+HOLD
+            </button>
+          )}
+
+          {/* Inline confirmation expand */}
+          {bulkConfirm && !bulkIngesting && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 10px',
+                border: '1px solid rgba(251,191,36,0.4)',
+                borderRadius: 4,
+                background: 'rgba(251,191,36,0.06)',
+              }}
+            >
+              <span style={{ ...mono, fontSize: 9, color: '#fbbf24', letterSpacing: '0.06em' }}>
+                Ingest all suitable+hold repos into REPO_INDEX? Overrides per-repo gate.
+              </span>
+              <button
+                onClick={() => void handleBulkIngest()}
+                style={{
+                  ...mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
+                  padding: '3px 10px',
+                  background: 'rgba(251,191,36,0.15)',
+                  border: '1px solid rgba(251,191,36,0.4)',
+                  borderRadius: 3, color: '#fbbf24', cursor: 'pointer',
+                }}
+              >
+                CONFIRM
+              </button>
+              <button
+                onClick={() => setBulkConfirm(false)}
+                style={{
+                  ...mono, fontSize: 9, padding: '3px 8px',
+                  background: 'transparent',
+                  border: '1px solid var(--pipe-border)',
+                  borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: 'pointer',
+                }}
+              >
+                CANCEL
+              </button>
+            </div>
+          )}
+
+          {/* In-progress spinner */}
+          {bulkIngesting && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Loader2 size={11} color="#fbbf24" style={{ animation: 'spin 1s linear infinite' }} />
+              <span style={{ ...mono, fontSize: 10, color: '#fbbf24', letterSpacing: '0.08em' }}>
+                INGESTING...
+              </span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Bulk ingest result banner */}
+      {bulkResult && (
+        <div
+          style={{
+            ...mono, fontSize: 9, letterSpacing: '0.05em',
+            padding: '10px 14px',
+            border: `1px solid ${bulkResult.failed_count === 0 ? 'rgba(74,222,128,0.3)' : 'rgba(251,191,36,0.3)'}`,
+            borderRadius: 6,
+            background: bulkResult.failed_count === 0 ? 'rgba(74,222,128,0.05)' : 'rgba(251,191,36,0.05)',
+            color: bulkResult.failed_count === 0 ? '#4ade80' : '#fbbf24',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>
+            BULK INGEST COMPLETE — {bulkResult.ok_count}/{bulkResult.total} ok
+            {bulkResult.failed_count > 0 && `, ${bulkResult.failed_count} failed`}
+          </span>
+          <button
+            onClick={() => setBulkResult(null)}
+            style={{
+              ...mono, fontSize: 9, padding: '2px 8px',
+              background: 'transparent',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: 'pointer',
+            }}
+          >
+            DISMISS
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
