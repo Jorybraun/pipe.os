@@ -87,6 +87,8 @@ export interface UseRoleDiscoveryResult {
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
   /** Hydrate directly to COMPLETE phase from a server-fetched context (resume path). */
   hydrateComplete: (data: { id: string; baseline: RoleContextBaseline; persona: CandidatePersona | null; jobDescription: GeneratedJobDescription | null }) => void;
+  /** Wipe the whole discovery back to IDLE — used by step-indicator back-nav. */
+  reset: () => void;
 }
 
 export function useRoleDiscovery(): UseRoleDiscoveryResult {
@@ -289,6 +291,17 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     setHydratedJobDescription(data.jobDescription);
   }, []);
 
+  const reset = useCallback((): void => {
+    contextIdRef.current = null;
+    participantIdRef.current = null;
+    participantRoleRef.current = null;
+    baselineRef.current = null;
+    setOverridePhase(null);
+    setHydratedPersona(null);
+    setHydratedJobDescription(null);
+    conv.reset();
+  }, [conv]);
+
   return {
     phase: (overridePhase ?? conv.phase) as DiscoveryPhase,
     contextId: contextIdRef.current,
@@ -312,5 +325,6 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     completeEarly: conv.completeEarly,
     submitFeedback: conv.submitFeedback,
     hydrateComplete,
+    reset,
   };
 }

@@ -45,6 +45,7 @@ import { detectConstructs } from './pass2/constructs.js';
 import { inferDomain, isDomainDenylisted } from './pass2/domain.js';
 import { samplePRs } from './pass2/prSample.js';
 import { persistPass2 } from './pass2/persist.js';
+import { extractReadme, extractRootTree } from './pass2/readmeAndTree.js';
 import { resolveSkillSlug } from './shared/skillResolver.js';
 import { computeSeniorityBand, DOMAIN_DENYLIST_KEYWORDS } from './config.js';
 import type { Pass1Row, Pass2Data } from './shared/types.js';
@@ -58,9 +59,11 @@ const { values: args } = parseArgs({
     pass3:         { type: 'boolean', default: false },
     'dry-run':     { type: 'boolean', default: false },
     limit:         { type: 'string' },
-    'repo-id':     { type: 'string' }, // pass3: run on a single repo by D1 ID
+    'repo-id':     { type: 'string' }, // pass2/pass3: run on a single repo by D1 ID
     concurrency:   { type: 'string' }, // pass3: parallel repo processing (default 5)
     queries:       { type: 'string' }, // limit number of search queries (for testing)
+    lang:          { type: 'string' }, // pass1: only run queries matching this language (e.g. ruby)
+    'no-ai':       { type: 'boolean', default: false }, // pass2: suppress auto-chained pass3 analyze
     help:          { type: 'boolean', default: false },
   },
 });
@@ -75,11 +78,13 @@ Usage:
 
 Options:
   --pass1       Run Pass 1 (search + coarse filter, no clone)
-  --pass2       Run Pass 2 (clone + deep analysis)
+  --pass2       Run Pass 2 (clone + deep analysis, auto-chains Pass 3 analyze on success unless --no-ai)
   --pass3       Run Pass 3 (offline AI signal extraction via Vertex AI Gemma)
   --dry-run     Print actions without writing to D1
   --limit N     Override batch size
-  --repo-id N   Pass 3: run on a single repo by D1 ID
+  --repo-id N   Pass 2 or Pass 3: run on a single repo by D1 ID
+  --lang L      Pass 1: only run queries for language L (e.g. ruby, java)
+  --no-ai       Pass 2: skip auto-chained Pass 3 analyze (bulk runs where you want to review later)
   --help        Show this help
 `);
   process.exit(0);
@@ -90,6 +95,8 @@ const LIMIT = args.limit ? parseInt(args.limit, 10) : undefined;
 const REPO_ID = args['repo-id'] ? parseInt(args['repo-id'], 10) : undefined;
 const CONCURRENCY = args.concurrency ? parseInt(args.concurrency, 10) : undefined;
 const MAX_QUERIES = args.queries ? parseInt(args.queries, 10) : undefined;
+const LANG_FILTER = args.lang?.toLowerCase();
+const NO_AI = args['no-ai'] ?? false;
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -151,11 +158,24 @@ async function runPass3(): Promise<void> {
 // ─── Pass 1 ───────────────────────────────────────────────────────────────────
 
 async function runPass1(github: GitHubClient, d1: D1Client | null): Promise<void> {
-  logger.info('[pass1] Starting', { queryCount: SEARCH_QUERIES.length });
-
   const cutoff = staleCutoff().split('T')[0]!; // YYYY-MM-DD for GitHub query
   const seen = new Set<string>(); // deduplicate across queries
-  const queries = MAX_QUERIES ? SEARCH_QUERIES.slice(0, MAX_QUERIES) : SEARCH_QUERIES;
+
+  let queries = SEARCH_QUERIES;
+  if (LANG_FILTER) {
+    queries = queries.filter((q) => q.lang.toLowerCase() === LANG_FILTER);
+    if (queries.length === 0) {
+      logger.error('[pass1] --lang matched no queries', { lang: LANG_FILTER });
+      return;
+    }
+  }
+  if (MAX_QUERIES) queries = queries.slice(0, MAX_QUERIES);
+
+  logger.info('[pass1] Starting', {
+    queryCount: queries.length,
+    totalQueries: SEARCH_QUERIES.length,
+    langFilter: LANG_FILTER,
+  });
 
   let totalPersisted = 0;
   let totalFailed = 0;
@@ -260,30 +280,62 @@ async function runPass2(github: GitHubClient, d1: D1Client | null): Promise<void
 
   const batchSize = LIMIT ?? PASS2_BATCH_SIZE;
 
-  // Fetch repos that need pass-2 processing
-  const rows = await d1.query<{
-    id: number;
-    full_name: string;
-    description: string | null;
-    primary_language: string;
-    topics_json: string | null;
-  }>(`
-    SELECT id, full_name, description, primary_language
-    FROM qualified_repos
-    WHERE pass = 1 AND disqualified = 0
-    ORDER BY RANDOM()
-    LIMIT ?
-  `, [batchSize]);
+  // Fetch repos that need pass-2 processing.
+  // If --repo-id is set, target a single repo regardless of pass/disqualified state
+  // (useful for retrying a known row from the admin UI).
+  const rows = REPO_ID !== undefined
+    ? await d1.query<{
+        id: number;
+        full_name: string;
+        description: string | null;
+        primary_language: string;
+      }>(
+        `SELECT id, full_name, description, primary_language
+         FROM qualified_repos
+         WHERE id = ?`,
+        [REPO_ID],
+      )
+    : await d1.query<{
+        id: number;
+        full_name: string;
+        description: string | null;
+        primary_language: string;
+      }>(
+        `SELECT id, full_name, description, primary_language
+         FROM qualified_repos
+         WHERE pass = 1 AND disqualified = 0
+         ORDER BY RANDOM()
+         LIMIT ?`,
+        [batchSize],
+      );
 
-  logger.info('[pass2] Processing batch', { count: rows.length, batchSize });
+  if (REPO_ID !== undefined && rows.length === 0) {
+    logger.error('[pass2] repo-id not found', { repoId: REPO_ID });
+    return;
+  }
+
+  logger.info('[pass2] Processing batch', {
+    count: rows.length,
+    batchSize: REPO_ID !== undefined ? 1 : batchSize,
+    repoId: REPO_ID,
+  });
 
   // Process in parallel with bounded concurrency
   await processWithConcurrency(rows, PASS2_CONCURRENCY, async (row) => {
     const [owner, repoName] = row.full_name.split('/') as [string, string];
     logger.info('[pass2] Processing repo', { full_name: row.full_name, id: row.id });
 
+    let qualified = false;
     try {
-      await processPass2Repo(github, d1, row.id, row.full_name, row.description, row.primary_language);
+      const result = await processPass2Repo(
+        github,
+        d1,
+        row.id,
+        row.full_name,
+        row.description,
+        row.primary_language,
+      );
+      qualified = result.disqualified === 0;
     } catch (err) {
       logger.error('[pass2] Repo failed', {
         full_name: row.full_name,
@@ -294,6 +346,23 @@ async function runPass2(github: GitHubClient, d1: D1Client | null): Promise<void
         `UPDATE qualified_repos SET disqualified = 1, disqualified_reason = 'crawl_error', refreshed_at = ? WHERE id = ?`,
         [new Date().toISOString(), row.id],
       );
+    }
+
+    // Auto-chain Pass 3 analyze (skip vectorize — the human ingest gate at
+    // /pass3/ingest stays in charge). Failure here is logged but never blocks
+    // the Pass 2 success that was just committed.
+    if (qualified && !DRY_RUN && !NO_AI) {
+      try {
+        logger.info('[pass2→pass3] Auto-chaining Pass 3 analyze', { id: row.id, full_name: row.full_name });
+        const { run } = await import('./pass3/run.js');
+        await run({ repoId: row.id, dryRun: false, concurrency: 1, skipVectorize: true });
+      } catch (err) {
+        logger.error('[pass2→pass3] Pass 3 chain failed (non-fatal)', {
+          id: row.id,
+          full_name: row.full_name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   });
 
@@ -313,7 +382,8 @@ async function processPass2Repo(
   fullName: string,
   description: string | null,
   primaryLanguage: string,
-): Promise<void> {
+): Promise<{ disqualified: 0 | 1 }> {
+  let disqualifiedResult: 0 | 1 = 1;
   await withClone(fullName, repoId, async (cloneDir, filePaths) => {
     const [owner, repoName] = fullName.split('/') as [string, string];
 
@@ -356,13 +426,13 @@ async function processPass2Repo(
     const { domain, confidence: domainConfidence } = inferDomain(filePaths, skillSlugs, rawDeps, []);
 
     // ── Hard disqualifiers ────────────────────────────────────────────────
+    // `no_tests` was previously a hard reject. It's now a soft signal: Gemma
+    // sees `has_tests: 0` in the FACTS block and can return `hold`/`reject`
+    // with a reason, which is richer feedback than a binary gate.
     let disqualified: 0 | 1 = 0;
     let disqualifiedReason: string | null = null;
 
-    if (!hasTests) {
-      disqualified = 1;
-      disqualifiedReason = 'no_tests';
-    } else if (isDomainDenylisted([], description)) {
+    if (isDomainDenylisted([], description)) {
       disqualified = 1;
       disqualifiedReason = 'domain_specificity';
     } else if (isComplexBuild(filePaths, rawDeps)) {
@@ -413,10 +483,29 @@ async function processPass2Repo(
       })),
       constructs: constructs.map((c) => ({ slug: c.slug, evidence_count: c.evidence_count })),
       sample_prs: samplePrs,
+      readme_excerpt: extractReadme(cloneDir),
+      root_tree_json: extractRootTree(cloneDir),
     };
 
     await persistPass2(d1, pass2Data);
+    disqualifiedResult = pass2Data.disqualified;
+
+    logger.info('[pass2] Done', {
+      full_name: fullName,
+      id: repoId,
+      disqualified: pass2Data.disqualified,
+      reason: pass2Data.disqualified_reason,
+      sloc: pass2Data.sloc,
+      file_count: pass2Data.file_count,
+      mean_ccn: pass2Data.mean_ccn,
+      seniority_band: pass2Data.seniority_band,
+      has_tests: pass2Data.has_tests,
+      constructs: pass2Data.constructs.length,
+      sample_prs: pass2Data.sample_prs.length,
+      pr_quality: pass2Data.pr_quality_score,
+    });
   });
+  return { disqualified: disqualifiedResult };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

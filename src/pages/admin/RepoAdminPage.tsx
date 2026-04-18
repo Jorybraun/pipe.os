@@ -599,7 +599,7 @@ export default function RepoAdminPage(): JSX.Element {
     setLoading(true);
     setError(null);
     try {
-      const qs = new URLSearchParams({ status, limit: '100' });
+      const qs = new URLSearchParams({ status, limit: '5000' });
       if (pass !== 'all') qs.set('pass', pass);
       const res = await api.get<ReposResponse>(`/api/v1/admin/repos?${qs.toString()}`);
       setRepos(res.repos);

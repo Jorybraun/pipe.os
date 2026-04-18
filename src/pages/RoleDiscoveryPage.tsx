@@ -32,7 +32,7 @@ import { usePipelineCreate } from '../hooks/usePipelineCreate';
 import { useApiClient } from '../hooks/useApiClient';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import { useRoleDiscoveryDraft, type RoleDiscoveryDraft } from '../hooks/useRoleDiscoveryDraft';
-import { useScriptedPhase, buildBaseline, type RolePreset } from '../hooks/useScriptedPhase';
+import { useScriptedPhase, buildBaseline, SCRIPTED, type RolePreset } from '../hooks/useScriptedPhase';
 import {
   Loader2, ArrowRight, ArrowLeft, Check, MessageSquare,
   FileUp, Sparkles, RotateCcw, RotateCw, Volume2, VolumeX,
@@ -262,7 +262,13 @@ function SynthesisPhase({
 
 type StepId = 'role' | 'interview' | 'review';
 
-function StepIndicator({ active }: { active: StepId }): JSX.Element {
+function StepIndicator({
+  active,
+  onStepClick,
+}: {
+  active: StepId;
+  onStepClick?: (id: StepId) => void;
+}): JSX.Element {
   const steps: Array<{ id: StepId; label: string }> = [
     { id: 'role', label: 'ROLE' },
     { id: 'interview', label: 'INTERVIEW' },
@@ -275,16 +281,52 @@ function StepIndicator({ active }: { active: StepId }): JSX.Element {
       {steps.map((step, i) => {
         const isDone = i < activeIdx;
         const isCurrent = i === activeIdx;
+        // Only already-reached steps (done) are clickable — forward-nav via the
+        // normal flow (SEND / CREATE_PIPELINE), back-nav via the indicator.
+        const isClickable = isDone && !!onStepClick;
         const nodeColor = isCurrent ? 'var(--pipe-text)' : isDone ? 'rgba(74, 222, 128, 0.9)' : 'var(--pipe-text-dim)';
         return (
           <div key={step.id} style={{ display: 'flex', alignItems: 'center' }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 14px', borderRadius: 6,
-              background: isCurrent ? 'var(--pipe-surface-hover)' : isDone ? 'rgba(74, 222, 128, 0.06)' : 'transparent',
-              border: isCurrent ? '1px solid var(--pipe-text-dim)' : isDone ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid transparent',
-              opacity: isCurrent ? 1 : isDone ? 1 : 0.35,
-            }}>
+            <div
+              onClick={isClickable ? () => onStepClick(step.id) : undefined}
+              role={isClickable ? 'button' : undefined}
+              tabIndex={isClickable ? 0 : undefined}
+              onKeyDown={
+                isClickable
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onStepClick(step.id);
+                      }
+                    }
+                  : undefined
+              }
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '8px 14px', borderRadius: 6,
+                background: isCurrent ? 'var(--pipe-surface-hover)' : isDone ? 'rgba(74, 222, 128, 0.06)' : 'transparent',
+                border: isCurrent ? '1px solid var(--pipe-text-dim)' : isDone ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid transparent',
+                opacity: isCurrent ? 1 : isDone ? 1 : 0.35,
+                cursor: isClickable ? 'pointer' : 'default',
+                transition: 'background 0.15s ease, border-color 0.15s ease',
+              }}
+              onMouseOver={
+                isClickable
+                  ? (e) => {
+                      e.currentTarget.style.background = 'rgba(74, 222, 128, 0.14)';
+                      e.currentTarget.style.borderColor = 'rgba(74, 222, 128, 0.45)';
+                    }
+                  : undefined
+              }
+              onMouseOut={
+                isClickable
+                  ? (e) => {
+                      e.currentTarget.style.background = 'rgba(74, 222, 128, 0.06)';
+                      e.currentTarget.style.borderColor = 'rgba(74, 222, 128, 0.2)';
+                    }
+                  : undefined
+              }
+            >
               <div style={{
                 width: 20, height: 20, borderRadius: '50%',
                 background: isCurrent ? 'var(--pipe-surface)' : isDone ? 'rgba(74, 222, 128, 0.15)' : 'var(--pipe-surface)',
@@ -332,7 +374,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const pendingDraftRef = useRef<RoleDiscoveryDraft | null>(null);
 
   // ── Scripted-phase TTS (must be declared before the hook that calls cancel) ──
-  const [scriptedVoiceOn, setScriptedVoiceOn] = useState(true);
+  // Default OFF: the scripted questions are short and readable; TTS defaults on
+  // felt intrusive. Users can opt in via the speaker toggle on the question card.
+  const [scriptedVoiceOn, setScriptedVoiceOn] = useState(false);
   const scriptedTTS = useTTS(scriptedVoiceOn);
   const handleScriptedVoiceToggle = useCallback((): void => {
     setScriptedVoiceOn((prev) => {
@@ -436,6 +480,27 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // ── Live session ended — return to Voice/Text choice without losing answers ──
   const handleLiveEnd = scripted.resetToMode;
 
+  // ── Step indicator click — back-nav between phases ──
+  // Only past steps (isDone) are clickable; the indicator hands us the target.
+  // ROLE back-nav clears interview + synthesis state but leaves the scripted
+  // draft intact so the user returns to their answers. INTERVIEW back-nav from
+  // REVIEW drops the synthesis and re-fires the interview so the user lands
+  // on a fresh first question.
+  const handleStepClick = useCallback((target: StepId): void => {
+    if (target === 'role') {
+      setInitConfig(null);
+      setDefaultLiveMode(false);
+      if (rd.phase === 'COMPLETE') rd.reset();
+      return;
+    }
+    if (target === 'interview' && rd.phase === 'COMPLETE') {
+      rd.reset();
+      // Re-fire using the current scripted answers so AIChat re-initializes
+      // with a new initConfig reference (triggers adapter.initialize()).
+      handleFire(scripted.answers, defaultLiveMode);
+    }
+  }, [rd, scripted.answers, defaultLiveMode, handleFire]);
+
   // ── Pipeline creation ──
   const handleCreatePipeline = async (): Promise<void> => {
     try {
@@ -497,12 +562,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
               START OVER
             </button>
           )}
-          <StepIndicator active={currentStep} />
+          <StepIndicator active={currentStep} onStepClick={handleStepClick} />
         </div>
       </div>
 
-      {/* ── Resume prompt — ask user to resume or start fresh ── */}
-      {showResumePrompt && (
+      {/* ── Resume prompt — ask user to resume or start fresh ──
+          Suppress once the interview/review is under way so a stale
+          `showResumePrompt` flag can't re-appear over the active UI. */}
+      {showResumePrompt && isInScriptedPhase && rd.phase !== 'COMPLETE' && (
         <div style={{ padding: 32, background: 'var(--pipe-surface)', border: '1px solid rgba(139, 92, 246, 0.25)', borderRadius: 16 }}>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(139, 92, 246, 0.6)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
             PREVIOUS_SESSION_FOUND
@@ -531,8 +598,8 @@ export default function RoleDiscoveryPage(): JSX.Element {
         </div>
       )}
 
-      {/* ── Scripted phase — shown until initConfig is set ── */}
-      {isInScriptedPhase && !showResumePrompt && (
+      {/* ── Scripted phase — linear flow, shown until every question has been captured ── */}
+      {isInScriptedPhase && !showResumePrompt && !scripted.isComplete && (
         <div>
           {/* Past scripted exchanges */}
           {scripted.exchanges.length > 0 && (
@@ -718,6 +785,92 @@ export default function RoleDiscoveryPage(): JSX.Element {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Scripted phase — review & edit, shown when every question is answered ── */}
+      {isInScriptedPhase && !showResumePrompt && scripted.isComplete && (
+        <div>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 20 }}>
+            ROLE_SUMMARY · EDIT OR CONTINUE
+          </div>
+
+          {SCRIPTED.map((q, i) => {
+            const raw = scripted.answers[q.id] ?? '';
+            return (
+              <div key={q.id} style={{
+                marginBottom: 14,
+                padding: 20,
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border-light)',
+                borderRadius: 12,
+              }}>
+                <div style={{
+                  fontSize: 10, letterSpacing: '0.15em',
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 10,
+                }}>
+                  Q{i + 1} — {q.text}
+                </div>
+                {q.inputType === 'tags' ? (
+                  <TagsInput
+                    value={raw ? raw.split('|||').filter(Boolean) : []}
+                    onChange={(tags) => scripted.editAnswer(q.id, tags.join('|||'))}
+                    placeholder={q.placeholder}
+                  />
+                ) : q.inputType === 'choice' ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {(q.options ?? []).map((opt) => {
+                      const selected = raw === opt;
+                      return (
+                        <button
+                          key={opt}
+                          onClick={() => scripted.editAnswer(q.id, opt)}
+                          style={{
+                            flex: 1, padding: '12px 18px',
+                            background: selected ? 'rgba(74, 222, 128, 0.08)' : 'var(--pipe-surface)',
+                            border: `1px solid ${selected ? 'rgba(74, 222, 128, 0.4)' : 'var(--pipe-border-light)'}`,
+                            color: selected ? 'rgba(74, 222, 128, 0.95)' : 'var(--pipe-text)',
+                            fontSize: 12, fontWeight: 700, letterSpacing: '0.05em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: 'pointer', borderRadius: 8,
+                          }}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <TextInput
+                    value={raw}
+                    onChange={(v) => scripted.editAnswer(q.id, v)}
+                    placeholder={q.placeholder}
+                  />
+                )}
+              </div>
+            );
+          })}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+            <button
+              onClick={() => handleFire(scripted.answers, defaultLiveMode)}
+              style={{
+                padding: '14px 28px',
+                background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.16))',
+                border: '1px solid rgba(139, 92, 246, 0.4)',
+                color: 'var(--pipe-text)',
+                fontSize: 11, fontWeight: 700, letterSpacing: '0.15em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 10,
+                borderRadius: 6,
+              }}
+            >
+              CONTINUE TO INTERVIEW <ArrowRight size={14} />
+            </button>
+          </div>
         </div>
       )}
 

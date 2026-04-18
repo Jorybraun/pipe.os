@@ -151,8 +151,14 @@ export async function persistPass3(
       engineering_narrative,
       signal_json,
       model_used,
-      model_version
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      model_version,
+      challenge_suitability_verdict,
+      challenge_suitability_reason,
+      top_pr_picks_json,
+      red_flags_json,
+      seniority_justification,
+      ideal_role_match
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.repo_id,
       data.signals_version,
@@ -174,6 +180,12 @@ export async function persistPass3(
       data.signal_json,
       data.model_used,
       data.model_version,
+      data.challenge_suitability_verdict,
+      data.challenge_suitability_reason,
+      JSON.stringify(data.top_pr_picks ?? []),
+      JSON.stringify(data.red_flags ?? []),
+      data.seniority_justification,
+      data.ideal_role_match,
     ],
   );
 
@@ -197,6 +209,7 @@ export async function persistAndVerify(
   db: D1Client,
   data: Pass3Data,
   dryRun = false,
+  skipVectorize = false,
 ): Promise<PersistResult> {
   await persistPass3(db, data, dryRun);
 
@@ -228,8 +241,9 @@ export async function persistAndVerify(
 
   // Embed + upsert into Vectorize only after D1 confirmed the write.
   // Keeps SQL authoritative — an orphan Vectorize row without a matching D1
-  // signal would be worse than no vector at all.
-  if (verified) {
+  // signal would be worse than no vector at all. skipVectorize preserves the
+  // human ingest gate when Pass 3 runs auto-chained from Pass 2.
+  if (verified && !skipVectorize) {
     await upsertToVectorize(data);
   }
 

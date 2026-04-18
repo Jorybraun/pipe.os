@@ -71,6 +71,11 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
     inputUsdPerM: 0.15,
     outputUsdPerM: 0.60,
   },
+  'vertex/gemma-4-26b-a4b-it-maas': {
+    provider: 'vertex-ai',
+    inputUsdPerM: 0.15,
+    outputUsdPerM: 0.60,
+  },
 
   // Vertex AI — Gemini 2.5 Flash Live API (voice interviews; TTS+STT combined).
   // Session context window billing: every turn re-charges accumulated tokens.

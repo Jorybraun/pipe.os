@@ -60,6 +60,8 @@ export interface UseConversationResult {
   respond: (answer: string, questionId: string) => Promise<void>;
   completeEarly: () => Promise<void>;
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
+  /** Wipe all conversation state back to IDLE — used by step-nav back-buttons. */
+  reset: () => void;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -220,6 +222,20 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     [adapter],
   );
 
+  const reset = useCallback((): void => {
+    setPhase('IDLE');
+    setAcknowledgment(null);
+    setCurrentQuestion(null);
+    setProgress(null);
+    setPastExchanges([]);
+    setPersona(null);
+    setJobDescription(null);
+    setSynthesis(null);
+    setIsLoading(false);
+    setError(null);
+    setStreamingText('');
+  }, []);
+
   // ─── Result ───────────────────────────────────────────────────────────────
 
   return {
@@ -238,5 +254,6 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     respond,
     completeEarly,
     submitFeedback,
+    reset,
   };
 }

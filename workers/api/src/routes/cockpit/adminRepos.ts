@@ -33,6 +33,9 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { createRoleAgentProvider } from '../../lib/llm/createProvider';
+import { VertexAIProvider } from '../../lib/llm/vertexAIProvider';
+import { recordAiUsage } from '../../lib/aiUsage';
+import type { TokenUsage } from '../../lib/llm/pricing';
 import type { Env, Variables } from '../../types';
 
 const adminRepos = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -88,7 +91,7 @@ adminRepos.get('/repos', async (c) => {
   const statusParam = c.req.query('status') ?? 'pending';
   const passParam   = c.req.query('pass');   // '1' | '2' | undefined
   const page  = Math.max(1, Number(c.req.query('page')  ?? '1'));
-  const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? '50')));
+  const limit = Math.min(5000, Math.max(1, Number(c.req.query('limit') ?? '50')));
   const offset = (page - 1) * limit;
 
   // Build WHERE conditions
@@ -173,6 +176,12 @@ interface SignalsRow {
   admin_feedback_text: string | null;
   verdict_at: string | null;
   vectorized_at: string | null;
+  challenge_suitability_verdict: string | null;
+  challenge_suitability_reason: string | null;
+  top_pr_picks_json: string | null;
+  red_flags_json: string | null;
+  seniority_justification: string | null;
+  ideal_role_match: string | null;
 }
 
 adminRepos.get('/repos/:id', async (c) => {
@@ -204,7 +213,10 @@ adminRepos.get('/repos/:id', async (c) => {
             test_touch_rate, mean_changed_files, p90_changed_files,
             issue_link_rate, swe_bench_eligibility_rate,
             model_used, model_version,
-            admin_verdict, admin_feedback_text, verdict_at, vectorized_at
+            admin_verdict, admin_feedback_text, verdict_at, vectorized_at,
+            challenge_suitability_verdict, challenge_suitability_reason,
+            top_pr_picks_json, red_flags_json,
+            seniority_justification, ideal_role_match
      FROM repo_engineering_signals WHERE repo_id = ?`,
   ).bind(id).first<SignalsRow>();
 
@@ -328,6 +340,8 @@ interface Pass3Facts {
     pr_quality_score: number;
     open_pr_count: number | null;
     open_feature_issue_count: number | null;
+    readme_excerpt: string | null;
+    root_tree_json: string | null;
     admin_status: string;
     pass: number;
   };
@@ -350,6 +364,8 @@ interface Pass3Facts {
   };
 }
 
+interface TopPrPick { pr_number: number; why: string }
+
 interface GemmaResult {
   architectureStyle: string;
   engineeringNarrative: string;
@@ -357,6 +373,15 @@ interface GemmaResult {
   contentHash: string;
   raw: string;
   modelUsed: string;
+  providerName: string;
+  modelKey: string;
+  usage: TokenUsage;
+  challengeSuitabilityVerdict: 'suitable' | 'hold' | 'reject' | null;
+  challengeSuitabilityReason: string | null;
+  topPrPicks: TopPrPick[];
+  redFlags: string[];
+  seniorityJustification: string | null;
+  idealRoleMatch: string | null;
 }
 
 async function loadPass3Facts(env: Env, id: number): Promise<Pass3Facts | null> {
@@ -364,7 +389,7 @@ async function loadPass3Facts(env: Env, id: number): Promise<Pass3Facts | null> 
     `SELECT id, full_name, primary_language, stars, sloc, file_count, mean_ccn,
             has_ci, has_tests, test_framework, detected_domain, detected_stack_json,
             seniority_band, pr_quality_score, open_pr_count, open_feature_issue_count,
-            admin_status, pass
+            readme_excerpt, root_tree_json, admin_status, pass
      FROM qualified_repos WHERE id = ?`,
   ).bind(id).first<Pass3Facts['repo']>();
   if (!repo) return null;
@@ -422,14 +447,20 @@ async function runGemmaAnalysis(env: Env, facts: Pass3Facts): Promise<GemmaResul
     swe_bench_eligible: pr.swe_bench_eligible === 1,
   }));
 
-  const systemPrompt = `You are an engineering analyst. Given structured metadata about an open-source repository, produce a JSON object describing the repo's engineering culture and discoverability profile.
+  const systemPrompt = `You are an engineering analyst. Given structured metadata about an open-source repository, produce a JSON object describing the repo's engineering culture, discoverability profile, and fitness as a code-review assessment source.
 
 Output MUST be valid JSON matching this schema EXACTLY:
 
 {
   "architecture_style": "monolith" | "layered_service" | "microservice" | "library" | "unknown",
   "engineering_narrative": string,
-  "repo_searchable_profile": string
+  "repo_searchable_profile": string,
+  "challenge_suitability_verdict": "suitable" | "hold" | "reject",
+  "challenge_suitability_reason": string,
+  "top_pr_picks": [{ "pr_number": number, "why": string }],
+  "red_flags": [string],
+  "seniority_justification": string,
+  "ideal_role_match": string
 }
 
 architecture_style definitions:
@@ -439,12 +470,50 @@ architecture_style definitions:
 - "microservice": part of a multi-service topology OR function-as-a-service.
 - "unknown": cannot determine from the provided signals.
 
+challenge_suitability_verdict definitions (used to decide whether this repo should feed the code-review challenge bank):
+- "suitable": repo has real business logic, clean PR shape, and would make a credible code-review challenge source.
+- "hold": decision borderline — quality issues, thin PR sample, or uncertain domain fit. Needs human review.
+- "reject": repo is vendor/generated/demo/tutorial code, test-theater, or otherwise unsuitable for assessment material.
+
 Constraints:
 - Return ONLY the JSON object. No markdown, no commentary.
 - "engineering_narrative": 200–400 words. MUST mention the primary language (${repo.primary_language}). Cover: test discipline, review culture, architecture style, complexity profile, notable PR-sample patterns.
-- "repo_searchable_profile": 400–600 words. A natural-language narrative covering (in order): repo type and purpose; primary language and detected stack; PR-shape observations; test/review culture; top three challenge surfaces; contribution readiness.
+- "repo_searchable_profile": 100–400 words (density over length — the labeled structure carries signal; do NOT pad). This string is embedded for semantic retrieval. Produce EXACTLY this shape (keep the labels verbatim):
+
+  Language: <primary_language>. Domain: <detected_domain or "unknown">. Architecture: <architecture_style>. Seniority signal: <seniority_band or "unknown">. Test culture: <one short clause, e.g. "pytest, 80% touch rate" or "no tests">. Key technologies: <comma-separated deps/libs from detected_stack, 3–8 items>. Challenge surfaces: <comma-separated top 3 surface names>.
+
+  Summary: <2–4 sentence engineering narrative. What the repo does, how it's built, and what makes it distinctive. Role-agnostic.>
+
+  PR shape: <1–2 sentences verbalising test_touch_rate, issue_link_rate, mean_changed_files, swe_bench_eligibility_rate from facts.>
+
+  Key concepts: <8–15 comma-separated noun phrases capturing the engineering patterns a reviewer would encounter — e.g. "dependency injection, async endpoints, OpenAPI generation, typed pydantic models, token auth, rate limiting, error middleware".>
+
+  Do not include any other sections, headings, or markdown. Labels must match exactly.
+- "challenge_suitability_reason": one sentence, ≤ 200 characters.
+- "top_pr_picks": 1–5 entries, each with pr_number matching one from the Sample PRs block and a 'why' reason ≤ 200 chars. Rank by review-teaching value.
+- "red_flags": 0–6 short strings, each ≤ 200 chars. Concrete observations the mechanical checks may have missed (e.g. "README claims TypeScript but repo is all JS", "tests are stubs", "all PRs are dependency bumps"). Empty array if none.
+- "seniority_justification": 2–4 sentences explaining why the mechanical seniority_band (${repo.seniority_band ?? 'unknown'}) fits or misses.
+- "ideal_role_match": short phrase ≤ 60 chars (e.g. "senior backend engineer", "mid frontend engineer").
 - You MAY NOT invent numbers. Every numeric digit you write must correspond to a value from the FACTS block.
-- Be role-agnostic. Do not assume what kind of developer would work on this repo.`;
+- Be role-agnostic in the narrative. The ideal_role_match field is the only place to name a target role.`;
+
+  let rootTree: string[] = [];
+  if (repo.root_tree_json) {
+    try {
+      const parsed: unknown = JSON.parse(repo.root_tree_json);
+      if (Array.isArray(parsed)) {
+        rootTree = parsed.filter((x): x is string => typeof x === 'string');
+      }
+    } catch {
+      // ignore malformed tree json
+    }
+  }
+  const readmeBlock = repo.readme_excerpt
+    ? `\n\nREADME EXCERPT (verbatim, up to ~3KB — use this as the primary source for what the repo IS and DOES):\n\`\`\`\n${repo.readme_excerpt}\n\`\`\``
+    : '\n\nREADME EXCERPT: (none — repo ships without a README or it was empty)';
+  const treeBlock = rootTree.length > 0
+    ? `\n\nROOT TREE (top-level entries, with one level of children for dirs):\n${rootTree.map((e) => `  ${e}`).join('\n')}`
+    : '';
 
   const userPrompt = `FACTS (do not modify, reason from these only):
 - repo: ${repo.full_name}
@@ -468,26 +537,37 @@ Constraints:
 - open_pr_count: ${fmt(repo.open_pr_count)}
 - open_feature_issue_count: ${fmt(repo.open_feature_issue_count)}
 
-Top constructs: ${constructsList || 'none detected'}
+Top constructs: ${constructsList || 'none detected'}${readmeBlock}${treeBlock}
 
 Sample PRs (${prs.length} total, first 10):
 ${JSON.stringify(prSummary, null, 2)}
 
-Choose an architecture_style from the enum, write the engineering_narrative, and write the repo_searchable_profile. Remember: use only numbers from FACTS.`;
+Produce all nine fields. Remember: use only numbers from FACTS. top_pr_picks pr_numbers MUST match the Sample PRs list. Use the README to ground what the repo actually does — do not hallucinate a purpose from the language/stack alone.`;
 
   const completion = await provider.complete(
     [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    { maxTokens: 4096, forceJson: true },
+    { maxTokens: 8192, forceJson: true },
   );
   const raw = completion.content ?? '';
   if (!raw) throw new Error('Gemma returned empty response');
 
   const VALID_ARCH = new Set(['monolith', 'layered_service', 'microservice', 'library', 'unknown']);
+  const VALID_SUITABILITY = new Set(['suitable', 'hold', 'reject']);
   const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-  let parsed: { architecture_style?: string; engineering_narrative?: string; repo_searchable_profile?: string };
+  let parsed: {
+    architecture_style?: string;
+    engineering_narrative?: string;
+    repo_searchable_profile?: string;
+    challenge_suitability_verdict?: string;
+    challenge_suitability_reason?: string;
+    top_pr_picks?: unknown;
+    red_flags?: unknown;
+    seniority_justification?: string;
+    ideal_role_match?: string;
+  };
   try {
     parsed = JSON.parse(stripped) as typeof parsed;
   } catch {
@@ -501,13 +581,55 @@ Choose an architecture_style from the enum, write the engineering_narrative, and
     throw new Error('Gemma response missing required fields');
   }
 
+  const challengeSuitabilityVerdict = VALID_SUITABILITY.has(parsed.challenge_suitability_verdict ?? '')
+    ? (parsed.challenge_suitability_verdict as 'suitable' | 'hold' | 'reject')
+    : null;
+  const challengeSuitabilityReason = typeof parsed.challenge_suitability_reason === 'string'
+    ? parsed.challenge_suitability_reason : null;
+  const topPrPicks: TopPrPick[] = Array.isArray(parsed.top_pr_picks)
+    ? parsed.top_pr_picks.flatMap((entry): TopPrPick[] => {
+        if (!entry || typeof entry !== 'object') return [];
+        const pn = (entry as { pr_number?: unknown }).pr_number;
+        const w = (entry as { why?: unknown }).why;
+        return typeof pn === 'number' && typeof w === 'string'
+          ? [{ pr_number: pn, why: w }]
+          : [];
+      })
+    : [];
+  const redFlags: string[] = Array.isArray(parsed.red_flags)
+    ? (parsed.red_flags as unknown[]).filter((x): x is string => typeof x === 'string')
+    : [];
+  const seniorityJustification = typeof parsed.seniority_justification === 'string'
+    ? parsed.seniority_justification : null;
+  const idealRoleMatch = typeof parsed.ideal_role_match === 'string'
+    ? parsed.ideal_role_match : null;
+
   const hashInput = `${repo.full_name}|${repo.sloc}|${stats.prCount}|${repo.pr_quality_score}|v2.0.0`;
   const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(hashInput));
   const contentHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
 
   const modelUsed = provider.name;
+  const providerName = provider.name;
+  const modelKey = provider instanceof VertexAIProvider ? provider.getModelKey() : provider.name;
+  const usage: TokenUsage = (provider instanceof VertexAIProvider ? provider.getLastUsage() : null) ?? {};
 
-  return { architectureStyle, engineeringNarrative, repoSearchableProfile, contentHash, raw, modelUsed };
+  return {
+    architectureStyle,
+    engineeringNarrative,
+    repoSearchableProfile,
+    contentHash,
+    raw,
+    modelUsed,
+    providerName,
+    modelKey,
+    usage,
+    challengeSuitabilityVerdict,
+    challengeSuitabilityReason,
+    topPrPicks,
+    redFlags,
+    seniorityJustification,
+    idealRoleMatch,
+  };
 }
 
 async function persistSignals(env: Env, id: number, facts: Pass3Facts, gemma: GemmaResult): Promise<void> {
@@ -522,8 +644,11 @@ async function persistSignals(env: Env, id: number, facts: Pass3Facts, gemma: Ge
        test_style, challenge_surfaces,
        repo_searchable_profile, engineering_narrative, signal_json,
        model_used, model_version,
-       admin_verdict, admin_feedback_text, verdict_at, vectorized_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)`,
+       admin_verdict, admin_feedback_text, verdict_at, vectorized_at,
+       challenge_suitability_verdict, challenge_suitability_reason,
+       top_pr_picks_json, red_flags_json,
+       seniority_justification, ideal_role_match
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     id,
     'v2.0.0',
@@ -545,6 +670,12 @@ async function persistSignals(env: Env, id: number, facts: Pass3Facts, gemma: Ge
     gemma.raw.slice(0, 8000),
     gemma.modelUsed,
     'v1',
+    gemma.challengeSuitabilityVerdict,
+    gemma.challengeSuitabilityReason,
+    JSON.stringify(gemma.topPrPicks),
+    JSON.stringify(gemma.redFlags),
+    gemma.seniorityJustification,
+    gemma.idealRoleMatch,
   ).run();
 }
 
@@ -594,6 +725,15 @@ adminRepos.post('/repos/:id/pass3/analyze', async (c) => {
     return apiError(c, 'INTERNAL_ERROR', err instanceof Error ? err.message : String(err));
   }
 
+  recordAiUsage(c.env.DB, c.executionCtx, {
+    feature: 'repo_crawl',
+    refId: String(id),
+    subRefId: gemma.contentHash,
+    provider: gemma.providerName,
+    model: gemma.modelKey,
+    usage: gemma.usage,
+  });
+
   await persistSignals(c.env, id, facts, gemma);
 
   return c.json({
@@ -605,6 +745,12 @@ adminRepos.post('/repos/:id/pass3/analyze', async (c) => {
     repo_searchable_profile: gemma.repoSearchableProfile,
     narrative_len: gemma.engineeringNarrative.length,
     profile_len: gemma.repoSearchableProfile.length,
+    challenge_suitability_verdict: gemma.challengeSuitabilityVerdict,
+    challenge_suitability_reason: gemma.challengeSuitabilityReason,
+    top_pr_picks: gemma.topPrPicks,
+    red_flags: gemma.redFlags,
+    seniority_justification: gemma.seniorityJustification,
+    ideal_role_match: gemma.idealRoleMatch,
   });
 });
 
@@ -691,6 +837,15 @@ adminRepos.post('/repos/:id/pass3', async (c) => {
     return apiError(c, 'INTERNAL_ERROR', err instanceof Error ? err.message : String(err));
   }
 
+  recordAiUsage(c.env.DB, c.executionCtx, {
+    feature: 'repo_crawl',
+    refId: String(id),
+    subRefId: gemma.contentHash,
+    provider: gemma.providerName,
+    model: gemma.modelKey,
+    usage: gemma.usage,
+  });
+
   await persistSignals(c.env, id, facts, gemma);
 
   // Auto-set verdict so the back-compat flow still lands rows in a consistent state.
@@ -742,8 +897,11 @@ adminRepos.post('/repos/search', async (c) => {
   let embedResult: { data?: number[][] };
   let queryResult: Awaited<ReturnType<typeof c.env.REPO_INDEX.query>>;
   try {
+    // BGE asymmetric retrieval: queries get the instruction prefix, documents don't.
+    // Matches the training objective of bge-large-en-v1.5.
+    const queryText = `Represent this sentence for searching relevant passages: ${query}`;
     embedResult = (await c.env.AI.run('@cf/baai/bge-large-en-v1.5', {
-      text: [query],
+      text: [queryText],
     })) as { data?: number[][] };
     const vector = embedResult?.data?.[0];
     if (!vector || !Array.isArray(vector)) {

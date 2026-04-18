@@ -61,10 +61,22 @@ const TEST_STYLES = new Set([
   'unknown',
 ]);
 
-const NARRATIVE_WORDS_MIN = 200;
+const SUITABILITY_VERDICTS = new Set(['suitable', 'hold', 'reject']);
+
+const REASON_MAX_CHARS = 200;
+const ROLE_MAX_CHARS = 60;
+const PR_PICK_MIN = 1;
+const PR_PICK_MAX = 5;
+const PR_PICK_WHY_MAX = 200;
+const RED_FLAGS_MAX = 6;
+const RED_FLAG_MAX_CHARS = 200;
+const SENIORITY_JUSTIFICATION_MIN_WORDS = 15;
+const SENIORITY_JUSTIFICATION_MAX_WORDS = 120;
+
+const NARRATIVE_WORDS_MIN = 150;
 const NARRATIVE_WORDS_MAX = 400;
-const PROFILE_WORDS_MIN = 400;
-const PROFILE_WORDS_MAX = 600;
+const PROFILE_WORDS_MIN = 75;
+const PROFILE_WORDS_MAX = 550;
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[_\-\s]/g, '');
@@ -291,6 +303,90 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
       `mean_changed_files (${output.mean_changed_files}) exceeds repo file_count ` +
         `(${input.file_count}) — LLM fabricated a value larger than the repo.`,
     );
+  }
+
+  // ─── Assessment fields (challenge_suitability, picks, flags, role) ──────
+
+  if (
+    output.challenge_suitability_verdict !== null &&
+    !SUITABILITY_VERDICTS.has(output.challenge_suitability_verdict)
+  ) {
+    failures.push(
+      `challenge_suitability_verdict invalid: "${output.challenge_suitability_verdict}"`,
+    );
+  }
+
+  if (output.challenge_suitability_verdict !== null) {
+    if (
+      output.challenge_suitability_reason === null ||
+      output.challenge_suitability_reason.trim().length === 0
+    ) {
+      failures.push('challenge_suitability_reason is empty but verdict was provided');
+    } else if (output.challenge_suitability_reason.length > REASON_MAX_CHARS) {
+      failures.push(
+        `challenge_suitability_reason too long: ${output.challenge_suitability_reason.length} chars (max ${REASON_MAX_CHARS})`,
+      );
+    }
+  }
+
+  const validPrNumbers = new Set(input.sample_prs.map((pr) => pr.pr_number));
+  if (output.top_pr_picks.length > 0) {
+    if (output.top_pr_picks.length < PR_PICK_MIN) {
+      failures.push(`top_pr_picks too few: ${output.top_pr_picks.length} (min ${PR_PICK_MIN})`);
+    }
+    if (output.top_pr_picks.length > PR_PICK_MAX) {
+      failures.push(`top_pr_picks too many: ${output.top_pr_picks.length} (max ${PR_PICK_MAX})`);
+    }
+    for (const pick of output.top_pr_picks) {
+      if (!validPrNumbers.has(pick.pr_number)) {
+        failures.push(
+          `top_pr_picks pr_number ${pick.pr_number} not in sample_prs (hallucinated)`,
+        );
+      }
+      if (!pick.why || pick.why.trim().length === 0) {
+        failures.push(`top_pr_picks entry for PR ${pick.pr_number} has empty "why"`);
+      } else if (pick.why.length > PR_PICK_WHY_MAX) {
+        failures.push(
+          `top_pr_picks entry for PR ${pick.pr_number} "why" too long: ${pick.why.length} chars (max ${PR_PICK_WHY_MAX})`,
+        );
+      }
+    }
+  } else if (input.sample_prs.length > 0) {
+    // Only warn — reject verdict may legitimately have no picks.
+    warnings.push('top_pr_picks is empty despite sample_prs being present');
+  }
+
+  if (output.red_flags.length > RED_FLAGS_MAX) {
+    failures.push(`red_flags too many: ${output.red_flags.length} (max ${RED_FLAGS_MAX})`);
+  }
+  for (const flag of output.red_flags) {
+    if (flag.length > RED_FLAG_MAX_CHARS) {
+      failures.push(`red_flag too long: ${flag.length} chars (max ${RED_FLAG_MAX_CHARS})`);
+      break;
+    }
+  }
+
+  if (output.seniority_justification !== null) {
+    const words = wordCount(output.seniority_justification);
+    if (words < SENIORITY_JUSTIFICATION_MIN_WORDS) {
+      failures.push(
+        `seniority_justification too short: ${words} words (min ${SENIORITY_JUSTIFICATION_MIN_WORDS})`,
+      );
+    } else if (words > SENIORITY_JUSTIFICATION_MAX_WORDS) {
+      failures.push(
+        `seniority_justification too long: ${words} words (max ${SENIORITY_JUSTIFICATION_MAX_WORDS})`,
+      );
+    }
+  }
+
+  if (output.ideal_role_match !== null) {
+    if (output.ideal_role_match.trim().length === 0) {
+      failures.push('ideal_role_match is empty');
+    } else if (output.ideal_role_match.length > ROLE_MAX_CHARS) {
+      failures.push(
+        `ideal_role_match too long: ${output.ideal_role_match.length} chars (max ${ROLE_MAX_CHARS})`,
+      );
+    }
   }
 
   return {

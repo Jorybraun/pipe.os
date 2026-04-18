@@ -31,9 +31,13 @@ import { auditSignals } from './audit.js';
 import { classifyTestStyle } from './testStyleClassifier.js';
 import { classifyChallengeSurfaces } from './challengeSurfaceClassifier.js';
 import { computeDeterministicStats, computeComplexityBand } from './deterministicStats.js';
-import { judgeOutput } from './judge.js';
 import type { Pass3Input, FetchOptions } from './types.js';
-import type { Pass3Data, ArchitectureStyle } from '../shared/types.js';
+import type {
+  Pass3Data,
+  ArchitectureStyle,
+  ChallengeSuitabilityVerdict,
+  TopPrPick,
+} from '../shared/types.js';
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -63,7 +67,7 @@ export async function callGemma(
   const combinedPrompt = `${systemPrompt}\n\n---\n\n${userPrompt}`;
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
-    generationConfig: { maxOutputTokens: 4096, responseMimeType: 'application/json' },
+    generationConfig: { maxOutputTokens: 8192, responseMimeType: 'application/json' },
   });
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -131,14 +135,20 @@ export function buildSummarizerPrompt(
   input: Pass3Input,
   facts: PromptFacts,
 ): { system: string; user: string } {
-  const system = `You are an engineering analyst. Given structured metadata about an open-source repository, produce a JSON object describing the repo's engineering culture and discoverability profile.
+  const system = `You are an engineering analyst. Given structured metadata about an open-source repository, produce a JSON object describing the repo's engineering culture, discoverability profile, and fitness as a code-review assessment source.
 
 Output MUST be valid JSON matching this schema EXACTLY:
 
 {
   "architecture_style": "monolith" | "layered_service" | "microservice" | "library" | "unknown",
   "engineering_narrative": string,
-  "repo_searchable_profile": string
+  "repo_searchable_profile": string,
+  "challenge_suitability_verdict": "suitable" | "hold" | "reject",
+  "challenge_suitability_reason": string,
+  "top_pr_picks": [{ "pr_number": number, "why": string }],
+  "red_flags": [string],
+  "seniority_justification": string,
+  "ideal_role_match": string
 }
 
 architecture_style definitions:
@@ -148,12 +158,32 @@ architecture_style definitions:
 - "microservice": part of a multi-service topology OR function-as-a-service.
 - "unknown": cannot determine from the provided signals.
 
+challenge_suitability_verdict definitions (used to decide whether this repo should feed the code-review challenge bank):
+- "suitable": repo has real business logic, clean PR shape, and would make a credible code-review challenge source.
+- "hold": decision borderline — quality issues, thin PR sample, or uncertain domain fit. Needs human review.
+- "reject": repo is vendor/generated/demo/tutorial code, test-theater, or otherwise unsuitable for assessment material.
+
 Constraints:
 - Return ONLY the JSON object. No markdown, no commentary.
 - "engineering_narrative": 200–400 words. MUST mention the primary language (${input.primary_language}). Cover: test discipline, review culture, architecture style, complexity profile, notable PR-sample patterns.
-- "repo_searchable_profile": 400–600 words. A natural-language narrative covering (in order): repo type and purpose; primary language and detected stack; PR-shape observations verbalised from facts; test/review culture verbalised from facts; top three challenge surfaces; contribution readiness (open PR count and open feature-issue count verbalised).
+- "repo_searchable_profile": 100–400 words (density over length — the labeled structure carries signal; do NOT pad). This string is embedded for semantic retrieval. Produce EXACTLY this shape (keep the labels verbatim):
+
+  Language: <primary_language>. Domain: <detected_domain or "unknown">. Architecture: <architecture_style>. Seniority signal: <seniority_band or "unknown">. Test culture: <one short clause, e.g. "pytest, 80% touch rate" or "no tests">. Key technologies: <comma-separated deps/libs from detected_stack, 3–8 items>. Challenge surfaces: <comma-separated top 3 surface names>.
+
+  Summary: <2–4 sentence engineering narrative. What the repo does, how it's built, and what makes it distinctive. Role-agnostic.>
+
+  PR shape: <1–2 sentences verbalising test_touch_rate, issue_link_rate, mean_changed_files, swe_bench_eligibility_rate from facts.>
+
+  Key concepts: <8–15 comma-separated noun phrases capturing the engineering patterns a reviewer would encounter — e.g. "dependency injection, async endpoints, OpenAPI generation, typed pydantic models, token auth, rate limiting, error middleware".>
+
+  Do not include any other sections, headings, or markdown. Labels must match exactly.
+- "challenge_suitability_reason": one sentence, ≤ 200 characters.
+- "top_pr_picks": 1–5 entries, each with pr_number matching one from the Sample PRs block and a 'why' reason ≤ 200 chars. Rank by review-teaching value.
+- "red_flags": 0–6 short strings, each ≤ 200 chars. Concrete observations the mechanical checks may have missed (e.g. "README claims TypeScript but repo is all JS", "tests are stubs", "all PRs are dependency bumps"). Empty array if none.
+- "seniority_justification": 2–4 sentences explaining why the mechanical seniority_band (${input.seniority_band ?? 'unknown'}) fits or misses.
+- "ideal_role_match": short phrase ≤ 60 chars (e.g. "senior backend engineer", "mid frontend engineer").
 - You MAY NOT invent numbers. Every numeric digit you write must correspond to a value from the FACTS block below. If a fact is "unknown", do not discuss it quantitatively.
-- Be role-agnostic. Do not assume what kind of developer would work on this repo.`;
+- Be role-agnostic in the narrative. The ideal_role_match field is the only place to name a target role.`;
 
   const constructsList = input.constructs
     .slice(0, 10)
@@ -168,6 +198,14 @@ Constraints:
     resolves_issue: pr.resolves_issue_number !== null,
     swe_bench_eligible: pr.swe_bench_eligible === 1,
   }));
+
+  const rootTree = parseRootTree(input.root_tree_json);
+  const readmeBlock = input.readme_excerpt
+    ? `\n\nREADME EXCERPT (verbatim, up to ~3KB — use this as the primary source for what the repo IS and DOES):\n\`\`\`\n${input.readme_excerpt}\n\`\`\``
+    : '\n\nREADME EXCERPT: (none — repo ships without a README or it was empty)';
+  const treeBlock = rootTree.length > 0
+    ? `\n\nROOT TREE (top-level entries, with one level of children for dirs):\n${rootTree.map((e) => `  ${e}`).join('\n')}`
+    : '';
 
   const user = `FACTS (do not modify, reason from these only):
 - repo: ${input.full_name}
@@ -196,14 +234,24 @@ Constraints:
 - open_feature_issue_count: ${fmt(facts.open_feature_issue_count)}
 - challenge_surfaces (top 3, sorted desc): ${topSurfaces(facts.challenge_surfaces, 3)}
 
-Top constructs: ${constructsList || 'none detected'}
+Top constructs: ${constructsList || 'none detected'}${readmeBlock}${treeBlock}
 
 Sample PRs (${input.sample_prs.length} total, first 10):
 ${JSON.stringify(prSummary, null, 2)}
 
-Choose an architecture_style from the enum, write the engineering_narrative, and write the repo_searchable_profile. Remember: use only numbers from FACTS.`;
+Produce all nine fields. Remember: use only numbers from FACTS. top_pr_picks pr_numbers MUST match the Sample PRs list. Use the README to ground what the repo actually does — do not hallucinate a purpose from the language/stack alone.`;
 
   return { system, user };
+}
+
+function parseRootTree(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 function topSurfaces(surfaces: Record<string, number>, k: number): string {
@@ -229,6 +277,31 @@ const ARCHITECTURE_ENUM = new Set<ArchitectureStyle>([
   'unknown',
 ]);
 
+const SUITABILITY_ENUM = new Set<ChallengeSuitabilityVerdict>([
+  'suitable',
+  'hold',
+  'reject',
+]);
+
+function parseTopPrPicks(value: unknown): TopPrPick[] {
+  if (!Array.isArray(value)) return [];
+  const picks: TopPrPick[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const pr_number = (entry as { pr_number?: unknown }).pr_number;
+    const why = (entry as { why?: unknown }).why;
+    if (typeof pr_number === 'number' && typeof why === 'string') {
+      picks.push({ pr_number, why });
+    }
+  }
+  return picks;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === 'string');
+}
+
 export function parseGemmaResponse(
   raw: string,
   input: Pass3Input,
@@ -243,6 +316,12 @@ export function parseGemmaResponse(
   const architecture_style: ArchitectureStyle | null =
     archCandidate && ARCHITECTURE_ENUM.has(archCandidate as ArchitectureStyle)
       ? (archCandidate as ArchitectureStyle)
+      : null;
+
+  const suitabilityCandidate = parsed.challenge_suitability_verdict as string | undefined;
+  const challenge_suitability_verdict: ChallengeSuitabilityVerdict | null =
+    suitabilityCandidate && SUITABILITY_ENUM.has(suitabilityCandidate as ChallengeSuitabilityVerdict)
+      ? (suitabilityCandidate as ChallengeSuitabilityVerdict)
       : null;
 
   return {
@@ -270,6 +349,19 @@ export function parseGemmaResponse(
     signal_json: stripped,
     model_used: SUMMARIZER_MODEL,
     model_version: MODEL_VERSION,
+    challenge_suitability_verdict,
+    challenge_suitability_reason:
+      typeof parsed.challenge_suitability_reason === 'string'
+        ? parsed.challenge_suitability_reason
+        : null,
+    top_pr_picks: parseTopPrPicks(parsed.top_pr_picks),
+    red_flags: parseStringArray(parsed.red_flags),
+    seniority_justification:
+      typeof parsed.seniority_justification === 'string'
+        ? parsed.seniority_justification
+        : null,
+    ideal_role_match:
+      typeof parsed.ideal_role_match === 'string' ? parsed.ideal_role_match : null,
   };
 }
 
@@ -278,7 +370,7 @@ export function parseGemmaResponse(
 interface RepoResult {
   repo_id: number;
   full_name: string;
-  status: 'cache_hit' | 'written' | 'gemma_error' | 'parse_error' | 'validation_failed' | 'judge_failed' | 'persist_failed';
+  status: 'cache_hit' | 'written' | 'gemma_error' | 'parse_error' | 'validation_failed' | 'persist_failed';
   detail?: string;
   narrative_len?: number;
 }
@@ -289,6 +381,7 @@ async function processRepo(
   db: D1Client,
   input: Pass3Input,
   dryRun: boolean,
+  skipVectorize: boolean,
   progress?: { index: number; total: number },
 ): Promise<RepoResult> {
   const base = { repo_id: input.repo_id, full_name: input.full_name };
@@ -397,88 +490,10 @@ async function processRepo(
     logger.warn(`[pass3] ${input.full_name} warnings: ${validation.warnings.join('; ')}`);
   }
 
-  // Step 4.5: Devstral judge gate
-  const mistralKey = process.env['MISTRAL_API_KEY'];
-  if (mistralKey) {
-    logger.info(`[pass3] ${tag} ${input.full_name} — running judge`);
-    let judgeResult = await judgeOutput({
-      factsBlock: factsPrompt,
-      narrative: output.engineering_narrative,
-      profile: output.repo_searchable_profile,
-      architectureStyle: output.architecture_style,
-      apiKey: mistralKey,
-    });
-
-    if (!judgeResult.approved) {
-      logger.warn(
-        `[pass3] ${tag} ${input.full_name} — judge denied (${judgeResult.failures.length} failures). Retrying Gemma with corrections.`,
-      );
-      const retryPrompt =
-        `${factsPrompt}\n\n---\nPREVIOUS ATTEMPT REJECTED by quality gate. Fix ALL of the following issues in your new response:\n` +
-        judgeResult.failures.map((f) => `- ${f}`).join('\n');
-
-      let retryRaw: string;
-      try {
-        retryRaw = await callGemma(accessToken, projectId, system, retryPrompt);
-      } catch (err) {
-        return {
-          ...base,
-          status: 'judge_failed',
-          detail: `judge denied; retry Gemma failed: ${err instanceof Error ? err.message : String(err)} | judge_failures: ${judgeResult.failures.join('; ')}`,
-        };
-      }
-
-      let retryOutput: Pass3Data;
-      try {
-        retryOutput = parseGemmaResponse(retryRaw, input, contentHash, facts);
-      } catch {
-        return {
-          ...base,
-          status: 'judge_failed',
-          detail: `judge denied; retry parse failed | judge_failures: ${judgeResult.failures.join('; ')}`,
-        };
-      }
-
-      const retryValidation = validatePass3(input, retryOutput);
-      if (!retryValidation.valid) {
-        return {
-          ...base,
-          status: 'judge_failed',
-          detail: `judge denied; retry validation failed: ${retryValidation.failures.join('; ')} | judge_failures: ${judgeResult.failures.join('; ')}`,
-        };
-      }
-
-      judgeResult = await judgeOutput({
-        factsBlock: factsPrompt,
-        narrative: retryOutput.engineering_narrative,
-        profile: retryOutput.repo_searchable_profile,
-        architectureStyle: retryOutput.architecture_style,
-        apiKey: mistralKey,
-      });
-
-      if (!judgeResult.approved) {
-        logger.error(
-          `[pass3] ${tag} ${input.full_name} — judge denied after retry. Dropping repo. Failures: ${judgeResult.failures.join('; ')}`,
-        );
-        return {
-          ...base,
-          status: 'judge_failed',
-          detail: `judge denied after retry | failures: ${judgeResult.failures.join('; ')} | reasoning: ${judgeResult.reasoning.slice(0, 200)}`,
-        };
-      }
-
-      // Retry passed — use the improved output
-      output = retryOutput;
-      logger.info(`[pass3] ${tag} ${input.full_name} — judge approved on retry`);
-    } else {
-      logger.info(`[pass3] ${tag} ${input.full_name} — judge approved`);
-    }
-  } else {
-    logger.warn(`[pass3] ${tag} ${input.full_name} — MISTRAL_API_KEY not set, skipping judge gate`);
-  }
-
   // Step 5: Persist
-  const persistResult = await persistAndVerify(db, output, false);
+  // Devstral judge removed — Gemma's output + deterministic validator carry
+  // the gate. Re-add a cross-family judge later if output drift warrants it.
+  const persistResult = await persistAndVerify(db, output, false, skipVectorize);
   if (!persistResult.verified) {
     return {
       ...base,
@@ -515,7 +530,6 @@ interface RunStats {
   written: number;
   validationFailed: number;
   gemmaErrors: number;
-  judgeFailed: number;
   persistFailed: number;
 }
 
@@ -564,17 +578,22 @@ export async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?: number }): Promise<void> {
+export async function run(
+  opts: FetchOptions & { dryRun?: boolean; concurrency?: number; skipVectorize?: boolean },
+): Promise<void> {
   const accessToken = await getAccessToken();
   const projectId = process.env['VERTEX_AI_PROJECT_ID'] ?? 'pipe-493116';
 
   const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
+  const skipVectorize = opts.skipVectorize ?? false;
   const db = new D1Client(loadD1Config());
   const runStart = new Date().toISOString();
 
   logger.info('[pass3/run] Fetching batch...');
   const batch = await fetchBatch(db, opts);
-  logger.info(`[pass3/run] ${batch.length} repos in batch (concurrency=${concurrency})`);
+  logger.info(
+    `[pass3/run] ${batch.length} repos in batch (concurrency=${concurrency}, skipVectorize=${skipVectorize})`,
+  );
 
   if (batch.length === 0) {
     logger.info('[pass3/run] Nothing to do.');
@@ -587,7 +606,6 @@ export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?:
     written: 0,
     validationFailed: 0,
     gemmaErrors: 0,
-    judgeFailed: 0,
     persistFailed: 0,
   };
 
@@ -596,7 +614,15 @@ export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?:
   let doneCount = 0;
   await runWithConcurrency(batch, concurrency, async (input: Pass3Input) => {
     const index = ++doneCount;
-    const result = await processRepo(accessToken, projectId, db, input, opts.dryRun ?? false, { index, total: batch.length });
+    const result = await processRepo(
+      accessToken,
+      projectId,
+      db,
+      input,
+      opts.dryRun ?? false,
+      skipVectorize,
+      { index, total: batch.length },
+    );
 
     switch (result.status) {
       case 'cache_hit':
@@ -620,11 +646,6 @@ export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?:
         logger.error(`[pass3] repo_id=${result.repo_id} full_name=${result.full_name} status=validation_failed failures=${result.detail}`);
         failures.push({ repo_id: result.repo_id, full_name: result.full_name, reason: `validation: ${result.detail}` });
         break;
-      case 'judge_failed':
-        stats.judgeFailed++;
-        logger.error(`[pass3] repo_id=${result.repo_id} full_name=${result.full_name} status=judge_failed detail=${result.detail}`);
-        failures.push({ repo_id: result.repo_id, full_name: result.full_name, reason: `judge: ${result.detail}` });
-        break;
       case 'persist_failed':
         stats.persistFailed++;
         logger.error(`[pass3] repo_id=${result.repo_id} full_name=${result.full_name} status=persist_unverified ${result.detail}`);
@@ -640,7 +661,6 @@ export async function run(opts: FetchOptions & { dryRun?: boolean; concurrency?:
   console.log(`  Written:         ${stats.written}`);
   console.log(`  Validation fail: ${stats.validationFailed}`);
   console.log(`  Gemma errors:    ${stats.gemmaErrors}`);
-  console.log(`  Judge failed:    ${stats.judgeFailed}`);
   console.log(`  Persist fail:    ${stats.persistFailed}`);
   console.log(`signals_version:   ${SIGNALS_VERSION}`);
   console.log(`model_used:        ${SUMMARIZER_MODEL}`);

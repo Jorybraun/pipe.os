@@ -13,7 +13,7 @@ import type { ExtractorContext } from '../shared/types.js';
 import { constructsForFiles } from './constructs.js';
 import { aggregatePathStats } from './pathClassifier.js';
 import { logger } from '../shared/logger.js';
-import { PASS2_PR_SCAN_LIMIT, PASS2_PR_ELIGIBLE_LIMIT, PASS2_MIN_ELIGIBLE_PRS } from '../config.js';
+import { PASS2_PR_SCAN_LIMIT, PASS2_PR_ELIGIBLE_LIMIT } from '../config.js';
 
 const REVERT_PATTERN = /^(revert|hotfix|chore:\s*bump)/i;
 const BUMP_PATTERN = /^bump\s/i;
@@ -159,8 +159,10 @@ export async function samplePRs(
     eligibilityRate * 0.3 +
     Math.min(constructDiversity / 5, 1) * 0.2;
 
-  // Disqualify if fewer than 3 SWE-bench eligible PRs
-  const disqualified = swebenchEligibleCount < PASS2_MIN_ELIGIBLE_PRS;
+  // Previously disqualified if fewer than 3 SWE-bench eligible PRs.
+  // Now a soft signal — Gemma sees `sample_prs` + `pr_quality_score` in FACTS
+  // and can return `reject` itself with a richer reason than a mechanical gate.
+  const disqualified = false;
 
   // Path-based aggregates (feed Pass 3 facts block + roleFitRerank).
   const prFilePaths = eligible.map(

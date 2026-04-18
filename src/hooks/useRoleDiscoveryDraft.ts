@@ -10,7 +10,7 @@
  * It never touches storage directly.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { PastExchange } from './useRoleDiscovery';
 
 // ─── Draft shape (public — imported by the page) ──────────────────────────────
@@ -65,5 +65,10 @@ export function useRoleDiscoveryDraft(): UseRoleDiscoveryDraftResult {
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  return { load, save, clear };
+  // Memoize the returned object so its identity is stable across renders.
+  // Consumers that pass `draft` as a useEffect dependency (e.g. useScriptedPhase)
+  // depend on this — an unstable identity re-fires mount effects every render,
+  // which was causing the "previous session" resume banner to re-appear after
+  // the user had already resumed.
+  return useMemo(() => ({ load, save, clear }), [load, save, clear]);
 }

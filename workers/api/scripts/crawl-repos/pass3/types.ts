@@ -45,6 +45,10 @@ export interface Pass3Input {
   cross_module_change_rate: number | null;
   constructs: Array<{ slug: string; evidence_count: number }>;
   sample_prs: SamplePRSummary[];
+  /** Up to ~3KB of README content captured at Pass 2. */
+  readme_excerpt: string | null;
+  /** JSON-encoded array of root-tree entries captured at Pass 2. */
+  root_tree_json: string | null;
   prior_content_hash: string | null;
   prior_signals_version: string | null;
 }

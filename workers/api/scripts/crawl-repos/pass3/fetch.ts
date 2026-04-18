@@ -41,6 +41,8 @@ interface QualifiedRepoRow {
   open_feature_issue_count: number | null;
   business_logic_ratio: number | null;
   cross_module_change_rate: number | null;
+  readme_excerpt: string | null;
+  root_tree_json: string | null;
   prior_content_hash: string | null;
   prior_signals_version: string | null;
 }
@@ -96,6 +98,8 @@ export async function fetchBatch(
       qr.open_feature_issue_count AS open_feature_issue_count,
       qr.business_logic_ratio     AS business_logic_ratio,
       qr.cross_module_change_rate AS cross_module_change_rate,
+      qr.readme_excerpt           AS readme_excerpt,
+      qr.root_tree_json           AS root_tree_json,
       res.content_hash            AS prior_content_hash,
       res.signals_version         AS prior_signals_version
     FROM qualified_repos qr
@@ -147,6 +151,8 @@ export async function fetchBatch(
       open_feature_issue_count: row.open_feature_issue_count,
       business_logic_ratio: row.business_logic_ratio,
       cross_module_change_rate: row.cross_module_change_rate,
+      readme_excerpt: row.readme_excerpt,
+      root_tree_json: row.root_tree_json,
       constructs,
       sample_prs: samplePrs,
       prior_content_hash: row.prior_content_hash,

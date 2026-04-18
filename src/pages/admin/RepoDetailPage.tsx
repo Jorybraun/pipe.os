@@ -64,6 +64,13 @@ interface RepoDetail {
   has_signals: number;
 }
 
+type SuitabilityVerdict = 'suitable' | 'hold' | 'reject';
+
+interface TopPrPick {
+  pr_number: number;
+  why: string;
+}
+
 interface SignalsRow {
   signals_version: string | null;
   content_hash: string | null;
@@ -81,6 +88,12 @@ interface SignalsRow {
   admin_feedback_text: string | null;
   verdict_at: string | null;
   vectorized_at: string | null;
+  challenge_suitability_verdict: SuitabilityVerdict | null;
+  challenge_suitability_reason: string | null;
+  top_pr_picks_json: string | null;
+  red_flags_json: string | null;
+  seniority_justification: string | null;
+  ideal_role_match: string | null;
 }
 
 interface RepoResponse {
@@ -200,10 +213,12 @@ function Section({ title, children, right }: { title: string; children: React.Re
 
 function Pass3Panel({
   repoId,
+  fullName,
   signals,
   onRefresh,
 }: {
   repoId: number;
+  fullName: string;
   signals: SignalsRow | null;
   onRefresh: () => void | Promise<void>;
 }): JSX.Element {
@@ -288,6 +303,9 @@ function Pass3Panel({
         </span>
       }
     >
+      {/* AI assessment (decision-oriented signal above the narrative) */}
+      <AssessmentBlock signals={signals} fullName={fullName} />
+
       {/* Architecture + stats row */}
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
         <StatChip label="ARCHITECTURE" value={(signals.architecture_style ?? 'unknown').toUpperCase()} color="#60a5fa" />
@@ -441,6 +459,211 @@ function Pass3Panel({
         </div>
       )}
     </Section>
+  );
+}
+
+const VERDICT_COLOR: Record<SuitabilityVerdict, string> = {
+  suitable: '#4ade80',
+  hold: '#fbbf24',
+  reject: '#f87171',
+};
+
+function safeParseJsonArray<T>(raw: string | null): T[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function AssessmentBlock({ signals, fullName }: { signals: SignalsRow; fullName: string }): JSX.Element | null {
+  const verdict = signals.challenge_suitability_verdict;
+  const reason = signals.challenge_suitability_reason;
+  const topPicks = safeParseJsonArray<TopPrPick>(signals.top_pr_picks_json);
+  const redFlags = safeParseJsonArray<string>(signals.red_flags_json);
+  const justification = signals.seniority_justification;
+  const role = signals.ideal_role_match;
+
+  const hasAny =
+    verdict !== null ||
+    (reason !== null && reason !== '') ||
+    topPicks.length > 0 ||
+    redFlags.length > 0 ||
+    (justification !== null && justification !== '') ||
+    (role !== null && role !== '');
+
+  if (!hasAny) return null;
+
+  const verdictColor = verdict ? VERDICT_COLOR[verdict] : 'var(--pipe-text-dim)';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        padding: 12,
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 6,
+        background: 'rgba(255,255,255,0.015)',
+      }}
+    >
+      <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.2em' }}>
+        AI ASSESSMENT
+      </div>
+
+      {/* Verdict + reason */}
+      {verdict && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding: '8px 10px',
+            border: `1px solid ${verdictColor}40`,
+            background: `${verdictColor}0c`,
+            borderRadius: 4,
+          }}
+        >
+          <span
+            style={{
+              ...mono,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.15em',
+              color: verdictColor,
+              padding: '2px 8px',
+              border: `1px solid ${verdictColor}`,
+              borderRadius: 3,
+              flexShrink: 0,
+              textTransform: 'uppercase',
+            }}
+          >
+            {verdict}
+          </span>
+          {reason && (
+            <span style={{ ...mono, fontSize: 10, lineHeight: 1.65, color: 'var(--pipe-text)' }}>
+              {reason}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Ideal role */}
+      {role && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.15em' }}>
+            IDEAL ROLE
+          </span>
+          <span
+            style={{
+              ...mono,
+              fontSize: 9,
+              fontWeight: 700,
+              color: '#a78bfa',
+              padding: '3px 8px',
+              borderRadius: 3,
+              background: 'rgba(167,139,250,0.08)',
+              border: '1px solid rgba(167,139,250,0.25)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            {role}
+          </span>
+        </div>
+      )}
+
+      {/* Top PR picks */}
+      {topPicks.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.15em' }}>
+            TOP PR PICKS
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {topPicks.map((pick) => (
+              <a
+                key={pick.pr_number}
+                href={`https://github.com/${fullName}/pull/${pick.pr_number}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  padding: '6px 8px',
+                  borderRadius: 3,
+                  border: '1px solid var(--pipe-border)',
+                  background: 'rgba(255,255,255,0.01)',
+                  textDecoration: 'none',
+                }}
+              >
+                <span
+                  style={{
+                    ...mono,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: '#60a5fa',
+                    flexShrink: 0,
+                    minWidth: 44,
+                  }}
+                >
+                  #{pick.pr_number}
+                </span>
+                <span style={{ ...mono, fontSize: 10, lineHeight: 1.55, color: 'var(--pipe-text)', flex: 1 }}>
+                  {pick.why}
+                </span>
+                <ExternalLink size={10} color="var(--pipe-text-dim)" style={{ marginTop: 2, flexShrink: 0 }} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Red flags */}
+      {redFlags.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ ...mono, fontSize: 8, color: '#f87171', letterSpacing: '0.15em' }}>
+            RED FLAGS
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {redFlags.map((flag, i) => (
+              <li
+                key={i}
+                style={{ ...mono, fontSize: 10, lineHeight: 1.6, color: 'var(--pipe-text)' }}
+              >
+                {flag}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Seniority justification */}
+      {justification && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.15em' }}>
+            SENIORITY JUSTIFICATION
+          </div>
+          <div
+            style={{
+              ...mono,
+              fontSize: 10,
+              lineHeight: 1.7,
+              color: 'var(--pipe-text)',
+              padding: '8px 10px',
+              borderRadius: 3,
+              background: 'rgba(255,255,255,0.01)',
+              border: '1px solid var(--pipe-border)',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {justification}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -708,7 +931,7 @@ export default function RepoDetailPage(): JSX.Element {
 
       {/* Pass 3 panel */}
       <div style={{ marginBottom: 16 }}>
-        <Pass3Panel repoId={id} signals={signals} onRefresh={loadDetail} />
+        <Pass3Panel repoId={id} fullName={repo.full_name} signals={signals} onRefresh={loadDetail} />
       </div>
 
       {/* PR list */}

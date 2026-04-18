@@ -18,37 +18,73 @@ export interface SearchQuery {
 // ─── Search queries ──────────────────────────────────────────────────────────
 
 export const SEARCH_QUERIES: SearchQuery[] = [
-  // TypeScript / React ecosystem
+  // ─── TypeScript / Node ecosystem ────────────────────────────────────────────
   { lang: 'typescript', topics: ['react'],           minStars: 100, maxStars: 10_000 },
   { lang: 'typescript', topics: ['nextjs'],          minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['remix'],           minStars:  50, maxStars: 10_000 },
   { lang: 'typescript', topics: ['graphql'],         minStars: 100, maxStars: 10_000 },
   { lang: 'typescript', topics: ['tailwindcss'],     minStars: 100, maxStars: 10_000 },
   { lang: 'typescript', topics: ['prisma'],          minStars: 100, maxStars: 10_000 },
   { lang: 'typescript', topics: ['trpc'],            minStars: 100, maxStars: 10_000 },
   { lang: 'typescript', topics: ['nestjs'],          minStars: 100, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['fastify'],         minStars:  50, maxStars: 10_000 },
+  { lang: 'typescript', topics: ['express'],         minStars: 100, maxStars: 10_000 },
   { lang: 'typescript', topics: ['hono'],            minStars:  50, maxStars: 10_000 },
   { lang: 'typescript', topics: ['testing'],         minStars: 100, maxStars: 10_000 },
-  // Python ecosystem
-  { lang: 'python',     topics: ['fastapi'],         minStars: 100, maxStars: 10_000 },
-  { lang: 'python',     topics: ['django'],          minStars: 100, maxStars: 10_000 },
-  { lang: 'python',     topics: ['flask'],           minStars: 100, maxStars: 10_000 },
-  { lang: 'python',     topics: ['sqlalchemy'],      minStars: 100, maxStars: 10_000 },
-  { lang: 'python',     topics: ['pytest'],          minStars: 100, maxStars: 10_000 },
-  { lang: 'python',     topics: ['pydantic'],        minStars: 100, maxStars: 10_000 },
-  // Go ecosystem
+
+  // ─── Python ecosystem ───────────────────────────────────────────────────────
+  { lang: 'python',     topics: ['fastapi'],                  minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['django'],                   minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['django-rest-framework'],    minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['flask'],                    minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['starlette'],                minStars:  50, maxStars: 10_000 },
+  { lang: 'python',     topics: ['aiohttp'],                  minStars:  50, maxStars: 10_000 },
+  { lang: 'python',     topics: ['celery'],                   minStars:  50, maxStars: 10_000 },
+  { lang: 'python',     topics: ['sqlalchemy'],               minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['pytest'],                   minStars: 100, maxStars: 10_000 },
+  { lang: 'python',     topics: ['pydantic'],                 minStars: 100, maxStars: 10_000 },
+
+  // ─── Go ecosystem ───────────────────────────────────────────────────────────
   { lang: 'go',         topics: ['api'],             minStars: 100, maxStars: 10_000 },
   { lang: 'go',         topics: ['gin'],             minStars: 100, maxStars: 10_000 },
+  { lang: 'go',         topics: ['echo'],            minStars:  50, maxStars: 10_000 },
+  { lang: 'go',         topics: ['fiber'],           minStars:  50, maxStars: 10_000 },
+  { lang: 'go',         topics: ['chi'],             minStars:  50, maxStars: 10_000 },
+  { lang: 'go',         topics: ['cobra'],           minStars:  50, maxStars: 10_000 },
+  { lang: 'go',         topics: ['grpc'],            minStars: 100, maxStars: 10_000 },
   { lang: 'go',         topics: ['rest-api'],        minStars: 100, maxStars: 10_000 },
   { lang: 'go',         topics: ['microservices'],   minStars: 100, maxStars: 10_000 },
-  // Rust ecosystem
+
+  // ─── Rust ecosystem ─────────────────────────────────────────────────────────
   { lang: 'rust',       topics: ['axum'],            minStars:  50, maxStars: 10_000 },
   { lang: 'rust',       topics: ['actix-web'],       minStars:  50, maxStars: 10_000 },
+  { lang: 'rust',       topics: ['rocket'],          minStars:  50, maxStars: 10_000 },
   { lang: 'rust',       topics: ['tokio'],           minStars: 100, maxStars: 10_000 },
-  // Java ecosystem
+  { lang: 'rust',       topics: ['sqlx'],            minStars:  50, maxStars: 10_000 },
+  { lang: 'rust',       topics: ['clap'],            minStars:  50, maxStars: 10_000 },
+  { lang: 'rust',       topics: ['cli'],             minStars: 100, maxStars: 10_000 },
+
+  // ─── Java ecosystem — broaden beyond Spring ────────────────────────────────
   { lang: 'java',       topics: ['spring-boot'],     minStars: 100, maxStars: 10_000 },
+  { lang: 'java',       topics: ['micronaut'],       minStars:  50, maxStars: 10_000 },
+  { lang: 'java',       topics: ['quarkus'],         minStars:  50, maxStars: 10_000 },
+  { lang: 'java',       topics: ['hibernate'],       minStars: 100, maxStars: 10_000 },
+  { lang: 'java',       topics: ['android'],         minStars: 100, maxStars: 10_000 },
+  { lang: 'java',       topics: ['junit'],           minStars:  50, maxStars: 10_000 },
+
+  // ─── Kotlin ecosystem ───────────────────────────────────────────────────────
   { lang: 'kotlin',     topics: ['spring-boot'],     minStars:  50, maxStars: 10_000 },
-  // Ruby
-  { lang: 'ruby',       topics: ['rails'],           minStars: 100, maxStars: 10_000 },
+  { lang: 'kotlin',     topics: ['ktor'],            minStars:  50, maxStars: 10_000 },
+  { lang: 'kotlin',     topics: ['android'],         minStars: 100, maxStars: 10_000 },
+  { lang: 'kotlin',     topics: ['coroutines'],      minStars:  50, maxStars: 10_000 },
+
+  // ─── Ruby ecosystem — previously under-represented ─────────────────────────
+  { lang: 'ruby',       topics: ['rails'],           minStars:  50, maxStars: 10_000 },
+  { lang: 'ruby',       topics: ['sinatra'],         minStars:  50, maxStars: 10_000 },
+  { lang: 'ruby',       topics: ['sidekiq'],         minStars:  50, maxStars: 10_000 },
+  { lang: 'ruby',       topics: ['rspec'],           minStars:  50, maxStars: 10_000 },
+  { lang: 'ruby',       topics: ['graphql'],         minStars:  50, maxStars: 10_000 },
+  { lang: 'ruby',       topics: ['hanami'],          minStars:  50, maxStars: 10_000 },
 ];
 
 // ─── License allowlist ────────────────────────────────────────────────────────

@@ -90,6 +90,10 @@ export interface Pass2Data {
   skills: Array<{ slug: string; source: 'manifest' | 'import' | 'topic' | 'readme'; confidence: number }>;
   constructs: Array<{ slug: string; evidence_count: number }>;
   sample_prs: SamplePR[];
+  /** Up to ~3KB of README content captured at clone-time. Feeds Pass 3 Gemma. */
+  readme_excerpt: string | null;
+  /** JSON-encoded array of top-level file/dir names (max 60). Feeds Pass 3 Gemma. */
+  root_tree_json: string | null;
 }
 
 export interface SamplePR {
@@ -143,6 +147,13 @@ export type TestStyle =
   | 'minimal'
   | 'unknown';
 
+export type ChallengeSuitabilityVerdict = 'suitable' | 'hold' | 'reject';
+
+export interface TopPrPick {
+  pr_number: number;
+  why: string;
+}
+
 /**
  * Bug-template-aligned challenge surface scores (0–1 each), keyed 1:1 to the
  * 10 ADR-032:131 templates. Computed deterministically in Pass 3 from
@@ -185,6 +196,18 @@ export interface Pass3Data {
   signal_json: string;
   model_used: string;
   model_version: string;
+  /** AI verdict on challenge-suitability: suitable | hold | reject. */
+  challenge_suitability_verdict: ChallengeSuitabilityVerdict | null;
+  /** One-sentence rationale for the verdict (≤ 200 chars). */
+  challenge_suitability_reason: string | null;
+  /** AI-ranked top PR picks for code-review challenge material. */
+  top_pr_picks: TopPrPick[];
+  /** AI-spotted red flags the mechanical Pass 2 checks missed. */
+  red_flags: string[];
+  /** Prose (2–4 sentences) explaining why the mechanical seniority_band fits or misses. */
+  seniority_justification: string | null;
+  /** Short role label, e.g. "senior backend engineer". */
+  ideal_role_match: string | null;
 }
 
 // ─── D1 write helpers ─────────────────────────────────────────────────────────

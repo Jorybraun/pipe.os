@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(admin): Pass 2 auto-chains Pass 3 analyze + 5-field assessment panel (2026-04-18)
+
+Operating the crawler meant: Pass 2 finishes → user opens the detail page → empty Pass 3 panel → click "Run AI analysis" → wait → read → decide. And the "read" step surfaced only a narrative — nothing told the user whether the repo was actually usable as code-review material. Two changes, one feature:
+
+**Auto-chain Pass 2 → Pass 3 analyze.** When `processPass2Repo` persists `disqualified = 0`, the CLI immediately dynamic-imports `./pass3/run.js` and calls `run({ repoId, skipVectorize: true, concurrency: 1 })`. The Gemma narrative lands on the detail page before the user even opens it. Vectorize is explicitly skipped — the human ingest gate at `/pass3/ingest` remains the only path into `REPO_INDEX`. Failure of the Pass 3 chain is logged but never rolls back the Pass 2 success. New `--no-ai` CLI flag opts out for bulk runs where the user wants to review before spending Gemma tokens.
+
+**5 decision-oriented fields on the Pass 3 output.** Gemma now produces a 9-field JSON instead of 3: `challenge_suitability_verdict` (suitable | hold | reject), `challenge_suitability_reason` (one sentence ≤200 chars), `top_pr_picks` (1–5 PRs with "why" per pick, each `pr_number` validated against the FACTS sample to block hallucinated numbers), `red_flags` (0–6 ≤200-char items), `seniority_justification` (15–120 words), and `ideal_role_match` (short label ≤60 chars). Both the CLI (`scripts/crawl-repos/pass3/run.ts`) and HTTP (`workers/api/src/routes/cockpit/adminRepos.ts runGemmaAnalysis`) prompt paths extended in lockstep; deduping the two is flagged as tech debt, out of scope. Validator enforces enum + length caps + PR membership. Schema: migration `0034_repo_signals_assessment.sql` adds 6 columns + a suitability index. RepoDetailPage renders a new `AssessmentBlock` above the narrative: verdict pill in green/amber/red, reason line, ideal-role chip, top-PR picks as external GitHub links with justification, red flags as a bulleted list, seniority prose block.
+
+Files: `workers/api/migrations/0034_repo_signals_assessment.sql`, `workers/api/scripts/crawl-repos/shared/types.ts`, `workers/api/scripts/crawl-repos/pass3/{run,validate,persist}.ts`, `workers/api/scripts/crawl-repos/index.ts`, `workers/api/src/routes/cockpit/adminRepos.ts`, `src/pages/admin/RepoDetailPage.tsx`.
+
 #### fix(admin): repo semantic search returns 0 results post-ingest (2026-04-18)
 
 `POST /api/v1/admin/repos/search` returned empty even when vectors existed in `REPO_INDEX`. Two root causes, one visible symptom.

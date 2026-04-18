@@ -132,6 +132,8 @@ export interface UseScriptedPhaseResult {
   exchanges: PastExchange[];
   currentQuestion: ScriptedQuestion | null;
   hasProgress: boolean;
+  /** True once every scripted question has been captured in an exchange. */
+  isComplete: boolean;
 
   back: () => void;
   submit: () => void;
@@ -141,6 +143,8 @@ export interface UseScriptedPhaseResult {
   jdImport: (parsed: ParseJDResponse['parsed']) => void;
   resetToMode: () => void;
   startOver: () => void;
+  /** Update a previously captured answer without advancing the scripted flow. */
+  editAnswer: (qId: string, newRaw: string) => void;
 }
 
 interface DraftWrite {
@@ -165,6 +169,12 @@ export function useScriptedPhase(args: UseScriptedPhaseArgs): UseScriptedPhaseRe
   const onResumeDraftFoundRef = useRef(onResumeDraftFound);
   useEffect(() => { onResumeDraftFoundRef.current = onResumeDraftFound; }, [onResumeDraftFound]);
 
+  // Guard: the mount-time draft restore must run exactly once per page load,
+  // even if `draft`'s identity briefly destabilises. Re-running fires
+  // `onResumeDraftFound` again, which brings the "resume?" banner back after
+  // the user already dismissed it.
+  const hasRestoredRef = useRef(false);
+
   // ── Draft persistence helper — collapses the 10+ repeated save shapes ──
   const persistDraft = useCallback((next: DraftWrite): void => {
     draft.save({
@@ -178,6 +188,8 @@ export function useScriptedPhase(args: UseScriptedPhaseArgs): UseScriptedPhaseRe
 
   // ── Restore draft on mount ──
   useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
     const saved = draft.load();
     if (!saved) return;
     // Migrate drafts written before the live-voice feature flag landed: strip
@@ -298,6 +310,10 @@ export function useScriptedPhase(args: UseScriptedPhaseArgs): UseScriptedPhaseRe
       setIdx(MODE_Q_IDX);
       persistDraft({ idx: MODE_Q_IDX, answers: presetAnswers, exchanges: presetExchanges });
     } else {
+      // Mirror the idx into local state, not just the draft — otherwise
+      // going back from INTERVIEW lands the user on Q1 with 5 past exchanges
+      // visible, which looks broken.
+      setIdx(SCRIPTED.length - 1);
       persistDraft({ idx: SCRIPTED.length - 1, answers: presetAnswers, exchanges: presetExchanges, completed: true });
       onFire(presetAnswers, false);
     }
@@ -348,8 +364,31 @@ export function useScriptedPhase(args: UseScriptedPhaseArgs): UseScriptedPhaseRe
     clearInterview();
   }, [draft, clearInterview]);
 
+  // ── Edit an already-answered question in place ──
+  // Used by the "review & edit" view when the user goes back to ROLE after the
+  // scripted phase is complete. Updates the answer, rewrites the matching
+  // exchange's display text, and persists — without touching idx.
+  const editAnswer = useCallback((qId: string, newRaw: string): void => {
+    const q = SCRIPTED.find((x) => x.id === qId);
+    if (!q) return;
+    const display = q.inputType === 'tags'
+      ? (newRaw.split('|||').filter(Boolean).join(', ') || '(skipped)')
+      : (newRaw.trim() || '(skipped)');
+    const newAnswers = { ...answers, [qId]: newRaw };
+    const newExchanges = exchanges.map((ex) =>
+      ex.questionId === qId ? { ...ex, answer: display } : ex,
+    );
+    setAnswers(newAnswers);
+    setExchanges(newExchanges);
+    persistDraft({ idx, answers: newAnswers, exchanges: newExchanges, completed: true });
+  }, [answers, exchanges, idx, persistDraft]);
+
   const currentQuestion: ScriptedQuestion | null = SCRIPTED[idx] ?? null;
   const hasProgress = idx > 0 || Object.keys(answers).length > 0;
+  // `isComplete` means every scripted question has been captured in an exchange
+  // — the canonical "scripted phase is done" signal used by the page to switch
+  // between linear-ask mode and review/edit mode.
+  const isComplete = exchanges.length >= SCRIPTED.length;
 
   return {
     idx,
@@ -359,6 +398,7 @@ export function useScriptedPhase(args: UseScriptedPhaseArgs): UseScriptedPhaseRe
     exchanges,
     currentQuestion,
     hasProgress,
+    isComplete,
     back,
     submit,
     skip,
@@ -367,5 +407,6 @@ export function useScriptedPhase(args: UseScriptedPhaseArgs): UseScriptedPhaseRe
     jdImport,
     resetToMode,
     startOver,
+    editAnswer,
   };
 }
