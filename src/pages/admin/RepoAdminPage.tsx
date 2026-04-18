@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Database, ExternalLink, Check, X, Loader2, Search, ChevronDown, ChevronRight, Sparkles, GitPullRequest, RefreshCcw } from 'lucide-react';
+import { Database, ExternalLink, Check, X, Loader2, Search, ChevronDown, ChevronRight, Sparkles, GitPullRequest, RefreshCcw, ChevronLeft } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -16,6 +16,9 @@ import { useApiClient } from '../../hooks/useApiClient';
 type AdminStatus = 'pending' | 'approved' | 'denied';
 type FilterKey = AdminStatus | 'failed' | 'all';
 type PassFilter = '1' | '2' | 'all';
+type SuitabilityFilter = 'suitable' | 'hold' | 'reject' | 'any';
+
+const PAGE_SIZE = 50;
 
 interface QualifiedRepo {
   id: number;
@@ -42,6 +45,7 @@ interface QualifiedRepo {
   disqualified_reason: string | null;
   pass: number;
   has_signals: number;
+  challenge_suitability_verdict: 'suitable' | 'hold' | 'reject' | null;
 }
 
 interface SamplePR {
@@ -60,6 +64,8 @@ interface SamplePR {
 interface ReposResponse {
   repos: QualifiedRepo[];
   total: number;
+  page?: number;
+  limit?: number;
 }
 
 interface PRsResponse {
@@ -90,6 +96,19 @@ const PASS_FILTERS: Array<{ key: PassFilter; label: string }> = [
   { key: '1',   label: 'PASS 1' },
   { key: '2',   label: 'PASS 2' },
 ];
+
+const SUITABILITY_FILTERS: Array<{ key: SuitabilityFilter; label: string; color: string }> = [
+  { key: 'any',      label: 'ANY',      color: 'var(--pipe-text-muted)' },
+  { key: 'suitable', label: 'SUITABLE', color: '#4ade80' },
+  { key: 'hold',     label: 'HOLD',     color: '#fbbf24' },
+  { key: 'reject',   label: 'REJECT',   color: '#f87171' },
+];
+
+const SUITABILITY_COLOR: Record<string, string> = {
+  suitable: '#4ade80',
+  hold: '#fbbf24',
+  reject: '#f87171',
+};
 
 // ─── Pill ─────────────────────────────────────────────────────────────────────
 
@@ -296,6 +315,20 @@ function RepoCard({
         {repo.detected_domain && (
           <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)' }}>
             {repo.detected_domain}
+          </span>
+        )}
+        {repo.challenge_suitability_verdict && (
+          <span
+            style={{
+              ...mono, fontSize: 8, fontWeight: 700,
+              color: SUITABILITY_COLOR[repo.challenge_suitability_verdict] ?? 'var(--pipe-text-dim)',
+              padding: '2px 7px', borderRadius: 3,
+              background: `${SUITABILITY_COLOR[repo.challenge_suitability_verdict] ?? 'var(--pipe-text-dim)'}14`,
+              border: `1px solid ${SUITABILITY_COLOR[repo.challenge_suitability_verdict] ?? 'var(--pipe-border)'}40`,
+              letterSpacing: '0.08em',
+            }}
+          >
+            {repo.challenge_suitability_verdict.toUpperCase()}
           </span>
         )}
         <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', marginLeft: 'auto' }}>
@@ -583,6 +616,8 @@ export default function RepoAdminPage(): JSX.Element {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<FilterKey>('pending');
   const [passFilter, setPassFilter] = useState<PassFilter>('all');
+  const [suitabilityFilter, setSuitabilityFilter] = useState<SuitabilityFilter>('any');
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [repos, setRepos] = useState<QualifiedRepo[]>([]);
   const [total, setTotal] = useState(0);
@@ -595,12 +630,22 @@ export default function RepoAdminPage(): JSX.Element {
 
   useEffect(() => { setMounted(true); }, []);
 
-  const load = useCallback(async (status: FilterKey, pass: PassFilter) => {
+  const load = useCallback(async (
+    status: FilterKey,
+    pass: PassFilter,
+    suitability: SuitabilityFilter,
+    pageNum: number,
+  ) => {
     setLoading(true);
     setError(null);
     try {
-      const qs = new URLSearchParams({ status, limit: '5000' });
+      const qs = new URLSearchParams({
+        status,
+        limit: String(PAGE_SIZE),
+        page: String(pageNum),
+      });
       if (pass !== 'all') qs.set('pass', pass);
+      if (suitability !== 'any') qs.set('suitability', suitability);
       const res = await api.get<ReposResponse>(`/api/v1/admin/repos?${qs.toString()}`);
       setRepos(res.repos);
       setTotal(res.total);
@@ -611,7 +656,14 @@ export default function RepoAdminPage(): JSX.Element {
     }
   }, [api]);
 
-  useEffect(() => { void load(statusFilter, passFilter); }, [statusFilter, passFilter, load]);
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [statusFilter, passFilter, suitabilityFilter]);
+
+  useEffect(() => {
+    void load(statusFilter, passFilter, suitabilityFilter, page);
+  }, [statusFilter, passFilter, suitabilityFilter, page, load]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleStatusChange = async (id: number, status: AdminStatus, reason: string): Promise<void> => {
     setSaving(id);
@@ -745,6 +797,18 @@ export default function RepoAdminPage(): JSX.Element {
             />
           ))}
         </div>
+        <div style={{ width: 1, height: 16, background: 'var(--pipe-border)' }} />
+        <div style={{ display: 'flex', gap: 4 }}>
+          {SUITABILITY_FILTERS.map(({ key, label, color }) => (
+            <Pill
+              key={key}
+              label={label}
+              active={suitabilityFilter === key}
+              onClick={() => setSuitabilityFilter(key)}
+              color={color}
+            />
+          ))}
+        </div>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', border: '1px solid var(--pipe-border)', borderRadius: 4 }}>
           <Search size={12} color="var(--pipe-text-dim)" />
@@ -797,23 +861,71 @@ export default function RepoAdminPage(): JSX.Element {
 
       {/* Grid */}
       {!loading && filtered.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
-          {filtered.map((repo) => (
-            <RepoCard
-              key={repo.id}
-              repo={repo}
-              saving={saving === repo.id}
-              requeueing={requeueing === repo.id}
-              runningPass3={runningPass3 === repo.id}
-              onApprove={(reason) => void handleStatusChange(repo.id, 'approved', reason)}
-              onDeny={(reason) => void handleStatusChange(repo.id, 'denied', reason)}
-              onReset={() => void handleStatusChange(repo.id, 'pending', '')}
-              onRequeue={() => void handleRequeue(repo.id)}
-              onRunPass3={() => void handleRunPass3(repo.id)}
-              onOpen={() => navigate(`/admin/repos/${repo.id}`)}
-            />
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
+            {filtered.map((repo) => (
+              <RepoCard
+                key={repo.id}
+                repo={repo}
+                saving={saving === repo.id}
+                requeueing={requeueing === repo.id}
+                runningPass3={runningPass3 === repo.id}
+                onApprove={(reason) => void handleStatusChange(repo.id, 'approved', reason)}
+                onDeny={(reason) => void handleStatusChange(repo.id, 'denied', reason)}
+                onReset={() => void handleStatusChange(repo.id, 'pending', '')}
+                onRequeue={() => void handleRequeue(repo.id)}
+                onRunPass3={() => void handleRunPass3(repo.id)}
+                onOpen={() => navigate(`/admin/repos/${repo.id}`)}
+              />
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div style={{
+              display: 'flex', justifyContent: 'center', alignItems: 'center',
+              gap: 8, marginTop: 32,
+            }}>
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                style={{
+                  ...mono, fontSize: 10, letterSpacing: '0.1em',
+                  padding: '6px 12px',
+                  background: 'transparent',
+                  border: '1px solid var(--pipe-border)',
+                  color: page === 1 ? 'var(--pipe-text-dim)' : 'var(--pipe-text)',
+                  cursor: page === 1 ? 'default' : 'pointer',
+                  borderRadius: 4,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  opacity: page === 1 ? 0.4 : 1,
+                }}
+              >
+                <ChevronLeft size={11} /> PREV
+              </button>
+              <span style={{ ...mono, fontSize: 10, color: 'var(--pipe-text-muted)', padding: '0 12px' }}>
+                PAGE {page} / {totalPages} · {total} TOTAL
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                style={{
+                  ...mono, fontSize: 10, letterSpacing: '0.1em',
+                  padding: '6px 12px',
+                  background: 'transparent',
+                  border: '1px solid var(--pipe-border)',
+                  color: page >= totalPages ? 'var(--pipe-text-dim)' : 'var(--pipe-text)',
+                  cursor: page >= totalPages ? 'default' : 'pointer',
+                  borderRadius: 4,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  opacity: page >= totalPages ? 0.4 : 1,
+                }}
+              >
+                NEXT <ChevronRight size={11} />
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(admin): suitability filter + pagination on repo admin list (2026-04-18)
+
+`/admin/repos` was loading 5000 repos in one shot to dodge a 100-row cap — OK for a few hundred, untenable once Pass 1 + Pass 2 balloon past 2000. Added: (1) a suitability filter driven by Gemma's `challenge_suitability_verdict` column (any | suitable | hold | reject) with matching pill in the filter strip, (2) server-side pagination at 50/page with prev/next controls + "PAGE X / Y · N TOTAL" readout, (3) suitability badge on each card's top row colored green/amber/red, (4) filter change resets to page 1. Backend: `GET /api/v1/admin/repos` now accepts `suitability` query param, returns `challenge_suitability_verdict` in each row, per-page limit hard-capped at 500 (was 5000). Files: `src/pages/admin/RepoAdminPage.tsx`, `workers/api/src/routes/cockpit/adminRepos.ts`.
+
 #### feat(admin): Pass 2 auto-chains Pass 3 analyze + 5-field assessment panel (2026-04-18)
 
 Operating the crawler meant: Pass 2 finishes → user opens the detail page → empty Pass 3 panel → click "Run AI analysis" → wait → read → decide. And the "read" step surfaced only a narrative — nothing told the user whether the repo was actually usable as code-review material. Two changes, one feature:

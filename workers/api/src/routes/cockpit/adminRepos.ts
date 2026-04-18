@@ -70,6 +70,7 @@ interface RepoRow {
   crawled_at: string;
   has_signals: number;
   top_skills_csv: string | null;
+  challenge_suitability_verdict: string | null;
 }
 
 interface SamplePRRow {
@@ -90,8 +91,9 @@ interface SamplePRRow {
 adminRepos.get('/repos', async (c) => {
   const statusParam = c.req.query('status') ?? 'pending';
   const passParam   = c.req.query('pass');   // '1' | '2' | undefined
+  const suitabilityParam = c.req.query('suitability'); // 'suitable' | 'hold' | 'reject' | 'any' | undefined
   const page  = Math.max(1, Number(c.req.query('page')  ?? '1'));
-  const limit = Math.min(5000, Math.max(1, Number(c.req.query('limit') ?? '50')));
+  const limit = Math.min(500, Math.max(1, Number(c.req.query('limit') ?? '50')));
   const offset = (page - 1) * limit;
 
   // Build WHERE conditions
@@ -116,6 +118,11 @@ adminRepos.get('/repos', async (c) => {
     conditions.push('qr.pass = 2');
   }
 
+  if (suitabilityParam && ['suitable', 'hold', 'reject'].includes(suitabilityParam)) {
+    conditions.push('res.challenge_suitability_verdict = ?');
+    baseParams.push(suitabilityParam);
+  }
+
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const countRow = await c.env.DB.prepare(
@@ -136,6 +143,7 @@ adminRepos.get('/repos', async (c) => {
        qr.admin_status, qr.admin_reason, qr.disqualified, qr.disqualified_reason,
        qr.pass, qr.crawled_at,
        CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
+       res.challenge_suitability_verdict,
        (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
          SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
        )) AS top_skills_csv
@@ -197,6 +205,7 @@ adminRepos.get('/repos/:id', async (c) => {
        qr.admin_status, qr.admin_reason, qr.disqualified, qr.disqualified_reason,
        qr.pass, qr.crawled_at,
        CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
+       res.challenge_suitability_verdict,
        (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
          SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
        )) AS top_skills_csv
