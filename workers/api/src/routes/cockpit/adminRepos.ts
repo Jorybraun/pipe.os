@@ -5,11 +5,15 @@
  * All routes require a valid Clerk JWT via authMiddleware.
  *
  * Routes:
- *   GET   /api/v1/admin/repos             — list repos (status + pass filters, pagination)
- *   GET   /api/v1/admin/repos/:id/prs     — sample PRs for a specific repo
- *   PATCH /api/v1/admin/repos/:id         — set admin_status + optional admin_reason
- *   POST  /api/v1/admin/repos/:id/requeue — demote repo to pass=1 for re-crawling
- *   POST  /api/v1/admin/repos/:id/pass3   — trigger Gemma summarization + vectorization
+ *   GET   /api/v1/admin/repos                     — list repos (status + pass filters, pagination)
+ *   GET   /api/v1/admin/repos/:id                 — single repo + engineering_signals join
+ *   GET   /api/v1/admin/repos/:id/prs             — sample PRs for a specific repo
+ *   PATCH /api/v1/admin/repos/:id                 — set admin_status + optional admin_reason
+ *   POST  /api/v1/admin/repos/:id/requeue         — demote repo to pass=1 for re-crawling
+ *   POST  /api/v1/admin/repos/:id/pass3/analyze   — Gemma summarization (no vectorize)
+ *   POST  /api/v1/admin/repos/:id/pass3/feedback  — record admin verdict + critique
+ *   POST  /api/v1/admin/repos/:id/pass3/ingest    — vectorize approved narrative → REPO_INDEX
+ *   POST  /api/v1/admin/repos/:id/pass3           — back-compat one-shot (analyze + approve + ingest)
  *
  * Status filter semantics (status= query param):
  *   'pending'  → disqualified=0, admin_status='pending'
@@ -28,7 +32,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { GoogleAIProvider } from '../../lib/llm/googleAIProvider';
+import { createRoleAgentProvider } from '../../lib/llm/createProvider';
 import type { Env, Variables } from '../../types';
 
 const adminRepos = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -149,6 +153,64 @@ adminRepos.get('/repos', async (c) => {
   });
 });
 
+// ─── GET /api/v1/admin/repos/:id ─────────────────────────────────────────────
+// Single repo + engineering_signals (nullable join). Used by the detail page.
+
+interface SignalsRow {
+  signals_version: string | null;
+  content_hash: string | null;
+  architecture_style: string | null;
+  engineering_narrative: string | null;
+  repo_searchable_profile: string | null;
+  test_touch_rate: number | null;
+  mean_changed_files: number | null;
+  p90_changed_files: number | null;
+  issue_link_rate: number | null;
+  swe_bench_eligibility_rate: number | null;
+  model_used: string | null;
+  model_version: string | null;
+  admin_verdict: string | null;
+  admin_feedback_text: string | null;
+  verdict_at: string | null;
+  vectorized_at: string | null;
+}
+
+adminRepos.get('/repos/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isFinite(id) || id <= 0) return apiError(c, 'VALIDATION_ERROR', 'invalid id');
+
+  const repo = await c.env.DB.prepare(
+    `SELECT
+       qr.id, qr.full_name, qr.github_url, qr.primary_language, qr.stars,
+       qr.detected_domain, qr.seniority_band, qr.sloc, qr.file_count, qr.mean_ccn,
+       qr.pr_quality_score, qr.open_feature_issue_count, qr.open_pr_count,
+       qr.has_ci, qr.has_tests, qr.test_framework, qr.detected_stack_json,
+       qr.admin_status, qr.admin_reason, qr.disqualified, qr.disqualified_reason,
+       qr.pass, qr.crawled_at,
+       CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
+       (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
+         SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
+       )) AS top_skills_csv
+     FROM qualified_repos qr
+     LEFT JOIN repo_engineering_signals res ON res.repo_id = qr.id
+     WHERE qr.id = ?`,
+  ).bind(id).first<RepoRow>();
+
+  if (!repo) return apiError(c, 'NOT_FOUND', 'repo not found');
+
+  const signals = await c.env.DB.prepare(
+    `SELECT signals_version, content_hash, architecture_style,
+            engineering_narrative, repo_searchable_profile,
+            test_touch_rate, mean_changed_files, p90_changed_files,
+            issue_link_rate, swe_bench_eligibility_rate,
+            model_used, model_version,
+            admin_verdict, admin_feedback_text, verdict_at, vectorized_at
+     FROM repo_engineering_signals WHERE repo_id = ?`,
+  ).bind(id).first<SignalsRow>();
+
+  return c.json({ repo, signals: signals ?? null });
+});
+
 // ─── GET /api/v1/admin/repos/:id/prs ─────────────────────────────────────────
 
 adminRepos.get('/repos/:id/prs', async (c) => {
@@ -238,86 +300,118 @@ adminRepos.post('/repos/:id/requeue', async (c) => {
   return c.json({ ok: true, id, pass: 1 });
 });
 
-// ─── POST /api/v1/admin/repos/:id/pass3 ──────────────────────────────────────
-// Triggers Workers AI Gemma summarization + Vectorize upsert for an approved repo.
-// Only runs if admin_status = 'approved' and pass >= 2.
+// ─── Pass 3 — split into analyze / feedback / ingest ─────────────────────────
+// Analyze: Gemma summarization + D1 persist. Does NOT vectorize.
+// Feedback: admin records approve/deny verdict + optional critique.
+// Ingest: embed repo_searchable_profile + upsert to REPO_INDEX (requires
+//         admin_verdict = 'approved').
+// Back-compat /pass3: runs analyze → approve → ingest in one shot, keyed
+//         on the older admin_status = 'approved' gate.
 
 interface ConstructRow { construct_slug: string; evidence_count: number }
 
-adminRepos.post('/repos/:id/pass3', async (c) => {
-  const id = Number(c.req.param('id'));
-  if (!Number.isFinite(id) || id <= 0) return apiError(c, 'VALIDATION_ERROR', 'invalid id');
-
-  // 1. Fetch the repo — must be approved pass-2 repo
-  const repo = await c.env.DB.prepare(
-    `SELECT id, full_name, primary_language, stars, sloc, file_count, mean_ccn,
-            has_ci, has_tests, test_framework, detected_domain, detected_stack_json,
-            seniority_band, pr_quality_score, open_pr_count, open_feature_issue_count,
-            business_logic_ratio, cross_module_change_rate, admin_status, pass
-     FROM qualified_repos WHERE id = ?`,
-  )
-    .bind(id)
-    .first<RepoRow & {
-      mean_ccn: number | null;
-      has_ci: number;
-      has_tests: number;
-      test_framework: string | null;
-      detected_stack_json: string | null;
-      business_logic_ratio: number | null;
-      cross_module_change_rate: number | null;
-    }>();
-
-  if (!repo) return apiError(c, 'NOT_FOUND', 'repo not found');
-  if (repo.admin_status !== 'approved') return apiError(c, 'VALIDATION_ERROR', 'repo must be approved before running pass 3');
-  if (repo.pass < 2) return apiError(c, 'VALIDATION_ERROR', 'repo has not completed pass 2');
-
-  // 2. Fetch PRs + constructs
-  const { results: prs } = await c.env.DB.prepare(
-    `SELECT pr_number, title, changed_file_count, modifies_tests, resolves_issue_number,
-            additions, deletions, swe_bench_eligible
-     FROM repo_sample_prs WHERE repo_id = ? ORDER BY pr_number`,
-  ).bind(id).all<{
+interface Pass3Facts {
+  repo: {
+    id: number;
+    full_name: string;
+    primary_language: string;
+    stars: number;
+    sloc: number | null;
+    file_count: number | null;
+    mean_ccn: number | null;
+    has_ci: number;
+    has_tests: number;
+    test_framework: string | null;
+    detected_domain: string | null;
+    detected_stack_json: string | null;
+    seniority_band: string | null;
+    pr_quality_score: number;
+    open_pr_count: number | null;
+    open_feature_issue_count: number | null;
+    admin_status: string;
+    pass: number;
+  };
+  prs: Array<{
     pr_number: number;
     title: string | null;
     changed_file_count: number;
     modifies_tests: number;
     resolves_issue_number: number | null;
-    additions: number | null;
-    deletions: number | null;
     swe_bench_eligible: number;
-  }>();
+  }>;
+  constructs: ConstructRow[];
+  stats: {
+    prCount: number;
+    testTouchRate: number | null;
+    issueLinkRate: number | null;
+    sweBenchRate: number | null;
+    meanChangedFiles: number | null;
+    p90ChangedFiles: number | null;
+  };
+}
 
-  const { results: constructs } = await c.env.DB.prepare(
-    `SELECT construct_slug, evidence_count FROM repo_constructs WHERE repo_id = ? ORDER BY evidence_count DESC LIMIT 10`,
+interface GemmaResult {
+  architectureStyle: string;
+  engineeringNarrative: string;
+  repoSearchableProfile: string;
+  contentHash: string;
+  raw: string;
+  modelUsed: string;
+}
+
+async function loadPass3Facts(env: Env, id: number): Promise<Pass3Facts | null> {
+  const repo = await env.DB.prepare(
+    `SELECT id, full_name, primary_language, stars, sloc, file_count, mean_ccn,
+            has_ci, has_tests, test_framework, detected_domain, detected_stack_json,
+            seniority_band, pr_quality_score, open_pr_count, open_feature_issue_count,
+            admin_status, pass
+     FROM qualified_repos WHERE id = ?`,
+  ).bind(id).first<Pass3Facts['repo']>();
+  if (!repo) return null;
+
+  const { results: prs } = await env.DB.prepare(
+    `SELECT pr_number, title, changed_file_count, modifies_tests,
+            resolves_issue_number, swe_bench_eligible
+     FROM repo_sample_prs WHERE repo_id = ? ORDER BY pr_number`,
+  ).bind(id).all<Pass3Facts['prs'][number]>();
+
+  const { results: constructs } = await env.DB.prepare(
+    `SELECT construct_slug, evidence_count FROM repo_constructs
+     WHERE repo_id = ? ORDER BY evidence_count DESC LIMIT 10`,
   ).bind(id).all<ConstructRow>();
 
-  // 3. Compute deterministic stats from PRs
   const prCount = prs.length;
-  const testTouchRate = prCount > 0
-    ? prs.filter((p) => p.modifies_tests === 1).length / prCount
-    : null;
-  const issueLinkRate = prCount > 0
-    ? prs.filter((p) => p.resolves_issue_number !== null).length / prCount
-    : null;
-  const sweBenchRate = prCount > 0
-    ? prs.filter((p) => p.swe_bench_eligible === 1).length / prCount
-    : null;
-  const changedFileCounts = prs.map((p) => p.changed_file_count);
-  const meanChangedFiles = prCount > 0
-    ? changedFileCounts.reduce((a, b) => a + b, 0) / prCount
-    : null;
+  const testTouchRate = prCount > 0 ? prs.filter((p) => p.modifies_tests === 1).length / prCount : null;
+  const issueLinkRate = prCount > 0 ? prs.filter((p) => p.resolves_issue_number !== null).length / prCount : null;
+  const sweBenchRate  = prCount > 0 ? prs.filter((p) => p.swe_bench_eligible === 1).length / prCount : null;
+  const changedCounts = prs.map((p) => p.changed_file_count);
+  const meanChangedFiles = prCount > 0 ? changedCounts.reduce((a, b) => a + b, 0) / prCount : null;
   const p90ChangedFiles = prCount > 0
     ? (() => {
-        const sorted = [...changedFileCounts].sort((a, b) => a - b);
+        const sorted = [...changedCounts].sort((a, b) => a - b);
         const idx = Math.floor(sorted.length * 0.9);
         return sorted[Math.min(idx, sorted.length - 1)] ?? null;
       })()
     : null;
 
-  function fmt(n: number | null): string {
-    return n === null ? 'unknown' : String(Math.round(n * 100) / 100);
+  return {
+    repo,
+    prs,
+    constructs,
+    stats: { prCount, testTouchRate, issueLinkRate, sweBenchRate, meanChangedFiles, p90ChangedFiles },
+  };
+}
+
+async function runGemmaAnalysis(env: Env, facts: Pass3Facts): Promise<GemmaResult> {
+  const provider = createRoleAgentProvider(env);
+  if (!provider) {
+    throw new Error(
+      'No role-agent LLM provider configured. Set ROLE_AGENT_PROVIDER to cloudflare-ai (AI binding) or vertex-ai (VERTEX_SA_KEY_JSON).',
+    );
   }
 
+  const { repo, prs, constructs, stats } = facts;
+  const fmt = (n: number | null): string => (n === null ? 'unknown' : String(Math.round(n * 100) / 100));
   const constructsList = constructs.map((c) => `${c.construct_slug} (${c.evidence_count})`).join(', ');
   const prSummary = prs.slice(0, 10).map((pr) => ({
     pr_number: pr.pr_number,
@@ -328,7 +422,6 @@ adminRepos.post('/repos/:id/pass3', async (c) => {
     swe_bench_eligible: pr.swe_bench_eligible === 1,
   }));
 
-  // 4. Build prompt
   const systemPrompt = `You are an engineering analyst. Given structured metadata about an open-source repository, produce a JSON object describing the repo's engineering culture and discoverability profile.
 
 Output MUST be valid JSON matching this schema EXACTLY:
@@ -367,11 +460,11 @@ Constraints:
 - test_framework: ${repo.test_framework ?? 'unknown'}
 - seniority_band: ${repo.seniority_band ?? 'unknown'}
 - pr_quality_score: ${repo.pr_quality_score.toFixed(2)}
-- test_touch_rate: ${fmt(testTouchRate)}
-- mean_changed_files: ${fmt(meanChangedFiles)}
-- p90_changed_files: ${fmt(p90ChangedFiles)}
-- issue_link_rate: ${fmt(issueLinkRate)}
-- swe_bench_eligibility_rate: ${fmt(sweBenchRate)}
+- test_touch_rate: ${fmt(stats.testTouchRate)}
+- mean_changed_files: ${fmt(stats.meanChangedFiles)}
+- p90_changed_files: ${fmt(stats.p90ChangedFiles)}
+- issue_link_rate: ${fmt(stats.issueLinkRate)}
+- swe_bench_eligibility_rate: ${fmt(stats.sweBenchRate)}
 - open_pr_count: ${fmt(repo.open_pr_count)}
 - open_feature_issue_count: ${fmt(repo.open_feature_issue_count)}
 
@@ -382,53 +475,45 @@ ${JSON.stringify(prSummary, null, 2)}
 
 Choose an architecture_style from the enum, write the engineering_narrative, and write the repo_searchable_profile. Remember: use only numbers from FACTS.`;
 
-  // 5. Call Gemma via Google AI API (generativelanguage.googleapis.com)
-  if (!c.env.GOOGLE_AI_API_KEY) {
-    return apiError(c, 'INTERNAL_ERROR', 'GOOGLE_AI_API_KEY not configured');
-  }
-  const googleProvider = new GoogleAIProvider(c.env.GOOGLE_AI_API_KEY, 'gemma-4-31b-it');
-  let raw: string;
-  try {
-    const completion = await googleProvider.complete(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      { maxTokens: 4096, forceJson: true },
-    );
-    raw = completion.content ?? '';
-    if (!raw) return apiError(c, 'INTERNAL_ERROR', 'Gemma returned empty response');
-  } catch (err) {
-    return apiError(c, 'INTERNAL_ERROR', `Gemma call failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  const completion = await provider.complete(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    { maxTokens: 4096, forceJson: true },
+  );
+  const raw = completion.content ?? '';
+  if (!raw) throw new Error('Gemma returned empty response');
 
-  // 6. Parse response
   const VALID_ARCH = new Set(['monolith', 'layered_service', 'microservice', 'library', 'unknown']);
+  const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
   let parsed: { architecture_style?: string; engineering_narrative?: string; repo_searchable_profile?: string };
   try {
-    const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     parsed = JSON.parse(stripped) as typeof parsed;
   } catch {
-    return apiError(c, 'INTERNAL_ERROR', `Failed to parse Gemma JSON: ${raw.slice(0, 200)}`);
+    throw new Error(`Failed to parse Gemma JSON: ${raw.slice(0, 200)}`);
   }
 
-  const architectureStyle = VALID_ARCH.has(parsed.architecture_style ?? '')
-    ? parsed.architecture_style
-    : 'unknown';
+  const architectureStyle = VALID_ARCH.has(parsed.architecture_style ?? '') ? parsed.architecture_style! : 'unknown';
   const engineeringNarrative = parsed.engineering_narrative ?? '';
   const repoSearchableProfile = parsed.repo_searchable_profile ?? '';
-
   if (!engineeringNarrative || !repoSearchableProfile) {
-    return apiError(c, 'INTERNAL_ERROR', 'Gemma response missing required fields');
+    throw new Error('Gemma response missing required fields');
   }
 
-  // 7. Content hash (SHA-256 of key signals)
-  const hashInput = `${repo.full_name}|${repo.sloc}|${prCount}|${repo.pr_quality_score}|v2.0.0`;
+  const hashInput = `${repo.full_name}|${repo.sloc}|${stats.prCount}|${repo.pr_quality_score}|v2.0.0`;
   const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(hashInput));
   const contentHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
 
-  // 8. Persist to repo_engineering_signals
-  await c.env.DB.prepare(
+  const modelUsed = provider.name;
+
+  return { architectureStyle, engineeringNarrative, repoSearchableProfile, contentHash, raw, modelUsed };
+}
+
+async function persistSignals(env: Env, id: number, facts: Pass3Facts, gemma: GemmaResult): Promise<void> {
+  // INSERT OR REPLACE wipes any prior verdict/vectorized_at; a re-analysis
+  // explicitly invalidates prior feedback (the narrative just changed).
+  await env.DB.prepare(
     `INSERT OR REPLACE INTO repo_engineering_signals (
        repo_id, signals_version, content_hash,
        test_touch_rate, mean_changed_files, p90_changed_files, issue_link_rate,
@@ -436,56 +521,194 @@ Choose an architecture_style from the enum, write the engineering_narrative, and
        review_density, commit_cadence, satd_density,
        test_style, challenge_surfaces,
        repo_searchable_profile, engineering_narrative, signal_json,
-       model_used, model_version
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       model_used, model_version,
+       admin_verdict, admin_feedback_text, verdict_at, vectorized_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)`,
   ).bind(
     id,
     'v2.0.0',
-    contentHash,
-    testTouchRate,
-    meanChangedFiles,
-    p90ChangedFiles,
-    issueLinkRate,
-    null, // complexity_band — skipped (needs mean_ccn classifier)
-    sweBenchRate,
-    architectureStyle,
-    null, // review_density
-    null, // commit_cadence
-    null, // satd_density
-    null, // test_style — skipped (needs test style classifier)
-    null, // challenge_surfaces — skipped (needs surface classifier)
-    repoSearchableProfile,
-    engineeringNarrative,
-    raw.slice(0, 8000),
-    'google-ai/gemma-4-31b-it',
+    gemma.contentHash,
+    facts.stats.testTouchRate,
+    facts.stats.meanChangedFiles,
+    facts.stats.p90ChangedFiles,
+    facts.stats.issueLinkRate,
+    null,
+    facts.stats.sweBenchRate,
+    gemma.architectureStyle,
+    null,
+    null,
+    null,
+    null,
+    null,
+    gemma.repoSearchableProfile,
+    gemma.engineeringNarrative,
+    gemma.raw.slice(0, 8000),
+    gemma.modelUsed,
     'v1',
   ).run();
+}
 
-  // 9. Vectorize upsert — embed repo_searchable_profile + upsert to REPO_INDEX
+async function vectorizeAndMark(env: Env, id: number, profile: string): Promise<{ vectorized: boolean; vectorizedAt: string | null }> {
+  const vectorizedAt = new Date().toISOString();
   try {
-    const embedResult = (await c.env.AI.run('@cf/baai/bge-large-en-v1.5', {
-      text: [repoSearchableProfile],
+    const embedResult = (await env.AI.run('@cf/baai/bge-large-en-v1.5', {
+      text: [profile],
     })) as { data?: number[][] };
     const vector = embedResult?.data?.[0];
-    if (vector && Array.isArray(vector)) {
-      await c.env.REPO_INDEX.upsert([{
-        id: `repo_${id}`,
-        values: vector,
-        metadata: { disqualified: 0, admin_status: 'approved' },
-      }]);
+    if (!vector || !Array.isArray(vector)) {
+      console.error(`[adminRepos] embedding returned no vector for repo ${id}`);
+      return { vectorized: false, vectorizedAt: null };
     }
+    await env.REPO_INDEX.upsert([{
+      id: `repo_${id}`,
+      values: vector,
+      metadata: { disqualified: 0, admin_status: 'approved' },
+    }]);
+    await env.DB.prepare(
+      `UPDATE repo_engineering_signals SET vectorized_at = ? WHERE repo_id = ?`,
+    ).bind(vectorizedAt, id).run();
+    return { vectorized: true, vectorizedAt };
   } catch (err) {
-    // Non-fatal — D1 is authoritative. Log and continue.
+    // Non-fatal — D1 is authoritative. Log and report.
     console.error(`[adminRepos] vectorize upsert failed for repo ${id}:`, err instanceof Error ? err.message : String(err));
+    return { vectorized: false, vectorizedAt: null };
   }
+}
+
+// ─── POST /api/v1/admin/repos/:id/pass3/analyze ──────────────────────────────
+// Runs Gemma and persists to D1. Does NOT vectorize. Does NOT require an
+// admin_status gate — the whole point is to read the narrative before deciding.
+
+adminRepos.post('/repos/:id/pass3/analyze', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isFinite(id) || id <= 0) return apiError(c, 'VALIDATION_ERROR', 'invalid id');
+
+  const facts = await loadPass3Facts(c.env, id);
+  if (!facts) return apiError(c, 'NOT_FOUND', 'repo not found');
+  if (facts.repo.pass < 2) return apiError(c, 'VALIDATION_ERROR', 'repo has not completed pass 2');
+
+  let gemma: GemmaResult;
+  try {
+    gemma = await runGemmaAnalysis(c.env, facts);
+  } catch (err) {
+    return apiError(c, 'INTERNAL_ERROR', err instanceof Error ? err.message : String(err));
+  }
+
+  await persistSignals(c.env, id, facts, gemma);
 
   return c.json({
     ok: true,
     id,
-    content_hash: contentHash,
-    narrative_len: engineeringNarrative.length,
-    profile_len: repoSearchableProfile.length,
-    architecture_style: architectureStyle,
+    content_hash: gemma.contentHash,
+    architecture_style: gemma.architectureStyle,
+    engineering_narrative: gemma.engineeringNarrative,
+    repo_searchable_profile: gemma.repoSearchableProfile,
+    narrative_len: gemma.engineeringNarrative.length,
+    profile_len: gemma.repoSearchableProfile.length,
+  });
+});
+
+// ─── POST /api/v1/admin/repos/:id/pass3/feedback ─────────────────────────────
+// Writes admin_verdict + optional free-text critique to repo_engineering_signals.
+
+const feedbackSchema = z.object({
+  verdict: z.enum(['approved', 'denied']),
+  feedback_text: z.string().max(4000).optional(),
+});
+
+adminRepos.post('/repos/:id/pass3/feedback', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isFinite(id) || id <= 0) return apiError(c, 'VALIDATION_ERROR', 'invalid id');
+
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return apiError(c, 'VALIDATION_ERROR', 'invalid JSON body'); }
+  const parsed = feedbackSchema.safeParse(body);
+  if (!parsed.success) return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'invalid body');
+
+  const verdictAt = new Date().toISOString();
+  const result = await c.env.DB.prepare(
+    `UPDATE repo_engineering_signals
+       SET admin_verdict = ?, admin_feedback_text = ?, verdict_at = ?
+     WHERE repo_id = ?`,
+  ).bind(parsed.data.verdict, parsed.data.feedback_text ?? null, verdictAt, id).run();
+
+  if (result.meta.changes === 0) {
+    return apiError(c, 'NOT_FOUND', 'no analysis row — run /pass3/analyze first');
+  }
+
+  return c.json({ ok: true, id, verdict: parsed.data.verdict, verdict_at: verdictAt });
+});
+
+// ─── POST /api/v1/admin/repos/:id/pass3/ingest ───────────────────────────────
+// Embeds the already-persisted repo_searchable_profile and upserts it into
+// REPO_INDEX. Requires admin_verdict = 'approved'.
+
+adminRepos.post('/repos/:id/pass3/ingest', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isFinite(id) || id <= 0) return apiError(c, 'VALIDATION_ERROR', 'invalid id');
+
+  const signals = await c.env.DB.prepare(
+    `SELECT admin_verdict, repo_searchable_profile
+     FROM repo_engineering_signals WHERE repo_id = ?`,
+  ).bind(id).first<{ admin_verdict: string | null; repo_searchable_profile: string | null }>();
+
+  if (!signals) return apiError(c, 'NOT_FOUND', 'no analysis row — run /pass3/analyze first');
+  if (signals.admin_verdict !== 'approved') {
+    return apiError(c, 'VALIDATION_ERROR', 'admin_verdict must be "approved" before ingest');
+  }
+  if (!signals.repo_searchable_profile) {
+    return apiError(c, 'VALIDATION_ERROR', 'repo_searchable_profile is empty');
+  }
+
+  const { vectorized, vectorizedAt } = await vectorizeAndMark(c.env, id, signals.repo_searchable_profile);
+  if (!vectorized) {
+    return apiError(c, 'INTERNAL_ERROR', 'vectorize failed — check logs. Note: REPO_INDEX requires --remote runtime.');
+  }
+
+  return c.json({ ok: true, id, vectorized_at: vectorizedAt });
+});
+
+// ─── POST /api/v1/admin/repos/:id/pass3 ──────────────────────────────────────
+// Back-compat one-shot: analyze → auto-approve verdict → ingest.
+// Gated on the legacy admin_status = 'approved' check so the existing approval
+// queue button keeps working.
+
+adminRepos.post('/repos/:id/pass3', async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isFinite(id) || id <= 0) return apiError(c, 'VALIDATION_ERROR', 'invalid id');
+
+  const facts = await loadPass3Facts(c.env, id);
+  if (!facts) return apiError(c, 'NOT_FOUND', 'repo not found');
+  if (facts.repo.admin_status !== 'approved') {
+    return apiError(c, 'VALIDATION_ERROR', 'repo must be approved before running pass 3');
+  }
+  if (facts.repo.pass < 2) return apiError(c, 'VALIDATION_ERROR', 'repo has not completed pass 2');
+
+  let gemma: GemmaResult;
+  try {
+    gemma = await runGemmaAnalysis(c.env, facts);
+  } catch (err) {
+    return apiError(c, 'INTERNAL_ERROR', err instanceof Error ? err.message : String(err));
+  }
+
+  await persistSignals(c.env, id, facts, gemma);
+
+  // Auto-set verdict so the back-compat flow still lands rows in a consistent state.
+  const verdictAt = new Date().toISOString();
+  await c.env.DB.prepare(
+    `UPDATE repo_engineering_signals
+       SET admin_verdict = 'approved', verdict_at = ? WHERE repo_id = ?`,
+  ).bind(verdictAt, id).run();
+
+  await vectorizeAndMark(c.env, id, gemma.repoSearchableProfile);
+
+  return c.json({
+    ok: true,
+    id,
+    content_hash: gemma.contentHash,
+    narrative_len: gemma.engineeringNarrative.length,
+    profile_len: gemma.repoSearchableProfile.length,
+    architecture_style: gemma.architectureStyle,
   });
 });
 

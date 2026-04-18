@@ -204,6 +204,7 @@ function RepoCard({
   onReset,
   onRequeue,
   onRunPass3,
+  onOpen,
   saving,
   requeueing,
   runningPass3,
@@ -214,6 +215,7 @@ function RepoCard({
   onReset: () => void;
   onRequeue: () => void;
   onRunPass3: () => void;
+  onOpen: () => void;
   saving: boolean;
   requeueing: boolean;
   runningPass3: boolean;
@@ -301,10 +303,17 @@ function RepoCard({
         </span>
       </div>
 
-      {/* Repo name */}
-      <div style={{ ...mono, fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', lineHeight: 1.3 }}>
+      {/* Repo name — click to open detail page */}
+      <button
+        onClick={onOpen}
+        style={{
+          ...mono, fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)',
+          lineHeight: 1.3, textAlign: 'left',
+          background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+        }}
+      >
         {repo.full_name}
-      </div>
+      </button>
 
       {/* Stats row */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -801,6 +810,7 @@ export default function RepoAdminPage(): JSX.Element {
               onReset={() => void handleStatusChange(repo.id, 'pending', '')}
               onRequeue={() => void handleRequeue(repo.id)}
               onRunPass3={() => void handleRunPass3(repo.id)}
+              onOpen={() => navigate(`/admin/repos/${repo.id}`)}
             />
           ))}
         </div>

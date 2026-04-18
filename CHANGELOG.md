@@ -6,6 +6,159 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### docs(strategy+adr): Role Discovery Agent Guardrails — Brief 6, RD-49..60, ADR-038 (2026-04-17)
+
+Research brief, STRATEGY integration, and ADR for the three missing guardrails in the role-discovery agent: unstructured `reasoning`, zero compliance scaffolding, no per-sub-topic depth counter.
+
+- `knowledge/role-discovery/role-discovery-guardrails.md` — 98-source cited brief (PASS WITH NOTES, 0 FATAL, 6 MAJOR, 6 MINOR).
+- `knowledge/role-discovery/role-discovery-guardrails-verification.md` — reviewer report.
+- `knowledge/role-discovery/role-discovery-guardrails.provenance.md` — provenance.
+- `knowledge/outputs/.plans/role-discovery-guardrails.md` — research plan.
+- `knowledge/outputs/.drafts/role-discovery-guardrails-draft.md` — Lead draft pre-citation.
+- `knowledge/STRATEGY.md` — added Brief 6, RD-49 through RD-60 (new phase RD-P7), OQ-29 through OQ-36, Decision Log entry.
+- `docs/decisions/ADR-038-role-discovery-agent-guardrails.md` — new ADR (Proposed). Structured rationale schema, 4-tier sensitivity ladder grounded in Title VII/ADA/ADEA/GINA/PDA + CA FEHA + NYC LL144 + CO SB24-205 + IL HB 3773 + EU AI Act, per-sub-topic depth tracking with 3-follow-up ceiling + 3 content signals, cross-family consistency classifier (extends ADR-032 pattern — **corrected 2026-04-17** to Llama 3.1 8B on Workers AI, not an invented Qwen-3B ID), `role_context_feedback` D1 migration + Karpathy-style training loop. 3-PR sequencing (PR1 M1+M3 → PR2 M2+M4 → PR3 M5). 3 calibration experiments.
+- `docs/decisions/README.md` — added ADR-037 + ADR-038 to index.
+
+#### docs: correct Role Discovery provider + classifier model across CLAUDE.md, STRATEGY.md, ADR-038 (2026-04-17)
+
+Two errors surfaced by the founder and fixed at the source so they don't propagate:
+
+- **Provider was wrong.** CLAUDE.md routing table said Role Discovery runs on "Gemma 4 31B · Workers AI." Reality per `workers/api/src/lib/llm/createProvider.ts` + `vertexAIProvider.ts` + `.dev.vars.example`: production uses `gemma-4-26b-a4b-it` on **Vertex AI MaaS** via `ROLE_AGENT_PROVIDER=vertex-ai`; Workers AI `cloudflare-ai` is the code default and fallback. Same Gemma 4 26B model on both paths — only the provider differs. The 31B dense model is not available on Vertex MaaS.
+- **Classifier model was invented.** ADR-038 specified `@cf/qwen/qwen2.5-3b-instruct` which does not exist on Workers AI. Replaced with `@cf/meta/llama-3.1-8b-instruct` — confirmed available, cross-family from Gemma (satisfies Panickssery 2024 independence requirement), runs on the `env.AI` binding regardless of primary provider so the guardrail stays available when Vertex is unhealthy.
+
+Files updated: `CLAUDE.md` (routing table row + quotas note), `docs/decisions/ADR-038-role-discovery-agent-guardrails.md` (§Cross-family classifier, §Consequences cost + risks, §Sequencing M4, §Decision log), `knowledge/STRATEGY.md` (Brief 6 pillar #4 + RD-52 + RD-59 + reviewer calibration note + new Decision Log entry).
+
+#### feat(admin): per-repo detail page with human-gated Pass 3 ingest (2026-04-17)
+
+Operating on 100+ qualified repos in a single approval queue was blunt:
+pass 3 bundled Gemma summarisation with Vectorize upsert so the narrative
+never got read before it entered the index. Added a per-repo detail page
+that splits the two steps and captures the approve/deny decision as a
+feedback signal for future automation.
+
+**Backend** — `workers/api/src/routes/cockpit/adminRepos.ts`:
+- Extracted the existing pass3 body into `loadPass3Facts`, `runGemmaAnalysis`,
+  `persistSignals`, `vectorizeAndMark` helpers.
+- `POST /api/v1/admin/repos/:id/pass3/analyze` — Gemma call + D1 persist.
+  No vectorize. No admin-status gate — the point is to read the narrative
+  before deciding.
+- `POST /api/v1/admin/repos/:id/pass3/feedback` — records `admin_verdict`
+  (`approved` | `denied`) + optional `admin_feedback_text` on
+  `repo_engineering_signals`.
+- `POST /api/v1/admin/repos/:id/pass3/ingest` — embeds the persisted
+  `repo_searchable_profile`, upserts to REPO_INDEX, writes `vectorized_at`.
+  Requires `admin_verdict = 'approved'`.
+- `POST /api/v1/admin/repos/:id/pass3` — preserved as a back-compat one-shot
+  alias for the existing approval-queue "Run pass 3" button.
+- `GET /api/v1/admin/repos/:id` — single repo joined with engineering signals.
+
+**Data model** — `workers/api/migrations/0033_repo_signals_feedback.sql`:
+- Adds `admin_verdict`, `admin_feedback_text`, `verdict_at`, `vectorized_at`
+  to `repo_engineering_signals` (same row as `content_hash` and
+  `signal_json` so later RLHF export is a single join).
+- Index `idx_signals_verdict` on `admin_verdict`.
+
+**Frontend** — `src/pages/admin/RepoDetailPage.tsx`:
+- New route `/admin/repos/:id`. Single-column layout: header (stars, SLOC,
+  mean CCN, PR quality, status), Pass 3 panel, sample PR list (read-only).
+- Pass 3 panel is state-dependent: `Run AI analysis` when no signals row,
+  narrative + `Approve & ingest` / `Deny` when signals exist with no
+  verdict, verdict badge + `Re-run analysis` when verdict is set.
+- Approve-and-ingest chains `/pass3/feedback` → `/pass3/ingest`. Retry
+  button appears if vectorize fails post-approval.
+- Repo name in `RepoAdminPage` is now clickable and navigates to the
+  detail page.
+
+**Research anchor:** `knowledge/STRATEGY.md` Decision Log 2026-04-14
+(canonical `repo_searchable_profile` shape + BGE embedder). Nothing in
+research previously specified human-gated vectorization; this change
+fills that silence rather than overriding a finding. Decision Log entry
+added for 2026-04-17.
+
+**Changed files:**
+- `workers/api/migrations/0033_repo_signals_feedback.sql` (new)
+- `workers/api/src/routes/cockpit/adminRepos.ts`
+- `src/pages/admin/RepoDetailPage.tsx` (new)
+- `src/pages/admin/RepoAdminPage.tsx`
+- `src/App.tsx`
+- `knowledge/STRATEGY.md`
+
+#### feat(role-discovery): review & edit view when going back to ROLE (2026-04-17)
+
+Clicking the `ROLE` step from `INTERVIEW` previously dropped the user back
+into the linear scripted flow — which started from Q1 (idx=0) with all past
+exchanges re-shown, and no way to edit a specific answer or return to the
+interview without re-answering everything.
+
+Root cause for the "starts from Q1" part: `presetSelect` in
+`useScriptedPhase` never called `setIdx(SCRIPTED.length - 1)` in the
+non-`FEATURE_FLAG_LIVE_VOICE` path — it only persisted the advanced index to
+the draft. Going back after a preset left local `idx` at 0.
+
+Fixes:
+- `presetSelect`: now calls `setIdx(SCRIPTED.length - 1)` in the non-flag
+  path to mirror the draft's advanced index.
+- `useScriptedPhase`: added `isComplete` (derived from
+  `exchanges.length >= SCRIPTED.length`) and `editAnswer(qId, newRaw)` — the
+  latter updates `answers` + the matching exchange's display text and
+  persists the draft without touching `idx`.
+- `RoleDiscoveryPage`: when `isInScriptedPhase && scripted.isComplete`,
+  renders a new **review & edit** view — a stacked card per scripted
+  question with its saved answer in an editable `TextInput` / `TagsInput`
+  / choice buttons, plus a `CONTINUE TO INTERVIEW` button that re-fires
+  `handleFire` with the current answers. The linear-flow card is gated to
+  `!scripted.isComplete` so it no longer appears underneath the summary.
+
+**Changed files:**
+- `src/hooks/useScriptedPhase.ts`
+- `src/pages/RoleDiscoveryPage.tsx`
+
+#### fix(role-discovery): default scripted-phase TTS to OFF (2026-04-17)
+
+The scripted-question card auto-spoke each question via TTS by default. Users
+reported it as noisy — the questions are short and readable. Flipped the
+default to OFF; the speaker toggle on the card still lets users opt in.
+
+**Changed files:**
+- `src/pages/RoleDiscoveryPage.tsx`
+
+#### fix(role-discovery): stuck resume banner + clickable step navigation (2026-04-17)
+
+Two issues on `/pipeline/new`:
+
+1. **Stuck "PREVIOUS_SESSION_FOUND" banner.** After the user clicked
+   `RESUME_SESSION`, the banner re-appeared over the active interview. Root
+   cause: `useRoleDiscoveryDraft` returned a fresh `{ load, save, clear }`
+   object literal every render, so `useScriptedPhase`'s mount-restore effect
+   (which depends on `draft`) re-fired on every render — re-invoking
+   `onResumeDraftFound`, which flipped `showResumePrompt` back to `true`.
+2. **No way to navigate between stages** — the `ROLE / INTERVIEW / REVIEW`
+   indicator was display-only.
+
+Fixes:
+- Memoized the `draft` return object so its identity is stable across renders.
+- Added a `hasRestoredRef` guard on `useScriptedPhase`'s mount effect as a
+  belt-and-suspenders defence against future unstable deps.
+- Gated the resume-banner render on `isInScriptedPhase && rd.phase !== 'COMPLETE'`
+  so even if the flag is stale, it can't overlay an active interview or
+  synthesis view.
+- Added `reset()` to `useConversation` + `useRoleDiscovery` (wipes phase,
+  question, exchanges, persona, JD, hydration override).
+- `StepIndicator` now takes an `onStepClick` prop; past steps are clickable
+  with hover feedback. Clicks wire through to:
+  - `ROLE` back-nav: `setInitConfig(null)` (+ `rd.reset()` if in REVIEW).
+    Keeps the scripted draft so the user returns to their answers.
+  - `INTERVIEW` back-nav from REVIEW: `rd.reset()` then re-fires `handleFire`
+    with the current scripted answers so `AIChat` re-initializes with a new
+    `initConfig` reference, creating a fresh context.
+
+**Changed files:**
+- `src/hooks/useRoleDiscoveryDraft.ts`
+- `src/hooks/useScriptedPhase.ts`
+- `src/hooks/useConversation.ts`
+- `src/hooks/useRoleDiscovery.ts`
+- `src/pages/RoleDiscoveryPage.tsx`
+
 #### fix(admin): align /admin/ai-usage with sibling admin page layout (2026-04-17)
 
 `AiUsagePage` was styled like `CultureCostDashboard` — a self-contained

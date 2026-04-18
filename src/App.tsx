@@ -38,6 +38,7 @@ import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
 import RepoAdminPage from "./pages/admin/RepoAdminPage";
 import RepoSearchPage from "./pages/admin/RepoSearchPage";
+import RepoDetailPage from "./pages/admin/RepoDetailPage";
 import AiUsagePage from "./pages/admin/AiUsagePage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
@@ -430,6 +431,7 @@ function App(): JSX.Element {
                     />
                     <Route path="/admin/repos" element={<RepoAdminPage />} />
                     <Route path="/admin/repos/search" element={<RepoSearchPage />} />
+                    <Route path="/admin/repos/:id" element={<RepoDetailPage />} />
                     <Route path="/admin/ai-usage" element={<AiUsagePage />} />
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
