@@ -6,13 +6,13 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
-#### feat(admin): bulk approve + ingest button for suitable+hold repos (2026-04-18)
+#### feat(admin): bulk ingest modal with per-verdict selection + live counts (2026-04-18)
 
-One-shot batch endpoint and UI to vectorize all Pass-3-analyzed repos where Gemma flagged `challenge_suitability_verdict IN ('suitable','hold')` and `vectorized_at IS NULL`. Explicitly approved by founder as a per-repo-gate override (ADR-033, 2026-04-17).
+Replaces the hardcoded "BULK INGEST SUITABLE+HOLD" inline confirm with a proper modal that lets the user choose which Gemma verdicts to include before triggering the batch.
 
-Backend: `POST /api/v1/admin/repos/bulk-ingest` accepts `{ verdicts, limit, feedback_text }` (zod-validated), queries D1 for un-vectorized suitable+hold targets, caps at 200 (Workers subrequest budget), then for each repo: sets `admin_verdict='approved'` + calls existing `vectorizeAndMark` helper (BGE-large embed → REPO_INDEX upsert). Per-repo errors are caught and recorded without aborting the batch. Returns `{ ok, total, ok_count, failed_count, results[] }`.
+Backend: added `GET /api/v1/admin/repos/bulk-ingest/preview` — single `GROUP BY challenge_suitability_verdict` query returning `{ suitable, hold, reject, total_unvectorized }` counts for un-vectorized, profile-ready repos. Registered before the `:id` wildcard routes to avoid Hono path collision. The existing `POST /api/v1/admin/repos/bulk-ingest` is unchanged.
 
-Frontend: amber "BULK INGEST SUITABLE+HOLD" button in the `/admin/repos` header strip. Click expands an inline confirmation ("Overrides per-repo gate.") with CONFIRM / CANCEL. On confirm, shows a spinner, then a dismissible result banner with ok/failed counts. Reloads the repo list on success. No new primitives — inline expand pattern, project color tokens only.
+Frontend: amber "BULK INGEST" button opens a fixed-overlay modal (no modal library). Modal fetches live per-verdict counts on open. Three labeled checkboxes — `SUITABLE` pre-checked (if > 0), `HOLD` and `REJECT` unchecked; disabled + dimmed when count is 0. Warning chip shown under HOLD/REJECT when selected ("Gemma flagged these for human review — selecting bypasses that signal"). Live "SELECTED: N repos" total updates as checkboxes toggle. "CONFIRM & INGEST (N)" button disabled when selection is empty. Escape key and click-outside cancel; focus returns to the trigger button on close. Spinner and result banner unchanged.
 
 Files: `workers/api/src/routes/cockpit/adminRepos.ts`, `src/pages/admin/RepoAdminPage.tsx`.
 

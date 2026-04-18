@@ -13,6 +13,8 @@
  *   POST  /api/v1/admin/repos/:id/pass3/analyze   — Gemma summarization (no vectorize)
  *   POST  /api/v1/admin/repos/:id/pass3/feedback  — record admin verdict + critique
  *   POST  /api/v1/admin/repos/:id/pass3/ingest    — vectorize approved narrative → REPO_INDEX
+ *   GET   /api/v1/admin/repos/bulk-ingest/preview  — per-verdict unvectorized counts
+ *   POST  /api/v1/admin/repos/bulk-ingest         — batch ingest by verdict selection
  *   POST  /api/v1/admin/repos/:id/pass3           — back-compat one-shot (analyze + approve + ingest)
  *
  * Status filter semantics (status= query param):
@@ -821,6 +823,46 @@ adminRepos.post('/repos/:id/pass3/ingest', async (c) => {
   }
 
   return c.json({ ok: true, id, vectorized_at: vectorizedAt });
+});
+
+// ─── GET /api/v1/admin/repos/bulk-ingest/preview ─────────────────────────────
+//
+// Returns per-verdict counts of repos eligible for bulk ingest
+// (vectorized_at IS NULL, repo_searchable_profile non-empty).
+// Registered before /repos/:id routes so Hono does not match 'bulk-ingest' as :id.
+
+interface BulkIngestPreviewResponse {
+  suitable: number;
+  hold: number;
+  reject: number;
+  total_unvectorized: number;
+}
+
+adminRepos.get('/repos/bulk-ingest/preview', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT challenge_suitability_verdict AS verdict, COUNT(*) AS cnt
+     FROM repo_engineering_signals
+     WHERE vectorized_at IS NULL
+       AND repo_searchable_profile IS NOT NULL
+       AND repo_searchable_profile != ''
+     GROUP BY challenge_suitability_verdict`,
+  ).all<{ verdict: string; cnt: number }>();
+
+  const counts: Record<string, number> = {};
+  for (const row of results) {
+    counts[row.verdict] = row.cnt;
+  }
+
+  const suitable = counts['suitable'] ?? 0;
+  const hold = counts['hold'] ?? 0;
+  const reject = counts['reject'] ?? 0;
+
+  return c.json<BulkIngestPreviewResponse>({
+    suitable,
+    hold,
+    reject,
+    total_unvectorized: suitable + hold + reject,
+  });
 });
 
 // ─── POST /api/v1/admin/repos/bulk-ingest ────────────────────────────────────

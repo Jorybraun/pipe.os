@@ -6,7 +6,7 @@
  * (Gemma summarization + Vectorize upsert). Review failed repos.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Database, ExternalLink, Check, X, Loader2, Search, ChevronDown, ChevronRight, Sparkles, GitPullRequest, RefreshCcw, ChevronLeft, PackageOpen } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
@@ -89,6 +89,13 @@ interface BulkIngestResponse {
   results: BulkIngestReportRow[];
 }
 
+interface BulkIngestPreviewCounts {
+  suitable: number;
+  hold: number;
+  reject: number;
+  total_unvectorized: number;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const mono: React.CSSProperties = { fontFamily: '"Space Mono", monospace' };
@@ -126,6 +133,273 @@ const SUITABILITY_COLOR: Record<string, string> = {
   hold: '#fbbf24',
   reject: '#f87171',
 };
+
+// ─── BulkIngestModal ─────────────────────────────────────────────────────────
+
+interface BulkIngestModalProps {
+  onConfirm: (verdicts: string[]) => void;
+  onCancel: () => void;
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
+  api: ReturnType<typeof useApiClient>;
+}
+
+function BulkIngestModal({ onConfirm, onCancel, triggerRef, api }: BulkIngestModalProps): JSX.Element {
+  const [counts, setCounts] = useState<BulkIngestPreviewCounts | null>(null);
+  const [loadingCounts, setLoadingCounts] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [suitable, setSuitable] = useState(true);
+  const [hold, setHold] = useState(false);
+  const [reject, setReject] = useState(false);
+
+  // Focus the backdrop for keyboard capture; overlay traps focus by design
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    backdropRef.current?.focus();
+  }, []);
+
+  // Escape to cancel
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'Escape') onCancel();
+  };
+
+  // Fetch live counts on open
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCounts(true);
+    setFetchError(null);
+
+    void (async () => {
+      try {
+        const res = await api.get<BulkIngestPreviewCounts>('/api/v1/admin/repos/bulk-ingest/preview');
+        if (!cancelled) {
+          setCounts(res);
+          // Pre-check suitable only if > 0
+          setSuitable(res.suitable > 0);
+        }
+      } catch (err) {
+        if (!cancelled) setFetchError(err instanceof Error ? err.message : 'Failed to load counts');
+      } finally {
+        if (!cancelled) setLoadingCounts(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [api]);
+
+  const selectedTotal =
+    (suitable && counts ? counts.suitable : 0) +
+    (hold && counts ? counts.hold : 0) +
+    (reject && counts ? counts.reject : 0);
+
+  const confirmDisabled = selectedTotal === 0;
+
+  const handleConfirm = (): void => {
+    const verdicts: string[] = [];
+    if (suitable) verdicts.push('suitable');
+    if (hold) verdicts.push('hold');
+    if (reject) verdicts.push('reject');
+    onConfirm(verdicts);
+    // Return focus to trigger
+    triggerRef.current?.focus();
+  };
+
+  const handleCancel = (): void => {
+    onCancel();
+    triggerRef.current?.focus();
+  };
+
+  const VERDICT_WARN = 'Gemma flagged these for human review — selecting bypasses that signal';
+
+  return (
+    <div
+      ref={backdropRef}
+      tabIndex={-1}
+      onKeyDown={handleKeyDown}
+      onClick={handleCancel}
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(12,12,14,0.72)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 1000,
+        outline: 'none',
+      }}
+    >
+      {/* Panel — stop propagation so clicks inside don't close */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          ...mono,
+          background: 'var(--pipe-surface, #15161d)',
+          border: '1px solid rgba(251,191,36,0.35)',
+          borderRadius: 8,
+          padding: '24px 28px',
+          width: 420,
+          maxWidth: 'calc(100vw - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 18,
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PackageOpen size={14} color="#fbbf24" />
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#fbbf24', letterSpacing: '0.1em' }}>
+              BULK INGEST
+            </span>
+          </div>
+          <button
+            onClick={handleCancel}
+            aria-label="Close modal"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--pipe-text-dim)', display: 'flex', alignItems: 'center', padding: 2,
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Description */}
+        <p style={{ fontSize: 9, color: 'var(--pipe-text-dim)', margin: 0, lineHeight: 1.6, letterSpacing: '0.04em' }}>
+          Select which Gemma verdicts to include. Only repos with a searchable profile and no prior
+          vectorization are eligible (max 200 per run).
+        </p>
+
+        {/* Counts + checkboxes */}
+        {loadingCounts && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Loader2 size={11} color="#fbbf24" style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', letterSpacing: '0.06em' }}>
+              LOADING COUNTS...
+            </span>
+          </div>
+        )}
+
+        {fetchError && (
+          <div style={{ fontSize: 9, color: '#f87171', letterSpacing: '0.04em' }}>
+            {fetchError}
+          </div>
+        )}
+
+        {!loadingCounts && !fetchError && counts && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* SUITABLE */}
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: counts.suitable > 0 ? 'pointer' : 'default', opacity: counts.suitable === 0 ? 0.4 : 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={suitable}
+                  disabled={counts.suitable === 0}
+                  onChange={(e) => setSuitable(e.target.checked)}
+                  style={{ accentColor: '#4ade80', width: 13, height: 13, cursor: counts.suitable > 0 ? 'pointer' : 'default' }}
+                />
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#4ade80', letterSpacing: '0.08em' }}>
+                  SUITABLE
+                </span>
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginLeft: 'auto' }}>
+                  {counts.suitable} un-vectorized
+                </span>
+              </div>
+            </label>
+
+            {/* HOLD */}
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: counts.hold > 0 ? 'pointer' : 'default', opacity: counts.hold === 0 ? 0.4 : 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={hold}
+                  disabled={counts.hold === 0}
+                  onChange={(e) => setHold(e.target.checked)}
+                  style={{ accentColor: '#fbbf24', width: 13, height: 13, cursor: counts.hold > 0 ? 'pointer' : 'default' }}
+                />
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#fbbf24', letterSpacing: '0.08em' }}>
+                  HOLD
+                </span>
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginLeft: 'auto' }}>
+                  {counts.hold} un-vectorized
+                </span>
+              </div>
+              {hold && (
+                <div style={{ fontSize: 8, color: '#fbbf24', paddingLeft: 21, letterSpacing: '0.03em', lineHeight: 1.5 }}>
+                  {VERDICT_WARN}
+                </div>
+              )}
+            </label>
+
+            {/* REJECT */}
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, cursor: counts.reject > 0 ? 'pointer' : 'default', opacity: counts.reject === 0 ? 0.4 : 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={reject}
+                  disabled={counts.reject === 0}
+                  onChange={(e) => setReject(e.target.checked)}
+                  style={{ accentColor: '#f87171', width: 13, height: 13, cursor: counts.reject > 0 ? 'pointer' : 'default' }}
+                />
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#f87171', letterSpacing: '0.08em' }}>
+                  REJECT
+                </span>
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginLeft: 'auto' }}>
+                  {counts.reject} un-vectorized
+                </span>
+              </div>
+              {reject && (
+                <div style={{ fontSize: 8, color: '#f87171', paddingLeft: 21, letterSpacing: '0.03em', lineHeight: 1.5 }}>
+                  {VERDICT_WARN}
+                </div>
+              )}
+            </label>
+          </div>
+        )}
+
+        {/* Live total */}
+        {!loadingCounts && !fetchError && counts && (
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+            color: selectedTotal > 0 ? '#fbbf24' : 'var(--pipe-text-dim)',
+            borderTop: '1px solid var(--pipe-border)',
+            paddingTop: 12,
+          }}>
+            SELECTED: {selectedTotal} repos
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            onClick={handleCancel}
+            style={{
+              ...mono, fontSize: 9, letterSpacing: '0.08em',
+              padding: '6px 14px',
+              background: 'transparent',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 4, color: 'var(--pipe-text-dim)', cursor: 'pointer',
+            }}
+          >
+            CANCEL
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={confirmDisabled || loadingCounts}
+            style={{
+              ...mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
+              padding: '6px 14px',
+              background: confirmDisabled ? 'rgba(251,191,36,0.04)' : 'rgba(251,191,36,0.12)',
+              border: `1px solid ${confirmDisabled ? 'rgba(251,191,36,0.15)' : 'rgba(251,191,36,0.45)'}`,
+              borderRadius: 4,
+              color: confirmDisabled ? 'rgba(251,191,36,0.35)' : '#fbbf24',
+              cursor: confirmDisabled ? 'default' : 'pointer',
+            }}
+          >
+            CONFIRM &amp; INGEST ({selectedTotal})
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Pill ─────────────────────────────────────────────────────────────────────
 
@@ -644,9 +918,10 @@ export default function RepoAdminPage(): JSX.Element {
   const [runningPass3, setRunningPass3] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkIngesting, setBulkIngesting] = useState(false);
   const [bulkResult, setBulkResult] = useState<BulkIngestResponse | null>(null);
+  const bulkTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -728,14 +1003,14 @@ export default function RepoAdminPage(): JSX.Element {
     }
   };
 
-  const handleBulkIngest = async (): Promise<void> => {
-    setBulkConfirm(false);
+  const handleBulkIngest = async (verdicts: string[]): Promise<void> => {
+    setBulkModalOpen(false);
     setBulkIngesting(true);
     setBulkResult(null);
     setError(null);
     try {
       const res = await api.post<BulkIngestResponse>('/api/v1/admin/repos/bulk-ingest', {
-        verdicts: ['suitable', 'hold'],
+        verdicts,
         feedback_text: 'bulk ingest 2026-04-18',
       });
       setBulkResult(res);
@@ -810,10 +1085,11 @@ export default function RepoAdminPage(): JSX.Element {
             SEMANTIC_SEARCH
           </button>
 
-          {/* Bulk ingest button — one-shot override for suitable+hold repos with vectorized_at IS NULL */}
-          {!bulkConfirm && !bulkIngesting && (
+          {/* Bulk ingest button — opens verdict-selection modal */}
+          {!bulkIngesting && (
             <button
-              onClick={() => setBulkConfirm(true)}
+              ref={bulkTriggerRef}
+              onClick={() => setBulkModalOpen(true)}
               style={{
                 background: 'rgba(251,191,36,0.08)',
                 border: '1px solid rgba(251,191,36,0.3)',
@@ -830,50 +1106,8 @@ export default function RepoAdminPage(): JSX.Element {
               }}
             >
               <PackageOpen size={11} />
-              BULK INGEST SUITABLE+HOLD
+              BULK INGEST
             </button>
-          )}
-
-          {/* Inline confirmation expand */}
-          {bulkConfirm && !bulkIngesting && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 10px',
-                border: '1px solid rgba(251,191,36,0.4)',
-                borderRadius: 4,
-                background: 'rgba(251,191,36,0.06)',
-              }}
-            >
-              <span style={{ ...mono, fontSize: 9, color: '#fbbf24', letterSpacing: '0.06em' }}>
-                Ingest all suitable+hold repos into REPO_INDEX? Overrides per-repo gate.
-              </span>
-              <button
-                onClick={() => void handleBulkIngest()}
-                style={{
-                  ...mono, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em',
-                  padding: '3px 10px',
-                  background: 'rgba(251,191,36,0.15)',
-                  border: '1px solid rgba(251,191,36,0.4)',
-                  borderRadius: 3, color: '#fbbf24', cursor: 'pointer',
-                }}
-              >
-                CONFIRM
-              </button>
-              <button
-                onClick={() => setBulkConfirm(false)}
-                style={{
-                  ...mono, fontSize: 9, padding: '3px 8px',
-                  background: 'transparent',
-                  border: '1px solid var(--pipe-border)',
-                  borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: 'pointer',
-                }}
-              >
-                CANCEL
-              </button>
-            </div>
           )}
 
           {/* In-progress spinner */}
@@ -1076,6 +1310,16 @@ export default function RepoAdminPage(): JSX.Element {
             </div>
           )}
         </>
+      )}
+
+      {/* Bulk ingest modal — portal-free fixed overlay */}
+      {bulkModalOpen && (
+        <BulkIngestModal
+          api={api}
+          triggerRef={bulkTriggerRef}
+          onConfirm={(verdicts) => void handleBulkIngest(verdicts)}
+          onCancel={() => setBulkModalOpen(false)}
+        />
       )}
     </div>
   );
