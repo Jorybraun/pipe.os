@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(admin): repo semantic search returns 0 results post-ingest (2026-04-18)
+
+`POST /api/v1/admin/repos/search` returned empty even when vectors existed in `REPO_INDEX`. Two root causes, one visible symptom.
+
+- **Vectorize metadata filter silently 0-matching.** The query passed `filter: { admin_status: 'approved' }` but Vectorize metadata filters require a metadata index created via `wrangler vectorize create-metadata-index`; without one, the filter matches nothing. Removed the filter — `/pass3/ingest` already gates on `admin_verdict='approved'` so every vector in the index is approved by construction (belt-and-suspenders that was blocking the whole path).
+- **D1 hydration filtered on the wrong status column.** `WHERE qr.admin_status = 'approved'` referenced the pre-Pass-3 queue approval, not the new per-repo Pass-3 verdict. A repo can have `admin_verdict='approved'` on its signals row (what the detail page captures) while `qualified_repos.admin_status` stays `'pending'`. Changed to `res.admin_verdict = 'approved'` so the hydration filter matches the actual Pass-3 gate.
+
+File: `workers/api/src/routes/cockpit/adminRepos.ts` (search route).
+
 #### docs(strategy+adr): Role Discovery Agent Guardrails — Brief 6, RD-49..60, ADR-038 (2026-04-17)
 
 Research brief, STRATEGY integration, and ADR for the three missing guardrails in the role-discovery agent: unstructured `reasoning`, zero compliance scaffolding, no per-sub-topic depth counter.

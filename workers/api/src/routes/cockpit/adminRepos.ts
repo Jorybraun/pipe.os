@@ -749,10 +749,10 @@ adminRepos.post('/repos/search', async (c) => {
     if (!vector || !Array.isArray(vector)) {
       return apiError(c, 'INTERNAL_ERROR', 'embedding failed');
     }
-    queryResult = await c.env.REPO_INDEX.query(vector, {
-      topK: 30,
-      filter: { admin_status: 'approved' },
-    });
+    // No metadata filter: /pass3/ingest already gates on admin_verdict='approved',
+    // so every vector in REPO_INDEX is already approved. Filtering here would require
+    // a Vectorize metadata index and is redundant.
+    queryResult = await c.env.REPO_INDEX.query(vector, { topK: 30 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('needs to be run remotely')) {
@@ -785,7 +785,7 @@ adminRepos.post('/repos/search', async (c) => {
      LEFT JOIN repo_engineering_signals res ON res.repo_id = qr.id
      WHERE qr.id IN (${placeholders})
        AND qr.disqualified = 0
-       AND qr.admin_status = 'approved'`,
+       AND res.admin_verdict = 'approved'`,
   ).bind(...matches.map((m) => m.id)).all<{
     id: number;
     full_name: string;
