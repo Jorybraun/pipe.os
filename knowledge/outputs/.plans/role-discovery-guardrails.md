@@ -48,11 +48,11 @@ Each researcher writes to `knowledge/role-discovery/role-discovery-guardrails-re
 
 | ID | Owner | Task | Status | Output |
 |---|---|---|---|---|
-| T1 | R1-taxonomy | Bad-question rubrics + invasive-question perception + demographic variance | todo | knowledge/role-discovery/role-discovery-guardrails-research-taxonomy.md |
-| T2 | R2-compliance | EEOC / Title VII / ADA / state + international AI-hiring law | todo | knowledge/role-discovery/role-discovery-guardrails-research-compliance.md |
-| T3 | R3-xai | Rationale surfacing + CoT-as-guardrail + Constitutional AI | todo | knowledge/role-discovery/role-discovery-guardrails-research-xai.md |
-| T4 | R4-depth | Laddering depth + probing pivots + consistency classifiers | todo | knowledge/role-discovery/role-discovery-guardrails-research-depth.md |
-| T5 | Lead | Synthesize + draft | todo | knowledge/outputs/.drafts/role-discovery-guardrails-draft.md |
+| T1 | R1-taxonomy | Bad-question rubrics + invasive-question perception + demographic variance | **done** | 22 sources, 7-D rubric → role-discovery-guardrails-research-taxonomy.md |
+| T2 | R2-compliance | EEOC / Title VII / ADA / state + international AI-hiring law | **done** | 26 sources, sensitivity ladder, Mobley v. Workday class cert flagged → role-discovery-guardrails-research-compliance.md |
+| T3 | R3-xai | Rationale surfacing + CoT-as-guardrail + Constitutional AI | **done** | 25 sources, rationale-before-question validated (38.15% gap Tam 2024), Panickssery cross-family judge validated → role-discovery-guardrails-research-xai.md |
+| T4 | R4-depth | Laddering depth + probing pivots + consistency classifiers | **done** | 25 sources, 3-turn threshold (convergent from 5 traditions), consistency classifier generalizes → role-discovery-guardrails-research-depth.md |
+| T5 | Lead | Synthesize + draft | in_progress | knowledge/outputs/.drafts/role-discovery-guardrails-draft.md |
 | T6 | verifier | Inline citations + URL verification | todo | knowledge/role-discovery/role-discovery-guardrails.md |
 | T7 | reviewer | Evidence-integrity review | todo | knowledge/role-discovery/role-discovery-guardrails-verification.md |
 
@@ -60,10 +60,18 @@ Each researcher writes to `knowledge/role-discovery/role-discovery-guardrails-re
 
 | Item | Method | Status | Evidence |
 |---|---|---|---|
-| (populated during run) | | | |
+| All 7 sub-questions covered ≥2 independent sources | Plan review of 4 research files | PASS | R1 n=22, R2 n=26, R3 n=25, R4 n=25 |
+| Compliance includes primary statute + enforcement | R2 inspection | PASS | iTutorGroup $365K settlement + Mobley class cert May 2025 + EEOC amicus |
+| Conversational XAI (not static prediction) studies present | R3 inspection | PASS | Tam EMNLP 2024, IUI 2025, CHI 2025 |
+| Numeric depth threshold with evidence | R4 inspection | PASS | 3 turns convergent from 5 traditions — flagged as inference, not direct measurement |
+| Contradictions flagged | Cross-reading | PASS | R3 internal/external tension (quality lever vs user-gaming) surfaced; R1 cross-cultural aggregate vs sub-group variance surfaced |
+| Acceptance criteria satisfied | Plan review | PASS | All 9 criteria met — proceeding to draft |
 
 ## Decision log
 
 - **2026-04-17** — Research scoped to *guardrails only*. Sales-intake / EVP extraction already covered by the 2026-04-11 brief (`role-discovery-sales-intake.md`). This brief complements, does not duplicate.
 - **2026-04-17** — Using Sonnet-level researchers (not Haiku), as explicitly requested and as prior role-discovery research used.
 - **2026-04-17** — Research files will live in `knowledge/role-discovery/` alongside the prior intake brief, not `knowledge/outputs/`, per user direction ("add the research to /role-discovery").
+- **2026-04-17** — Round 1 complete, no second round needed. All sub-questions have ≥2 independent sources. Key gap: no direct empirical study of follow-up depth in hiring-intake dialogue specifically (R4 flagged this; convergent inference from 5 adjacent domains instead). This gap is recorded in Open Questions, not a blocker — it's the highest-value future experiment PIPE could run.
+- **2026-04-17** — Surprising finding adopted into draft: Trump administration's January 2025 removal of the EEOC AI-guidance doc is *legally irrelevant* — the underlying statutes (Title VII / ADA / ADEA) are unchanged, and state-level regulation (CA FEHA Oct 2025, Colorado SB24-205, Illinois 1/2026) is accelerating in response. Removing the guidance may *increase* enterprise-buyer anxiety.
+- **2026-04-17** — Mobley v. Workday class certification (May 2025) with EEOC amicus endorsing "agent theory" is the single most load-bearing legal finding for PIPE as a platform. Treated as non-negotiable in the design recommendations.

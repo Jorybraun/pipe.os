@@ -123,7 +123,7 @@ There is no single LLM. Different agents use different models so each task picks
 |-----------------------------------|--------------------------------------------|--------------------|---------------------------------------------------------------------|
 | Culture interview agent (turn FSM, scoring) | `@cf/google/gemma-4-26b-a4b-it`     | Workers AI         | Strong instruction-following + structured JSON output, cheap on the AI binding. |
 | Culture scorer (5 dimensions × 5 axes + synthesis) | `@cf/google/gemma-4-26b-a4b-it`  | Workers AI         | 11 calls per scoring run; Gemma keeps the per-interview cost negligible.        |
-| Role Discovery agent (persona + JD synthesis) | Gemma 4 31B (primary)               | Workers AI         | Migrated off Mistral Small. Free-tier-friendly and strong at structured output. |
+| Role Discovery agent (persona + JD synthesis) | `gemma-4-26b-a4b-it`                | Vertex AI (prod) / Workers AI (code default) | Migrated off Mistral Small. Vertex AI MaaS endpoint via `ROLE_AGENT_PROVIDER=vertex-ai` for production throughput; `cloudflare-ai` binding is the code default and the fallback. Same Gemma 4 26B model on both paths — only the provider differs. 31B dense is not yet on MaaS (per `vertexAIProvider.ts`). |
 | Code review implementer agent (junior/mid persona) | Qwen 2.5-Coder 32B                | Workers AI         | Coder-tuned model handles diff understanding + rebuttals well.       |
 | Code review implementer agent (senior persona, premium tier) | Qwen3-Coder (when avail) / Claude Sonnet 4.6 fallback | Workers AI / Anthropic | Senior persona needs stronger reasoning to hold nuanced pushback in-character (research: CR-6, CR-12) |
 | **Consistency classifier (NEW, per ADR-032)** — runs on every implementer turn | **Gemma 4 12B** | **Workers AI** | **Non-negotiable guardrail against agent drift (14–34% off-persona baseline per research). 4-axis JSON classifier. MUST be a different model family than the implementer it guards.** |
@@ -137,10 +137,10 @@ There is no single LLM. Different agents use different models so each task picks
 **Routing principles (locked in, per research):**
 1. **Never use the same model family for implementer and consistency classifier.** Gemma-guarding-Qwen is an independent perspective; Qwen-guarding-Qwen is useless.
 2. **Always keep a ceiling model distinct from production scoring.** Devstral for live scoring; Sonnet 4.6 as offline oracle. Track κ drift.
-3. **Only the real-time hot path runs on Workers AI.** The implementer (per-turn latency) and the consistency classifier (per-turn × every turn) live on Workers AI. Everything else — content generation, tagging, calibration — goes offline via the Anthropic Agent tool path.
+3. **Real-time hot path runs on an edge-local LLM — Workers AI by default, Vertex AI MaaS when a call ceiling demands it.** The code-review implementer, the consistency classifiers (per-turn × every turn), and the culture agent all run on Workers AI. Role Discovery runs the same Gemma 4 26B on Vertex AI MaaS in production (per-token, no daily cap) with Workers AI as code default + fallback. Everything else — content generation, tagging, calibration — goes offline via the Anthropic Agent tool path.
 
 **Quotas to remember:**
-- Workers AI Gemma 4 has a daily call ceiling (~10k) — production interviews must keep below this. Build-time bulk tagging (e.g. wiki sync) uses Haiku 4.5 via the Agent tool, never Gemma.
+- Workers AI Gemma 4 has a daily call ceiling (~10k) — culture interviews must keep below this. When a hot-path agent needs to exceed that ceiling (e.g. role discovery at scale), switch to Vertex AI via `*_PROVIDER=vertex-ai` with the same `gemma-4-26b-a4b-it` model — metered per-token, no daily cap. Build-time bulk tagging (e.g. wiki sync) uses Haiku 4.5 via the Agent tool, never Gemma.
 - Mistral Devstral is metered per-token; budget tracked in `culture_usage_tracking` and `culture_compliance_audit`.
 
 **Build-time vs. runtime:** Workers cannot read the filesystem. Anything that needs to ship to the Worker (question banks, role overlays, calibration fixtures) must be bundled as a TS const via a sync script (see `workers/api/scripts/sync-culture-wiki.ts`).
