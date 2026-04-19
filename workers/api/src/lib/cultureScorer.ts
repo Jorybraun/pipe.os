@@ -160,10 +160,6 @@ export interface CultureScoreReport {
   scoredAt: string;
 }
 
-// ─── Model constant ───────────────────────────────────────────────────────────
-
-const GEMMA_MODEL = '@cf/google/gemma-4-26b-a4b-it';
-
 // ─── BARS rubric table ────────────────────────────────────────────────────────
 // One honest craft-quality 5-level BARS rubric per competency dimension, plus
 // 3 calibration quotes (Low / Medium / High) drawn from plausible candidate
@@ -864,8 +860,7 @@ async function callProvider(
     const completion = await provider.complete(messages, {
       forceJson: true,
       maxTokens,
-      model: GEMMA_MODEL,
-    } as Parameters<typeof provider.complete>[1]);
+    });
     return (completion.content ?? '').trim() || null;
   } catch (err) {
     console.error('[cultureScorer] provider.complete failed:', err);

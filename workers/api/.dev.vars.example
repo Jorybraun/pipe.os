@@ -25,3 +25,5 @@ GOOGLE_AI_API_KEY=your_google_ai_studio_api_key_here
 # VERTEX_AI_REGION=us-central1
 # VERTEX_AI_MODEL=gemma-4-26b-a4b-it
 # ROLE_AGENT_PROVIDER=vertex-ai
+# CULTURE_AGENT_PROVIDER=vertex-ai
+# COPILOT_AGENT_PROVIDER=vertex-ai

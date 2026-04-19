@@ -692,29 +692,57 @@ async function persistSignals(env: Env, id: number, facts: Pass3Facts, gemma: Ge
 
 async function vectorizeAndMark(env: Env, id: number, profile: string): Promise<{ vectorized: boolean; vectorizedAt: string | null }> {
   const vectorizedAt = new Date().toISOString();
+
+  let vector: number[];
   try {
     const embedResult = (await env.AI.run('@cf/baai/bge-large-en-v1.5', {
       text: [profile],
     })) as { data?: number[][] };
-    const vector = embedResult?.data?.[0];
-    if (!vector || !Array.isArray(vector)) {
-      console.error(`[adminRepos] embedding returned no vector for repo ${id}`);
+    const v = embedResult?.data?.[0];
+    if (!v || !Array.isArray(v)) {
+      console.error(`[adminRepos] embed returned no vector for repo ${id}; shape=`, JSON.stringify(embedResult).slice(0, 300));
       return { vectorized: false, vectorizedAt: null };
     }
+    vector = v;
+  } catch (err) {
+    console.error(`[adminRepos] embed failed for repo ${id}:`, err instanceof Error ? `${err.name}: ${err.message}` : String(err));
+    return { vectorized: false, vectorizedAt: null };
+  }
+
+  if (vector.length !== 1024) {
+    console.error(`[adminRepos] embed returned wrong dim for repo ${id}: got ${vector.length}, expected 1024`);
+    return { vectorized: false, vectorizedAt: null };
+  }
+  if (vector.some((n) => !Number.isFinite(n))) {
+    console.error(`[adminRepos] embed returned non-finite values for repo ${id}`);
+    return { vectorized: false, vectorizedAt: null };
+  }
+
+  try {
     await env.REPO_INDEX.upsert([{
       id: `repo_${id}`,
       values: vector,
       metadata: { disqualified: 0, admin_status: 'approved' },
     }]);
-    await env.DB.prepare(
-      `UPDATE repo_engineering_signals SET vectorized_at = ? WHERE repo_id = ?`,
-    ).bind(vectorizedAt, id).run();
-    return { vectorized: true, vectorizedAt };
   } catch (err) {
-    // Non-fatal — D1 is authoritative. Log and report.
-    console.error(`[adminRepos] vectorize upsert failed for repo ${id}:`, err instanceof Error ? err.message : String(err));
+    const errAny = err as { name?: string; message?: string; cause?: unknown; stack?: string };
+    console.error(
+      `[adminRepos] upsert failed for repo ${id}:`,
+      JSON.stringify({
+        name: errAny?.name,
+        message: errAny?.message,
+        cause: errAny?.cause ? String(errAny.cause) : undefined,
+        profileLen: profile.length,
+        vectorLen: vector.length,
+      }),
+    );
     return { vectorized: false, vectorizedAt: null };
   }
+
+  await env.DB.prepare(
+    `UPDATE repo_engineering_signals SET vectorized_at = ? WHERE repo_id = ?`,
+  ).bind(vectorizedAt, id).run();
+  return { vectorized: true, vectorizedAt };
 }
 
 // ─── POST /api/v1/admin/repos/:id/pass3/analyze ──────────────────────────────

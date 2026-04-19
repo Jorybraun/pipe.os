@@ -178,7 +178,11 @@ When the budget is exhausted, STOP asking questions and produce the two final ar
 
 ### Persona rules
 
-- **Evidence-grounded**: every field must be derivable from something the recruiter or stakeholder actually said. If the conversation didn't cover it, use a short placeholder like "Not specified" rather than inventing.
+- **Baseline data is always usable**: The BASELINE FORM DATA above contains the recruiter's direct inputs — role title, company, salary range, and tech stack. These are facts the recruiter entered, not inferences. Always use them:
+  - \`mustHaveSkills\`: start with every technology listed in baseline \`techStack\` (an array), one item per skill. Then expand with anything from the interview. Never leave mustHaveSkills empty if the baseline techStack has entries.
+  - \`seniority\`: derive from the role title in baseline \`title\` if the interview didn't specify it explicitly (e.g. "Senior" in the title → "Senior, 5–8 years").
+  - \`archetype\`: include the role title and company context from baseline as a starting point.
+- **Evidence-grounded for non-baseline fields**: fields like \`disposition\`, \`redFlags\`, \`dealbreakers\`, \`careerSignal\` must come from what the recruiter actually said in the interview. If the conversation didn't cover it, use a short placeholder like "Not specified" or an empty array — don't invent.
 - **Specific over generic**: "PostgreSQL query optimization under load" beats "strong SQL skills". "Has handled a production incident without escalating" beats "production-ready".
 - **Deal-breakers are HARD NOs only**. If the recruiter said "ideally they know Rust but we're flexible" — that's a nice-to-have, not a dealbreaker.
 - **Internal tone can be critical**: the persona is internal hiring truth. If the team has ownership problems or the role is really a dev-ops-disguised-as-backend role, say so plainly in redFlags or disposition.

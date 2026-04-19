@@ -6,6 +6,30 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(role-discovery): mic unblocked during TTS, counter hides during calibration, persona baseline seeding (2026-04-19)
+
+Three UX and correctness fixes:
+
+1. **Mic button unblocked during TTS** (`AIChat.tsx:818`): removed `disabled={isTTSPlaying}` — clicking the mic while AI is speaking now cancels TTS and starts recording via the existing `cancelSpeech()` call inside `startRecording()`.
+
+2. **Question counter hidden during calibration** (`AIChat.tsx:550`): counter `QUESTION_X_OF_Y` now only shows when `conv.phase === 'INTERVIEWING'`, not during the `CALIBRATING` phase. Previously the calibration role-setup question and the first real interview question both showed `QUESTION_1_OF_15`, making the counter appear stuck.
+
+3. **Persona baseline seeding** (`roleAgentPrompts.ts`): added explicit persona rule directing the agent to seed `mustHaveSkills` from the baseline `techStack` array and derive `seniority` from the baseline `title`, so short interviews still produce a populated persona from the recruiter's scripted inputs.
+
+**Bonus:** `Layout.tsx` `overflow: hidden` → `overflow: clip` to fix scroll layout black-area artifact.
+
+Files: `src/components/AIChat/AIChat.tsx`, `src/components/Layout.tsx`, `workers/api/src/lib/roleAgentPrompts.ts`.
+
+#### refactor(llm): route issueScorer through ROLE_AGENT_PROVIDER factory; clean up cultureScorer (2026-04-18)
+
+`issueScorer.ts` was calling `env.AI.run()` directly, bypassing the provider factory and hardwiring Gemma to Workers AI. It now calls `createRoleAgentProvider(env)` — Vertex AI MaaS in production when `ROLE_AGENT_PROVIDER=vertex-ai`, Workers AI binding as fallback. The `extractText` helper and the `MODEL` constant were removed.
+
+`cultureScorer.ts` had a dead `model: GEMMA_MODEL` field being passed in `callProvider` via a type-assertion cast to non-standard `CompleteOptions`. The constant and the cast are removed — the injected provider instance already determines the model.
+
+`.dev.vars.example` documents `CULTURE_AGENT_PROVIDER=vertex-ai` and `COPILOT_AGENT_PROVIDER=vertex-ai` alongside the existing `ROLE_AGENT_PROVIDER=vertex-ai` entry.
+
+Files: `workers/api/src/routes/cron/issueScorer.ts`, `workers/api/src/lib/cultureScorer.ts`, `workers/api/.dev.vars.example`.
+
 #### feat(admin): bulk ingest modal with per-verdict selection + live counts (2026-04-18)
 
 Replaces the hardcoded "BULK INGEST SUITABLE+HOLD" inline confirm with a proper modal that lets the user choose which Gemma verdicts to include before triggering the batch.

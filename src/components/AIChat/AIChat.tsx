@@ -547,7 +547,7 @@ export function AIChat({
       {renderHeader?.()}
 
       {/* Progress bar + domain bars + early submit */}
-      {isAIPhase && (
+      {conv.phase === 'INTERVIEWING' && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{
@@ -815,7 +815,7 @@ export function AIChat({
                       }}>
                         <button
                           onClick={isRecording ? stopRecording : () => { startRecording().catch(() => {}); }}
-                          disabled={isTTSPlaying}
+                          disabled={false}
                           style={{
                             width: 80,
                             height: 80,

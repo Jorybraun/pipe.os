@@ -35,7 +35,7 @@ export function Layout({
         fontFamily: '"Space Mono", monospace',
         color: "var(--pipe-text, #fff)",
         position: "relative",
-        overflow: "hidden",
+        overflow: "clip",
       }}
     >
       {/* Header — fixed to top */}

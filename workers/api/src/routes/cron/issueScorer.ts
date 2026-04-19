@@ -2,7 +2,9 @@
  * Issue Scorer Cron Handler — AI scoring of issues for challenge suitability (RD-P6).
  *
  * Trigger: Sunday 04:00 UTC (configured in wrangler.jsonc, runs after issueCrawler)
- * Model: Gemma 4 26B via Workers AI (@cf/google/gemma-4-26b-a4b-it)
+ * Model: Gemma 4 26B — routed through ROLE_AGENT_PROVIDER factory.
+ *        Set ROLE_AGENT_PROVIDER=vertex-ai in production (Vertex MaaS, no daily cap).
+ *        Falls back to cloudflare-ai Workers AI binding when unset.
  *
  * Flow:
  *   1. Query repo_issues for unscored issues
@@ -13,14 +15,13 @@
  */
 
 import type { Env, IssueDifficultyBand, IssueDisqualifiedReason } from '../../types';
+import { createRoleAgentProvider } from '../../lib/llm/createProvider';
+import type { LLMProvider, LLMMessage } from '../../lib/llm/types';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 /** Number of issues to score per cron invocation. */
 const BATCH_SIZE = 20;
-
-/** Model for issue scoring. */
-const MODEL = '@cf/google/gemma-4-26b-a4b-it';
 
 /** Current signals version (bump when scoring prompt changes). */
 const SIGNALS_VERSION = 1;
@@ -32,11 +33,11 @@ const MAX_BODY_IN_PROMPT = 8000;
 
 export async function handleIssueScorerCron(env: Env): Promise<{ processed: number; errors: string[] }> {
   const db = env.DB;
-  const ai = env.AI;
+  const provider = createRoleAgentProvider(env);
 
-  if (!ai) {
-    console.error('[issueScorer] AI binding not available');
-    return { processed: 0, errors: ['AI binding not available'] };
+  if (!provider) {
+    console.error('[issueScorer] No AI provider available (check ROLE_AGENT_PROVIDER + credentials)');
+    return { processed: 0, errors: ['No AI provider available'] };
   }
 
   // Get cursor from crawler_state
@@ -103,7 +104,7 @@ export async function handleIssueScorerCron(env: Env): Promise<{ processed: numb
 
   for (const issue of issues.results) {
     try {
-      const signals = await scoreIssue(ai, issue);
+      const signals = await scoreIssue(provider, issue);
 
       await insertSignals(db, issue.issue_id, signals);
 
@@ -151,20 +152,14 @@ interface ScoredSignals {
   disqualified_reason: IssueDisqualifiedReason;
 }
 
-async function scoreIssue(ai: Ai, issue: IssueContext): Promise<ScoredSignals> {
+async function scoreIssue(provider: LLMProvider, issue: IssueContext): Promise<ScoredSignals> {
   const prompt = buildScoringPrompt(issue);
-
-  // Type assertion needed because Gemma 4 26B is not in the AiModels type yet
-  const response = await ai.run(MODEL as Parameters<typeof ai.run>[0], {
-    messages: [
-      { role: 'system', content: SCORING_SYSTEM_PROMPT },
-      { role: 'user', content: prompt },
-    ],
-    max_tokens: 1024,
-  });
-
-  const text = extractText(response);
-  return parseScoreResponse(text);
+  const messages: LLMMessage[] = [
+    { role: 'system', content: SCORING_SYSTEM_PROMPT },
+    { role: 'user', content: prompt },
+  ];
+  const completion = await provider.complete(messages, { maxTokens: 1024, forceJson: true });
+  return parseScoreResponse(completion.content ?? '');
 }
 
 function buildScoringPrompt(issue: IssueContext): string {
@@ -250,14 +245,6 @@ You receive a GitHub issue and its repository context. Your job: score whether t
   "disqualified": true | false,
   "disqualified_reason": "too_vague" | "too_large" | "requires_maintainer" | "staff_level" | null
 }`;
-
-function extractText(response: unknown): string {
-  if (typeof response === 'string') return response;
-  if (response && typeof response === 'object' && 'response' in response) {
-    return String((response as { response: unknown }).response);
-  }
-  throw new Error('Unexpected AI response format');
-}
 
 function parseScoreResponse(text: string): ScoredSignals {
   // Strip markdown code fences if present
