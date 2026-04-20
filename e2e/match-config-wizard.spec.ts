@@ -227,4 +227,64 @@ test.describe("Match-config chip on StageStepper", () => {
     // …but no chip when match config is absent.
     await expect(page.locator('[data-testid="match-config-chip"]')).toHaveCount(0);
   });
+
+  test("surfaces auto-build WARN guardrails as a dismissible banner", async ({ page }) => {
+    await page.route(
+      `${API_BASE}/api/v1/pipelines/${seed.pipelineId}/overview`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            overviewResponse(seed, {
+              matchPhilosophy: "tailored",
+              tolerance: "strict",
+              stageLinkage: "shared-repo",
+              automationGranularity: "per-candidate",
+              hybridMixRatio: null,
+            }),
+          ),
+        });
+      },
+    );
+
+    // Navigate with warnings in router state (mirrors the path taken by
+    // RoleDiscoveryPage.handleWizardComplete after a successful /auto-build
+    // response that includes a non-empty `warnings` array).
+    await page.goto(`${APP_BASE}/pipeline/${seed.pipelineId}`);
+    await page.waitForLoadState("networkidle");
+    await page.evaluate(
+      ({ id }) => {
+        window.history.pushState(
+          {
+            usr: {
+              autoBuildWarnings: [
+                {
+                  code: "W-NO-NON-NEGOTIABLE-SKILLS",
+                  severity: "warn",
+                  message:
+                    "no skills marked non-negotiable — repo match will fall back to persona.mustHaveSkills as soft constraints",
+                },
+              ],
+            },
+          },
+          "",
+          `/pipeline/${id}`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      { id: seed.pipelineId },
+    );
+
+    const banner = page.locator('[data-testid="auto-build-warnings-banner"]');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("AUTO_BUILD_WARNINGS");
+    await expect(banner).toContainText("W-NO-NON-NEGOTIABLE-SKILLS");
+
+    // Dismiss and confirm it's gone.
+    await page.locator('[data-testid="auto-build-warnings-dismiss"]').click();
+    await expect(
+      page.locator('[data-testid="auto-build-warnings-banner"]'),
+    ).toHaveCount(0);
+  });
 });

@@ -546,7 +546,10 @@ export default function RoleDiscoveryPage(): JSX.Element {
     setIsAutoBuilding(true);
     setAutoBuildError(null);
     try {
-      const res = await api.post<{ pipeline: { id: string } }>(
+      const res = await api.post<{
+        pipeline: { id: string };
+        warnings?: Array<{ code: string; severity: 'warn'; message: string }>;
+      }>(
         '/api/v1/pipelines/auto-build',
         {
           role_context_id: rd.contextId,
@@ -556,7 +559,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
       );
       draft.clear();
       setIsWizardOpen(false);
-      navigate(`/pipeline/${res.pipeline.id}`);
+      navigate(`/pipeline/${res.pipeline.id}`, {
+        state: res.warnings && res.warnings.length > 0
+          ? { autoBuildWarnings: res.warnings }
+          : undefined,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Auto-build failed';
       setAutoBuildError(message);

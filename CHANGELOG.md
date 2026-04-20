@@ -6,6 +6,32 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(match-config): surface auto-build WARN guardrails in recruiter UI (ADR-039 v1 follow-up) (2026-04-19)
+
+The WARN guardrails the server has always computed are now visible to the recruiter on the destination pipeline page.
+
+**What changed:**
+
+- **`src/pages/RoleDiscoveryPage.tsx`** — `handleWizardComplete` now reads `warnings` off the `/auto-build` 201 response and forwards them to `/pipeline/:id` via React Router's `navigate(..., { state })` when non-empty.
+- **`src/pages/PipelineShellPage.tsx`** — reads `location.state.autoBuildWarnings` once on mount, renders a dismissible amber banner with code + message per warning, and clears `window.history.state` so a hard refresh doesn't replay the banner.
+- **`e2e/match-config-wizard.spec.ts`** — new BDD `surfaces auto-build WARN guardrails as a dismissible banner`: pushes `autoBuildWarnings` into router state, asserts the banner renders the `[W-NO-NON-NEGOTIABLE-SKILLS]` code + message, and dismisses cleanly.
+- **`workers/api/src/routes/cockpit/__tests__/pipelinesAutoBuild.rest.test.ts`** — new module-level REST test (11 cases) locking in the route's Zod body schema, the 422 `GUARDRAIL_BLOCKED` contract, and the 201 `warnings[]` contract the banner depends on.
+
+No API surface change — `/auto-build` already returned `warnings: guardrail.warnings` in both the 201 and 422 responses; this slice wires the frontend through to actually consume it.
+
+#### feat(role-discovery): preserve mid-interview progress on page return (2026-04-19)
+
+When a recruiter navigates away during the AI interview and returns, the session now resumes from exactly where they left off instead of restarting.
+
+**What changed:**
+
+- **`src/lib/api/types.ts`** — Added `RoleContextExchange`, `RoleContextParticipantSummary` types; added `participants` array to `RoleContextFullState` so the GET response carries the exchange history.
+- **`src/hooks/useRoleDiscoveryDraft.ts`** — Added `participantId?` to `RoleDiscoveryDraft` so the creator participant ID is persisted alongside the context ID.
+- **`src/hooks/useConversation.ts`** — Added `hydrateInterviewing()` method: reconstructs `pastExchanges`, `currentQuestion`, `acknowledgment`, `progress`, and `phase` from server-side exchange history without going through `adapter.initialize()`.
+- **`src/hooks/useRoleDiscovery.ts`** — Added `hydrateInterviewing()` wrapper that sets context/participant/role refs before delegating to `conv.hydrateInterviewing()`.
+- **`src/components/AIChat/AIChat.tsx`** — Guard added: skip `conv.initialize()` when `conv.phase !== 'IDLE'` (hydrated session already has state).
+- **`src/pages/RoleDiscoveryPage.tsx`** — Draft persist effect now saves `participantId`; `handleResumeSession` adds mid-interview branch between COMPLETE and restart paths — detects `INTERVIEWING`/`CALIBRATING` participant, calls `rd.hydrateInterviewing()`, and sets `initConfig` to render the `AIChat` phase without re-running initialization.
+
 #### fix(role-agent): increase question maxTokens from 640 to 1024 to prevent truncated JSON (2026-04-19)
 
 Both the streaming and non-streaming paths in `roleAgent.ts` used a 640-token ceiling for question responses, causing the model to cut off mid-JSON when the reasoning field was verbose. Bumped to 1024.
