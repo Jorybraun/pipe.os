@@ -18,6 +18,7 @@ import { useApiClient } from './useApiClient';
 import { useConversation } from './useConversation';
 import type {
   RoleContextBaseline,
+  RoleContextExchange,
   ParticipantRole,
   CandidatePersona,
   GeneratedJobDescription,
@@ -87,6 +88,17 @@ export interface UseRoleDiscoveryResult {
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
   /** Hydrate directly to COMPLETE phase from a server-fetched context (resume path). */
   hydrateComplete: (data: { id: string; baseline: RoleContextBaseline; persona: CandidatePersona | null; jobDescription: GeneratedJobDescription | null }) => void;
+  /** Restore a mid-interview session from server state without calling adapter.initialize(). */
+  hydrateInterviewing: (data: {
+    id: string;
+    participantId: string;
+    participantRole: ParticipantRole | null;
+    baseline: RoleContextBaseline;
+    exchanges: RoleContextExchange[];
+    questionsAsked: number;
+    questionBudget: number;
+    knowledgeState: Record<string, unknown>;
+  }) => void;
   /** Wipe the whole discovery back to IDLE — used by step-indicator back-nav. */
   reset: () => void;
 }
@@ -291,6 +303,28 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     setHydratedJobDescription(data.jobDescription);
   }, []);
 
+  const hydrateInterviewing = useCallback((data: {
+    id: string;
+    participantId: string;
+    participantRole: ParticipantRole | null;
+    baseline: RoleContextBaseline;
+    exchanges: RoleContextExchange[];
+    questionsAsked: number;
+    questionBudget: number;
+    knowledgeState: Record<string, unknown>;
+  }): void => {
+    contextIdRef.current = data.id;
+    participantIdRef.current = data.participantId;
+    participantRoleRef.current = data.participantRole;
+    baselineRef.current = data.baseline;
+    conv.hydrateInterviewing({
+      exchanges: data.exchanges,
+      questionsAsked: data.questionsAsked,
+      questionBudget: data.questionBudget,
+      knowledgeState: data.knowledgeState,
+    });
+  }, [conv]);
+
   const reset = useCallback((): void => {
     contextIdRef.current = null;
     participantIdRef.current = null;
@@ -325,6 +359,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     completeEarly: conv.completeEarly,
     submitFeedback: conv.submitFeedback,
     hydrateComplete,
+    hydrateInterviewing,
     reset,
   };
 }

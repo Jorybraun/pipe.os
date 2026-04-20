@@ -23,6 +23,8 @@ export interface RoleDiscoveryDraft {
   defaultLiveMode: boolean;
   /** Server-side role context ID — saved after context creation to enable resume. */
   contextId?: string;
+  /** Creator participant ID — saved alongside contextId to re-attach on resume. */
+  participantId?: string;
 }
 
 // ─── Storage key ──────────────────────────────────────────────────────────────

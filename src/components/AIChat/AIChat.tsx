@@ -213,6 +213,8 @@ export function AIChat({
 
   useEffect(() => {
     if (!initConfig) return;
+    // Skip if already hydrated (e.g. mid-interview resume via hydrateInterviewing)
+    if (conv.phase !== 'IDLE') return;
     if (defaultLiveModeRef.current && enableLiveVoice) {
       // Voice agent owns the interview — no HTTP turn loop
       handleGoLive(initConfig.baseline as Record<string, unknown>).catch(() => {});

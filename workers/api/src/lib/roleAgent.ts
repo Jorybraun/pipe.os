@@ -522,10 +522,7 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
     { role: 'user', content: userMessage },
   ];
 
-  // Question turns produce compact JSON (~200-400 tokens); synthesis needs full
-  // persona + JD markdown (~600-1200 tokens). Keeping question ceiling tight
-  // cuts generation time by ~30-40% per turn.
-  const maxTokens = budgetExhausted ? 1536 : 640;
+  const maxTokens = budgetExhausted ? 1536 : 1024;
 
   let content: string;
   let toolsUsed: string[];
@@ -606,7 +603,7 @@ export async function* callRoleAgentStream(
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
   ];
-  const maxTokens = budgetExhausted ? 1536 : 640;
+  const maxTokens = budgetExhausted ? 1536 : 1024;
 
   // Stream the response
   const accumulated: string[] = [];

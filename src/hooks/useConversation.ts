@@ -18,6 +18,8 @@ import { ApiError } from '../lib/api/types';
 import type {
   RoleContextQuestion,
   RoleContextProgress,
+  RoleContextExchange,
+  DomainCoverage,
   CandidatePersona,
   GeneratedJobDescription,
 } from '../lib/api/types';
@@ -60,6 +62,17 @@ export interface UseConversationResult {
   respond: (answer: string, questionId: string) => Promise<void>;
   completeEarly: () => Promise<void>;
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
+  /**
+   * Restore INTERVIEWING state from server exchanges — used when resuming a
+   * mid-interview session. Skips adapter.initialize(); the adapter's refs
+   * (contextId/participantId) must be set by the caller before calling this.
+   */
+  hydrateInterviewing: (data: {
+    exchanges: RoleContextExchange[];
+    questionsAsked: number;
+    questionBudget: number;
+    knowledgeState: Record<string, unknown>;
+  }) => void;
   /** Wipe all conversation state back to IDLE — used by step-nav back-buttons. */
   reset: () => void;
 }
@@ -222,6 +235,46 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     [adapter],
   );
 
+  const hydrateInterviewing = useCallback((data: {
+    exchanges: RoleContextExchange[];
+    questionsAsked: number;
+    questionBudget: number;
+    knowledgeState: Record<string, unknown>;
+  }): void => {
+    const { exchanges, questionsAsked, questionBudget, knowledgeState } = data;
+
+    // Last exchange without an answer is the current question awaiting response.
+    const lastExchange = exchanges[exchanges.length - 1];
+    const hasCurrentQuestion = !!lastExchange && !lastExchange.answer;
+    const currentExchange = hasCurrentQuestion ? lastExchange : null;
+    const answeredExchanges = hasCurrentQuestion ? exchanges.slice(0, -1) : exchanges;
+
+    const restored: PastExchange[] = answeredExchanges
+      .filter((ex) => ex.questionId !== 'q-calibration' && ex.answer !== undefined)
+      .map((ex) => ({
+        questionId: ex.questionId,
+        acknowledgment: ex.acknowledgment,
+        questionText: ex.question,
+        answer: ex.answer as string,
+      }));
+
+    const restoredQuestion: RoleContextQuestion | null = currentExchange
+      ? { id: currentExchange.questionId, text: currentExchange.question, input: currentExchange.input }
+      : null;
+
+    const defaultDomains: Record<string, DomainCoverage> = { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' };
+    const coverage = (knowledgeState['_coverage'] as Record<string, DomainCoverage> | undefined) ?? defaultDomains;
+
+    setPastExchanges(restored);
+    setCurrentQuestion(restoredQuestion);
+    setAcknowledgment(currentExchange?.acknowledgment ?? null);
+    setProgress({ asked: questionsAsked, budget: questionBudget, domains: coverage });
+    setPhase('INTERVIEWING');
+    setIsLoading(false);
+    setError(null);
+    setStreamingText('');
+  }, []);
+
   const reset = useCallback((): void => {
     setPhase('IDLE');
     setAcknowledgment(null);
@@ -254,6 +307,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     respond,
     completeEarly,
     submitFeedback,
+    hydrateInterviewing,
     reset,
   };
 }

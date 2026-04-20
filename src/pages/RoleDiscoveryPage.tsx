@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type {
-  RoleContextBaseline, RoleContextProgress,
+  RoleContextBaseline, RoleContextProgress, RoleContextFullState,
   ParseJDResponse, CandidatePersona, GeneratedJobDescription,
 } from '../lib/api/types';
 import type { AdapterConfig } from '../components/AIChat/types';
@@ -418,14 +418,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
     onResumeDraftFound: handleResumeDraftFound,
   });
 
-  // ── Persist contextId to draft whenever it appears ──────────────────────────
+  // ── Persist contextId + participantId to draft when they first appear ────────
 
   useEffect(() => {
     if (!rd.contextId) return;
     const current = draft.load();
     if (!current) return;
-    draft.save({ ...current, contextId: rd.contextId });
-  }, [rd.contextId]); // eslint-disable-line react-hooks/exhaustive-deps
+    draft.save({ ...current, contextId: rd.contextId, ...(rd.participantId ? { participantId: rd.participantId } : {}) });
+  }, [rd.contextId, rd.participantId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Start over — clears draft and resets to Q1 ───────────────────────────────
 
@@ -447,13 +447,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
     // If we have a contextId, try to hydrate from the server
     if (saved.contextId) {
       try {
-        const ctx = await api.get<{
-          id: string;
-          status: string;
-          baseline: RoleContextBaseline;
-          persona: CandidatePersona | null;
-          jobDescription: GeneratedJobDescription | null;
-        }>(`/api/v1/role-contexts/${saved.contextId}`);
+        const ctx = await api.get<RoleContextFullState>(`/api/v1/role-contexts/${saved.contextId}`);
 
         if (ctx.persona || ctx.jobDescription) {
           // Context is COMPLETE — hydrate directly to synthesis, skip the interview
@@ -462,12 +456,30 @@ export default function RoleDiscoveryPage(): JSX.Element {
           setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
           return;
         }
+
+        // Context is mid-interview — restore exchange history and current question
+        const creator = ctx.participants?.find((p) => p.isCreator) ?? ctx.participants?.[0];
+        if (creator && (creator.status === 'INTERVIEWING' || creator.status === 'CALIBRATING') && creator.exchanges.length > 0) {
+          rd.hydrateInterviewing({
+            id: ctx.id,
+            participantId: saved.participantId ?? creator.id,
+            participantRole: creator.participantRole,
+            baseline: ctx.baseline ?? baseline,
+            exchanges: creator.exchanges,
+            questionsAsked: creator.questionsAsked,
+            questionBudget: creator.questionBudget,
+            knowledgeState: ctx.knowledgeState,
+          });
+          setDefaultLiveMode(saved.defaultLiveMode);
+          setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: creator.questionBudget });
+          return;
+        }
       } catch {
-        // Context fetch failed — fall through to normal resume
+        // Context fetch failed — fall through to restart
       }
     }
 
-    // No complete context — restart the AI interview from the saved baseline
+    // No resumable context — restart the AI interview from the saved baseline
     setDefaultLiveMode(saved.defaultLiveMode);
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
   }, [api, rd]);

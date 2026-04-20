@@ -373,25 +373,38 @@ export interface RespondSynthesisResponse {
 
 export type RespondRoleContextResponse = RespondQuestionResponse | RespondSynthesisResponse;
 
+export type RoleContextExchange = {
+  questionId: string;
+  acknowledgment: string;
+  question: string;
+  input: RoleContextQuestionInput;
+  answer?: string;
+};
+
+export interface RoleContextParticipantSummary {
+  id: string;
+  participantRole: ParticipantRole | null;
+  isCreator: boolean;
+  questionsAsked: number;
+  questionBudget: number;
+  status: 'PENDING' | 'INVITED' | 'CALIBRATING' | 'INTERVIEWING' | 'COMPLETE';
+  exchanges: RoleContextExchange[];
+}
+
 export interface RoleContextFullState {
   id: string;
   pipelineId: string | null;
   status: 'BASELINE' | 'INTERVIEWING' | 'COMPLETE' | 'ABANDONED';
   baseline: RoleContextBaseline;
   knowledgeState: Record<string, Record<string, unknown>>;
-  exchanges: Array<{
-    questionId: string;
-    acknowledgment: string;
-    question: string;
-    input: RoleContextQuestionInput;
-    answer?: string;
-  }>;
+  exchanges: RoleContextExchange[];
   /** Persisted persona from prior synthesis — null if not yet synthesized. */
   persona: CandidatePersona | null;
   /** Persisted JD markdown from prior synthesis — null if not yet synthesized. */
   jobDescription: GeneratedJobDescription | null;
   questionBudget: number;
   questionsAsked: number;
+  participants: RoleContextParticipantSummary[];
   createdAt: string;
   updatedAt: string;
 }
