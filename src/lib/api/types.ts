@@ -209,12 +209,27 @@ export interface OverviewRoleContext {
   jobDescription: GeneratedJobDescription | null;
 }
 
+/** Inherited match config (pipeline-level + role-level fallback) — ADR-039. */
+export interface OverviewMatchConfig {
+  matchPhilosophy: 'tailored' | 'hybrid' | 'validate' | null;
+  tolerance: 'strict' | 'moderate' | 'lenient' | null;
+  stageLinkage: 'shared-repo' | 'per-stage' | null;
+  automationGranularity:
+    | 'per-pipeline'
+    | 'per-candidate'
+    | 'per-stage'
+    | 'recruiter-override'
+    | null;
+  hybridMixRatio: number | null;
+}
+
 export interface OverviewResponse {
   pipeline: PipelineListItem;
   stages: OverviewStage[];
   candidates: OverviewCandidate[];
   interviews: unknown[];
   roleContext: OverviewRoleContext | null;
+  matchConfig: OverviewMatchConfig | null;
 }
 
 // ─── Candidates ────────────────────────────────────────────────────────────────

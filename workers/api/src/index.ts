@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { handleScheduled, type ScheduledEvent } from './routes/cron';
 // Cockpit — recruiter config + view CRUD
 import { pipelines } from './routes/cockpit/pipelines';
+import { autoBuild as pipelinesAutoBuild } from './routes/cockpit/pipelinesAutoBuild';
 import { pipelineStages, stageOps, stageChallenges } from './routes/cockpit/stages';
 import { challenges } from './routes/cockpit/challenges';
 import { repoDiscovery } from './routes/cockpit/repoDiscovery';
@@ -72,6 +73,8 @@ app.use(
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.route('/api/v1/pipelines', pipelines);
+// ADR-039 wizard handoff: POST /api/v1/pipelines/auto-build
+app.route('/api/v1/pipelines', pipelinesAutoBuild);
 // Pipeline-scoped stage creation: POST /api/v1/pipelines/:pipelineId/stages
 app.route('/api/v1/pipelines', pipelineStages);
 // Flat stage routes: GET/PATCH/DELETE /api/v1/stages/:stageId

@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Home, Plus, Phone, Users, Zap, FileText, GitPullRequest } from 'lucide-react';
-import type { OverviewStage, OverviewCandidate } from '../../lib/api/types';
+import type { OverviewStage, OverviewCandidate, OverviewMatchConfig } from '../../lib/api/types';
 import type { StageType } from '../../lib/stageTemplates';
 
 /**
@@ -35,6 +36,8 @@ export interface StageStepperProps {
    * form in the EMPTY_PIPELINE quickstart card.
    */
   onAddStage?: () => void;
+  /** Inherited match config (ADR-039). When present, renders a chip per stage. */
+  matchConfig?: OverviewMatchConfig | null;
 }
 
 const NODE_BASE: React.CSSProperties = {
@@ -70,13 +73,31 @@ const CONNECTOR: React.CSSProperties = {
   flex: '0 0 auto',
 };
 
+function formatMatchChip(cfg: OverviewMatchConfig): string {
+  const phil = cfg.matchPhilosophy ? cap(cfg.matchPhilosophy) : '—';
+  const tol = cfg.tolerance ? cap(cfg.tolerance) : '—';
+  const linkage =
+    cfg.stageLinkage === 'shared-repo'
+      ? 'Shared repo'
+      : cfg.stageLinkage === 'per-stage'
+        ? 'Per stage'
+        : '—';
+  return `${phil} · ${tol} · ${linkage}`;
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function StageStepper({
   pipelineId,
   stages,
   candidates,
   canAddStage,
   onAddStage,
+  matchConfig,
 }: StageStepperProps): JSX.Element {
+  const [openTooltipStageId, setOpenTooltipStageId] = useState<string | null>(null);
   return (
     <div
       data-testid="stage-stepper"
@@ -130,6 +151,7 @@ export function StageStepper({
             style={{ display: 'flex', alignItems: 'center' }}
           >
             <div style={CONNECTOR} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
             <NavLink
               to={`/pipeline/${pipelineId}/stage/${stage.id}`}
               data-testid="stepper-stage"
@@ -203,6 +225,56 @@ export function StageStepper({
                 </>
               )}
             </NavLink>
+            {matchConfig && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  data-testid="match-config-chip"
+                  data-stage-id={stage.id}
+                  onClick={() =>
+                    setOpenTooltipStageId((cur) => (cur === stage.id ? null : stage.id))
+                  }
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px',
+                    background: 'transparent',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 4,
+                    color: 'var(--pipe-text-dim)',
+                    fontSize: 9,
+                    letterSpacing: '0.08em',
+                    fontFamily: '"Space Mono", monospace',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                  }}
+                >
+                  MATCH: {formatMatchChip(matchConfig).toUpperCase()}
+                </button>
+                {openTooltipStageId === stage.id && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      left: 0,
+                      right: 0,
+                      padding: 10,
+                      background: '#13131a',
+                      border: '1px solid var(--pipe-border)',
+                      borderRadius: 4,
+                      fontSize: 9,
+                      lineHeight: 1.5,
+                      color: 'var(--pipe-text-muted)',
+                      fontFamily: '"Space Mono", monospace',
+                      zIndex: 10,
+                    }}
+                    data-testid="match-config-tooltip"
+                  >
+                    Inherited from role config. Override coming soon.
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
           </div>
         );
       })}

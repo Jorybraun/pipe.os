@@ -6,6 +6,32 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(role-agent): increase question maxTokens from 640 to 1024 to prevent truncated JSON (2026-04-19)
+
+Both the streaming and non-streaming paths in `roleAgent.ts` used a 640-token ceiling for question responses, causing the model to cut off mid-JSON when the reasoning field was verbose. Bumped to 1024.
+
+#### feat(match-config): wizard + auto-build for 2-station interviews (ADR-039 v1) (2026-04-19)
+
+Smallest end-to-end slice of ADR-039 (Bi-directional Vectorization + 3-Station Interview Trajectory). The recruiter no longer manually creates each stage after Role Discovery — a 5-step wizard captures match philosophy, tolerance, non-negotiable skills, and stage linkage, and one transactional `/auto-build` call provisions the pipeline + 2 stations with repo-matched challenges.
+
+**What landed:**
+
+- **Migration `0037_match_config_extensions.sql`** — `role_contexts.non_negotiable_skills_json` (JSON array, subset of `persona.mustHaveSkills`) and `pipeline_match_config.hybrid_mix_ratio` (REAL 0–1, default 0.6 — the role-leaning default per synthesis §4.3).
+- **`workers/api/src/lib/match/guardrails.ts`** — pure function covering all 5 ADR-039 §4 rules. v1 enforces the 3 BLOCK rules at `/auto-build`; the 2 WARN rules are logged (UI deferred).
+- **`workers/api/src/lib/match/autoStageBuilder.ts`** — picks repo via existing `matchRepos.ts:104` (threading `non_negotiable_skills` as `mustHaveSkills` so the existing `HAVING must_hits = must_total` clause guarantees coverage), then a CODE_REVIEW PR from `repo_sample_prs` (highest swe_bench eligibility, lowest changed-file count), then a CODE_IMPLEMENTATION issue from `repo_issues` JOIN `issue_challenge_signals` (`disqualified=0`, `has_merged_pr=0`, difficulty band by persona seniority). When `stage_linkage='shared-repo'` both stations share a repo; `'per-stage'` runs the matcher twice.
+- **`POST /api/v1/pipelines/auto-build`** — Zod-validated wizard payload, role-context ownership check, guardrails (422 on block), then a single D1 batch writing `pipelines` (creation_mode='AI_DRIVEN') + `pipeline_match_config` + 2 `stages` + 2 `challenges`.
+- **`src/components/RoleDiscovery/MatchConfigWizard.tsx`** — 5-step wizard composed on the existing `<Wizard>` primitive: philosophy (with inline hybrid mix slider when philosophy='hybrid') → tolerance → non-negotiable skills (chips populated from `persona.mustHaveSkills` with explicit "none non-negotiable" opt-out) → stage linkage → review (requiresApproval). InterviewDepthModal visual language.
+- **`src/pages/RoleDiscoveryPage.tsx`** — `SynthesisPhase`'s `onCreatePipeline` now opens the wizard; on approve, posts to `/auto-build` and navigates to `/pipeline/:id`. Legacy direct-create path preserved as `handleLegacyCreatePipeline` for back-compat.
+- **`workers/api/src/routes/cockpit/overview.ts`** — extended to LEFT JOIN `pipeline_match_config` + `role_contexts` so the response includes `matchConfig` (NULL columns fall back to role-level defaults).
+- **`src/components/Pipeline/StageStepper.tsx`** — read-only chip below each stage node showing the inherited config (`MATCH: TAILORED · STRICT · SHARED REPO`); click → "Inherited from role config. Override coming soon." tooltip. No edit modal in v1.
+- **`src/lib/api/types.ts` + `src/hooks/useOverviewData.ts` + `src/pages/PipelineShellPage.tsx`** — `OverviewMatchConfig` type, hook field, and prop wiring for the chip.
+
+**Test coverage:** 18/18 unit tests green (7 `guardrails.test.ts` + 11 `autoStageBuilder.test.ts`); BDD spec `e2e/match-config-wizard.spec.ts` covers chip render path with the API mocked. Full `/auto-build` HTTP integration test deferred (no `@cloudflare/vitest-pool-workers` configured, mirroring the existing `challengeAuthoring.rest.test.ts` pattern).
+
+**Documentation:** ADR-039 decision log row records the v1 scope decisions (wizard-in-Discovery + chip-per-stage UX split resolves OQ-V4; `hybrid_mix_ratio` default 0.6 resolves OQ-V6 with explicit "working default, not validated" caveat; v1 ships 2 stations and ADR_REVIEW remains deferred until OQ-V2 rubric research). STRATEGY.md decision log records the same.
+
+**Carried open questions for v2:** `ADR_REVIEW` rubric (OQ-V2), tolerance band → cosine threshold mapping (OQ-W1; v1 uses `matchRepos` score rank), per-stage repo collision (OQ-W2), wizard step ordering (OQ-W3), empty `persona.mustHaveSkills` recovery (OQ-W4), edit modal for chip (OQ-W5).
+
 #### fix(role-discovery): mic unblocked during TTS, counter hides during calibration, persona baseline seeding (2026-04-19)
 
 Three UX and correctness fixes:

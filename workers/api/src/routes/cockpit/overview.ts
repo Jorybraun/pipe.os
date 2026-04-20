@@ -72,6 +72,34 @@ overview.get('/:pipelineId/overview', async (c) => {
     .bind(pipelineId)
     .all();
 
+  // 4b. Match config (ADR-039) — pipeline-level overrides + role-level fallback
+  // for NULL columns. Returned even when no row exists yet so the chip can
+  // render "—" gracefully.
+  const matchConfigRow = await db
+    .prepare(
+      `SELECT pmc.match_philosophy AS pmc_phil,
+              pmc.tolerance        AS pmc_tol,
+              pmc.stage_linkage    AS stage_linkage,
+              pmc.automation_granularity AS automation_granularity,
+              pmc.hybrid_mix_ratio AS hybrid_mix_ratio,
+              rc.match_philosophy  AS rc_phil,
+              rc.tolerance         AS rc_tol
+         FROM pipelines p
+         LEFT JOIN pipeline_match_config pmc ON pmc.pipeline_id = p.id
+         LEFT JOIN role_contexts rc ON rc.pipeline_id = p.id
+        WHERE p.id = ?`,
+    )
+    .bind(pipelineId)
+    .first<{
+      pmc_phil: string | null;
+      pmc_tol: string | null;
+      stage_linkage: string | null;
+      automation_granularity: string | null;
+      hybrid_mix_ratio: number | null;
+      rc_phil: string | null;
+      rc_tol: string | null;
+    }>();
+
   // 5. Role context (if this pipeline was created via AI discovery).
   // Includes the synthesized persona + job description from Role Discovery v2
   // (migration 0013_persona_jd.sql) so the overview page can render them.
@@ -131,6 +159,15 @@ overview.get('/:pipelineId/overview', async (c) => {
       scheduledAt: iv.scheduled_at as string | null,
       meetingUrl: iv.meeting_url as string | null,
     })),
+    matchConfig: matchConfigRow
+      ? {
+          matchPhilosophy: (matchConfigRow.pmc_phil ?? matchConfigRow.rc_phil) ?? null,
+          tolerance: (matchConfigRow.pmc_tol ?? matchConfigRow.rc_tol) ?? null,
+          stageLinkage: matchConfigRow.stage_linkage ?? null,
+          automationGranularity: matchConfigRow.automation_granularity ?? null,
+          hybridMixRatio: matchConfigRow.hybrid_mix_ratio ?? null,
+        }
+      : null,
     roleContext: roleContextRow
       ? {
           id: roleContextRow.id as string,

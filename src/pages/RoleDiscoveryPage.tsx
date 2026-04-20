@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { TextInput, TagsInput } from '../components/ui/form';
 import { JobDescriptionImportModal } from '../components/RoleDiscovery/JobDescriptionImportModal';
+import { MatchConfigWizard, type MatchConfigOutput } from '../components/RoleDiscovery/MatchConfigWizard';
 import { AIChat } from '../components/AIChat/AIChat';
 import { DomainBars } from '../components/AIChat';
 import { EQVisualizer } from '../components/AIChat/EQVisualizer';
@@ -502,7 +503,24 @@ export default function RoleDiscoveryPage(): JSX.Element {
   }, [rd, scripted.answers, defaultLiveMode, handleFire]);
 
   // ── Pipeline creation ──
-  const handleCreatePipeline = async (): Promise<void> => {
+  // ADR-039: open the MatchConfigWizard before any pipeline write. Wizard
+  // completion calls /api/v1/pipelines/auto-build which provisions the
+  // pipeline + 2 stations atomically. Falls back to legacy blank-pipeline
+  // creation if the role context id is missing (no role to match against).
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [isAutoBuilding, setIsAutoBuilding] = useState(false);
+  const [autoBuildError, setAutoBuildError] = useState<string | null>(null);
+
+  const handleCreatePipeline = (): void => {
+    if (!rd.contextId) {
+      void handleLegacyCreatePipeline();
+      return;
+    }
+    setAutoBuildError(null);
+    setIsWizardOpen(true);
+  };
+
+  const handleLegacyCreatePipeline = async (): Promise<void> => {
     try {
       const baseline = rd.baseline;
       const pipelineId = await createPipeline({
@@ -520,6 +538,30 @@ export default function RoleDiscoveryPage(): JSX.Element {
       navigate(`/pipeline/${pipelineId}`);
     } catch {
       // surfaced via pipeline hook
+    }
+  };
+
+  const handleWizardComplete = async (output: MatchConfigOutput): Promise<void> => {
+    if (!rd.contextId) return;
+    setIsAutoBuilding(true);
+    setAutoBuildError(null);
+    try {
+      const res = await api.post<{ pipeline: { id: string } }>(
+        '/api/v1/pipelines/auto-build',
+        {
+          role_context_id: rd.contextId,
+          pipeline_title: rd.baseline?.title,
+          match_config: output,
+        },
+      );
+      draft.clear();
+      setIsWizardOpen(false);
+      navigate(`/pipeline/${res.pipeline.id}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Auto-build failed';
+      setAutoBuildError(message);
+    } finally {
+      setIsAutoBuilding(false);
     }
   };
 
@@ -909,6 +951,62 @@ export default function RoleDiscoveryPage(): JSX.Element {
           onParsed={handleJDImport}
           onClose={() => setIsJDModalOpen(false)}
         />
+      )}
+
+      {/* Match-config wizard (ADR-039 v1) */}
+      {isWizardOpen && (
+        <div
+          onClick={() => !isAutoBuilding && setIsWizardOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 720,
+              background: '#13131a',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 12,
+              padding: 32,
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+            data-testid="match-config-wizard-modal"
+          >
+            <MatchConfigWizard
+              candidateSkills={rd.persona?.mustHaveSkills ?? []}
+              onComplete={(output) => { void handleWizardComplete(output); }}
+              onCancel={() => !isAutoBuilding && setIsWizardOpen(false)}
+            />
+            {(isAutoBuilding || autoBuildError) && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 12,
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontFamily: '"Space Mono", monospace',
+                  background: autoBuildError ? 'rgba(248, 113, 113, 0.08)' : 'rgba(96, 165, 250, 0.08)',
+                  border: autoBuildError ? '1px solid rgba(248, 113, 113, 0.3)' : '1px solid rgba(96, 165, 250, 0.3)',
+                  color: autoBuildError ? 'rgba(248, 113, 113, 0.9)' : 'rgba(96, 165, 250, 0.9)',
+                }}
+                data-testid="auto-build-status"
+              >
+                {autoBuildError ?? 'Building pipeline + matching repo…'}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

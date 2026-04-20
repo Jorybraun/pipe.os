@@ -71,6 +71,7 @@ export default function PipelineShellPage(): JSX.Element {
     stages,
     candidates,
     roleContext,
+    matchConfig,
     isLoading,
     error,
     refetch,
@@ -340,6 +341,7 @@ export default function PipelineShellPage(): JSX.Element {
           stages={stages}
           candidates={candidates}
           canAddStage={isDraft}
+          matchConfig={matchConfig}
           {...(isDraft
             ? {
                 onAddStage: () => setShowNewStage(true),

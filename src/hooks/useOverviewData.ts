@@ -15,6 +15,7 @@ import type {
   OverviewStage,
   OverviewCandidate,
   OverviewRoleContext,
+  OverviewMatchConfig,
 } from '../lib/api/types';
 import { ApiError } from '../lib/api/types';
 
@@ -24,6 +25,7 @@ export interface UseOverviewDataResult {
   candidates: OverviewCandidate[];
   interviews: unknown[];
   roleContext: OverviewRoleContext | null;
+  matchConfig: OverviewMatchConfig | null;
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
@@ -43,6 +45,7 @@ export function useOverviewData(pipelineId: string | undefined): UseOverviewData
   const [candidates, setCandidates] = useState<OverviewCandidate[]>([]);
   const [interviews, setInterviews] = useState<unknown[]>([]);
   const [roleContext, setRoleContext] = useState<OverviewRoleContext | null>(null);
+  const [matchConfig, setMatchConfig] = useState<OverviewMatchConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -63,6 +66,7 @@ export function useOverviewData(pipelineId: string | undefined): UseOverviewData
       setCandidates(data.candidates);
       setInterviews(data.interviews);
       setRoleContext(data.roleContext);
+      setMatchConfig(data.matchConfig);
     } catch (err) {
       if (err instanceof ApiError) {
         console.error('[useOverviewData] API error:', err.code, err.message);
@@ -106,6 +110,7 @@ export function useOverviewData(pipelineId: string | undefined): UseOverviewData
     candidates,
     interviews,
     roleContext,
+    matchConfig,
     isLoading,
     error,
     refetch: fetchOverview,
