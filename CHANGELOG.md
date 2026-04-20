@@ -6,6 +6,36 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(theme): add Gray's Anatomy theme with parchment palette and spine background (2026-04-20)
+
+New `'anatomy'` ThemeMode with cream/sepia color tokens and an `'anatomy-spine'` background shader that renders the anatomical spine illustration. Selecting the mode auto-configures the spine background; switching back to dark auto-restores liquid-metal.
+
+**What changed:**
+
+- **`src/contexts/ThemeContext.tsx`** — Added `'anatomy'` to `ThemeMode`, `'anatomy-spine'` to `BackgroundSettings.shader`, anatomy color tokens, and auto-background switching in `setMode`.
+- **`src/components/ui/AppBackground.tsx`** — Renders `bg-spine.png` img layer for `anatomy-spine` shader.
+- **`src/components/DisplaySettingsPanel.tsx`** + **`src/components/settings/DisplaySettings.tsx`** — ANATOMY mode button added to the mode toggle.
+- **`src/components/Layout.tsx`** — Anatomy overlay uses parchment `rgba(243,234,213,…)` instead of the generic light value.
+- **`public/bg-spine.png`** — Anatomical spine asset (from marketing page).
+
+#### fix(role-discovery): wizard preserves step progress on modal close/reopen and page reload (2026-04-20)
+
+`MatchConfigWizard` state was lost whenever the user closed the modal (clicked back or cancel) because it used only local React state with no persistence. Re-opening the wizard now restores all fields.
+
+**What changed:**
+
+- **`src/hooks/useRoleDiscoveryDraft.ts`** — Added `wizardDraft?: Partial<MatchConfigOutput>` to `RoleDiscoveryDraft` so in-progress wizard selections survive page navigation.
+- **`src/components/RoleDiscovery/MatchConfigWizard.tsx`** — Added `onChange?: (draft: Partial<MatchConfigOutput>) => void` prop. A `useEffect` watching all five field states calls `onChange` on every change so the caller can persist.
+- **`src/pages/RoleDiscoveryPage.tsx`** — Added `wizardDraft` state (initialized from localStorage draft on mount), `handleWizardDraftChange` callback (saves to draft on each change), and passes `initial={wizardDraft}` + `onChange={handleWizardDraftChange}` to the wizard. Clears `wizardDraft` after successful auto-build.
+
+#### fix(role-agent): synthesis uses wrong system prompt when phaseDirective is active (2026-04-20)
+
+When the budget was exhausted and a phaseDirective was set (always true after RD-P5), `callRoleAgent` and `callRoleAgentStream` selected a phase-specific system prompt (e.g., `QUALIFY_CLOSE`) that only contained the question-turn JSON schema. The synthesis persona fields and job description structure are defined only in `buildRoleAgentSystemPrompt`. The model received "BUDGET EXHAUSTED. Produce synthesis JSON" in the user message but a question-asking system prompt, producing empty `persona` fields ("Not specified", empty arrays).
+
+**What changed:**
+
+- **`workers/api/src/lib/roleAgent.ts`** — Both the non-streaming (`callRoleAgent`) and streaming (`callRoleAgentStream`) paths now use `buildRoleAgentSystemPrompt(participantRole)` when `budgetExhausted=true`, regardless of whether a phaseDirective is set. Phase-specific prompts are only used for question turns.
+
 #### feat(match-config): surface auto-build WARN guardrails in recruiter UI (ADR-039 v1 follow-up) (2026-04-19)
 
 The WARN guardrails the server has always computed are now visible to the recruiter on the destination pipeline page.

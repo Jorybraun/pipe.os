@@ -12,7 +12,7 @@ export type HeatmapColorTheme = 'aurora' | 'neon' | 'calm';
 
 export interface BackgroundSettings {
   enabled: boolean;
-  shader: 'liquid-metal' | 'heatmap';
+  shader: 'liquid-metal' | 'heatmap' | 'anatomy-spine';
   heatmapTheme: HeatmapColorTheme;
   opacity: number;
   speed: number;
@@ -23,7 +23,7 @@ export interface BackgroundSettings {
 
 // ── Full theme ──────────────────────────────────────────────────────────────
 
-export type ThemeMode = 'dark' | 'light';
+export type ThemeMode = 'dark' | 'light' | 'anatomy';
 
 export interface ThemeSettings {
   mode: ThemeMode;
@@ -73,6 +73,20 @@ function saveTheme(theme: ThemeSettings, userId?: string): void {
 // ── CSS custom properties per mode ─────────────────────────────────────────
 
 const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
+  anatomy: {
+    '--pipe-bg': '#f3ead5',
+    '--pipe-text': '#2a1f0e',
+    '--pipe-text-muted': 'rgba(42,31,14,0.55)',
+    '--pipe-text-dim': 'rgba(42,31,14,0.35)',
+    '--pipe-border': 'rgba(42,31,14,0.14)',
+    '--pipe-border-light': 'rgba(42,31,14,0.07)',
+    '--pipe-surface': 'rgba(42,31,14,0.04)',
+    '--pipe-surface-hover': 'rgba(42,31,14,0.09)',
+    '--pipe-surface-solid': '#faf6ed',
+    '--pipe-surface-solid-hover': '#f5edd8',
+    '--pipe-overlay': 'rgba(243,234,213,0.93)',
+    '--pipe-shadow': 'rgba(42,31,14,0.10)',
+  },
   dark: {
     '--pipe-bg': '#15151b',
     '--pipe-text': '#ffffff',
@@ -139,7 +153,17 @@ export function ThemeProvider({ children }: { children: ReactNode }): JSX.Elemen
 
   const setMode = useCallback((mode: ThemeMode) => {
     setTheme((prev) => {
-      const next = { ...prev, mode };
+      const backgroundOverride: Partial<BackgroundSettings> =
+        mode === 'anatomy'
+          ? { shader: 'anatomy-spine', enabled: true, opacity: 0.09 }
+          : mode === 'dark' && prev.mode === 'anatomy'
+          ? { shader: 'liquid-metal', enabled: true, opacity: 0.4 }
+          : {};
+      const next = {
+        ...prev,
+        mode,
+        background: { ...prev.background, ...backgroundOverride },
+      };
       saveTheme(next, userIdRef.current);
       return next;
     });

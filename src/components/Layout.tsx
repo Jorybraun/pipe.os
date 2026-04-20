@@ -21,7 +21,11 @@ export function Layout({
 }: ProfileLayoutProps) {
   const { theme } = useTheme();
   const isDark = theme.mode === 'dark';
-  const overlayAlpha = theme.background.overlay;
+  const overlayColor = theme.mode === 'anatomy'
+    ? `rgba(243,234,213,${theme.background.overlay})`
+    : isDark
+    ? `rgba(12,12,14,${theme.background.overlay})`
+    : `rgba(245,245,247,${theme.background.overlay})`;
   const { setPortalNode, isPortalOpen } = useSidebarPortal();
 
   // The aside is open if either the agentPanel has content OR a portal is active
@@ -31,7 +35,7 @@ export function Layout({
     <div
       style={{
         minHeight: "100vh",
-        background: isDark ? `rgba(12, 12, 14, ${overlayAlpha})` : `rgba(245, 245, 247, ${overlayAlpha})`,
+        background: overlayColor,
         fontFamily: '"Space Mono", monospace',
         color: "var(--pipe-text, #fff)",
         position: "relative",
@@ -45,7 +49,7 @@ export function Layout({
         left: 0,
         right: 0,
         zIndex: 20,
-        background: isDark ? `rgba(12, 12, 14, ${overlayAlpha})` : `rgba(245, 245, 247, ${overlayAlpha})`,
+        background: overlayColor,
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid var(--pipe-border-light, rgba(255,255,255,0.04))",
       }}>
@@ -87,7 +91,7 @@ export function Layout({
               left: "80px",
               top: 100,
               height: "calc(100vh - 120px)",
-              background: isDark ? `rgba(12, 12, 14, ${overlayAlpha})` : `rgba(245, 245, 247, ${overlayAlpha})`,
+              background: overlayColor,
               backdropFilter: "blur(12px)",
               borderRight: "1px solid var(--pipe-border, rgba(255,255,255,0.06))",
               boxShadow: `4px 0 24px var(--pipe-shadow, rgba(0,0,0,0.3))`,

@@ -2,7 +2,7 @@
  * DisplaySettingsPanel — Slide-out panel for user theme/display preferences.
  */
 
-import { X, RotateCcw, Sun, Moon } from 'lucide-react';
+import { X, RotateCcw, Sun, Moon, BookOpen } from 'lucide-react';
 import { useTheme, type HeatmapColorTheme, type ThemeMode } from '../contexts/ThemeContext';
 
 interface DisplaySettingsPanelProps {
@@ -60,6 +60,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
             {([
               { key: 'dark' as ThemeMode, label: 'DARK', icon: <Moon size={12} /> },
               { key: 'light' as ThemeMode, label: 'LIGHT', icon: <Sun size={12} /> },
+              { key: 'anatomy' as ThemeMode, label: 'ANATOMY', icon: <BookOpen size={12} /> },
             ]).map((m) => (
               <button
                 key={m.key}

@@ -47,6 +47,21 @@ export function AppBackground(): JSX.Element {
 
   const shader = bg.shader === 'heatmap'
     ? <PipeHeatmap speed={speed} scale={bg.scale} colorTheme={bg.heatmapTheme} />
+    : bg.shader === 'anatomy-spine'
+    ? (
+      <img
+        src="/bg-spine.png"
+        alt=""
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'contain',
+          objectPosition: 'center',
+          filter: 'grayscale(0.3) sepia(0.15) contrast(0.9)',
+          mixBlendMode: 'multiply',
+        }}
+      />
+    )
     : <PipeLiquidMetal speed={speed} scale={bg.scale} />;
 
   return (
