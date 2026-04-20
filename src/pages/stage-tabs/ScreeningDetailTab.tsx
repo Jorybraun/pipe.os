@@ -49,7 +49,7 @@ const FORMAT_OPTIONS: Array<{
     description: 'Live video meeting in the browser',
     detail: 'Schedule a video room. Both parties join from the browser — no app download needed.',
     icon: Video,
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
   },
   {
     key: 'ONLINE',
@@ -324,8 +324,8 @@ export default function ScreeningDetailTab(): JSX.Element {
               )}
               {currentFormat === 'VIDEO_CALL' && (
                 <>
-                  <InfoCard icon={Video} color="#a78bfa" label="VIDEO_ROOM" text="Browser-based, no app download required" />
-                  <InfoCard icon={Mail} color="#a78bfa" label="NOTIFICATION" text="Candidate receives meeting link via email" />
+                  <InfoCard icon={Video} color="var(--pipe-accent)" label="VIDEO_ROOM" text="Browser-based, no app download required" />
+                  <InfoCard icon={Mail} color="var(--pipe-accent)" label="NOTIFICATION" text="Candidate receives meeting link via email" />
                 </>
               )}
               {currentFormat === 'ONLINE' && (

@@ -386,10 +386,10 @@ function ScreeningFormatPicker({ stageId, stage, updateStage, refetch, triggerRe
                   fontWeight: 700,
                   letterSpacing: '0.08em',
                   fontFamily: '"Space Mono", monospace',
-                  background: isPending ? 'rgba(251,191,36,0.08)' : isCurrent ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
-                  border: isPending ? '1px solid rgba(251,191,36,0.3)' : isCurrent ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                  background: isPending ? 'rgba(251,191,36,0.08)' : isCurrent ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
+                  border: isPending ? '1px solid rgba(251,191,36,0.3)' : isCurrent ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
                   borderRadius: 4,
-                  color: isPending ? '#fbbf24' : isCurrent ? '#a78bfa' : 'var(--pipe-text-dim)',
+                  color: isPending ? '#fbbf24' : isCurrent ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                   textAlign: 'left',
@@ -503,12 +503,12 @@ function ScreeningCallConfig({ format, stageId, stage, updateStage, refetch, tri
           borderRadius: 6,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            {isPhone ? <PhoneCall size={14} color="#60a5fa" /> : <Video size={14} color="#a78bfa" />}
+            {isPhone ? <PhoneCall size={14} color="#60a5fa" /> : <Video size={14} color="var(--pipe-accent)" />}
             <span style={{
               fontSize: 9,
               fontWeight: 700,
               letterSpacing: '0.1em',
-              color: isPhone ? '#60a5fa' : '#a78bfa',
+              color: isPhone ? '#60a5fa' : 'var(--pipe-accent)',
             }}>
               {isPhone ? 'PHONE_SCREENING' : 'VIDEO_SCREENING'}
             </span>
@@ -911,10 +911,10 @@ function TypeSelector({ onSelect, currentType, pendingType }: {
                   fontWeight: 700,
                   letterSpacing: '0.08em',
                   fontFamily: '"Space Mono", monospace',
-                  background: isPending ? 'rgba(251,191,36,0.08)' : isActive ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
-                  border: isPending ? '1px solid rgba(251,191,36,0.3)' : isActive ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                  background: isPending ? 'rgba(251,191,36,0.08)' : isActive ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
+                  border: isPending ? '1px solid rgba(251,191,36,0.3)' : isActive ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
                   borderRadius: 4,
-                  color: isPending ? '#fbbf24' : isActive ? '#a78bfa' : 'var(--pipe-text-dim)',
+                  color: isPending ? '#fbbf24' : isActive ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                   textAlign: 'left',
@@ -1017,7 +1017,7 @@ function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boole
         height: 20,
         borderRadius: 10,
         border: 'none',
-        background: value ? '#a78bfa' : 'var(--pipe-surface)',
+        background: value ? 'var(--pipe-accent)' : 'var(--pipe-surface)',
         cursor: 'pointer',
         position: 'relative',
         transition: 'background 0.2s',

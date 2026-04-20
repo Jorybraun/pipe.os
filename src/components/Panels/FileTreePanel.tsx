@@ -108,7 +108,7 @@ function TreeNodeItem({
     : ['js', 'jsx'].includes(ext) ? '#f7df1e'
     : ['json'].includes(ext) ? '#64748b'
     : ['md', 'mdx'].includes(ext) ? '#60a5fa'
-    : ['css', 'scss'].includes(ext) ? '#a78bfa'
+    : ['css', 'scss'].includes(ext) ? 'var(--pipe-accent)'
     : 'rgba(255,255,255,0.35)';
 
   return (

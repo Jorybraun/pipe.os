@@ -189,7 +189,7 @@ function CallFlowDetail({
         { icon: CheckCircle2, text: 'Advance candidate to next stage or reject' },
       ];
 
-  const accentColor = isPhone ? '#60a5fa' : '#a78bfa';
+  const accentColor = isPhone ? '#60a5fa' : 'var(--pipe-accent)';
   const accentBg = isPhone ? 'rgba(96,165,250,0.06)' : 'rgba(167,139,250,0.06)';
 
   return (

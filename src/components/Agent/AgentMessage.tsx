@@ -56,7 +56,7 @@ export function AgentMessage({ message }: AgentMessageProps): JSX.Element {
                 style={{
                   ...mono,
                   fontSize: 7,
-                  color: '#a78bfa',
+                  color: 'var(--pipe-accent)',
                   padding: '1px 5px',
                   borderRadius: 2,
                   background: 'rgba(167,139,250,0.1)',

@@ -475,10 +475,10 @@ export default function PipelineInsightsPanel(): JSX.Element {
                   fontWeight: 700,
                   letterSpacing: '0.15em',
                   fontFamily: '"Space Mono", monospace',
-                  background: 'rgba(167,139,250,0.12)',
-                  border: '1px solid rgba(167,139,250,0.35)',
+                  background: 'var(--pipe-accent-surface)',
+                  border: '1px solid var(--pipe-accent-border)',
                   borderRadius: 6,
-                  color: '#a78bfa',
+                  color: 'var(--pipe-accent)',
                   cursor: 'pointer',
                 }}
               >
@@ -548,7 +548,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
             ) : effectiveTab === 'job_description' ? (
               <FileText size={16} color="#60a5fa" />
             ) : effectiveTab === 'profile' ? (
-              <Sparkles size={16} color="#a78bfa" />
+              <Sparkles size={16} color="var(--pipe-accent)" />
             ) : effectiveTab === 'insights' ? (
               <Activity size={16} color="#4ade80" />
             ) : (

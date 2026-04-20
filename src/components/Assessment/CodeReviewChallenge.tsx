@@ -533,7 +533,7 @@ export function CodeReviewChallenge({
                   style={{
                     fontSize: 10,
                     color:
-                      submission.annotations.length > 0 ? '#a78bfa' : 'rgba(255,255,255,0.3)',
+                      submission.annotations.length > 0 ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.3)',
                     fontWeight: 700,
                   }}
                 >

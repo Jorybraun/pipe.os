@@ -53,7 +53,7 @@ const STAGE_OPTIONS: StageTypeOption[] = [
     detail:
       'An AI agent conducts a structured behavioral interview. Questions drawn from a curated bank across 5 competency dimensions. Scores against BARS rubrics and compares to your team benchmark.',
     icon: Brain,
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
   },
   {
     key: 'QUESTIONS',

@@ -207,7 +207,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
           Isolated lifecycle test for the Fargate + code-server pipeline. Launch
           a container, verify the iframe renders, then destroy it. Once stable,
           this will be extracted into{' '}
-          <code style={{ color: '#a78bfa' }}>SystemEnvironmentShell</code>.
+          <code style={{ color: 'var(--pipe-accent)' }}>SystemEnvironmentShell</code>.
         </p>
       </div>
 
@@ -319,7 +319,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
                   ? 'rgba(248,113,113,0.15)'
                   : 'linear-gradient(135deg, rgba(167,139,250,0.2), rgba(139,92,246,0.15))',
               border: `1px solid ${state === 'ERROR' ? 'rgba(248,113,113,0.4)' : 'rgba(167,139,250,0.4)'}`,
-              color: state === 'ERROR' ? '#f87171' : '#a78bfa',
+              color: state === 'ERROR' ? '#f87171' : 'var(--pipe-accent)',
               fontSize: 11,
               letterSpacing: '0.15em',
               fontWeight: 700,

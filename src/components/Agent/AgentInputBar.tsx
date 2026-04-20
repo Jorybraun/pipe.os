@@ -51,10 +51,10 @@ export function AgentInputBar({ onSend, isThinking, skillMode, onSkillModeChange
                 fontWeight: 700,
                 letterSpacing: '0.1em',
                 padding: '3px 8px',
-                background: active ? 'rgba(167,139,250,0.12)' : 'transparent',
-                border: `1px solid ${active ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                background: active ? 'var(--pipe-accent-surface)' : 'transparent',
+                border: `1px solid ${active ? 'var(--pipe-accent-border)' : 'rgba(255,255,255,0.06)'}`,
                 borderRadius: 3,
-                color: active ? '#a78bfa' : 'var(--pipe-text-dim)',
+                color: active ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
                 cursor: 'pointer',
               }}
             >

@@ -26,8 +26,8 @@ function typeLabel(type: string): string {
 function typeColor(type: string): string {
   if (type === 'QUIZ_MCQ') return '#4ade80';
   if (type === 'QUIZ_SHORT_ANSWER') return '#fbbf24';
-  if (type === 'FOLLOW_UP') return '#a78bfa';
-  if (type === 'CODE_IMPLEMENTATION') return '#a78bfa';
+  if (type === 'FOLLOW_UP') return 'var(--pipe-accent)';
+  if (type === 'CODE_IMPLEMENTATION') return 'var(--pipe-accent)';
   return '#60a5fa';
 }
 

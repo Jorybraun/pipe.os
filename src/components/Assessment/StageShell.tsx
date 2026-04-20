@@ -44,7 +44,7 @@ export function StageShell({
         <div style={{ 
           height: '100%', 
           width: `${progressPercent}%`, 
-          background: 'linear-gradient(90deg, #60a5fa, #a78bfa)', 
+          background: 'linear-gradient(90deg, #60a5fa, var(--pipe-accent))', 
           transition: 'width 0.5s ease-out',
           boxShadow: '0 0 10px rgba(167, 139, 250, 0.5)'
         }} />

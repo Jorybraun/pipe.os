@@ -98,7 +98,7 @@ function getSignalColors(signal: string): { text: string; bg: string; border: st
 
 const CHALLENGE_TYPE_COLORS: Record<string, string> = {
   CODE_REVIEW: "#60a5fa",
-  CODE_IMPLEMENTATION: "#a78bfa",
+  CODE_IMPLEMENTATION: "var(--pipe-accent)",
   QUIZ_MCQ: "#4ade80",
   QUIZ_SHORT_ANSWER: "#fbbf24",
   AGENT_INTERVIEW: "#06b6d4",
@@ -658,7 +658,7 @@ function ChallengeCard({
                     style={{
                       margin: 0,
                       fontSize: 13,
-                      color: "#a78bfa",
+                      color: "var(--pipe-accent)",
                       fontFamily: '"Space Mono", monospace',
                       lineHeight: 1.6,
                       whiteSpace: "pre-wrap",
@@ -723,7 +723,7 @@ function ChallengeCard({
                       style={{
                         width: "100%",
                         cursor: "pointer",
-                        accentColor: "#a78bfa",
+                        accentColor: "var(--pipe-accent)",
                       }}
                     />
                   </div>
@@ -1193,7 +1193,7 @@ export default function CandidateProfilePage(): JSX.Element {
               border: "none",
               borderBottom:
                 selectedTab === "INTELLIGENCE"
-                  ? "2px solid #a78bfa"
+                  ? "2px solid var(--pipe-accent)"
                   : "2px solid transparent",
               display: "flex",
               alignItems: "center",
@@ -1206,7 +1206,7 @@ export default function CandidateProfilePage(): JSX.Element {
               size={12}
               color={
                 selectedTab === "INTELLIGENCE"
-                  ? "#a78bfa"
+                  ? "var(--pipe-accent)"
                   : "rgba(255,255,255,0.25)"
               }
             />
@@ -1216,7 +1216,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 fontWeight: 800,
                 color:
                   selectedTab === "INTELLIGENCE"
-                    ? "#a78bfa"
+                    ? "var(--pipe-accent)"
                     : "rgba(255,255,255,0.35)",
                 fontFamily: '"Space Mono", monospace',
                 letterSpacing: "0.05em",
@@ -1235,7 +1235,7 @@ export default function CandidateProfilePage(): JSX.Element {
                 <div
                   style={{
                     fontSize: 11,
-                    color: "#a78bfa",
+                    color: "var(--pipe-accent)",
                     fontFamily: '"Space Mono", monospace',
                     letterSpacing: "0.2em",
                     marginBottom: 16,
@@ -1256,7 +1256,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     style={{
                       width: "40%",
                       height: "100%",
-                      background: "#a78bfa",
+                      background: "var(--pipe-accent)",
                       animation: "slide 1.5s infinite ease-in-out",
                     }}
                   />

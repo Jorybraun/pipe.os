@@ -27,7 +27,7 @@ const CONTEXT_COLORS: Record<string, string> = {
   WHY:            '#60a5fa',
   FIX:            '#f87171',
   MISSED:         '#fbbf24',
-  PRIORITISATION: '#a78bfa',
+  PRIORITISATION: 'var(--pipe-accent)',
   DEPTH:          '#4ade80',
 };
 

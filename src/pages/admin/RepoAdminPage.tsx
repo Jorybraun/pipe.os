@@ -104,7 +104,7 @@ const SENIORITY_COLOR: Record<string, string> = {
   junior: '#4ade80',
   mid: '#fbbf24',
   senior: '#f87171',
-  staff: '#a78bfa',
+  staff: 'var(--pipe-accent)',
 };
 
 const STATUS_FILTERS: Array<{ key: FilterKey; label: string; color: string }> = [
@@ -489,7 +489,7 @@ function PRRow({ pr }: { pr: SamplePR }): JSX.Element {
             <span style={{ ...mono, fontSize: 7, color: '#60a5fa' }}>fixes #{pr.resolves_issue_number}</span>
           )}
           {pr.swe_bench_eligible === 1 && (
-            <span style={{ ...mono, fontSize: 7, color: '#a78bfa' }}>swe-bench</span>
+            <span style={{ ...mono, fontSize: 7, color: 'var(--pipe-accent)' }}>swe-bench</span>
           )}
         </div>
       </div>
@@ -652,7 +652,7 @@ function RepoCard({
         )}
         <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)' }}>pass {repo.pass}</span>
         {repo.has_signals === 1 && (
-          <span style={{ ...mono, fontSize: 8, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-accent)', display: 'flex', alignItems: 'center', gap: 3 }}>
             <Sparkles size={8} /> SIGNALS
           </span>
         )}
@@ -793,7 +793,7 @@ function RepoCard({
               padding: '4px 10px',
               background: 'rgba(167,139,250,0.08)',
               border: '1px solid rgba(167,139,250,0.25)',
-              borderRadius: 3, color: '#a78bfa', cursor: 'pointer',
+              borderRadius: 3, color: 'var(--pipe-accent)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 4,
               opacity: runningPass3 ? 0.6 : 1,
             }}

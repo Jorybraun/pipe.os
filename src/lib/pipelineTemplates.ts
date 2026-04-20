@@ -45,7 +45,7 @@ export const PIPELINE_TEMPLATES: PipelineTemplate[] = [
     key: 'BACKEND_ENGINEER',
     label: 'Backend Engineer',
     description: 'Screening → Technical → Panel',
-    accent: '#a78bfa',
+    accent: 'var(--pipe-accent)',
     stages: [
       { stageType: 'SCREENING', title: 'Screening' },
       { stageType: 'TECHNICAL', title: 'Technical' },

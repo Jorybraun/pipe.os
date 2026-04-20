@@ -57,8 +57,10 @@ export function AppBackground(): JSX.Element {
           height: '100%',
           objectFit: 'contain',
           objectPosition: 'center',
-          filter: 'grayscale(0.3) sepia(0.15) contrast(0.9)',
-          mixBlendMode: 'multiply',
+          filter: theme.mode === 'anatomy-dark'
+            ? 'invert(1) grayscale(0.3) sepia(0.15) contrast(0.9)'
+            : 'grayscale(0.3) sepia(0.15) contrast(0.9)',
+          mixBlendMode: theme.mode === 'anatomy-dark' ? 'screen' : 'multiply',
         }}
       />
     )

@@ -34,7 +34,7 @@ const TYPE_COLORS = {
   CODE_IMPLEMENTATION: {
     bg: "rgba(167, 139, 250, 0.1)",
     border: "rgba(167, 139, 250, 0.3)",
-    text: "#a78bfa",
+    text: "var(--pipe-accent)",
     icon: Code,
   },
   QUIZ_MCQ: {

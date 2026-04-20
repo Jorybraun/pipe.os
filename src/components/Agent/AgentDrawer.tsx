@@ -63,12 +63,12 @@ export function AgentDrawer({ pipelineId, skillMode, onClose, onSkillModeChange 
           flexShrink: 0,
         }}
       >
-        <Bot size={16} color="#a78bfa" />
+        <Bot size={16} color="var(--pipe-accent)" />
         <div style={{ flex: 1 }}>
           <div style={{ ...mono, fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: 'var(--pipe-text)' }}>
             COPILOT
           </div>
-          <div style={{ ...mono, fontSize: 8, color: '#a78bfa', letterSpacing: '0.1em', marginTop: 2 }}>
+          <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-accent)', letterSpacing: '0.1em', marginTop: 2 }}>
             {SKILL_LABELS[chat.skillMode] ?? chat.skillMode.toUpperCase()}
           </div>
         </div>

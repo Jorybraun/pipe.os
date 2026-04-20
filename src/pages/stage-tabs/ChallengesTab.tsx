@@ -345,7 +345,7 @@ export default function ChallengesTab(): JSX.Element {
               const isCall = fmt === 'PHONE_CALL' || fmt === 'VIDEO_CALL';
               if (isCall) {
                 const Icon = fmt === 'PHONE_CALL' ? PhoneCall : Video;
-                const accentColor = fmt === 'PHONE_CALL' ? '#60a5fa' : '#a78bfa';
+                const accentColor = fmt === 'PHONE_CALL' ? '#60a5fa' : 'var(--pipe-accent)';
                 const accentBg =
                   fmt === 'PHONE_CALL'
                     ? 'rgba(96,165,250,0.06)'
@@ -465,9 +465,9 @@ export default function ChallengesTab(): JSX.Element {
                 style={{
                   padding: '12px 16px',
                   background: 'rgba(12, 12, 14, 0.95)',
-                  border: '1px solid rgba(167,139,250,0.3)',
+                  border: '1px solid var(--pipe-accent-border)',
                   borderRadius: 8,
-                  color: '#a78bfa',
+                  color: 'var(--pipe-accent)',
                   fontSize: 10,
                   fontWeight: 700,
                   fontFamily: '"Space Mono", monospace',

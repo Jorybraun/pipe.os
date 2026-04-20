@@ -9,7 +9,7 @@
  * caller POSTs to /api/v1/pipelines/auto-build.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Wizard, WizardStepContent, type WizardStep } from '../ui/Wizard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -78,6 +78,8 @@ export interface MatchConfigWizardProps {
   onComplete: (output: MatchConfigOutput) => void;
   onCancel?: () => void;
   initial?: Partial<MatchConfigOutput>;
+  /** Called whenever any field changes — caller can persist for back-navigation resume. */
+  onChange?: (draft: Partial<MatchConfigOutput>) => void;
 }
 
 export function MatchConfigWizard({
@@ -85,6 +87,7 @@ export function MatchConfigWizard({
   onComplete,
   onCancel,
   initial,
+  onChange,
 }: MatchConfigWizardProps): JSX.Element {
   const [philosophy, setPhilosophy] = useState<MatchPhilosophy | null>(
     initial?.match_philosophy ?? 'hybrid',
@@ -102,6 +105,18 @@ export function MatchConfigWizard({
   const [linkage, setLinkage] = useState<StageLinkage | null>(
     initial?.stage_linkage ?? 'shared-repo',
   );
+
+  useEffect(() => {
+    if (!onChange) return;
+    onChange({
+      ...(philosophy !== null ? { match_philosophy: philosophy } : {}),
+      ...(tolerance !== null ? { tolerance } : {}),
+      ...(linkage !== null ? { stage_linkage: linkage } : {}),
+      hybrid_mix_ratio: hybridRatio,
+      non_negotiable_skills: nonNegotiable,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [philosophy, tolerance, linkage, hybridRatio, nonNegotiable]);
 
   const steps: WizardStep[] = useMemo(
     () => [

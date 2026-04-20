@@ -344,7 +344,7 @@ export function SubmissionPanel({
                 <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Annotations</span>
                 <span style={{
                   fontSize: 10,
-                  color: annotations.length > 0 ? '#a78bfa' : 'rgba(255,255,255,0.3)',
+                  color: annotations.length > 0 ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.3)',
                   fontWeight: 700,
                 }}>
                   {annotations.length}

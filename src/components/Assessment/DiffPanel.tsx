@@ -584,7 +584,7 @@ function FileDiffBody({
                       gap: 8,
                       background: 'rgba(167, 139, 250, 0.04)',
                     }}>
-                      <MessageSquare size={12} color="#a78bfa" />
+                      <MessageSquare size={12} color="var(--pipe-accent)" />
                       <span style={{
                         fontSize: 10,
                         color: 'var(--pipe-text-muted)',
@@ -697,9 +697,9 @@ function FileDiffBody({
                         style={{
                           padding: '7px 20px',
                           background: annotationComment.trim() ? 'rgba(167,139,250,0.15)' : 'var(--pipe-surface)',
-                          border: `1px solid ${annotationComment.trim() ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.06)'}`,
+                          border: `1px solid ${annotationComment.trim() ? 'var(--pipe-accent-border)' : 'rgba(255,255,255,0.06)'}`,
                           borderRadius: 4,
-                          color: annotationComment.trim() ? '#a78bfa' : 'rgba(255,255,255,0.15)',
+                          color: annotationComment.trim() ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.15)',
                           fontSize: 10,
                           fontWeight: 700,
                           letterSpacing: '0.05em',
@@ -763,7 +763,7 @@ function FileDiffBody({
                         const moveColorMap = {
                           change: { color: '#34d399', bg: 'rgba(52,211,153,0.05)', border: 'rgba(52,211,153,0.15)' },
                           pushback: { color: '#f87171', bg: 'rgba(248,113,113,0.05)', border: 'rgba(248,113,113,0.15)' },
-                          comment: { color: '#a78bfa', bg: 'rgba(167,139,250,0.05)', border: 'rgba(167,139,250,0.15)' },
+                          comment: { color: 'var(--pipe-accent)', bg: 'rgba(167,139,250,0.05)', border: 'rgba(167,139,250,0.15)' },
                         } as const;
                         type MoveKey = keyof typeof moveColorMap;
                         const moveKey: MoveKey = (exchange.move ?? 'comment') as MoveKey;
@@ -1086,7 +1086,7 @@ export function DiffPanel({
                 padding: '12px 20px',
                 background: i === activeFileIdx ? 'rgba(255,255,255,0.04)' : 'transparent',
                 border: 'none',
-                borderBottom: i === activeFileIdx ? '2px solid #a78bfa' : '2px solid transparent',
+                borderBottom: i === activeFileIdx ? '2px solid var(--pipe-accent)' : '2px solid transparent',
                 color: i === activeFileIdx ? '#fff' : 'rgba(255,255,255,0.3)',
                 fontSize: 10,
                 fontFamily: '"Space Mono", monospace',
@@ -1101,7 +1101,7 @@ export function DiffPanel({
               aria-selected={i === activeFileIdx}
               data-testid={`file-tab-${i}`}
             >
-              <FileCode size={12} color={i === activeFileIdx ? '#a78bfa' : 'rgba(255,255,255,0.2)'} />
+              <FileCode size={12} color={i === activeFileIdx ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.2)'} />
               {f.path.split('/').pop()}
               <span style={{
                 fontSize: 8,
@@ -1240,7 +1240,7 @@ export function DiffPanel({
               gap: 10,
               backdropFilter: 'blur(4px)',
             }}>
-              <FileCode size={12} color="#a78bfa" />
+              <FileCode size={12} color="var(--pipe-accent)" />
               <span style={{
                 flex: 1,
                 fontSize: 11,

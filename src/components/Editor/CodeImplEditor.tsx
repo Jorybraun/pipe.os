@@ -348,7 +348,7 @@ export function CodeImplEditor({ challenge, onChange }: EditorFormProps): JSX.El
             onClick={handleRunTests}
             disabled={isRunning}
             style={{
-              background: isRunning ? 'rgba(255,255,255,0.04)' : '#a78bfa',
+              background: isRunning ? 'rgba(255,255,255,0.04)' : 'var(--pipe-accent)',
               border: 'none',
               color: isRunning ? 'rgba(255,255,255,0.4)' : '#000',
               padding: '8px 20px',

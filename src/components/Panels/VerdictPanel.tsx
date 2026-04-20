@@ -169,7 +169,7 @@ export function VerdictPanel({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Annotations</span>
-              <span style={{ fontSize: 10, color: annotations.length > 0 ? '#a78bfa' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
+              <span style={{ fontSize: 10, color: annotations.length > 0 ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.3)', fontWeight: 700 }}>
                 {annotations.length}
               </span>
             </div>

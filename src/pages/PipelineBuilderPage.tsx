@@ -251,7 +251,7 @@ const FORMAT_INFO: Record<ScreeningFormatDisplay, { label: string; description: 
     label: 'Video Call',
     description: 'Live video screening meeting in the browser.',
     Icon: Video,
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
   },
   ONLINE: {
     label: 'Online Questions',

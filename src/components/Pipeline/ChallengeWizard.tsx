@@ -51,7 +51,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const TYPE_BADGE_COLORS: Record<string, string> = {
-  CODE_IMPLEMENTATION: '#a78bfa',
+  CODE_IMPLEMENTATION: 'var(--pipe-accent)',
   QUIZ_MCQ: '#4ade80',
   QUIZ_SHORT_ANSWER: '#fbbf24',
   CODE_REVIEW: '#60a5fa',

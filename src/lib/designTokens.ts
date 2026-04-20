@@ -47,7 +47,7 @@ export const COLORS = {
   // Challenge Type Badges
   CHALLENGE: {
     CODE_REVIEW: '#60a5fa',           // Blue
-    IMPLEMENTATION: '#a78bfa',        // Purple
+    IMPLEMENTATION: 'var(--pipe-accent)',        // Purple
     QUIZ_MCQ: '#4ade80',              // Green
     QUIZ_SHORT_ANSWER: '#fbbf24',     // Amber
   },

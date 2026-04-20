@@ -268,7 +268,7 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
             style={{
               background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.2))',
               border: '1px solid rgba(139, 92, 246, 0.4)',
-              color: '#a78bfa',
+              color: 'var(--pipe-accent)',
               padding: '14px 32px',
               borderRadius: 0,
               cursor: 'pointer',

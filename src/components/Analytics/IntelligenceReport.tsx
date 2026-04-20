@@ -124,7 +124,7 @@ const SEV_COLORS: Record<string, string> = {
 
 const CHALLENGE_TYPE_COLORS: Record<string, string> = {
   CODE_REVIEW:         '#60a5fa',
-  CODE_IMPLEMENTATION: '#a78bfa',
+  CODE_IMPLEMENTATION: 'var(--pipe-accent)',
   QUIZ_MCQ:            '#4ade80',
   QUIZ_SHORT_ANSWER:   '#fbbf24',
 };

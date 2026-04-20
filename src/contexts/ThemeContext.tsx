@@ -23,7 +23,7 @@ export interface BackgroundSettings {
 
 // ── Full theme ──────────────────────────────────────────────────────────────
 
-export type ThemeMode = 'dark' | 'light' | 'anatomy';
+export type ThemeMode = 'dark' | 'light' | 'anatomy' | 'anatomy-dark';
 
 export interface ThemeSettings {
   mode: ThemeMode;
@@ -86,6 +86,26 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-surface-solid-hover': '#f5edd8',
     '--pipe-overlay': 'rgba(243,234,213,0.93)',
     '--pipe-shadow': 'rgba(42,31,14,0.10)',
+    '--pipe-accent': '#c17d3c',
+    '--pipe-accent-surface': 'rgba(193,125,60,0.12)',
+    '--pipe-accent-border': 'rgba(193,125,60,0.35)',
+  },
+  'anatomy-dark': {
+    '--pipe-bg': '#1a1208',
+    '--pipe-text': '#f3ead5',
+    '--pipe-text-muted': 'rgba(243,234,213,0.6)',
+    '--pipe-text-dim': 'rgba(243,234,213,0.35)',
+    '--pipe-border': 'rgba(243,234,213,0.10)',
+    '--pipe-border-light': 'rgba(243,234,213,0.05)',
+    '--pipe-surface': 'rgba(243,234,213,0.04)',
+    '--pipe-surface-hover': 'rgba(243,234,213,0.08)',
+    '--pipe-surface-solid': '#231810',
+    '--pipe-surface-solid-hover': '#2e2015',
+    '--pipe-overlay': 'rgba(26,18,8,0.93)',
+    '--pipe-shadow': 'rgba(0,0,0,0.45)',
+    '--pipe-accent': '#d4953a',
+    '--pipe-accent-surface': 'rgba(212,149,58,0.12)',
+    '--pipe-accent-border': 'rgba(212,149,58,0.35)',
   },
   dark: {
     '--pipe-bg': '#15151b',
@@ -98,8 +118,11 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-surface-hover': 'rgba(255,255,255,0.08)',
     '--pipe-surface-solid': '#1e1e25',
     '--pipe-surface-solid-hover': '#26262e',
-    '--pipe-overlay': 'rgba(21, 21, 27, 0.93)',
+    '--pipe-overlay': 'rgba(21,21,27,0.93)',
     '--pipe-shadow': 'rgba(0,0,0,0.3)',
+    '--pipe-accent': '#a78bfa',
+    '--pipe-accent-surface': 'rgba(167,139,250,0.12)',
+    '--pipe-accent-border': 'rgba(167,139,250,0.3)',
   },
   light: {
     '--pipe-bg': '#f5f5f7',
@@ -112,8 +135,11 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-surface-hover': 'rgba(0,0,0,0.1)',
     '--pipe-surface-solid': '#ffffff',
     '--pipe-surface-solid-hover': '#fafafa',
-    '--pipe-overlay': 'rgba(245, 245, 247, 0.88)',
+    '--pipe-overlay': 'rgba(245,245,247,0.88)',
     '--pipe-shadow': 'rgba(0,0,0,0.08)',
+    '--pipe-accent': '#a78bfa',
+    '--pipe-accent-surface': 'rgba(167,139,250,0.12)',
+    '--pipe-accent-border': 'rgba(167,139,250,0.3)',
   },
 };
 
@@ -153,10 +179,13 @@ export function ThemeProvider({ children }: { children: ReactNode }): JSX.Elemen
 
   const setMode = useCallback((mode: ThemeMode) => {
     setTheme((prev) => {
+      const fromAnatomy = prev.mode === 'anatomy' || prev.mode === 'anatomy-dark';
       const backgroundOverride: Partial<BackgroundSettings> =
         mode === 'anatomy'
           ? { shader: 'anatomy-spine', enabled: true, opacity: 0.09 }
-          : mode === 'dark' && prev.mode === 'anatomy'
+          : mode === 'anatomy-dark'
+          ? { shader: 'anatomy-spine', enabled: true, opacity: 0.12 }
+          : fromAnatomy
           ? { shader: 'liquid-metal', enabled: true, opacity: 0.4 }
           : {};
       const next = {

@@ -64,7 +64,7 @@ const COMPETENCY_DIMENSIONS = [
     key: 'self-awareness',
     label: 'Self-Awareness',
     icon: Eye,
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
     description: 'Recognizes own patterns, blind spots, and impact',
   },
 ] as const;

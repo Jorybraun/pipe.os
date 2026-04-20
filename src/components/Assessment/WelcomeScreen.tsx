@@ -33,7 +33,7 @@ const CHALLENGE_CONFIG: Record<
   CODE_IMPLEMENTATION: {
     label: 'CODE_IMPLEMENTATION',
     icon: <Code2 size={28} />,
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
     guidance:
       'Implement a function to the spec provided. You can run and test your code in the editor.',
   },

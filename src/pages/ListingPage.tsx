@@ -284,7 +284,7 @@ export default function ListingPage(): JSX.Element {
                 gap: 8,
                 background: 'rgba(139, 92, 246, 0.1)',
                 border: '1px solid rgba(139, 92, 246, 0.2)',
-                color: '#a78bfa',
+                color: 'var(--pipe-accent)',
                 padding: '4px 12px',
                 borderRadius: 4,
                 fontSize: 10,
@@ -399,7 +399,7 @@ export default function ListingPage(): JSX.Element {
                     }}>
                       {f === 'all' ? 'ALL_STATUS' : f}
                     </span>
-                    {filter === f && <Check size={12} color="#a78bfa" />}
+                    {filter === f && <Check size={12} color="var(--pipe-accent)" />}
                   </div>
                 ))}
              </div>

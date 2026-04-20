@@ -148,7 +148,7 @@ const SENIORITY_COLOR: Record<string, string> = {
   junior: '#4ade80',
   mid: '#fbbf24',
   senior: '#f87171',
-  staff: '#a78bfa',
+  staff: 'var(--pipe-accent)',
 };
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -280,7 +280,7 @@ function Pass3Panel({
         <button
           onClick={() => void runAnalyze()}
           disabled={busy !== null}
-          style={actionButton('#a78bfa', busy !== null)}
+          style={actionButton('var(--pipe-accent)', busy !== null)}
         >
           {busy === 'analyze'
             ? <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> RUNNING...</>
@@ -437,7 +437,7 @@ function Pass3Panel({
           <button
             onClick={() => void runAnalyze()}
             disabled={busy !== null}
-            style={actionButton('#a78bfa', busy !== null, true)}
+            style={actionButton('var(--pipe-accent)', busy !== null, true)}
           >
             {busy === 'analyze'
               ? <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> RE-RUNNING...</>
@@ -448,7 +448,7 @@ function Pass3Panel({
             <button
               onClick={() => void submitVerdict('approved')}
               disabled={busy !== null}
-              style={actionButton('#a78bfa', busy !== null)}
+              style={actionButton('var(--pipe-accent)', busy !== null)}
             >
               {busy === 'ingest'
                 ? <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> VECTORIZING...</>
@@ -562,7 +562,7 @@ function AssessmentBlock({ signals, fullName }: { signals: SignalsRow; fullName:
               ...mono,
               fontSize: 9,
               fontWeight: 700,
-              color: '#a78bfa',
+              color: 'var(--pipe-accent)',
               padding: '3px 8px',
               borderRadius: 3,
               background: 'rgba(167,139,250,0.08)',
@@ -750,7 +750,7 @@ function PRListRow({ pr }: { pr: SamplePR }): JSX.Element {
       <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)' }}>{addDel}</span>
       {pr.modifies_tests === 1 && <span style={{ ...mono, fontSize: 8, color: '#4ade80' }}>tests</span>}
       {pr.resolves_issue_number !== null && <span style={{ ...mono, fontSize: 8, color: '#60a5fa' }}>#{pr.resolves_issue_number}</span>}
-      {pr.swe_bench_eligible === 1 && <span style={{ ...mono, fontSize: 8, color: '#a78bfa' }}>swe-bench</span>}
+      {pr.swe_bench_eligible === 1 && <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-accent)' }}>swe-bench</span>}
       <ExternalLink size={10} color="var(--pipe-text-dim)" />
     </a>
   );

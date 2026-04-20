@@ -47,7 +47,7 @@ const STAGE_OPTIONS: StageTypeOption[] = [
     detail:
       'AI agent conducts a structured behavioral interview across 5 competency dimensions. Scored against BARS rubrics.',
     icon: Brain,
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
   },
   {
     key: 'QUESTIONS',
@@ -71,7 +71,7 @@ const STAGE_OPTIONS: StageTypeOption[] = [
 
 const SCREENING_FORMATS = [
   { key: 'PHONE_CALL' as const, label: 'Phone Screen', icon: Phone, color: '#60a5fa', description: 'Recruiter calls, auto-recorded and transcribed' },
-  { key: 'VIDEO_CALL' as const, label: 'Video Call', icon: Video, color: '#a78bfa', description: 'Live video meeting in the browser' },
+  { key: 'VIDEO_CALL' as const, label: 'Video Call', icon: Video, color: 'var(--pipe-accent)', description: 'Live video meeting in the browser' },
   { key: 'ONLINE' as const, label: 'Online Questions', icon: FileText, color: '#fbbf24', description: 'Async questions — text, voice, or video responses' },
 ];
 

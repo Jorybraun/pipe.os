@@ -2,7 +2,7 @@
  * DisplaySettingsPanel — Slide-out panel for user theme/display preferences.
  */
 
-import { X, RotateCcw, Sun, Moon, BookOpen } from 'lucide-react';
+import { X, RotateCcw, Sun, Moon, BookOpen, MoonStar } from 'lucide-react';
 import { useTheme, type HeatmapColorTheme, type ThemeMode } from '../contexts/ThemeContext';
 
 interface DisplaySettingsPanelProps {
@@ -61,6 +61,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
               { key: 'dark' as ThemeMode, label: 'DARK', icon: <Moon size={12} /> },
               { key: 'light' as ThemeMode, label: 'LIGHT', icon: <Sun size={12} /> },
               { key: 'anatomy' as ThemeMode, label: 'ANATOMY', icon: <BookOpen size={12} /> },
+              { key: 'anatomy-dark' as ThemeMode, label: 'ANATOMY_DARK', icon: <MoonStar size={12} /> },
             ]).map((m) => (
               <button
                 key={m.key}
@@ -72,10 +73,10 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
                   fontWeight: 700,
                   letterSpacing: '0.08em',
                   fontFamily: '"Space Mono", monospace',
-                  background: theme.mode === m.key ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
-                  border: theme.mode === m.key ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                  background: theme.mode === m.key ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
+                  border: theme.mode === m.key ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
                   borderRadius: 4,
-                  color: theme.mode === m.key ? '#a78bfa' : 'var(--pipe-text-dim)',
+                  color: theme.mode === m.key ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                   display: 'flex',
@@ -101,7 +102,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
               height: 20,
               borderRadius: 10,
               border: 'none',
-              background: bg.enabled ? '#a78bfa' : 'var(--pipe-surface)',
+              background: bg.enabled ? 'var(--pipe-accent)' : 'var(--pipe-surface)',
               cursor: 'pointer',
               position: 'relative',
               transition: 'background 0.2s',
@@ -135,10 +136,10 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
                   fontWeight: 700,
                   letterSpacing: '0.08em',
                   fontFamily: '"Space Mono", monospace',
-                  background: bg.shader === s ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
-                  border: bg.shader === s ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                  background: bg.shader === s ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
+                  border: bg.shader === s ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
                   borderRadius: 4,
-                  color: bg.shader === s ? '#a78bfa' : 'var(--pipe-text-dim)',
+                  color: bg.shader === s ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                 }}
@@ -169,10 +170,10 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
                     fontWeight: 700,
                     letterSpacing: '0.08em',
                     fontFamily: '"Space Mono", monospace',
-                    background: bg.heatmapTheme === t.key ? 'rgba(167,139,250,0.12)' : 'var(--pipe-surface)',
-                    border: bg.heatmapTheme === t.key ? '1px solid rgba(167,139,250,0.3)' : '1px solid var(--pipe-border)',
+                    background: bg.heatmapTheme === t.key ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
+                    border: bg.heatmapTheme === t.key ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
                     borderRadius: 4,
-                    color: bg.heatmapTheme === t.key ? '#a78bfa' : 'var(--pipe-text-dim)',
+                    color: bg.heatmapTheme === t.key ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
                     cursor: 'pointer',
                     transition: 'all 0.15s',
                     display: 'flex',
@@ -236,7 +237,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
               height: 20,
               borderRadius: 10,
               border: 'none',
-              background: bg.animateForever ? '#a78bfa' : 'var(--pipe-surface)',
+              background: bg.animateForever ? 'var(--pipe-accent)' : 'var(--pipe-surface)',
               cursor: 'pointer',
               position: 'relative',
               transition: 'background 0.2s',
@@ -327,7 +328,7 @@ function SliderControl({ label, value, min, max, step, displayValue, onChange }:
         <span style={{
           fontSize: 10,
           fontWeight: 700,
-          color: '#a78bfa',
+          color: 'var(--pipe-accent)',
           fontFamily: '"Space Mono", monospace',
         }}>
           {displayValue}
@@ -342,7 +343,7 @@ function SliderControl({ label, value, min, max, step, displayValue, onChange }:
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{
           width: '100%',
-          accentColor: '#a78bfa',
+          accentColor: 'var(--pipe-accent)',
           cursor: 'pointer',
         }}
       />

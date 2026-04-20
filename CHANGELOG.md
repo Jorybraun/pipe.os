@@ -6,6 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(theme): add anatomy-dark mode and replace all hardcoded purple with CSS accent variables (2026-04-20)
+
+New `'anatomy-dark'` ThemeMode (dark sepia/parchment palette with amber accent). All 130+ hardcoded `#a78bfa` purple values replaced with `var(--pipe-accent)` / `var(--pipe-accent-surface)` / `var(--pipe-accent-border)` so every UI element inherits the active theme's accent color.
+
+**What changed:**
+
+- **`src/contexts/ThemeContext.tsx`** — Added `'anatomy-dark'` mode tokens (dark sepia bg, amber accent `#d4953a`); `setMode` auto-enables anatomy-spine for anatomy-dark; dark/light modes retain purple accent via CSS var definition.
+- **`src/components/ui/AppBackground.tsx`** — Spine image uses `mixBlendMode:'screen'` + `invert(1)` filter for anatomy-dark, `multiply` for anatomy light.
+- **`src/components/settings/DisplaySettings.tsx`** + **`src/components/DisplaySettingsPanel.tsx`** — ANATOMY_DARK mode button added; all `#a78bfa` / `rgba(167,139,250,…)` replaced with CSS vars.
+- **36 component/page files** — Global replace of hardcoded purple with `var(--pipe-accent)`, `var(--pipe-accent-surface)`, `var(--pipe-accent-border)`.
+
 #### feat(theme): add Gray's Anatomy theme with parchment palette and spine background (2026-04-20)
 
 New `'anatomy'` ThemeMode with cream/sepia color tokens and an `'anatomy-spine'` background shader that renders the anatomical spine illustration. Selecting the mode auto-configures the spine background; switching back to dark auto-restores liquid-metal.

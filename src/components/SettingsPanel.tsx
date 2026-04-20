@@ -86,9 +86,9 @@ export function SettingsPanel({ onClose, initialTab = 'display' }: SettingsPanel
               background: 'none',
               border: 'none',
               borderBottom: activeTab === tab.key
-                ? '2px solid #a78bfa'
+                ? '2px solid var(--pipe-accent)'
                 : '2px solid transparent',
-              color: activeTab === tab.key ? '#a78bfa' : 'var(--pipe-text-dim)',
+              color: activeTab === tab.key ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
               cursor: 'pointer',
               transition: 'all 0.15s',
             }}

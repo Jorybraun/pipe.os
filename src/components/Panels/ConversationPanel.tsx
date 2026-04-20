@@ -78,7 +78,7 @@ const MOVE_CONFIG: Record<ImplementerMove, { label: string; color: string; bg: s
   },
   comment: {
     label: 'COMMENT',
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
     bg: 'rgba(167,139,250,0.10)',
     border: 'rgba(167,139,250,0.25)',
   },
@@ -313,7 +313,7 @@ function ExchangeCard({ exchange }: { exchange: ThreadExchange }): JSX.Element {
       style={{
         padding: '12px 14px',
         background: isReviewer ? 'rgba(96,165,250,0.04)' : 'rgba(167,139,250,0.04)',
-        border: `1px solid ${isReviewer ? 'rgba(96,165,250,0.12)' : 'rgba(167,139,250,0.12)'}`,
+        border: `1px solid ${isReviewer ? 'rgba(96,165,250,0.12)' : 'var(--pipe-accent-surface)'}`,
         borderRadius: 4,
         display: 'flex',
         flexDirection: 'column',
@@ -424,11 +424,11 @@ function ThreadCard({
                 alignItems: 'center',
                 gap: 3,
                 padding: '1px 6px',
-                background: 'rgba(167,139,250,0.12)',
+                background: 'var(--pipe-accent-surface)',
                 border: '1px solid rgba(167,139,250,0.25)',
                 borderRadius: 3,
                 fontSize: 8,
-                color: '#a78bfa',
+                color: 'var(--pipe-accent)',
                 fontWeight: 700,
                 letterSpacing: '0.08em',
               }}
@@ -668,7 +668,7 @@ export function ConversationPanel({
         >
           <Loader2
             size={24}
-            color="#a78bfa"
+            color="var(--pipe-accent)"
             style={{ animation: 'spin 1s linear infinite' }}
           />
           <span
@@ -704,12 +704,12 @@ export function ConversationPanel({
               style={{
                 padding: '2px 8px',
                 background: 'rgba(167,139,250,0.15)',
-                border: '1px solid rgba(167,139,250,0.3)',
+                border: '1px solid var(--pipe-accent-border)',
                 borderRadius: 3,
                 fontSize: 8,
                 fontWeight: 700,
                 letterSpacing: '0.08em',
-                color: '#a78bfa',
+                color: 'var(--pipe-accent)',
               }}
             >
               UNREAD

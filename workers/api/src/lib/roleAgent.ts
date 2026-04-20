@@ -504,9 +504,11 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
       : getMockQuestionResponse(questionsAsked);
   }
 
-  // RD-P5: use phase-specific system prompt when a directive is available;
-  // fall back to the monolithic prompt for backwards compatibility.
-  const systemPrompt = phaseDirective
+  // RD-P5: use phase-specific system prompt when a directive is available.
+  // When budget is exhausted (synthesis turn), always use the monolithic prompt —
+  // phase prompts only carry the question-turn schema; the synthesis schema (persona
+  // fields, JD structure) lives exclusively in buildRoleAgentSystemPrompt.
+  const systemPrompt = !budgetExhausted && phaseDirective
     ? selectPhasePrompt(phaseDirective.phase, participantRole)
     : buildRoleAgentSystemPrompt(participantRole);
 
@@ -591,7 +593,7 @@ export async function* callRoleAgentStream(
   }
 
   // Build prompts (same logic as callRoleAgent)
-  const systemPrompt = phaseDirective
+  const systemPrompt = !budgetExhausted && phaseDirective
     ? selectPhasePrompt(phaseDirective.phase, participantRole)
     : buildRoleAgentSystemPrompt(participantRole);
 

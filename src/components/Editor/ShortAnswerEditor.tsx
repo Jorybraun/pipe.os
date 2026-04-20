@@ -65,7 +65,7 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
           <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <VideoIcon size={16} color="#a78bfa" />
+              <VideoIcon size={16} color="var(--pipe-accent)" />
               <SubTitle>VIDEO_INSTRUCTIONS</SubTitle>
             </div>
             {existingVideoKey && (

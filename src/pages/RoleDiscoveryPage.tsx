@@ -522,6 +522,15 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [isAutoBuilding, setIsAutoBuilding] = useState(false);
   const [autoBuildError, setAutoBuildError] = useState<string | null>(null);
+  const [wizardDraft, setWizardDraft] = useState<Partial<MatchConfigOutput>>(
+    () => draft.load()?.wizardDraft ?? {},
+  );
+
+  const handleWizardDraftChange = useCallback((d: Partial<MatchConfigOutput>): void => {
+    setWizardDraft(d);
+    const current = draft.load();
+    if (current) draft.save({ ...current, wizardDraft: d });
+  }, [draft]);
 
   const handleCreatePipeline = (): void => {
     if (!rd.contextId) {
@@ -570,6 +579,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
         },
       );
       draft.clear();
+      setWizardDraft({});
       setIsWizardOpen(false);
       navigate(`/pipeline/${res.pipeline.id}`, {
         state: res.warnings && res.warnings.length > 0
@@ -1004,6 +1014,8 @@ export default function RoleDiscoveryPage(): JSX.Element {
           >
             <MatchConfigWizard
               candidateSkills={rd.persona?.mustHaveSkills ?? []}
+              initial={wizardDraft}
+              onChange={handleWizardDraftChange}
               onComplete={(output) => { void handleWizardComplete(output); }}
               onCancel={() => !isAutoBuilding && setIsWizardOpen(false)}
             />

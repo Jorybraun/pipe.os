@@ -12,6 +12,7 @@
 
 import { useCallback, useMemo } from 'react';
 import type { PastExchange } from './useRoleDiscovery';
+import type { MatchConfigOutput } from '../components/RoleDiscovery/MatchConfigWizard';
 
 // ─── Draft shape (public — imported by the page) ──────────────────────────────
 
@@ -25,6 +26,8 @@ export interface RoleDiscoveryDraft {
   contextId?: string;
   /** Creator participant ID — saved alongside contextId to re-attach on resume. */
   participantId?: string;
+  /** In-progress wizard selections — preserved so re-opening the modal restores progress. */
+  wizardDraft?: Partial<MatchConfigOutput>;
 }
 
 // ─── Storage key ──────────────────────────────────────────────────────────────

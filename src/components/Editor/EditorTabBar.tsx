@@ -32,7 +32,7 @@ export function EditorTabBar({ tabs, activeKey, onSelect }: EditorTabBarProps): 
               padding: '12px 20px',
               background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
               border: 'none',
-              borderBottom: isActive ? '2px solid #a78bfa' : '2px solid transparent',
+              borderBottom: isActive ? '2px solid var(--pipe-accent)' : '2px solid transparent',
               color: isActive ? 'var(--pipe-text, #fff)' : 'rgba(255,255,255,0.4)',
               fontSize: 10,
               fontWeight: 800,
@@ -52,7 +52,7 @@ export function EditorTabBar({ tabs, activeKey, onSelect }: EditorTabBarProps): 
                 fontWeight: 700,
                 padding: '2px 6px',
                 background: isActive ? 'rgba(167,139,250,0.2)' : 'rgba(255,255,255,0.08)',
-                color: isActive ? '#a78bfa' : 'rgba(255,255,255,0.3)',
+                color: isActive ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.3)',
                 fontFamily: 'Space Mono',
               }}>
                 {tab.badge}

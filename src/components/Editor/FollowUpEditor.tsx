@@ -15,7 +15,7 @@ const CATEGORIES = [
   { id: 'DEPTH', label: 'DEPTH', color: '#4ade80', desc: 'Go deeper on topic' },
   { id: 'FIX', label: 'FIX', color: '#f87171', desc: 'Correct weakness' },
   { id: 'MISSED', label: 'MISSED', color: '#fbbf24', desc: 'Cover blind spots' },
-  { id: 'PRIORITISATION', label: 'PRIORITY', color: '#a78bfa', desc: 'Rank trade-offs' },
+  { id: 'PRIORITISATION', label: 'PRIORITY', color: 'var(--pipe-accent)', desc: 'Rank trade-offs' },
 ];
 
 export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.Element {
@@ -51,7 +51,7 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
         <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
           <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Layers size={16} color="#a78bfa" />
+              <Layers size={16} color="var(--pipe-accent)" />
               <SubTitle>ALLOWED_RESPONSE_FORMATS</SubTitle>
             </div>
             <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>{selectedTypes.length} SELECTED</span>
@@ -67,7 +67,7 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
                   background: isOn ? 'rgba(167,139,250,0.1)' : 'rgba(0,0,0,0.1)',
                   color: isOn ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}>
-                  <div style={{ color: isOn ? '#a78bfa' : 'rgba(255,255,255,0.2)' }}><Icon size={18} /></div>
+                  <div style={{ color: isOn ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.2)' }}><Icon size={18} /></div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, letterSpacing: '0.05em' }}>{label}</div>
                     <div style={{ fontSize: 8, opacity: 0.5, marginTop: 2 }}>{desc}</div>

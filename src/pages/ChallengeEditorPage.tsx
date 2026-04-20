@@ -583,7 +583,7 @@ export default function ChallengeEditorPage(): JSX.Element {
                       config: { ...challenge.config, enableFollowUp: val },
                     })
                   }
-                  accentColor="#a78bfa"
+                  accentColor="var(--pipe-accent)"
                 />
               </div>
             </>
