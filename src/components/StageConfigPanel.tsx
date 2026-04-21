@@ -498,8 +498,8 @@ function ScreeningCallConfig({ format, stageId, stage, updateStage, refetch, tri
         {/* Format summary */}
         <div style={{
           padding: 16,
-          background: isPhone ? 'rgba(96,165,250,0.06)' : 'rgba(167,139,250,0.06)',
-          border: `1px solid ${isPhone ? 'rgba(96,165,250,0.15)' : 'rgba(167,139,250,0.15)'}`,
+          background: isPhone ? 'rgba(96,165,250,0.06)' : 'var(--pipe-accent-surface)',
+          border: `1px solid ${isPhone ? 'rgba(96,165,250,0.15)' : 'var(--pipe-accent-surface)'}`,
           borderRadius: 6,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>

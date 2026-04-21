@@ -51,7 +51,7 @@ export function EditorTabBar({ tabs, activeKey, onSelect }: EditorTabBarProps): 
                 fontSize: 8,
                 fontWeight: 700,
                 padding: '2px 6px',
-                background: isActive ? 'rgba(167,139,250,0.2)' : 'rgba(255,255,255,0.08)',
+                background: isActive ? 'var(--pipe-accent-surface)' : 'rgba(255,255,255,0.08)',
                 color: isActive ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.3)',
                 fontFamily: 'Space Mono',
               }}>

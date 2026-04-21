@@ -79,8 +79,8 @@ const MOVE_CONFIG: Record<ImplementerMove, { label: string; color: string; bg: s
   comment: {
     label: 'COMMENT',
     color: 'var(--pipe-accent)',
-    bg: 'rgba(167,139,250,0.10)',
-    border: 'rgba(167,139,250,0.25)',
+    bg: 'var(--pipe-accent-surface)',
+    border: 'var(--pipe-accent-surface)',
   },
 };
 
@@ -312,7 +312,7 @@ function ExchangeCard({ exchange }: { exchange: ThreadExchange }): JSX.Element {
     <div
       style={{
         padding: '12px 14px',
-        background: isReviewer ? 'rgba(96,165,250,0.04)' : 'rgba(167,139,250,0.04)',
+        background: isReviewer ? 'rgba(96,165,250,0.04)' : 'var(--pipe-accent-surface)',
         border: `1px solid ${isReviewer ? 'rgba(96,165,250,0.12)' : 'var(--pipe-accent-surface)'}`,
         borderRadius: 4,
         display: 'flex',
@@ -325,7 +325,7 @@ function ExchangeCard({ exchange }: { exchange: ThreadExchange }): JSX.Element {
         <span
           style={{
             fontSize: 9,
-            color: isReviewer ? 'rgba(96,165,250,0.7)' : 'rgba(167,139,250,0.7)',
+            color: isReviewer ? 'rgba(96,165,250,0.7)' : 'var(--pipe-accent)',
             letterSpacing: '0.1em',
             fontWeight: 600,
           }}
@@ -425,7 +425,7 @@ function ThreadCard({
                 gap: 3,
                 padding: '1px 6px',
                 background: 'var(--pipe-accent-surface)',
-                border: '1px solid rgba(167,139,250,0.25)',
+                border: '1px solid var(--pipe-accent-border)',
                 borderRadius: 3,
                 fontSize: 8,
                 color: 'var(--pipe-accent)',
@@ -703,7 +703,7 @@ export function ConversationPanel({
             <span
               style={{
                 padding: '2px 8px',
-                background: 'rgba(167,139,250,0.15)',
+                background: 'var(--pipe-accent-surface)',
                 border: '1px solid var(--pipe-accent-border)',
                 borderRadius: 3,
                 fontSize: 8,

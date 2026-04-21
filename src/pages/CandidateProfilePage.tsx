@@ -1247,7 +1247,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   style={{
                     width: 200,
                     height: 2,
-                    background: "rgba(167,139,250,0.1)",
+                    background: "var(--pipe-accent-surface)",
                     margin: "0 auto",
                     overflow: "hidden",
                   }}

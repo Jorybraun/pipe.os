@@ -349,11 +349,11 @@ export default function ChallengesTab(): JSX.Element {
                 const accentBg =
                   fmt === 'PHONE_CALL'
                     ? 'rgba(96,165,250,0.06)'
-                    : 'rgba(167,139,250,0.06)';
+                    : 'var(--pipe-accent-surface)';
                 const accentBorder =
                   fmt === 'PHONE_CALL'
                     ? 'rgba(96,165,250,0.2)'
-                    : 'rgba(167,139,250,0.2)';
+                    : 'var(--pipe-accent-surface)';
                 return (
                   <div
                     style={{

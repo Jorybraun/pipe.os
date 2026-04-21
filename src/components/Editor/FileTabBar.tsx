@@ -51,7 +51,7 @@ export function FileTabBar({
               height: 36,
               background: isActive ? 'rgba(255,255,255,0.06)' : 'transparent',
               borderRight: '1px solid rgba(255,255,255,0.04)',
-              borderBottom: isActive ? '2px solid rgba(167,139,250,0.6)' : '2px solid transparent',
+              borderBottom: isActive ? '2px solid var(--pipe-accent-border)' : '2px solid transparent',
               cursor: 'pointer',
               transition: 'background 100ms ease',
             }}

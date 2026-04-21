@@ -106,7 +106,7 @@ const COLLAPSED_CHALLENGES = [
 
 const TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   CODE_REVIEW: { bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.3)", text: "#60a5fa" },
-  CODE_IMPLEMENTATION: { bg: "rgba(167,139,250,0.1)", border: "var(--pipe-accent-border)", text: "var(--pipe-accent)" },
+  CODE_IMPLEMENTATION: { bg: "var(--pipe-accent-surface)", border: "var(--pipe-accent-border)", text: "var(--pipe-accent)" },
   QUIZ_MCQ: { bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.3)", text: "#34d399" },
   QUIZ_SHORT_ANSWER: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", text: "#fbbf24" },
 };

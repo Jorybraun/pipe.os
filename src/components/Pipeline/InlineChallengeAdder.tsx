@@ -190,7 +190,7 @@ function CallFlowDetail({
       ];
 
   const accentColor = isPhone ? '#60a5fa' : 'var(--pipe-accent)';
-  const accentBg = isPhone ? 'rgba(96,165,250,0.06)' : 'rgba(167,139,250,0.06)';
+  const accentBg = isPhone ? 'rgba(96,165,250,0.06)' : 'var(--pipe-accent-surface)';
 
   return (
     <div
@@ -632,8 +632,8 @@ function AiGeneratedQuestions({
       <div
         style={{
           padding: '12px 14px',
-          background: 'rgba(167,139,250,0.06)',
-          border: '1px solid rgba(167,139,250,0.15)',
+          background: 'var(--pipe-accent-surface)',
+          border: '1px solid var(--pipe-accent-border)',
           borderRadius: 6,
           fontSize: 10,
           color: 'var(--pipe-text-muted)',

@@ -115,7 +115,7 @@ export function RunConsolePanel({
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: isRunning ? 'rgba(255,255,255,0.04)' : 'rgba(167,139,250,0.15)',
+              background: isRunning ? 'rgba(255,255,255,0.04)' : 'var(--pipe-accent-surface)',
               border: isRunning ? '1px solid rgba(255,255,255,0.06)' : '1px solid var(--pipe-accent-border)',
               color: isRunning ? 'rgba(255,255,255,0.3)' : 'var(--pipe-accent)',
               padding: '6px 14px',

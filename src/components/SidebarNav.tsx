@@ -411,9 +411,9 @@ export function SidebarNav({
             alignItems: "center",
             justifyContent: "center",
             background: activeSection === "sandbox"
-              ? "linear-gradient(135deg, rgba(167,139,250,0.2), rgba(139,92,246,0.15))"
+              ? "linear-gradient(135deg, var(--pipe-accent-surface), var(--pipe-accent-surface))"
               : "transparent",
-            border: activeSection === "sandbox" ? "1px solid rgba(167,139,250,0.4)" : "none",
+            border: activeSection === "sandbox" ? "1px solid var(--pipe-accent-border)" : "none",
             borderRadius: "12px",
             color: activeSection === "sandbox" ? "var(--pipe-accent)" : "var(--pipe-text-dim)",
             cursor: "pointer",
@@ -426,8 +426,8 @@ export function SidebarNav({
           }}
           onMouseEnter={(e) => {
             if (activeSection !== "sandbox") {
-              e.currentTarget.style.background = "rgba(167,139,250,0.1)";
-              e.currentTarget.style.color = "rgba(167,139,250,0.8)";
+              e.currentTarget.style.background = "var(--pipe-accent-surface)";
+              e.currentTarget.style.color = "var(--pipe-accent-surface)";
               e.currentTarget.style.transform = "translateX(4px)";
             }
           }}
@@ -469,9 +469,9 @@ export function SidebarNav({
             alignItems: "center",
             justifyContent: "center",
             background: activeSection === "agent"
-              ? "linear-gradient(135deg, rgba(167,139,250,0.2), rgba(139,92,246,0.15))"
+              ? "linear-gradient(135deg, var(--pipe-accent-surface), var(--pipe-accent-surface))"
               : "transparent",
-            border: activeSection === "agent" ? "1px solid rgba(167,139,250,0.4)" : "none",
+            border: activeSection === "agent" ? "1px solid var(--pipe-accent-border)" : "none",
             borderRadius: "12px",
             color: activeSection === "agent" ? "var(--pipe-accent)" : "var(--pipe-text-dim)",
             cursor: "pointer",
@@ -484,8 +484,8 @@ export function SidebarNav({
           }}
           onMouseEnter={(e) => {
             if (activeSection !== "agent") {
-              e.currentTarget.style.background = "rgba(167,139,250,0.1)";
-              e.currentTarget.style.color = "rgba(167,139,250,0.8)";
+              e.currentTarget.style.background = "var(--pipe-accent-surface)";
+              e.currentTarget.style.color = "var(--pipe-accent-surface)";
               e.currentTarget.style.transform = "translateX(4px)";
             }
           }}

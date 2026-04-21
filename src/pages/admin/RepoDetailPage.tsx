@@ -565,8 +565,8 @@ function AssessmentBlock({ signals, fullName }: { signals: SignalsRow; fullName:
               color: 'var(--pipe-accent)',
               padding: '3px 8px',
               borderRadius: 3,
-              background: 'rgba(167,139,250,0.08)',
-              border: '1px solid rgba(167,139,250,0.25)',
+              background: 'var(--pipe-accent-surface)',
+              border: '1px solid var(--pipe-accent-border)',
               letterSpacing: '0.06em',
             }}
           >

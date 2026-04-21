@@ -63,8 +63,8 @@ export function FollowUpEditor({ challenge, onChange }: EditorFormProps): JSX.El
                 <button key={id} onClick={() => updateFU({ questionTypes: toggleList(selectedTypes, id) })} style={{
                   display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', borderRadius: 8, cursor: 'pointer',
                   fontFamily: 'Space Mono', fontSize: 11, textAlign: 'left',
-                  border: isOn ? '1px solid rgba(167,139,250,0.5)' : '1px solid rgba(255,255,255,0.1)',
-                  background: isOn ? 'rgba(167,139,250,0.1)' : 'rgba(0,0,0,0.1)',
+                  border: isOn ? '1px solid var(--pipe-accent-border)' : '1px solid rgba(255,255,255,0.1)',
+                  background: isOn ? 'var(--pipe-accent-surface)' : 'rgba(0,0,0,0.1)',
                   color: isOn ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
                 }}>
                   <div style={{ color: isOn ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.2)' }}><Icon size={18} /></div>

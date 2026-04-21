@@ -791,8 +791,8 @@ function RepoCard({
             style={{
               ...mono, fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
               padding: '4px 10px',
-              background: 'rgba(167,139,250,0.08)',
-              border: '1px solid rgba(167,139,250,0.25)',
+              background: 'var(--pipe-accent-surface)',
+              border: '1px solid var(--pipe-accent-border)',
               borderRadius: 3, color: 'var(--pipe-accent)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 4,
               opacity: runningPass3 ? 0.6 : 1,
@@ -812,8 +812,8 @@ function RepoCard({
             disabled={runningPass3 || saving}
             style={{
               ...mono, fontSize: 8, padding: '4px 8px',
-              background: 'transparent', border: '1px solid rgba(167,139,250,0.2)',
-              borderRadius: 3, color: 'rgba(167,139,250,0.5)', cursor: 'pointer',
+              background: 'transparent', border: '1px solid var(--pipe-accent-border)',
+              borderRadius: 3, color: 'var(--pipe-accent)', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 4,
               opacity: runningPass3 ? 0.5 : 1,
             }}

@@ -317,8 +317,8 @@ export default function DevContainerSandboxPage(): JSX.Element {
               background:
                 state === 'ERROR'
                   ? 'rgba(248,113,113,0.15)'
-                  : 'linear-gradient(135deg, rgba(167,139,250,0.2), rgba(139,92,246,0.15))',
-              border: `1px solid ${state === 'ERROR' ? 'rgba(248,113,113,0.4)' : 'rgba(167,139,250,0.4)'}`,
+                  : 'linear-gradient(135deg, var(--pipe-accent-surface), var(--pipe-accent-surface))',
+              border: `1px solid ${state === 'ERROR' ? 'rgba(248,113,113,0.4)' : 'var(--pipe-accent-surface)'}`,
               color: state === 'ERROR' ? '#f87171' : 'var(--pipe-accent)',
               fontSize: 11,
               letterSpacing: '0.15em',
@@ -524,7 +524,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
           <div>• Ready → ALB routes /session/:id → container port 8080</div>
           <div>• Destroy → ECS.StopTask + automatic 60-min session timeout</div>
           <div>• Cost → ~$0.05 per 60-min interview session</div>
-          <div style={{ marginTop: 8, color: 'rgba(167,139,250,0.5)' }}>
+          <div style={{ marginTop: 8, color: 'var(--pipe-accent)' }}>
             ADR-016 — docs/decisions/ADR-016-dev-container-architecture.md
           </div>
         </div>

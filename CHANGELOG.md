@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(theme): replace remaining hardcoded purple rgba variants with CSS accent vars (2026-04-21)
+
+Second pass over the purple cleanup — replaced all `rgba(167,139,250,0.XX)` and `rgba(139,92,246,0.XX)` opacity variants that the first sed missed. Border usages → `var(--pipe-accent-border)`, text/fill → `var(--pipe-accent)`, background tints → `var(--pipe-accent-surface)`.
+
 #### feat(theme): add anatomy-dark mode and replace all hardcoded purple with CSS accent variables (2026-04-20)
 
 New `'anatomy-dark'` ThemeMode (dark sepia/parchment palette with amber accent). All 130+ hardcoded `#a78bfa` purple values replaced with `var(--pipe-accent)` / `var(--pipe-accent-surface)` / `var(--pipe-accent-border)` so every UI element inherits the active theme's accent color.

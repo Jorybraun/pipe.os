@@ -647,7 +647,7 @@ function FileDiffBody({
                           lineHeight: 1.6,
                         }}
                         onFocus={(e) => {
-                          (e.currentTarget as HTMLTextAreaElement).style.borderColor = 'rgba(167,139,250,0.4)';
+                          (e.currentTarget as HTMLTextAreaElement).style.borderColor = 'var(--pipe-accent-surface)';
                         }}
                         onBlur={(e) => {
                           (e.currentTarget as HTMLTextAreaElement).style.borderColor = 'rgba(255,255,255,0.08)';
@@ -696,7 +696,7 @@ function FileDiffBody({
                         disabled={!annotationComment.trim()}
                         style={{
                           padding: '7px 20px',
-                          background: annotationComment.trim() ? 'rgba(167,139,250,0.15)' : 'var(--pipe-surface)',
+                          background: annotationComment.trim() ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
                           border: `1px solid ${annotationComment.trim() ? 'var(--pipe-accent-border)' : 'rgba(255,255,255,0.06)'}`,
                           borderRadius: 4,
                           color: annotationComment.trim() ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.15)',
@@ -763,7 +763,7 @@ function FileDiffBody({
                         const moveColorMap = {
                           change: { color: '#34d399', bg: 'rgba(52,211,153,0.05)', border: 'rgba(52,211,153,0.15)' },
                           pushback: { color: '#f87171', bg: 'rgba(248,113,113,0.05)', border: 'rgba(248,113,113,0.15)' },
-                          comment: { color: 'var(--pipe-accent)', bg: 'rgba(167,139,250,0.05)', border: 'rgba(167,139,250,0.15)' },
+                          comment: { color: 'var(--pipe-accent)', bg: 'var(--pipe-accent-surface)', border: 'var(--pipe-accent-border)' },
                         } as const;
                         type MoveKey = keyof typeof moveColorMap;
                         const moveKey: MoveKey = (exchange.move ?? 'comment') as MoveKey;
@@ -797,7 +797,7 @@ function FileDiffBody({
                               )}
                               <span style={{
                                 fontSize: 8,
-                                color: isImplementer ? 'rgba(167,139,250,0.6)' : 'rgba(96,165,250,0.6)',
+                                color: isImplementer ? 'var(--pipe-accent)' : 'rgba(96,165,250,0.6)',
                                 letterSpacing: '0.08em',
                                 fontWeight: 600,
                               }}>

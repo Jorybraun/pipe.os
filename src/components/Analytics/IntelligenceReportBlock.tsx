@@ -198,7 +198,7 @@ function IntelligenceBlock({ config }: { config: IntelligenceBlockConfig }): JSX
           <div style={{ height: 120, display: 'flex', alignItems: 'flex-end', gap: 12, paddingBottom: 20 }}>
             {config.data.points.map((p: any, i: number) => (
               <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: '100%', height: `${p.value}%`, background: 'linear-gradient(180deg, var(--pipe-accent) 0%, rgba(167,139,250,0.2) 100%)', borderRadius: '4px 4px 2px 2px' }} />
+                <div style={{ width: '100%', height: `${p.value}%`, background: 'linear-gradient(180deg, var(--pipe-accent) 0%, var(--pipe-accent-surface) 100%)', borderRadius: '4px 4px 2px 2px' }} />
                 <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>{p.label}</div>
               </div>
             ))}
