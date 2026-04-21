@@ -66,12 +66,26 @@ const NODE_ACTIVE: React.CSSProperties = {
   color: 'var(--pipe-text)',
 };
 
-const CONNECTOR: React.CSSProperties = {
-  width: 16,
-  height: 1,
-  background: 'var(--pipe-border)',
-  flex: '0 0 auto',
-};
+const ChainConnector = () => (
+  <svg
+    viewBox="0 0 1000 1000"
+    fill="none"
+    style={{ width: 24, height: 24, flex: '0 0 auto', flexShrink: 0 }}
+    aria-hidden="true"
+  >
+    <g transform="rotate(90, 500, 500)">
+      <path
+        d="M 740 500 L 740 752 A 120 120 0 0 1 500 752 L 500 248 A 120 120 0 0 0 260 248 L 260 500"
+        stroke="var(--pipe-text-dim)"
+        strokeWidth="192"
+        strokeLinecap="butt"
+        strokeLinejoin="round"
+      />
+      <rect x="615" y="450" width="250" height="100" fill="var(--pipe-text-dim)" />
+      <rect x="135" y="450" width="250" height="100" fill="var(--pipe-text-dim)" />
+    </g>
+  </svg>
+);
 
 function formatMatchChip(cfg: OverviewMatchConfig): string {
   const phil = cfg.matchPhilosophy ? cap(cfg.matchPhilosophy) : '—';
@@ -150,7 +164,7 @@ export function StageStepper({
             key={stage.id}
             style={{ display: 'flex', alignItems: 'center' }}
           >
-            <div style={CONNECTOR} />
+            <ChainConnector />
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
             <NavLink
               to={`/pipeline/${pipelineId}/stage/${stage.id}`}
@@ -281,7 +295,7 @@ export function StageStepper({
 
       {canAddStage && (
         <>
-          <div style={CONNECTOR} />
+          <ChainConnector />
           {onAddStage ? (
             <button
               type="button"

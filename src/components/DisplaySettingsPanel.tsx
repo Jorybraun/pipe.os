@@ -2,16 +2,49 @@
  * DisplaySettingsPanel — Slide-out panel for user theme/display preferences.
  */
 
-import { X, RotateCcw, Sun, Moon, BookOpen, MoonStar } from 'lucide-react';
-import { useTheme, type HeatmapColorTheme, type ThemeMode } from '../contexts/ThemeContext';
+import { X, RotateCcw } from 'lucide-react';
+import { useTheme, type HeatmapColorTheme } from '../contexts/ThemeContext';
 
 interface DisplaySettingsPanelProps {
   onClose: () => void;
 }
 
+type ColorScheme = 'dark' | 'light';
+type ThemeName = 'metalic' | 'heatmap' | 'anatomy';
+
+function deriveScheme(mode: string): ColorScheme {
+  return mode === 'dark' || mode === 'anatomy-dark' ? 'dark' : 'light';
+}
+
+function deriveThemeName(mode: string, shader: string): ThemeName {
+  if (mode === 'anatomy' || mode === 'anatomy-dark') return 'anatomy';
+  if (shader === 'heatmap') return 'heatmap';
+  return 'metalic';
+}
+
 export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JSX.Element {
   const { theme, updateBackground, setMode, resetTheme } = useTheme();
   const bg = theme.background;
+
+  const colorScheme = deriveScheme(theme.mode);
+  const themeName = deriveThemeName(theme.mode, bg.shader);
+
+  function applyScheme(scheme: ColorScheme) {
+    if (themeName === 'anatomy') {
+      setMode(scheme === 'dark' ? 'anatomy-dark' : 'anatomy');
+    } else {
+      setMode(scheme === 'dark' ? 'dark' : 'light');
+    }
+  }
+
+  function applyTheme(name: ThemeName) {
+    if (name === 'anatomy') {
+      setMode(colorScheme === 'dark' ? 'anatomy-dark' : 'anatomy');
+    } else {
+      setMode(colorScheme === 'dark' ? 'dark' : 'light');
+      updateBackground({ shader: name === 'heatmap' ? 'heatmap' : 'liquid-metal' });
+    }
+  }
 
   return (
     <div style={{
@@ -26,7 +59,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '20px 20px 16px',
-        borderBottom: '1px solid var(--pipe-border, rgba(255,255,255,0.06))',
+        borderBottom: '1px solid var(--pipe-border)',
       }}>
         <span style={{
           fontSize: 9,
@@ -53,105 +86,77 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
-        {/* Mode toggle */}
+        {/* Dark / Light tabs */}
         <div>
           <label style={labelStyle}>MODE</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {([
-              { key: 'dark' as ThemeMode, label: 'DARK', icon: <Moon size={12} /> },
-              { key: 'light' as ThemeMode, label: 'LIGHT', icon: <Sun size={12} /> },
-              { key: 'anatomy' as ThemeMode, label: 'ANATOMY', icon: <BookOpen size={12} /> },
-              { key: 'anatomy-dark' as ThemeMode, label: 'ANATOMY_DARK', icon: <MoonStar size={12} /> },
-            ]).map((m) => (
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--pipe-border)', marginBottom: -1 }}>
+            {(['dark', 'light'] as ColorScheme[]).map((s) => (
               <button
-                key={m.key}
-                onClick={() => setMode(m.key)}
+                key={s}
+                onClick={() => applyScheme(s)}
                 style={{
                   flex: 1,
-                  padding: '10px 12px',
+                  padding: '8px 0',
                   fontSize: 9,
                   fontWeight: 700,
-                  letterSpacing: '0.08em',
+                  letterSpacing: '0.12em',
                   fontFamily: '"Space Mono", monospace',
-                  background: theme.mode === m.key ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
-                  border: theme.mode === m.key ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
-                  borderRadius: 4,
-                  color: theme.mode === m.key ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: colorScheme === s
+                    ? '2px solid var(--pipe-text)'
+                    : '2px solid transparent',
+                  color: colorScheme === s ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
                 }}
               >
-                {m.icon}
-                {m.label}
+                {s.toUpperCase()}
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Theme select */}
+        <div>
+          <label style={labelStyle}>THEME</label>
+          <select
+            value={themeName}
+            onChange={(e) => applyTheme(e.target.value as ThemeName)}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              fontFamily: '"Space Mono", monospace',
+              background: 'var(--pipe-surface-solid)',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 4,
+              color: 'var(--pipe-text)',
+              cursor: 'pointer',
+              appearance: 'none',
+              WebkitAppearance: 'none',
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 12px center',
+              paddingRight: 32,
+            }}
+          >
+            <option value="metalic">METALIC</option>
+            <option value="heatmap">HEAT_MAP</option>
+            <option value="anatomy">ANATOMY</option>
+          </select>
         </div>
 
         {/* Background toggle */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <label style={{ ...labelStyle, marginBottom: 0 }}>BACKGROUND</label>
-          <button
-            onClick={() => updateBackground({ enabled: !bg.enabled })}
-            style={{
-              width: 36,
-              height: 20,
-              borderRadius: 10,
-              border: 'none',
-              background: bg.enabled ? 'var(--pipe-accent)' : 'var(--pipe-surface)',
-              cursor: 'pointer',
-              position: 'relative',
-              transition: 'background 0.2s',
-            }}
-          >
-            <div style={{
-              width: 16,
-              height: 16,
-              borderRadius: '50%',
-              background: '#fff',
-              position: 'absolute',
-              top: 2,
-              left: bg.enabled ? 18 : 2,
-              transition: 'left 0.2s',
-            }} />
-          </button>
-        </div>
-
-        {/* Shader picker */}
-        <div>
-          <label style={labelStyle}>BACKGROUND_SHADER</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {(['liquid-metal', 'heatmap'] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => updateBackground({ shader: s })}
-                style={{
-                  flex: 1,
-                  padding: '10px 12px',
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  fontFamily: '"Space Mono", monospace',
-                  background: bg.shader === s ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
-                  border: bg.shader === s ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
-                  borderRadius: 4,
-                  color: bg.shader === s ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {s.toUpperCase().replace('-', '_')}
-              </button>
-            ))}
-          </div>
+          <ToggleSwitch enabled={bg.enabled} onChange={() => updateBackground({ enabled: !bg.enabled })} />
         </div>
 
         {/* Color theme picker (heatmap only) */}
-        {bg.shader === 'heatmap' && (
+        {themeName === 'heatmap' && (
           <div>
             <label style={labelStyle}>COLOR_THEME</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -198,9 +203,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
         <SliderControl
           label="DARK_OVERLAY"
           value={bg.overlay}
-          min={0}
-          max={1}
-          step={0.05}
+          min={0} max={1} step={0.05}
           displayValue={`${Math.round(bg.overlay * 100)}%`}
           onChange={(v) => updateBackground({ overlay: v })}
         />
@@ -209,9 +212,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
         <SliderControl
           label="OPACITY"
           value={bg.opacity}
-          min={0}
-          max={1}
-          step={0.05}
+          min={0} max={1} step={0.05}
           displayValue={`${Math.round(bg.opacity * 100)}%`}
           onChange={(v) => updateBackground({ opacity: v })}
         />
@@ -220,9 +221,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
         <SliderControl
           label="ANIMATION_SPEED"
           value={bg.speed}
-          min={0}
-          max={1}
-          step={0.05}
+          min={0} max={1} step={0.05}
           displayValue={bg.speed === 0 ? 'STATIC' : `${bg.speed.toFixed(2)}`}
           onChange={(v) => updateBackground({ speed: v })}
         />
@@ -230,39 +229,14 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
         {/* Animate forever toggle */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <label style={{ ...labelStyle, marginBottom: 0 }}>KEEP_PLAYING</label>
-          <button
-            onClick={() => updateBackground({ animateForever: !bg.animateForever })}
-            style={{
-              width: 36,
-              height: 20,
-              borderRadius: 10,
-              border: 'none',
-              background: bg.animateForever ? 'var(--pipe-accent)' : 'var(--pipe-surface)',
-              cursor: 'pointer',
-              position: 'relative',
-              transition: 'background 0.2s',
-            }}
-          >
-            <div style={{
-              width: 16,
-              height: 16,
-              borderRadius: '50%',
-              background: '#fff',
-              position: 'absolute',
-              top: 2,
-              left: bg.animateForever ? 18 : 2,
-              transition: 'left 0.2s',
-            }} />
-          </button>
+          <ToggleSwitch enabled={bg.animateForever} onChange={() => updateBackground({ animateForever: !bg.animateForever })} />
         </div>
 
         {/* Scale slider */}
         <SliderControl
           label="SCALE"
           value={bg.scale}
-          min={0.1}
-          max={1.5}
-          step={0.05}
+          min={0.1} max={1.5} step={0.05}
           displayValue={`${bg.scale.toFixed(2)}`}
           onChange={(v) => updateBackground({ scale: v })}
         />
@@ -310,6 +284,37 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 10,
 };
 
+// ── Toggle switch ──────────────────────────────────────────────────────────
+
+function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: () => void }): JSX.Element {
+  return (
+    <button
+      onClick={onChange}
+      style={{
+        width: 36,
+        height: 20,
+        borderRadius: 10,
+        border: 'none',
+        background: enabled ? 'var(--pipe-text-muted)' : 'var(--pipe-surface)',
+        cursor: 'pointer',
+        position: 'relative',
+        transition: 'background 0.2s',
+      }}
+    >
+      <div style={{
+        width: 16,
+        height: 16,
+        borderRadius: '50%',
+        background: 'var(--pipe-bg)',
+        position: 'absolute',
+        top: 2,
+        left: enabled ? 18 : 2,
+        transition: 'left 0.2s',
+      }} />
+    </button>
+  );
+}
+
 // ── Slider sub-component ────────────────────────────────────────────────────
 
 function SliderControl({ label, value, min, max, step, displayValue, onChange }: {
@@ -328,7 +333,7 @@ function SliderControl({ label, value, min, max, step, displayValue, onChange }:
         <span style={{
           fontSize: 10,
           fontWeight: 700,
-          color: 'var(--pipe-accent)',
+          color: 'var(--pipe-text-muted)',
           fontFamily: '"Space Mono", monospace',
         }}>
           {displayValue}
@@ -343,7 +348,7 @@ function SliderControl({ label, value, min, max, step, displayValue, onChange }:
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{
           width: '100%',
-          accentColor: 'var(--pipe-accent)',
+          accentColor: 'var(--pipe-text)',
           cursor: 'pointer',
         }}
       />

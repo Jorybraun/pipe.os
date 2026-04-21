@@ -33,7 +33,7 @@ export interface ThemeSettings {
 const DEFAULTS: ThemeSettings = {
   mode: 'dark',
   background: {
-    enabled: true,
+    enabled: false,
     shader: 'liquid-metal',
     heatmapTheme: 'aurora',
     opacity: 0.4,

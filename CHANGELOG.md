@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(theme): redesign display settings — DARK/LIGHT tabs + THEME select, no-purple inputs (2026-04-21)
+
+Settings panel now shows DARK/LIGHT mode tabs and a single THEME select (Metalic / Heat Map / Anatomy) instead of four mode buttons + a separate shader picker. Background defaults to off. Slider and toggle inputs use `var(--pipe-text)` accent instead of the theme accent color so they're never purple.
+
+**What changed:**
+- **`src/components/settings/DisplaySettings.tsx`** + **`src/components/DisplaySettingsPanel.tsx`** — new DARK/LIGHT tabs, THEME select, neutral input styling.
+- **`src/contexts/ThemeContext.tsx`** — `DEFAULTS.background.enabled` → `false`.
+- **`src/components/Pipeline/StageStepper.tsx`** — fix TS error: replace `<div style={CONNECTOR} />` with `<ChainConnector />`.
+
 #### fix(theme): replace remaining hardcoded purple rgba variants with CSS accent vars (2026-04-21)
 
 Second pass over the purple cleanup — replaced all `rgba(167,139,250,0.XX)` and `rgba(139,92,246,0.XX)` opacity variants that the first sed missed. Border usages → `var(--pipe-accent-border)`, text/fill → `var(--pipe-accent)`, background tints → `var(--pipe-accent-surface)`.

@@ -1,56 +1,112 @@
 /**
  * DisplaySettings — Theme and background controls.
- * Extracted from the old DisplaySettingsPanel for use inside the tabbed SettingsPanel.
  */
 
-import { RotateCcw, Sun, Moon, BookOpen, MoonStar } from 'lucide-react';
-import { useTheme, type HeatmapColorTheme, type ThemeMode } from '../../contexts/ThemeContext';
+import { RotateCcw } from 'lucide-react';
+import { useTheme, type HeatmapColorTheme } from '../../contexts/ThemeContext';
+
+type ColorScheme = 'dark' | 'light';
+type ThemeName = 'metalic' | 'heatmap' | 'anatomy';
+
+function deriveScheme(mode: string): ColorScheme {
+  return mode === 'dark' || mode === 'anatomy-dark' ? 'dark' : 'light';
+}
+
+function deriveThemeName(mode: string, shader: string): ThemeName {
+  if (mode === 'anatomy' || mode === 'anatomy-dark') return 'anatomy';
+  if (shader === 'heatmap') return 'heatmap';
+  return 'metalic';
+}
 
 export function DisplaySettings(): JSX.Element {
   const { theme, updateBackground, setMode, resetTheme } = useTheme();
   const bg = theme.background;
 
+  const colorScheme = deriveScheme(theme.mode);
+  const themeName = deriveThemeName(theme.mode, bg.shader);
+
+  function applyScheme(scheme: ColorScheme) {
+    if (themeName === 'anatomy') {
+      setMode(scheme === 'dark' ? 'anatomy-dark' : 'anatomy');
+    } else {
+      setMode(scheme === 'dark' ? 'dark' : 'light');
+    }
+  }
+
+  function applyTheme(name: ThemeName) {
+    if (name === 'anatomy') {
+      setMode(colorScheme === 'dark' ? 'anatomy-dark' : 'anatomy');
+    } else {
+      setMode(colorScheme === 'dark' ? 'dark' : 'light');
+      updateBackground({ shader: name === 'heatmap' ? 'heatmap' : 'liquid-metal' });
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
-        {/* Mode toggle */}
+        {/* Dark / Light tabs */}
         <div>
           <label style={labelStyle}>MODE</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {([
-              { key: 'dark' as ThemeMode, label: 'DARK', icon: <Moon size={12} /> },
-              { key: 'light' as ThemeMode, label: 'LIGHT', icon: <Sun size={12} /> },
-              { key: 'anatomy' as ThemeMode, label: 'ANATOMY', icon: <BookOpen size={12} /> },
-              { key: 'anatomy-dark' as ThemeMode, label: 'ANATOMY_DARK', icon: <MoonStar size={12} /> },
-            ]).map((m) => (
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--pipe-border)', marginBottom: -1 }}>
+            {(['dark', 'light'] as ColorScheme[]).map((s) => (
               <button
-                key={m.key}
-                onClick={() => setMode(m.key)}
+                key={s}
+                onClick={() => applyScheme(s)}
                 style={{
                   flex: 1,
-                  padding: '10px 12px',
+                  padding: '8px 0',
                   fontSize: 9,
                   fontWeight: 700,
-                  letterSpacing: '0.08em',
+                  letterSpacing: '0.12em',
                   fontFamily: '"Space Mono", monospace',
-                  background: theme.mode === m.key ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
-                  border: theme.mode === m.key ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
-                  borderRadius: 4,
-                  color: theme.mode === m.key ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: colorScheme === s
+                    ? '2px solid var(--pipe-text)'
+                    : '2px solid transparent',
+                  color: colorScheme === s ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
                 }}
               >
-                {m.icon}
-                {m.label}
+                {s.toUpperCase()}
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Theme select */}
+        <div>
+          <label style={labelStyle}>THEME</label>
+          <select
+            value={themeName}
+            onChange={(e) => applyTheme(e.target.value as ThemeName)}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              fontFamily: '"Space Mono", monospace',
+              background: 'var(--pipe-surface-solid)',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 4,
+              color: 'var(--pipe-text)',
+              cursor: 'pointer',
+              appearance: 'none',
+              WebkitAppearance: 'none',
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 12px center',
+              paddingRight: 32,
+            }}
+          >
+            <option value="metalic">METALIC</option>
+            <option value="heatmap">HEAT_MAP</option>
+            <option value="anatomy">ANATOMY</option>
+          </select>
         </div>
 
         {/* Background toggle */}
@@ -59,37 +115,8 @@ export function DisplaySettings(): JSX.Element {
           <ToggleSwitch enabled={bg.enabled} onChange={() => updateBackground({ enabled: !bg.enabled })} />
         </div>
 
-        {/* Shader picker */}
-        <div>
-          <label style={labelStyle}>BACKGROUND_SHADER</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {(['liquid-metal', 'heatmap'] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => updateBackground({ shader: s })}
-                style={{
-                  flex: 1,
-                  padding: '10px 12px',
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  fontFamily: '"Space Mono", monospace',
-                  background: bg.shader === s ? 'var(--pipe-accent-surface)' : 'var(--pipe-surface)',
-                  border: bg.shader === s ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
-                  borderRadius: 4,
-                  color: bg.shader === s ? 'var(--pipe-accent)' : 'var(--pipe-text-dim)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {s.toUpperCase().replace('-', '_')}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Color theme picker (heatmap only) */}
-        {bg.shader === 'heatmap' && (
+        {themeName === 'heatmap' && (
           <div>
             <label style={labelStyle}>COLOR_THEME</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -228,7 +255,7 @@ function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: () =>
         height: 20,
         borderRadius: 10,
         border: 'none',
-        background: enabled ? 'var(--pipe-accent)' : 'var(--pipe-surface)',
+        background: enabled ? 'var(--pipe-text-muted)' : 'var(--pipe-surface)',
         cursor: 'pointer',
         position: 'relative',
         transition: 'background 0.2s',
@@ -238,7 +265,7 @@ function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: () =>
         width: 16,
         height: 16,
         borderRadius: '50%',
-        background: '#fff',
+        background: 'var(--pipe-bg)',
         position: 'absolute',
         top: 2,
         left: enabled ? 18 : 2,
@@ -266,7 +293,7 @@ function SliderControl({ label, value, min, max, step, displayValue, onChange }:
         <span style={{
           fontSize: 10,
           fontWeight: 700,
-          color: 'var(--pipe-accent)',
+          color: 'var(--pipe-text-muted)',
           fontFamily: '"Space Mono", monospace',
         }}>
           {displayValue}
@@ -281,7 +308,7 @@ function SliderControl({ label, value, min, max, step, displayValue, onChange }:
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{
           width: '100%',
-          accentColor: 'var(--pipe-accent)',
+          accentColor: 'var(--pipe-text)',
           cursor: 'pointer',
         }}
       />

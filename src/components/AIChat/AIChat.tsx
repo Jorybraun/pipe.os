@@ -17,6 +17,7 @@ import { Mic, Square, Loader2, ArrowRight, Radio, Bot, Volume2, VolumeX, RotateC
 import { useLiveSession } from '../../hooks/useLiveSession';
 import { useTTS } from '../../hooks/useTTS';
 import { ThinkingIndicator } from './ThinkingIndicator';
+import Logo from '../ui/Logo';
 import { PastExchangeCard } from './PastExchangeCard';
 import { QuestionInput } from './QuestionInput';
 import { DomainBars } from './DomainBars';
@@ -664,25 +665,32 @@ export function AIChat({
         })()}
 
         <div ref={scrollRef}>
-          {/* Loading indicator — shows streaming text when available */}
+          {/* Loading indicator */}
           {conv.isLoading && (
             conv.streamingText ? (
               <div style={{
-                padding: 24,
-                background: 'var(--pipe-surface)',
-                border: '1px solid var(--pipe-border-light)',
-                borderRadius: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 16,
+                padding: '32px 0',
               }}>
                 <div style={{
-                  fontSize: 13,
-                  color: 'var(--pipe-text)',
-                  lineHeight: 1.7,
-                  fontFamily: '"Space Mono", monospace',
-                  whiteSpace: 'pre-wrap',
+                  width: 48,
+                  height: 48,
+                  animation: 'pipeSpin 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+                  opacity: 0.85,
                 }}>
-                  {conv.streamingText}
-                  <span style={{ opacity: 0.5, animation: 'blink 1s infinite' }}>▊</span>
+                  <Logo />
                 </div>
+                <span style={{
+                  fontSize: 9,
+                  letterSpacing: '0.2em',
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                }}>
+                  THINKING...
+                </span>
               </div>
             ) : (
               <ThinkingIndicator
@@ -960,6 +968,12 @@ export function AIChat({
       {/* Keyframe styles */}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pipeSpin {
+          0%   { transform: rotate(0deg)   scale(1); }
+          75%  { transform: rotate(290deg) scale(1); }
+          88%  { transform: rotate(372deg) scale(1.06); }
+          100% { transform: rotate(360deg) scale(1); }
+        }
         @keyframes liveOrbPulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.2); }
           50% { box-shadow: 0 0 0 16px rgba(74, 222, 128, 0); }
