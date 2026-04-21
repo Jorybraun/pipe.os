@@ -214,14 +214,14 @@ export default function ListingPage(): JSX.Element {
                   width: 14,
                   height: 14,
                   borderRadius: 3,
-                  border: `1.5px solid ${selectedIds.size > 0 ? "#8b5cf6" : "var(--pipe-text-dim)"}`,
-                  background: selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 ? "#8b5cf6" : "transparent",
+                  border: `1.5px solid ${selectedIds.size > 0 ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-text-dim)"}`,
+                  background: selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 ? "rgba(255, 255, 255, 0.40)" : "transparent",
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
                   {selectedIds.size > 0 && selectedIds.size < filteredPipelines.length && (
-                    <div style={{ width: 6, height: 1.5, background: '#8b5cf6' }} />
+                    <div style={{ width: 6, height: 1.5, background: 'rgba(255, 255, 255, 0.40)' }} />
                   )}
                   {selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 && (
                     <Check size={10} color="#fff" strokeWidth={4} />
@@ -282,8 +282,8 @@ export default function ListingPage(): JSX.Element {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                background: 'rgba(139, 92, 246, 0.1)',
-                border: '1px solid rgba(139, 92, 246, 0.2)',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
                 color: 'var(--pipe-accent)',
                 padding: '4px 12px',
                 borderRadius: 4,
@@ -360,7 +360,7 @@ export default function ListingPage(): JSX.Element {
              }}
            >
              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Filter size={14} color="#8b5cf6" />
+                <Filter size={14} color="rgba(255, 255, 255, 0.40)" />
                 <h3 style={{
                   fontSize: 10,
                   letterSpacing: '0.2em',
@@ -380,8 +380,8 @@ export default function ListingPage(): JSX.Element {
                     onClick={() => setFilter(f)}
                     style={{
                       padding: '12px 16px',
-                      background: filter === f ? 'rgba(139, 92, 246, 0.1)' : 'var(--pipe-surface)',
-                      border: `1px solid ${filter === f ? 'rgba(139, 92, 246, 0.3)' : 'var(--pipe-border-light)'}`,
+                      background: filter === f ? 'rgba(255, 255, 255, 0.06)' : 'var(--pipe-surface)',
+                      border: `1px solid ${filter === f ? 'rgba(255, 255, 255, 0.12)' : 'var(--pipe-border-light)'}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -412,9 +412,9 @@ export default function ListingPage(): JSX.Element {
                   PIPELINE_INSIGHTS
                 </span>
                 <div style={{ 
-                  padding: 16, 
-                  background: 'rgba(139, 92, 246, 0.03)', 
-                  border: '1px solid rgba(139, 92, 246, 0.1)',
+                  padding: 16,
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
                   borderRadius: 8,
                   display: 'flex',
                   flexDirection: 'column',

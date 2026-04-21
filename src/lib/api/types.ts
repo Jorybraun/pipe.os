@@ -290,6 +290,7 @@ export interface RoleContextQuestion {
   id: string;
   text: string;
   input: RoleContextQuestionInput;
+  suggestedAnswers?: string[];
 }
 
 export interface RoleContextProgress {

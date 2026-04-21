@@ -159,13 +159,13 @@ test.describe("Match-config chip on StageStepper", () => {
     const chips = page.locator('[data-testid="match-config-chip"]');
     await expect(chips).toHaveCount(seed.stages.length);
 
-    // Every chip renders the same inherited summary string.
-    const expected = "MATCH: TAILORED · STRICT · SHARED REPO";
+    // Chip shows philosophy + tolerance (linkage is shown in the gate panel, not the chip).
+    const expected = "MATCH: TAILORED · STRICT";
     await expect(chips.nth(0)).toContainText(expected);
     await expect(chips.nth(1)).toContainText(expected);
   });
 
-  test("clicking the chip opens the inheritance tooltip", async ({ page }) => {
+  test("clicking the chip opens the StageGatePanel with full config details", async ({ page }) => {
     await page.route(
       `${API_BASE}/api/v1/pipelines/${seed.pipelineId}/overview`,
       async (route) => {
@@ -189,20 +189,60 @@ test.describe("Match-config chip on StageStepper", () => {
     await page.waitForLoadState("networkidle");
 
     const firstChip = page.locator('[data-testid="match-config-chip"]').first();
-    await expect(firstChip).toContainText("MATCH: HYBRID · MODERATE · PER STAGE");
+    await expect(firstChip).toContainText("MATCH: HYBRID · MODERATE");
 
-    // No tooltip until the user clicks.
-    await expect(page.locator('[data-testid="match-config-tooltip"]')).toHaveCount(0);
+    // Panel is closed until chip is clicked.
+    await expect(page.locator('[data-testid="stage-gate-panel"]')).toHaveCount(0);
 
     await firstChip.click();
 
-    const tooltip = page.locator('[data-testid="match-config-tooltip"]').first();
-    await expect(tooltip).toBeVisible();
-    await expect(tooltip).toContainText(/inherited from role config/i);
+    // Panel opens with full config details.
+    const panel = page.locator('[data-testid="stage-gate-panel"]');
+    await expect(panel).toBeVisible();
+    // Panel shows match philosophy.
+    await expect(panel).toContainText(/hybrid/i);
+    // Panel shows stage linkage (not shown in chip).
+    await expect(panel).toContainText(/per.?stage/i);
 
-    // Clicking again toggles the tooltip closed.
-    await firstChip.click();
-    await expect(page.locator('[data-testid="match-config-tooltip"]')).toHaveCount(0);
+    // Close via close button.
+    await page.locator('[aria-label="Close gate panel"]').click();
+    await expect(page.locator('[data-testid="stage-gate-panel"]')).toHaveCount(0);
+  });
+
+  test("gate connector circle opens the StageGatePanel when clicked", async ({ page }) => {
+    await page.route(
+      `${API_BASE}/api/v1/pipelines/${seed.pipelineId}/overview`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            overviewResponse(seed, {
+              matchPhilosophy: "tailored",
+              tolerance: "strict",
+              stageLinkage: "shared-repo",
+              automationGranularity: "per-candidate",
+              hybridMixRatio: null,
+            }),
+          ),
+        });
+      },
+    );
+
+    await page.goto(`${APP_BASE}/pipeline/${seed.pipelineId}`);
+    await page.waitForLoadState("networkidle");
+
+    const gateConnector = page.locator('[data-testid="stage-gate-connector"]').first();
+    await expect(gateConnector).toBeVisible();
+    await gateConnector.click();
+
+    const panel = page.locator('[data-testid="stage-gate-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(/tailored/i);
+
+    // Close via the panel's close button.
+    await page.locator('[aria-label="Close gate panel"]').click();
+    await expect(panel).toHaveCount(0);
   });
 
   test("no chip renders when matchConfig is null", async ({ page }) => {

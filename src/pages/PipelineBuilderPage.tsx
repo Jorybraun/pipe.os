@@ -915,7 +915,7 @@ export default function PipelineBuilderPage(): JSX.Element {
             style={{
               fontSize: 11,
               letterSpacing: "0.2em",
-              color: "rgba(139, 92, 246, 0.8)",
+              color: "rgba(255, 255, 255, 0.45)",
               marginBottom: 8,
             }}
           >

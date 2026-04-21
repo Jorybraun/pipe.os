@@ -421,7 +421,7 @@ export function SidebarNav({
             position: "relative",
             backdropFilter: activeSection === "sandbox" ? "blur(20px)" : "none",
             boxShadow: activeSection === "sandbox"
-              ? "0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)"
+              ? "0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)"
               : "none",
           }}
           onMouseEnter={(e) => {
@@ -448,9 +448,9 @@ export function SidebarNav({
                 width: 3,
                 height: 24,
                 background:
-                  "linear-gradient(180deg, rgba(139, 92, 246, 0.8), rgba(167, 139, 250, 0.6))",
+                  "linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.25))",
                 borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(139, 92, 246, 0.6)",
+                boxShadow: "0 0 12px rgba(255, 255, 255, 0.20)",
               }}
             />
           )}
@@ -479,7 +479,7 @@ export function SidebarNav({
             position: "relative",
             backdropFilter: activeSection === "agent" ? "blur(20px)" : "none",
             boxShadow: activeSection === "agent"
-              ? "0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)"
+              ? "0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)"
               : "none",
           }}
           onMouseEnter={(e) => {
@@ -506,9 +506,9 @@ export function SidebarNav({
                 width: 3,
                 height: 24,
                 background:
-                  "linear-gradient(180deg, rgba(139, 92, 246, 0.8), rgba(167, 139, 250, 0.6))",
+                  "linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.25))",
                 borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(139, 92, 246, 0.6)",
+                boxShadow: "0 0 12px rgba(255, 255, 255, 0.20)",
               }}
             />
           )}

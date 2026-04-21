@@ -270,7 +270,7 @@ function CandidateKanbanCard({
 
   const getStatusColor = (): string => {
     if (candidate.status === 'COMPLETED') return '#34d399';
-    if (candidate.status === 'IN_PROGRESS') return '#8b5cf6';
+    if (candidate.status === 'IN_PROGRESS') return 'rgba(255, 255, 255, 0.40)';
     return 'rgba(255,255,255,0.2)';
   };
 
@@ -453,7 +453,7 @@ function CandidateKanbanCard({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: refreshing ? '#8b5cf6' : 'var(--pipe-text-dim)',
+                color: refreshing ? 'rgba(255, 255, 255, 0.40)' : 'var(--pipe-text-dim)',
                 cursor: refreshing ? 'wait' : 'pointer',
                 padding: 4,
                 transition: 'all 0.2s ease',

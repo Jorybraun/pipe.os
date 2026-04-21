@@ -266,8 +266,8 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           <button
             onClick={nextPhase}
             style={{
-              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.2))',
-              border: '1px solid rgba(139, 92, 246, 0.4)',
+              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(59, 130, 246, 0.2))',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
               color: 'var(--pipe-accent)',
               padding: '14px 32px',
               borderRadius: 0,
@@ -279,16 +279,16 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
               fontWeight: 700,
               letterSpacing: '0.15em',
               textTransform: 'uppercase',
-              boxShadow: '0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)',
+              boxShadow: '0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)',
               transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(139, 92, 246, 0.3)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(255, 255, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12)';
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)';
             }}
           >
             {currentPhase === PHASES.length - 1 ? 'FINISH_ROLE_DISCOVERY' : 'NEXT_STEP'}

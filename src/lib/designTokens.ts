@@ -61,11 +61,11 @@ export const COLORS = {
     MERCURY: 'rgba(200, 210, 230, 0.12)',
   },
 
-  // AI/Agent Accent
+  // Accent
   AI: {
-    PRIMARY: 'rgba(139, 92, 246, 0.8)',
+    PRIMARY: 'rgba(255, 255, 255, 0.45)',
     SECONDARY: 'rgba(167, 139, 250, 0.6)',
-    GLOW: 'rgba(139, 92, 246, 0.4)',
+    GLOW: 'rgba(255, 255, 255, 0.18)',
   },
 
   // Borders & Accents

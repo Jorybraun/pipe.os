@@ -6,6 +6,22 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(pipeline): stage gate panel, clickable connectors, synthesis improvements, role profile hero (2026-04-19)
+
+Five UI tasks completed in one batch:
+
+**#19 — Clickable circle stage-gate connector** (`StageStepper.tsx`): replaced the decorative SVG chain connector with a 32px circle button containing a `Settings2` icon. Blue-tinted when match config is present. Each circle opens the stage gate panel for that stage.
+
+**#17 — StageGatePanel** (`src/components/Pipeline/StageGatePanel.tsx`): new fixed right-side drawer that opens when a gate circle or match chip is clicked. Three sections: MATCH_CONFIG (all 5 axes with plain-language descriptions), REPO_CONFIG (selection method + match signals + coming-soon repo detail link), CANDIDATES_AT_GATE (invited/in-progress/completed counts + score-gate threshold stub), EMAIL_AUTOMATION (three email trigger stubs with SOON badges).
+
+**#18 — Repo config surface** (inside StageGatePanel): REPO_CONFIG section shows selection method (shared-repo vs per-stage), match signals used (non-negotiable skills + seniority), challenge types provisioned.
+
+**#20 — Pipeline home role profile hero** (`PipelineInsightsPanel.tsx`): always-visible summary strip above the tab card when `roleContext` exists — archetype (large), seniority, company/location/department metadata, top 6 must-have skill chips, profile depth signal count.
+
+**#21 — Synthesis phase UI improvements** (`RoleDiscoveryPage.tsx`): added `baseline` prop so the synthesis header shows the role title and company. New baseline metadata strip (role/company/salary/location/stack). Persona tab reorganised: hero archetype+seniority row, career signal card, 2-column skills grid, risk signals section. Added COVERAGE tab showing domain bars. JD tab uses system font stack (readable prose).
+
+**E2E tests updated** (`e2e/match-config-wizard.spec.ts`): chip text assertion updated (linkage moved to panel); tooltip test replaced with panel open/close test; new gate-connector test added.
+
 #### fix(theme): neutral accents for dark/light modes — white and black (2026-04-21)
 
 Dark mode `--pipe-accent` → `#ffffff` (white). Light mode → `#1a1a1a` (black). Anatomy modes retain warm amber. Purple is gone from all themes.

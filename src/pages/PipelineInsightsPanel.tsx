@@ -409,6 +409,88 @@ export default function PipelineInsightsPanel(): JSX.Element {
       data-testid="insights-panel"
       style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
     >
+      {/* Role profile summary — always visible when role context exists */}
+      {roleContext && (
+        <div
+          style={{
+            padding: '20px 24px',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(96,165,250,0.04) 100%)',
+            border: '1px solid var(--pipe-border)',
+            borderRadius: 10,
+            display: 'flex',
+            gap: 32,
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+          }}
+        >
+          {/* Archetype block */}
+          {roleContext.persona && (
+            <div style={{ flex: '0 0 auto', maxWidth: 320 }}>
+              <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>ARCHETYPE</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.01em', lineHeight: 1.2, marginBottom: 4 }}>
+                {roleContext.persona.archetype}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.05em' }}>
+                {roleContext.persona.seniority}
+              </div>
+            </div>
+          )}
+
+          {/* Key metadata */}
+          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
+            {([
+              ['COMPANY', roleContext.baseline.companyName],
+              ['LOCATION', roleContext.baseline.location],
+              ['DEPARTMENT', roleContext.baseline.department],
+            ] as [string, string | undefined][]).filter(([, v]) => !!v).map(([label, value]) => (
+              <div key={label}>
+                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
+              </div>
+            ))}
+
+            {/* Must-have skill chips */}
+            {roleContext.persona && roleContext.persona.mustHaveSkills.length > 0 && (
+              <div>
+                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>MUST-HAVE SKILLS</div>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {roleContext.persona.mustHaveSkills.slice(0, 6).map((skill) => (
+                    <span
+                      key={skill}
+                      style={{
+                        fontSize: 9,
+                        padding: '3px 8px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: 'var(--pipe-text-muted)',
+                        fontFamily: '"Space Mono", monospace',
+                        borderRadius: 3,
+                      }}
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                  {roleContext.persona.mustHaveSkills.length > 6 && (
+                    <span style={{ fontSize: 9, padding: '3px 8px', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+                      +{roleContext.persona.mustHaveSkills.length - 6} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Profile depth signal */}
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+            <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>PROFILE DEPTH</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace', lineHeight: 1 }}>
+              {countFilledSignals(roleContext)}
+            </div>
+            <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>SIGNALS</div>
+          </div>
+        </div>
+      )}
+
       {/* Empty-state quickstart — DRAFT with no stages */}
       {isDraft && isEmpty && (
         <SectionCard
@@ -899,7 +981,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                   c.status === 'COMPLETED'
                     ? '#4ade80'
                     : c.status === 'IN_PROGRESS'
-                      ? '#8b5cf6'
+                      ? 'rgba(255, 255, 255, 0.40)'
                       : 'var(--pipe-text-dim)';
                 return (
                   <button

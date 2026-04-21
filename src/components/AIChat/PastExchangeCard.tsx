@@ -45,7 +45,7 @@ export function PastExchangeCard({ exchange, index, onFeedback }: {
       style={{
         padding: expanded ? '16px 20px' : '10px 20px',
         background: 'var(--pipe-surface)',
-        borderLeft: `2px solid ${hasFeedback ? 'rgba(251, 191, 36, 0.4)' : 'rgba(139, 92, 246, 0.2)'}`,
+        borderLeft: `2px solid ${hasFeedback ? 'rgba(251, 191, 36, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
         cursor: 'pointer',
         transition: 'all 0.3s ease',
         marginBottom: 2,
@@ -55,7 +55,7 @@ export function PastExchangeCard({ exchange, index, onFeedback }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <span style={{
             fontSize: 8, letterSpacing: '0.15em',
-            color: 'rgba(139, 92, 246, 0.5)',
+            color: 'rgba(255, 255, 255, 0.25)',
             fontFamily: '"Space Mono", monospace', flexShrink: 0,
           }}>
             Q{index + 1}

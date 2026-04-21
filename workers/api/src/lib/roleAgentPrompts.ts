@@ -126,7 +126,8 @@ You MUST respond with valid JSON matching this exact schema:
       "type": "<text | textarea | tags | select | radio>",
       "placeholder": "<optional hint text>",
       "options": ["<only for select/radio type>"]
-    }
+    },
+    "suggestedAnswers": ["<2-3 short realistic example answers the recruiter could tap to answer this question quickly. Concrete and specific — not generic. Omit for open-ended questions where any answer is equally valid.>"]
   },
   "knowledgeStateUpdate": {
     "<domain>": { "<key>": "<value extracted from their answer>" }

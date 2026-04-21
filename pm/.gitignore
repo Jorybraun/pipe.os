@@ -1,0 +1,6 @@
+node_modules/
+pm.json
+.env
+.env.local
+*.log
+.DS_Store

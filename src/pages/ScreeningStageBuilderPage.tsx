@@ -304,7 +304,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
             style={{
               fontSize: 11,
               letterSpacing: '0.2em',
-              color: 'rgba(139, 92, 246, 0.8)',
+              color: 'rgba(255, 255, 255, 0.45)',
               marginBottom: 8,
             }}
           >
@@ -442,9 +442,9 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                 onClick={() => console.log('AI Generate questions')}
                 style={{
                   padding: '8px 14px',
-                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.15))',
-                  border: '1px solid rgba(139, 92, 246, 0.3)',
-                  color: 'rgba(139, 92, 246, 0.9)',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(59, 130, 246, 0.15))',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: 'rgba(255, 255, 255, 0.55)',
                   fontSize: 8,
                   letterSpacing: '0.15em',
                   cursor: 'pointer',

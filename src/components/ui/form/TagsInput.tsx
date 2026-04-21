@@ -80,10 +80,10 @@ export function TagsInput({
               style={{
                 padding: '6px 12px',
                 background:
-                  'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.15))',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
+                  'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(59, 130, 246, 0.15))',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
                 fontSize: 10,
-                color: 'rgba(139, 92, 246, 0.9)',
+                color: 'rgba(255, 255, 255, 0.55)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,

@@ -917,6 +917,46 @@ export function AIChat({
                     </>
                   )}
 
+                  {/* Suggested answer chips */}
+                  {conv.currentQuestion.suggestedAnswers && conv.currentQuestion.suggestedAnswers.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                      {conv.currentQuestion.suggestedAnswers.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setAiAnswer(s)}
+                          style={{
+                            padding: '6px 14px',
+                            background: aiAnswer === s ? 'rgba(255,255,255,0.08)' : 'transparent',
+                            border: `1px solid ${aiAnswer === s ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)'}`,
+                            color: aiAnswer === s ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                            fontSize: 11,
+                            fontFamily: '"Space Mono", monospace',
+                            letterSpacing: '0.03em',
+                            cursor: 'pointer',
+                            borderRadius: 4,
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseOver={(e) => {
+                            if (aiAnswer !== s) {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)';
+                              e.currentTarget.style.color = 'var(--pipe-text)';
+                            }
+                          }}
+                          onMouseOut={(e) => {
+                            if (aiAnswer !== s) {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                              e.currentTarget.style.color = 'var(--pipe-text-dim)';
+                            }
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Text input + SEND */}
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <div style={{ flex: 1 }}>

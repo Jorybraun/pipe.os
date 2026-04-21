@@ -56,13 +56,13 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                   background: isComplete
                     ? "rgba(16, 185, 129, 0.1)"
                     : isActive
-                    ? "rgba(139, 92, 246, 0.2)"
+                    ? "rgba(255, 255, 255, 0.08)"
                     : "var(--pipe-surface)",
                   border: `1px solid ${
                     isComplete
                       ? "rgba(16, 185, 129, 0.4)"
                       : isActive
-                      ? "rgba(139, 92, 246, 0.5)"
+                      ? "rgba(255, 255, 255, 0.25)"
                       : "var(--pipe-border)"
                   }`,
                   display: "flex",
@@ -77,7 +77,7 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                   fontWeight: 700,
                   fontFamily: '"Space Mono", monospace',
                   transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: isActive ? '0 0 15px rgba(139, 92, 246, 0.3)' : 'none'
+                  boxShadow: isActive ? '0 0 15px rgba(255, 255, 255, 0.12)' : 'none'
                 }}
               >
                 {isComplete ? <Check size={14} /> : i + 1}
@@ -104,8 +104,8 @@ export function PhaseProgress({ current, phases }: PhaseProgressProps) {
                   width: 6,
                   height: 6,
                   borderRadius: '50%',
-                  background: 'rgba(139, 92, 246, 0.8)',
-                  boxShadow: '0 0 8px rgba(139, 92, 246, 0.6)',
+                  background: 'rgba(255, 255, 255, 0.45)',
+                  boxShadow: '0 0 8px rgba(255, 255, 255, 0.30)',
                   animation: 'pulse 2s ease-in-out infinite'
                 }} />
               )}

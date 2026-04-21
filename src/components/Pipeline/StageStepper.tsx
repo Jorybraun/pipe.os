@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, Plus, Phone, Users, Zap, FileText, GitPullRequest } from 'lucide-react';
+import { Home, Plus, Phone, Users, Zap, FileText, GitPullRequest, Settings2 } from 'lucide-react';
 import type { OverviewStage, OverviewCandidate, OverviewMatchConfig } from '../../lib/api/types';
 import type { StageType } from '../../lib/stageTemplates';
 
@@ -9,11 +8,9 @@ import type { StageType } from '../../lib/stageTemplates';
  * insights view and each stage panel.
  *
  * Nodes:
- *   [HOME] — [STAGE 1] — [STAGE 2] — ... — [+ ADD_STAGE]
+ *   [HOME] — ⦿ — [STAGE 1] — ⦿ — [STAGE 2] — ... — ⦿ — [+ ADD_STAGE]
  *
- * The home node links to `/pipeline/:id` (insights). Each stage node links to
- * `/pipeline/:id/stage/:stageId`. Active state is driven by NavLink so route
- * changes and browser history update the stepper without any extra state.
+ * The circle gate connectors (⦿) are clickable — opening StageGatePanel.
  */
 
 const STAGE_TYPE_ICON: Record<StageType, typeof Phone> = {
@@ -38,6 +35,11 @@ export interface StageStepperProps {
   onAddStage?: () => void;
   /** Inherited match config (ADR-039). When present, renders a chip per stage. */
   matchConfig?: OverviewMatchConfig | null;
+  /**
+   * Called when a gate circle is clicked. Receives the stageId the gate leads
+   * into. Parent opens StageGatePanel for that stage.
+   */
+  onStageGateClick?: (stageId: string) => void;
 }
 
 const NODE_BASE: React.CSSProperties = {
@@ -66,37 +68,76 @@ const NODE_ACTIVE: React.CSSProperties = {
   color: 'var(--pipe-text)',
 };
 
-const ChainConnector = () => (
-  <svg
-    viewBox="0 0 1000 1000"
-    fill="none"
-    style={{ width: 28, height: 28, flex: '0 0 auto', flexShrink: 0 }}
-    aria-hidden="true"
-  >
-    <g transform="rotate(90, 500, 500)">
-      <path
-        d="M 740 500 L 740 752 A 120 120 0 0 1 500 752 L 500 248 A 120 120 0 0 0 260 248 L 260 500"
-        stroke="var(--pipe-text-dim)"
-        strokeWidth="192"
-        strokeLinecap="butt"
-        strokeLinejoin="round"
+interface StageGateProps {
+  stageId: string;
+  onClick: (id: string) => void;
+  hasConfig: boolean;
+}
+
+function StageGate({ stageId, onClick, hasConfig }: StageGateProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      data-testid="stage-gate-connector"
+      data-stage-id={stageId}
+      onClick={() => onClick(stageId)}
+      title="Configure stage gate"
+      style={{
+        width: 32,
+        height: 32,
+        flex: '0 0 auto',
+        flexShrink: 0,
+        borderRadius: '50%',
+        background: hasConfig ? 'rgba(96,165,250,0.06)' : 'var(--pipe-surface)',
+        border: hasConfig
+          ? '1px solid rgba(96,165,250,0.25)'
+          : '1px solid var(--pipe-border-light)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(96,165,250,0.12)';
+        (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(96,165,250,0.5)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = hasConfig
+          ? 'rgba(96,165,250,0.06)'
+          : 'var(--pipe-surface)';
+        (e.currentTarget as HTMLButtonElement).style.borderColor = hasConfig
+          ? 'rgba(96,165,250,0.25)'
+          : 'var(--pipe-border-light)';
+      }}
+    >
+      <Settings2
+        size={12}
+        color={hasConfig ? '#60a5fa' : 'var(--pipe-text-dim)'}
       />
-      <rect x="615" y="450" width="250" height="100" fill="var(--pipe-text-dim)" />
-      <rect x="135" y="450" width="250" height="100" fill="var(--pipe-text-dim)" />
-    </g>
-  </svg>
-);
+    </button>
+  );
+}
+
+/** Thin horizontal line connecting nodes when gate is not applicable (e.g. before HOME). */
+function Line(): JSX.Element {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        width: 20,
+        height: 1,
+        background: 'var(--pipe-border-light)',
+        flex: '0 0 auto',
+      }}
+    />
+  );
+}
 
 function formatMatchChip(cfg: OverviewMatchConfig): string {
   const phil = cfg.matchPhilosophy ? cap(cfg.matchPhilosophy) : '—';
   const tol = cfg.tolerance ? cap(cfg.tolerance) : '—';
-  const linkage =
-    cfg.stageLinkage === 'shared-repo'
-      ? 'Shared repo'
-      : cfg.stageLinkage === 'per-stage'
-        ? 'Per stage'
-        : '—';
-  return `${phil} · ${tol} · ${linkage}`;
+  return `${phil} · ${tol}`;
 }
 
 function cap(s: string): string {
@@ -110,8 +151,14 @@ export function StageStepper({
   canAddStage,
   onAddStage,
   matchConfig,
+  onStageGateClick,
 }: StageStepperProps): JSX.Element {
-  const [openTooltipStageId, setOpenTooltipStageId] = useState<string | null>(null);
+  const hasConfig = !!matchConfig;
+
+  const handleGateClick = (stageId: string): void => {
+    onStageGateClick?.(stageId);
+  };
+
   return (
     <div
       data-testid="stage-stepper"
@@ -122,233 +169,226 @@ export function StageStepper({
         marginBottom: 24,
       }}
     >
-    <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '16px 0',
-        width: 'max-content',
-      }}
-    >
-      {/* Home node — insights route */}
-      <NavLink
-        to={`/pipeline/${pipelineId}`}
-        end
-        data-testid="stepper-home"
-        style={({ isActive }) => ({
-          ...NODE_BASE,
-          minWidth: 64,
-          padding: '14px',
-          justifyContent: 'center',
-          ...(isActive ? NODE_ACTIVE : NODE_INACTIVE),
-        })}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '16px 0',
+          width: 'max-content',
+        }}
       >
-        {({ isActive }) => (
-          <Home
-            size={16}
-            color={isActive ? 'var(--pipe-text)' : 'var(--pipe-text-muted)'}
-          />
-        )}
-      </NavLink>
+        {/* Home node — insights route */}
+        <NavLink
+          to={`/pipeline/${pipelineId}`}
+          end
+          data-testid="stepper-home"
+          style={({ isActive }) => ({
+            ...NODE_BASE,
+            minWidth: 64,
+            padding: '14px',
+            justifyContent: 'center',
+            ...(isActive ? NODE_ACTIVE : NODE_INACTIVE),
+          })}
+        >
+          {({ isActive }) => (
+            <Home
+              size={16}
+              color={isActive ? 'var(--pipe-text)' : 'var(--pipe-text-muted)'}
+            />
+          )}
+        </NavLink>
 
-      {stages.map((stage, index) => {
-        const candidateCount = candidates.filter(
-          (c) => c.currentStageId === stage.id,
-        ).length;
-        const TypeIcon = stage.stageType
-          ? STAGE_TYPE_ICON[stage.stageType as StageType] ?? FileText
-          : FileText;
+        {stages.map((stage) => {
+          const candidateCount = candidates.filter(
+            (c) => c.currentStageId === stage.id,
+          ).length;
+          const TypeIcon = stage.stageType
+            ? STAGE_TYPE_ICON[stage.stageType as StageType] ?? FileText
+            : FileText;
 
-        return (
-          <div
-            key={stage.id}
-            style={{ display: 'flex', alignItems: 'center' }}
-          >
-            <ChainConnector />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
-            <NavLink
-              to={`/pipeline/${pipelineId}/stage/${stage.id}`}
-              data-testid="stepper-stage"
-              data-stage-id={stage.id}
-              style={({ isActive }) => ({
-                ...NODE_BASE,
-                ...(isActive ? NODE_ACTIVE : NODE_INACTIVE),
-              })}
+          return (
+            <div
+              key={stage.id}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}
             >
-              {({ isActive }) => (
-                <>
-                  <div
+              {/* Gate circle */}
+              {onStageGateClick ? (
+                <StageGate
+                  stageId={stage.id}
+                  onClick={handleGateClick}
+                  hasConfig={hasConfig}
+                />
+              ) : (
+                <Line />
+              )}
+
+              {/* Stage node + match chip stacked */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+                <NavLink
+                  to={`/pipeline/${pipelineId}/stage/${stage.id}`}
+                  data-testid="stepper-stage"
+                  data-stage-id={stage.id}
+                  style={({ isActive }) => ({
+                    ...NODE_BASE,
+                    ...(isActive ? NODE_ACTIVE : NODE_INACTIVE),
+                  })}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          background: isActive
+                            ? 'var(--pipe-surface-hover)'
+                            : 'var(--pipe-surface)',
+                          border: '1px solid var(--pipe-border)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: isActive
+                            ? 'var(--pipe-text)'
+                            : 'var(--pipe-text-muted)',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {stage.sortOrder + 1}
+                      </div>
+                      <TypeIcon
+                        size={14}
+                        color={
+                          isActive ? 'var(--pipe-text)' : 'var(--pipe-text-muted)'
+                        }
+                      />
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 2,
+                          minWidth: 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            letterSpacing: '0.1em',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: 140,
+                          }}
+                        >
+                          {(stage.title ?? 'STAGE').toUpperCase()}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 8,
+                            letterSpacing: '0.15em',
+                            color: 'var(--pipe-text-dim)',
+                          }}
+                        >
+                          {candidateCount} CANDIDATE{candidateCount === 1 ? '' : 'S'}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </NavLink>
+
+                {/* Match chip — click opens gate panel */}
+                {matchConfig && onStageGateClick && (
+                  <button
+                    type="button"
+                    data-testid="match-config-chip"
+                    data-stage-id={stage.id}
+                    onClick={() => handleGateClick(stage.id)}
                     style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: '50%',
-                      background: isActive
-                        ? 'var(--pipe-surface-hover)'
-                        : 'var(--pipe-surface)',
-                      border: '1px solid var(--pipe-border)',
+                      width: '100%',
+                      padding: '4px 8px',
+                      background: 'transparent',
+                      border: '1px solid rgba(96,165,250,0.2)',
+                      borderRadius: 4,
+                      color: '#60a5fa',
+                      fontSize: 9,
+                      letterSpacing: '0.08em',
+                      fontFamily: '"Space Mono", monospace',
+                      cursor: 'pointer',
+                      textAlign: 'center',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: 10,
-                      fontWeight: 800,
-                      color: isActive
-                        ? 'var(--pipe-text)'
-                        : 'var(--pipe-text-muted)',
-                      flexShrink: 0,
+                      gap: 5,
                     }}
                   >
-                    {index + 1}
-                  </div>
-                  <TypeIcon
-                    size={14}
-                    color={
-                      isActive ? 'var(--pipe-text)' : 'var(--pipe-text-muted)'
-                    }
-                  />
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 2,
-                      minWidth: 0,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.1em',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        maxWidth: 140,
-                      }}
-                    >
-                      {(stage.title ?? 'STAGE').toUpperCase()}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 8,
-                        letterSpacing: '0.15em',
-                        color: 'var(--pipe-text-dim)',
-                      }}
-                    >
-                      {candidateCount} CANDIDATE{candidateCount === 1 ? '' : 'S'}
-                    </div>
-                  </div>
-                </>
-              )}
-            </NavLink>
-            {matchConfig && (
-              <div style={{ position: 'relative' }}>
-                <button
-                  type="button"
-                  data-testid="match-config-chip"
-                  data-stage-id={stage.id}
-                  onClick={() =>
-                    setOpenTooltipStageId((cur) => (cur === stage.id ? null : stage.id))
-                  }
-                  style={{
-                    width: '100%',
-                    padding: '4px 8px',
-                    background: 'transparent',
-                    border: '1px solid var(--pipe-border)',
-                    borderRadius: 4,
-                    color: 'var(--pipe-text-dim)',
-                    fontSize: 9,
-                    letterSpacing: '0.08em',
-                    fontFamily: '"Space Mono", monospace',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                  }}
-                >
-                  MATCH: {formatMatchChip(matchConfig).toUpperCase()}
-                </button>
-                {openTooltipStageId === stage.id && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 4px)',
-                      left: 0,
-                      right: 0,
-                      padding: 10,
-                      background: '#13131a',
-                      border: '1px solid var(--pipe-border)',
-                      borderRadius: 4,
-                      fontSize: 9,
-                      lineHeight: 1.5,
-                      color: 'var(--pipe-text-muted)',
-                      fontFamily: '"Space Mono", monospace',
-                      zIndex: 10,
-                    }}
-                    data-testid="match-config-tooltip"
-                  >
-                    Inherited from role config. Override coming soon.
-                  </div>
+                    <Settings2 size={8} />
+                    MATCH: {formatMatchChip(matchConfig).toUpperCase()}
+                  </button>
                 )}
               </div>
-            )}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
 
-      {canAddStage && (
-        <>
-          <ChainConnector />
-          {onAddStage ? (
-            <button
-              type="button"
-              data-testid="stepper-add-stage"
-              onClick={onAddStage}
-              style={{
-                ...NODE_BASE,
-                minWidth: 140,
-                border: '1px dashed var(--pipe-border)',
-                background: 'var(--pipe-surface)',
-                color: 'var(--pipe-text-muted)',
-              }}
-            >
-              <Plus size={14} />
-              <span
+        {canAddStage && (
+          <>
+            <Line />
+            {onAddStage ? (
+              <button
+                type="button"
+                data-testid="stepper-add-stage"
+                onClick={onAddStage}
                 style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
+                  ...NODE_BASE,
+                  minWidth: 140,
+                  border: '1px dashed var(--pipe-border)',
+                  background: 'var(--pipe-surface)',
+                  color: 'var(--pipe-text-muted)',
                 }}
               >
-                ADD_STAGE
-              </span>
-            </button>
-          ) : (
-            <NavLink
-              to={`/pipeline/${pipelineId}/new-stage`}
-              data-testid="stepper-add-stage"
-              style={({ isActive }) => ({
-                ...NODE_BASE,
-                minWidth: 140,
-                border: '1px dashed var(--pipe-border)',
-                background: isActive
-                  ? 'var(--pipe-surface-hover)'
-                  : 'var(--pipe-surface)',
-                color: 'var(--pipe-text-muted)',
-              })}
-            >
-              <Plus size={14} />
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                }}
+                <Plus size={14} />
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.15em',
+                  }}
+                >
+                  ADD_STAGE
+                </span>
+              </button>
+            ) : (
+              <NavLink
+                to={`/pipeline/${pipelineId}/new-stage`}
+                data-testid="stepper-add-stage"
+                style={({ isActive }) => ({
+                  ...NODE_BASE,
+                  minWidth: 140,
+                  border: '1px dashed var(--pipe-border)',
+                  background: isActive
+                    ? 'var(--pipe-surface-hover)'
+                    : 'var(--pipe-surface)',
+                  color: 'var(--pipe-text-muted)',
+                })}
               >
-                ADD_STAGE
-              </span>
-            </NavLink>
-          )}
-        </>
-      )}
-    </div>
+                <Plus size={14} />
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.15em',
+                  }}
+                >
+                  ADD_STAGE
+                </span>
+              </NavLink>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

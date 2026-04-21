@@ -17,14 +17,14 @@ export function RadioGroup({ value, onChange, options }: RadioGroupProps): JSX.E
               width: 16,
               height: 16,
               border: `2px solid ${
-                value === opt ? 'rgba(139, 92, 246, 0.8)' : 'var(--pipe-border)'
+                value === opt ? 'rgba(255, 255, 255, 0.45)' : 'var(--pipe-border)'
               }`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            {value === opt && <div style={{ width: 8, height: 8, background: 'rgba(139, 92, 246, 0.8)' }} />}
+            {value === opt && <div style={{ width: 8, height: 8, background: 'rgba(255, 255, 255, 0.45)' }} />}
           </div>
           <input
             type="radio"

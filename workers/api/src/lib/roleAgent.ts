@@ -56,6 +56,7 @@ export interface RoleAgentQuestionResponse {
       options?: string[];
       placeholder?: string;
     };
+    suggestedAnswers?: string[];
   };
   knowledgeStateUpdate: Record<string, Record<string, unknown>>;
   domainCoverage: Record<string, DomainCoverage>;
@@ -436,6 +437,7 @@ function parseQuestionResponse(parsed: Record<string, unknown>, questionsAsked: 
         ...(Array.isArray(input?.options) ? { options: input.options.filter((o: unknown) => typeof o === 'string') as string[] } : {}),
         ...(typeof input?.placeholder === 'string' ? { placeholder: input.placeholder } : {}),
       },
+      ...(Array.isArray(question?.suggestedAnswers) ? { suggestedAnswers: toStringArray(question.suggestedAnswers) } : {}),
     },
     knowledgeStateUpdate: parseKnowledgeStateUpdate(parsed.knowledgeStateUpdate),
     domainCoverage: parseDomainCoverage(parsed.domainCoverage),
