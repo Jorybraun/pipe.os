@@ -134,7 +134,7 @@ function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
  * Pick the top PR for a given repo from repo_sample_prs, preferring SWE-bench
  * eligible PRs (`swe_bench_eligible = 1`).
  */
-async function pickReviewPr(
+export async function pickReviewPr(
   db: D1Database,
   repoId: number,
 ): Promise<{ prNumber: number; prTitle: string } | null> {
@@ -161,7 +161,7 @@ async function pickReviewPr(
  *   - difficulty_band matches normalized persona seniority (or any band if
  *     persona is unknown)
  */
-async function pickImplementationIssue(
+export async function pickImplementationIssue(
   db: D1Database,
   repoId: number,
   seniority: 'junior' | 'mid' | 'senior' | 'staff',

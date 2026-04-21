@@ -6,6 +6,15 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(ingestion): matchReposForCandidate — per-candidate repo resolver (2026-04-21)
+
+Fourth step of the per-candidate "Ingestion" pre-stage. Resolves a single `(repo, PR, issue)` tuple per candidate from the Candidate Discovery output, using the same `qualified_repos` catalog as `autoStageBuilder` plus an optional cosine rerank against `REPO_INDEX`.
+
+- `workers/api/src/lib/match/matchReposForCandidate.ts`: new sibling to `autoStageBuilder`. Builds a `MatchRequest` from `key_concepts` (seniority / primary_language / must-have / nice-to-have / domain), runs graph-score matching via `matchRepos`, optionally reranks via BGE cosine (query prefix added at query time per BGE asymmetric retrieval), then picks PR + issue via the shared helpers. Best-effort PR/issue — returns `null` slots rather than throwing when the repo has none. Hybrid role-side blending is explicitly deferred — v1 is candidate-side only until role-side Gemma text is stored at request time.
+- `workers/api/src/lib/match/autoStageBuilder.ts`: `pickReviewPr` and `pickImplementationIssue` are now exported so `matchReposForCandidate` reuses the same tested logic. No behavior change — all 11 existing `autoStageBuilder` tests still pass.
+- `workers/api/src/lib/candidateDiscovery/persist.ts`: added `markIngestionMatched` (status `embedded → matched` + `matched_repo_id` + `matched_at`) and `upsertCandidateChallengeAssignment` (upsert on UNIQUE `candidate_id, stage_id`).
+- `workers/api/src/lib/match/__tests__/matchReposForCandidate.test.ts`: 7 stub-based tests — graph-only path, cosine rerank winner flip, cosine below threshold keeps graph winner, empty-must-have guard, empty-repos guard, null PR/issue passthrough, wrong-dim embed fallback to graph-only.
+
 #### feat(ingestion): CANDIDATE_INDEX Vectorize binding + embed helper (2026-04-21)
 
 Third step of the per-candidate "Ingestion" pre-stage. Provisions the candidate-side Vectorize index so the Discovery agent's narrative can embed symmetrically with `repo_searchable_profile`.

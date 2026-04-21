@@ -80,6 +80,72 @@ export async function persistCandidateProfile(
     .run();
 }
 
+export async function markIngestionMatched(
+  db: D1Database,
+  candidateId: string,
+  matchedRepoId: number,
+): Promise<void> {
+  const now = nowIso();
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion
+         SET status = 'matched',
+             matched_repo_id = ?2,
+             matched_at = ?3,
+             error_text = NULL,
+             updated_at = ?3
+       WHERE candidate_id = ?1`,
+    )
+    .bind(candidateId, matchedRepoId, now)
+    .run();
+}
+
+export interface CandidateChallengeAssignmentInput {
+  id: string;
+  candidateId: string;
+  stageId: string;
+  challengeId: string;
+  repoId: number;
+  githubRepoUrl: string;
+  githubPrNumber: number | null;
+  issueNumber: number | null;
+}
+
+/**
+ * Upsert a per-candidate challenge override. UNIQUE (candidate_id, stage_id)
+ * — re-running ingestion for the same candidate cleanly replaces the prior
+ * assignment for each stage.
+ */
+export async function upsertCandidateChallengeAssignment(
+  db: D1Database,
+  row: CandidateChallengeAssignmentInput,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO candidate_challenge_assignment
+         (id, candidate_id, stage_id, challenge_id, repo_id, github_repo_url, github_pr_number, issue_number)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       ON CONFLICT(candidate_id, stage_id) DO UPDATE SET
+         challenge_id = excluded.challenge_id,
+         repo_id = excluded.repo_id,
+         github_repo_url = excluded.github_repo_url,
+         github_pr_number = excluded.github_pr_number,
+         issue_number = excluded.issue_number,
+         assigned_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+    )
+    .bind(
+      row.id,
+      row.candidateId,
+      row.stageId,
+      row.challengeId,
+      row.repoId,
+      row.githubRepoUrl,
+      row.githubPrNumber,
+      row.issueNumber,
+    )
+    .run();
+}
+
 export async function markIngestionEmbedded(
   db: D1Database,
   candidateId: string,
