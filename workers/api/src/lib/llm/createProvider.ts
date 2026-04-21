@@ -41,6 +41,7 @@ interface ProviderEnv {
   ROLE_AGENT_PROVIDER?: string;
   CULTURE_AGENT_PROVIDER?: string;
   COPILOT_AGENT_PROVIDER?: string;
+  CANDIDATE_AGENT_PROVIDER?: string;
   AI?: Ai;
   /** When 'true', culture agent returns null provider and uses deterministic mock path. */
   MOCK_AI?: string;
@@ -152,6 +153,49 @@ export function createCopilotProvider(env: ProviderEnv): LLMProvider | null {
     const sa = parseServiceAccount(env);
     if (!sa || !sa.project_id) return null;
     return new VertexAIProvider(sa, sa.project_id, env.VERTEX_AI_REGION ?? 'us-central1', env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it');
+  }
+
+  if (providerName === 'mistral') {
+    const key = env.MISTRAL_API_KEY ?? '';
+    if (!key) return null;
+    return new MistralProvider(key);
+  }
+
+  return null;
+}
+
+/**
+ * Factory for the Candidate Discovery agent (ADR-039 + STRATEGY.md Decision
+ * Log 2026-04-21). Mirror of createRoleAgentProvider — same Gemma 4 26B on
+ * Vertex AI in prod with Workers AI binding as fallback.
+ */
+export function createCandidateAgentProvider(env: ProviderEnv): LLMProvider | null {
+  if (env.MOCK_AI === 'true') return null;
+
+  const providerName = (env.CANDIDATE_AGENT_PROVIDER ?? 'cloudflare-ai') as ProviderName;
+
+  if (providerName === 'cloudflare-ai') {
+    if (env.AI) return new CloudflareAIProvider(env.AI);
+    const mistralKey = env.MISTRAL_API_KEY ?? '';
+    if (mistralKey) return new MistralProvider(mistralKey);
+    return null;
+  }
+
+  if (providerName === 'vertex-ai') {
+    const sa = parseServiceAccount(env);
+    if (!sa || !sa.project_id) return null;
+    return new VertexAIProvider(
+      sa,
+      sa.project_id,
+      env.VERTEX_AI_REGION ?? 'us-central1',
+      env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it',
+    );
+  }
+
+  if (providerName === 'google-ai') {
+    const key = env.GOOGLE_AI_API_KEY ?? '';
+    if (!key) return null;
+    return new GoogleAIProvider(key);
   }
 
   if (providerName === 'mistral') {

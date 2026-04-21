@@ -6,6 +6,16 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(ingestion): Candidate Discovery agent — narrative profile + key concepts from parsed CV (2026-04-21)
+
+Second step of the per-candidate "Ingestion" pre-stage (ADR-039 sequencing override, STRATEGY.md Decision Log 2026-04-21). Mirror of the repo-side pass3 searchable-profile generator — Gemma 4 26B writes a 400–600 word engineering narrative plus structured `key_concepts` from the parsed CV + raw resume text, ready to embed into the BGE-large-en-v1.5 vector space symmetric with `repo_searchable_profile`.
+
+- `workers/api/src/lib/candidateDiscovery/prompts.ts`: `CANDIDATE_DISCOVERY_SYSTEM_PROMPT` (narrative + JSON shape + anti-hallucination rules), `buildCandidateDiscoveryUserMessage(facts)`, prompt version `candidate-v1`.
+- `workers/api/src/lib/candidateDiscovery/agent.ts`: `discoverCandidateProfile({ provider, parsed, resumeText })` — forces JSON output, strips markdown fences, dedupes/lowercases skills (cap 10), coerces seniority to `junior|mid|senior|staff` (falls back to years-based inference), enforces `MIN_PROFILE_CHARS = 400`. Returns `{ candidateSearchableProfile, keyConcepts, profileVersion, modelUsed, rawText }`.
+- `workers/api/src/lib/candidateDiscovery/persist.ts`: idempotent upserts to `candidate_ingestion` for the `pending → profile_generated` and `failed` transitions (ON CONFLICT DO UPDATE keyed on candidate_id).
+- `workers/api/src/lib/llm/createProvider.ts`: new `createCandidateAgentProvider(env)` factory mirroring `createRoleAgentProvider` — cloudflare-ai default, vertex-ai preferred in prod, mistral/google-ai fallbacks. Reads `CANDIDATE_AGENT_PROVIDER` env var.
+- `workers/api/src/lib/candidateDiscovery/__tests__/agent.test.ts`: 7 stub-provider tests covering well-formed parse, code-fence stripping, short-profile rejection, invalid-seniority fallback to years inference, skill dedupe/lowercase, non-JSON rejection, empty-content rejection. All pass.
+
 #### feat(ingestion): gate auto-build on `validate` + candidate ingestion schema (2026-04-21)
 
 Groundwork for the per-candidate "Ingestion" pre-stage (ADR-039 sequencing override, STRATEGY.md Decision Log 2026-04-21).
