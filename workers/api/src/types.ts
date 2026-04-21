@@ -14,6 +14,13 @@ export interface Env {
    * Used in discover.ts hybrid recall (STRATEGY Decision Log 2026-04-14).
    */
   REPO_INDEX: VectorizeIndex;
+  /**
+   * Vectorize index binding for candidate_searchable_profile embeddings.
+   * Symmetric with REPO_INDEX (same 1024-dim bge-large-en-v1.5 space).
+   * Populated on resume upload by the Candidate Discovery agent
+   * (STRATEGY Decision Log 2026-04-21, ADR-039).
+   */
+  CANDIDATE_INDEX: VectorizeIndex;
   /** Clerk secret key for JWT verification. Set via .dev.vars in dev. */
   CLERK_SECRET_KEY: string;
   /** Session token secret for candidate JWT signing/verification. */

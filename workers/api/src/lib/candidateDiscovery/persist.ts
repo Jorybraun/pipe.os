@@ -80,6 +80,25 @@ export async function persistCandidateProfile(
     .run();
 }
 
+export async function markIngestionEmbedded(
+  db: D1Database,
+  candidateId: string,
+  embeddedAt: string,
+): Promise<void> {
+  const now = nowIso();
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion
+         SET status = 'embedded',
+             profile_embedded_at = ?2,
+             error_text = NULL,
+             updated_at = ?3
+       WHERE candidate_id = ?1`,
+    )
+    .bind(candidateId, embeddedAt, now)
+    .run();
+}
+
 export async function markIngestionFailed(
   db: D1Database,
   candidateId: string,

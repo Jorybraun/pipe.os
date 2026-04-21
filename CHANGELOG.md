@@ -6,6 +6,17 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(ingestion): CANDIDATE_INDEX Vectorize binding + embed helper (2026-04-21)
+
+Third step of the per-candidate "Ingestion" pre-stage. Provisions the candidate-side Vectorize index so the Discovery agent's narrative can embed symmetrically with `repo_searchable_profile`.
+
+- New Vectorize index `candidate-searchable-profiles` (1024-dim, cosine) created remotely. Same shape as `repo-searchable-profiles`.
+- `workers/api/wrangler.jsonc`: new `CANDIDATE_INDEX` binding (`remote: true`).
+- `workers/api/src/types.ts`: added `CANDIDATE_INDEX: VectorizeIndex` to `Env`.
+- `workers/api/src/lib/candidateDiscovery/embed.ts`: `embedAndUpsertCandidate({ ai, vectorize, candidateId, profile, metadata? })` — runs `@cf/baai/bge-large-en-v1.5`, validates 1024-dim + finite values, upserts as `candidate_{id}`. Document-side (no query prefix) matches repo index convention — consumers add the BGE query prefix at query time.
+- `workers/api/src/lib/candidateDiscovery/persist.ts`: new `markIngestionEmbedded(db, candidateId, embeddedAt)` transitions `profile_generated → embedded` and stamps `profile_embedded_at`.
+- `workers/api/src/lib/candidateDiscovery/__tests__/embed.test.ts`: 6 stub-based tests (happy path, metadata attachment, empty profile, missing vector, wrong dim, non-finite). All pass.
+
 #### feat(ingestion): Candidate Discovery agent — narrative profile + key concepts from parsed CV (2026-04-21)
 
 Second step of the per-candidate "Ingestion" pre-stage (ADR-039 sequencing override, STRATEGY.md Decision Log 2026-04-21). Mirror of the repo-side pass3 searchable-profile generator — Gemma 4 26B writes a 400–600 word engineering narrative plus structured `key_concepts` from the parsed CV + raw resume text, ready to embed into the BGE-large-en-v1.5 vector space symmetric with `repo_searchable_profile`.

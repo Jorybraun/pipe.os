@@ -33,6 +33,11 @@
 			"binding": "REPO_INDEX",
 			"index_name": "repo-searchable-profiles",
 			"remote": true
+		},
+		{
+			"binding": "CANDIDATE_INDEX",
+			"index_name": "candidate-searchable-profiles",
+			"remote": true
 		}
 	],
 	"containers": [
