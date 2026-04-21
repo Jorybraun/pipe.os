@@ -101,24 +101,32 @@ autoBuild.post('/auto-build', async (c) => {
     input.match_config.non_negotiable_skills.length > 0 &&
     !roleContext.non_negotiable_skills_json;
 
-  // 4. Resolve repo + stations.
-  let plan;
-  try {
-    plan = await autoStageBuilder({
-      db: c.env.DB,
-      roleContext: {
-        ...roleContext,
-        // Inject the wizard's non_negotiable list so the builder picks it up
-        // even if the column has not been persisted yet.
-        ...(input.match_config.non_negotiable_skills.length > 0
-          ? { non_negotiable_skills_json: JSON.stringify(input.match_config.non_negotiable_skills) }
-          : {}),
-      } as RoleContextRow,
-      matchConfig: input.match_config,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'autoStageBuilder failed';
-    return apiError(c, 'AUTO_BUILD_FAILED', message);
+  // 4. Resolve repo + stations. Only 'validate' philosophy bakes a repo into
+  //    the pipeline at build time — it's the "same canonical repo for everyone"
+  //    mode. 'tailored' and 'hybrid' defer repo/PR/issue selection to the
+  //    Ingestion pre-stage, which fires on resume upload and writes per-candidate
+  //    rows to candidate_challenge_assignment. See STRATEGY.md Decision Log
+  //    2026-04-21 (ADR-039 sequencing override).
+  const shouldMatchNow = input.match_config.match_philosophy === 'validate';
+  let plan: Awaited<ReturnType<typeof autoStageBuilder>> | null = null;
+  if (shouldMatchNow) {
+    try {
+      plan = await autoStageBuilder({
+        db: c.env.DB,
+        roleContext: {
+          ...roleContext,
+          // Inject the wizard's non_negotiable list so the builder picks it up
+          // even if the column has not been persisted yet.
+          ...(input.match_config.non_negotiable_skills.length > 0
+            ? { non_negotiable_skills_json: JSON.stringify(input.match_config.non_negotiable_skills) }
+            : {}),
+        } as RoleContextRow,
+        matchConfig: input.match_config,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'autoStageBuilder failed';
+      return apiError(c, 'AUTO_BUILD_FAILED', message);
+    }
   }
 
   // 5. Build the D1 batch: pipeline + match_config + stages + challenges + (optional) skill persist.
@@ -171,25 +179,80 @@ autoBuild.post('/auto-build', async (c) => {
     );
   }
 
-  const stageRecords = plan.stations.map((station) => {
-    const stageId = generateId();
-    const challengeId = generateId();
-    return { stageId, challengeId, station };
-  });
+  // Build station records. For deferred mode (tailored/hybrid), the stations
+  // are placeholders — repo/PR/issue are resolved per-candidate during ingestion.
+  type StationRecord = {
+    stageId: string;
+    challengeId: string;
+    type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION';
+    title: string;
+    sortOrder: number;
+    repoId: number | null;
+    githubRepoUrl: string | null;
+    githubPrNumber: number | null;
+    issueNumber: number | null;
+    instructions: string;
+  };
 
-  for (const { stageId, station } of stageRecords) {
+  const stageRecords: StationRecord[] = plan
+    ? plan.stations.map((station) => ({
+        stageId: generateId(),
+        challengeId: generateId(),
+        type: station.type,
+        title: station.title,
+        sortOrder: station.sortOrder,
+        repoId: station.repoId,
+        githubRepoUrl: station.githubRepoUrl,
+        githubPrNumber: station.githubPrNumber ?? null,
+        issueNumber: station.issueNumber ?? null,
+        instructions:
+          station.type === 'CODE_REVIEW'
+            ? `Review pull request #${station.githubPrNumber} on ${station.githubRepoUrl}.`
+            : `Implement issue #${station.issueNumber} on ${station.githubRepoUrl}.`,
+      }))
+    : [
+        {
+          stageId: generateId(),
+          challengeId: generateId(),
+          type: 'CODE_REVIEW',
+          title: 'Code Review',
+          sortOrder: 0,
+          repoId: null,
+          githubRepoUrl: null,
+          githubPrNumber: null,
+          issueNumber: null,
+          instructions:
+            'A pull request from a repository matched to your background will be assigned when your profile is ingested.',
+        },
+        {
+          stageId: generateId(),
+          challengeId: generateId(),
+          type: 'CODE_IMPLEMENTATION',
+          title: 'Code Implementation',
+          sortOrder: 1,
+          repoId: null,
+          githubRepoUrl: null,
+          githubPrNumber: null,
+          issueNumber: null,
+          instructions:
+            'An issue from a repository matched to your background will be assigned when your profile is ingested.',
+        },
+      ];
+
+  for (const rec of stageRecords) {
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(stageId, pipelineId, station.title, station.sortOrder, 'TECHNICAL', userId),
+      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, 'TECHNICAL', userId),
     );
   }
 
-  for (const { stageId, challengeId, station } of stageRecords) {
+  for (const rec of stageRecords) {
     const config = JSON.stringify({
       autoBuilt: true,
-      repoId: station.repoId,
+      repoId: rec.repoId,
+      matchDeferred: !shouldMatchNow,
     });
     statements.push(
       c.env.DB.prepare(
@@ -198,17 +261,15 @@ autoBuild.post('/auto-build', async (c) => {
            github_repo_url, github_pr_number, owner_id
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
       ).bind(
-        challengeId,
-        stageId,
-        station.type,
+        rec.challengeId,
+        rec.stageId,
+        rec.type,
         0,
-        station.title,
-        station.type === 'CODE_REVIEW'
-          ? `Review pull request #${station.githubPrNumber} on ${station.githubRepoUrl}.`
-          : `Implement issue #${station.issueNumber} on ${station.githubRepoUrl}.`,
+        rec.title,
+        rec.instructions,
         config,
-        station.githubRepoUrl,
-        station.githubPrNumber ?? null,
+        rec.githubRepoUrl,
+        rec.githubPrNumber,
         userId,
       ),
     );
@@ -225,19 +286,20 @@ autoBuild.post('/auto-build', async (c) => {
         creationMode: 'AI_DRIVEN',
         createdAt: nowIso,
       },
-      stages: stageRecords.map(({ stageId, station }) => ({
-        id: stageId,
-        title: station.title,
-        type: station.type,
-        sortOrder: station.sortOrder,
-        repoId: station.repoId,
-        githubRepoUrl: station.githubRepoUrl,
-        githubPrNumber: station.githubPrNumber,
-        issueNumber: station.issueNumber,
+      stages: stageRecords.map((rec) => ({
+        id: rec.stageId,
+        title: rec.title,
+        type: rec.type,
+        sortOrder: rec.sortOrder,
+        repoId: rec.repoId,
+        githubRepoUrl: rec.githubRepoUrl,
+        githubPrNumber: rec.githubPrNumber,
+        issueNumber: rec.issueNumber,
       })),
       matchConfig: input.match_config,
-      repoChoice: plan.repoChoice,
-      perStationRepo: plan.perStationRepo,
+      matchDeferred: !shouldMatchNow,
+      repoChoice: plan?.repoChoice ?? null,
+      perStationRepo: plan?.perStationRepo ?? null,
       warnings: guardrail.warnings,
     },
     201,

@@ -6,6 +6,14 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### feat(ingestion): gate auto-build on `validate` + candidate ingestion schema (2026-04-21)
+
+Groundwork for the per-candidate "Ingestion" pre-stage (ADR-039 sequencing override, STRATEGY.md Decision Log 2026-04-21).
+
+- `workers/api/src/routes/cockpit/pipelinesAutoBuild.ts`: `autoStageBuilder` is now only called when `match_philosophy === 'validate'`. For `tailored` and `hybrid`, the route creates 2 stages + 2 challenges with NULL repo/PR/issue fields and placeholder titles ("Code Review", "Code Implementation"); per-candidate matching will populate them at ingestion time. Response gains `matchDeferred: boolean`; `repoChoice` and `perStationRepo` become nullable. All 22 existing unit tests still pass.
+- `workers/api/migrations/0038_candidate_ingestion.sql`: new tables `candidate_ingestion` (per-candidate status + `candidate_searchable_profile` + `matched_repo_id`) and `candidate_challenge_assignment` (per-candidate override for `github_repo_url`/`github_pr_number`/`issue_number`, UNIQUE per candidate+stage). Indexed on status, matched_repo_id, candidate, and stage.
+- `knowledge/STRATEGY.md` Decision Log: dated override entry citing founder approval to compress ADR-039 Implementation items (2)+(3)+(5) into a single per-candidate ingestion work stream, triggered on resume upload only.
+
 #### refactor(pipeline): gate circle navigates to dedicated gate page instead of opening a drawer (2026-04-21)
 
 Removed `StageGatePanel` drawer. Gate circles and match chips in `StageStepper` are now `NavLink` elements that navigate to `/pipeline/:id/stage/:stageId/gate`. New `GateConfigTab` page (`src/pages/stage-tabs/GateConfigTab.tsx`) surfaces the entry conditions for a stage: previous-stage context, score gate threshold (stub), inherited match config, and email triggers. GATE tab added to all stage variants in `StagePanel`. `matchConfig` added to `PipelineShellContext` so the gate tab can read it without an extra fetch. E2E assertions updated from drawer checks to URL/content navigation checks.
