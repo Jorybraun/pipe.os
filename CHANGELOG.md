@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### fix(theme): neutral accents for dark/light modes — white and black (2026-04-21)
+
+Dark mode `--pipe-accent` → `#ffffff` (white). Light mode → `#1a1a1a` (black). Anatomy modes retain warm amber. Purple is gone from all themes.
+
 #### feat(theme): redesign display settings — DARK/LIGHT tabs + THEME select, no-purple inputs (2026-04-21)
 
 Settings panel now shows DARK/LIGHT mode tabs and a single THEME select (Metalic / Heat Map / Anatomy) instead of four mode buttons + a separate shader picker. Background defaults to off. Slider and toggle inputs use `var(--pipe-text)` accent instead of the theme accent color so they're never purple.

@@ -70,7 +70,7 @@ const ChainConnector = () => (
   <svg
     viewBox="0 0 1000 1000"
     fill="none"
-    style={{ width: 24, height: 24, flex: '0 0 auto', flexShrink: 0 }}
+    style={{ width: 28, height: 28, flex: '0 0 auto', flexShrink: 0 }}
     aria-hidden="true"
   >
     <g transform="rotate(90, 500, 500)">

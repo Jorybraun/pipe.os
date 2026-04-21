@@ -120,9 +120,9 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-surface-solid-hover': '#26262e',
     '--pipe-overlay': 'rgba(21,21,27,0.93)',
     '--pipe-shadow': 'rgba(0,0,0,0.3)',
-    '--pipe-accent': '#a78bfa',
-    '--pipe-accent-surface': 'rgba(167,139,250,0.12)',
-    '--pipe-accent-border': 'rgba(167,139,250,0.3)',
+    '--pipe-accent': '#ffffff',
+    '--pipe-accent-surface': 'rgba(255,255,255,0.08)',
+    '--pipe-accent-border': 'rgba(255,255,255,0.2)',
   },
   light: {
     '--pipe-bg': '#f5f5f7',
@@ -137,9 +137,9 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-surface-solid-hover': '#fafafa',
     '--pipe-overlay': 'rgba(245,245,247,0.88)',
     '--pipe-shadow': 'rgba(0,0,0,0.08)',
-    '--pipe-accent': '#a78bfa',
-    '--pipe-accent-surface': 'rgba(167,139,250,0.12)',
-    '--pipe-accent-border': 'rgba(167,139,250,0.3)',
+    '--pipe-accent': '#1a1a1a',
+    '--pipe-accent-surface': 'rgba(0,0,0,0.06)',
+    '--pipe-accent-border': 'rgba(0,0,0,0.2)',
   },
 };
 
