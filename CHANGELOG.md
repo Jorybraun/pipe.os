@@ -6,6 +6,10 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### refactor(pipeline): gate circle navigates to dedicated gate page instead of opening a drawer (2026-04-21)
+
+Removed `StageGatePanel` drawer. Gate circles and match chips in `StageStepper` are now `NavLink` elements that navigate to `/pipeline/:id/stage/:stageId/gate`. New `GateConfigTab` page (`src/pages/stage-tabs/GateConfigTab.tsx`) surfaces the entry conditions for a stage: previous-stage context, score gate threshold (stub), inherited match config, and email triggers. GATE tab added to all stage variants in `StagePanel`. `matchConfig` added to `PipelineShellContext` so the gate tab can read it without an extra fetch. E2E assertions updated from drawer checks to URL/content navigation checks.
+
 #### feat(pipeline): stage gate panel, clickable connectors, synthesis improvements, role profile hero (2026-04-19)
 
 Five UI tasks completed in one batch:

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Plus, Phone, Users, Zap, FileText, GitPullRequest, Settings2 } from 'lucide-react';
+import { Home, Plus, Phone, Users, Zap, FileText, GitPullRequest, Settings2, GitMerge } from 'lucide-react';
 import type { OverviewStage, OverviewCandidate, OverviewMatchConfig } from '../../lib/api/types';
 import type { StageType } from '../../lib/stageTemplates';
 
@@ -10,7 +10,7 @@ import type { StageType } from '../../lib/stageTemplates';
  * Nodes:
  *   [HOME] — ⦿ — [STAGE 1] — ⦿ — [STAGE 2] — ... — ⦿ — [+ ADD_STAGE]
  *
- * The circle gate connectors (⦿) are clickable — opening StageGatePanel.
+ * The circle gate connectors (⦿) are NavLinks to /stage/:stageId/gate.
  */
 
 const STAGE_TYPE_ICON: Record<StageType, typeof Phone> = {
@@ -35,11 +35,6 @@ export interface StageStepperProps {
   onAddStage?: () => void;
   /** Inherited match config (ADR-039). When present, renders a chip per stage. */
   matchConfig?: OverviewMatchConfig | null;
-  /**
-   * Called when a gate circle is clicked. Receives the stageId the gate leads
-   * into. Parent opens StageGatePanel for that stage.
-   */
-  onStageGateClick?: (stageId: string) => void;
 }
 
 const NODE_BASE: React.CSSProperties = {
@@ -69,27 +64,32 @@ const NODE_ACTIVE: React.CSSProperties = {
 };
 
 interface StageGateProps {
+  pipelineId: string;
   stageId: string;
-  onClick: (id: string) => void;
   hasConfig: boolean;
 }
 
-function StageGate({ stageId, onClick, hasConfig }: StageGateProps): JSX.Element {
+function StageGate({ pipelineId, stageId, hasConfig }: StageGateProps): JSX.Element {
   return (
-    <button
-      type="button"
+    <NavLink
+      to={`/pipeline/${pipelineId}/stage/${stageId}/gate`}
       data-testid="stage-gate-connector"
       data-stage-id={stageId}
-      onClick={() => onClick(stageId)}
-      title="Configure stage gate"
-      style={{
+      title="Stage gate — entry config"
+      style={({ isActive }) => ({
         width: 32,
         height: 32,
         flex: '0 0 auto',
         flexShrink: 0,
         borderRadius: '50%',
-        background: hasConfig ? 'rgba(96,165,250,0.06)' : 'var(--pipe-surface)',
-        border: hasConfig
+        background: isActive
+          ? 'rgba(96,165,250,0.18)'
+          : hasConfig
+          ? 'rgba(96,165,250,0.06)'
+          : 'var(--pipe-surface)',
+        border: isActive
+          ? '1px solid rgba(96,165,250,0.6)'
+          : hasConfig
           ? '1px solid rgba(96,165,250,0.25)'
           : '1px solid var(--pipe-border-light)',
         display: 'flex',
@@ -97,25 +97,16 @@ function StageGate({ stageId, onClick, hasConfig }: StageGateProps): JSX.Element
         justifyContent: 'center',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
-      }}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = 'rgba(96,165,250,0.12)';
-        (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(96,165,250,0.5)';
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = hasConfig
-          ? 'rgba(96,165,250,0.06)'
-          : 'var(--pipe-surface)';
-        (e.currentTarget as HTMLButtonElement).style.borderColor = hasConfig
-          ? 'rgba(96,165,250,0.25)'
-          : 'var(--pipe-border-light)';
-      }}
+        textDecoration: 'none',
+      })}
     >
-      <Settings2
-        size={12}
-        color={hasConfig ? '#60a5fa' : 'var(--pipe-text-dim)'}
-      />
-    </button>
+      {({ isActive }) => (
+        <GitMerge
+          size={12}
+          color={isActive || hasConfig ? '#60a5fa' : 'var(--pipe-text-dim)'}
+        />
+      )}
+    </NavLink>
   );
 }
 
@@ -151,13 +142,8 @@ export function StageStepper({
   canAddStage,
   onAddStage,
   matchConfig,
-  onStageGateClick,
 }: StageStepperProps): JSX.Element {
   const hasConfig = !!matchConfig;
-
-  const handleGateClick = (stageId: string): void => {
-    onStageGateClick?.(stageId);
-  };
 
   return (
     <div
@@ -212,16 +198,12 @@ export function StageStepper({
               key={stage.id}
               style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}
             >
-              {/* Gate circle */}
-              {onStageGateClick ? (
-                <StageGate
-                  stageId={stage.id}
-                  onClick={handleGateClick}
-                  hasConfig={hasConfig}
-                />
-              ) : (
-                <Line />
-              )}
+              {/* Gate link — navigates to /gate entry-config page */}
+              <StageGate
+                pipelineId={pipelineId}
+                stageId={stage.id}
+                hasConfig={hasConfig}
+              />
 
               {/* Stage node + match chip stacked */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
@@ -299,34 +281,34 @@ export function StageStepper({
                   )}
                 </NavLink>
 
-                {/* Match chip — click opens gate panel */}
-                {matchConfig && onStageGateClick && (
-                  <button
-                    type="button"
+                {/* Match chip — links to gate entry-config page */}
+                {matchConfig && (
+                  <NavLink
+                    to={`/pipeline/${pipelineId}/stage/${stage.id}/gate`}
                     data-testid="match-config-chip"
                     data-stage-id={stage.id}
-                    onClick={() => handleGateClick(stage.id)}
-                    style={{
+                    style={({ isActive }) => ({
                       width: '100%',
                       padding: '4px 8px',
-                      background: 'transparent',
-                      border: '1px solid rgba(96,165,250,0.2)',
+                      background: isActive ? 'rgba(96,165,250,0.1)' : 'transparent',
+                      border: `1px solid ${isActive ? 'rgba(96,165,250,0.4)' : 'rgba(96,165,250,0.2)'}`,
                       borderRadius: 4,
                       color: '#60a5fa',
                       fontSize: 9,
                       letterSpacing: '0.08em',
                       fontFamily: '"Space Mono", monospace',
                       cursor: 'pointer',
-                      textAlign: 'center',
+                      textAlign: 'center' as const,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       gap: 5,
-                    }}
+                      textDecoration: 'none',
+                    })}
                   >
                     <Settings2 size={8} />
                     MATCH: {formatMatchChip(matchConfig).toUpperCase()}
-                  </button>
+                  </NavLink>
                 )}
               </div>
             </div>

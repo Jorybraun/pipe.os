@@ -23,7 +23,7 @@ import {
   useOutletContext,
   useParams,
 } from 'react-router-dom';
-import { ListChecks, Users, Settings, Trash2, Brain, Target, GitPullRequest } from 'lucide-react';
+import { ListChecks, Users, Settings, Trash2, Brain, Target, GitPullRequest, GitMerge } from 'lucide-react';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useStageDetail } from '../hooks/useStageDetail';
 import { useStageMutations } from '../hooks/useStageMutations';
@@ -227,26 +227,33 @@ export default function StagePanel(): JSX.Element {
   // ── Tab config per variant ─────────────────────────────────────────────
   interface TabDef { key: string; path: string; label: string; icon: JSX.Element; count?: number }
 
+  const gateTab: TabDef = { key: 'gate', path: '/gate', label: 'GATE', icon: <GitMerge size={12} /> };
+
   const tabConfigs: Record<typeof stageVariant, TabDef[]> = {
     'cultural': [
       { key: 'details', path: '', label: 'DETAILS', icon: <Brain size={12} /> },
       { key: 'benchmark', path: '/benchmark', label: 'BENCHMARK', icon: <Target size={12} /> },
+      gateTab,
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'code-review': [
       { key: 'details', path: '', label: 'DETAILS', icon: <GitPullRequest size={12} /> },
+      gateTab,
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'questions': [
       { key: 'details', path: '', label: 'DETAILS', icon: <ListChecks size={12} />, count: challengeCount },
+      gateTab,
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'screening': [
       { key: 'details', path: '', label: 'DETAILS', icon: <ListChecks size={12} /> },
+      gateTab,
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'generic': [
       { key: 'challenges', path: '', label: 'CHALLENGES', icon: <ListChecks size={12} />, count: challengeCount },
+      gateTab,
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
       { key: 'configure', path: '/configure', label: 'CONFIGURE', icon: <Settings size={12} /> },
     ],

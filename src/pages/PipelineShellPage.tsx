@@ -26,13 +26,13 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { CandidateIntakeModal } from '../components/Candidate/CandidateIntakeModal';
 import { NewStageModal } from '../components/Pipeline/NewStageModal';
 import { StageStepper } from '../components/Pipeline/StageStepper';
-import { StageGatePanel } from '../components/Pipeline/StageGatePanel';
 import { useOverviewData } from '../hooks/useOverviewData';
 import type {
   OverviewPipeline,
   OverviewStage,
   OverviewCandidate,
   OverviewRoleContext,
+  OverviewMatchConfig,
 } from '../lib/api/types';
 
 /**
@@ -45,6 +45,7 @@ export interface PipelineShellContext {
   stages: OverviewStage[];
   candidates: OverviewCandidate[];
   roleContext: OverviewRoleContext | null;
+  matchConfig: OverviewMatchConfig | null;
   refetch: () => Promise<void>;
 }
 
@@ -88,7 +89,6 @@ export default function PipelineShellPage(): JSX.Element {
 
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [showNewStage, setShowNewStage] = useState(false);
-  const [openGateStageId, setOpenGateStageId] = useState<string | null>(null);
 
   // Warnings arriving via navigate state from the auto-build wizard. Captured
   // once on mount so the banner persists even after route state is cleared.
@@ -209,6 +209,7 @@ export default function PipelineShellPage(): JSX.Element {
     stages,
     candidates,
     roleContext,
+    matchConfig,
     refetch,
   };
 
@@ -427,7 +428,6 @@ export default function PipelineShellPage(): JSX.Element {
           candidates={candidates}
           canAddStage={isDraft}
           matchConfig={matchConfig}
-          onStageGateClick={(stageId) => setOpenGateStageId(stageId)}
           {...(isDraft
             ? {
                 onAddStage: () => setShowNewStage(true),
@@ -439,18 +439,6 @@ export default function PipelineShellPage(): JSX.Element {
       {/* Outlet — nested routes render their own SectionCards so the shell
           doesn't need an outer container. */}
       <Outlet context={outletContext} />
-
-      {openGateStageId && (() => {
-        const gateStage = stages.find((s) => s.id === openGateStageId);
-        return gateStage ? (
-          <StageGatePanel
-            stage={gateStage}
-            candidates={candidates}
-            matchConfig={matchConfig}
-            onClose={() => setOpenGateStageId(null)}
-          />
-        ) : null;
-      })()}
 
       {showAddCandidate && id && (
         <CandidateIntakeModal

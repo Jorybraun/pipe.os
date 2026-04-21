@@ -165,7 +165,7 @@ test.describe("Match-config chip on StageStepper", () => {
     await expect(chips.nth(1)).toContainText(expected);
   });
 
-  test("clicking the chip opens the StageGatePanel with full config details", async ({ page }) => {
+  test("clicking the chip navigates to the gate config page", async ({ page }) => {
     await page.route(
       `${API_BASE}/api/v1/pipelines/${seed.pipelineId}/overview`,
       async (route) => {
@@ -191,25 +191,23 @@ test.describe("Match-config chip on StageStepper", () => {
     const firstChip = page.locator('[data-testid="match-config-chip"]').first();
     await expect(firstChip).toContainText("MATCH: HYBRID · MODERATE");
 
-    // Panel is closed until chip is clicked.
-    await expect(page.locator('[data-testid="stage-gate-panel"]')).toHaveCount(0);
-
     await firstChip.click();
+    await page.waitForLoadState("networkidle");
 
-    // Panel opens with full config details.
-    const panel = page.locator('[data-testid="stage-gate-panel"]');
-    await expect(panel).toBeVisible();
-    // Panel shows match philosophy.
-    await expect(panel).toContainText(/hybrid/i);
-    // Panel shows stage linkage (not shown in chip).
-    await expect(panel).toContainText(/per.?stage/i);
+    // Navigated to the gate tab for the first stage.
+    await expect(page).toHaveURL(
+      new RegExp(`/pipeline/${seed.pipelineId}/stage/${seed.stages[0].id}/gate`),
+    );
 
-    // Close via close button.
-    await page.locator('[aria-label="Close gate panel"]').click();
-    await expect(page.locator('[data-testid="stage-gate-panel"]')).toHaveCount(0);
+    // Gate tab content shows match config details.
+    const gateContent = page.locator('[data-testid="stage-tab-content-gate"]');
+    await expect(gateContent).toBeVisible();
+    await expect(gateContent).toContainText(/hybrid/i);
+    // Per-stage linkage is also shown on the full gate page.
+    await expect(gateContent).toContainText(/per.?stage/i);
   });
 
-  test("gate connector circle opens the StageGatePanel when clicked", async ({ page }) => {
+  test("gate connector circle navigates to the gate config page", async ({ page }) => {
     await page.route(
       `${API_BASE}/api/v1/pipelines/${seed.pipelineId}/overview`,
       async (route) => {
@@ -235,14 +233,17 @@ test.describe("Match-config chip on StageStepper", () => {
     const gateConnector = page.locator('[data-testid="stage-gate-connector"]').first();
     await expect(gateConnector).toBeVisible();
     await gateConnector.click();
+    await page.waitForLoadState("networkidle");
 
-    const panel = page.locator('[data-testid="stage-gate-panel"]');
-    await expect(panel).toBeVisible();
-    await expect(panel).toContainText(/tailored/i);
+    // Navigated to the gate tab for the first stage.
+    await expect(page).toHaveURL(
+      new RegExp(`/pipeline/${seed.pipelineId}/stage/${seed.stages[0].id}/gate`),
+    );
 
-    // Close via the panel's close button.
-    await page.locator('[aria-label="Close gate panel"]').click();
-    await expect(panel).toHaveCount(0);
+    // Gate page shows match philosophy.
+    const gateContent = page.locator('[data-testid="stage-tab-content-gate"]');
+    await expect(gateContent).toBeVisible();
+    await expect(gateContent).toContainText(/tailored/i);
   });
 
   test("no chip renders when matchConfig is null", async ({ page }) => {

@@ -23,6 +23,7 @@ import StagePanel from "./pages/StagePanel";
 import StageIndexTab from "./pages/stage-tabs/StageIndexTab";
 import CandidatesTab from "./pages/stage-tabs/CandidatesTab";
 import ConfigureTab from "./pages/stage-tabs/ConfigureTab";
+import GateConfigTab from "./pages/stage-tabs/GateConfigTab";
 import CultureBenchmarkTab from "./pages/stage-tabs/CultureBenchmarkTab";
 import NewStageFormPage from "./pages/NewStageFormPage";
 import KanbanPage from "./pages/KanbanPage";
@@ -387,6 +388,7 @@ function App(): JSX.Element {
                         <Route index element={<StageIndexTab />} />
                         <Route path="candidates" element={<CandidatesTab />} />
                         <Route path="configure" element={<ConfigureTab />} />
+                        <Route path="gate" element={<GateConfigTab />} />
                         <Route path="benchmark" element={<CultureBenchmarkTab />} />
                       </Route>
                     </Route>
