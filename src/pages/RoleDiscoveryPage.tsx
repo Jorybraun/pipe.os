@@ -432,6 +432,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const [initConfig, setInitConfig] = useState<AdapterConfig | null>(null);
   // ── Whether to start in live voice mode (set by sq-mode choice) ──
   const [defaultLiveMode, setDefaultLiveMode] = useState(false);
+  // ── Peeking: user navigated back to ROLE while interview is in progress ──
+  // Keeps initConfig (and AIChat) alive; just hides the interview view.
+  const [peeking, setPeeking] = useState(false);
   // ── Resume prompt — shown when a completed draft is found on mount ──
   const [showResumePrompt, setShowResumePrompt] = useState(false);
   const pendingDraftRef = useRef<RoleDiscoveryDraft | null>(null);
@@ -452,18 +455,21 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const clearInterview = useCallback((): void => {
     setInitConfig(null);
     setDefaultLiveMode(false);
+    setPeeking(false);
   }, []);
 
   // ── Hook callback: fire the AI interview with the finalised answers ──
   const handleFire = useCallback((answers: Record<string, string>, liveMode: boolean): void => {
     setDefaultLiveMode(liveMode);
     setInitConfig({ baseline: buildBaseline(answers) as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setPeeking(false);
   }, []);
 
   // ── Hook callback: JD import delivered a baseline — start the interview ──
   const handleJdImport = useCallback((baseline: RoleContextBaseline): void => {
     setDefaultLiveMode(false);
     setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setPeeking(false);
   }, []);
 
   // ── Hook callback: completed draft found on mount — show resume prompt ──
@@ -563,18 +569,30 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // on a fresh first question.
   const handleStepClick = useCallback((target: StepId): void => {
     if (target === 'role') {
+      if (initConfig !== null && rd.phase !== 'COMPLETE') {
+        // Interview in progress — peek at role form without destroying AIChat state
+        setPeeking(true);
+        return;
+      }
       setInitConfig(null);
       setDefaultLiveMode(false);
       if (rd.phase === 'COMPLETE') rd.reset();
       return;
     }
-    if (target === 'interview' && rd.phase === 'COMPLETE') {
-      rd.reset();
-      // Re-fire using the current scripted answers so AIChat re-initializes
-      // with a new initConfig reference (triggers adapter.initialize()).
-      handleFire(scripted.answers, defaultLiveMode);
+    if (target === 'interview') {
+      if (peeking) {
+        // Return to the in-progress interview
+        setPeeking(false);
+        return;
+      }
+      if (rd.phase === 'COMPLETE') {
+        rd.reset();
+        // Re-fire using the current scripted answers so AIChat re-initializes
+        // with a new initConfig reference (triggers adapter.initialize()).
+        handleFire(scripted.answers, defaultLiveMode);
+      }
     }
-  }, [rd, scripted.answers, defaultLiveMode, handleFire]);
+  }, [rd, initConfig, peeking, scripted.answers, defaultLiveMode, handleFire]);
 
   // ── Pipeline creation ──
   // ADR-039: open the MatchConfigWizard before any pipeline write. Wizard
@@ -659,10 +677,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // ── Computed ──
   const currentStep: StepId =
     rd.phase === 'COMPLETE' ? 'review' :
+    peeking ? 'role' :
     initConfig !== null ? 'interview' :
     'role';
 
-  const isInScriptedPhase = initConfig === null;
+  const isInScriptedPhase = initConfig === null || peeking;
   const currentScriptedQ = isInScriptedPhase ? scripted.currentQuestion : null;
 
   // Speak each scripted question — covers radio/select intake questions too.
@@ -1007,19 +1026,22 @@ export default function RoleDiscoveryPage(): JSX.Element {
         </div>
       )}
 
-      {/* ── AI phase — shown once scripted questions complete, until synthesis ── */}
+      {/* ── AI phase — shown once scripted questions complete, until synthesis ──
+          Kept mounted while peeking so the conversation is never lost. */}
       {initConfig !== null && rd.phase !== 'COMPLETE' && (
-        <AIChat
-          conv={rd.conv}
-          initConfig={initConfig}
-          defaultLiveMode={defaultLiveMode}
-          enableVoice
-          enableLiveVoice={FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE}
-          enableTTS
-          greeting="Hi, I'm Pipe's interview assistant. I'll ask you a few questions to help define the role you're building for. Let's get started."
-          showDomainBars
-          onLiveEnd={handleLiveEnd}
-        />
+        <div style={{ display: peeking ? 'none' : 'block' }}>
+          <AIChat
+            conv={rd.conv}
+            initConfig={initConfig}
+            defaultLiveMode={defaultLiveMode}
+            enableVoice
+            enableLiveVoice={FEATURE_FLAGS.FEATURE_FLAG_LIVE_VOICE}
+            enableTTS
+            greeting="Hi, I'm Pipe's interview assistant. I'll ask you a few questions to help define the role you're building for. Let's get started."
+            showDomainBars
+            onLiveEnd={handleLiveEnd}
+          />
+        </div>
       )}
 
       {/* ── Synthesis — shown when AI interview is complete ──

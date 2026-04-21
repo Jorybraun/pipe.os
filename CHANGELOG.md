@@ -22,6 +22,10 @@ Five UI tasks completed in one batch:
 
 **E2E tests updated** (`e2e/match-config-wizard.spec.ts`): chip text assertion updated (linkage moved to panel); tooltip test replaced with panel open/close test; new gate-connector test added.
 
+#### fix(role-discovery): clicking ROLE step mid-interview no longer clears conversation (2026-04-21)
+
+`handleStepClick('role')` was calling `setInitConfig(null)` which unmounted `<AIChat>` and lost the in-progress interview. Fix: a `peeking` boolean lets the user navigate back to the role form while keeping `initConfig` alive and `<AIChat>` mounted (hidden via `display:none`). Clicking INTERVIEW returns to the live conversation. Re-firing (editing scripted answers) still restarts as expected.
+
 #### fix(theme): neutral accents for dark/light modes — white and black (2026-04-21)
 
 Dark mode `--pipe-accent` → `#ffffff` (white). Light mode → `#1a1a1a` (black). Anatomy modes retain warm amber. Purple is gone from all themes.

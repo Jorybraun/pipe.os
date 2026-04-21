@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import 'dotenv/config';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import chalk from 'chalk';
@@ -18,8 +20,9 @@ import {
   printRequests
 } from './utils.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PM_FILE = process.env.PM_DATA_FILE || 'pm.json';
-const REPO_PATH = process.env.GIT_REPO_PATH || '..';
+const REPO_PATH = path.resolve(__dirname, process.env.GIT_REPO_PATH || '..');
 
 const argv = yargs(hideBin(process.argv))
   .command(
