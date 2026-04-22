@@ -1,7 +1,7 @@
 # ADR-040. Meaning-Based Candidate-Repo-Role Triangulation
 
 **Date:** 2026-04-22
-**Status:** Proposed
+**Status:** Accepted
 **Extends:** [ADR-036](ADR-036-role-discovery-data-contract.md) (Role Discovery + Repo Understanding Data Contract), [ADR-039](ADR-039-bi-directional-vectorization-and-3-station-interview.md) (Bi-directional Vectorization + 3-Station Interview)
 **Author:** Claude Opus 4.7 with founder
 
@@ -49,7 +49,7 @@ Consumes four scalar signals and emits a `TriangulatedMatchRow`:
 |---|---|---|
 | `role_repo_alignment` | `roleFitRerank` alignment_score | 0.0–1.0 |
 | `candidate_repo_fit` | `candidateSituationFit` fit_score | 0.0–1.0 |
-| `role_candidate_cosine` | Cosine similarity between role embedding and candidate embedding | 0.0–1.0 |
+| `role_candidate_cosine` | Exact cosine from D1 ground-truth vectors (dual-layer embedding) | 0.0–1.0 |
 | `skill_coverage` | `matchedMustSkills.length / mustHaveSkills.length` | 0.0–1.0 |
 
 Formula (deterministic, no LLM):
@@ -66,9 +66,9 @@ Mode presets:
 
 | Mode | Description | Weights (role_repo / candidate / cosine / skills) |
 |---|---|---|
-| `validate` | Stresses role-repo alignment; candidate fit is a sanity check only | 0.60 / 0.10 / 0.20 / 0.10 |
-| `tailored` | Ignores role-repo alignment; optimizes candidate-repo fit + cosine | 0.00 / 0.45 / 0.35 / 0.20 |
-| `hybrid` | Blends both with role-leaning default | 0.35 / 0.25 / 0.25 / 0.15 |
+| `validate` | Stresses role-repo alignment; candidate fit is a sanity check only | 0.35 / 0.30 / 0.15 / 0.20 |
+| `tailored` | Ignores role-repo alignment; optimizes candidate-repo fit + cosine | 0.00 / 0.50 / 0.20 / 0.30 |
+| `hybrid` | Blends both with role-leaning default | 0.25 / 0.35 / 0.20 / 0.20 |
 
 Mode is selected from `pipeline_match_config.match_philosophy` (ADR-039 §2), falling back to `role_contexts.match_philosophy`. All weights are stamped on the output row for reproducibility.
 
@@ -77,6 +77,14 @@ Mode is selected from `pipeline_match_config.match_philosophy` (ADR-039 §2), fa
 `candidate_ingestion` (v2 rich-agent output):
 - `career_context_json` — JSON blob with `company_stages`, `team_topologies`, `primary_challenge_types`, `growth_trajectory`.
 - `situation_signature_json` — JSON blob with `primary_challenge_types`, `complexity_tolerance_band`, `review_culture_preference`.
+- `embedding_json` — BGE-large-en-v1.5 vector JSON (dual-layer ground truth; mirrored in `CANDIDATE_INDEX`).
+
+`repo_engineering_signals` (Pass 3 output):
+- `embedding_json` — BGE-large-en-v1.5 vector JSON (dual-layer ground truth; mirrored in `REPO_INDEX`).
+
+`role_contexts` (Role Discovery output):
+- `role_searchable_profile` — 400–600 word narrative describing the role, built from `job_description_md`.
+- `embedding_json` — BGE-large-en-v1.5 vector JSON (dual-layer ground truth).
 
 `candidate_repo_match` (new table):
 - `candidate_id`, `repo_id`, `role_context_id`
@@ -137,6 +145,7 @@ On resume upload:
 ### Risks
 
 - LLM scorer drift: if Gemma 4 weights change at Vertex AI, per-signal score distributions may shift. Mitigation: version-stamp `model_used` and run a rolling calibration window.
+- **Dual-layer embedding architecture:** D1 stores `embedding_json` as ground truth (exact cosine, index rebuild source); Vectorize (`REPO_INDEX`, `CANDIDATE_INDEX`) remains the fast ANN layer. This enables exact `role_candidate_cosine` computation at match time and bidirectional search endpoints (`POST /api/v1/search/candidates`, `POST /api/v1/search/repos`).
 - Privacy of candidate embeddings: `role_candidate_cosine` requires candidate embeddings in the same space as repo embeddings. Candidate text (resume, profile) is sensitive PII. Mitigation: embeddings are vectors, not reversibly decryptable; access control follows ADR-031 consent gate.
 
 ---
@@ -164,3 +173,4 @@ On resume upload:
 | Date | Change | Source |
 |---|---|---|
 | 2026-04-22 | Initial draft (Proposed) | STRATEGY.md Decision Log 2026-04-22 entry; `roleFitRerank.ts` pattern reuse |
+| 2026-04-22 | Accepted + dual-layer embedding implementation | Migration 0042, `lib/embedding/cosine.ts`, unified search endpoints, `role_candidate_cosine` now computed from D1 ground truth |

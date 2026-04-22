@@ -28,7 +28,7 @@ The four signals are:
 |--------|--------|-------------|
 | `role_repo_alignment` | `repo_role_alignment` cache (ADR-036) | Pre-scored role→repo fit at pipeline build time |
 | `candidate_repo_fit` | `candidateSituationFit` LLM scorer | Per-candidate situational scoring against repo engineering signals |
-| `role_candidate_cosine` | Vectorize cosine (deferred) | Cosine similarity between role searchable profile and candidate searchable profile |
+| `role_candidate_cosine` | Exact cosine from D1 ground-truth vectors | Cosine similarity between role embedding and candidate embedding, computed from `embedding_json` columns in D1 (not Vectorize ANN approximations) |
 | `skill_coverage` | `matchReposForCandidate` graph score | Normalized structured-filter + cosine blended score |
 
 ### Formula
@@ -73,7 +73,7 @@ In `tailored` mode the graph winner may not be the best candidate fit. After `ca
 
 ### Option C — Deterministic weighted combinator (chosen)
 - **Pros:** Deterministic, testable, fast (no LLM at scoring time), explainable per-dimension, philosophy-aware via weight presets.
-- **Cons:** Requires a pre-computed `candidate_repo_fit` signal (one LLM call per candidate, amortized across the shortlist); `role_candidate_cosine` requires role embeddings that do not yet exist.
+- **Cons:** Requires a pre-computed `candidate_repo_fit` signal (one LLM call per candidate, amortized across the shortlist).
 
 ---
 
@@ -93,7 +93,7 @@ Option C hits the sweet spot: we pay the LLM cost once per candidate (the `candi
 
 ### Negative / Trade-offs
 - `candidateSituationFit` adds one LLM call (~2–4s) to the ingestion pipeline.
-- `role_candidate_cosine` is currently `null` for all matches because role profiles are not pre-embedded. This means the `role_candidate` weight contributes `0` until ADR-041 (Role Embedding Pre-computation) is implemented.
+- `role_candidate_cosine` is computed exactly from dual-layer ground-truth vectors stored in D1 (`candidate_ingestion.embedding_json` and `role_contexts.embedding_json`). If either embedding is missing (e.g., role context not yet completed), the signal falls back to `null` and its weight contributes `0`.
 - The `candidate_ingestion` row grows by ~2 KB per candidate due to JSON columns.
 
 ### Risks
@@ -117,6 +117,6 @@ Option C hits the sweet spot: we pay the LLM cost once per candidate (the `candi
 
 ## Follow-up
 
-- **ADR-041:** Pre-compute and cache role profile embeddings so `role_candidate_cosine` can be populated at ingestion time.
 - **Weight tuning:** After 50+ feedback rows, run offline regression to calibrate weight presets against recruiter thumbs-up/down accuracy.
 - **Expand PR/issue picker:** Allow `pickReviewPr` / `pickImplementationIssue` to run against any repo in the shortlist, not just the graph winner.
+- **Unified search endpoints:** `POST /api/v1/search/candidates` and `POST /api/v1/search/repos` enable bidirectional semantic search (role→candidates, role→repos, candidate→repos, repo→candidates) using the same dual-layer embedding architecture.

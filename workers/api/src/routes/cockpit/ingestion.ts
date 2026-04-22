@@ -337,6 +337,7 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
          error_text = NULL,
          profile_generated_at = NULL,
          profile_embedded_at = NULL,
+         embedding_json = NULL,
          matched_at = NULL,
          matched_repo_id = NULL,
          triangulated_score = NULL,

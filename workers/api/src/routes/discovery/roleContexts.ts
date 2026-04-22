@@ -55,6 +55,65 @@ function now(): string {
 }
 
 /**
+ * Build a searchable profile from the role's job description + persona.
+ * Best-effort: if embedding fails we log and move on — role discovery
+ * must never block on the vector layer.
+ */
+async function buildAndStoreRoleEmbedding(
+  env: Env,
+  roleContextId: string,
+  jobDescription: string,
+  persona: unknown,
+): Promise<void> {
+  const profile = buildRoleSearchableProfile(jobDescription, persona);
+  if (!profile || profile.trim().length < 50) {
+    console.warn(`[roleContexts] skipping role embed for ${roleContextId}: profile too short`);
+    return;
+  }
+
+  try {
+    const embedResult = (await env.AI.run('@cf/baai/bge-large-en-v1.5', {
+      text: [profile],
+    })) as { data?: number[][] };
+    const vector = embedResult?.data?.[0];
+    if (!vector || !Array.isArray(vector) || vector.length !== 1024) {
+      console.warn(`[roleContexts] embed returned bad vector for ${roleContextId}`);
+      return;
+    }
+    await env.DB.prepare(
+      `UPDATE role_contexts SET role_searchable_profile = ?, embedding_json = ? WHERE id = ?`,
+    ).bind(profile, JSON.stringify(vector), roleContextId).run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[roleContexts] role embed failed for ${roleContextId}:`, msg);
+  }
+}
+
+function buildRoleSearchableProfile(
+  jobDescription: string,
+  persona: unknown,
+): string {
+  if (jobDescription && jobDescription.trim().length >= 200) {
+    // Strip markdown headings for density, keep the rest
+    return jobDescription.replace(/^#{1,6}\s+/gm, '').trim();
+  }
+  // Fallback: synthesise from persona
+  const parts: string[] = [];
+  const p = persona as Record<string, unknown> | null;
+  if (p) {
+    const seniority = typeof p.seniority === 'string' ? p.seniority : '';
+    const archetype = typeof p.archetype === 'string' ? p.archetype : '';
+    const mustHave = Array.isArray(p.mustHaveSkills) ? p.mustHaveSkills.join(', ') : '';
+    const niceToHave = Array.isArray(p.niceToHaveSkills) ? p.niceToHaveSkills.join(', ') : '';
+    if (seniority) parts.push(`This role is for a ${seniority} engineer.`);
+    if (archetype) parts.push(`Archetype: ${archetype}.`);
+    if (mustHave) parts.push(`Must-have skills: ${mustHave}.`);
+    if (niceToHave) parts.push(`Nice-to-have skills: ${niceToHave}.`);
+  }
+  return parts.join(' ');
+}
+
+/**
  * Log role-discovery AI usage to ai_usage_events. Reads token counts from the
  * Vertex provider's `getLastUsage()` after a call. Safe to call even when the
  * provider is null, a non-Vertex provider, or the call errored — it just
@@ -630,6 +689,9 @@ roleContexts.post('/:id/respond', async (c) => {
             .run();
         }
 
+        // Best-effort role embedding (fire-and-forget inside SSE)
+        buildAndStoreRoleEmbedding(c.env, id, jobDescription, persona).catch(() => {});
+
         await stream.writeSSE({
           event: 'done',
           data: JSON.stringify({
@@ -831,6 +893,11 @@ roleContexts.post('/:id/respond', async (c) => {
         .run();
     }
 
+    // Best-effort role embedding
+    c.executionCtx.waitUntil(
+      buildAndStoreRoleEmbedding(c.env, id, jobDescription, persona),
+    );
+
     return c.json({
       participantId: participant.id,
       synthesis,
@@ -999,6 +1066,11 @@ roleContexts.post('/:id/complete', async (c) => {
       .bind(now(), id)
       .run();
   }
+
+  // Best-effort role embedding
+  c.executionCtx.waitUntil(
+    buildAndStoreRoleEmbedding(c.env, id, jobDescription, persona),
+  );
 
   return c.json({
     participantId: participant.id,

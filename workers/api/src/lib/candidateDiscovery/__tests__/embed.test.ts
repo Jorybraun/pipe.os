@@ -35,6 +35,7 @@ describe('embedAndUpsertCandidate', () => {
     });
 
     expect(result.vectorDim).toBe(1024);
+    expect(result.vector).toHaveLength(1024);
     expect(typeof result.embeddedAt).toBe('string');
     expect(upsert).toHaveBeenCalledTimes(1);
     const firstCall = upsert.mock.calls[0]!;

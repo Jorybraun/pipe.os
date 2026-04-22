@@ -40,6 +40,7 @@ import {
   type MarkIngestionMatchedInput,
 } from './persist';
 import { candidateSituationFit, type SituationFitCandidate } from './candidateSituationFit';
+import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
 
 export interface IngestionInput {
   env: Env;
@@ -94,9 +95,9 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   }
 
   // Step 4: Embed into CANDIDATE_INDEX
-  let embeddedAt: string;
+  let embedResult: Awaited<ReturnType<typeof embedAndUpsertCandidate>>;
   try {
-    const embedResult = await embedAndUpsertCandidate({
+    embedResult = await embedAndUpsertCandidate({
       ai: env.AI,
       vectorize: env.CANDIDATE_INDEX,
       candidateId,
@@ -106,7 +107,6 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
         primary_language: discoveryResult.keyConcepts.primary_language,
       },
     });
-    embeddedAt = embedResult.embeddedAt;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] embedAndUpsertCandidate failed:', msg);
@@ -116,7 +116,7 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
 
   // Step 5: Mark embedded
   try {
-    await markIngestionEmbedded(db, candidateId, embeddedAt);
+    await markIngestionEmbedded(db, candidateId, embedResult.embeddedAt, JSON.stringify(embedResult.vector));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] markIngestionEmbedded failed:', msg);
@@ -202,10 +202,30 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       roleRepoAlignments.set(row.repo_id, row.alignment_score);
     }
 
-    // TODO: Compute role_candidate_cosine by embedding role profile and querying
-    // CANDIDATE_INDEX, or pre-compute at pipeline build time. For now, null
-    // means triangulateMatch falls back to skill_coverage weight.
-    roleCandidateCosine = null;
+    // Dual-layer exact cosine: load ground-truth vectors from D1,
+    // compute exact similarity. Falls back to null if either side
+    // hasn't been embedded yet (triangulateMatch then uses skill_coverage).
+    const embeddingRow = await db
+      .prepare(
+        `SELECT ci.embedding_json AS candidate_embedding, rc.embedding_json AS role_embedding
+           FROM candidate_ingestion ci
+           LEFT JOIN role_contexts rc ON rc.id = ?1
+          WHERE ci.candidate_id = ?2`,
+      )
+      .bind(roleContextRow.id, candidateId)
+      .first<{ candidate_embedding: string | null; role_embedding: string | null }>();
+
+    const candidateVec = parseEmbeddingJson(embeddingRow?.candidate_embedding);
+    const roleVec = parseEmbeddingJson(embeddingRow?.role_embedding);
+    if (candidateVec && roleVec) {
+      try {
+        roleCandidateCosine = cosineSimilarity(candidateVec, roleVec);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[ingestion] cosine failed for candidate ${candidateId}:`, msg);
+        roleCandidateCosine = null;
+      }
+    }
   }
 
   // Step 8: Candidate situation fit

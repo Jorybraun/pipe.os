@@ -16,6 +16,7 @@ import { overview } from './routes/cockpit/overview';
 import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
 import { devContainerSessions } from './routes/cockpit/devContainerSessions';
 import { ingestion } from './routes/cockpit/ingestion';
+import { search } from './routes/search';
 import { schedulingAuth, schedulingPublic } from './routes/cockpit/scheduling';
 // Discovery — Role Discovery Agent
 import { roleContexts } from './routes/discovery/roleContexts';
@@ -102,6 +103,8 @@ app.route('/api/v1/pipelines', pipelineCandidates);
 app.route('/api/v1/candidates', candidateOps);
 // Ingestion: GET/POST /api/v1/pipelines/:pipelineId/ingestion
 app.route('/api/v1/pipelines', ingestion);
+// Search: POST /api/v1/search/candidates, POST /api/v1/search/repos
+app.route('/api/v1/search', search);
 // Dev container sessions: recruiter read-only cockpit routes (ADR-037, Phase 3b)
 app.route('/api/v1', devContainerSessions);
 // Email: POST /api/v1/candidates/:candidateId/send-invite, /send-result

@@ -740,8 +740,8 @@ async function vectorizeAndMark(env: Env, id: number, profile: string): Promise<
   }
 
   await env.DB.prepare(
-    `UPDATE repo_engineering_signals SET vectorized_at = ? WHERE repo_id = ?`,
-  ).bind(vectorizedAt, id).run();
+    `UPDATE repo_engineering_signals SET vectorized_at = ?, embedding_json = ? WHERE repo_id = ?`,
+  ).bind(vectorizedAt, JSON.stringify(vector), id).run();
   return { vectorized: true, vectorizedAt };
 }
 

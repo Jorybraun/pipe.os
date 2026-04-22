@@ -270,6 +270,10 @@ export interface RoleContextRow {
   bars_overrides: string | null;
   /** RecruitmentBrief JSON (stringified). Null until synthesis runs. (RD-P5) */
   recruitment_brief_json: string | null;
+  /** 400–600 word narrative describing the role, suitable for embedding. */
+  role_searchable_profile?: string | null;
+  /** BGE-large-en-v1.5 vector JSON (dual-layer ground truth). */
+  embedding_json?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -600,6 +604,8 @@ export interface RepoEngineeringSignalsRow {
   challenge_surfaces: string | null;
   /** 400–600 word Gemma-narrated profile (embedded into Vectorize REPO_INDEX). */
   repo_searchable_profile: string;
+  /** BGE-large-en-v1.5 vector JSON (dual-layer ground truth). */
+  embedding_json?: string | null;
 
   engineering_narrative: string;
   signal_json: string;                 // JSON-stringified full blob

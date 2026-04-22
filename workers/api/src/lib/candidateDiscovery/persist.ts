@@ -184,6 +184,7 @@ export async function markIngestionEmbedded(
   db: D1Database,
   candidateId: string,
   embeddedAt: string,
+  embeddingJson?: string,
 ): Promise<void> {
   const now = nowIso();
   await db
@@ -191,11 +192,12 @@ export async function markIngestionEmbedded(
       `UPDATE candidate_ingestion
          SET status = 'embedded',
              profile_embedded_at = ?2,
+             embedding_json = COALESCE(?4, embedding_json),
              error_text = NULL,
              updated_at = ?3
        WHERE candidate_id = ?1`,
     )
-    .bind(candidateId, embeddedAt, now)
+    .bind(candidateId, embeddedAt, now, embeddingJson ?? null)
     .run();
 }
 

@@ -24,6 +24,8 @@ export interface EmbedCandidateInput {
 export interface EmbedCandidateResult {
   embeddedAt: string;
   vectorDim: number;
+  /** The raw embedding vector (also persisted to D1 as ground truth). */
+  vector: number[];
 }
 
 const BGE_MODEL = '@cf/baai/bge-large-en-v1.5';
@@ -68,5 +70,6 @@ export async function embedAndUpsertCandidate(
   return {
     embeddedAt: new Date().toISOString(),
     vectorDim: vector.length,
+    vector,
   };
 }

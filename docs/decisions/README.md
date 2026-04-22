@@ -30,7 +30,7 @@ ADRs 023–039 reflect the Cloudflare-era architecture. These are the source of 
 | [ADR-037](current/ADR-037-dev-containers-on-cloudflare.md) | Dev containers on Cloudflare | Accepted |
 | [ADR-038](current/ADR-038-role-discovery-agent-guardrails.md) | Role discovery agent guardrails | Accepted |
 | [ADR-039](current/ADR-039-bi-directional-vectorization-and-3-station-interview.md) | Bi-directional vectorization + 3-station interview | Accepted |
-| [ADR-040](current/ADR-040-meaning-based-triangulation.md) | Meaning-based candidate-repo-role triangulation | Proposed |
+| [ADR-040](current/ADR-040-meaning-based-triangulation.md) | Meaning-based candidate-repo-role triangulation | Accepted |
 
 ### Load-bearing ADRs
 
