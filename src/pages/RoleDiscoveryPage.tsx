@@ -147,7 +147,7 @@ function SynthesisPhase({
   onCreatePipeline: () => void;
   isCreating: boolean;
   flagAttribute: (flagType: string, domain: string, attribute: string, note?: string) => Promise<{ question: string }>;
-  submitGapAnswer: (answer: string) => Promise<void>;
+  submitGapAnswer: (answer: string) => Promise<unknown>;
   refreshRcd: () => Promise<void>;
 }): JSX.Element {
   const availableTabs: SynthesisTab[] = [

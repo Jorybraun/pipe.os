@@ -1239,6 +1239,180 @@ roleContexts.post('/:id/feedback', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── POST /:id/calibrate — Recruiter flags a gap, get a clarifying question ──
+
+roleContexts.post('/:id/calibrate', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = calibrateSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { participantId, flagType, domain, attribute, note } = parsed.data;
+
+  const row = await c.env.DB.prepare(
+    'SELECT * FROM role_contexts WHERE id = ?1',
+  )
+    .bind(id)
+    .first<RoleContextRow>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  const participant = await c.env.DB.prepare(
+    'SELECT * FROM role_context_participants WHERE id = ?1 AND role_context_id = ?2',
+  )
+    .bind(participantId, id)
+    .first<RoleContextParticipantRow>();
+
+  if (!participant) {
+    return apiError(c, 'NOT_FOUND', 'Participant not found.');
+  }
+
+  const rcd = row.rcd_json
+    ? parseJsonColumn<RoleContextDocument>(row.rcd_json, null)
+    : null;
+
+  const exchanges = parseJsonColumn<RoleExchange[]>(participant.exchanges, []);
+  const transcript = exchanges
+    .map((ex) => `Q: ${ex.question}\nA: ${ex.answer ?? '(no answer)'}`)
+    .join('\n\n');
+
+  const provider = createRoleAgentProvider(c.env);
+  const gapResult = await callGapFillingAgent({
+    provider,
+    rcd: (rcd ?? {}) as Record<string, unknown>,
+    flagType,
+    domain,
+    attribute,
+    recruiterNote: note ?? '',
+    transcript,
+  });
+
+  return c.json({
+    clarifyingQuestion: gapResult.clarifyingQuestion,
+    domain,
+    attribute,
+  });
+});
+
+// ─── POST /:id/calibrate/respond — Gap-filling answer, re-synthesize domain ──
+
+roleContexts.post('/:id/calibrate/respond', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const b = body as Record<string, unknown>;
+  const participantId = typeof b.participantId === 'string' ? b.participantId : '';
+  const answer = typeof b.answer === 'string' ? b.answer : '';
+  const domain = typeof b.domain === 'string' ? b.domain : '';
+  const attribute = typeof b.attribute === 'string' ? b.attribute : '';
+  const flagType = typeof b.flagType === 'string' ? b.flagType : '';
+  const note = typeof b.note === 'string' ? b.note : '';
+
+  if (!participantId || !answer || !domain || !attribute) {
+    return apiError(c, 'VALIDATION_ERROR', 'participantId, answer, domain, and attribute are required.');
+  }
+
+  const row = await c.env.DB.prepare(
+    'SELECT * FROM role_contexts WHERE id = ?1',
+  )
+    .bind(id)
+    .first<RoleContextRow>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  const participant = await c.env.DB.prepare(
+    'SELECT * FROM role_context_participants WHERE id = ?1 AND role_context_id = ?2',
+  )
+    .bind(participantId, id)
+    .first<RoleContextParticipantRow>();
+
+  if (!participant) {
+    return apiError(c, 'NOT_FOUND', 'Participant not found.');
+  }
+
+  const rcd = row.rcd_json
+    ? parseJsonColumn<RoleContextDocument>(row.rcd_json, null)
+    : null;
+
+  if (!rcd) {
+    return apiError(c, 'VALIDATION_ERROR', 'No RCD exists for this role context. Complete an interview first.');
+  }
+
+  const exchanges = parseJsonColumn<RoleExchange[]>(participant.exchanges, []);
+  const transcript = exchanges
+    .map((ex) => `Q: ${ex.question}\nA: ${ex.answer ?? '(no answer)'}`)
+    .join('\n\n');
+
+  const provider = createRoleAgentProvider(c.env);
+  const calibrationResult = await calibrateRcd({
+    provider,
+    rcd,
+    flagType,
+    domain: domain as import('../../types').Domain,
+    attribute,
+    recruiterNote: note,
+    transcript,
+    answer,
+    stakeholder: (participant.participant_role as import('../../types').StakeholderType) ?? 'HIRING_MANAGER',
+  });
+
+  const updatedRcd = calibrationResult.rcd;
+  const persona = updatedRcd.consumer_slice;
+  const jobDescription = deriveJobDescriptionFromRcd(updatedRcd);
+
+  await c.env.DB.prepare(
+    `UPDATE role_contexts
+     SET rcd_json = ?1,
+         validation_metadata = ?2,
+         persona_json = ?3,
+         job_description_md = ?4,
+         updated_at = ?5
+     WHERE id = ?6`,
+  ).bind(
+    JSON.stringify(updatedRcd),
+    JSON.stringify(updatedRcd.validation_metadata),
+    JSON.stringify(persona),
+    jobDescription,
+    now(),
+    id,
+  ).run();
+
+  return c.json({
+    updatedCell: calibrationResult.updatedCell,
+    persona,
+    jobDescription,
+    rcd: JSON.parse(JSON.stringify(updatedRcd)),
+  });
+});
+
 // ─── POST /:id/invite — Send interview invitations to team members ──────────
 
 roleContexts.post('/:id/invite', async (c) => {
