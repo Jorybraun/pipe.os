@@ -312,43 +312,17 @@ github.post('/repo-context', async (c) => {
   });
 
   // Call AI to generate repoKnowledge
-  const apiKey = c.env.MISTRAL_API_KEY ?? '';
-  const provider = apiKey ? 'mistral' : 'workers-ai';
-
   let repoKnowledge: RepoKnowledgeInput;
   try {
-    if (provider === 'mistral') {
-      const mistralRes = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: 'devstral-small-latest',
-          messages: [
-            { role: 'system', content: 'You generate structured JSON about code repositories. Respond with ONLY the JSON object, no markdown fences.' },
-            { role: 'user', content: contextForAI },
-          ],
-          temperature: 0.3,
-          max_tokens: 4000,
-        }),
-      });
-      if (!mistralRes.ok) throw new Error(`Mistral ${mistralRes.status}`);
-      const mistralData = (await mistralRes.json()) as {
-        choices: Array<{ message: { content: string } }>;
-      };
-      const raw = mistralData.choices[0]?.message?.content ?? '{}';
-      repoKnowledge = parseRepoKnowledge(raw);
-    } else {
-      // Workers AI fallback
-      const aiResult = await c.env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct' as Parameters<typeof c.env.AI.run>[0], {
-        messages: [
-          { role: 'system', content: 'You generate structured JSON about code repositories. Respond with ONLY the JSON object, no markdown fences.' },
-          { role: 'user', content: contextForAI },
-        ],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }) as { response?: string };
-      repoKnowledge = parseRepoKnowledge(aiResult.response ?? '{}');
-    }
+    const aiResult = await c.env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct' as Parameters<typeof c.env.AI.run>[0], {
+      messages: [
+        { role: 'system', content: 'You generate structured JSON about code repositories. Respond with ONLY the JSON object, no markdown fences.' },
+        { role: 'user', content: contextForAI },
+      ],
+      temperature: 0.3,
+      max_tokens: 4000,
+    }) as { response?: string };
+    repoKnowledge = parseRepoKnowledge(aiResult.response ?? '{}');
   } catch (err) {
     console.error('[github/repo-context] AI generation failed:', err);
     // Return a minimal fallback so the flow doesn't break

@@ -9,7 +9,7 @@
  *   /pipeline/:id/challenges/:challengeId         — existing challenge
  *   /pipeline/:id/challenges/NEW_CODE_IMPLEMENTATION?stageId=... — new challenge
  *
- * No aws-amplify imports anywhere in this file.
+ * Cloudflare Worker API only — zero vendor SDK imports.
  */
 
 import { useState, useEffect, useCallback, type ComponentType } from 'react';

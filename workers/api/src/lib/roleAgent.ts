@@ -1,7 +1,7 @@
 /**
  * Role Discovery Agent — provider-agnostic with tool calling support.
  *
- * Uses the LLMProvider interface so Mistral and Google AI (Gemma 4) can be
+ * Uses the LLMProvider interface so Google AI (Gemma 4) and Vertex AI can be
  * swapped via the ROLE_AGENT_PROVIDER env var.
  *
  * ReAct loop (only when provider.supportsTools):
@@ -376,7 +376,7 @@ Hit apply — we'll be in touch within a few days. No cover letter needed.
 
   return {
     type: 'synthesis',
-    reasoning: '[MOCK] Budget exhausted. Mock persona + JD returned because MISTRAL_API_KEY is not configured.',
+    reasoning: '[MOCK] Budget exhausted. Mock persona + JD returned because no AI provider is configured.',
     persona,
     jobDescription,
     synthesis: persona.archetype,

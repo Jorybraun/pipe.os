@@ -15,7 +15,7 @@
  * consumed the RCD instead of ranking by stars.
  *
  * Model-family independence (CLAUDE.md AI routing rule, ADR-032 anchor):
- *   • Pass 3 (offline) writes signals on Claude Haiku 4.5.
+ *   • Pass 3 (offline) writes signals on Gemma 4 26B.
  *   • This file (runtime) reranks on Gemma 4 26B.
  *   • Never let the same family both write and read signals — the rerank
  *     must be an independent perspective on the signals.

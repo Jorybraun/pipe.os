@@ -1,15 +1,14 @@
 /**
  * Implementer Agent — Multi-Turn Code Review
  *
- * Calls Devstral (Mistral) via the OpenAI-compatible Chat Completions API
- * to generate PR author responses to reviewer comments.
+ * Calls the configured LLM to generate PR author responses to reviewer comments.
  *
  * Aligned with the Code Review Arena spec:
  * - Output: ImplementerResponse[] with to_comment_id + move (comment/change/pushback)
  * - Input: ReviewRound[] transcript + new ReviewComment[]
  *
- * When MISTRAL_API_KEY is not set, returns mock responses so that
- * the Worker can be tested locally without a live API key.
+ * When no AI binding is available, returns mock responses so that
+ * the Worker can be tested locally.
  */
 
 import { buildImplementerSystemPrompt } from './prompts';
@@ -46,7 +45,7 @@ export interface ReviewRound {
   implementer_responses: ImplementerResponse[];
 }
 
-export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic';
+export type LLMProvider = 'workers-ai' | 'google-ai';
 
 export interface CallImplementerAgentInput {
   apiKey: string;
@@ -67,20 +66,6 @@ export interface CallImplementerAgentInput {
    * The addendum never overrides persona — it tunes, it does not replace.
    */
   dispositionalWeights?: Record<string, number>;
-}
-
-// ─── LLM API response shapes ────────────────────────────────────────────────
-
-interface MistralChoice {
-  message: { role: string; content: string };
-}
-
-interface MistralResponse {
-  choices: MistralChoice[];
-}
-
-interface AnthropicMessage {
-  content: Array<{ type: string; text: string }>;
 }
 
 const VALID_MOVES: ImplementerMove[] = ['comment', 'change', 'pushback'];
@@ -124,8 +109,7 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string):
 // ─── Prompt builder for user message ────────────────────────────────────────
 
 /**
- * Formats the conversation transcript + new comments into a user message
- * for the Anthropic API.
+ * Formats the conversation transcript + new comments into a user message.
  */
 function buildUserMessage(
   previousRounds: ReviewRound[],
@@ -171,69 +155,10 @@ function buildUserMessage(
 
 // ─── Agent call ──────────────────────────────────────────────────────────────
 
-// ─── Provider-specific API calls ────────────────────────────────────────────
-
-async function callMistral(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'devstral-latest',
-      max_tokens: 2048,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[implementerAgent] Mistral API error', { status: response.status, body: errorText });
-    return '';
-  }
-
-  const data = (await response.json()) as MistralResponse;
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
-}
-
-async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 2048,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[implementerAgent] Anthropic API error', { status: response.status, body: errorText });
-    return '';
-  }
-
-  const data = (await response.json()) as AnthropicMessage;
-  return data.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
-}
-
-// ─── Agent call ──────────────────────────────────────────────────────────────
-
 /**
- * Calls the configured LLM (Mistral Devstral by default, Anthropic as option)
- * to get implementer responses for the given comments.
+ * Calls the configured LLM to get implementer responses for the given comments.
  *
  * Falls back to mock responses when:
- * - apiKey is empty / missing
  * - The API call fails (logs error, does not throw — assessment must not break)
  */
 export async function callImplementerAgent(
@@ -248,17 +173,8 @@ export async function callImplementerAgent(
     return [];
   }
 
-  // Return mock responses when API key is not configured (for testing)
-  if (!apiKey && provider !== 'workers-ai') {
-    console.log('[implementerAgent] No API key configured. Returning mock responses for testing.');
-    return getMockImplementerResponses(newComments, persona);
-  }
-
   if (provider === 'workers-ai' && !ai) {
     throw new Error('[implementerAgent] Workers AI binding not available.');
-  }
-  if (provider !== 'workers-ai' && !apiKey) {
-    throw new Error(`[implementerAgent] No API key configured for ${provider}. Set MISTRAL_API_KEY or ANTHROPIC_API_KEY.`);
   }
 
   const systemPrompt = buildImplementerSystemPrompt(persona, prBrief, prDiff, dispositionalWeights);
@@ -268,10 +184,8 @@ export async function callImplementerAgent(
   try {
     if (provider === 'workers-ai') {
       raw = await callWorkersAI(ai!, systemPrompt, userMessage);
-    } else if (provider === 'anthropic') {
-      raw = await callAnthropic(apiKey, systemPrompt, userMessage);
     } else {
-      raw = await callMistral(apiKey, systemPrompt, userMessage);
+      throw new Error(`[implementerAgent] Provider '${provider}' is not supported.`);
     }
   } catch (err) {
     console.error(`[implementerAgent] ${provider} call failed:`, err);

@@ -6,8 +6,8 @@ export type SchedulingProvider = 'CALENDLY' | 'CAL_COM' | 'MANUAL';
 export type SyncSource = 'MANUAL' | 'WEBHOOK';
 
 /**
- * Local mirror of the ScheduledInterview Amplify model.
- * Fields match the schema defined in amplify/data/resource.ts.
+ * ScheduledInterview — local TypeScript interface.
+ * Matches the D1 schema (see workers/api/migrations/).
  */
 export interface ScheduledInterview {
   readonly id: string;
@@ -36,8 +36,8 @@ export interface ScheduledInterview {
 }
 
 /**
- * Local mirror of the SchedulingConnection Amplify model.
- * Fields match the schema defined in amplify/data/resource.ts.
+ * SchedulingConnection — local TypeScript interface.
+ * Matches the D1 schema (see workers/api/migrations/).
  */
 export interface SchedulingConnection {
   readonly id: string;

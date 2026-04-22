@@ -2,7 +2,7 @@ import type { Stage } from "../types";
 
 /**
  * Mock stage data for development.
- * This data structure matches the future Amplify Data schema.
+ * Matches the D1 schema (see workers/api/migrations/).
  */
 export const mockStages: Stage[] = [
   {

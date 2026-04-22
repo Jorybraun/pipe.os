@@ -22,7 +22,7 @@
  * See ADR-040 Meaning-Based Candidate-Repo-Role Triangulation.
  */
 
-import type { Env } from '../../types';
+import type { Env, RepoEngineeringSignalsRow } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import { createCandidateAgentProvider } from '../llm/createProvider';
 import { matchReposForCandidate } from '../match/matchReposForCandidate';
@@ -255,13 +255,13 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       mean_changed_files: row.mean_changed_files,
       p90_changed_files: row.p90_changed_files,
       issue_link_rate: row.issue_link_rate,
-      complexity_band: row.complexity_band,
+      complexity_band: row.complexity_band as RepoEngineeringSignalsRow['complexity_band'],
       swe_bench_eligibility_rate: row.swe_bench_eligibility_rate,
-      architecture_style: row.architecture_style,
+      architecture_style: row.architecture_style as RepoEngineeringSignalsRow['architecture_style'],
       review_density: row.review_density,
       commit_cadence: null,
       satd_density: null,
-      test_style: row.test_style,
+      test_style: row.test_style as RepoEngineeringSignalsRow['test_style'],
       challenge_surfaces: row.challenge_surfaces,
       repo_searchable_profile: row.repo_searchable_profile,
       engineering_narrative: row.engineering_narrative,
@@ -301,7 +301,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   const triangulated = triangulateMatch({
     philosophy,
     graphResult: matchResult,
-    situationRankings,
+    situationRankings: situationRankings.rankings,
     roleRepoAlignments,
     roleCandidateCosine,
   });

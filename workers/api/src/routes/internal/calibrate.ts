@@ -35,7 +35,7 @@ interface CalibrateScoreBody {
   provider: LLMProvider;
   /**
    * Scorer input minus `apiKey` and `ai` — the handler fills those from
-   * `env` so clients never need to hold Mistral keys or Worker bindings.
+   * `env` so clients never need to hold API keys or Worker bindings.
    */
   scorerInput: Omit<ScorerInput, 'apiKey' | 'ai' | 'provider'>;
 }
@@ -138,18 +138,6 @@ calibrate.post('/score', async (c) => {
 
 function resolveApiKey(provider: LLMProvider, env: Env): string {
   if (provider === 'workers-ai') return '';
-  if (provider === 'mistral') {
-    if (!env.MISTRAL_API_KEY) {
-      throw new Error('[calibrate] MISTRAL_API_KEY not configured for devstral calibration run.');
-    }
-    return env.MISTRAL_API_KEY;
-  }
-  if (provider === 'anthropic') {
-    if (!env.ANTHROPIC_API_KEY) {
-      throw new Error('[calibrate] ANTHROPIC_API_KEY not configured for sonnet calibration run.');
-    }
-    return env.ANTHROPIC_API_KEY;
-  }
   if (provider === 'google-ai') {
     if (!env.GOOGLE_AI_API_KEY) {
       throw new Error('[calibrate] GOOGLE_AI_API_KEY not configured for gemini calibration run.');

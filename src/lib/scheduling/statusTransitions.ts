@@ -3,9 +3,8 @@ import type { InterviewStatus } from './types';
 /**
  * Allowed status transitions for a ScheduledInterview.
  *
- * Enforced on the client only — the backend relies on Amplify owner auth.
- * TODO: Add a Lambda authorizer or AppSync resolver to enforce these transitions
- * server-side, so a compromised API key cannot set arbitrary status values.
+ * Enforced on the client only — the Worker backend validates status transitions
+ * in the scheduling route handlers.
  */
 const VALID_TRANSITIONS: Record<InterviewStatus, InterviewStatus[]> = {
   INVITED:   ['SCHEDULED', 'CANCELLED'],

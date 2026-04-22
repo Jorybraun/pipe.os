@@ -31,20 +31,9 @@ export interface Env {
    * Optional — unauthenticated requests are rate-limited at 60/hour.
    */
   GITHUB_TOKEN?: string;
-  /**
-   * Mistral API key for the implementer agent (Devstral model).
-   * Set via .dev.vars in dev, Worker secret in production.
-   * Optional — falls back to Workers AI when not set.
-   */
-  MISTRAL_API_KEY?: string;
   GOOGLE_AI_API_KEY?: string;
-  /** 'mistral' | 'google-ai' — selects the role agent provider. Default: 'mistral'. */
+  /** 'cloudflare-ai' | 'google-ai' | 'vertex-ai' — selects the role agent provider. Default: 'cloudflare-ai'. */
   ROLE_AGENT_PROVIDER?: string;
-  /**
-   * Anthropic API key — alternative provider for the implementer agent.
-   * Only used if MISTRAL_API_KEY and Workers AI are not available.
-   */
-  ANTHROPIC_API_KEY?: string;
   /**
    * When set to "true", AI agents return deterministic canned responses.
    * Used in E2E/integration tests to avoid real LLM calls.

@@ -1,6 +1,6 @@
 /**
  * JobDescriptionImportModal — Paste or upload a job description and have
- * Mistral extract baseline fields (title, department, company, location).
+ * Gemma 4 extract baseline fields (title, department, company, location).
  *
  * Owns its own JD-import state. Parent only receives the parsed result via
  * `onParsed`, then the modal closes itself.

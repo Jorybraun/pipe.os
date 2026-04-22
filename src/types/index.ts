@@ -1,6 +1,6 @@
 /**
  * TypeScript type definitions for mock data.
- * These types will align with future Amplify Data schema for easy migration.
+ * Core domain types. Aligned with the D1 schema.
  */
 
 export interface Role {

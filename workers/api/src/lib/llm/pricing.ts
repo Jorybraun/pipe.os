@@ -13,11 +13,9 @@
 
 export type PricingProvider =
   | 'cloudflare-ai'
-  | 'mistral'
   | 'google-ai'
   | 'vertex-ai'
-  | 'vertex-live'
-  | 'anthropic';
+  | 'vertex-live';
 
 export interface ModelPrice {
   provider: PricingProvider;

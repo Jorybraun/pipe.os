@@ -2,7 +2,7 @@
  * useEditorChallengeV2
  *
  * Replaces useEditorChallenge for the Cloudflare-migrated ChallengeEditorPage.
- * All data comes from the Worker API (/api/v1/challenges/:id) — zero aws-amplify.
+ * All data comes from the Worker API (/api/v1/challenges/:id).
  *
  * Handles:
  *   - Existing challenges: fetched via GET /api/v1/challenges/:id

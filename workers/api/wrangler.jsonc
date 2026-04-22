@@ -8,7 +8,7 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "pipe-dev",
+			"database_name": "pipe-db",
 			"database_id": "15afd1c5-640f-4ffc-b675-82d58c0eb548",
 			"migrations_dir": "migrations"
 		},
@@ -93,5 +93,26 @@
 		"DEV_CONTAINER_DEFAULT_TTL_SECONDS": "3600",
 		"DEV_CONTAINER_MAX_TTL_SECONDS": "7200",
 		"DEV_CONTAINER_WARN_BEFORE_SECONDS": "60"
+	},
+	"env": {
+		"staging": {
+			"name": "pipe-api-staging",
+			"vars": {
+				"APP_BASE_URL": "https://staging.pipe.build"
+			}
+			// TODO: create staging D1 database and R2 bucket, then uncomment:
+			// "d1_databases": [
+			//   { "binding": "DB", "database_name": "pipe-staging", "database_id": "<STAGING_DB_ID>", "migrations_dir": "migrations" }
+			// ],
+			// "r2_buckets": [
+			//   { "binding": "STORAGE", "bucket_name": "pipe-assets-staging" }
+			// ]
+		},
+		"production": {
+			"name": "pipe-api",
+			"vars": {
+				"APP_BASE_URL": "https://pipe.build"
+			}
+		}
 	}
 }

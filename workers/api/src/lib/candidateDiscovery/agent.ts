@@ -72,9 +72,9 @@ const MAX_SKILLS = 10;
 const MIN_PROFILE_CHARS = 400;
 const MAX_ARRAY_LEN = 10;
 
-const VALID_TENURE_PATTERNS = new Set(['stable', 'moderate', 'job-hopper']);
-const VALID_PROGRESSION_VELOCITIES = new Set(['fast', 'normal', 'slow']);
-const VALID_OWNERSHIP_DEPTHS = new Set(['feature', 'service', 'platform', 'org']);
+const VALID_TENURE_PATTERNS = new Set(['stable', 'moderate', 'job-hopper', 'unknown'] as const);
+const VALID_PROGRESSION_VELOCITIES = new Set(['fast', 'normal', 'slow', 'unknown'] as const);
+const VALID_OWNERSHIP_DEPTHS = new Set(['feature', 'service', 'platform', 'org', 'unknown'] as const);
 
 function stripCodeFences(raw: string): string {
   return raw

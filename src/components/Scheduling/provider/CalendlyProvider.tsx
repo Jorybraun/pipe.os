@@ -22,7 +22,7 @@ const CALENDLY_CLIENT_ID = import.meta.env['VITE_CALENDLY_CLIENT_ID'] as string 
  * TODO: Content-Security-Policy — the production CSP must allow:
  *   script-src https://asset.calendly.com
  *   frame-src  https://calendly.com
- * Add these to amplify/hosting/customHeaders.json before go-live.
+ * Add these to Cloudflare Pages _headers file before go-live.
  */
 const CalendlyWidget: FC<SchedulingProviderConfig> = ({
   schedulingUrl,

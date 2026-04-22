@@ -1,12 +1,14 @@
 /**
  * Job Description Parser — Extract structured baseline data from raw JD text.
  *
- * Calls Mistral (mistral-small) to extract title, level, stack, department,
- * work model, location, team size, and reports-to from pasted or uploaded JD text.
- * Same pattern as cvParser.ts.
+ * Uses Gemma 4 26B (Workers AI or Vertex AI) to extract title, level, stack,
+ * department, work model, location, team size, and reports-to from pasted or
+ * uploaded JD text. Same pattern as cvParser.ts.
  */
 
 import { extractText } from 'unpdf';
+import { createRoleAgentProvider } from './llm/createProvider';
+import type { ProviderEnv } from './llm/createProvider';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -73,39 +75,24 @@ async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
 
 // ─── LLM Extraction ────────────────────────────────────────────────────────
 
-async function callMistral(apiKey: string, jdText: string): Promise<ParsedJD> {
-  const truncated = jdText.trim().slice(0, 6000);
-
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'mistral-small-latest',
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Job Description:\n${truncated}` },
-      ],
-      temperature: 0.1,
-      max_tokens: 500,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[jdParser] Mistral API error', { status: response.status, body: errorText.slice(0, 200) });
-    throw new Error(`Mistral API ${response.status}`);
+async function callProvider(env: ProviderEnv, jdText: string): Promise<ParsedJD> {
+  const provider = createRoleAgentProvider(env);
+  if (!provider) {
+    throw new Error('No AI provider available for JD parsing');
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
+  const truncated = jdText.trim().slice(0, 6000);
 
-  const outputText = data.choices?.[0]?.message?.content;
-  if (!outputText) throw new Error('No content in Mistral response');
+  const result = await provider.complete(
+    [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: `Job Description:\n${truncated}` },
+    ],
+    { forceJson: true, maxTokens: 500 },
+  );
+
+  const outputText = result.content;
+  if (!outputText) throw new Error('No content in provider response');
 
   const cleaned = outputText.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
   return JSON.parse(cleaned) as ParsedJD;
@@ -120,8 +107,8 @@ export interface ParseJDInput {
   fileBuffer?: ArrayBuffer;
   /** MIME type of the uploaded file */
   contentType?: string;
-  /** Mistral API key */
-  apiKey?: string;
+  /** Worker env / bindings — used to create the AI provider */
+  env?: ProviderEnv;
   /** Return mock data */
   mock?: boolean;
 }
@@ -132,11 +119,6 @@ export interface ParseJDInput {
 export async function parseJobDescription(input: ParseJDInput): Promise<ParsedJD | null> {
   if (input.mock) {
     return getMockParsedJD();
-  }
-
-  if (!input.apiKey) {
-    console.warn('[jdParser] No MISTRAL_API_KEY — skipping JD parsing');
-    return null;
   }
 
   let jdText = input.text ?? '';
@@ -158,7 +140,9 @@ export async function parseJobDescription(input: ParseJDInput): Promise<ParsedJD
 
   try {
     console.log('[jdParser] Parsing', jdText.length, 'chars of JD text');
-    const parsed = await callMistral(input.apiKey, jdText);
+    const parsed = input.env
+      ? await callProvider(input.env, jdText)
+      : null;
     console.log('[jdParser] Parsed JD:', JSON.stringify(parsed).slice(0, 200));
     return parsed;
   } catch (err) {

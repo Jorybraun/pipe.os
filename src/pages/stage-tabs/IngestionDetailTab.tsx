@@ -163,10 +163,10 @@ export default function IngestionDetailTab(): JSX.Element {
     setError(null);
     try {
       const api = createApiClient({ getToken });
-      const data = await api.get<IngestionRow[]>(
+      const data = await api.get<{ results: IngestionRow[] }>(
         `/api/v1/pipelines/${shell.pipelineId}/ingestion`,
       );
-      setRows(data);
+      setRows(data.results);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -216,13 +216,13 @@ export default function IngestionDetailTab(): JSX.Element {
   }, [rows, filter, sort]);
 
   const handleFeedback = useCallback(
-    async (candidateId: string, approved: boolean) => {
+    async (candidateId: string, thumb: 'up' | 'down') => {
       setActionId(candidateId);
       try {
         const api = createApiClient({ getToken });
         await api.post(
           `/api/v1/pipelines/${shell.pipelineId}/ingestion/${candidateId}/feedback`,
-          { approved },
+          { thumb },
         );
         await fetchIngestion();
       } catch (err) {
@@ -515,7 +515,7 @@ export default function IngestionDetailTab(): JSX.Element {
                     <>
                       <button
                         onClick={() =>
-                          void handleFeedback(row.candidateId, true)
+                          void handleFeedback(row.candidateId, 'up')
                         }
                         disabled={actionId === row.candidateId}
                         title="Approve match"
@@ -544,7 +544,7 @@ export default function IngestionDetailTab(): JSX.Element {
                       </button>
                       <button
                         onClick={() =>
-                          void handleFeedback(row.candidateId, false)
+                          void handleFeedback(row.candidateId, 'down')
                         }
                         disabled={actionId === row.candidateId}
                         title="Reject match"

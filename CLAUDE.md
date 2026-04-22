@@ -144,10 +144,15 @@ See [`migration/PLAN.md`](migration/PLAN.md) for full details.
 ## Commands
 
 ```bash
-npm run dev                # Local dev server
-npx tsc --noEmit           # Type check (always run bare, never pipe)
-npx wrangler dev           # Workers dev server (post-migration)
-npx playwright test        # BDD tests
+npm run dev                          # Local dev server
+npx tsc --noEmit                     # Type check (always run bare, never pipe)
+npx wrangler dev                     # Workers dev server
+npx playwright test                  # BDD tests
+
+# Deployment (via GitHub Actions on push to main)
+# Manual fallback:
+cd workers/api && npx wrangler deploy --env production   # Deploy Worker
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production  # Apply DB migrations
 ```
 
 ---

@@ -41,14 +41,7 @@ export interface SituationFitRanking {
     mismatches: string[];
     summary: string;
   };
-  per_signal_scores: {
-    skill_coverage: number;
-    seniority_fit: number;
-    complexity_fit: number;
-    architecture_fit: number;
-    test_culture_fit: number;
-    challenge_surface_fit: number;
-  };
+  per_signal_scores: Record<string, number>;
 }
 
 export interface CandidateSituationFitResult {

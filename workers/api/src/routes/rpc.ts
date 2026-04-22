@@ -425,17 +425,33 @@ rpcAuth.post('/get-challenge', async (c) => {
   // Adjust order to account for synthetic entries
   const dbOrder = order - syntheticCount;
 
-  // Fetch challenges for the current stage, ordered
+  // Check if this stage is an INGESTION stage — skip it in candidate flow
+  const stageTypeCheck = await c.env.DB.prepare(
+    `SELECT stage_type FROM stages WHERE id = ?1`
+  ).bind(candidate.current_stage_id).first<{ stage_type: string | null }>();
+
+  if (stageTypeCheck?.stage_type === 'INGESTION') {
+    return c.json({ error: 'Ingestion stage is not part of the interview' }, 404);
+  }
+
+  // Fetch challenges for the current stage, ordered.
+  // LEFT JOIN candidate_challenge_assignment to apply per-candidate overrides.
   const challenges = await c.env.DB.prepare(`
-    SELECT id, type, title, instructions, config,
-           cached_diff_json, github_pr_title, github_pr_number,
-           github_repo_url, github_pr_description,
-           dev_container_repo_url
-    FROM challenges
-    WHERE stage_id = ?1
-    ORDER BY sort_order ASC
+    SELECT
+      ch.id, ch.type, ch.title, ch.instructions, ch.config,
+      ch.cached_diff_json, ch.github_pr_title, ch.github_pr_number,
+      ch.github_repo_url, ch.github_pr_description,
+      ch.dev_container_repo_url,
+      COALESCE(cca.github_repo_url, ch.github_repo_url) as effective_repo_url,
+      COALESCE(cca.github_pr_number, ch.github_pr_number) as effective_pr_number,
+      COALESCE(cca.issue_number, NULL) as effective_issue_number
+    FROM challenges ch
+    LEFT JOIN candidate_challenge_assignment cca
+      ON cca.challenge_id = ch.id AND cca.candidate_id = ?2
+    WHERE ch.stage_id = ?1
+    ORDER BY ch.sort_order ASC
   `)
-    .bind(candidate.current_stage_id)
+    .bind(candidate.current_stage_id, candidateId)
     .all();
 
   const rows = challenges.results ?? [];
@@ -445,6 +461,14 @@ rpcAuth.post('/get-challenge', async (c) => {
   }
 
   const ch = rows[dbOrder] as Record<string, unknown>;
+
+  // Apply per-candidate overrides from the LEFT JOIN
+  if (ch.effective_repo_url) {
+    ch.github_repo_url = ch.effective_repo_url;
+  }
+  if (typeof ch.effective_pr_number === 'number') {
+    ch.github_pr_number = ch.effective_pr_number;
+  }
 
   // Parse config JSON if stored as string
   let config: unknown = null;
@@ -471,12 +495,15 @@ rpcAuth.post('/get-challenge', async (c) => {
   }
 
   // Self-heal: if diff is missing but repo+PR exist, fetch and cache it now
-  if (!cachedDiffJson && ch.github_repo_url && ch.github_pr_number) {
+  // Use the potentially overridden values from candidate_challenge_assignment
+  const effectiveRepoUrl = ch.github_repo_url as string | null;
+  const effectivePrNumber = ch.github_pr_number as number | null;
+  if (!cachedDiffJson && effectiveRepoUrl && effectivePrNumber) {
     try {
       const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
       const result = await fetchGitHubDiff(
-        ch.github_repo_url as string,
-        ch.github_pr_number as number,
+        effectiveRepoUrl,
+        effectivePrNumber,
         token,
       );
       if (result) {

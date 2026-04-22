@@ -156,8 +156,8 @@ describe('discoverCandidateProfile rich-agent v2', () => {
     });
 
     expect(result.candidateSearchableProfile).toBe(PROFILE_400);
-    expect(result.careerContext).toBeNull();
-    expect(result.situationSignature).toBeNull();
+    expect(result.careerContext.tenure_pattern).toBe('unknown');
+    expect(result.situationSignature.test_culture_exposure).toBe('unknown');
   });
 
   it('falls back gracefully when rich fields are missing entirely', async () => {
@@ -179,7 +179,7 @@ describe('discoverCandidateProfile rich-agent v2', () => {
     });
 
     expect(result.candidateSearchableProfile).toBe(PROFILE_400);
-    expect(result.careerContext).toBeNull();
-    expect(result.situationSignature).toBeNull();
+    expect(result.careerContext.tenure_pattern).toBe('unknown');
+    expect(result.situationSignature.test_culture_exposure).toBe('unknown');
   });
 });

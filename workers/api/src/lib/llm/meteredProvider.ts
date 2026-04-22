@@ -135,7 +135,7 @@ function resolveModelKey(provider: LLMProvider): string {
   if (provider.name === 'cloudflare-ai') {
     return '@cf/google/gemma-4-26b-a4b-it';
   }
-  // For mistral / google-ai providers the model key is the provider name.
+  // For google-ai / vertex-ai providers the model key is the provider name.
   // These are not in MODEL_PRICING yet — computeCallCost will throw, which
   // surfaces the gap rather than silently billing $0.
   return provider.name;

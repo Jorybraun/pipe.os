@@ -10,7 +10,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { parseResume, persistParsedCV } from '../../lib/cvParser';
+import { parseResume, persistParsedCV, extractTextFromPDF } from '../../lib/cvParser';
+import { runCandidateIngestion } from '../../lib/candidateDiscovery/orchestrate';
 import { sendNotificationEmail } from '../../lib/email';
 import type { Env, Variables } from '../../types';
 
@@ -542,12 +543,30 @@ candidateOps.post('/:candidateId/resume', async (c) => {
   const parsed = await parseResume({
     fileBuffer: arrayBuffer,
     contentType: fileEntry.type,
-    ...(c.env.MISTRAL_API_KEY ? { apiKey: c.env.MISTRAL_API_KEY } : {}),
+    env: c.env,
     mock: isMock,
   });
 
   if (parsed) {
     await persistParsedCV(db, candidateId, parsed);
+  }
+
+  // Trigger background ingestion — never fail the upload if ingestion fails
+  if (fileEntry.type === 'application/pdf') {
+    try {
+      const resumeText = await extractTextFromPDF(arrayBuffer);
+      runCandidateIngestion({
+        env: c.env,
+        db,
+        candidateId,
+        parsed: parsed ?? { skills: [] },
+        resumeText,
+      }).catch((err) => {
+        console.error('[candidates/resume] background ingestion error:', err);
+      });
+    } catch (err) {
+      console.error('[candidates/resume] text extraction failed, skipping ingestion:', err);
+    }
   }
 
   return c.json({ success: true, r2Key, parsed }, 201);

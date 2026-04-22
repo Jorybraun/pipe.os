@@ -1,14 +1,13 @@
 /**
  * Explainer Agent — Blind Comprehension Review
  *
- * Calls Devstral (Mistral) via the OpenAI-compatible Chat Completions API
- * to answer candidate questions about a PR they're reviewing blind.
+ * Calls Workers AI or Google AI to answer candidate questions about a PR they're reviewing blind.
  *
  * Unlike the implementer agent (which responds to bug-finding annotations),
  * the explainer agent answers free-form questions with markdown + mermaid diagrams.
  *
- * Same provider abstraction: Workers AI / Mistral / Anthropic.
- * When MISTRAL_API_KEY is not set, returns mock responses for testing.
+ * Same provider abstraction: Workers AI / Google AI.
+ * When API key is not set, returns mock responses for testing.
  */
 
 import { buildExplainerSystemPrompt, type RepoKnowledgeInput } from './explainerPrompts';
@@ -37,7 +36,7 @@ export interface ComprehensionExchange {
   answer: ExplainerResponse;
 }
 
-export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic' | 'google-ai';
+export type LLMProvider = 'workers-ai' | 'google-ai';
 
 export interface CallExplainerAgentInput {
   apiKey: string;
@@ -51,18 +50,6 @@ export interface CallExplainerAgentInput {
 }
 
 // ─── LLM API response shapes ───────────────────────────────────────────────
-
-interface MistralChoice {
-  message: { role: string; content: string };
-}
-
-interface MistralResponse {
-  choices: MistralChoice[];
-}
-
-interface AnthropicMessage {
-  content: Array<{ type: string; text: string }>;
-}
 
 const VALID_CONTEXT_TAGS: ContextTag[] = ['architecture', 'data_flow', 'surrounding_code', 'trade_off', 'problem_context', 'integration'];
 const VALID_DEPTH_LEVELS: DepthLevel[] = ['surface', 'moderate', 'deep'];
@@ -100,59 +87,6 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string):
     return String(raw).trim();
   }
   return '';
-}
-
-async function callMistral(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'devstral-latest',
-      max_tokens: 4096,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[explainerAgent] Mistral API error', { status: response.status, body: errorText });
-    return '';
-  }
-
-  const data = (await response.json()) as MistralResponse;
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
-}
-
-async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[explainerAgent] Anthropic API error', { status: response.status, body: errorText });
-    return '';
-  }
-
-  const data = (await response.json()) as AnthropicMessage;
-  return data.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
 }
 
 async function callGoogleAI(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
@@ -234,9 +168,6 @@ export async function callExplainerAgent(
   if (provider === 'workers-ai' && !ai) {
     throw new Error('[explainerAgent] Workers AI binding not available.');
   }
-  if (provider !== 'workers-ai' && !apiKey) {
-    throw new Error(`[explainerAgent] No API key configured for ${provider}.`);
-  }
 
   const systemPrompt = buildExplainerSystemPrompt(prBrief, prDiff, repoKnowledge);
   const userMessage = buildUserMessage(previousExchanges, newQuestion);
@@ -245,12 +176,8 @@ export async function callExplainerAgent(
   try {
     if (provider === 'workers-ai') {
       raw = await callWorkersAI(ai!, systemPrompt, userMessage);
-    } else if (provider === 'google-ai') {
-      raw = await callGoogleAI(apiKey, systemPrompt, userMessage);
-    } else if (provider === 'anthropic') {
-      raw = await callAnthropic(apiKey, systemPrompt, userMessage);
     } else {
-      raw = await callMistral(apiKey, systemPrompt, userMessage);
+      raw = await callGoogleAI(apiKey, systemPrompt, userMessage);
     }
   } catch (err) {
     console.error(`[explainerAgent] ${provider} call failed:`, err);

@@ -2,7 +2,7 @@ import type { Role } from '../types';
 
 /**
  * Mock role/pipeline data for development.
- * This data structure matches the future Amplify Data schema.
+ * Matches the D1 schema (see workers/api/migrations/).
  */
 export const mockRoles: Role[] = [
   {

@@ -14,8 +14,7 @@ type RecorderState = 'idle' | 'recording' | 'recorded' | 'uploading' | 'done' | 
 
 /**
  * Recruiter-facing component for recording or replacing a question video.
- * Uploads directly to S3 via authenticated Amplify Storage (recruiter is always
- * a Cognito user).
+ * Uploads via the Storage provider abstraction (R2 in production).
  *
  * S3 path: challenge-questions/{challengeId}/question.webm
  */

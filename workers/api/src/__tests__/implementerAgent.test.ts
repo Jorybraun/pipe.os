@@ -1,23 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { callImplementerAgent, type CallImplementerAgentInput } from '../lib/implementerAgent';
 
-// ─── Mock fetch ─────────────────────────────────────────────────────────────
+// ─── Mock Workers AI binding ────────────────────────────────────────────────
 
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+const mockAiRun = vi.fn();
+const mockAi = { run: mockAiRun } as unknown as Ai;
 
-function mistralResponse(content: string): Response {
-  return new Response(
-    JSON.stringify({
-      choices: [{ message: { role: 'assistant', content } }],
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  );
+function workersAiResponse(content: string): { response: string } {
+  return { response: content };
 }
 
 const BASE_INPUT: CallImplementerAgentInput = {
   apiKey: 'test-key',
-  provider: 'mistral',
+  provider: 'workers-ai',
+  ai: mockAi,
   persona: 'junior',
   prBrief: 'Add search functionality',
   prDiff: '--- search.ts\n+function search() {}',
@@ -28,7 +24,7 @@ const BASE_INPUT: CallImplementerAgentInput = {
 };
 
 beforeEach(() => {
-  mockFetch.mockReset();
+  mockAiRun.mockReset();
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -37,8 +33,8 @@ beforeEach(() => {
 
 describe('callImplementerAgent', () => {
   it('passes through updated_code when move=change', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mistralResponse(
+    mockAiRun.mockResolvedValueOnce(
+      workersAiResponse(
         JSON.stringify([
           {
             to_comment_id: 1,
@@ -57,8 +53,8 @@ describe('callImplementerAgent', () => {
   });
 
   it('warns when move=change but no updated_code (soft enforcement)', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mistralResponse(
+    mockAiRun.mockResolvedValueOnce(
+      workersAiResponse(
         JSON.stringify([
           {
             to_comment_id: 1,
@@ -79,8 +75,8 @@ describe('callImplementerAgent', () => {
   });
 
   it('does not include updated_code for pushback moves', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mistralResponse(
+    mockAiRun.mockResolvedValueOnce(
+      workersAiResponse(
         JSON.stringify([
           {
             to_comment_id: 1,
@@ -98,8 +94,8 @@ describe('callImplementerAgent', () => {
   });
 
   it('does not include updated_code for comment moves', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mistralResponse(
+    mockAiRun.mockResolvedValueOnce(
+      workersAiResponse(
         JSON.stringify([
           {
             to_comment_id: 1,
@@ -119,8 +115,8 @@ describe('callImplementerAgent', () => {
   it('handles code with newlines and special characters in updated_code', async () => {
     const codeWithSpecials = 'function validate(token: string): boolean {\n  if (!token) return false;\n  // Check for "special" chars\n  return token.length > 0 && token !== \'\\n\';\n}';
 
-    mockFetch.mockResolvedValueOnce(
-      mistralResponse(
+    mockAiRun.mockResolvedValueOnce(
+      workersAiResponse(
         JSON.stringify([
           {
             to_comment_id: 1,
@@ -137,8 +133,8 @@ describe('callImplementerAgent', () => {
   });
 
   it('strips empty updated_code strings', async () => {
-    mockFetch.mockResolvedValueOnce(
-      mistralResponse(
+    mockAiRun.mockResolvedValueOnce(
+      workersAiResponse(
         JSON.stringify([
           {
             to_comment_id: 1,
@@ -160,7 +156,7 @@ describe('callImplementerAgent', () => {
       { to_comment_id: 1, content: 'Fixed!', move: 'change', updated_code: 'const x = 1;' },
     ]) + '\n```';
 
-    mockFetch.mockResolvedValueOnce(mistralResponse(wrappedResponse));
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(wrappedResponse));
 
     const results = await callImplementerAgent(BASE_INPUT);
     expect(results).toHaveLength(1);

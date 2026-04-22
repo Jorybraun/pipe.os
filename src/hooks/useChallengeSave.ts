@@ -2,7 +2,7 @@
  * useChallengeSave
  *
  * Provides save and clone actions for the ChallengeEditorPage.
- * All writes go through the Worker API — zero aws-amplify.
+ * All writes go through the Worker API.
  *
  * save(challengeId, challenge, stageId):
  *   - Existing challenge: PUT /api/v1/challenges/:id

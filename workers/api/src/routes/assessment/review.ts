@@ -990,7 +990,7 @@ review.post('/:sessionId/verdict', async (c) => {
 
   // Trigger async scoring (fire-and-forget via waitUntil)
   // Scorer uses Google AI Gemma 4 31B — different family from Qwen implementer (ADR-032)
-  const scorerApiKey = c.env.GOOGLE_AI_API_KEY ?? c.env.MISTRAL_API_KEY ?? c.env.ANTHROPIC_API_KEY ?? '';
+  const scorerApiKey = c.env.GOOGLE_AI_API_KEY ?? '';
   const hasAI = !!c.env.AI;
   if (hasAI || scorerApiKey) {
     const scoringPromise = (async () => {
@@ -1028,7 +1028,7 @@ review.post('/:sessionId/verdict', async (c) => {
           .bind(new Date().toISOString(), sessionId)
           .run();
 
-        const scorerProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : c.env.MISTRAL_API_KEY ? 'mistral' as const : 'workers-ai' as const;
+        const scorerProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : 'workers-ai' as const;
 
         // ADR-036 Phase 3: dispositional weights reshape the scorer's 6-dim
         // composite weighting (clamped to [0.5, 1.5], renormalized, sign-preserved).

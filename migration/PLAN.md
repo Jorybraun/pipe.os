@@ -62,7 +62,7 @@ CI/CD:     GitHub Actions + Cloudflare Wrangler + Terraform
 | 3b | Dev Containers (ECS → CF Containers) | ⏸️ Paused | `DevContainerSandboxPage` exists but no `containers` route in Worker; not blocking MVP |
 | 3c | Implementer Agent (multi-turn code review) | ✅ Done | `implementerAgent.ts` + `/api/v1/review-sessions` live; Phase E (frontend wiring) shipped — 8/8 E2E green at time of commit |
 | 4 | Real-time signaling + Scheduling | ✅ Done (expanded) | Video DO with Hibernation API, WebRTC signaling, Calendly/Cal.com OAuth, scheduling webhooks |
-| 5 | CI/CD + Terraform + Cleanup | ❌ Not started | `amplify/`, `amplify_outputs.json`, `amplify.yml` still in repo |
+| 5 | CI/CD + Wrangler + Cleanup | 🟡 In progress | `amplify/` deleted; GitHub Actions workflows created; Pages projects TBD |
 | 6 | Challenge Experience — Real Repo Pipelines | 🟡 Partial | `presets.ts` exists, `github` route imports PRs, but "3 curated pipelines" not assembled |
 | 7 | Sourcing & Matching — Two-Lane Candidate Ingestion | ⏸️ Deferred | Autonomous matcher + manual search bar share one backend; one-click invite drops into existing flow. **Deferred until Phases 5–6 ship.** |
 

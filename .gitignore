@@ -23,24 +23,19 @@ dist-ssr
 *.sln
 *.sw?
 
-# amplify
-.amplify
-amplify_outputs*
-amplifyconfiguration*
-
 # Environment variables (contains secrets)
 .env
 .env.local
-amplify/functions/**/.env
 workers/api/.dev.vars
 
 # GCP service account keys (never commit)
 workers/api/sa-key.json
 sa-key.json
 
-# rulesync generated files
+# Generated / local-only directories
+.amplify/
 .claude/
-.github/
+.hermes/
 
 # Test artifacts
 test-results/

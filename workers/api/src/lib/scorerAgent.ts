@@ -1,7 +1,7 @@
 /**
  * Scorer Agent — 6-Dimension BARS Code Review Scoring Pipeline
  *
- * Calls Devstral (Mistral) to score a completed review session across 6 BARS dimensions:
+ * Scores a completed review session across 6 BARS dimensions:
  *
  * Scorer A (needs ground truth):
  *   1. Issue Identification Depth (20%)
@@ -15,9 +15,6 @@
  *
  * Effectiveness (15% of composite): deterministic bug-matching, no LLM.
  * Synthesizer: narrative summary for hiring managers.
- *
- * Same pattern as implementerAgent.ts: Devstral by default, Anthropic as fallback.
- * When MISTRAL_API_KEY is not set, returns mock responses for testing.
  */
 
 import {
@@ -25,7 +22,6 @@ import {
   SCORER_B_PROMPT,
   SYNTHESIZER_PROMPT,
 } from './scorerPrompts';
-import { getMockScoreReport } from './mockResponses';
 import { type DimensionId } from './scorerRubric';
 
 import {
@@ -42,7 +38,7 @@ import {
 
 export type { PlantedBug, BarsDimensionScores, EffectivenessScore };
 
-export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic' | 'vertex-ai' | 'google-ai';
+export type LLMProvider = 'workers-ai' | 'vertex-ai' | 'google-ai';
 
 export interface ScorerInput {
   apiKey: string;
@@ -152,72 +148,7 @@ export interface PracticeScore extends DimensionScores {
   positive_recognition: number;
 }
 
-// ─── LLM API calls (same as implementerAgent) ──────────────────────────────
-
-interface MistralChoice {
-  message: { role: string; content: string };
-}
-
-interface MistralResponse {
-  choices: MistralChoice[];
-}
-
-interface AnthropicMessage {
-  content: Array<{ type: string; text: string }>;
-}
-
-async function callMistral(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'devstral-latest',
-      max_tokens: maxTokens,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[scorerAgent] Mistral API error', { status: response.status, body: errorText });
-    throw new Error(`[scorerAgent] Mistral API ${response.status}: ${errorText.slice(0, 200)}`);
-  }
-
-  const data = (await response.json()) as MistralResponse;
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
-}
-
-async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[scorerAgent] Anthropic API error', { status: response.status, body: errorText });
-    throw new Error(`[scorerAgent] Anthropic API ${response.status}: ${errorText.slice(0, 200)}`);
-  }
-
-  const data = (await response.json()) as AnthropicMessage;
-  return data.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
-}
+// ─── LLM API calls ─────────────────────────────────────────────────────────
 
 /**
  * Vertex AI via OpenAI-compatible chat/completions endpoint.
@@ -415,9 +346,7 @@ async function callLLM(
   if (provider === 'google-ai') {
     return callGoogleAI(apiKey, systemPrompt, userMessage, maxTokens);
   }
-  return provider === 'anthropic'
-    ? callAnthropic(apiKey, systemPrompt, userMessage, maxTokens)
-    : callMistral(apiKey, systemPrompt, userMessage, maxTokens);
+  throw new Error(`[scorerAgent] Unknown provider: ${provider}`);
 }
 
 // ─── JSON extraction ────────────────────────────────────────────────────────
@@ -489,22 +418,16 @@ Write the hiring assessment narrative. Return JSON with: { "narrative": "...", "
  */
 export async function scoreReviewSession(input: ScorerInput): Promise<ScoreReport> {
   const {
-    apiKey, provider = 'mistral', ai, transcript, groundTruth,
+    apiKey, provider = 'workers-ai', ai, transcript, groundTruth,
     diff, prTitle, prDescription, instructions, level = 'mid',
     dispositionalWeights,
   } = input;
 
-  // Return mock score report when API key is not configured (for testing)
-  if (!apiKey && provider !== 'workers-ai') {
-    console.log('[scorerAgent] No API key configured. Returning mock score report for testing.');
-    return getMockScoreReport();
-  }
-
   if (provider === 'workers-ai' && !ai) {
     throw new Error('[scorerAgent] Workers AI binding not available.');
   }
-  if (provider !== 'workers-ai' && !apiKey) {
-    throw new Error('[scorerAgent] No API key configured. Set GOOGLE_AI_API_KEY, MISTRAL_API_KEY, or ANTHROPIC_API_KEY.');
+  if ((provider === 'google-ai' || provider === 'vertex-ai') && !apiKey) {
+    throw new Error('[scorerAgent] No API key configured. Set GOOGLE_AI_API_KEY or VERTEX_AI_ACCESS_TOKEN.');
   }
 
   const prContext = [

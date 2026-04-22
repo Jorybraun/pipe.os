@@ -22,7 +22,7 @@ import { getMockComprehensionScoreReport } from './mockResponses';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type LLMProvider = 'workers-ai' | 'mistral' | 'anthropic' | 'google-ai';
+export type LLMProvider = 'workers-ai' | 'google-ai';
 
 export interface KeyInsight {
   id: number;
@@ -60,47 +60,7 @@ export interface ComprehensionScoreReport {
 
 // ─── LLM calls (same pattern as scorerAgent) ───────────────────────────────
 
-interface MistralChoice { message: { role: string; content: string } }
-interface MistralResponse { choices: MistralChoice[] }
-interface AnthropicMessage { content: Array<{ type: string; text: string }> }
-
 let _ai: Ai | undefined;
-
-async function callMistral(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
-  const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'devstral-latest', max_tokens: maxTokens,
-      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],
-    }),
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[comprehensionScorer] Mistral API error', { status: response.status, body: errorText });
-    throw new Error(`[comprehensionScorer] Mistral API ${response.status}`);
-  }
-  const data = (await response.json()) as MistralResponse;
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
-}
-
-async function callAnthropic(apiKey: string, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5', max_tokens: maxTokens,
-      system: systemPrompt, messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[comprehensionScorer] Anthropic API error', { status: response.status, body: errorText });
-    throw new Error(`[comprehensionScorer] Anthropic API ${response.status}`);
-  }
-  const data = (await response.json()) as AnthropicMessage;
-  return data.content?.find((b) => b.type === 'text')?.text?.trim() ?? '';
-}
 
 async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, maxTokens = 2048): Promise<string> {
   const response = await ai.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
@@ -148,9 +108,7 @@ async function callLLM(apiKey: string, provider: LLMProvider, systemPrompt: stri
     return callWorkersAI(_ai, systemPrompt, userMessage, maxTokens);
   }
   if (provider === 'google-ai') return callGoogleAI(apiKey, systemPrompt, userMessage, maxTokens);
-  return provider === 'anthropic'
-    ? callAnthropic(apiKey, systemPrompt, userMessage, maxTokens)
-    : callMistral(apiKey, systemPrompt, userMessage, maxTokens);
+  throw new Error(`[comprehensionScorer] Unknown provider: ${provider}`);
 }
 
 // ─── JSON extraction ────────────────────────────────────────────────────────
@@ -259,7 +217,7 @@ export async function scoreComprehensionSession(input: ComprehensionScorerInput)
   _ai = ai;
 
   // Mock fallback
-  if (!apiKey && provider !== 'workers-ai') {
+  if (!apiKey && provider === 'google-ai') {
     console.log('[comprehensionScorer] No API key configured. Returning mock score report.');
     return getMockComprehensionScoreReport() as unknown as ComprehensionScoreReport;
   }
