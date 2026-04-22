@@ -8,7 +8,7 @@
  * Stage types:
  *   - CODE_REVIEW  → Multi-turn PR review with AI implementer
  *   - CULTURAL     → AI-conducted behavioral interview (STAR format)
- *   - QUESTIONS    → Mix-and-match question library (technical + non-technical)
+ *   - OPEN_SOURCE  → Live issue implementation in dev container
  *   - SCREENING    → Initial candidate evaluation (phone/video/online)
  */
 
@@ -19,6 +19,7 @@ import {
   Brain,
   ListChecks,
   Phone,
+  Video,
   ArrowLeft,
 } from 'lucide-react';
 import { SectionCard } from '../components';
@@ -56,15 +57,6 @@ const STAGE_OPTIONS: StageTypeOption[] = [
     color: 'var(--pipe-accent)',
   },
   {
-    key: 'QUESTIONS',
-    label: 'Questions',
-    description: 'Technical and non-technical question library',
-    detail:
-      'Mix and match questions from the library — system design, debugging, trade-offs, leadership, collaboration. Group by topic or create a custom mix. Supports short answer, MCQ, and follow-up formats.',
-    icon: ListChecks,
-    color: '#4ade80',
-  },
-  {
     key: 'SCREENING',
     label: 'Screening',
     description: 'Initial candidate evaluation',
@@ -72,6 +64,24 @@ const STAGE_OPTIONS: StageTypeOption[] = [
       'Phone screen, video call, or async online questions. Lightweight first filter before deeper assessment stages.',
     icon: Phone,
     color: '#fbbf24',
+  },
+  {
+    key: 'OPEN_SOURCE',
+    label: 'Open Source',
+    description: 'Live issue implementation in dev container',
+    detail:
+      'Candidate fixes a real open-source issue in a dev container. Uses AI copilot. All interactions logged.',
+    icon: ListChecks,
+    color: '#4ade80',
+  },
+  {
+    key: 'LIVE_PANEL',
+    label: 'Live Panel',
+    description: 'Live video interview with human interviewers',
+    detail:
+      'Scheduled video interview with real humans. Recorded and transcribed. Can attach to any stage or as final stage.',
+    icon: Video,
+    color: '#f472b6',
   },
 ];
 
@@ -97,8 +107,7 @@ export default function NewStageFormPage(): JSX.Element {
     setError(null);
 
     try {
-      // Map QUESTIONS → TECHNICAL for the API (same underlying type)
-      const stageType = selected.key === 'QUESTIONS' ? 'TECHNICAL' : selected.key;
+      const stageType = selected.key;
       const created = await createStage(pipelineId, title, stageType);
       await refetch();
       navigate(`/pipeline/${pipelineId}/stage/${created.id}`);

@@ -1,10 +1,8 @@
 import { useState } from "react";
 import {
   Phone,
-  Zap,
   Code,
   FileText,
-  Mic,
   Users,
   CheckCircle,
   MessageSquare,
@@ -43,11 +41,10 @@ import {
 // Stage types
 type StageType =
   | "SCREENING"
-  | "AI_COLLAB"
+  | "CULTURAL"
   | "CODE_REVIEW"
-  | "PLANNING"
-  | "VOICE"
-  | "PANEL";
+  | "OPEN_SOURCE"
+  | "LIVE_PANEL";
 
 interface StageConfig {
   id: StageType;
@@ -67,9 +64,9 @@ const initialStages: StageConfig[] = [
     order: 1,
   },
   {
-    id: "AI_COLLAB",
-    title: "AI Collaboration",
-    icon: Zap,
+    id: "CULTURAL",
+    title: "Cultural Fit",
+    icon: Users,
     configured: false,
     order: 2,
   },
@@ -81,25 +78,18 @@ const initialStages: StageConfig[] = [
     order: 3,
   },
   {
-    id: "PLANNING",
-    title: "Planning",
+    id: "OPEN_SOURCE",
+    title: "Open Source",
     icon: FileText,
     configured: false,
     order: 4,
   },
   {
-    id: "VOICE",
-    title: "Voice Interview",
-    icon: Mic,
-    configured: false,
-    order: 5,
-  },
-  {
-    id: "PANEL",
-    title: "Panel Interview",
+    id: "LIVE_PANEL",
+    title: "Live Panel",
     icon: Users,
     configured: false,
-    order: 6,
+    order: 5,
   },
 ];
 
@@ -780,84 +770,6 @@ function PlanningStageConfig() {
   );
 }
 
-function VoiceStageConfig() {
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>VOICE_INTERVIEW</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          <RubricCard
-            title="Technical Discussion"
-            points={[
-              "Explaining complex technical concepts clearly",
-              "Discussing past projects and decisions",
-              "Problem-solving approach and methodology",
-              "Learning from failures and mistakes",
-            ]}
-          />
-          <RubricCard
-            title="Collaboration & Culture"
-            points={[
-              "Team collaboration experience",
-              "Mentoring and knowledge sharing",
-              "Handling feedback and disagreements",
-              "Alignment with team values",
-            ]}
-          />
-        </div>
-
-        <div>
-          <TimeCard duration="45m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PanelStageConfig() {
-  return (
-    <div>
-      <div style={{ marginBottom: 32 }}>
-        <SubTitle>PANEL_INTERVIEW</SubTitle>
-      </div>
-
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 24 }}
-      >
-        <div>
-          <RubricCard
-            title="Cross-Functional Assessment"
-            points={[
-              "Product thinking and user empathy",
-              "Cross-team collaboration experience",
-              "Technical leadership potential",
-              "Strategic thinking and prioritization",
-            ]}
-          />
-          <RubricCard
-            title="Growth & Impact"
-            points={[
-              "Career growth trajectory",
-              "Impact on previous teams/projects",
-              "Continuous learning mindset",
-              "Long-term potential and fit",
-            ]}
-          />
-        </div>
-
-        <div>
-          <TimeCard duration="60m" label="Duration" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function PipelineBuilderPage(): JSX.Element {
   const [activeSection] = useState("pipeline");
   const isAgentOpen = false;
@@ -871,16 +783,12 @@ export default function PipelineBuilderPage(): JSX.Element {
     switch (selectedStage) {
       case "SCREENING":
         return <ScreeningStageConfig />;
-      case "AI_COLLAB":
+      case "CULTURAL":
         return <AICollabStageConfig />;
       case "CODE_REVIEW":
         return <CodeReviewStageConfig />;
-      case "PLANNING":
+      case "OPEN_SOURCE":
         return <PlanningStageConfig />;
-      case "VOICE":
-        return <VoiceStageConfig />;
-      case "PANEL":
-        return <PanelStageConfig />;
       default:
         return null;
     }

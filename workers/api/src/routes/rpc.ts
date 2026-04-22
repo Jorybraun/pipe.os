@@ -430,7 +430,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     `SELECT stage_type FROM stages WHERE id = ?1`
   ).bind(candidate.current_stage_id).first<{ stage_type: string | null }>();
 
-  if (stageTypeCheck?.stage_type === 'INGESTION') {
+  if (stageTypeCheck?.stage_type === 'OPEN_SOURCE') {
     return c.json({ error: 'Ingestion stage is not part of the interview' }, 404);
   }
 

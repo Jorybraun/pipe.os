@@ -37,8 +37,8 @@ export const PIPELINE_TEMPLATES: PipelineTemplate[] = [
     accent: '#60a5fa',
     stages: [
       { stageType: 'SCREENING', title: 'Screening' },
-      { stageType: 'TECHNICAL', title: 'Technical' },
-      { stageType: 'PANEL', title: 'Panel' },
+      { stageType: 'CODE_REVIEW', title: 'Code Review' },
+      { stageType: 'LIVE_PANEL', title: 'Live Panel' },
     ],
   },
   {
@@ -48,8 +48,8 @@ export const PIPELINE_TEMPLATES: PipelineTemplate[] = [
     accent: 'var(--pipe-accent)',
     stages: [
       { stageType: 'SCREENING', title: 'Screening' },
-      { stageType: 'TECHNICAL', title: 'Technical' },
-      { stageType: 'PANEL', title: 'Panel' },
+      { stageType: 'CODE_REVIEW', title: 'Code Review' },
+      { stageType: 'LIVE_PANEL', title: 'Live Panel' },
     ],
   },
   {
@@ -60,8 +60,8 @@ export const PIPELINE_TEMPLATES: PipelineTemplate[] = [
     stages: [
       { stageType: 'SCREENING', title: 'Screening' },
       { stageType: 'CULTURAL', title: 'Cultural Fit' },
-      { stageType: 'TECHNICAL', title: 'Technical' },
-      { stageType: 'PANEL', title: 'Panel' },
+      { stageType: 'CODE_REVIEW', title: 'Code Review' },
+      { stageType: 'LIVE_PANEL', title: 'Live Panel' },
     ],
   },
   {
@@ -71,8 +71,8 @@ export const PIPELINE_TEMPLATES: PipelineTemplate[] = [
     accent: '#fbbf24',
     stages: [
       { stageType: 'SCREENING', title: 'Screening' },
-      { stageType: 'TECHNICAL', title: 'Technical' },
-      { stageType: 'PANEL', title: 'Panel' },
+      { stageType: 'CODE_REVIEW', title: 'Code Review' },
+      { stageType: 'LIVE_PANEL', title: 'Live Panel' },
     ],
   },
 ];

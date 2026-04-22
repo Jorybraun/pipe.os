@@ -162,7 +162,7 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/feedback', async (c) => {
     .prepare(
       `SELECT s.id AS stage_id
        FROM stages s
-       WHERE s.pipeline_id = ? AND s.stage_type = 'INGESTION'
+       WHERE s.pipeline_id = ? AND s.stage_type = 'OPEN_SOURCE'
        LIMIT 1`,
     )
     .bind(candidate.pipeline_id)

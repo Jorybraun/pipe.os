@@ -244,7 +244,7 @@ autoBuild.post('/auto-build', async (c) => {
       c.env.DB.prepare(
         `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, 'TECHNICAL', userId),
+      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, 'CODE_REVIEW', userId),
     );
   }
 

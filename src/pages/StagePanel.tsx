@@ -201,30 +201,14 @@ export default function StagePanel(): JSX.Element {
 
   // ── Stage variant detection ────────────────────────────────────────────
   // Determines which tab layout + index component to render.
-  // Primary: stageType field. Fallback: challenge types / title matching.
-  const titleLower = stage.title.toLowerCase();
-  const stageVariant: 'cultural' | 'code-review' | 'questions' | 'screening' | 'ingestion' | 'generic' = (() => {
-    if (
-      stage.stageType === 'CULTURAL' ||
-      (!stage.stageType && (titleLower.includes('cultural') || titleLower.includes('culture')))
-    ) return 'cultural';
+  // Primary: stageType field. Stages must have stage_type populated.
+  const stageVariant: 'cultural' | 'code-review' | 'screening' | 'generic' = (() => {
+    if (stage.stageType === 'CULTURAL') return 'cultural';
     if (
       stage.stageType === 'CODE_REVIEW' ||
-      stage.challenges?.some((c) => c.type === 'CODE_REVIEW') ||
-      (!stage.stageType && titleLower.includes('code review'))
+      stage.challenges?.some((c) => c.type === 'CODE_REVIEW')
     ) return 'code-review';
-    if (
-      stage.stageType === 'TECHNICAL' ||
-      (!stage.stageType && (titleLower.includes('question') || titleLower.includes('technical')))
-    ) return 'questions';
-    if (
-      stage.stageType === 'SCREENING' ||
-      (!stage.stageType && titleLower.includes('screening'))
-    ) return 'screening';
-    if (
-      stage.stageType === 'INGESTION' ||
-      (!stage.stageType && titleLower.includes('ingestion'))
-    ) return 'ingestion';
+    if (stage.stageType === 'SCREENING') return 'screening';
     return 'generic';
   })();
 
@@ -245,18 +229,9 @@ export default function StagePanel(): JSX.Element {
       gateTab,
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
     ],
-    'questions': [
-      { key: 'details', path: '', label: 'DETAILS', icon: <ListChecks size={12} />, count: challengeCount },
-      gateTab,
-      { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
-    ],
     'screening': [
       { key: 'details', path: '', label: 'DETAILS', icon: <ListChecks size={12} /> },
       gateTab,
-      { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
-    ],
-    'ingestion': [
-      { key: 'details', path: '', label: 'DETAILS', icon: <Brain size={12} /> },
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'generic': [

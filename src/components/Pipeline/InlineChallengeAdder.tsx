@@ -3,11 +3,11 @@
  *
  * Renders inside the CHALLENGES SectionCard body. Flow:
  *
- *   1. Compact type-button row  (SCREENING / CULTURAL / TECHNICAL / PANEL)
+ *   1. Compact type-button row  (SCREENING / CULTURAL / CODE_REVIEW / OPEN_SOURCE / LIVE_PANEL)
  *   2. When a type is selected a detail section expands below:
  *        SCREENING   → format picker (PHONE_CALL / VIDEO_CALL / ONLINE)
  *                       → call config with collapsible details  |  question picker
- *        TECHNICAL   → template list (CODE_REVIEW, CODE_IMPLEMENTATION, QUIZ_*)
+ *        CODE_REVIEW / OPEN_SOURCE → template list (CODE_REVIEW, CODE_IMPLEMENTATION, QUIZ_*)
  *        others      → response-format picker → template list
  */
 
@@ -16,7 +16,6 @@ import {
   Phone,
   Users,
   FileText,
-  Zap,
   ChevronDown,
   ChevronUp,
   PhoneCall,
@@ -32,7 +31,6 @@ import {
   PenLine,
   X,
   GitPullRequest,
-  Brain,
 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../../lib/stageTemplates';
 import { useStageMutations } from '../../hooks/useStageMutations';
@@ -55,10 +53,9 @@ interface StagedItem {
 const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   SCREENING: Phone,
   CULTURAL: Users,
-  TECHNICAL: Zap,
   CODE_REVIEW: GitPullRequest,
-  PANEL: FileText,
-  INGESTION: Brain,
+  OPEN_SOURCE: FileText,
+  LIVE_PANEL: Users,
 };
 
 const SCREENING_FORMAT_OPTIONS: {

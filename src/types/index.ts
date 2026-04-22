@@ -21,7 +21,7 @@ export interface Stage {
   id: string;
   pipelineId: string;
   name: string;
-  type: 'CODE_REVIEW' | 'VOICE_INTERVIEW' | 'PLANNING';
+  type: 'SCREENING' | 'CULTURAL' | 'CODE_REVIEW' | 'OPEN_SOURCE' | 'LIVE_PANEL';
   order: number;
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED';
   score?: number;

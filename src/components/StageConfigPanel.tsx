@@ -1,7 +1,7 @@
 /**
  * StageConfigPanel — Multi-step stage configuration wizard.
  *
- * Step 1: Pick a stage type (SCREENING, CULTURAL, TECHNICAL, CODE_REVIEW, PANEL)
+ * Step 1: Pick a stage type (SCREENING, CULTURAL, CODE_REVIEW, OPEN_SOURCE, LIVE_PANEL)
  *         → renames the stage, saves the type, swaps to step 2
  * Step 2: Type-specific challenge picker
  *         → browse/add challenges relevant to that type
@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2, Brain } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, FileText, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -42,10 +42,9 @@ interface StageConfigPanelProps {
 const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   SCREENING: Phone,
   CULTURAL: Users,
-  TECHNICAL: Zap,
   CODE_REVIEW: GitPullRequest,
-  PANEL: FileText,
-  INGESTION: Brain,
+  OPEN_SOURCE: FileText,
+  LIVE_PANEL: Users,
 };
 
 
@@ -1168,7 +1167,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
 
   return (
     <>
-      {/* Back button (when opened from within TECHNICAL) */}
+      {/* Back button (when opened from within CODE_REVIEW or OPEN_SOURCE) */}
       {onBack && (
         <div style={{ padding: '8px 20px 0' }}>
           <button

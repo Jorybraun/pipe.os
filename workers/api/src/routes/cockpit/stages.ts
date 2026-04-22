@@ -20,7 +20,7 @@ import type { Env, Variables, ChallengeRow } from '../../types';
 
 // ─── Validation schemas ───────────────────────────────────────────────────────
 
-const STAGE_TYPES = ['SCREENING', 'CULTURAL', 'TECHNICAL', 'CODE_REVIEW', 'PANEL'] as const;
+const STAGE_TYPES = ['SCREENING', 'CULTURAL', 'CODE_REVIEW', 'OPEN_SOURCE', 'LIVE_PANEL'] as const;
 
 const createStageSchema = z.object({
   title: z

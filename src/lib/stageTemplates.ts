@@ -11,10 +11,9 @@ import type { ChallengeType } from './api/types';
 export const STAGE_TYPES = [
   'SCREENING',
   'CULTURAL',
-  'TECHNICAL',
   'CODE_REVIEW',
-  'PANEL',
-  'INGESTION',
+  'OPEN_SOURCE',
+  'LIVE_PANEL',
 ] as const;
 
 export type StageType = (typeof STAGE_TYPES)[number];
@@ -98,35 +97,16 @@ export const STAGE_TYPE_CONFIGS: Record<StageType, StageTypeConfig> = {
     description: 'Multi-turn code review challenge',
     templateQuestions: [],
   },
-  TECHNICAL: {
-    key: 'TECHNICAL',
-    label: 'Technical',
-    description: 'Skills and problem-solving assessment',
-    templateQuestions: [
-      {
-        type: 'QUIZ_SHORT_ANSWER',
-        title: 'System design',
-        instructions:
-          'Walk us through how you would design a system for a use case relevant to this role.',
-      },
-      {
-        type: 'QUIZ_SHORT_ANSWER',
-        title: 'Debugging approach',
-        instructions:
-          'Describe your approach to debugging a production issue you have never seen before.',
-      },
-      {
-        type: 'QUIZ_SHORT_ANSWER',
-        title: 'Trade-off analysis',
-        instructions:
-          'Describe a technical decision where you had to weigh trade-offs. What did you choose and why?',
-      },
-    ],
+  OPEN_SOURCE: {
+    key: 'OPEN_SOURCE',
+    label: 'Open Source',
+    description: 'Implementation challenge on a live open-source issue',
+    templateQuestions: [],
   },
-  PANEL: {
-    key: 'PANEL',
-    label: 'Panel Interview',
-    description: 'Multi-interviewer round',
+  LIVE_PANEL: {
+    key: 'LIVE_PANEL',
+    label: 'Live Panel',
+    description: 'Live video interview with human interviewers',
     templateQuestions: [
       {
         type: 'FOLLOW_UP',
@@ -147,11 +127,5 @@ export const STAGE_TYPE_CONFIGS: Record<StageType, StageTypeConfig> = {
           'Describe a disagreement you had with a colleague. How did you resolve it?',
       },
     ],
-  },
-  INGESTION: {
-    key: 'INGESTION',
-    label: 'Ingestion',
-    description: 'Candidate profile ingestion and repo matching',
-    templateQuestions: [],
   },
 };

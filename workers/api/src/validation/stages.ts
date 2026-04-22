@@ -9,9 +9,9 @@ import { z } from 'zod';
 export const STAGE_TYPES = [
   'SCREENING',
   'CULTURAL',
-  'TECHNICAL',
   'CODE_REVIEW',
-  'PANEL',
+  'OPEN_SOURCE',
+  'LIVE_PANEL',
 ] as const;
 
 export const CHALLENGE_TYPES = [

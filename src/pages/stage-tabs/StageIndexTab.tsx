@@ -4,7 +4,9 @@
  * Routes to the correct detail tab based on stage type:
  *   - CULTURAL → CultureDetailTab
  *   - CODE_REVIEW → CodeReviewDetailTab
- *   - TECHNICAL (Questions) → QuestionsDetailTab
+ *   - SCREENING → ScreeningDetailTab
+ *   - OPEN_SOURCE → ChallengesTab (generic fallback)
+ *   - LIVE_PANEL → ChallengesTab (generic fallback)
  *   - Everything else → ChallengesTab (generic fallback)
  */
 
@@ -12,51 +14,23 @@ import { useOutletContext } from 'react-router-dom';
 import ChallengesTab from './ChallengesTab';
 import CultureDetailTab from './CultureDetailTab';
 import CodeReviewDetailTab from './CodeReviewDetailTab';
-import QuestionsDetailTab from './QuestionsDetailTab';
 import ScreeningDetailTab from './ScreeningDetailTab';
-import IngestionDetailTab from './IngestionDetailTab';
 import type { StagePanelContext } from '../StagePanel';
 
 export default function StageIndexTab(): JSX.Element {
   const { stage } = useOutletContext<StagePanelContext>();
 
-  const titleLower = stage.title.toLowerCase();
-
-  if (
-    stage.stageType === 'CULTURAL' ||
-    (!stage.stageType && (titleLower.includes('cultural') || titleLower.includes('culture')))
-  ) {
+  if (stage.stageType === 'CULTURAL') {
     return <CultureDetailTab />;
   }
 
   const hasCodeReview = stage.challenges?.some((c) => c.type === 'CODE_REVIEW');
-  if (
-    stage.stageType === 'CODE_REVIEW' ||
-    hasCodeReview ||
-    (!stage.stageType && titleLower.includes('code review'))
-  ) {
+  if (stage.stageType === 'CODE_REVIEW' || hasCodeReview) {
     return <CodeReviewDetailTab />;
   }
 
-  if (
-    stage.stageType === 'TECHNICAL' ||
-    (!stage.stageType && (titleLower.includes('question') || titleLower.includes('technical')))
-  ) {
-    return <QuestionsDetailTab />;
-  }
-
-  if (
-    stage.stageType === 'SCREENING' ||
-    (!stage.stageType && titleLower.includes('screening'))
-  ) {
+  if (stage.stageType === 'SCREENING') {
     return <ScreeningDetailTab />;
-  }
-
-  if (
-    stage.stageType === 'INGESTION' ||
-    (!stage.stageType && titleLower.includes('ingestion'))
-  ) {
-    return <IngestionDetailTab />;
   }
 
   return <ChallengesTab />;
