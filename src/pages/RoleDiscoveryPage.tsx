@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { TextInput, TagsInput } from '../components/ui/form';
 import { JobDescriptionImportModal } from '../components/RoleDiscovery/JobDescriptionImportModal';
+import { RoleContextReview } from '../components/RoleDiscovery/RoleContextReview';
 import { MatchConfigWizard, type MatchConfigOutput } from '../components/RoleDiscovery/MatchConfigWizard';
 import { AIChat } from '../components/AIChat/AIChat';
 import { DomainBars } from '../components/AIChat';
@@ -42,6 +43,7 @@ import ReactMarkdown from 'react-markdown';
 import type {
   RoleContextBaseline, RoleContextProgress, RoleContextFullState,
   ParseJDResponse, CandidatePersona, GeneratedJobDescription,
+  RoleContextDocument,
 } from '../lib/api/types';
 import type { AdapterConfig } from '../components/AIChat/types';
 
@@ -129,22 +131,30 @@ function PersonaTagList({ items, tone }: { items: string[]; tone: 'neutral' | 'w
 
 // ─── SynthesisPhase ───────────────────────────────────────────────────────────
 
-type SynthesisTab = 'PERSONA' | 'JOB_DESCRIPTION' | 'COVERAGE';
+type SynthesisTab = 'PERSONA' | 'JOB_DESCRIPTION' | 'COVERAGE' | 'ROLE_CONTEXT';
 
 function SynthesisPhase({
-  persona, jobDescription, progress, baseline, onCreatePipeline, isCreating,
+  persona, jobDescription, progress, baseline, rcd, contextId,
+  onCreatePipeline, isCreating,
+  flagAttribute, submitGapAnswer, refreshRcd,
 }: {
   persona: CandidatePersona | null;
   jobDescription: GeneratedJobDescription | null;
   progress: RoleContextProgress | null;
   baseline: RoleContextBaseline | null;
+  rcd: RoleContextDocument | null;
+  contextId: string | null;
   onCreatePipeline: () => void;
   isCreating: boolean;
+  flagAttribute: (flagType: string, domain: string, attribute: string, note?: string) => Promise<{ question: string }>;
+  submitGapAnswer: (answer: string) => Promise<void>;
+  refreshRcd: () => Promise<void>;
 }): JSX.Element {
   const availableTabs: SynthesisTab[] = [
     'PERSONA',
     ...(jobDescription ? (['JOB_DESCRIPTION'] as SynthesisTab[]) : []),
     ...(progress?.domains ? (['COVERAGE'] as SynthesisTab[]) : []),
+    'ROLE_CONTEXT',
   ];
   const [tab, setTab] = useState<SynthesisTab>('PERSONA');
 
@@ -206,6 +216,7 @@ function SynthesisPhase({
         {tabButton('PERSONA', 'CANDIDATE PERSONA')}
         {tabButton('JOB_DESCRIPTION', 'JOB DESCRIPTION')}
         {tabButton('COVERAGE', 'DOMAIN COVERAGE')}
+        {tabButton('ROLE_CONTEXT', 'ROLE CONTEXT')}
       </div>
 
       {tab === 'PERSONA' && (
@@ -304,6 +315,16 @@ function SynthesisPhase({
           </div>
           <DomainBars domains={progress.domains} />
         </LiquidMetalCard>
+      )}
+
+      {tab === 'ROLE_CONTEXT' && (
+        <RoleContextReview
+          rcd={rcd}
+          contextId={contextId}
+          onFlagAttribute={flagAttribute}
+          onSubmitGapAnswer={submitGapAnswer}
+          onRcdUpdated={refreshRcd}
+        />
       )}
 
       <button
@@ -519,7 +540,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
         if (ctx.persona || ctx.jobDescription) {
           // Context is COMPLETE — hydrate directly to synthesis, skip the interview
-          rd.hydrateComplete({ id: ctx.id, baseline: ctx.baseline ?? baseline, persona: ctx.persona, jobDescription: ctx.jobDescription });
+          rd.hydrateComplete({ id: ctx.id, baseline: ctx.baseline ?? baseline, persona: ctx.persona, jobDescription: ctx.jobDescription, rcd: ctx.rcd });
           setDefaultLiveMode(false);
           setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
           return;
@@ -1054,8 +1075,13 @@ export default function RoleDiscoveryPage(): JSX.Element {
           jobDescription={rd.jobDescription}
           progress={rd.progress}
           baseline={rd.baseline}
+          rcd={rd.rcd}
+          contextId={rd.contextId}
           onCreatePipeline={handleCreatePipeline}
           isCreating={isCreating}
+          flagAttribute={rd.flagAttribute}
+          submitGapAnswer={rd.submitGapAnswer}
+          refreshRcd={rd.refreshRcd}
         />
       )}
 

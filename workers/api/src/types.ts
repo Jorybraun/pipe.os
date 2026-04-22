@@ -21,6 +21,12 @@ export interface Env {
    * (STRATEGY Decision Log 2026-04-21, ADR-039).
    */
   CANDIDATE_INDEX: VectorizeIndex;
+  /**
+   * Vectorize index binding for role_searchable_profile embeddings.
+   * Symmetric with REPO_INDEX and CANDIDATE_INDEX (same 1024-dim space).
+   * Enables role→candidate, role→repo, and candidate→role ANN queries.
+   */
+  ROLE_INDEX: VectorizeIndex;
   /** Clerk secret key for JWT verification. Set via .dev.vars in dev. */
   CLERK_SECRET_KEY: string;
   /** Session token secret for candidate JWT signing/verification. */
@@ -806,6 +812,8 @@ export interface ConversationContext {
   mustHavesPrioritized: boolean;
   frictionProbed: boolean;
   dayInLifeProbed: boolean;
+  /** RD-P5 probe progression: how many of the 6 calibrated probes have been delivered. */
+  probesDelivered: number;
 }
 
 /**

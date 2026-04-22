@@ -62,6 +62,20 @@ export const PARTICIPANT_ROLES = [
 ] as const;
 
 /**
+ * POST /api/v1/role-contexts/:id/calibrate — recruiter flags a gap in the RCD.
+ */
+export const calibrateSchema = z.object({
+  participantId: z.string().min(1, 'participantId is required'),
+  flagType: z.string().min(1, 'flagType is required'),
+  gapType: z.string().min(1, 'gapType is required'),
+  note: z.string().max(1000).optional(),
+  domain: z.string().min(1, 'domain is required'),
+  attribute: z.string().min(1, 'attribute is required'),
+});
+
+export type CalibrateInput = z.infer<typeof calibrateSchema>;
+
+/**
  * POST /api/v1/role-contexts/:id/invite — invite team members.
  */
 export const inviteSchema = z.object({

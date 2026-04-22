@@ -3,14 +3,16 @@
  * the vector into the CANDIDATE_INDEX Vectorize index as `candidate_{id}`.
  *
  * Symmetric with the repo-side embedding in `routes/cockpit/adminRepos.ts`
- * (vectorizeAndMark). Profile text goes in as a DOCUMENT — the BGE query-
- * side instruction prefix is added by the consumer (matchReposForCandidate)
- * at query time, not at index time. This matches the repo index.
+ * (vectorizeAndMark) and the role-side embedding in `lib/roleDiscovery/embedRole.ts`.
+ * Profile text goes in as a DOCUMENT — the BGE query-side instruction prefix
+ * is added by the consumer at query time, not at index time.
  *
  * Returns { embedded: true, embeddedAt } on success. Throws on unrecoverable
  * errors (bad vector shape, upsert failure) — the caller is expected to
  * wrap this in a try/catch and route failures through markIngestionFailed.
  */
+
+import { preprocessForEmbedding } from '../embedding/preprocess';
 
 export interface EmbedCandidateInput {
   ai: Ai;
@@ -40,8 +42,10 @@ export async function embedAndUpsertCandidate(
     throw new Error(`[candidateEmbed] empty profile for candidate ${candidateId}`);
   }
 
+  const normalized = preprocessForEmbedding(profile, 'document');
+
   const embedResult = (await ai.run(BGE_MODEL, {
-    text: [profile],
+    text: [normalized],
   })) as { data?: number[][] };
 
   const vector = embedResult?.data?.[0];

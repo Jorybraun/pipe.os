@@ -18,15 +18,18 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { createRoleContextSchema, respondSchema, inviteSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
+import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
 import { callRoleAgent, callRoleAgentStream, mergeKnowledgeState, type RoleAgentResponse } from '../../lib/roleAgent';
+import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
+import { deriveJobDescriptionFromRcd } from '../../lib/roleAgent/deriveJobDescription';
+import { calibrateRcd } from '../../lib/roleAgent/calibrateRcd';
 import { buildConversationContext, buildPhaseDirective } from '../../lib/roleAgentPrompts';
 import { createRoleAgentProvider } from '../../lib/llm/createProvider';
 import { VertexAIProvider } from '../../lib/llm/vertexAIProvider';
 import { recordAiUsage } from '../../lib/aiUsage';
 import { parseJobDescription } from '../../lib/jdParser';
 import { sendNotificationEmail } from '../../lib/email';
-import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole } from '../../types';
+import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole, RoleContextDocument } from '../../types';
 
 export const roleContexts = new Hono<{ Bindings: Env; Variables: Variables }>();
 roleContexts.use('*', authMiddleware);
@@ -86,6 +89,66 @@ async function buildAndStoreRoleEmbedding(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[roleContexts] role embed failed for ${roleContextId}:`, msg);
+  }
+}
+
+/**
+ * Run RCD synthesis across all participant transcripts for a role context.
+ * Returns the RCD, derived persona, derived job description, and legacy synthesis string.
+ */
+async function runRcdSynthesis(
+  env: Env,
+  roleContextId: string,
+  baseline: Record<string, unknown>,
+): Promise<{ rcd: RoleContextDocument; persona: unknown; jobDescription: string; synthesis: string; issues: unknown[]; passed: boolean } | null> {
+  const participantRows = await env.DB.prepare(
+    'SELECT * FROM role_context_participants WHERE role_context_id = ?1 ORDER BY is_creator DESC, created_at ASC',
+  )
+    .bind(roleContextId)
+    .all<RoleContextParticipantRow>();
+
+  const participants = participantRows.results ?? [];
+  if (participants.length === 0) return null;
+
+  const stakeholderTranscripts = participants
+    .filter((p) => p.participant_role && p.exchanges)
+    .map((p) => ({
+      stakeholder_type: p.participant_role as import('../../types').StakeholderType,
+      interviewee_label: p.name || p.participant_role || 'Unknown',
+      exchanges: parseJsonColumn<RoleExchange[]>(p.exchanges, []),
+      knowledge_state: parseJsonColumn<Record<string, unknown>>(p.exchanges, {}),
+    }));
+
+  if (stakeholderTranscripts.length === 0) return null;
+
+  const provider = createRoleAgentProvider(env);
+  if (!provider) return null;
+
+  try {
+    const result = await synthesizeRcd({
+      provider,
+      roleContextId,
+      pipelineId: (baseline.pipelineId as string | undefined) ?? '',
+      baseline,
+      stakeholderTranscripts,
+    });
+
+    const rcd = result.rcd;
+    const persona = rcd.consumer_slice;
+    const jobDescription = deriveJobDescriptionFromRcd(rcd);
+    const synthesis = typeof persona.archetype === 'string' ? persona.archetype : '';
+
+    return {
+      rcd,
+      persona,
+      jobDescription,
+      synthesis,
+      issues: result.issues,
+      passed: result.passed,
+    };
+  } catch (err) {
+    console.error('[roleContexts] RCD synthesis failed:', err);
+    return null;
   }
 }
 
@@ -646,9 +709,13 @@ roleContexts.post('/:id/respond', async (c) => {
       (updatedKnowledgeState as Record<string, unknown>)['_coverage'] = agentResponse.domainCoverage;
 
       if (agentResponse.type === 'synthesis' || budgetExhausted) {
-        const synthesis = agentResponse.type === 'synthesis' ? agentResponse.synthesis : '';
-        const persona = agentResponse.type === 'synthesis' ? agentResponse.persona : null;
-        const jobDescription = agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '';
+        // Path B: RCD synthesis replaces inline agent synthesis
+        const rcdResult = await runRcdSynthesis(c.env, id, baseline);
+
+        const synthesis = rcdResult?.synthesis ?? (agentResponse.type === 'synthesis' ? agentResponse.synthesis : '');
+        const persona = rcdResult?.persona ?? (agentResponse.type === 'synthesis' ? agentResponse.persona : null);
+        const jobDescription = rcdResult?.jobDescription ?? (agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '');
+        const rcd = rcdResult?.rcd ?? null;
 
         await c.env.DB.batch([
           c.env.DB.prepare(
@@ -662,13 +729,17 @@ roleContexts.post('/:id/respond', async (c) => {
                  questions_asked = questions_asked + ?2,
                  persona_json = ?3,
                  job_description_md = ?4,
-                 updated_at = ?5
-             WHERE id = ?6`,
+                 rcd_json = ?5,
+                 validation_metadata = ?6,
+                 updated_at = ?7
+             WHERE id = ?8`,
           ).bind(
             JSON.stringify(updatedKnowledgeState),
             questionsAsked,
             persona ? JSON.stringify(persona) : null,
             jobDescription || null,
+            rcd ? JSON.stringify(rcd) : null,
+            rcd ? JSON.stringify(rcd.validation_metadata) : null,
             now(),
             id,
           ),
@@ -699,6 +770,7 @@ roleContexts.post('/:id/respond', async (c) => {
             synthesis,
             persona,
             jobDescription,
+            rcd: rcd ? JSON.parse(JSON.stringify(rcd)) : null,
             knowledgeState: updatedKnowledgeState,
             progress: {
               asked: questionsAsked,
@@ -844,14 +916,16 @@ roleContexts.post('/:id/respond', async (c) => {
   (updatedKnowledgeState as Record<string, unknown>)['_coverage'] = agentResponse.domainCoverage;
 
   if (agentResponse.type === 'synthesis' || budgetExhausted) {
-    // Role Discovery v2: synthesis now emits persona + jobDescription artifacts.
-    // Legacy `synthesis` string is preserved for backwards compat (derived from archetype).
-    const synthesis = agentResponse.type === 'synthesis' ? agentResponse.synthesis : '';
-    const persona = agentResponse.type === 'synthesis' ? agentResponse.persona : null;
-    const jobDescription = agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '';
+    // Path B: RCD synthesis replaces inline agent synthesis
+    const rcdResult = await runRcdSynthesis(c.env, id, baseline);
+
+    const synthesis = rcdResult?.synthesis ?? (agentResponse.type === 'synthesis' ? agentResponse.synthesis : '');
+    const persona = rcdResult?.persona ?? (agentResponse.type === 'synthesis' ? agentResponse.persona : null);
+    const jobDescription = rcdResult?.jobDescription ?? (agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '');
+    const rcd = rcdResult?.rcd ?? null;
 
     // Update participant as complete + merge knowledge state into shared +
-    // persist persona/JD on the role_contexts row (shared across stakeholders).
+    // persist persona/JD/RCD on the role_contexts row (shared across stakeholders).
     await c.env.DB.batch([
       c.env.DB.prepare(
         `UPDATE role_context_participants
@@ -865,13 +939,17 @@ roleContexts.post('/:id/respond', async (c) => {
              questions_asked = questions_asked + ?2,
              persona_json = ?3,
              job_description_md = ?4,
-             updated_at = ?5
-         WHERE id = ?6`,
+             rcd_json = ?5,
+             validation_metadata = ?6,
+             updated_at = ?7
+         WHERE id = ?8`,
       ).bind(
         JSON.stringify(updatedKnowledgeState),
         questionsAsked,
         persona ? JSON.stringify(persona) : null,
         jobDescription || null,
+        rcd ? JSON.stringify(rcd) : null,
+        rcd ? JSON.stringify(rcd.validation_metadata) : null,
         now(),
         id,
       ),
@@ -903,6 +981,7 @@ roleContexts.post('/:id/respond', async (c) => {
       synthesis,
       persona,
       jobDescription,
+      rcd: rcd ? JSON.parse(JSON.stringify(rcd)) : null,
       knowledgeState: updatedKnowledgeState,
       progress: {
         asked: questionsAsked,
@@ -1024,9 +1103,13 @@ roleContexts.post('/:id/complete', async (c) => {
   logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
 
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
-  const synthesis = agentResponse.type === 'synthesis' ? agentResponse.synthesis : '';
-  const persona = agentResponse.type === 'synthesis' ? agentResponse.persona : null;
-  const jobDescription = agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '';
+
+  // Path B: RCD synthesis replaces inline agent synthesis
+  const rcdResult = await runRcdSynthesis(c.env, id, baseline);
+  const synthesis = rcdResult?.synthesis ?? (agentResponse.type === 'synthesis' ? agentResponse.synthesis : '');
+  const persona = rcdResult?.persona ?? (agentResponse.type === 'synthesis' ? agentResponse.persona : null);
+  const jobDescription = rcdResult?.jobDescription ?? (agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '');
+  const rcd = rcdResult?.rcd ?? null;
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -1040,12 +1123,16 @@ roleContexts.post('/:id/complete', async (c) => {
        SET knowledge_state = ?1,
            persona_json = ?2,
            job_description_md = ?3,
-           updated_at = ?4
-       WHERE id = ?5`,
+           rcd_json = ?4,
+           validation_metadata = ?5,
+           updated_at = ?6
+       WHERE id = ?7`,
     ).bind(
       JSON.stringify(updatedKnowledgeState),
       persona ? JSON.stringify(persona) : null,
       jobDescription || null,
+      rcd ? JSON.stringify(rcd) : null,
+      rcd ? JSON.stringify(rcd.validation_metadata) : null,
       now(),
       id,
     ),
@@ -1077,6 +1164,7 @@ roleContexts.post('/:id/complete', async (c) => {
     synthesis,
     persona,
     jobDescription,
+    rcd: rcd ? JSON.parse(JSON.stringify(rcd)) : null,
     knowledgeState: updatedKnowledgeState,
     progress: {
       asked: participant.questions_asked,

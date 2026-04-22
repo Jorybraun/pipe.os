@@ -6,6 +6,8 @@
  * valid field values is workers/api/src/validation/pipelines.ts.
  */
 
+import type { ScoringReport, StructuredTranscript } from '../../types/conversation';
+
 // ─── Pipeline list ────────────────────────────────────────────────────────────
 
 export interface PipelineListItem {
@@ -207,6 +209,8 @@ export interface OverviewRoleContext {
   persona: CandidatePersona | null;
   /** Generated job description in Markdown produced by the Role Discovery Agent. */
   jobDescription: GeneratedJobDescription | null;
+  /** Full Role Context Document — null until RCD synthesis runs. */
+  rcd: RoleContextDocument | null;
 }
 
 /** Inherited match config (pipeline-level + role-level fallback) — ADR-039. */
@@ -370,6 +374,8 @@ export interface RespondSynthesisResponse {
   knowledgeState: Record<string, Record<string, unknown>>;
   progress: RoleContextProgress;
   status: 'COMPLETE';
+  /** Full Role Context Document — present when backend has cut over to RCD synthesis. */
+  rcd?: RoleContextDocument | null;
 }
 
 export type RespondRoleContextResponse = RespondQuestionResponse | RespondSynthesisResponse;
@@ -403,11 +409,195 @@ export interface RoleContextFullState {
   persona: CandidatePersona | null;
   /** Persisted JD markdown from prior synthesis — null if not yet synthesized. */
   jobDescription: GeneratedJobDescription | null;
+  /** Full Role Context Document — null until RCD synthesis runs. */
+  rcd: RoleContextDocument | null;
   questionBudget: number;
   questionsAsked: number;
   participants: RoleContextParticipantSummary[];
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Role Context Document (ADR-036) ─────────────────────────────────────────
+
+export type EnergySignal = 'high' | 'medium' | 'low' | 'unknown';
+
+export type DomainCoverageLevel = 'not_probed' | 'sparse' | 'partial' | 'covered' | 'deep';
+
+export type AxialRelation = 'causes' | 'enables' | 'blocks' | 'contradicts' | 'instantiates';
+
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+export interface LadderingChain {
+  attribute_quote: string;
+  source_exchange_id: string;
+  consequence: string;
+  value: string;
+  energy_signal: EnergySignal;
+  confidence: ConfidenceLevel;
+}
+
+export interface StoryRecord {
+  situation: string;
+  action: string;
+  outcome: string;
+  moral: string;
+  source_exchange_id: string;
+}
+
+export interface DomainCell {
+  primary_authority: boolean;
+  coverage: DomainCoverageLevel;
+  laddering_chains: LadderingChain[];
+  open_codes: string[];
+  axial_links: Array<{
+    from_code: string;
+    to_code: string;
+    relation: AxialRelation;
+  }>;
+  stories: StoryRecord[];
+  summary: string;
+}
+
+export type StakeholderType = 'HIRING_MANAGER' | 'TEAM_MEMBER' | 'INTERNAL_RECRUITER' | 'EXTERNAL_RECRUITER';
+
+export type Domain = 'why' | 'work' | 'team' | 'bar' | 'codebase' | 'process';
+
+export type DomainMatrix = {
+  [stakeholder in StakeholderType]?: {
+    [domain in Domain]?: DomainCell;
+  };
+};
+
+export type ConflictFlag = 'minor' | 'material' | 'blocking';
+
+export type ConflictResolution = 'prefer_authoritative' | 'preserve_both' | 'escalate_to_recruiter';
+
+export interface ConflictRecord {
+  domain: Domain;
+  field: string;
+  stakeholder_a: StakeholderType;
+  position_a: string;
+  stakeholder_b: StakeholderType;
+  position_b: string;
+  conflict_flag: ConflictFlag;
+  resolution_strategy: ConflictResolution;
+}
+
+export interface DealbreakerRecord {
+  id: string;
+  label: string;
+  pattern: string;
+  source_stakeholder: StakeholderType;
+  source_chain_id: string;
+  job_relatedness_note: string;
+  job_relatedness_strength: 'strong' | 'moderate' | 'weak';
+  evidence_quote: string;
+}
+
+export interface RedFlagRecord {
+  id: string;
+  label: string;
+  source_stakeholder: StakeholderType;
+  source_chain_id: string;
+  evidence_quote: string;
+}
+
+export interface TeamCultureProfile {
+  per_stakeholder: {
+    [stakeholder in StakeholderType]?: {
+      clan_affinity: number;
+      adhocracy_affinity: number;
+      market_affinity: number;
+      hierarchy_affinity: number;
+      psychological_safety: number;
+    };
+  };
+  aggregated?: {
+    formula: string;
+    clan_affinity: number;
+    adhocracy_affinity: number;
+    market_affinity: number;
+    hierarchy_affinity: number;
+    psychological_safety: number;
+  };
+}
+
+export interface BarsOverride {
+  dimension: string;
+  anchor_level: number;
+  base_anchor_text: string;
+  override_anchor_text: string;
+  source_chain_id: string;
+  approved_by: string;
+  approved_at: string;
+}
+
+export interface ProbeEnrichment {
+  static_base_version: string;
+  enriched_probes: Array<{
+    dimension: string;
+    probe_text: string;
+    source_chain_id: string;
+    approved_by: string;
+    approved_at: string;
+  }>;
+}
+
+export interface TechnicalContext {
+  stack: string[];
+  constructs: string[];
+  seniority_band: string;
+  codebase_expectations: string[];
+  dispositional_weights: Record<string, number>;
+}
+
+export interface ValidationMetadata {
+  schema_version: string;
+  synthesis_model: string;
+  synthesis_prompt_version: string;
+  verification_pass_model: string;
+  face_validity_reviewed_at: string | null;
+  face_validity_reviewer: string | null;
+}
+
+export interface RoleContextDocument {
+  rcd_version: string;
+  role_context_id: string;
+  pipeline_id: string;
+  created_at: string;
+  domain_matrix: DomainMatrix;
+  conflicts: ConflictRecord[];
+  technical_context: TechnicalContext;
+  team_culture_profile: TeamCultureProfile;
+  bars_overrides: BarsOverride[];
+  probe_bank_enrichment: ProbeEnrichment;
+  dealbreakers: DealbreakerRecord[];
+  red_flags: RedFlagRecord[];
+  consumer_slice: CandidatePersona;
+  validation_metadata: ValidationMetadata;
+}
+
+// ─── RCD Calibration ─────────────────────────────────────────────────────────
+
+export interface FlagAttributeRequest {
+  flagType: string;
+  domain: string;
+  attribute: string;
+  note?: string;
+}
+
+export interface FlagAttributeResponse {
+  question: string;
+}
+
+export interface SubmitGapAnswerRequest {
+  answer: string;
+}
+
+export interface SubmitGapAnswerResponse {
+  success: boolean;
+  rcd?: RoleContextDocument;
 }
 
 // ─── Candidate Profile ────────────────────────────────────────────────────────
@@ -429,6 +619,7 @@ export interface ProfileChallenge {
   config: Record<string, unknown> | null;
   order: number;
   submission: ChallengeSubmissionDetail | null;
+  reviewSession?: ReviewSessionListItem | null;
 }
 
 export interface ScheduledInterviewInfo {
@@ -487,8 +678,37 @@ export interface PhoneCallRecord {
   createdAt: string;
 }
 
+// ─── Review Sessions ──────────────────────────────────────────────────────────
+
+export type ReviewSessionStatus = 'pending' | 'in_progress' | 'scoring' | 'scored' | 'scoring_failed';
+
+export interface ReviewSessionListItem {
+  id: string;
+  challengeId: string;
+  status: ReviewSessionStatus;
+  score: number | null;
+  scoreReport: ScoringReport | null;
+  transcript?: StructuredTranscript;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewSessionReportResponse {
+  id: string;
+  challengeId: string;
+  status: string;
+  transcript: StructuredTranscript;
+  scoreReport: ScoringReport | null;
+  metrics: {
+    bugsFound: number;
+    bugsMissed: number;
+    falsePositives: number;
+  };
+}
+
 export interface CandidateProfileResponse {
   candidate: CandidateProfileRecord;
   stages: ProfileStage[];
   phoneCalls: PhoneCallRecord[];
+  reviewSessions?: ReviewSessionListItem[];
 }

@@ -24,6 +24,8 @@ export type CandidateIngestionStatus =
   | 'matched'
   | 'failed';
 
+const MAX_ERROR_TEXT_LENGTH = 2000;
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -39,6 +41,23 @@ export async function upsertPendingIngestion(
        VALUES (?1, 'pending', ?2, ?2)
        ON CONFLICT(candidate_id) DO UPDATE SET
          status = 'pending',
+         candidate_searchable_profile = NULL,
+         key_concepts_json = NULL,
+         career_context_json = NULL,
+         situation_signature_json = NULL,
+         key_situations_json = NULL,
+         profile_version = NULL,
+         model_used = NULL,
+         profile_generated_at = NULL,
+         profile_embedded_at = NULL,
+         matched_repo_id = NULL,
+         matched_at = NULL,
+         triangulated_score = NULL,
+         dimensions_json = NULL,
+         reasoning_json = NULL,
+         match_philosophy = NULL,
+         embedding_json = NULL,
+         role_candidate_cosine = NULL,
          error_text = NULL,
          updated_at = excluded.updated_at`,
     )
@@ -69,6 +88,15 @@ export async function persistCandidateProfile(
          profile_version = excluded.profile_version,
          model_used = excluded.model_used,
          profile_generated_at = excluded.profile_generated_at,
+         profile_embedded_at = NULL,
+         matched_repo_id = NULL,
+         matched_at = NULL,
+         triangulated_score = NULL,
+         dimensions_json = NULL,
+         reasoning_json = NULL,
+         match_philosophy = NULL,
+         embedding_json = NULL,
+         role_candidate_cosine = NULL,
          error_text = NULL,
          updated_at = excluded.updated_at`,
     )
@@ -184,7 +212,7 @@ export async function markIngestionEmbedded(
   db: D1Database,
   candidateId: string,
   embeddedAt: string,
-  embeddingJson?: string,
+  embeddingJson?: string | undefined,
 ): Promise<void> {
   const now = nowIso();
   await db
@@ -192,7 +220,7 @@ export async function markIngestionEmbedded(
       `UPDATE candidate_ingestion
          SET status = 'embedded',
              profile_embedded_at = ?2,
-             embedding_json = COALESCE(?4, embedding_json),
+             embedding_json = ?4,
              error_text = NULL,
              updated_at = ?3
        WHERE candidate_id = ?1`,
@@ -216,6 +244,6 @@ export async function markIngestionFailed(
          error_text = excluded.error_text,
          updated_at = excluded.updated_at`,
     )
-    .bind(candidateId, errorText.slice(0, 2000), now)
+    .bind(candidateId, errorText.slice(0, MAX_ERROR_TEXT_LENGTH), now)
     .run();
 }

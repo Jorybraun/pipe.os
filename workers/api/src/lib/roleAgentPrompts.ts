@@ -59,16 +59,25 @@ Demonstrate domain knowledge without assuming context:
 - Bad: "What is event-driven architecture to your team?"
 Framework: "I know what [X] is. I don't know what [X] is to you."
 
-## Six Domains to Cover
+## Six Calibrated Probes
 
-Track coverage internally. Move between domains based on conversation flow, not linearly.
+Your interview follows a deterministic probe progression. Ask ONE probe per turn in this order. Follow energy on each probe — if the answer is short or vague, ask ONE drilling follow-up, then move to the next probe. Do not skip probes.
 
-1. WHY — Role origin (new/backfill), what problem this hire solves, urgency, timeline
-2. WORK — Product/system, features, technology with context about HOW it's used, autonomy level
-3. TEAM — Size, composition, dynamics, communication style, who thrives/fails
-4. BAR — Hard requirements vs. nice-to-haves, seniority definition, hidden requirements (on-call, compliance, mentoring)
-5. CODEBASE — Age, structure, testing, typical PRs, tech debt, comparable repos
-6. PROCESS — Interview constraints, past pain points, stakeholders, timeline
+1. "Describe a recent code review that sparked disagreement. How was it resolved?" → Team Context (review culture, communication norms, psychological safety)
+2. "When a production incident happens, what does the team do first?" → Team Context (ownership, blame culture, on-call expectations)
+3. "What does 'done' mean for a PR on your team?" → Technical Context (quality standards, testing practices, review rigor)
+4. "How do you prefer to give feedback to a peer?" → Dispositional Context (directness, mentorship style, growth expectations)
+5. "What does 'senior' mean on this team?" → Dispositional Context (autonomy level, ownership scope, mentorship dynamics)
+6. "Walk me through the last feature shipped — from idea to production." → Technical Context (stack, architecture, autonomy, shipping cadence)
+
+Track domain coverage internally as you gather answers:
+- team = probes 1 + 2 + 4
+- work = probes 5 + 6
+- codebase = probes 3 + 6
+- bar = probe 5
+- why/process = capture opportunistically between probes or during context/close phases
+
+Never ask more than one follow-up per probe. Budget discipline matters.
 
 ## Seven Question Types
 
@@ -105,7 +114,7 @@ Call tools when they'll make your questions significantly better. Don't call the
 ## ReAct Reasoning
 
 Before EVERY response, reason in your <think> block:
-1. Which Six Domains have coverage? Which are sparse?
+1. Which of the 6 calibrated probes have been delivered? Which domains still need coverage?
 2. How deep have I gone? (Attribute / Consequence / Value per Laddering)
 3. What's the user's energy? (Long answer = dig deeper, short = pivot)
 4. How many questions remain? Should I prioritize depth or breadth?
@@ -154,7 +163,7 @@ The Six Domains are your reasoning scaffold. But the final artifacts require spe
 6. **Tools they should already know** vs. tools they can learn on the job (the 70/30 split).
 7. **What kind of person thrives here** vs. what kind struggles (from hiring manager or team member perspective).
 
-If the conversation has covered fewer than 4 of these by mid-budget, prioritize them over further Six Domains depth.
+If the conversation has covered fewer than 4 of these by mid-budget, prioritize them over further probe depth.
 
 ## Final Synthesis (Budget Exhausted)
 
@@ -781,6 +790,7 @@ export function buildConversationContext(
   const mustHavesPrioritized = Boolean(knowledgeState['_mustHavesPrioritized']);
   const frictionProbed = Boolean(knowledgeState['_frictionProbed']);
   const dayInLifeProbed = Boolean(knowledgeState['_dayInLifeProbed']);
+  const probesDelivered = typeof knowledgeState['_probesDelivered'] === 'number' ? (knowledgeState['_probesDelivered'] as number) : 0;
 
   // Determine phase from persisted directive or compute fresh
   const persistedPhase = (knowledgeState['_phase'] as { phase?: ConversationPhase } | undefined)?.phase;
@@ -795,6 +805,7 @@ export function buildConversationContext(
     mustHavesPrioritized,
     frictionProbed,
     dayInLifeProbed,
+    probesDelivered,
   };
 }
 
@@ -826,32 +837,34 @@ export function buildPhaseDirective(
   questionsAsked: number,
   questionBudget: number,
 ): PhaseDirective {
-  const { domainCoverage, evpCoverage, storiesExtracted, mustHavesPrioritized, frictionProbed, dayInLifeProbed } = context;
+  const { domainCoverage, evpCoverage, storiesExtracted, mustHavesPrioritized, frictionProbed, dayInLifeProbed, probesDelivered } = context;
   const budgetExhausted = questionsAsked >= questionBudget;
 
   const domainValues = Object.values(domainCoverage) as DomainCoverage[];
-  const allDomainsAtLeastPartial = domainValues.length > 0 && domainValues.every(c => coverageGte(c, 'partial'));
   const anyDomainBlind = domainValues.some(c => !coverageGte(c, 'sparse'));
 
   const evpValues = Object.values(evpCoverage) as DomainCoverage[];
   const anyEvpUncovered = evpValues.some(c => c === 'none');
 
-  // Gates for synthesisAllowed (RD-42)
-  const allGatesPass = mustHavesPrioritized && frictionProbed && storiesExtracted.length >= 1 && allDomainsAtLeastPartial;
+  const allProbesDelivered = probesDelivered >= 6;
 
-  // Phase selection
+  // Gates for synthesisAllowed (RD-42)
+  const allGatesPass = mustHavesPrioritized && frictionProbed && storiesExtracted.length >= 1 && allProbesDelivered;
+
+  // Phase selection — probe progression drives DISCOVERY, not domain coverage arcs
   let phase: ConversationPhase;
   let focusGoal: string;
   const urgentGaps: string[] = [];
 
-  if (questionsAsked < 3 || domainValues.length === 0 || domainValues.every(c => c === 'none')) {
+  if (questionsAsked < 2) {
     phase = 'CONTEXT';
-    focusGoal = 'Establish context, warm rapport, and understand why this role is open now.';
-    urgentGaps.push('Role opening reason not captured', 'Stakeholder context unknown');
-  } else if (!dayInLifeProbed || storiesExtracted.length === 0 || anyDomainBlind) {
+    focusGoal = 'Establish rapport and context before beginning the calibrated probes.';
+    urgentGaps.push('Warm-up not yet complete');
+  } else if (!allProbesDelivered) {
     phase = 'DISCOVERY';
-    focusGoal = 'Pry deeply — extract stories, uncover hidden requirements, probe divergent angles.';
-    if (!dayInLifeProbed) urgentGaps.push('Day-in-the-life not yet walked through');
+    const nextProbe = probesDelivered + 1;
+    focusGoal = `Deliver calibrated probe ${nextProbe} of 6. Ask exactly one probe, follow energy with at most one drilling question, then move on.`;
+    urgentGaps.push(`Probe ${nextProbe} not yet delivered`);
     if (storiesExtracted.length === 0) urgentGaps.push('No concrete stories extracted yet');
     const blindDomains = Object.entries(domainCoverage)
       .filter(([, v]) => !coverageGte(v as DomainCoverage, 'sparse'))
@@ -883,10 +896,10 @@ export function buildPhaseDirective(
   const reasoning = synthesisAllowed
     ? `Phase ${phase}. All gates passed — synthesis allowed.`
     : `Phase ${phase}. Gates pending: ${[
+        !allProbesDelivered && `${6 - probesDelivered} probes remaining`,
         !mustHavesPrioritized && 'must-haves not ranked',
         !frictionProbed && 'friction not probed',
         storiesExtracted.length === 0 && 'no stories',
-        !allDomainsAtLeastPartial && 'domains not partial',
       ].filter(Boolean).join('; ')}.`;
 
   return { phase, focusGoal, urgentGaps, synthesisAllowed, reasoning };
@@ -1009,9 +1022,19 @@ Never accept abstract descriptions. "Tell me about the last engineer who really 
 ### Day-in-the-life (Cooper goal-directed design)
 Before leaving this phase, walk a specific day: "Walk me through Tuesday for this person — 9am standup, what do they say? 2pm code review, what are they looking for? End of day, what did they ship?" If the hiring manager can't walk a day, they have a wishlist, not a persona. Press until they can.
 
-## Six domains to cover before leaving DISCOVERY
+## Calibrated probe progression
 
-Track your coverage of: WHY (business context, urgency), WORK (day-to-day tasks, output), TEAM (dynamics, collaboration, reporting), BAR (success criteria, seniority, dealbreakers), CODEBASE (stack, constructs, technical expectations), PROCESS (workflow, tooling, meetings).
+You are delivering the 6 calibrated probes in strict order. Ask exactly one probe per turn. If the participant's answer is rich, acknowledge and move to the next probe. If it is short or vague, ask ONE drilling follow-up, then move on. Never stack questions.
+
+Current probe sequence:
+1. "Describe a recent code review that sparked disagreement. How was it resolved?" → Team Context
+2. "When a production incident happens, what does the team do first?" → Team Context
+3. "What does 'done' mean for a PR on your team?" → Technical Context
+4. "How do you prefer to give feedback to a peer?" → Dispositional Context
+5. "What does 'senior' mean on this team?" → Dispositional Context
+6. "Walk me through the last feature shipped — from idea to production." → Technical Context
+
+After each probe, increment \`_probesDelivered\` by 1 in the knowledgeStateUpdate. Track domain coverage from the answers as usual.
 
 ${roleVariant}
 

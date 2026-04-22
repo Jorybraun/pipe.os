@@ -13,7 +13,7 @@
  * baseline) are stored in refs on this hook and exposed on the returned object.
  */
 
-import { useRef, useMemo, useState, useCallback } from 'react';
+import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { useApiClient } from './useApiClient';
 import { useConversation } from './useConversation';
 import type {
@@ -22,11 +22,15 @@ import type {
   ParticipantRole,
   CandidatePersona,
   GeneratedJobDescription,
+  RoleContextDocument,
+  RoleContextFullState,
   CreateRoleContextResponse,
   StartRoleContextResponse,
   RespondRoleContextResponse,
   RespondSynthesisResponse,
   RespondQuestionResponse,
+  FlagAttributeResponse,
+  SubmitGapAnswerResponse,
 } from '../lib/api/types';
 import type {
   ConversationAdapter,
@@ -76,6 +80,8 @@ export interface UseRoleDiscoveryResult {
   jobDescription: UseConversationResult['jobDescription'];
   /** Legacy narrative string, derived from persona.archetype. Kept for compat. */
   synthesis: string | null;
+  /** Full Role Context Document — null until synthesis runs. */
+  rcd: RoleContextDocument | null;
 
   // Loading & error
   isLoading: boolean;
@@ -86,8 +92,14 @@ export interface UseRoleDiscoveryResult {
   respond: (answer: string, questionId: string) => Promise<void>;
   completeEarly: () => Promise<void>;
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
+  /** Flag an RCD attribute for calibration. Returns a clarifying question. */
+  flagAttribute: (flagType: string, domain: string, attribute: string, note?: string) => Promise<FlagAttributeResponse>;
+  /** Submit the recruiter's answer to a calibration gap-fill question. */
+  submitGapAnswer: (answer: string) => Promise<SubmitGapAnswerResponse>;
+  /** Refetch the RCD from the server. */
+  refreshRcd: () => Promise<void>;
   /** Hydrate directly to COMPLETE phase from a server-fetched context (resume path). */
-  hydrateComplete: (data: { id: string; baseline: RoleContextBaseline; persona: CandidatePersona | null; jobDescription: GeneratedJobDescription | null }) => void;
+  hydrateComplete: (data: { id: string; baseline: RoleContextBaseline; persona: CandidatePersona | null; jobDescription: GeneratedJobDescription | null; rcd?: RoleContextDocument | null }) => void;
   /** Restore a mid-interview session from server state without calling adapter.initialize(). */
   hydrateInterviewing: (data: {
     id: string;
@@ -118,6 +130,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const [overridePhase, setOverridePhase] = useState<DiscoveryPhase | null>(null);
   const [hydratedPersona, setHydratedPersona] = useState<CandidatePersona | null>(null);
   const [hydratedJobDescription, setHydratedJobDescription] = useState<GeneratedJobDescription | null>(null);
+  const [hydratedRcd, setHydratedRcd] = useState<RoleContextDocument | null>(null);
 
   const roleDiscoveryAdapter: ConversationAdapter = useMemo<ConversationAdapter>(
     () => ({
@@ -162,6 +175,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
 
         if (data.status === 'COMPLETE') {
           const synth = data as RespondSynthesisResponse;
+          if (synth.rcd) setHydratedRcd(synth.rcd);
           const result: SynthesisResult = {
             type: 'synthesis',
             synthesis: synth.synthesis,
@@ -201,6 +215,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
           synthesis?: string;
           persona?: RespondSynthesisResponse['persona'];
           jobDescription?: string;
+          rcd?: RoleContextDocument;
           acknowledgment?: string;
           question?: RespondQuestionResponse['question'];
           knowledgeState?: Record<string, unknown>;
@@ -217,6 +232,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
             const data = event.data;
             // Check if synthesis (has synthesis field) or question (has question field)
             if (data.synthesis !== undefined) {
+              if (data.rcd) setHydratedRcd(data.rcd);
               const result: SynthesisResult = {
                 type: 'synthesis',
                 synthesis: data.synthesis,
@@ -251,6 +267,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
           `/api/v1/role-contexts/${contextId}/complete`,
           { participantId },
         );
+
+        if (data.rcd) setHydratedRcd(data.rcd);
 
         return {
           type: 'synthesis',
@@ -295,12 +313,14 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     baseline: RoleContextBaseline;
     persona: CandidatePersona | null;
     jobDescription: GeneratedJobDescription | null;
+    rcd?: RoleContextDocument | null;
   }): void => {
     contextIdRef.current = data.id;
     baselineRef.current = data.baseline;
     setOverridePhase('COMPLETE');
     setHydratedPersona(data.persona);
     setHydratedJobDescription(data.jobDescription);
+    setHydratedRcd(data.rcd ?? null);
   }, []);
 
   const hydrateInterviewing = useCallback((data: {
@@ -333,8 +353,56 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     setOverridePhase(null);
     setHydratedPersona(null);
     setHydratedJobDescription(null);
+    setHydratedRcd(null);
     conv.reset();
   }, [conv]);
+
+  const flagAttribute = useCallback(
+    async (flagType: string, domain: string, attribute: string, note?: string): Promise<FlagAttributeResponse> => {
+      const contextId = contextIdRef.current;
+      if (!contextId) throw new Error('No context created');
+      return api.post<FlagAttributeResponse>(`/api/v1/role-contexts/${contextId}/calibrate`, {
+        flagType,
+        domain,
+        attribute,
+        note,
+      });
+    },
+    [api],
+  );
+
+  const submitGapAnswer = useCallback(
+    async (answer: string): Promise<SubmitGapAnswerResponse> => {
+      const contextId = contextIdRef.current;
+      if (!contextId) throw new Error('No context created');
+      const res = await api.post<SubmitGapAnswerResponse>(`/api/v1/role-contexts/${contextId}/calibrate/respond`, {
+        answer,
+      });
+      if (res.rcd) setHydratedRcd(res.rcd);
+      return res;
+    },
+    [api],
+  );
+
+  const refreshRcd = useCallback(async (): Promise<void> => {
+    const contextId = contextIdRef.current;
+    if (!contextId) return;
+    try {
+      const ctx = await api.get<RoleContextFullState>(`/api/v1/role-contexts/${contextId}`);
+      setHydratedRcd(ctx.rcd ?? null);
+    } catch {
+      // Non-fatal — RCD may not exist yet
+    }
+  }, [api]);
+
+  // Fetch RCD when conversation naturally reaches COMPLETE (backend may not
+  // include it in the synthesis response yet).
+  useEffect(() => {
+    if (conv.phase !== 'COMPLETE') return;
+    if (hydratedRcd) return;
+    void refreshRcd();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conv.phase]);
 
   return {
     phase: (overridePhase ?? conv.phase) as DiscoveryPhase,
@@ -352,6 +420,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     persona: hydratedPersona ?? conv.persona,
     jobDescription: hydratedJobDescription ?? conv.jobDescription,
     synthesis: conv.synthesis,
+    rcd: hydratedRcd,
     isLoading: conv.isLoading,
     error: conv.error,
     createAndStart,
@@ -361,5 +430,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     hydrateComplete,
     hydrateInterviewing,
     reset,
+    flagAttribute,
+    submitGapAnswer,
+    refreshRcd,
   };
 }

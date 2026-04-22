@@ -145,7 +145,7 @@ function parsePatchToHunks(patch: string): import('../../components/Assessment/D
  * GitHub format: { files: [{ filename, patch, additions, deletions }] }
  * DiffPanel format: { files: [{ path, status, additions, deletions, hunks }], stats }
  */
-function normalizeDiffJson(raw: unknown): import('../../components/Assessment/DiffPanel').DiffJson {
+export function normalizeDiffJson(raw: unknown): import('../../components/Assessment/DiffPanel').DiffJson {
   const empty: import('../../components/Assessment/DiffPanel').DiffJson = {
     files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 },
   };

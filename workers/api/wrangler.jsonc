@@ -38,6 +38,11 @@
 			"binding": "CANDIDATE_INDEX",
 			"index_name": "candidate-searchable-profiles",
 			"remote": true
+		},
+		{
+			"binding": "ROLE_INDEX",
+			"index_name": "role-searchable-profiles",
+			"remote": true
 		}
 	],
 	"containers": [
