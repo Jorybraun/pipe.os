@@ -49,7 +49,7 @@ describe('aggregatePathStats', () => {
       ['src/services/order.ts', 'tests/order.test.ts'],
       ['src/components/Button.tsx'],
       ['src/services/a.ts', 'api/b.ts'],
-      ['docs/README.md'],
+      ['CLAUDE.md'],
     ];
     const r = aggregatePathStats(prs, 'typescript');
     expect(r.business_logic_ratio).toBeCloseTo(0.5, 3);

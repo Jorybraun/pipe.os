@@ -56,13 +56,16 @@ export async function persistCandidateProfile(
     .prepare(
       `INSERT INTO candidate_ingestion (
          candidate_id, status, candidate_searchable_profile, key_concepts_json,
+         career_context_json, situation_signature_json,
          profile_version, model_used, profile_generated_at,
          created_at, updated_at
-       ) VALUES (?1, 'profile_generated', ?2, ?3, ?4, ?5, ?6, ?6, ?6)
+       ) VALUES (?1, 'profile_generated', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?8)
        ON CONFLICT(candidate_id) DO UPDATE SET
          status = 'profile_generated',
          candidate_searchable_profile = excluded.candidate_searchable_profile,
          key_concepts_json = excluded.key_concepts_json,
+         career_context_json = excluded.career_context_json,
+         situation_signature_json = excluded.situation_signature_json,
          profile_version = excluded.profile_version,
          model_used = excluded.model_used,
          profile_generated_at = excluded.profile_generated_at,
@@ -73,6 +76,8 @@ export async function persistCandidateProfile(
       candidateId,
       result.candidateSearchableProfile,
       JSON.stringify(result.keyConcepts),
+      JSON.stringify(result.careerContext),
+      JSON.stringify(result.situationSignature),
       result.profileVersion,
       result.modelUsed,
       now,

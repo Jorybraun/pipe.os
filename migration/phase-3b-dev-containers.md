@@ -1,10 +1,10 @@
 # Phase 3b: Dev Containers — ECS to Cloudflare Containers
 
-> **Status:** ✅ Implemented — see [ADR-037](../docs/decisions/ADR-037-dev-containers-on-cloudflare.md)
+> **Status:** ✅ Implemented — see [ADR-037](../docs/decisions/current/ADR-037-dev-containers-on-cloudflare.md)
 > **Depends on:** Phase 2 (D1 schema, Workers API), Phase 3 (candidate session JWT auth)
 > **Replaces:** ECS Fargate cluster, ALB, EventBridge rules, 5 Lambdas, ECR images
 
-> **Authoritative design record:** [ADR-037](../docs/decisions/ADR-037-dev-containers-on-cloudflare.md). The plan below describes the original Sandbox SDK approach; the shipping implementation uses `@cloudflare/containers` `Container` base class with a three-layer TTL resolver and warn-then-expire bisection. When the two disagree, ADR-037 wins.
+> **Authoritative design record:** [ADR-037](../docs/decisions/current/ADR-037-dev-containers-on-cloudflare.md). The plan below describes the original Sandbox SDK approach; the shipping implementation uses `@cloudflare/containers` `Container` base class with a three-layer TTL resolver and warn-then-expire bisection. When the two disagree, ADR-037 wins.
 
 ---
 

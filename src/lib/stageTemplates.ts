@@ -14,6 +14,7 @@ export const STAGE_TYPES = [
   'TECHNICAL',
   'CODE_REVIEW',
   'PANEL',
+  'INGESTION',
 ] as const;
 
 export type StageType = (typeof STAGE_TYPES)[number];
@@ -146,5 +147,11 @@ export const STAGE_TYPE_CONFIGS: Record<StageType, StageTypeConfig> = {
           'Describe a disagreement you had with a colleague. How did you resolve it?',
       },
     ],
+  },
+  INGESTION: {
+    key: 'INGESTION',
+    label: 'Ingestion',
+    description: 'Candidate profile ingestion and repo matching',
+    templateQuestions: [],
   },
 };

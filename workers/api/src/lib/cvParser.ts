@@ -61,7 +61,7 @@ export function getMockParsedCV(): ParsedCV {
 
 // ─── Text Extraction ────────────────────────────────────────────────────────
 
-async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
+export async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
   const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
   return typeof text === 'string' ? text : (text as string[]).join('\n');
 }

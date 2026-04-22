@@ -98,7 +98,7 @@ The defaults above collapse to: *"The system auto-picks one repo per candidate, 
 - STRATEGY.md Decision Log entry 2026-04-18 (exploratory direction) — **read first**
 - `knowledge/outputs/role-discovery-data-contract.md` — canonical RCD schema; config axes must thread through `role_contexts`
 - `knowledge/outputs/role-discovery-sales-intake.md` — Role Discovery agent design; informs which config axes can be elicited conversationally
-- `docs/decisions/ADR-027-role-discovery-agent.md`, `ADR-031-ai-hiring-compliance.md`, `ADR-032-code-review-research-integration.md`, `ADR-034-challenge-authoring-system.md`, `ADR-036-role-discovery-data-contract.md`, `ADR-038-role-discovery-agent-guardrails.md`
+- `docs/decisions/current/ADR-027-role-discovery-agent.md`, `ADR-031-ai-hiring-compliance.md`, `ADR-032-code-review-research-integration.md`, `ADR-034-challenge-authoring-system.md`, `ADR-036-role-discovery-data-contract.md`, `ADR-038-role-discovery-agent-guardrails.md`
 - `knowledge/outputs/behavioral-culture-interview-agent.md` — BARS, disposition weighting; repo-match dispositional cross-check
 - `workers/api/src/lib/roleAgentPrompts.ts` — current Role Discovery prompt surface
 - `src/pages/` — existing wizard patterns (Role Discovery page, Pipeline creation flow)

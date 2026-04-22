@@ -1,6 +1,6 @@
 # Culture Interview Knowledge Base
 
-Source of truth for the Culture Interview Agent (see `docs/decisions/ADR-029-culture-interview-agent-architecture.md`). Every question, rubric, probe, and calibration example used by the agent lives here as markdown and is synced to D1 at deploy time.
+Source of truth for the Culture Interview Agent (see `docs/decisions/current/ADR-029-culture-interview-agent-architecture.md`). Every question, rubric, probe, and calibration example used by the agent lives here as markdown and is synced to D1 at deploy time.
 
 This wiki is **version-controlled craft work**, not a CMS. Changes go through PR review. Agent quality lives and dies by the quality of these files.
 
@@ -71,7 +71,7 @@ History: an earlier commit (`5cec8ff`) shipped a 1,015-node Exponent-sourced lay
 
 ## References
 
-- `docs/decisions/ADR-029-culture-interview-agent-architecture.md` — architecture
-- `docs/decisions/ADR-030-culture-profile-operationalization.md` — 5-dimension profile
-- `docs/decisions/ADR-031-ai-hiring-compliance-architecture.md` — consent, HITL, audit
+- `docs/decisions/current/ADR-029-culture-interview-agent-architecture.md` — architecture
+- `docs/decisions/current/ADR-030-culture-profile-operationalization.md` — 5-dimension profile
+- `docs/decisions/current/ADR-031-ai-hiring-compliance-architecture.md` — consent, HITL, audit
 - `knowledge/outputs/behavioral-culture-interview-agent.md` — research brief (617 lines, 48 sources)

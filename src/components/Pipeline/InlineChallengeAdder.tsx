@@ -32,6 +32,7 @@ import {
   PenLine,
   X,
   GitPullRequest,
+  Brain,
 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../../lib/stageTemplates';
 import { useStageMutations } from '../../hooks/useStageMutations';
@@ -57,6 +58,7 @@ const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   TECHNICAL: Zap,
   CODE_REVIEW: GitPullRequest,
   PANEL: FileText,
+  INGESTION: Brain,
 };
 
 const SCREENING_FORMAT_OPTIONS: {

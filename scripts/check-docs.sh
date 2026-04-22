@@ -27,9 +27,13 @@ if grep -rn "amplify\|AppSync\|DynamoDB\|Cognito\|Lambda" e2e/*.spec.ts 2>/dev/n
   ERRORS=$((ERRORS + 1))
 fi
 
-# 4. Ensure docs/README.md exists
-if [ ! -f "docs/README.md" ]; then
-  echo "ERROR: docs/README.md is missing."
+# 4. Ensure canonical navigation files exist
+if [ ! -f "CLAUDE.md" ]; then
+  echo "ERROR: CLAUDE.md (navigation hub) is missing."
+  ERRORS=$((ERRORS + 1))
+fi
+if [ ! -f "docs/vision.md" ]; then
+  echo "ERROR: docs/vision.md is missing."
   ERRORS=$((ERRORS + 1))
 fi
 

@@ -14,6 +14,7 @@ import CultureDetailTab from './CultureDetailTab';
 import CodeReviewDetailTab from './CodeReviewDetailTab';
 import QuestionsDetailTab from './QuestionsDetailTab';
 import ScreeningDetailTab from './ScreeningDetailTab';
+import IngestionDetailTab from './IngestionDetailTab';
 import type { StagePanelContext } from '../StagePanel';
 
 export default function StageIndexTab(): JSX.Element {
@@ -49,6 +50,13 @@ export default function StageIndexTab(): JSX.Element {
     (!stage.stageType && titleLower.includes('screening'))
   ) {
     return <ScreeningDetailTab />;
+  }
+
+  if (
+    stage.stageType === 'INGESTION' ||
+    (!stage.stageType && titleLower.includes('ingestion'))
+  ) {
+    return <IngestionDetailTab />;
   }
 
   return <ChallengesTab />;

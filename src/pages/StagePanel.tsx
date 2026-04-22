@@ -203,7 +203,7 @@ export default function StagePanel(): JSX.Element {
   // Determines which tab layout + index component to render.
   // Primary: stageType field. Fallback: challenge types / title matching.
   const titleLower = stage.title.toLowerCase();
-  const stageVariant: 'cultural' | 'code-review' | 'questions' | 'screening' | 'generic' = (() => {
+  const stageVariant: 'cultural' | 'code-review' | 'questions' | 'screening' | 'ingestion' | 'generic' = (() => {
     if (
       stage.stageType === 'CULTURAL' ||
       (!stage.stageType && (titleLower.includes('cultural') || titleLower.includes('culture')))
@@ -221,6 +221,10 @@ export default function StagePanel(): JSX.Element {
       stage.stageType === 'SCREENING' ||
       (!stage.stageType && titleLower.includes('screening'))
     ) return 'screening';
+    if (
+      stage.stageType === 'INGESTION' ||
+      (!stage.stageType && titleLower.includes('ingestion'))
+    ) return 'ingestion';
     return 'generic';
   })();
 
@@ -249,6 +253,10 @@ export default function StagePanel(): JSX.Element {
     'screening': [
       { key: 'details', path: '', label: 'DETAILS', icon: <ListChecks size={12} /> },
       gateTab,
+      { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
+    ],
+    'ingestion': [
+      { key: 'details', path: '', label: 'DETAILS', icon: <Brain size={12} /> },
       { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'generic': [

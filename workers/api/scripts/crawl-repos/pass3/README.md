@@ -84,7 +84,7 @@ The orchestrator computes a SHA-256 content hash over the inputs that determine 
 
 ## References
 
-- ADR-036 — Role Discovery + Repo Understanding Data Contract (`docs/decisions/ADR-036-role-discovery-data-contract.md`)
+- ADR-036 — Role Discovery + Repo Understanding Data Contract (`docs/decisions/current/ADR-036-role-discovery-data-contract.md`)
 - Migration `0022_role_discovery_data_contract.sql` — the DDL for `repo_engineering_signals` + `repo_role_alignment`
 - `rerankPipeline.ts` — the runtime consumer; read this before touching `signals_version`
 - `roleFitRerank.ts` — the Gemma prompt that the rerank pipeline wraps

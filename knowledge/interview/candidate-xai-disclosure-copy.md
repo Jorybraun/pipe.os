@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-19
 **Status:** Draft (first pass) — pending legal review + variant A/B test (ADR-039 OQ-V8)
-**Belongs to:** [ADR-039](../../docs/decisions/ADR-039-bi-directional-vectorization-and-3-station-interview.md) §Open #8
+**Belongs to:** [ADR-039](../../docs/decisions/current/ADR-039-bi-directional-vectorization-and-3-station-interview.md) §Open #8
 **Companion research:** `repo-personalized-interview-config.md` §3.3 (transparency), §4.4 (UX), §4.6 (Role Discovery prompt variants)
 
 ---

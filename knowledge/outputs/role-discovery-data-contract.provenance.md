@@ -59,6 +59,6 @@
 
 ## Next actions (post-delivery, not part of this run)
 
-1. Draft ADR-036 at `docs/decisions/ADR-036-role-discovery-data-contract.md` using the scaffold at `/Users/hans/.claude/plans/streamed-squishing-waterfall.md`.
+1. Draft ADR-036 at `docs/decisions/current/ADR-036-role-discovery-data-contract.md` using the scaffold at `/Users/hans/.claude/plans/streamed-squishing-waterfall.md`.
 2. Update `knowledge/STRATEGY.md` RD-1 through RD-24 rows with the new recommendations.
 3. Commit the outputs folder additions with a changelog entry under `[Unreleased]`.

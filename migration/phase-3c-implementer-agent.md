@@ -2,7 +2,7 @@
 
 > **Status:** In Progress
 > **Depends on:** Phase 3 (multi-turn code review endpoints, scorer agent, /calibrate skill)
-> **ADR:** `docs/decisions/ADR-026-implementer-agent-improvements.md`
+> **ADR:** `docs/decisions/current/ADR-026-implementer-agent-improvements.md`
 
 ---
 

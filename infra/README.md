@@ -210,5 +210,5 @@ backend "s3" {
 ## References
 
 - [Terraform AWS Provider docs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
-- [ADR-016](../docs/decisions/ADR-016-dev-container-architecture.md) — Architecture decision for the full dev container system
+- [ADR-016](../docs/decisions/historical/ADR-016-dev-container-architecture.md) — Architecture decision for the full dev container system
 - [state/2026-03-06-initial.json](./state/2026-03-06-initial.json) — Archived manual provisioning record

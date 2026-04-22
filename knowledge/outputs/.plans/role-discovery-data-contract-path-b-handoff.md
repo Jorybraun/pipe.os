@@ -9,12 +9,12 @@
 ## Read these first, in this order
 
 1. **`CLAUDE.md`** (repo root) — project context, tech stack, AI model routing table, guardrail rule. Non-negotiable reading.
-2. **`docs/decisions/ADR-036-role-discovery-data-contract.md`** — the decision record. Read §"Phase 4 — Repo understanding" (line 492) and §"Phase 3 — Code review consumer rewrite" (line 483) in full. Also skim §"Schema migration plan" for the DDL you'll need to reference (the migration itself is already shipped — see below).
+2. **`docs/decisions/current/ADR-036-role-discovery-data-contract.md`** — the decision record. Read §"Phase 4 — Repo understanding" (line 492) and §"Phase 3 — Code review consumer rewrite" (line 483) in full. Also skim §"Schema migration plan" for the DDL you'll need to reference (the migration itself is already shipped — see below).
 3. **`knowledge/outputs/.plans/role-discovery-data-contract-implementation-handoff.md`** — the full implementation handoff. The section titled "Phase 1 implementation decisions (2026-04-10, post-kickoff)" contains load-bearing constraints that also apply to you (no new Anthropic transport on the hot path, model-family independence, etc.). Read it end-to-end.
 4. **`knowledge/outputs/role-discovery-data-contract.md`** — the research brief. For Path B you specifically need §"Half 2 — Repo Understanding Contract" (codebase signals, competitor scan, two-stage retrieval architecture, D1 DDL). You can skim Half 1, but you must internalize the brief's argument for why the retrieval architecture is two-stage (offline signals + runtime rerank), grounded in ColBERT, AIF, and the SWE-bench query-agnostic retrieval limits.
 5. **`knowledge/outputs/role-discovery-data-contract-research-codereview.md`** (R3, 25 sources) — the MSR literature + competitor scan + ColBERT/AIF anchors the two-stage architecture rests on.
 6. **`knowledge/STRATEGY.md`** — skim the "RD — Role Discovery + Repo Understanding findings" block, specifically RD-17 through RD-24. Those are the findings Path B closes. RD-23 and RD-24 are the load-bearing ones for Phase 4.
-7. **`docs/decisions/ADR-035-global-copilot-agent.md`** — you'll need to add a new copilot tool (`explain_repo_for_role`) per ADR-035's tool protocol. Read the tool schema and registration pattern before writing the new tool file.
+7. **`docs/decisions/current/ADR-035-global-copilot-agent.md`** — you'll need to add a new copilot tool (`explain_repo_for_role`) per ADR-035's tool protocol. Read the tool schema and registration pattern before writing the new tool file.
 
 Supporting ADRs to skim: ADR-027 (Role Discovery Agent), ADR-032 (code review research integration — your scorer/implementer consumers).
 
@@ -371,7 +371,7 @@ Stop and ask the founder if any of these happen:
 - **Date of this handoff:** 2026-04-10
 - **Branch:** `feat/cloudflare-migration`
 - **Parent handoff:** `knowledge/outputs/.plans/role-discovery-data-contract-implementation-handoff.md` (Phase 1 decisions apply to you too — read it)
-- **ADR:** `docs/decisions/ADR-036-role-discovery-data-contract.md` (Proposed; will move to Accepted when Phase 1 lands)
+- **ADR:** `docs/decisions/current/ADR-036-role-discovery-data-contract.md` (Proposed; will move to Accepted when Phase 1 lands)
 - **Research brief:** `knowledge/outputs/role-discovery-data-contract.md`
 - **Provenance:** `knowledge/outputs/role-discovery-data-contract.provenance.md`
 - **Strategy:** `knowledge/STRATEGY.md` — RD-17 through RD-24 are your scope markers

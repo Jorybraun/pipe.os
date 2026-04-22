@@ -149,7 +149,7 @@ Feature: Add Challenge
     And ground truth must be manually annotated (no exercise case definition exists)
 ```
 
-> **Note on challenge creation model change (see [ADR-024](../docs/decisions/ADR-024-multi-turn-agentic-code-review.md)):**
+> **Note on challenge creation model change (see [ADR-024](../docs/decisions/current/ADR-024-multi-turn-agentic-code-review.md)):**
 >
 > The slopify repo is the primary source for CODE_REVIEW challenges. Each PR on slopify is a prepared exercise with planted bugs and design trade-offs defined in the research system (`research/code-review-arena/golden/cases.json`). When a recruiter selects a slopify PR, the ground truth is automatically loaded — no manual annotation needed.
 >

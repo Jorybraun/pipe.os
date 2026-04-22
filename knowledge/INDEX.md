@@ -7,7 +7,7 @@ Navigation index for `knowledge/`. Covers the canonical plan, deep-research outp
 > **Read order for new sessions (don't skip):**
 > 1. **`knowledge/STRATEGY.md`** — canonical plan. Every research finding mapped to a concrete action.
 > 2. **`PIPE-OS/CLAUDE.md`** — project instructions, guardrail rule, model routing.
-> 3. **`docs/decisions/ADR-032`** (code review research integration) and **`ADR-033`** (research integration strategy + guardrails).
+> 3. **`docs/decisions/current/ADR-032`** (code review research integration) and **`ADR-033`** (research integration strategy + guardrails).
 > 4. The two final research briefs — only after (1)–(3). The briefs are source material; STRATEGY.md is where decisions live.
 
 ---
@@ -405,8 +405,8 @@ Graph construction is deferred — STRATEGY.md row IDs are the interim structure
 ```
 ┌─ CANONICAL PLAN ─────────────────────────────────────────┐
 │  knowledge/STRATEGY.md     ← source of truth             │
-│  docs/decisions/ADR-032    ← code review integration     │
-│  docs/decisions/ADR-033    ← guardrails (meta)           │
+│  docs/decisions/current/ADR-032    ← code review integration     │
+│  docs/decisions/current/ADR-033    ← guardrails (meta)           │
 │  PIPE-OS/CLAUDE.md         ← project instructions        │
 └──────────────────────────────────────────────────────────┘
                          ↑

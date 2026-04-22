@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, FileText, Zap, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2, Brain } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -45,6 +45,7 @@ const STAGE_TYPE_ICONS: Record<StageType, typeof Phone> = {
   TECHNICAL: Zap,
   CODE_REVIEW: GitPullRequest,
   PANEL: FileText,
+  INGESTION: Brain,
 };
 
 

@@ -86,7 +86,7 @@ Rationale for sequential (not parallel): founder directive 2026-04-08 — contex
 - `knowledge/outputs/culture-bars-anchoring-research-methodology.md` (R1 from prior loop — §§4–6 usable: anchor-writing failure modes, verbosity audit, Maurer 2002 resolution)
 - `knowledge/outputs/culture-bars-anchoring-research-competencies.md` (R2 from prior loop — usable as anchor raw material, requires R1's three-question test before any anchor is accepted)
 - `knowledge/outputs/behavioral-culture-interview-agent.md` (parent brief — treat as background, not authoritative on scoring architecture)
-- `docs/decisions/ADR-029-culture-interview-agent-architecture.md` (the architecture under review)
+- `docs/decisions/current/ADR-029-culture-interview-agent-architecture.md` (the architecture under review)
 - `knowledge/STRATEGY.md` BC-section (plan ledger)
 
 ---

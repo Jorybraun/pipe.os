@@ -216,7 +216,7 @@ Per the plan file task ledger:
 - **T7 — Reviewer (evidence integrity pass)** → `knowledge/outputs/role-discovery-data-contract-verification.md`. Flags single-source critical findings, logical gaps, confidence overstated relative to evidence strength. Use the `reviewer` subagent. Verdict: PASS / PASS WITH NOTES / FAIL.
 - **T8 — Lead finalizes** → `knowledge/outputs/role-discovery-data-contract.md` + `role-discovery-data-contract.provenance.md`. Only proceed if T7 verdict is PASS or PASS WITH NOTES.
 
-After T8: draft **ADR-036 — Role Discovery + Repo Understanding Data Contract** at `docs/decisions/ADR-036-role-discovery-data-contract.md` using the scaffold in `/Users/hans/.claude/plans/streamed-squishing-waterfall.md`. Every load-bearing claim must carry a `[R#-S#]` citation traceable back to the final brief's Sources table.
+After T8: draft **ADR-036 — Role Discovery + Repo Understanding Data Contract** at `docs/decisions/current/ADR-036-role-discovery-data-contract.md` using the scaffold in `/Users/hans/.claude/plans/streamed-squishing-waterfall.md`. Every load-bearing claim must carry a `[R#-S#]` citation traceable back to the final brief's Sources table.
 
 Update STRATEGY.md RD-* finding rows: Source column → point at the brief; Status column → NOT STARTED → IN PROGRESS once ADR-036 lands.
 

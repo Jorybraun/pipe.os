@@ -33,9 +33,29 @@ export interface CandidateKeyConcepts {
   detected_domain: string;
 }
 
+export interface CareerContext {
+  company_stages: string[];
+  company_size_exposure: string[];
+  tenure_pattern: 'stable' | 'moderate' | 'job-hopper' | 'unknown';
+  progression_velocity: 'fast' | 'normal' | 'slow' | 'unknown';
+  ownership_depth: 'feature' | 'service' | 'platform' | 'org' | 'unknown';
+  system_scale_exposure: string[];
+  greenfield_ratio: number;
+}
+
+export interface SituationSignature {
+  primary_challenge_types: string[];
+  architecture_exposure: string[];
+  test_culture_exposure: string;
+  review_culture: string;
+  impact_signals: string[];
+}
+
 export interface CandidateDiscoveryResult {
   candidateSearchableProfile: string;
   keyConcepts: CandidateKeyConcepts;
+  careerContext: CareerContext;
+  situationSignature: SituationSignature;
   profileVersion: string;
   modelUsed: string;
   rawText: string;
@@ -50,6 +70,11 @@ export interface DiscoverCandidateProfileInput {
 const SENIORITY_BANDS: SeniorityBand[] = ['junior', 'mid', 'senior', 'staff'];
 const MAX_SKILLS = 10;
 const MIN_PROFILE_CHARS = 400;
+const MAX_ARRAY_LEN = 10;
+
+const VALID_TENURE_PATTERNS = new Set(['stable', 'moderate', 'job-hopper']);
+const VALID_PROGRESSION_VELOCITIES = new Set(['fast', 'normal', 'slow']);
+const VALID_OWNERSHIP_DEPTHS = new Set(['feature', 'service', 'platform', 'org']);
 
 function stripCodeFences(raw: string): string {
   return raw
@@ -69,6 +94,17 @@ function coerceStringArray(value: unknown, max: number): string[] {
     if (out.length >= max) break;
   }
   return out;
+}
+
+function coerceEnum<T extends string>(value: unknown, valid: Set<T>, fallback: T): T {
+  if (typeof value !== 'string') return fallback;
+  const v = value.trim().toLowerCase() as T;
+  return valid.has(v) ? v : fallback;
+}
+
+function coerceNumberInRange(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
 }
 
 function coerceSeniority(value: unknown, fallback: SeniorityBand): SeniorityBand {
@@ -153,9 +189,32 @@ export async function discoverCandidateProfile(
     detected_domain: detectedDomain,
   };
 
+  // Parse rich profile fields with fallbacks for backward compatibility
+  const ccRaw = (parsedResponse.career_context ?? {}) as Record<string, unknown>;
+  const careerContext: CareerContext = {
+    company_stages: coerceStringArray(ccRaw.company_stages, MAX_ARRAY_LEN),
+    company_size_exposure: coerceStringArray(ccRaw.company_size_exposure, MAX_ARRAY_LEN),
+    tenure_pattern: coerceEnum(ccRaw.tenure_pattern, VALID_TENURE_PATTERNS, 'unknown'),
+    progression_velocity: coerceEnum(ccRaw.progression_velocity, VALID_PROGRESSION_VELOCITIES, 'unknown'),
+    ownership_depth: coerceEnum(ccRaw.ownership_depth, VALID_OWNERSHIP_DEPTHS, 'unknown'),
+    system_scale_exposure: coerceStringArray(ccRaw.system_scale_exposure, MAX_ARRAY_LEN),
+    greenfield_ratio: coerceNumberInRange(ccRaw.greenfield_ratio, 0, 1, 0.5),
+  };
+
+  const ssRaw = (parsedResponse.situation_signature ?? {}) as Record<string, unknown>;
+  const situationSignature: SituationSignature = {
+    primary_challenge_types: coerceStringArray(ssRaw.primary_challenge_types, 5),
+    architecture_exposure: coerceStringArray(ssRaw.architecture_exposure, 5),
+    test_culture_exposure: typeof ssRaw.test_culture_exposure === 'string' ? ssRaw.test_culture_exposure : 'unknown',
+    review_culture: typeof ssRaw.review_culture === 'string' ? ssRaw.review_culture : 'unknown',
+    impact_signals: coerceStringArray(ssRaw.impact_signals, 5),
+  };
+
   return {
     candidateSearchableProfile: profileRaw.trim(),
     keyConcepts,
+    careerContext,
+    situationSignature,
     profileVersion: CANDIDATE_DISCOVERY_PROMPT_VERSION,
     modelUsed: provider.name,
     rawText,

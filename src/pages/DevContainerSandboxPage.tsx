@@ -525,7 +525,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
           <div>• Destroy → ECS.StopTask + automatic 60-min session timeout</div>
           <div>• Cost → ~$0.05 per 60-min interview session</div>
           <div style={{ marginTop: 8, color: 'var(--pipe-accent)' }}>
-            ADR-016 — docs/decisions/ADR-016-dev-container-architecture.md
+            ADR-016 — docs/decisions/historical/ADR-016-dev-container-architecture.md
           </div>
         </div>
       </div>

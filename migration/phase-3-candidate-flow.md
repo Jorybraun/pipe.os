@@ -79,7 +79,7 @@ Feature: Token resolution and assessment start
 
 ### 2.2 Candidate completes a CODE_REVIEW challenge (multi-turn conversation)
 
-> **See [ADR-024](../docs/decisions/ADR-024-multi-turn-agentic-code-review.md) for full architectural context.**
+> **See [ADR-024](../docs/decisions/current/ADR-024-multi-turn-agentic-code-review.md) for full architectural context.**
 > This replaces the single-turn annotation + deterministic scoring flow (ADR-021) which was never completed to production.
 
 ```gherkin
