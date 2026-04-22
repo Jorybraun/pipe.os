@@ -4,7 +4,7 @@
  * BDD: Candidate Media Upload — voice/video blobs directly to R2 via Worker
  *
  * Tests the POST /rpc/upload-media endpoint that replaces the Amplify
- * generateMediaUploadUrl Lambda + S3 presigned URL flow.
+ * POST /rpc/upload-media — stores audio/video in R2, returns r2Key.
  *
  * Feature sections
  * ────────────────

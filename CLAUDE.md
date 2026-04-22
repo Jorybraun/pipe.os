@@ -242,3 +242,14 @@ A real person (not a developer) can:
 6. Recruiter logs in and sees 3 candidates ranked by score with per-challenge breakdown
 
 Everything else is post-MVP.
+
+---
+
+## Documentation Upkeep Rule
+
+1. **Every commit that changes behavior updates docs.** If you change a route, update the phase doc. If you change a BDD scenario, update the test. No exceptions.
+2. **No stale tracking artifacts.** `CURRENT_STATE.json`, personal todo files, and agent worktrees are banned. State lives in `migration/PLAN.md` status columns or the code itself.
+3. **Archive, don't delete.** Old docs move to `docs/archive/` with a `SUPERSEDED_BY:` header. Deleting history is not allowed.
+4. **BDD tests are production code.** Stale tests are bugs. If a test hasn't passed in 2 weeks, delete it or fix it.
+5. **Monthly doc audit.** First session of each month: review `docs/`, `e2e/`, and `knowledge/outputs/` for drift. Log findings in `docs/DRIFT_LOG.md`.
+6. **Pre-commit docs check.** `scripts/check-docs.sh` runs in the pre-commit hook. It fails if stale artifacts or old-stack references are detected.

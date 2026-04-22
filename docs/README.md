@@ -17,16 +17,11 @@
 | [`scoring-system.md`](../../research/code-review-arena/spec/scoring-system.md) | Panel-based scorer specification |
 | [`training-loop.md`](../../research/code-review-arena/spec/training-loop.md) | Karpathy-style training loop |
 
-## Archived
-
-| Directory | What it contains |
-|---|---|
-| [`archive-amplify/`](./archive-amplify/) | Pre-migration docs (Amplify era). Historical reference only — does NOT reflect current architecture. |
-| [`archive/`](./archive/) | Older archived documentation. |
-
 ## ADR note
 
 ADRs 001-022 were written during the Amplify era. The architectural decisions they document are historical — the reasoning is valuable but the specific tech (Lambda, AppSync, DynamoDB, Cognito) is being replaced. ADR-023+ reflects the migration-era architecture.
+
+**Old archives deleted on 2026-04-22.** Pre-migration docs (`archive-amplify/`) and older archived docs (`archive/`) removed. They described systems that no longer exist. If you need historical context, check git history.
 
 ---
 
