@@ -6,6 +6,8 @@ All notable changes are indexed here. Detailed file diffs and summaries live in 
 
 ### [Unreleased]
 
+#### chore(pipeline): delete StageGatePanel — replaced by GateConfigTab routed page (2026-04-22)
+
 #### feat(ingestion): matchReposForCandidate — per-candidate repo resolver (2026-04-21)
 
 Fourth step of the per-candidate "Ingestion" pre-stage. Resolves a single `(repo, PR, issue)` tuple per candidate from the Candidate Discovery output, using the same `qualified_repos` catalog as `autoStageBuilder` plus an optional cosine rerank against `REPO_INDEX`.

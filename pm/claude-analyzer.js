@@ -5,6 +5,20 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_PATH = process.env.GIT_REPO_PATH || '..';
 
+function extractJson(text) {
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  const stripped = text.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+  // Try full parse first
+  try { return JSON.parse(stripped); } catch (_) {}
+  // Fall back to matching array or object
+  const arr = stripped.match(/\[[\s\S]*\]/);
+  if (arr) { try { return JSON.parse(arr[0]); } catch (_) {} }
+  const obj = stripped.match(/\{[\s\S]*\}/);
+  if (obj) { try { return JSON.parse(obj[0]); } catch (_) {} }
+  console.error('[claude-analyzer] Failed to parse JSON from output:', text.slice(0, 200));
+  return null;
+}
+
 /**
  * Run Claude CLI with a prompt and collect output.
  * Returns parsed JSON or null on failure.
@@ -30,26 +44,7 @@ function runClaude(prompt, { cwd, timeout = 120000 } = {}) {
         resolve(null);
         return;
       }
-      // Extract JSON from output
-      const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          resolve(JSON.parse(jsonMatch[0]));
-        } catch (e) {
-          console.error(`[claude-analyzer] JSON parse error: ${e.message}`);
-          console.error(`[claude-analyzer] Raw output (first 500): ${stdout.slice(0, 500)}`);
-          resolve(null);
-        }
-      } else {
-        // Try array match
-        const arrMatch = stdout.match(/\[[\s\S]*\]/);
-        if (arrMatch) {
-          try { resolve(JSON.parse(arrMatch[0])); } catch { resolve(null); }
-        } else {
-          console.error(`[claude-analyzer] No JSON found in output (${stdout.length} chars)`);
-          resolve(null);
-        }
-      }
+      resolve(extractJson(stdout));
     });
 
     proc.on('error', (err) => {
