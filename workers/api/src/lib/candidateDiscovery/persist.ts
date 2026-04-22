@@ -85,23 +85,52 @@ export async function persistCandidateProfile(
     .run();
 }
 
+export interface MarkIngestionMatchedInput {
+  candidateId: string;
+  matchedRepoId: number;
+  triangulatedScore?: number | undefined;
+  dimensionsJson?: string | undefined;
+  reasoningJson?: string | undefined;
+  matchPhilosophy?: string | undefined;
+}
+
 export async function markIngestionMatched(
   db: D1Database,
-  candidateId: string,
-  matchedRepoId: number,
+  input: MarkIngestionMatchedInput,
 ): Promise<void> {
   const now = nowIso();
+  const {
+    candidateId,
+    matchedRepoId,
+    triangulatedScore,
+    dimensionsJson,
+    reasoningJson,
+    matchPhilosophy,
+  } = input;
+
   await db
     .prepare(
       `UPDATE candidate_ingestion
          SET status = 'matched',
              matched_repo_id = ?2,
              matched_at = ?3,
+             triangulated_score = ?4,
+             dimensions_json = ?5,
+             reasoning_json = ?6,
+             match_philosophy = ?7,
              error_text = NULL,
              updated_at = ?3
        WHERE candidate_id = ?1`,
     )
-    .bind(candidateId, matchedRepoId, now)
+    .bind(
+      candidateId,
+      matchedRepoId,
+      now,
+      triangulatedScore ?? null,
+      dimensionsJson ?? null,
+      reasoningJson ?? null,
+      matchPhilosophy ?? null,
+    )
     .run();
 }
 

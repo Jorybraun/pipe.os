@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 5 CI/CD: GitHub Actions workflows for CI, staging deploy, and production deploy
 - ADR-041: Cloudflare-native deployment with Wrangler (drops Terraform)
 - `workers/api/wrangler.jsonc` environments: `staging` and `production`
+- `docs/project-brief.md`: Unified project vision, glossary, phased roadmap, and honest current-state snapshot
+- `.claude/rules/terminology.md`: Mandatory domain language for all agents
 
 ### Changed
+- `docs/vision.md`: Aligned with project brief — added product thesis, full vision reference, and guardrails
+- `migration/PLAN.md`: Added Product Phases (P1–P5) section with 2026-04-22 decisions
 - Documentation reorganization: unified navigation hub, split decisions into current/historical, extracted model routing, archived stale artifacts
 - Deleted obsolete files: BUGS.md, TEST_ANALYSIS.md, TEST_STATUS.md, TODO.md, CONTRIBUTING.md, docs/README.md, docs/handoffs/
 - Deleted AWS Amplify artifacts: `amplify/`, `amplify_outputs.json`, `amplify.yml`

@@ -26,7 +26,8 @@ import type { Env, RepoEngineeringSignalsRow } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import { createCandidateAgentProvider } from '../llm/createProvider';
 import { matchReposForCandidate } from '../match/matchReposForCandidate';
-import { triangulateMatch } from '../match/triangulateMatch';
+import { triangulateMatch, triangulateShortlist } from '../match/triangulateMatch';
+import { pickReviewPr, pickImplementationIssue } from '../match/autoStageBuilder';
 import { discoverCandidateProfile, type CandidateDiscoveryResult } from './agent';
 import { embedAndUpsertCandidate } from './embed';
 import {
@@ -36,6 +37,7 @@ import {
   markIngestionMatched,
   markIngestionFailed,
   upsertCandidateChallengeAssignment,
+  type MarkIngestionMatchedInput,
 } from './persist';
 import { candidateSituationFit, type SituationFitCandidate } from './candidateSituationFit';
 
@@ -298,7 +300,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   });
 
   // Step 9: Triangulate
-  const triangulated = triangulateMatch({
+  let triangulated = triangulateMatch({
     philosophy,
     graphResult: matchResult,
     situationRankings: situationRankings.rankings,
@@ -306,45 +308,116 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     roleCandidateCosine,
   });
 
-  const winnerRepoId = triangulated.repo_id;
+  let winnerRepoId = triangulated.repo_id;
+  let winnerRepoUrl = matchResult.repoChoice.githubUrl;
+  let winnerReview = matchResult.review;
+  let winnerImplementation = matchResult.implementation;
 
-  // Step 10: Find placeholder stages and write assignments
-  const placeholderStages = await db
-    .prepare(
-      `SELECT s.id as stage_id, c.id as challenge_id, c.type
-         FROM stages s
-         JOIN challenges c ON c.stage_id = s.id
-         JOIN candidates cd ON cd.pipeline_id = s.pipeline_id
-        WHERE cd.id = ?1 AND c.github_repo_url IS NULL
-          AND c.type IN ('CODE_REVIEW', 'CODE_IMPLEMENTATION')`,
-    )
-    .bind(candidateId)
-    .all<{ stage_id: string; challenge_id: string; type: string }>();
-
-  // Get the winner's PR/issue from matchResult
-  const winnerReview = matchResult.review;
-  const winnerImplementation = matchResult.implementation;
-  const winnerRepoUrl = matchResult.repoChoice.githubUrl;
-
-  for (const stage of placeholderStages.results ?? []) {
-    const isReview = stage.type === 'CODE_REVIEW';
-    const prNumber = isReview ? (winnerReview?.prNumber ?? null) : null;
-    const issueNumber = !isReview ? (winnerImplementation?.issueNumber ?? null) : null;
-
-    await upsertCandidateChallengeAssignment(db, {
-      id: cryptoRandomId(),
-      candidateId,
-      stageId: stage.stage_id,
-      challengeId: stage.challenge_id,
-      repoId: winnerRepoId,
-      githubRepoUrl: winnerRepoUrl,
-      githubPrNumber: prNumber,
-      issueNumber: issueNumber,
+  // Tailored mode: re-rank the full shortlist and potentially switch winner
+  if (philosophy === 'tailored' && matchResult.shortlist.length > 1) {
+    const shortlistScores = triangulateShortlist({
+      philosophy,
+      graphResult: matchResult,
+      situationRankings: situationRankings.rankings,
+      roleRepoAlignments,
+      roleCandidateCosine,
     });
+
+    if (shortlistScores.length > 0) {
+      const top = shortlistScores[0]!;
+      if (top.repo_id !== winnerRepoId) {
+        winnerRepoId = top.repo_id;
+        // Look up github_url from qualified_repos
+        const repoRow = await db
+          .prepare('SELECT full_name, html_url FROM qualified_repos WHERE id = ?1')
+          .bind(winnerRepoId)
+          .first<{ full_name: string; html_url: string }>();
+        winnerRepoUrl = repoRow?.html_url ?? '';
+
+        // Fetch PR/issue for the new winner
+        const [pr, issue] = await Promise.all([
+          pickReviewPr(db, winnerRepoId),
+          pickImplementationIssue(db, winnerRepoId, discoveryResult.keyConcepts.seniority),
+        ]);
+        winnerReview = pr;
+        winnerImplementation = issue;
+
+        // Re-triangulate the single winner so dimensions/raw_signals are accurate
+        const tailoredWinner = matchResult.shortlist.find((s) => s.repoId === winnerRepoId);
+        if (tailoredWinner) {
+          triangulated = triangulateMatch({
+            philosophy,
+            graphResult: {
+              ...matchResult,
+              repoChoice: {
+                repoId: winnerRepoId,
+                fullName: repoRow?.full_name ?? `repo_${winnerRepoId}`,
+                githubUrl: winnerRepoUrl,
+                score: tailoredWinner.score,
+                cosine: tailoredWinner.cosine,
+                rationale: `tailored re-rank winner (score ${top.triangulated_score.toFixed(3)})`,
+              },
+            },
+            situationRankings: situationRankings.rankings,
+            roleRepoAlignments,
+            roleCandidateCosine,
+          });
+        }
+      }
+    }
   }
 
-  // Step 11: Mark matched
-  await markIngestionMatched(db, candidateId, winnerRepoId);
+  // Extract reasoning for the winner from situation fit rankings
+  const winnerSituation = situationRankings.rankings.find((r) => r.repo_id === winnerRepoId);
+  const reasoningJson = winnerSituation
+    ? JSON.stringify({
+        matches: winnerSituation.reasoning.matches,
+        mismatches: winnerSituation.reasoning.mismatches,
+      })
+    : undefined;
+
+  // Step 10: Find placeholder stages and write assignments (skip in validate mode)
+  if (philosophy !== 'validate') {
+    const placeholderStages = await db
+      .prepare(
+        `SELECT s.id as stage_id, c.id as challenge_id, c.type
+           FROM stages s
+           JOIN challenges c ON c.stage_id = s.id
+           JOIN candidates cd ON cd.pipeline_id = s.pipeline_id
+          WHERE cd.id = ?1 AND c.github_repo_url IS NULL
+            AND c.type IN ('CODE_REVIEW', 'CODE_IMPLEMENTATION')`,
+      )
+      .bind(candidateId)
+      .all<{ stage_id: string; challenge_id: string; type: string }>();
+
+    for (const stage of placeholderStages.results ?? []) {
+      const isReview = stage.type === 'CODE_REVIEW';
+      const prNumber = isReview ? (winnerReview?.prNumber ?? null) : null;
+      const issueNumber = !isReview ? (winnerImplementation?.issueNumber ?? null) : null;
+
+      await upsertCandidateChallengeAssignment(db, {
+        id: cryptoRandomId(),
+        candidateId,
+        stageId: stage.stage_id,
+        challengeId: stage.challenge_id,
+        repoId: winnerRepoId,
+        githubRepoUrl: winnerRepoUrl,
+        githubPrNumber: prNumber,
+        issueNumber: issueNumber,
+      });
+    }
+  }
+
+  // Step 11: Mark matched with full score payload
+  const matchedInput: MarkIngestionMatchedInput = {
+    candidateId,
+    matchedRepoId: winnerRepoId,
+    triangulatedScore: triangulated.triangulated_score,
+    dimensionsJson: JSON.stringify(triangulated.dimensions),
+    reasoningJson,
+    matchPhilosophy: philosophy,
+  };
+  await markIngestionMatched(db, matchedInput);
 }
 
 // ─── Utility ────────────────────────────────────────────────────────────────

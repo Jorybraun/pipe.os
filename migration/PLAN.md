@@ -70,7 +70,29 @@ Legend: ✅ done · 🟡 partial / drifted · ⏸️ paused or deferred · ❌ n
 
 ---
 
-## Current State — 2026-04-06
+## Product Phases (post-migration)
+
+These phases supersede the migration phases above. The migration was infrastructure; these are product.
+
+| Phase | What | Status | Acceptance |
+|-------|------|--------|------------|
+| P1 | Pipeline Creation & Role Discovery | 🟡 In progress | Non-developer creates pipeline in <5 min |
+| P2 | End-to-End Interview Flow | 🟡 Partial | 5 real developers complete full pipeline |
+| P3 | Scoring & Insights | ❌ Not started | QWK ≥ 0.60 culture, ≥ 0.70 code review |
+| P4 | Open Source Challenge | ❌ Not started | Candidate fixes live issue in dev container |
+| P5 | Polish & Scale | ❌ Not started | First paying customer |
+
+**Key decisions (2026-04-22):**
+- Stage types locked to 5: `SCREENING`, `CULTURAL`, `CODE_REVIEW`, `OPEN_SOURCE`, `LIVE_PANEL`
+- Deprecated types removed from UI: `AI_COLLAB`, `PLANNING`, `VOICE`, `INGESTION`, `TECHNICAL`, `QUESTIONS`
+- `CULTURAL` = AI behavioral interview only (no challenge-based fallback)
+- `CODE_REVIEW` stage = multi-turn review session only
+- Dev containers = Phase 4, not Phase 2
+- See `docs/project-brief.md` for full glossary, roadmap, and current state
+
+---
+
+## Current State — 2026-04-22
 
 The migration is functionally past the original Phase 4 boundary, but several major systems were built mid-stream that the original phase docs never captured. This section is the honest snapshot.
 

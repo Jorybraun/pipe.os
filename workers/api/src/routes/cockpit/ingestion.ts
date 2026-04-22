@@ -39,9 +39,22 @@ interface IngestionListRow {
   status: string;
   candidate_searchable_profile: string | null;
   matched_repo_name: string | null;
+  triangulated_score: number | null;
+  dimensions_json: string | null;
+  reasoning_json: string | null;
   error_text: string | null;
   created_at: string;
   updated_at: string;
+}
+
+function snakeToCamelDimensions(dimensions: Record<string, number> | null) {
+  if (!dimensions) return null;
+  return {
+    skillCoverage: dimensions.skill_coverage ?? 0,
+    semanticSimilarity: dimensions.semantic_similarity ?? 0,
+    situationFit: dimensions.situation_fit ?? 0,
+    roleAlignment: dimensions.role_alignment ?? 0,
+  };
 }
 
 ingestion.get('/:pipelineId/ingestion', async (c) => {
@@ -67,6 +80,9 @@ ingestion.get('/:pipelineId/ingestion', async (c) => {
          ci.status,
          ci.candidate_searchable_profile,
          qr.full_name AS matched_repo_name,
+         ci.triangulated_score,
+         ci.dimensions_json,
+         ci.reasoning_json,
          ci.error_text,
          ci.created_at,
          ci.updated_at
@@ -79,17 +95,26 @@ ingestion.get('/:pipelineId/ingestion', async (c) => {
     .bind(pipelineId)
     .all<IngestionListRow>();
 
-  const results = (rows.results ?? []).map((r) => ({
-    candidateId: r.candidate_id,
-    candidateName: r.candidate_name,
-    status: r.status ?? 'pending',
-    candidateSearchableProfile: r.candidate_searchable_profile ?? '',
-    matchedRepoName: r.matched_repo_name,
-    triangulatedScore: null as number | null,
-    dimensions: null as object | null,
-    reasoning: null as object | null,
-    errorText: r.error_text,
-  }));
+  const results = (rows.results ?? []).map((r) => {
+    const dimensions = r.dimensions_json
+      ? (JSON.parse(r.dimensions_json) as Record<string, number>)
+      : null;
+    const reasoning = r.reasoning_json
+      ? (JSON.parse(r.reasoning_json) as { matches: string[]; mismatches: string[] })
+      : null;
+
+    return {
+      candidateId: r.candidate_id,
+      candidateName: r.candidate_name,
+      status: (r.status ?? 'pending') as 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed',
+      candidateSearchableProfile: r.candidate_searchable_profile ?? '',
+      matchedRepoName: r.matched_repo_name,
+      triangulatedScore: r.triangulated_score,
+      dimensions: snakeToCamelDimensions(dimensions),
+      reasoning,
+      errorText: r.error_text,
+    };
+  });
 
   return c.json({ results });
 });
@@ -173,6 +198,60 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/feedback', async (c) => {
     .run();
 
   return c.json({ success: true, feedbackId: id });
+});
+
+// ─── GET /:pipelineId/ingestion/:candidateId/feedback ───────────────────────
+
+ingestion.get('/:pipelineId/ingestion/:candidateId/feedback', async (c) => {
+  const userId = c.var.userId;
+  const { pipelineId, candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  // Ownership check
+  const candidate = await db
+    .prepare(
+      `SELECT c.id
+       FROM candidates c
+       JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND p.owner_id = ? AND c.pipeline_id = ?`,
+    )
+    .bind(candidateId, userId, pipelineId)
+    .first<{ id: string }>();
+
+  if (!candidate) {
+    return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+  }
+
+  const rows = await db
+    .prepare(
+      `SELECT thumb, reason, triangulated_score, role_repo_alignment,
+              candidate_repo_fit, role_candidate_cosine, created_at
+       FROM match_feedback
+       WHERE candidate_id = ? AND pipeline_id = ?
+       ORDER BY created_at DESC`,
+    )
+    .bind(candidateId, pipelineId)
+    .all<{
+      thumb: string;
+      reason: string | null;
+      triangulated_score: number | null;
+      role_repo_alignment: number | null;
+      candidate_repo_fit: number | null;
+      role_candidate_cosine: number | null;
+      created_at: string;
+    }>();
+
+  const feedback = (rows.results ?? []).map((r) => ({
+    thumb: r.thumb,
+    reason: r.reason,
+    triangulatedScore: r.triangulated_score,
+    roleRepoAlignment: r.role_repo_alignment,
+    candidateRepoFit: r.candidate_repo_fit,
+    roleCandidateCosine: r.role_candidate_cosine,
+    createdAt: r.created_at,
+  }));
+
+  return c.json({ feedback });
 });
 
 // ─── POST /:pipelineId/ingestion/:candidateId/reingest ──────────────────────
@@ -260,6 +339,10 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
          profile_embedded_at = NULL,
          matched_at = NULL,
          matched_repo_id = NULL,
+         triangulated_score = NULL,
+         dimensions_json = NULL,
+         reasoning_json = NULL,
+         match_philosophy = NULL,
          updated_at = excluded.updated_at`,
     )
     .bind(candidateId, new Date().toISOString())

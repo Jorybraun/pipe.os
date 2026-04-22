@@ -676,6 +676,55 @@ candidateOps.patch('/:candidateId', async (c) => {
   return c.json({ success: true });
 });
 
+// GET /:candidateId/assignments — list candidate_challenge_assignment rows
+candidateOps.get('/:candidateId/assignments', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db
+    .prepare(
+      `SELECT c.id FROM candidates c
+       JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND p.owner_id = ?`
+    )
+    .bind(candidateId, userId)
+    .first<{ id: string }>();
+
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const rows = await db
+    .prepare(
+      `SELECT stage_id, challenge_id, repo_id, github_repo_url,
+              github_pr_number, issue_number, assigned_at
+       FROM candidate_challenge_assignment
+       WHERE candidate_id = ?
+       ORDER BY assigned_at DESC`
+    )
+    .bind(candidateId)
+    .all<{
+      stage_id: string;
+      challenge_id: string;
+      repo_id: number;
+      github_repo_url: string;
+      github_pr_number: number | null;
+      issue_number: number | null;
+      assigned_at: string;
+    }>();
+
+  const assignments = (rows.results ?? []).map((r) => ({
+    stageId: r.stage_id,
+    challengeId: r.challenge_id,
+    repoId: r.repo_id,
+    githubRepoUrl: r.github_repo_url,
+    githubPrNumber: r.github_pr_number,
+    issueNumber: r.issue_number,
+    assignedAt: r.assigned_at,
+  }));
+
+  return c.json({ assignments });
+});
+
 // POST /:candidateId/refresh-link — regenerate invite token
 candidateOps.post('/:candidateId/refresh-link', async (c) => {
   const userId = c.var.userId;

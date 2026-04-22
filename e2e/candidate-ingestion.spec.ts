@@ -6,20 +6,12 @@
  * Tests the full upload→ingestion→match lifecycle for candidate resumes:
  *   1. Recruiter uploads a resume via POST /api/v1/candidates/:id/resume
  *   2. Ingestion fires asynchronously (Candidate Discovery v2 + situational scorer)
- *   3. Candidate sees a matched repo on their profile
- *   4. Mode-specific behavior: validate does NOT mutate challenges; hybrid runs full triangulation
+ *   3. Pipeline ingestion list shows matched repo with triangulated scores
+ *   4. Mode-specific behavior: validate does NOT create challenge assignments;
+ *      hybrid/tailored DOES create assignments
  *   5. Ingestion failure is non-fatal to upload; status = failed
  *   6. Re-ingest can be triggered from pending/failed state
- *   7. Match feedback (thumbs down) is recorded
- *
- * Feature sections
- * ────────────────
- *   §I1  Upload triggers ingestion → candidate sees matched repo
- *   §I2  Validate mode: upload does NOT mutate challenges
- *   §I3  Hybrid mode: upload DOES run full triangulation
- *   §I4  Ingestion failure: upload still succeeds, status = failed
- *   §I5  Re-ingest: re-runs from pending/failed
- *   §I6  Match feedback: recruiter thumbs down → recorded
+ *   7. Match feedback (thumbs down) is recorded and retrievable
  *
  * Auth: Tests run as authenticated recruiter (Clerk JWT via storageState).
  * API base: http://localhost:8787
@@ -46,13 +38,21 @@ interface SeededCandidate {
   inviteToken: string;
 }
 
-interface CandidateProfileBody {
-  candidate: {
-    id: string;
-    resumeS3Key: string | null;
-    ingestionStatus?: string | null;
-    matchedRepoId?: number | null;
-  };
+interface IngestionRow {
+  candidateId: string;
+  candidateName: string;
+  status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
+  candidateSearchableProfile: string;
+  matchedRepoName: string | null;
+  triangulatedScore: number | null;
+  dimensions: {
+    skillCoverage: number;
+    semanticSimilarity: number;
+    situationFit: number;
+    roleAlignment: number;
+  } | null;
+  reasoning: { matches: string[]; mismatches: string[] } | null;
+  errorText: string | null;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -133,9 +133,54 @@ async function teardownPipeline(
   });
 }
 
+async function uploadResume(
+  request: APIRequestContext,
+  authToken: string,
+  candidateId: string,
+): Promise<void> {
+  const pdfBytes = minimalPdfBytes();
+  const uploadRes = await request.post(
+    `${API_BASE}/api/v1/candidates/${candidateId}/resume`,
+    {
+      headers: authHeader(authToken),
+      multipart: {
+        file: {
+          name: 'jordan-resume.pdf',
+          mimeType: 'application/pdf',
+          buffer: pdfBytes,
+        },
+      },
+    },
+  );
+  expect(uploadRes.status()).toBe(201);
+}
+
+async function pollIngestionStatus(
+  request: APIRequestContext,
+  authToken: string,
+  pipelineId: string,
+  candidateId: string,
+  maxSeconds = 30,
+): Promise<IngestionRow | null> {
+  for (let i = 0; i < maxSeconds; i++) {
+    const res = await request.get(
+      `${API_BASE}/api/v1/pipelines/${pipelineId}/ingestion`,
+      { headers: jsonHeaders(authToken) },
+    );
+    expect(res.ok()).toBeTruthy();
+    const body = (await res.json()) as { results: IngestionRow[] };
+    const row = body.results.find((r) => r.candidateId === candidateId);
+    if (row && (row.status === 'matched' || row.status === 'failed')) {
+      return row;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return null;
+}
+
 // ─── §I1  Upload triggers ingestion → candidate sees matched repo ────────────
 
-test.describe('§I1 — Recruiter uploads resume → ingestion fires → candidate sees matched repo', () => {
+test.describe('§I1 — Recruiter uploads resume → ingestion fires → pipeline shows matched repo', () => {
   let authToken: string;
   let pipeline: SeededPipeline;
   let candidate: SeededCandidate;
@@ -154,56 +199,19 @@ test.describe('§I1 — Recruiter uploads resume → ingestion fires → candida
     await teardownPipeline(request, authToken, pipeline.id);
   });
 
-  /**
-   * Scenario: Upload resume triggers ingestion and produces a matched repo
-   *   Given the recruiter is authenticated
-   *   And a candidate record exists
-   *   When the recruiter POSTs a PDF resume to /api/v1/candidates/:id/resume
-   *   Then the upload response is 201
-   *   And the candidate profile eventually shows a matchedRepoId
-   */
-  test('Scenario: resume upload triggers ingestion and candidate gets matched repo', async ({ request }) => {
-    const pdfBytes = minimalPdfBytes();
+  test('Scenario: resume upload triggers ingestion and pipeline shows matched repo', async ({ request }) => {
+    await uploadResume(request, authToken, candidate.id);
 
-    const uploadRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/resume`,
-      {
-        headers: authHeader(authToken),
-        multipart: {
-          file: {
-            name: 'jordan-resume.pdf',
-            mimeType: 'application/pdf',
-            buffer: pdfBytes,
-          },
-        },
-      },
-    );
-    expect(uploadRes.status()).toBe(201);
-
-    // Poll for ingestion completion (max 30s)
-    let matchedRepoId: number | null = null;
-    for (let i = 0; i < 30; i++) {
-      const profileRes = await request.get(
-        `${API_BASE}/api/v1/candidates/${candidate.id}`,
-        { headers: jsonHeaders(authToken) },
-      );
-      expect(profileRes.ok()).toBeTruthy();
-      const body = (await profileRes.json()) as CandidateProfileBody;
-      if (body.candidate.matchedRepoId) {
-        matchedRepoId = body.candidate.matchedRepoId;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-
-    expect(matchedRepoId).not.toBeNull();
-    expect(typeof matchedRepoId).toBe('number');
+    const row = await pollIngestionStatus(request, authToken, pipeline.id, candidate.id);
+    expect(row).not.toBeNull();
+    expect(row!.status).toBe('matched');
+    expect(row!.matchedRepoName).not.toBeNull();
   });
 });
 
-// ─── §I2  Validate mode: upload does NOT mutate challenges ──────────────────
+// ─── §I2  Validate mode: upload does NOT create challenge assignments ───────
 
-test.describe('§I2 — Validate mode: upload does NOT mutate challenges', () => {
+test.describe('§I2 — Validate mode: upload does NOT create challenge assignments', () => {
   let authToken: string;
   let pipeline: SeededPipeline;
   let candidate: SeededCandidate;
@@ -217,7 +225,6 @@ test.describe('§I2 — Validate mode: upload does NOT mutate challenges', () =>
 
     ({ pipeline, candidate } = await seedCandidateWithPipeline(request, authToken));
 
-    // Configure pipeline to validate mode
     await request.patch(`${API_BASE}/api/v1/pipelines/${pipeline.id}/match-config`, {
       headers: jsonHeaders(authToken),
       data: { match_philosophy: 'validate' },
@@ -228,46 +235,13 @@ test.describe('§I2 — Validate mode: upload does NOT mutate challenges', () =>
     await teardownPipeline(request, authToken, pipeline.id);
   });
 
-  /**
-   * Scenario: Validate mode ingestion does not create or update challenges
-   *   Given the pipeline is in validate mode
-   *   When a resume is uploaded
-   *   Then ingestion completes
-   *   And no challenge assignments are created for the candidate
-   */
-  test('Scenario: validate mode does not mutate candidate challenges', async ({ request }) => {
-    const pdfBytes = minimalPdfBytes();
-    const uploadRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/resume`,
-      {
-        headers: authHeader(authToken),
-        multipart: {
-          file: {
-            name: 'validate-mode.pdf',
-            mimeType: 'application/pdf',
-            buffer: pdfBytes,
-          },
-        },
-      },
-    );
-    expect(uploadRes.status()).toBe(201);
+  test('Scenario: validate mode ingestion completes but does not mutate assignments', async ({ request }) => {
+    await uploadResume(request, authToken, candidate.id);
 
-    // Poll for ingestion completion
-    let status: string | null = null;
-    for (let i = 0; i < 30; i++) {
-      const profileRes = await request.get(
-        `${API_BASE}/api/v1/candidates/${candidate.id}`,
-        { headers: jsonHeaders(authToken) },
-      );
-      const body = (await profileRes.json()) as CandidateProfileBody;
-      status = body.candidate.ingestionStatus ?? null;
-      if (status === 'completed' || status === 'failed') break;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
+    const row = await pollIngestionStatus(request, authToken, pipeline.id, candidate.id);
+    expect(row).not.toBeNull();
+    expect(row!.status).toBe('matched');
 
-    expect(status).toBe('completed');
-
-    // Verify no challenge assignments exist
     const assignmentsRes = await request.get(
       `${API_BASE}/api/v1/candidates/${candidate.id}/assignments`,
       { headers: jsonHeaders(authToken) },
@@ -278,9 +252,9 @@ test.describe('§I2 — Validate mode: upload does NOT mutate challenges', () =>
   });
 });
 
-// ─── §I3  Hybrid mode: upload DOES run full triangulation ───────────────────
+// ─── §I3  Hybrid mode: upload DOES run full triangulation and assignments ───
 
-test.describe('§I3 — Hybrid mode: upload DOES run full triangulation', () => {
+test.describe('§I3 — Hybrid mode: upload DOES create challenge assignments', () => {
   let authToken: string;
   let pipeline: SeededPipeline;
   let candidate: SeededCandidate;
@@ -294,7 +268,6 @@ test.describe('§I3 — Hybrid mode: upload DOES run full triangulation', () => 
 
     ({ pipeline, candidate } = await seedCandidateWithPipeline(request, authToken));
 
-    // Configure pipeline to hybrid mode
     await request.patch(`${API_BASE}/api/v1/pipelines/${pipeline.id}/match-config`, {
       headers: jsonHeaders(authToken),
       data: { match_philosophy: 'hybrid' },
@@ -305,47 +278,14 @@ test.describe('§I3 — Hybrid mode: upload DOES run full triangulation', () => 
     await teardownPipeline(request, authToken, pipeline.id);
   });
 
-  /**
-   * Scenario: Hybrid mode runs full triangulation and creates challenge assignments
-   *   Given the pipeline is in hybrid mode
-   *   When a resume is uploaded
-   *   Then ingestion completes
-   *   And challenge assignments are created for the candidate
-   *   And the match row contains triangulated_score with hybrid weights
-   */
-  test('Scenario: hybrid mode creates assignments and triangulated match', async ({ request }) => {
-    const pdfBytes = minimalPdfBytes();
-    const uploadRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/resume`,
-      {
-        headers: authHeader(authToken),
-        multipart: {
-          file: {
-            name: 'hybrid-mode.pdf',
-            mimeType: 'application/pdf',
-            buffer: pdfBytes,
-          },
-        },
-      },
-    );
-    expect(uploadRes.status()).toBe(201);
+  test('Scenario: hybrid mode creates assignments and shows triangulated scores', async ({ request }) => {
+    await uploadResume(request, authToken, candidate.id);
 
-    // Poll for ingestion completion
-    let status: string | null = null;
-    for (let i = 0; i < 30; i++) {
-      const profileRes = await request.get(
-        `${API_BASE}/api/v1/candidates/${candidate.id}`,
-        { headers: jsonHeaders(authToken) },
-      );
-      const body = (await profileRes.json()) as CandidateProfileBody;
-      status = body.candidate.ingestionStatus ?? null;
-      if (status === 'completed' || status === 'failed') break;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
+    const row = await pollIngestionStatus(request, authToken, pipeline.id, candidate.id);
+    expect(row).not.toBeNull();
+    expect(row!.status).toBe('matched');
 
-    expect(status).toBe('completed');
-
-    // Verify challenge assignments exist
+    // Assignments exist
     const assignmentsRes = await request.get(
       `${API_BASE}/api/v1/candidates/${candidate.id}/assignments`,
       { headers: jsonHeaders(authToken) },
@@ -354,24 +294,11 @@ test.describe('§I3 — Hybrid mode: upload DOES run full triangulation', () => 
     const assignmentsBody = (await assignmentsRes.json()) as { assignments: unknown[] };
     expect(assignmentsBody.assignments.length).toBeGreaterThan(0);
 
-    // Verify triangulated match row exists
-    const matchRes = await request.get(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/match`,
-      { headers: jsonHeaders(authToken) },
-    );
-    expect(matchRes.status()).toBe(200);
-    const matchBody = (await matchRes.json()) as {
-      match: {
-        triangulated_score: number;
-        mode: string;
-        weights_json: string;
-      };
-    };
-    expect(matchBody.match.triangulated_score).toBeGreaterThan(0);
-    expect(matchBody.match.mode).toBe('hybrid');
-    const weights = JSON.parse(matchBody.match.weights_json) as Record<string, number>;
-    expect(weights.role_repo).toBe(0.35);
-    expect(weights.candidate).toBe(0.25);
+    // Dimensions populated
+    expect(row!.triangulatedScore).not.toBeNull();
+    expect(row!.dimensions).not.toBeNull();
+    expect(row!.dimensions!.skillCoverage).toBeGreaterThanOrEqual(0);
+    expect(row!.dimensions!.skillCoverage).toBeLessThanOrEqual(1);
   });
 });
 
@@ -396,53 +323,20 @@ test.describe('§I4 — Ingestion failure: upload still succeeds, status = faile
     await teardownPipeline(request, authToken, pipeline.id);
   });
 
-  /**
-   * Scenario: Ingestion fails but upload succeeds
-   *   Given the ingestion service is unavailable or returns an error
-   *   When a resume is uploaded
-   *   Then the upload response is still 201
-   *   And the candidate ingestionStatus becomes "failed"
-   */
-  test('Scenario: upload succeeds even when ingestion fails', async ({ request }) => {
-    // This test may require a test-specific fixture or env toggle to force ingestion failure.
-    // For now, assert the contract: upload 201 + eventual status = failed.
-    const pdfBytes = minimalPdfBytes();
-    const uploadRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/resume`,
-      {
-        headers: authHeader(authToken),
-        multipart: {
-          file: {
-            name: 'failure-test.pdf',
-            mimeType: 'application/pdf',
-            buffer: pdfBytes,
-          },
-        },
-      },
-    );
-    expect(uploadRes.status()).toBe(201);
+  test('Scenario: upload succeeds even when ingestion eventually fails', async ({ request }) => {
+    // We cannot force an ingestion failure in this environment without a mock
+    // toggle. Assert the contract: upload 201 + eventual terminal status.
+    await uploadResume(request, authToken, candidate.id);
 
-    // Poll for terminal ingestion status
-    let status: string | null = null;
-    for (let i = 0; i < 30; i++) {
-      const profileRes = await request.get(
-        `${API_BASE}/api/v1/candidates/${candidate.id}`,
-        { headers: jsonHeaders(authToken) },
-      );
-      const body = (await profileRes.json()) as CandidateProfileBody;
-      status = body.candidate.ingestionStatus ?? null;
-      if (status === 'completed' || status === 'failed') break;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-
-    // If we cannot force failure in this environment, assert at least a terminal status.
-    expect(['completed', 'failed']).toContain(status);
+    const row = await pollIngestionStatus(request, authToken, pipeline.id, candidate.id);
+    expect(row).not.toBeNull();
+    expect(['matched', 'failed']).toContain(row!.status);
   });
 });
 
 // ─── §I5  Re-ingest: re-runs from pending ───────────────────────────────────
 
-test.describe('§I5 — Re-ingest: re-runs from pending', () => {
+test.describe('§I5 — Re-ingest: re-runs from pending/failed', () => {
   let authToken: string;
   let pipeline: SeededPipeline;
   let candidate: SeededCandidate;
@@ -461,52 +355,26 @@ test.describe('§I5 — Re-ingest: re-runs from pending', () => {
     await teardownPipeline(request, authToken, pipeline.id);
   });
 
-  /**
-   * Scenario: Recruiter triggers re-ingestion for a candidate
-   *   Given a candidate has ingestionStatus = pending or failed
-   *   When the recruiter POSTs to /api/v1/candidates/:id/re-ingest
-   *   Then the response is 202
-   *   And ingestionStatus resets to pending and eventually completes
-   */
   test('Scenario: re-ingest endpoint re-runs ingestion from pending', async ({ request }) => {
     // Trigger initial upload
-    const pdfBytes = minimalPdfBytes();
-    const uploadRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/resume`,
-      {
-        headers: authHeader(authToken),
-        multipart: {
-          file: {
-            name: 're-ingest.pdf',
-            mimeType: 'application/pdf',
-            buffer: pdfBytes,
-          },
-        },
-      },
-    );
-    expect(uploadRes.status()).toBe(201);
+    await uploadResume(request, authToken, candidate.id);
+
+    // Wait for first run to finish
+    const firstRow = await pollIngestionStatus(request, authToken, pipeline.id, candidate.id);
+    expect(firstRow).not.toBeNull();
+    expect(['matched', 'failed']).toContain(firstRow!.status);
 
     // Call re-ingest
     const reingestRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/re-ingest`,
+      `${API_BASE}/api/v1/pipelines/${pipeline.id}/ingestion/${candidate.id}/reingest`,
       { headers: jsonHeaders(authToken) },
     );
-    expect(reingestRes.status()).toBe(202);
+    expect(reingestRes.status()).toBe(200);
 
-    // Poll for completion
-    let status: string | null = null;
-    for (let i = 0; i < 30; i++) {
-      const profileRes = await request.get(
-        `${API_BASE}/api/v1/candidates/${candidate.id}`,
-        { headers: jsonHeaders(authToken) },
-      );
-      const body = (await profileRes.json()) as CandidateProfileBody;
-      status = body.candidate.ingestionStatus ?? null;
-      if (status === 'completed' || status === 'failed') break;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-
-    expect(status).toBe('completed');
+    // Poll for completion again
+    const secondRow = await pollIngestionStatus(request, authToken, pipeline.id, candidate.id);
+    expect(secondRow).not.toBeNull();
+    expect(secondRow!.status).toBe('matched');
   });
 });
 
@@ -531,71 +399,40 @@ test.describe('§I6 — Match feedback: recruiter thumbs down → recorded', () 
     await teardownPipeline(request, authToken, pipeline.id);
   });
 
-  /**
-   * Scenario: Recruiter gives thumbs down on a match
-   *   Given a candidate has a completed match
-   *   When the recruiter POSTs thumbs_down feedback
-   *   Then the response is 201
-   *   And the feedback is retrievable
-   */
-  test('Scenario: thumbs down feedback is recorded', async ({ request }) => {
+  test('Scenario: thumbs down feedback is recorded and retrievable', async ({ request }) => {
     // Ensure a match exists first
-    const pdfBytes = minimalPdfBytes();
-    const uploadRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/resume`,
-      {
-        headers: authHeader(authToken),
-        multipart: {
-          file: {
-            name: 'feedback-test.pdf',
-            mimeType: 'application/pdf',
-            buffer: pdfBytes,
-          },
-        },
-      },
-    );
-    expect(uploadRes.status()).toBe(201);
+    await uploadResume(request, authToken, candidate.id);
 
-    // Wait for match
-    let matchedRepoId: number | null = null;
-    for (let i = 0; i < 30; i++) {
-      const profileRes = await request.get(
-        `${API_BASE}/api/v1/candidates/${candidate.id}`,
-        { headers: jsonHeaders(authToken) },
-      );
-      const body = (await profileRes.json()) as CandidateProfileBody;
-      if (body.candidate.matchedRepoId) {
-        matchedRepoId = body.candidate.matchedRepoId;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-    expect(matchedRepoId).not.toBeNull();
+    const row = await pollIngestionStatus(request, authToken, pipeline.id, candidate.id);
+    expect(row).not.toBeNull();
+    expect(row!.status).toBe('matched');
 
     // Submit thumbs down
     const feedbackRes = await request.post(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/match/feedback`,
+      `${API_BASE}/api/v1/pipelines/${pipeline.id}/ingestion/${candidate.id}/feedback`,
       {
         headers: jsonHeaders(authToken),
         data: {
-          feedback_type: 'thumbs_down',
-          notes: 'Repo too advanced for this candidate',
+          thumb: 'down',
+          reason: 'Repo too advanced for this candidate',
         },
       },
     );
-    expect(feedbackRes.status()).toBe(201);
+    expect(feedbackRes.status()).toBe(200);
+    const feedbackBody = (await feedbackRes.json()) as { success: boolean; feedbackId: string };
+    expect(feedbackBody.success).toBe(true);
 
     // Retrieve feedback
     const listRes = await request.get(
-      `${API_BASE}/api/v1/candidates/${candidate.id}/match/feedback`,
+      `${API_BASE}/api/v1/pipelines/${pipeline.id}/ingestion/${candidate.id}/feedback`,
       { headers: jsonHeaders(authToken) },
     );
     expect(listRes.status()).toBe(200);
     const listBody = (await listRes.json()) as {
-      feedback: Array<{ feedback_type: string; notes: string }>;
+      feedback: Array<{ thumb: string; reason: string | null }>;
     };
     expect(listBody.feedback.length).toBeGreaterThan(0);
-    expect(listBody.feedback[0].feedback_type).toBe('thumbs_down');
-    expect(listBody.feedback[0].notes).toBe('Repo too advanced for this candidate');
+    expect(listBody.feedback[0].thumb).toBe('down');
+    expect(listBody.feedback[0].reason).toBe('Repo too advanced for this candidate');
   });
 });
