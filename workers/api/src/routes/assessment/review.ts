@@ -16,6 +16,7 @@
  */
 
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import type { Env } from '../../types';
 import type { CandidateVariables } from '../../middleware/candidateAuth';
 import {
@@ -35,6 +36,7 @@ import { scoreReviewSession, type PlantedBug } from '../../lib/scorerAgent';
 import { scoreComprehensionSession, type ComprehensionGroundTruth } from '../../lib/comprehensionScorer';
 import { computeImplementerMetrics } from '../../lib/implementerMetrics';
 import { loadRcdForAssessment } from '../../lib/rcd';
+import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 

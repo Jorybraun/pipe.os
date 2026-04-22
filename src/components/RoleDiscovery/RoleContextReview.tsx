@@ -24,7 +24,7 @@ interface RoleContextReviewProps {
     attribute: string,
     note?: string,
   ) => Promise<{ question: string }>;
-  onSubmitGapAnswer: (answer: string) => Promise<void>;
+  onSubmitGapAnswer: (answer: string) => Promise<unknown>;
   onRcdUpdated: () => Promise<void>;
 }
 
