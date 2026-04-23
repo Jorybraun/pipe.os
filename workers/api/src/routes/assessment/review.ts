@@ -37,11 +37,9 @@ import {
   type ComprehensionExchange,
 } from '../../lib/explainerAgent';
 import type { RepoKnowledgeInput } from '../../lib/explainerPrompts';
-import { scoreReviewSession, type PlantedBug } from '../../lib/scorerAgent';
-import { scoreComprehensionSession, type ComprehensionGroundTruth } from '../../lib/comprehensionScorer';
-import { computeImplementerMetrics } from '../../lib/implementerMetrics';
 import { loadRcdForAssessment } from '../../lib/rcd';
 import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
+import { scoreAndPropagate } from '../../lib/review/scoreAndPropagate';
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -447,141 +445,19 @@ async function finalizeReviewSession(
     .bind(now, session.assessment_id)
     .run();
 
-  // Trigger async scoring
   const scorerApiKey = c.env.GOOGLE_AI_API_KEY ?? '';
   const hasAI = !!c.env.AI;
   if (hasAI || scorerApiKey) {
-    const scoringPromise = (async () => {
-      try {
-        const ch = await c.env.DB.prepare(
-          `SELECT ground_truth, server_config, github_pr_title, github_pr_description, instructions, cached_diff_json
-           FROM challenges WHERE id = ?1`,
-        )
-          .bind(session.challenge_id)
-          .first<{
-            ground_truth: string | null;
-            server_config: string | null;
-            github_pr_title: string | null;
-            github_pr_description: string | null;
-            instructions: string | null;
-            cached_diff_json: string | null;
-          }>();
-
-        if (!ch) {
-          console.error('[finalizeReviewSession] Challenge not found for scoring, sessionId:', session.id);
-          return;
-        }
-
-        const groundTruth = parseJsonColumn<PlantedBug[]>(ch.ground_truth) ?? [];
-        const serverConfig = parseJsonColumn<Record<string, unknown>>(ch.server_config);
-        const plantedBugs = Array.isArray(serverConfig?.plantedBugs)
-          ? (serverConfig.plantedBugs as PlantedBug[])
-          : groundTruth;
-
-        await c.env.DB.prepare(
-          `UPDATE review_sessions SET status = 'scoring', updated_at = ?1 WHERE id = ?2`,
-        )
-          .bind(new Date().toISOString(), session.id)
-          .run();
-
-        const scorerProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : 'workers-ai' as const;
-
-        const rcdScore = await loadRcdForAssessment(c.env.DB, session.assessment_id);
-        const dispositionalWeightsScore = rcdScore?.technical_context?.dispositional_weights;
-
-        const scoreReport = await scoreReviewSession({
-          apiKey: scorerApiKey,
-          provider: scorerProvider,
-          ai: c.env.AI,
-          transcript,
-          groundTruth: plantedBugs,
-          diff: ch.cached_diff_json,
-          prTitle: ch.github_pr_title,
-          prDescription: ch.github_pr_description,
-          instructions: ch.instructions,
-          ...(dispositionalWeightsScore ? { dispositionalWeights: dispositionalWeightsScore } : {}),
-        });
-
-        const implementerMetrics = computeImplementerMetrics(transcript.rounds);
-
-        let comprehensionSupplement: Record<string, unknown> | undefined;
-        if (transcript.explainer_exchanges && transcript.explainer_exchanges.length > 0) {
-          try {
-            const groundTruthRaw = parseJsonColumn<ComprehensionGroundTruth>(ch.ground_truth);
-            const comprehensionGroundTruth: ComprehensionGroundTruth = groundTruthRaw?.mode === 'comprehension'
-              ? groundTruthRaw
-              : { mode: 'comprehension', keyInsights: [], idealVerdict: 'approve', idealRationale: '' };
-
-            const compReport = await scoreComprehensionSession({
-              apiKey: scorerApiKey,
-              provider: scorerProvider,
-              ai: c.env.AI,
-              transcript: { mode: 'comprehension', exchanges: transcript.explainer_exchanges },
-              groundTruth: comprehensionGroundTruth,
-              prTitle: ch.github_pr_title,
-              prDescription: ch.github_pr_description,
-              instructions: ch.instructions,
-            });
-            comprehensionSupplement = compReport as unknown as Record<string, unknown>;
-          } catch (compErr) {
-            console.error('[finalizeReviewSession] Supplementary comprehension scoring failed:', compErr);
-          }
-        }
-
-        const fullReport = {
-          ...scoreReport,
-          implementer_metrics: implementerMetrics,
-          ...(comprehensionSupplement ? { comprehension_supplement: comprehensionSupplement } : {}),
-        };
-        const scoredAt = new Date().toISOString();
-        await c.env.DB.prepare(
-          `UPDATE review_sessions SET score_report = ?1, status = 'scored', updated_at = ?2 WHERE id = ?3`,
-        )
-          .bind(JSON.stringify(fullReport), scoredAt, session.id)
-          .run();
-
-        // Propagate score to challenge_submission
-        const sub = await c.env.DB.prepare(
-          `SELECT id FROM challenge_submissions
-           WHERE assessment_id = ?1 AND challenge_id = ?2 LIMIT 1`,
-        )
-          .bind(session.assessment_id, session.challenge_id)
-          .first<{ id: string }>();
-
-        if (sub) {
-          await c.env.DB.prepare(
-            `UPDATE challenge_submissions
-             SET score = ?1, feedback = ?2, scored_at = ?3, updated_at = ?3
-             WHERE id = ?4`,
-          )
-            .bind(Math.round(scoreReport.overall.score), scoreReport.overall.narrative, scoredAt, sub.id)
-            .run();
-
-          await c.env.DB.prepare(
-            `UPDATE assessments
-             SET score = (
-               SELECT AVG(score) FROM challenge_submissions
-               WHERE assessment_id = ?1 AND score IS NOT NULL
-             ), updated_at = ?2
-             WHERE id = ?1`,
-          )
-            .bind(session.assessment_id, scoredAt)
-            .run();
-        }
-
-        console.log(`[finalizeReviewSession] Scoring complete for session ${session.id}: ${scoreReport.overall.score}/100 (${scoreReport.overall.band})`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[finalizeReviewSession] Scoring failed for session ${session.id}:`, msg);
-        await c.env.DB.prepare(
-          `UPDATE review_sessions SET status = 'scoring_failed', updated_at = ?1 WHERE id = ?2`,
-        )
-          .bind(new Date().toISOString(), session.id)
-          .run();
-      }
-    })();
-
-    c.executionCtx.waitUntil(scoringPromise);
+    c.executionCtx.waitUntil(
+      scoreAndPropagate({
+        env: c.env,
+        sessionId: session.id,
+        assessmentId: session.assessment_id,
+        challengeId: session.challenge_id,
+        transcript,
+        scope: 'finalizeReviewSession',
+      }),
+    );
   } else {
     console.warn('[finalizeReviewSession] No API key configured — scoring skipped for session:', session.id);
   }

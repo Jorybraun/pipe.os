@@ -37,6 +37,7 @@ import { useCandidateProfile } from "../hooks/useCandidateProfile";
 import { useApiClient } from "../hooks/useApiClient";
 import type { ProfileChallenge, ReviewSessionListItem } from "../lib/api/types";
 import { ReviewSessionReport } from "../components/Analytics/ReviewSessionReport";
+import { getReviewSessionStatusColors } from "../lib/reviewSessionStatus";
 
 // ============================================================================
 // Local types
@@ -153,17 +154,8 @@ function TypeBadge({ type }: { type: string }): JSX.Element {
   );
 }
 
-const REVIEW_SESSION_STATUS_COLORS: Record<string, { text: string; bg: string; border: string }> = {
-  pending: { text: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)' },
-  in_progress: { text: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.3)' },
-  scoring: { text: '#a78bfa', bg: 'rgba(167,139,250,0.1)', border: 'rgba(167,139,250,0.3)' },
-  scored: { text: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.3)' },
-  scoring_failed: { text: '#f87171', bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.3)' },
-};
-
 function ReviewSessionStatusBadge({ status }: { status: string }): JSX.Element {
-  const fallback = { text: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)' };
-  const colors = REVIEW_SESSION_STATUS_COLORS[status] ?? fallback;
+  const colors = getReviewSessionStatusColors(status);
   const label =
     status === 'in_progress'
       ? 'In Progress'
@@ -978,6 +970,15 @@ export default function CandidateProfilePage(): JSX.Element {
       setTimeout(() => setIsAiGenerating(false), 1000);
     }
   }, [selectedTab, aiBlocks.length, isAiGenerating]);
+
+  useEffect(() => {
+    if (!viewingReviewSession) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setViewingReviewSession(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewingReviewSession]);
 
   // ── Loading skeleton ────────────────────────────────────────────────────────
   if (isLoading && !candidate) {
@@ -1959,6 +1960,9 @@ export default function CandidateProfilePage(): JSX.Element {
       {/* Review Session Report Modal */}
       {viewingReviewSession && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="review-session-report-heading"
           style={{
             position: 'fixed',
             inset: 0,
@@ -1985,6 +1989,12 @@ export default function CandidateProfilePage(): JSX.Element {
               flexDirection: 'column',
             }}
           >
+            <h2
+              id="review-session-report-heading"
+              style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}
+            >
+              Review Session Report
+            </h2>
             <ReviewSessionReport session={viewingReviewSession} />
           </div>
         </div>

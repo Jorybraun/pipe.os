@@ -3,7 +3,7 @@
  * and captures the recruiter's answer.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 
 interface GapFillModalProps {
@@ -27,10 +27,21 @@ export function GapFillModal({ question, onSubmit, onClose }: GapFillModalProps)
     }
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div
       onClick={onClose}
       data-testid="gap-fill-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="gap-fill-modal-title"
       style={{
         position: 'fixed',
         inset: 0,
@@ -56,7 +67,7 @@ export function GapFillModal({ question, onSubmit, onClose }: GapFillModalProps)
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
-            <div style={{ fontSize: 11, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
+            <div id="gap-fill-modal-title" style={{ fontSize: 11, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
               CLARIFY ATTRIBUTE
             </div>
             <div style={{ fontSize: 13, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>

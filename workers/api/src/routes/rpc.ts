@@ -425,7 +425,7 @@ rpcAuth.post('/get-challenge', async (c) => {
   // Adjust order to account for synthetic entries
   const dbOrder = order - syntheticCount;
 
-  // Check if this stage is an INGESTION stage — skip it in candidate flow
+  // Check if this stage is an OPEN_SOURCE stage — skip it in candidate flow
   const stageTypeCheck = await c.env.DB.prepare(
     `SELECT stage_type FROM stages WHERE id = ?1`
   ).bind(candidate.current_stage_id).first<{ stage_type: string | null }>();

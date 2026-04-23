@@ -113,6 +113,26 @@
 			//   { "binding": "STORAGE", "bucket_name": "pipe-assets-staging" }
 			// ]
 		},
+		"test": {
+			"name": "pipe-api-test",
+			"vars": {
+				"APP_BASE_URL": "https://pipe-app-test.pages.dev",
+				"ENV": "test"
+			}
+			// After running the one-time bootstrap in scripts/bootstrap-test-env.sh,
+			// fill the IDs returned by wrangler and uncomment the bindings below.
+			// "d1_databases": [
+			//   { "binding": "DB", "database_name": "pipe-db-test", "database_id": "<TEST_DB_ID>", "migrations_dir": "migrations" }
+			// ],
+			// "r2_buckets": [
+			//   { "binding": "STORAGE", "bucket_name": "pipe-assets-test" }
+			// ],
+			// "vectorize": [
+			//   { "binding": "REPO_INDEX", "index_name": "repo-profiles-test" },
+			//   { "binding": "CANDIDATE_INDEX", "index_name": "candidate-profiles-test" },
+			//   { "binding": "ROLE_INDEX", "index_name": "role-profiles-test" }
+			// ]
+		},
 		"production": {
 			"name": "pipe-api",
 			"vars": {
