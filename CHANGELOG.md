@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+**Task B — Role Discovery Agent:**
+- Role Discovery agent now uses 6 calibrated probes instead of open-ended Six Domains exploration
+- Role Context Document (RCD) is now the primary synthesis artifact
+- Added calibration review UI for recruiters to flag and correct RCD attributes
+- Added gap-filling agent for targeted clarifying questions
+
+**Task C — Code Review Golden Path:**
+- CODE_REVIEW stages now create review session on stage entry
+- New review session endpoints: `/rpc/review/session/init`, `/message`, `/complete`
+- Added dedicated review session page with diff + chat interface
+- Recruiter dashboard now shows review session status, score, and transcript
+
+**Infrastructure & Docs:**
 - Phase 5 CI/CD: GitHub Actions workflows for CI, staging deploy, and production deploy
 - ADR-041: Cloudflare-native deployment with Wrangler (drops Terraform)
 - `workers/api/wrangler.jsonc` environments: `staging` and `production`

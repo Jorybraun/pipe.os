@@ -505,6 +505,73 @@ it("should update status to ACTIVE when all stages are configured", () => {});
 3. Simple getter/setter methods
 4. Framework code (React, Amplify)
 
+## Testing Anti-Patterns (DO NOT USE)
+
+The following patterns create flaky, non-deterministic tests. Never use them.
+
+### ❌ No Timeouts, Sleeps, or Delays
+
+```typescript
+// FORBIDDEN — flaky, non-deterministic
+await new Promise(r => setTimeout(r, 1000));
+await page.waitForTimeout(500);
+await sleep(200);
+
+// FORBIDDEN — racing against time
+await Promise.race([fetchData(), new Promise((_, reject) => setTimeout(reject, 5000))]);
+```
+
+**Why:** Tests that depend on timing pass on fast machines and fail on slow ones. The project has auth tokens and mocks for all external dependencies — there is never a need to "wait" for something.
+
+### ❌ No Conditional Assertions
+
+```typescript
+// FORBIDDEN — test outcome depends on runtime state
+if (process.env.MOCK_AI) {
+  expect(result).toBe('mock');
+} else {
+  expect(result).toBe('real');
+}
+
+// FORBIDDEN — conditional branching in test body
+const hasFeature = await checkFeatureFlag();
+if (hasFeature) {
+  expect(screen.getByText('New')).toBeInTheDocument();
+}
+```
+
+**Why:** A test should have exactly one code path. If the assertion depends on a condition, write two separate tests — one for each branch.
+
+### ❌ No Conditional Test Skipping
+
+```typescript
+// FORBIDDEN — tests that sometimes run and sometimes don't
+it.skip('should work', () => { ... });
+it.only('should work', () => { ... });
+```
+
+**Why:** Skipped or focused tests rot. They break silently and block CI. If a test is broken, fix it or delete it.
+
+### ✅ Deterministic Alternatives
+
+| Bad Pattern | Good Pattern |
+|---|---|
+| `setTimeout` to wait for async | Mock the async dependency and resolve synchronously |
+| `page.waitForTimeout` | Use Playwright's built-in auto-waiting (`expect(locator).toBeVisible()`) |
+| `if (condition) expect(...)` | Write two tests, or use `test.each` for parameterized cases |
+| `Promise.race` with timeout | Return a resolved mock directly; tests should never wait on real time |
+| Polling with `setInterval` | Use `waitFor` from testing-library with a mocked state update |
+
+### End-to-End Deterministic Tests
+
+E2E tests must be fully deterministic:
+- **Fixed data:** Seed the database with the exact same fixtures every run
+- **Fixed auth:** Use the same test tokens (stored in `playwright/.auth/`)
+- **Fixed environment:** `MOCK_AI=true` for deterministic LLM responses
+- **No external dependencies:** All APIs, databases, and AI calls are mocked or use local dev bindings
+
+If a test cannot be made deterministic, it should be a manual test procedure, not an automated test.
+
 ## Running Tests
 
 ```bash
