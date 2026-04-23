@@ -3,6 +3,7 @@
  *
  * POST /api/v1/search/candidates  — search candidates by role, repo, or free text
  * POST /api/v1/search/repos       — search repos by role, candidate, or free text
+ * POST /api/v1/search/roles       — search roles by candidate, repo, or free text
  *
  * Query vector resolution (first match wins):
  *   1. roleContextId → role_contexts.embedding_json
@@ -18,6 +19,12 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
 import { parseEmbeddingJson } from '../lib/embedding/cosine';
+import { preprocessForEmbedding } from '../lib/embedding/preprocess';
+import {
+  matchReposVectorNative,
+  matchCandidatesVectorNative,
+  matchRolesVectorNative,
+} from '../lib/match/matchVectorNative';
 import type { Env, Variables } from '../types';
 
 const search = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -39,8 +46,15 @@ const repoSearchSchema = z.object({
   limit: z.number().int().positive().max(100).default(20),
 });
 
+const roleSearchSchema = z.object({
+  candidateId: z.string().optional(),
+  repoId: z.number().int().positive().optional(),
+  roleContextId: z.string().optional(),
+  query: z.string().min(1).optional(),
+  limit: z.number().int().positive().max(100).default(20),
+});
+
 const BGE_MODEL = '@cf/baai/bge-large-en-v1.5';
-const BGE_QUERY_PREFIX = 'Represent this sentence for searching relevant passages: ';
 
 interface VectorSource {
   vector: number[];
@@ -89,8 +103,9 @@ async function resolveQueryVector(
 
   if (query) {
     try {
+      const normalized = preprocessForEmbedding(query, 'query');
       const embedResult = (await ai.run(BGE_MODEL, {
-        text: [BGE_QUERY_PREFIX + query],
+        text: [normalized],
       })) as { data?: number[][] };
       const vector = embedResult?.data?.[0];
       if (vector && Array.isArray(vector) && vector.length === 1024) {
@@ -135,65 +150,25 @@ search.post('/candidates', async (c) => {
     return apiError(c, 'NOT_FOUND', 'no embedding found for the provided source, and query embed failed');
   }
 
-  let matches: Array<{ id: string; score: number }> = [];
-  try {
-    const result = await c.env.CANDIDATE_INDEX.query(source.vector, { topK: limit });
-    for (const m of result?.matches ?? []) {
-      const idMatch = m.id.match(/^candidate_(.+)$/);
-      if (idMatch?.[1]) {
-        matches.push({ id: idMatch[1], score: m.score });
-      }
-    }
-  } catch (err) {
-    console.error('[search/candidates] vectorize query failed:', err);
-    return apiError(c, 'INTERNAL_ERROR', 'vector search failed');
-  }
+  const hydrated = await matchCandidatesVectorNative({
+    db: c.env.DB,
+    targetIndex: c.env.CANDIDATE_INDEX,
+    queryVector: source.vector,
+    topK: limit,
+    ownerId: userId,
+  });
 
-  if (matches.length === 0) {
-    return c.json({ candidates: [], source: { type: source.sourceType, id: source.sourceId } });
-  }
-
-  const placeholders = matches.map(() => '?').join(', ');
-  const { results } = await c.env.DB.prepare(
-    `SELECT
-       c.id, c.name, c.email, c.pipeline_id,
-       ci.status, ci.candidate_searchable_profile, ci.triangulated_score,
-       p.name AS pipeline_name
-     FROM candidates c
-     LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
-     JOIN pipelines p ON p.id = c.pipeline_id
-     WHERE c.id IN (${placeholders})
-       AND p.owner_id = ?`
-  ).bind(...matches.map((m) => m.id), userId).all<{
-    id: string;
-    name: string;
-    email: string;
-    pipeline_id: string;
-    status: string | null;
-    candidate_searchable_profile: string | null;
-    triangulated_score: number | null;
-    pipeline_name: string;
-  }>();
-
-  const rowMap = new Map(results.map((r) => [r.id, r]));
-
-  const candidates = matches
-    .map((m) => {
-      const row = rowMap.get(m.id);
-      if (!row) return null;
-      return {
-        candidateId: row.id,
-        name: row.name,
-        email: row.email,
-        pipelineId: row.pipeline_id,
-        pipelineName: row.pipeline_name,
-        status: row.status ?? 'pending',
-        searchableProfile: row.candidate_searchable_profile ?? '',
-        triangulatedScore: row.triangulated_score,
-        score: m.score,
-      };
-    })
-    .filter(Boolean);
+  const candidates = hydrated.map((m) => ({
+    candidateId: m.id,
+    name: m.name,
+    email: m.email,
+    pipelineId: m.pipelineId,
+    pipelineName: m.pipelineName,
+    status: m.status,
+    searchableProfile: m.searchableProfile ?? '',
+    triangulatedScore: m.triangulatedScore,
+    score: m.score,
+  }));
 
   return c.json({
     candidates,
@@ -204,7 +179,6 @@ search.post('/candidates', async (c) => {
 // ─── POST /api/v1/search/repos ───────────────────────────────────────────────
 
 search.post('/repos', async (c) => {
-  const userId = c.var.userId;
   let body: unknown;
   try {
     body = await c.req.json();
@@ -232,74 +206,83 @@ search.post('/repos', async (c) => {
     return apiError(c, 'NOT_FOUND', 'no embedding found for the provided source, and query embed failed');
   }
 
-  let matches: Array<{ id: number; score: number }> = [];
-  try {
-    const result = await c.env.REPO_INDEX.query(source.vector, {
-      topK: limit,
-      filter: { disqualified: 0 },
-    });
-    for (const m of result?.matches ?? []) {
-      const idMatch = m.id.match(/^repo_(\d+)$/);
-      if (idMatch?.[1]) {
-        matches.push({ id: Number(idMatch[1]), score: m.score });
-      }
-    }
-  } catch (err) {
-    console.error('[search/repos] vectorize query failed:', err);
-    return apiError(c, 'INTERNAL_ERROR', 'vector search failed');
-  }
+  const hydrated = await matchReposVectorNative({
+    db: c.env.DB,
+    targetIndex: c.env.REPO_INDEX,
+    queryVector: source.vector,
+    topK: limit,
+    metadataFilters: { disqualified: 0 },
+  });
 
-  if (matches.length === 0) {
-    return c.json({ repos: [], source: { type: source.sourceType, id: source.sourceId } });
-  }
-
-  const placeholders = matches.map(() => '?').join(', ');
-  const { results } = await c.env.DB.prepare(
-    `SELECT
-       r.id, r.full_name, r.github_url, r.description, r.primary_language,
-       r.stars, r.seniority_band, r.detected_domain,
-       es.challenge_suitability_verdict, es.repo_searchable_profile
-     FROM qualified_repos r
-     LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id
-     WHERE r.id IN (${placeholders})
-       AND r.disqualified = 0`
-  ).bind(...matches.map((m) => m.id)).all<{
-    id: number;
-    full_name: string;
-    github_url: string;
-    description: string | null;
-    primary_language: string;
-    stars: number;
-    seniority_band: string | null;
-    detected_domain: string | null;
-    challenge_suitability_verdict: string | null;
-    repo_searchable_profile: string | null;
-  }>();
-
-  const rowMap = new Map(results.map((r) => [r.id, r]));
-
-  const repos = matches
-    .map((m) => {
-      const row = rowMap.get(m.id);
-      if (!row) return null;
-      return {
-        repoId: row.id,
-        fullName: row.full_name,
-        githubUrl: row.github_url,
-        description: row.description,
-        primaryLanguage: row.primary_language,
-        stars: row.stars,
-        seniorityBand: row.seniority_band,
-        detectedDomain: row.detected_domain,
-        challengeSuitability: row.challenge_suitability_verdict,
-        searchableProfile: row.repo_searchable_profile ?? '',
-        score: m.score,
-      };
-    })
-    .filter(Boolean);
+  const repos = hydrated.map((m) => ({
+    repoId: Number(m.id),
+    fullName: m.fullName,
+    githubUrl: m.githubUrl,
+    description: m.description,
+    primaryLanguage: m.primaryLanguage,
+    stars: m.stars,
+    seniorityBand: m.seniorityBand,
+    detectedDomain: m.detectedDomain,
+    challengeSuitability: null,
+    searchableProfile: m.repoSearchableProfile ?? '',
+    score: m.score,
+  }));
 
   return c.json({
     repos,
+    source: { type: source.sourceType, id: source.sourceId },
+  });
+});
+
+// ─── POST /api/v1/search/roles ───────────────────────────────────────────────
+
+search.post('/roles', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'invalid JSON body');
+  }
+
+  const parsed = roleSearchSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'invalid body');
+  }
+
+  const { candidateId, repoId, roleContextId, query, limit } = parsed.data;
+  if (!candidateId && !repoId && !roleContextId && !query) {
+    return apiError(c, 'VALIDATION_ERROR', 'provide at least one of candidateId, repoId, roleContextId, or query');
+  }
+
+  const source = await resolveQueryVector(c.env.DB, c.env.AI, {
+    roleContextId,
+    repoId,
+    candidateId,
+    query,
+  });
+  if (!source) {
+    return apiError(c, 'NOT_FOUND', 'no embedding found for the provided source, and query embed failed');
+  }
+
+  const hydrated = await matchRolesVectorNative({
+    db: c.env.DB,
+    targetIndex: c.env.ROLE_INDEX,
+    queryVector: source.vector,
+    topK: limit,
+  });
+
+  const roles = hydrated.map((m) => ({
+    roleId: m.id,
+    roleTitle: m.roleTitle,
+    roleSearchableProfile: m.roleSearchableProfile,
+    seniorityBand: m.seniorityBand,
+    detectedDomain: m.detectedDomain,
+    pipelineId: m.pipelineId,
+    score: m.score,
+  }));
+
+  return c.json({
+    roles,
     source: { type: source.sourceType, id: source.sourceId },
   });
 });

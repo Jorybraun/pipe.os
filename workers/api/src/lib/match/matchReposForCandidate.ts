@@ -1,52 +1,50 @@
 /**
  * matchReposForCandidate — picks the best repo + PR + issue for a single
- * candidate using the candidate's key_concepts (structured filter + graph
- * score) and an optional vector rerank against REPO_INDEX.
+ * candidate using vector-native ANN as the primary retrieval mechanism,
+ * with the SQL graph matcher as a structured guardrail fallback.
  *
  * Called from the resume-upload hook after the Candidate Discovery agent
  * produces a candidate_searchable_profile + key_concepts. Writes are the
  * caller's responsibility — this function is a pure resolver.
  *
  * Flow:
- *   1. Build a MatchRequest from key_concepts (seniority, primary_language,
- *      mustHaveSkills, niceToHaveSkills, detected_domain).
- *   2. Call matchRepos(db, req) — returns top N by graph score.
- *   3. Optional vector rerank: embed the candidate profile with the BGE query
- *      prefix, query REPO_INDEX for topK, build a lookup of cosine scores,
- *      blend with the graph score. If no ai/vectorize is provided, skip the
- *      rerank and return the raw matchRepos ordering.
- *   4. Reuse autoStageBuilder's pickReviewPr + pickImplementationIssue to
- *      resolve a PR (CODE_REVIEW) and issue (CODE_IMPLEMENTATION) from the
- *      chosen repo.
+ *   1. Primary: Call matchReposVectorNative with the candidate profile
+ *      (preprocessed & embedded internally) against REPO_INDEX. Metadata
+ *      filters (disqualified, primaryLanguage, seniorityBand) narrow the
+ *      ANN search.
+ *   2. Guardrail: If ANN returns < 5 results, also run matchRepos SQL
+ *      graph matcher from key_concepts.
+ *   3. Blend: Union of ANN and SQL results. Intersection repos are blended
+ *      with the tunable cosineWeight. ANN-only repos use the raw ANN score.
+ *      SQL-only repos use the normalized graph score.
+ *   4. Pick PR + issue from the winning repo via autoStageBuilder.
  *
- * The per-candidate row writes to `candidate_challenge_assignment` happen
- * in the orchestration layer (hooks/resumeUpload) — this module returns a
- * plain resolver result.
- *
- * v1 scope: candidate-side query only. Role-side blending for `hybrid`
- * match_philosophy is deferred — no ROLE_INDEX exists yet and role-side
- * Gemma-narrated text isn't stored at request time. Callers that want
- * `hybrid` get the same path as `tailored` until role-side search ships.
- * See STRATEGY.md Decision Log 2026-04-21.
+ * v2: Flipped primary path to REPO_INDEX ANN (matchReposVectorNative).
+ *     SQL graph matcher (matchRepos) is the fallback when ANN is sparse.
  */
 
 import type { CandidateKeyConcepts } from '../candidateDiscovery/agent';
 import { matchRepos, type MatchedRepo, type MatchRequest } from '../repoDiscovery/matchRepos';
+import {
+  matchReposVectorNative,
+  queryVectorIndex,
+  type HydratedRepoMatch,
+} from './matchVectorNative';
 import { pickReviewPr, pickImplementationIssue } from './autoStageBuilder';
 
 export interface MatchReposForCandidateInput {
   db: D1Database;
-  /** REPO_INDEX binding — optional; rerank is skipped if missing. */
+  /** REPO_INDEX binding — optional; fallback to SQL if missing. */
   vectorize?: VectorizeIndex | undefined;
-  /** AI binding for BGE embed — optional; rerank is skipped if missing. */
+  /** AI binding for BGE embed — optional; fallback to SQL if missing. */
   ai?: Ai | undefined;
   candidateProfile: string;
   keyConcepts: CandidateKeyConcepts;
-  /** How many repos matchRepos considers before rerank. */
+  /** How many repos the SQL graph matcher considers. */
   candidateLimit?: number;
-  /** How many vector neighbours to pull from REPO_INDEX for rerank. */
+  /** How many vector neighbours to pull from REPO_INDEX. */
   rerankTopK?: number;
-  /** Weight of cosine score in the blended ranking (0..1). Default 0.5. */
+  /** Weight of the ANN score in the blended ranking (0..1). Default 0.6. */
   cosineWeight?: number;
 }
 
@@ -55,20 +53,17 @@ export interface MatchReposForCandidateResult {
     repoId: number;
     fullName: string;
     githubUrl: string;
-    /** Combined graph score + cosine similarity (or raw graph score if no rerank). */
+    /** Blended ANN + normalized graph score (or raw ANN / normalized graph if single source). */
     score: number;
-    /** Raw cosine distance from REPO_INDEX when rerank ran, else null. */
+    /** Raw cosine distance from REPO_INDEX when ANN ran, else null. */
     cosine: number | null;
     rationale: string;
   };
   review: { prNumber: number; prTitle: string } | null;
   implementation: { issueNumber: number; issueTitle: string } | null;
-  /** Top N candidates (post-rerank) for explainability + debugging. */
+  /** Top N candidates (post-blend) for explainability + debugging. */
   shortlist: Array<{ repoId: number; fullName: string; score: number; cosine: number | null }>;
 }
-
-const BGE_MODEL = '@cf/baai/bge-large-en-v1.5';
-const BGE_QUERY_PREFIX = 'Represent this sentence for searching relevant passages: ';
 
 function buildMatchRequestFromCandidate(
   kc: CandidateKeyConcepts,
@@ -84,40 +79,17 @@ function buildMatchRequestFromCandidate(
   };
 }
 
-async function embedQuery(ai: Ai, text: string): Promise<number[] | null> {
-  const queryText = BGE_QUERY_PREFIX + text;
-  try {
-    const embedResult = (await ai.run(BGE_MODEL, { text: [queryText] })) as {
-      data?: number[][];
-    };
-    const vector = embedResult?.data?.[0];
-    if (!vector || !Array.isArray(vector) || vector.length !== 1024) return null;
-    return vector;
-  } catch (err) {
-    console.error('[matchReposForCandidate] query embed failed:', err);
-    return null;
-  }
+/** Graph scores from matchRepos typically range 0.4–0.8; min-max normalize to 0..1. */
+function normalizeGraphScore(score: number): number {
+  const minExpected = 0.3;
+  const maxExpected = 0.9;
+  return clamp01((score - minExpected) / (maxExpected - minExpected));
 }
 
-async function fetchCosineScores(
-  vectorize: VectorizeIndex,
-  queryVector: number[],
-  topK: number,
-): Promise<Map<number, number>> {
-  const scores = new Map<number, number>();
-  try {
-    const result = await vectorize.query(queryVector, {
-      topK,
-      filter: { disqualified: 0 },
-    });
-    for (const m of result?.matches ?? []) {
-      const idMatch = m.id.match(/^repo_(\d+)$/);
-      if (idMatch?.[1]) scores.set(Number(idMatch[1]), m.score);
-    }
-  } catch (err) {
-    console.error('[matchReposForCandidate] vectorize.query failed:', err);
-  }
-  return scores;
+function clamp01(n: number): number {
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
 }
 
 export async function matchReposForCandidate(
@@ -131,7 +103,7 @@ export async function matchReposForCandidate(
     keyConcepts,
     candidateLimit = 10,
     rerankTopK = 50,
-    cosineWeight = 0.5,
+    cosineWeight = 0.6,
   } = input;
 
   if (keyConcepts.mustHaveSkills.length === 0) {
@@ -140,70 +112,152 @@ export async function matchReposForCandidate(
     );
   }
 
+  // ─── Stage 1: Vector-native ANN primary retrieval ───────────────────────────
+  let annMatches: HydratedRepoMatch[] = [];
+  let annScoreMap = new Map<number, number>(); // fallback raw scores if hydration fails
+
+  if (ai && vectorize) {
+    try {
+      const metadataFilters: Record<string, string | number | boolean> = {
+        disqualified: 0,
+      };
+      if (keyConcepts.primary_language) {
+        metadataFilters.primaryLanguage = keyConcepts.primary_language;
+      }
+      if (keyConcepts.seniority) {
+        metadataFilters.seniorityBand = keyConcepts.seniority;
+      }
+
+      annMatches = await matchReposVectorNative({
+        db,
+        targetIndex: vectorize,
+        queryText: candidateProfile,
+        topK: rerankTopK,
+        ai,
+        metadataFilters,
+      });
+    } catch (err) {
+      console.error('[matchReposForCandidate] ANN primary retrieval failed:', err);
+      annMatches = [];
+    }
+
+    // If hydration yielded nothing (e.g., test stubs with partial D1 stubs),
+    // fall back to raw index scores so we can still blend with SQL graph results.
+    if (annMatches.length === 0) {
+      try {
+        const rawMatches = await queryVectorIndex({
+          targetIndex: vectorize,
+          queryText: candidateProfile,
+          topK: rerankTopK,
+          ai,
+          metadataFilters: { disqualified: 0 },
+        });
+        for (const m of rawMatches) {
+          const id = Number(m.id);
+          if (Number.isFinite(id)) annScoreMap.set(id, m.score);
+        }
+      } catch (err) {
+        console.error('[matchReposForCandidate] raw vector index query failed:', err);
+      }
+    }
+  }
+
+  // ─── Stage 2: Structured SQL guardrail (always run for blending / fallback) ─
   const req = buildMatchRequestFromCandidate(keyConcepts, candidateLimit);
   const graphMatches = await matchRepos(db, req);
-  if (graphMatches.length === 0) {
+
+  if (annMatches.length === 0 && annScoreMap.size === 0 && graphMatches.length === 0) {
     throw new Error(
       `matchReposForCandidate: no candidate repos for seniority=${keyConcepts.seniority}, lang=${keyConcepts.primary_language}, must=${keyConcepts.mustHaveSkills.join(',')}`,
     );
   }
 
-  // Optional rerank by cosine.
-  let cosineScores: Map<number, number> = new Map();
-  if (ai && vectorize) {
-    const queryVector = await embedQuery(ai, candidateProfile);
-    if (queryVector) {
-      cosineScores = await fetchCosineScores(vectorize, queryVector, rerankTopK);
-    }
+  // ─── Stage 3: Blend scores ──────────────────────────────────────────────────
+  const annMap = new Map<number, HydratedRepoMatch>();
+  for (const m of annMatches) {
+    const id = Number(m.id);
+    if (Number.isFinite(id)) annMap.set(id, m);
   }
 
-  const blended = graphMatches.map((m) => {
-    const cos = cosineScores.get(m.id);
-    const hasCos = typeof cos === 'number' && Number.isFinite(cos);
-    const blendedScore = hasCos
-      ? m.score * (1 - cosineWeight) + (cos as number) * cosineWeight
-      : m.score;
+  const sqlMap = new Map<number, MatchedRepo>();
+  for (const m of graphMatches) {
+    sqlMap.set(m.id, m);
+  }
+
+  const allRepoIds = new Set<number>([...annMap.keys(), ...annScoreMap.keys(), ...sqlMap.keys()]);
+
+  const blended = Array.from(allRepoIds).map((repoId) => {
+    const ann = annMap.get(repoId);
+    const rawScore = annScoreMap.get(repoId);
+    const sql = sqlMap.get(repoId);
+
+    const annScore = ann ? ann.score : typeof rawScore === 'number' ? rawScore : null;
+    const graphScore = sql ? sql.score : null;
+
+    let score: number;
+    if (annScore !== null && graphScore !== null) {
+      score = annScore * cosineWeight + normalizeGraphScore(graphScore) * (1 - cosineWeight);
+    } else if (annScore !== null) {
+      score = annScore;
+    } else if (graphScore !== null) {
+      score = normalizeGraphScore(graphScore);
+    } else {
+      score = 0;
+    }
+
     return {
-      match: m,
-      cosine: hasCos ? (cos as number) : null,
-      blendedScore,
+      repoId,
+      fullName: ann?.fullName ?? sql?.fullName ?? '',
+      githubUrl: ann?.githubUrl ?? sql?.githubUrl ?? '',
+      score,
+      cosine: annScore,
+      matchedMustSkills: sql?.matchedMustSkills ?? [],
     };
   });
-  blended.sort((a, b) => b.blendedScore - a.blendedScore);
+
+  blended.sort((a, b) => b.score - a.score);
 
   const winner = blended[0]!;
-  const top: MatchedRepo = winner.match;
+  const topRepoId = winner.repoId;
 
-  // Best-effort PR + issue — failure to find either is a partial result, not
-  // a hard error. The caller decides whether to mark the ingestion failed
-  // or let the recruiter-override path fill the gap.
+  // ─── Stage 4: Pick PR + issue for winner ────────────────────────────────────
   const [pr, issue] = await Promise.all([
-    pickReviewPr(db, top.id),
-    pickImplementationIssue(db, top.id, keyConcepts.seniority),
+    pickReviewPr(db, topRepoId),
+    pickImplementationIssue(db, topRepoId, keyConcepts.seniority),
   ]);
 
+  // ─── Stage 5: Build rationale ───────────────────────────────────────────────
   const rationaleParts = [
-    `matched ${top.fullName} (graph ${top.score.toFixed(3)}`,
+    `matched ${winner.fullName} (score ${winner.score.toFixed(3)}`,
     winner.cosine !== null ? `, cosine ${winner.cosine.toFixed(3)}` : '',
     `)`,
-    ` covering ${top.matchedMustSkills.length}/${keyConcepts.mustHaveSkills.length} must-have skill(s)`,
   ];
+
+  if (winner.matchedMustSkills.length > 0) {
+    rationaleParts.push(
+      ` covering ${winner.matchedMustSkills.length}/${keyConcepts.mustHaveSkills.length} must-have skill(s)`,
+    );
+  }
+
+  if ((annMatches.length === 0 && annScoreMap.size === 0) && graphMatches.length > 0) {
+    rationaleParts.push(' [SQL fallback]');
+  }
 
   return {
     repoChoice: {
-      repoId: top.id,
-      fullName: top.fullName,
-      githubUrl: top.githubUrl,
-      score: winner.blendedScore,
+      repoId: topRepoId,
+      fullName: winner.fullName,
+      githubUrl: winner.githubUrl,
+      score: winner.score,
       cosine: winner.cosine,
       rationale: rationaleParts.join(''),
     },
     review: pr,
     implementation: issue,
     shortlist: blended.slice(0, 5).map((b) => ({
-      repoId: b.match.id,
-      fullName: b.match.fullName,
-      score: b.blendedScore,
+      repoId: b.repoId,
+      fullName: b.fullName,
+      score: b.score,
       cosine: b.cosine,
     })),
   };

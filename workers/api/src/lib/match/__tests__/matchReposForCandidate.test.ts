@@ -5,10 +5,19 @@
  * rerank, winner flip when cosine dominates, and empty-must-have guard.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { D1Database } from '@cloudflare/workers-types';
 import { matchReposForCandidate } from '../matchReposForCandidate';
+import { matchReposVectorNative } from '../matchVectorNative';
 import type { CandidateKeyConcepts } from '../../candidateDiscovery/agent';
+
+vi.mock('../matchVectorNative', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../matchVectorNative')>();
+  return {
+    ...actual,
+    matchReposVectorNative: vi.fn(),
+  };
+});
 
 // ─── Shared stub fixtures (same shape as autoStageBuilder.test.ts) ────────────
 
@@ -136,6 +145,27 @@ function buildStubDb(state: DbState): D1Database {
             }
             if (
               normalized.startsWith(
+                'SELECT r.id, r.full_name, r.github_url, r.description, r.primary_language, r.seniority_band, r.detected_domain, r.stars, es.repo_searchable_profile FROM qualified_repos r LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id WHERE r.id IN',
+              )
+            ) {
+              const repoIds = (args as unknown[]).filter((a): a is number => typeof a === 'number');
+              const rows = state.repos
+                .filter((r) => repoIds.includes(r.id))
+                .map((r) => ({
+                  id: r.id,
+                  full_name: r.full_name,
+                  github_url: r.github_url,
+                  description: r.description,
+                  primary_language: r.primary_language,
+                  seniority_band: r.seniority_band,
+                  detected_domain: r.detected_domain,
+                  stars: r.stars,
+                  repo_searchable_profile: null,
+                }));
+              return { results: rows as T[], success: true, meta: {} };
+            }
+            if (
+              normalized.startsWith(
                 'SELECT repo_id, pr_number, pr_url, title, swe_bench_eligible, changed_file_count FROM repo_sample_prs',
               )
             ) {
@@ -232,6 +262,9 @@ function makeVectorize(scores: Record<number, number>): VectorizeIndex {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('matchReposForCandidate', () => {
+  beforeEach(() => {
+    vi.mocked(matchReposVectorNative).mockReset().mockResolvedValue([]);
+  });
   it('returns a repo + PR + issue using graph score only when ai/vectorize are absent', async () => {
     const db = buildStubDb(fixtureState());
     const result = await matchReposForCandidate({
@@ -335,5 +368,71 @@ describe('matchReposForCandidate', () => {
     // embed rejected → cosine scores never fetched → graph winner wins.
     expect(result.repoChoice.repoId).toBe(101);
     expect(result.repoChoice.cosine).toBeNull();
+  });
+
+  it('uses ANN-primary path when matchReposVectorNative returns repos', async () => {
+    const mocked = vi.mocked(matchReposVectorNative);
+    // Return both repos from ANN with 102 scoring higher.
+    // Blending: 101 gets 0.05*0.6 + normalizeGraphScore(0.95)*0.4 ≈ 0.43
+    //           102 gets 0.95*0.6 + normalizeGraphScore(0.725)*0.4 ≈ 0.853
+    mocked.mockResolvedValueOnce([
+      {
+        id: '101',
+        score: 0.05,
+        metadata: {},
+        fullName: 'acme/widgets',
+        githubUrl: 'https://github.com/acme/widgets',
+        description: 'a',
+        primaryLanguage: 'typescript',
+        seniorityBand: 'mid',
+        detectedDomain: 'general',
+        stars: 5000,
+        repoSearchableProfile: null,
+      },
+      {
+        id: '102',
+        score: 0.95,
+        metadata: {},
+        fullName: 'acme/things',
+        githubUrl: 'https://github.com/acme/things',
+        description: null,
+        primaryLanguage: 'typescript',
+        seniorityBand: 'mid',
+        detectedDomain: 'general',
+        stars: 2500,
+        repoSearchableProfile: null,
+      },
+    ]);
+
+    const db = buildStubDb(fixtureState());
+    const result = await matchReposForCandidate({
+      db,
+      ai: makeAi(),
+      vectorize: makeVectorize({}),
+      candidateProfile: 'Jane profile…',
+      keyConcepts: KC,
+    });
+
+    expect(mocked).toHaveBeenCalled();
+    expect(result.repoChoice.repoId).toBe(102);
+    expect(result.repoChoice.cosine).toBe(0.95);
+  });
+
+  it('falls back to SQL graph matcher when matchReposVectorNative returns empty', async () => {
+    const mocked = vi.mocked(matchReposVectorNative);
+    mocked.mockResolvedValueOnce([]);
+
+    const db = buildStubDb(fixtureState());
+    const result = await matchReposForCandidate({
+      db,
+      ai: makeAi(),
+      vectorize: makeVectorize({}),
+      candidateProfile: 'Jane profile…',
+      keyConcepts: KC,
+    });
+
+    expect(mocked).toHaveBeenCalled();
+    // Fallback to graph matching → repo 101 wins on graph score
+    expect(result.repoChoice.repoId).toBe(101);
   });
 });

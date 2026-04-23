@@ -1,18 +1,10 @@
 /**
  * Triangulated Match Scorer — coordinates meaning across Role → Candidate → Repo.
  *
- * Combines three pre-computed alignment signals into a single triangulated score:
- *   1. role_repo_alignment      — from repo_role_alignment cache (ADR-036 §2.3)
- *   2. candidate_repo_fit       — from candidateSituationFit
- *   3. role_candidate_cosine    — cosine(role_searchable_profile, candidate_searchable_profile)
- *
- * Plus a skill_coverage term from the graph matcher for grounding.
- *
- * The formula is philosophy-aware:
- *   - validate:  role_repo_alignment is high (baked at build time);
- *               candidate_repo_fit personalizes it.
- *   - tailored:  role_repo_alignment is ignored; candidate_repo_fit drives selection.
- *   - hybrid:    both contribute proportionally.
+ * Combines pre-computed alignment signals into a single triangulated score.
+ * v2: Adds vector-native signals (vector_role_repo, vector_role_cand, vector_cand_repo)
+ *     with small weights. When vector signals are absent the legacy weight preset
+ *     is used for full backward compatibility.
  *
  * See ADR-040 Meaning-Based Candidate-Repo-Role Triangulation.
  */
@@ -38,6 +30,9 @@ export interface TriangulatedScore {
     candidate_repo_fit: number | null;
     role_candidate_cosine: number | null;
     graph_score: number | null;
+    vector_role_repo: number | null;
+    vector_role_cand: number | null;
+    vector_cand_repo: number | null;
   };
 }
 
@@ -52,18 +47,25 @@ export interface TriangulateMatchInput {
   roleRepoAlignments: Map<number, number>;
   /** Pre-computed role→candidate cosine similarity. */
   roleCandidateCosine: number | null;
+  /** Vector ANN score for role→repo query (optional). */
+  vectorRoleRepo?: number | null;
+  /** Vector ANN score for role→candidate query (optional). */
+  vectorRoleCandidate?: number | null;
+  /** Vector ANN score for candidate→repo query (optional). */
+  vectorCandidateRepo?: number | null;
 }
 
-// ─── Weight presets by philosophy ───────────────────────────────────────────
+// ─── Weight presets ─────────────────────────────────────────────────────────
 
-interface WeightPreset {
+interface LegacyWeightPreset {
   role_repo: number;
   candidate_fit: number;
   role_candidate: number;
   skill_coverage: number;
 }
 
-const WEIGHTS: Record<MatchPhilosophy, WeightPreset> = {
+/** Original weights preserved for backward compatibility when no vector signals are present. */
+const LEGACY_WEIGHTS: Record<MatchPhilosophy, LegacyWeightPreset> = {
   validate: {
     role_repo: 0.35,
     candidate_fit: 0.30,
@@ -84,10 +86,68 @@ const WEIGHTS: Record<MatchPhilosophy, WeightPreset> = {
   },
 };
 
+interface VectorWeightPreset {
+  role_repo: number;
+  candidate_fit: number;
+  role_candidate: number;
+  skill_coverage: number;
+  vector_role_repo: number;
+  vector_role_cand: number;
+  vector_cand_repo: number;
+}
+
+/** New vector-native weights activated when any vector signal is provided. */
+const VECTOR_WEIGHTS: Record<MatchPhilosophy, VectorWeightPreset> = {
+  validate: {
+    role_repo: 0.30,
+    candidate_fit: 0.25,
+    role_candidate: 0.15,
+    skill_coverage: 0.15,
+    vector_role_repo: 0.05,
+    vector_role_cand: 0.05,
+    vector_cand_repo: 0.05,
+  },
+  tailored: {
+    role_repo: 0.00,
+    candidate_fit: 0.45,
+    role_candidate: 0.15,
+    skill_coverage: 0.25,
+    vector_role_repo: 0.05,
+    vector_role_cand: 0.05,
+    vector_cand_repo: 0.05,
+  },
+  hybrid: {
+    role_repo: 0.20,
+    candidate_fit: 0.30,
+    role_candidate: 0.15,
+    skill_coverage: 0.15,
+    vector_role_repo: 0.0667,
+    vector_role_cand: 0.0667,
+    vector_cand_repo: 0.0666,
+  },
+};
+
+function hasVectorSignals(input: TriangulateMatchInput): boolean {
+  return (
+    input.vectorRoleRepo != null ||
+    input.vectorRoleCandidate != null ||
+    input.vectorCandidateRepo != null
+  );
+}
+
 // ─── Main function ──────────────────────────────────────────────────────────
 
 export function triangulateMatch(input: TriangulateMatchInput): TriangulatedScore {
-  const { philosophy, graphResult, situationRankings, roleRepoAlignments, roleCandidateCosine } = input;
+  const {
+    philosophy,
+    graphResult,
+    situationRankings,
+    roleRepoAlignments,
+    roleCandidateCosine,
+    vectorRoleRepo,
+    vectorRoleCandidate,
+    vectorCandidateRepo,
+  } = input;
 
   const winner = graphResult.repoChoice;
   const repoId = winner.repoId;
@@ -107,12 +167,22 @@ export function triangulateMatch(input: TriangulateMatchInput): TriangulatedScor
   };
 
   // Compute triangulated score
-  const w = WEIGHTS[philosophy];
-  const triangulatedScore =
+  const useVectors = hasVectorSignals(input);
+  const w = useVectors ? VECTOR_WEIGHTS[philosophy] : LEGACY_WEIGHTS[philosophy];
+
+  let triangulatedScore =
     w.role_repo * (roleRepoAlignment ?? 0) +
     w.candidate_fit * (candidateRepoFit ?? 0) +
     w.role_candidate * (roleCandidateCosine ?? 0) +
     w.skill_coverage * dimensions.skill_coverage;
+
+  if (useVectors) {
+    const vw = w as VectorWeightPreset;
+    triangulatedScore +=
+      vw.vector_role_repo * (vectorRoleRepo ?? 0) +
+      vw.vector_role_cand * (vectorRoleCandidate ?? 0) +
+      vw.vector_cand_repo * (vectorCandidateRepo ?? 0);
+  }
 
   return {
     repo_id: repoId,
@@ -123,6 +193,9 @@ export function triangulateMatch(input: TriangulateMatchInput): TriangulatedScor
       candidate_repo_fit: candidateRepoFit,
       role_candidate_cosine: roleCandidateCosine,
       graph_score: graphScore,
+      vector_role_repo: vectorRoleRepo ?? null,
+      vector_role_cand: vectorRoleCandidate ?? null,
+      vector_cand_repo: vectorCandidateRepo ?? null,
     },
   };
 }
@@ -154,9 +227,19 @@ export interface BatchTriangulatedScore {
 export function triangulateShortlist(
   input: TriangulateMatchInput,
 ): BatchTriangulatedScore[] {
-  const { philosophy, graphResult, situationRankings, roleRepoAlignments, roleCandidateCosine } = input;
+  const {
+    philosophy,
+    graphResult,
+    situationRankings,
+    roleRepoAlignments,
+    roleCandidateCosine,
+    vectorRoleRepo,
+    vectorRoleCandidate,
+    vectorCandidateRepo,
+  } = input;
 
-  const w = WEIGHTS[philosophy];
+  const useVectors = hasVectorSignals(input);
+  const w = useVectors ? VECTOR_WEIGHTS[philosophy] : LEGACY_WEIGHTS[philosophy];
   const results: BatchTriangulatedScore[] = [];
 
   for (const item of graphResult.shortlist) {
@@ -165,11 +248,19 @@ export function triangulateShortlist(
     const candidateRepoFit = situationRanking?.fit_score ?? null;
     const roleRepoAlignment = roleRepoAlignments.get(repoId) ?? null;
 
-    const score =
+    let score =
       w.role_repo * (roleRepoAlignment ?? 0) +
       w.candidate_fit * (candidateRepoFit ?? 0) +
       w.role_candidate * (roleCandidateCosine ?? 0) +
       w.skill_coverage * normalizeGraphScore(item.score);
+
+    if (useVectors) {
+      const vw = w as VectorWeightPreset;
+      score +=
+        vw.vector_role_repo * (vectorRoleRepo ?? 0) +
+        vw.vector_role_cand * (vectorRoleCandidate ?? 0) +
+        vw.vector_cand_repo * (vectorCandidateRepo ?? 0);
+    }
 
     const clamped = clamp01(score);
     results.push({

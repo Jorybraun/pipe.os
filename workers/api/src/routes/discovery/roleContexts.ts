@@ -19,7 +19,7 @@ import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
-import { callRoleAgent, callRoleAgentStream, mergeKnowledgeState, type RoleAgentResponse } from '../../lib/roleAgent';
+import { callRoleAgent, callRoleAgentStream, mergeKnowledgeState, callGapFillingAgent, type RoleAgentResponse } from '../../lib/roleAgent';
 import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
 import { deriveJobDescriptionFromRcd } from '../../lib/roleAgent/deriveJobDescription';
 import { calibrateRcd } from '../../lib/roleAgent/calibrateRcd';
@@ -29,6 +29,8 @@ import { VertexAIProvider } from '../../lib/llm/vertexAIProvider';
 import { recordAiUsage } from '../../lib/aiUsage';
 import { parseJobDescription } from '../../lib/jdParser';
 import { sendNotificationEmail } from '../../lib/email';
+import { embedAndUpsertRole } from '../../lib/roleDiscovery/embedRole';
+import { buildRoleSearchableProfile } from '../../lib/roleDiscovery/buildRoleProfile';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole, RoleContextDocument } from '../../types';
 
 export const roleContexts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -62,7 +64,7 @@ function now(): string {
  * Best-effort: if embedding fails we log and move on — role discovery
  * must never block on the vector layer.
  */
-async function buildAndStoreRoleEmbedding(
+export async function buildAndStoreRoleEmbedding(
   env: Env,
   roleContextId: string,
   jobDescription: string,
@@ -75,17 +77,47 @@ async function buildAndStoreRoleEmbedding(
   }
 
   try {
-    const embedResult = (await env.AI.run('@cf/baai/bge-large-en-v1.5', {
-      text: [profile],
-    })) as { data?: number[][] };
-    const vector = embedResult?.data?.[0];
-    if (!vector || !Array.isArray(vector) || vector.length !== 1024) {
-      console.warn(`[roleContexts] embed returned bad vector for ${roleContextId}`);
+    // Step 1: persist the searchable profile
+    await env.DB.prepare(
+      `UPDATE role_contexts SET role_searchable_profile = ?, updated_at = ? WHERE id = ?`,
+    ).bind(profile, now(), roleContextId).run();
+
+    // Step 2: read row back for metadata fields
+    const rc = await env.DB.prepare('SELECT * FROM role_contexts WHERE id = ?')
+      .bind(roleContextId)
+      .first<RoleContextRow>();
+    if (!rc) {
+      console.warn(`[roleContexts] role context ${roleContextId} not found after profile update`);
       return;
     }
+
+    // Step 3: build metadata (only non-null values)
+    const metadata: Record<string, string | number | boolean> = {};
+    if (rc.pipeline_id) metadata.pipeline_id = rc.pipeline_id;
+    if (rc.rcd_json) {
+      try {
+        const rcd = JSON.parse(rc.rcd_json) as { technical_context?: { seniority_band?: string } };
+        if (rcd.technical_context?.seniority_band) {
+          metadata.seniority_band = rcd.technical_context.seniority_band;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    // Step 4: embed and upsert via shared library
+    const { vector } = await embedAndUpsertRole({
+      ai: env.AI,
+      vectorize: env.ROLE_INDEX,
+      roleContextId: rc.id,
+      profile,
+      metadata,
+    });
+
+    // Step 5: persist embedding vector and timestamp
     await env.DB.prepare(
-      `UPDATE role_contexts SET role_searchable_profile = ?, embedding_json = ? WHERE id = ?`,
-    ).bind(profile, JSON.stringify(vector), roleContextId).run();
+      `UPDATE role_contexts SET embedding_json = ?, updated_at = ? WHERE id = ?`,
+    ).bind(JSON.stringify(vector), now(), roleContextId).run();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[roleContexts] role embed failed for ${roleContextId}:`, msg);
@@ -116,7 +148,7 @@ async function runRcdSynthesis(
       stakeholder_type: p.participant_role as import('../../types').StakeholderType,
       interviewee_label: p.name || p.participant_role || 'Unknown',
       exchanges: parseJsonColumn<RoleExchange[]>(p.exchanges, []),
-      knowledge_state: parseJsonColumn<Record<string, unknown>>(p.exchanges, {}),
+      knowledge_state: {},
     }));
 
   if (stakeholderTranscripts.length === 0) return null;
@@ -135,7 +167,8 @@ async function runRcdSynthesis(
 
     const rcd = result.rcd;
     const persona = rcd.consumer_slice;
-    const jobDescription = deriveJobDescriptionFromRcd(rcd);
+    const fallbackTitle = typeof baseline.title === 'string' ? baseline.title : '';
+    const jobDescription = deriveJobDescriptionFromRcd(rcd, fallbackTitle);
     const synthesis = typeof persona.archetype === 'string' ? persona.archetype : '';
 
     return {
@@ -152,29 +185,7 @@ async function runRcdSynthesis(
   }
 }
 
-function buildRoleSearchableProfile(
-  jobDescription: string,
-  persona: unknown,
-): string {
-  if (jobDescription && jobDescription.trim().length >= 200) {
-    // Strip markdown headings for density, keep the rest
-    return jobDescription.replace(/^#{1,6}\s+/gm, '').trim();
-  }
-  // Fallback: synthesise from persona
-  const parts: string[] = [];
-  const p = persona as Record<string, unknown> | null;
-  if (p) {
-    const seniority = typeof p.seniority === 'string' ? p.seniority : '';
-    const archetype = typeof p.archetype === 'string' ? p.archetype : '';
-    const mustHave = Array.isArray(p.mustHaveSkills) ? p.mustHaveSkills.join(', ') : '';
-    const niceToHave = Array.isArray(p.niceToHaveSkills) ? p.niceToHaveSkills.join(', ') : '';
-    if (seniority) parts.push(`This role is for a ${seniority} engineer.`);
-    if (archetype) parts.push(`Archetype: ${archetype}.`);
-    if (mustHave) parts.push(`Must-have skills: ${mustHave}.`);
-    if (niceToHave) parts.push(`Nice-to-have skills: ${niceToHave}.`);
-  }
-  return parts.join(' ');
-}
+
 
 /**
  * Log role-discovery AI usage to ai_usage_events. Reads token counts from the
@@ -1284,7 +1295,7 @@ roleContexts.post('/:id/calibrate', async (c) => {
   }
 
   const rcd = row.rcd_json
-    ? parseJsonColumn<RoleContextDocument>(row.rcd_json, null)
+    ? parseJsonColumn<RoleContextDocument | null>(row.rcd_json, null)
     : null;
 
   const exchanges = parseJsonColumn<RoleExchange[]>(participant.exchanges, []);
@@ -1295,7 +1306,7 @@ roleContexts.post('/:id/calibrate', async (c) => {
   const provider = createRoleAgentProvider(c.env);
   const gapResult = await callGapFillingAgent({
     provider,
-    rcd: (rcd ?? {}) as Record<string, unknown>,
+    rcd: (rcd ?? {}) as unknown as Record<string, unknown>,
     flagType,
     domain,
     attribute,
@@ -1359,7 +1370,7 @@ roleContexts.post('/:id/calibrate/respond', async (c) => {
   }
 
   const rcd = row.rcd_json
-    ? parseJsonColumn<RoleContextDocument>(row.rcd_json, null)
+    ? parseJsonColumn<RoleContextDocument | null>(row.rcd_json, null)
     : null;
 
   if (!rcd) {
@@ -1374,7 +1385,7 @@ roleContexts.post('/:id/calibrate/respond', async (c) => {
   const provider = createRoleAgentProvider(c.env);
   const calibrationResult = await calibrateRcd({
     provider,
-    rcd,
+    rcd: rcd as import('../../types').RoleContextDocument,
     flagType,
     domain: domain as import('../../types').Domain,
     attribute,
@@ -1384,9 +1395,11 @@ roleContexts.post('/:id/calibrate/respond', async (c) => {
     stakeholder: (participant.participant_role as import('../../types').StakeholderType) ?? 'HIRING_MANAGER',
   });
 
+  const baselineForCalibrate = parseJsonColumn<Record<string, unknown>>(row.baseline, {});
   const updatedRcd = calibrationResult.rcd;
   const persona = updatedRcd.consumer_slice;
-  const jobDescription = deriveJobDescriptionFromRcd(updatedRcd);
+  const fallbackTitle = typeof baselineForCalibrate.title === 'string' ? baselineForCalibrate.title : '';
+  const jobDescription = deriveJobDescriptionFromRcd(updatedRcd, fallbackTitle);
 
   await c.env.DB.prepare(
     `UPDATE role_contexts
