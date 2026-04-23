@@ -8,13 +8,15 @@
 
 import type { RoleContextDocument } from '../../types';
 
-export function deriveJobDescriptionFromRcd(rcd: RoleContextDocument): string {
+export function deriveJobDescriptionFromRcd(rcd: RoleContextDocument, fallbackTitle?: string): string {
   const { consumer_slice, technical_context, domain_matrix } = rcd;
 
-  // Title — from consumer_slice archetype or fall back to generic
-  const title = consumer_slice.archetype !== 'Not specified'
-    ? consumer_slice.archetype.split(' — ')[0] ?? 'Engineering Role'
-    : 'Engineering Role';
+  // Title — prefer fallback, then archetype prefix, then generic
+  const title = fallbackTitle && fallbackTitle.length > 0
+    ? fallbackTitle
+    : consumer_slice.archetype !== 'Not specified'
+      ? consumer_slice.archetype.split(' — ')[0] ?? 'Engineering Role'
+      : 'Engineering Role';
 
   // Company summary — opportunistically lifted from work domain if available
   const workCell = domain_matrix.HIRING_MANAGER?.work ?? domain_matrix.TEAM_MEMBER?.work;

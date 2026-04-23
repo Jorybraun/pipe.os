@@ -118,6 +118,33 @@ function isConfidence(v: unknown): v is DomainCell['laddering_chains'][number]['
   return v === 'high' || v === 'medium' || v === 'low';
 }
 
+/** Build a fallback DomainCell when LLM re-synthesis is unavailable or fails. */
+function buildFallbackCell(
+  existingCell: DomainCell,
+  domain: Domain,
+  attribute: string,
+  answer: string,
+): DomainCell {
+  return {
+    ...existingCell,
+    coverage: existingCell.coverage === 'not_probed' ? 'sparse' : existingCell.coverage,
+    laddering_chains: [
+      ...existingCell.laddering_chains,
+      {
+        attribute_quote: answer.slice(0, 200),
+        source_exchange_id: 'calibrate-1',
+        consequence: `Clarifying answer on ${attribute}: ${answer.slice(0, 200)}`,
+        value: `Reinforces ${domain} expectations for this role.`,
+        energy_signal: 'medium',
+        confidence: 'medium',
+      },
+    ],
+    summary: existingCell.summary
+      ? `${existingCell.summary} (Updated: ${attribute} — ${answer.slice(0, 120)}).`
+      : `${attribute}: ${answer.slice(0, 200)}`,
+  };
+}
+
 export async function calibrateRcd(input: CalibrateRcdInput): Promise<CalibrateRcdOutput> {
   const { provider, rcd, flagType, domain, attribute, recruiterNote, transcript, answer, stakeholder = 'HIRING_MANAGER' } = input;
 
@@ -125,7 +152,7 @@ export async function calibrateRcd(input: CalibrateRcdInput): Promise<CalibrateR
   if (!answer || answer.trim().length === 0) {
     const gapResult = await callGapFillingAgent({
       provider,
-      rcd: rcd as Record<string, unknown>,
+      rcd: rcd as unknown as Record<string, unknown>,
       flagType,
       domain,
       attribute,
@@ -146,7 +173,7 @@ export async function calibrateRcd(input: CalibrateRcdInput): Promise<CalibrateR
     summary: '',
   };
 
-  let updatedCell: DomainCell = { ...existingCell };
+  let updatedCell: DomainCell;
 
   if (provider) {
     const messages = [
@@ -165,46 +192,10 @@ export async function calibrateRcd(input: CalibrateRcdInput): Promise<CalibrateR
       updatedCell = normalizeCell(parsed);
     } catch (err) {
       console.error('[calibrateRcd] Re-synthesis failed, falling back to manual append:', err);
-      // Fallback: manually append a laddering chain and update summary
-      updatedCell = {
-        ...existingCell,
-        coverage: existingCell.coverage === 'not_probed' ? 'sparse' : existingCell.coverage,
-        laddering_chains: [
-          ...existingCell.laddering_chains,
-          {
-            attribute_quote: answer.slice(0, 200),
-            source_exchange_id: 'calibrate-1',
-            consequence: `Clarifying answer on ${attribute}: ${answer.slice(0, 200)}`,
-            value: `Reinforces ${domain} expectations for this role.`,
-            energy_signal: 'medium',
-            confidence: 'medium',
-          },
-        ],
-        summary: existingCell.summary
-          ? `${existingCell.summary} (Updated: ${attribute} — ${answer.slice(0, 120)}).`
-          : `${attribute}: ${answer.slice(0, 200)}`,
-      };
+      updatedCell = buildFallbackCell(existingCell, domain, attribute, answer);
     }
   } else {
-    // No provider — same manual fallback
-    updatedCell = {
-      ...existingCell,
-      coverage: existingCell.coverage === 'not_probed' ? 'sparse' : existingCell.coverage,
-      laddering_chains: [
-        ...existingCell.laddering_chains,
-        {
-          attribute_quote: answer.slice(0, 200),
-          source_exchange_id: 'calibrate-1',
-          consequence: `Clarifying answer on ${attribute}: ${answer.slice(0, 200)}`,
-          value: `Reinforces ${domain} expectations for this role.`,
-          energy_signal: 'medium',
-          confidence: 'medium',
-        },
-      ],
-      summary: existingCell.summary
-        ? `${existingCell.summary} (Updated: ${attribute} — ${answer.slice(0, 120)}).`
-        : `${attribute}: ${answer.slice(0, 200)}`,
-    };
+    updatedCell = buildFallbackCell(existingCell, domain, attribute, answer);
   }
 
   // Write the updated cell back into the RCD

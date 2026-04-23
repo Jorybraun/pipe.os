@@ -930,7 +930,8 @@ For a question turn:
     "_stories": [],
     "_mustHavesPrioritized": false,
     "_frictionProbed": false,
-    "_dayInLifeProbed": false
+    "_dayInLifeProbed": false,
+    "_probesDelivered": 0
   },
   "domainCoverage": { "why": "none", "work": "none", "team": "none", "bar": "none", "codebase": "none", "process": "none" }
 }

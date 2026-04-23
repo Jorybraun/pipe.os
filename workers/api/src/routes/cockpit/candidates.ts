@@ -328,6 +328,32 @@ candidateOps.get('/:candidateId', async (c) => {
     submissions.map((s) => [s.challenge_id, s])
   );
 
+  // Fetch all review sessions for this candidate
+  const reviewSessionsResult = await db
+    .prepare(
+      `SELECT id, challenge_id, status, current_round, max_rounds, score_report, created_at, updated_at
+       FROM review_sessions
+       WHERE candidate_id = ?`
+    )
+    .bind(candidateId)
+    .all<{
+      id: string;
+      challenge_id: string;
+      status: string;
+      current_round: number;
+      max_rounds: number;
+      score_report: string | null;
+      created_at: string;
+      updated_at: string;
+    }>();
+
+  const reviewSessionsByChallenge = new Map<string, typeof reviewSessionsResult.results>();
+  for (const rs of reviewSessionsResult.results ?? []) {
+    const list = reviewSessionsByChallenge.get(rs.challenge_id) ?? [];
+    list.push(rs);
+    reviewSessionsByChallenge.set(rs.challenge_id, list);
+  }
+
   // Fetch scheduled interviews for this candidate
   const interviewsResult = await db
     .prepare(
@@ -364,6 +390,7 @@ candidateOps.get('/:candidateId', async (c) => {
           ? (JSON.parse(ch.server_config) as Record<string, unknown>)
           : {};
         const mergedConfig = { ...publicConfig, ...serverConfig };
+        const reviewSessions = reviewSessionsByChallenge.get(ch.id) ?? [];
         return {
           id: ch.id,
           type: ch.type,
@@ -383,6 +410,17 @@ candidateOps.get('/:candidateId', async (c) => {
                 scoredAt: sub.scored_at,
               }
             : null,
+          reviewSessions: reviewSessions.map((rs) => ({
+            id: rs.id,
+            status: rs.status,
+            currentRound: rs.current_round,
+            maxRounds: rs.max_rounds,
+            scoreReport: rs.score_report
+              ? (JSON.parse(rs.score_report) as Record<string, unknown>)
+              : null,
+            createdAt: rs.created_at,
+            updatedAt: rs.updated_at,
+          })),
         };
       });
     const interview = interviewsByStage.get(stage.id);

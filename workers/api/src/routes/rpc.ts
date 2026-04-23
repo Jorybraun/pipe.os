@@ -527,7 +527,7 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // SECURITY: Never expose server_config or ground truth.
   // Challenge ID (UUID) is safe — needed for file browser + review session scoping.
-  return c.json({
+  const response: Record<string, unknown> = {
     id: ch.id,
     type: ch.type,
     title: ch.title,
@@ -539,7 +539,16 @@ rpcAuth.post('/get-challenge', async (c) => {
     githubRepoUrl: ch.github_repo_url ?? null,
     githubPrDescription: ch.github_pr_description ?? null,
     devContainerRepoUrl: ch.dev_container_repo_url ?? null,
-  });
+  };
+
+  if ((ch.type as string) === 'CODE_REVIEW') {
+    response.reviewSession = {
+      requiresInit: true,
+      challengeId: ch.id as string,
+    };
+  }
+
+  return c.json(response);
 });
 
 // ── POST /rpc/submit-challenge-response ─────────────────────────────────────

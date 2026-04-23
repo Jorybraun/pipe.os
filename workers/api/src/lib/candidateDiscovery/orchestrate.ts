@@ -396,6 +396,34 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       })
     : undefined;
 
+  // Telemetry: record vector vs LLM signal correlation for empirical calibration
+  // NOTE: match_feedback table (migration 0040) currently lacks columns for
+  // vector_role_repo, vector_cand_repo, and vector_role_cand. If these signals
+  // are promoted to first-class match dimensions, extend the schema.
+  const rawSignals = triangulated.raw_signals as typeof triangulated.raw_signals & {
+    vector_role_repo?: number | null;
+    vector_cand_repo?: number | null;
+    vector_role_cand?: number | null;
+  };
+  console.log(
+    JSON.stringify({
+      event: 'match.telemetry',
+      candidateId,
+      pipelineId,
+      triangulatedScore: triangulated.triangulated_score,
+      vectorSignals: {
+        vector_role_repo: rawSignals.vector_role_repo ?? null,
+        vector_cand_repo: rawSignals.vector_cand_repo ?? null,
+        vector_role_cand: rawSignals.vector_role_cand ?? null,
+      },
+      llmSignals: {
+        role_repo_alignment: rawSignals.role_repo_alignment,
+        candidate_repo_fit: rawSignals.candidate_repo_fit,
+        role_candidate_cosine: rawSignals.role_candidate_cosine,
+      },
+    }),
+  );
+
   // Step 10: Find placeholder stages and write assignments (skip in validate mode)
   if (philosophy !== 'validate') {
     const placeholderStages = await db
