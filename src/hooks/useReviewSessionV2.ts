@@ -80,8 +80,9 @@ async function rpcPost<T>(
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
-export function useReviewSessionV2(initialSessionId?: string | null): UseReviewSessionV2Return {
-  const sessionToken = useSessionToken();
+export function useReviewSessionV2(initialSessionId?: string | null, explicitToken?: string | null): UseReviewSessionV2Return {
+  const contextToken = useSessionToken();
+  const sessionToken = explicitToken ?? contextToken;
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -13,6 +13,8 @@ interface StageShellProps {
   isSubmitting: boolean;
   /** When true, the content area fills the viewport edge-to-edge with no padding or maxWidth. Use for full-bleed challenge types like CODE_REVIEW. */
   fullBleed?: boolean;
+  /** When true, hides the footer navigation. Used by challenge types that control their own flow. */
+  hideFooter?: boolean | undefined;
 }
 
 /**
@@ -29,6 +31,7 @@ export function StageShell({
   canAdvance,
   isSubmitting,
   fullBleed = false,
+  hideFooter = false,
 }: StageShellProps): JSX.Element {
   const { secondsRemaining, formatTime } = useTimer();
 
@@ -133,7 +136,7 @@ export function StageShell({
       </main>
 
       {/* Footer Navigation */}
-      <footer style={{ 
+      {!hideFooter && <footer style={{ 
         padding: '24px 40px', 
         background: 'rgba(12, 12, 14, 0.9)',
         borderTop: '1px solid var(--pipe-border)',
@@ -181,7 +184,7 @@ export function StageShell({
           {isSubmitting ? 'UPLOADING...' : isLastChallenge ? 'FINAL_SUBMIT' : 'NEXT_CHALLENGE'}
           <ChevronRight size={16} />
         </button>
-      </footer>
+      </footer>}
     </div>
   );
 }

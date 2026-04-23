@@ -52,6 +52,9 @@ export interface ChallengeContentDTO {
   githubRepoUrl?: string;
   githubPrDescription?: string;
   codeArtifact?: unknown;
+  reviewSession?: {
+    requiresInit?: boolean;
+  } | null;
 }
 
 export interface FollowUpQuestion {

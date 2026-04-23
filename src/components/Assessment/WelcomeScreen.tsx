@@ -170,6 +170,7 @@ export function WelcomeScreen({
 
         {/* Start button */}
         <button
+          data-testid="start-interview-btn"
           onClick={onStart}
           style={{
             width: '100%',

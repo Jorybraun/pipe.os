@@ -35,7 +35,8 @@ import {
 } from "../components/Analytics/IntelligenceReportBlock";
 import { useCandidateProfile } from "../hooks/useCandidateProfile";
 import { useApiClient } from "../hooks/useApiClient";
-import type { ProfileChallenge } from "../lib/api/types";
+import type { ProfileChallenge, ReviewSessionListItem } from "../lib/api/types";
+import { ReviewSessionReport } from "../components/Analytics/ReviewSessionReport";
 
 // ============================================================================
 // Local types
@@ -148,6 +149,43 @@ function TypeBadge({ type }: { type: string }): JSX.Element {
       }}
     >
       {type}
+    </span>
+  );
+}
+
+const REVIEW_SESSION_STATUS_COLORS: Record<string, { text: string; bg: string; border: string }> = {
+  pending: { text: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)' },
+  in_progress: { text: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.3)' },
+  scoring: { text: '#a78bfa', bg: 'rgba(167,139,250,0.1)', border: 'rgba(167,139,250,0.3)' },
+  scored: { text: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.3)' },
+  scoring_failed: { text: '#f87171', bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.3)' },
+};
+
+function ReviewSessionStatusBadge({ status }: { status: string }): JSX.Element {
+  const fallback = { text: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)' };
+  const colors = REVIEW_SESSION_STATUS_COLORS[status] ?? fallback;
+  const label =
+    status === 'in_progress'
+      ? 'In Progress'
+      : status === 'scoring_failed'
+        ? 'Scoring Failed'
+        : status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        padding: '3px 10px',
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 4,
+        fontSize: 9,
+        fontWeight: 700,
+        color: colors.text,
+        letterSpacing: '0.08em',
+        fontFamily: '"Space Mono", monospace',
+      }}
+    >
+      {label}
     </span>
   );
 }
@@ -329,10 +367,12 @@ function ChallengeCard({
   challenge,
   onScoreChange,
   onFeedbackChange,
+  onViewReviewSession,
 }: {
   challenge: ProfileChallenge;
   onScoreChange: (submissionId: string, score: number) => void;
   onFeedbackChange: (submissionId: string, feedback: string) => void;
+  onViewReviewSession?: (session: ReviewSessionListItem) => void;
 }): JSX.Element {
   const sub = challenge.submission;
   const isManual =
@@ -356,26 +396,50 @@ function ChallengeCard({
           <h4 style={{ fontSize: 16, fontWeight: 800, color: "var(--pipe-text, #fff)", margin: 0 }}>
             {challenge.title ?? "Untitled Challenge"}
           </h4>
+          {challenge.type === 'CODE_REVIEW' && challenge.reviewSession && (
+            <ReviewSessionStatusBadge status={challenge.reviewSession.status} />
+          )}
         </div>
-        {sub && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {challenge.type === 'CODE_REVIEW' && challenge.reviewSession && onViewReviewSession && (
+            <button
+              onClick={() => onViewReviewSession(challenge.reviewSession!)}
               style={{
+                padding: '6px 14px',
+                background: 'rgba(96,165,250,0.08)',
+                border: '1px solid rgba(96,165,250,0.25)',
+                borderRadius: 4,
+                color: '#60a5fa',
                 fontSize: 9,
-                letterSpacing: "0.1em",
-                color: "var(--pipe-text-dim)",
+                fontWeight: 700,
+                letterSpacing: '0.08em',
                 fontFamily: '"Space Mono", monospace',
+                cursor: 'pointer',
               }}
             >
-              SCORE
+              VIEW REVIEW SESSION
+            </button>
+          )}
+          {sub && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.1em",
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                SCORE
+              </div>
+              <div
+                style={{ fontSize: 24, fontWeight: 900, color: "var(--pipe-text, #fff)", lineHeight: 1 }}
+              >
+                {sub.score}
+              </div>
             </div>
-            <div
-              style={{ fontSize: 24, fontWeight: 900, color: "var(--pipe-text, #fff)", lineHeight: 1 }}
-            >
-              {sub.score}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Body */}
@@ -429,6 +493,7 @@ function ChallengeCard({
                         >
                           <SubTitle>VERDICT</SubTitle>
                           <span
+                            data-testid="review-verdict"
                             style={{
                               fontSize: 11,
                               fontWeight: 800,
@@ -444,6 +509,7 @@ function ChallengeCard({
                       )}
                       {Boolean(response.summary) && (
                         <div
+                          data-testid="review-summary"
                           style={{
                             fontSize: 14,
                             color: "var(--pipe-text-muted)",
@@ -785,6 +851,7 @@ export default function CandidateProfilePage(): JSX.Element {
     useCandidateProfile(id);
 
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const [viewingReviewSession, setViewingReviewSession] = useState<ReviewSessionListItem | null>(null);
   const [showPhoneDrawer, setShowPhoneDrawer] = useState(false);
   const [editingPhone, setEditingPhone] = useState(false);
   const [phoneInput, setPhoneInput] = useState('');
@@ -1030,6 +1097,7 @@ export default function CandidateProfilePage(): JSX.Element {
             </div>
             <div>
               <h1
+                data-testid="candidate-name"
                 style={{
                   fontSize: 24,
                   fontWeight: 900,
@@ -1490,6 +1558,7 @@ export default function CandidateProfilePage(): JSX.Element {
                     onFeedbackChange={(submissionId, feedback) => {
                       void updateSubmissionFeedback(submissionId, feedback);
                     }}
+                    onViewReviewSession={(session) => setViewingReviewSession(session)}
                   />
                 ))}
               </div>
@@ -1886,6 +1955,40 @@ export default function CandidateProfilePage(): JSX.Element {
           </div>
         </LiquidMetalCard>
       </aside>
+
+      {/* Review Session Report Modal */}
+      {viewingReviewSession && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 40,
+          }}
+          onClick={() => setViewingReviewSession(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 900,
+              maxWidth: '90vw',
+              height: '80vh',
+              background: 'var(--pipe-bg, #0c0c0e)',
+              borderRadius: 12,
+              border: '1px solid var(--pipe-border)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <ReviewSessionReport session={viewingReviewSession} />
+          </div>
+        </div>
+      )}
 
       {/* Phone Call Drawer — fixed overlay */}
       {showPhoneDrawer && candidate.phoneNumber && (

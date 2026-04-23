@@ -9,8 +9,8 @@ import { buildThreadsFromRounds } from '../types/conversation';
 export interface ReviewSessionPageProps {
   sessionId: string;
   pr: {
-    title?: string;
-    description?: string;
+    title?: string | undefined;
+    description?: string | undefined;
     diff: DiffJson;
   };
   maxRounds: number;
@@ -80,6 +80,7 @@ export function ReviewSessionPage({ sessionId, pr, maxRounds, onComplete }: Revi
   if (isComplete) {
     return (
       <div
+        data-testid="review-session-completion"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -113,6 +114,7 @@ export function ReviewSessionPage({ sessionId, pr, maxRounds, onComplete }: Revi
             to you soon.
           </p>
           <button
+            data-testid="review-session-continue-btn"
             onClick={onComplete}
             style={{
               marginTop: 32,
@@ -146,6 +148,7 @@ export function ReviewSessionPage({ sessionId, pr, maxRounds, onComplete }: Revi
     >
       {/* Left panel: Diff */}
       <div
+        data-testid="diff-panel"
         style={{
           width: '60%',
           display: 'flex',
@@ -188,6 +191,7 @@ export function ReviewSessionPage({ sessionId, pr, maxRounds, onComplete }: Revi
         )}
         {isLoading && rounds.length === 0 && (
           <div
+            data-testid="review-session-loader"
             style={{
               flex: 1,
               display: 'flex',

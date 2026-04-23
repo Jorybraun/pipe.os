@@ -12,7 +12,10 @@ import { InterviewProvider } from '../contexts/InterviewContext';
 import { StageRenderer } from '../components/Assessment/StageRenderer';
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
+import { normalizeDiffJson } from '../lib/challenge/componentMap';
 import type { RawStage } from '../lib/challenge/resolveStageConfig';
+import { useReviewSessionV2 } from '../hooks/useReviewSessionV2';
+import { ReviewSessionPage } from './ReviewSessionPage';
 
 /**
  * Build a RawStage from the stage config DTO + current challenge content.
@@ -92,6 +95,38 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
   // Current challenge type (from stage config, not content — available before hydration)
   const currentType = stageConfig?.challenges?.[currentOrder]?.type;
+
+  // Review session v2 state (CODE_REVIEW golden path)
+  const [reviewSessionMeta, setReviewSessionMeta] = useState<{
+    sessionId: string;
+    maxRounds: number;
+  } | null>(null);
+  const [reviewSessionInitLoading, setReviewSessionInitLoading] = useState(false);
+  const { initSession } = useReviewSessionV2(undefined, sessionToken);
+
+  // Auto-init review session for CODE_REVIEW challenges that require it
+  useEffect(() => {
+    if (
+      currentType === 'CODE_REVIEW' &&
+      challengeContent?.reviewSession?.requiresInit &&
+      !reviewSessionMeta &&
+      !reviewSessionInitLoading &&
+      !isLoading &&
+      challengeContent?.id
+    ) {
+      setReviewSessionInitLoading(true);
+      initSession(challengeContent.id)
+        .then((result) => {
+          setReviewSessionMeta({ sessionId: result.sessionId, maxRounds: result.maxRounds });
+        })
+        .catch((err: unknown) => {
+          console.error('[CandidateAssessmentPage] initSession failed:', err);
+        })
+        .finally(() => {
+          setReviewSessionInitLoading(false);
+        });
+    }
+  }, [currentType, challengeContent, reviewSessionMeta, reviewSessionInitLoading, isLoading, initSession]);
 
   // Auto-start: WELCOME is now a challenge in the queue, not a separate screen
   useEffect(() => {
@@ -207,7 +242,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
   if (isSubmitted) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
+      <div data-testid="assessment-submitted" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
         <ChromeMeshGrid />
         <LiquidMetalCard variant="chrome" style={{ maxWidth: 480, padding: 60, textAlign: 'center', zIndex: 1 }}>
           <CheckCircle size={64} color="#10b981" style={{ marginBottom: 32 }} />
@@ -248,6 +283,17 @@ export default function CandidateAssessmentPage(): JSX.Element {
   const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
+
+  // Determine if we're in the review session v2 flow
+  const isReviewSessionV2 =
+    currentType === 'CODE_REVIEW' &&
+    challengeContent?.reviewSession?.requiresInit &&
+    reviewSessionMeta != null;
+
+  const isReviewSessionV2Loading =
+    currentType === 'CODE_REVIEW' &&
+    challengeContent?.reviewSession?.requiresInit &&
+    reviewSessionInitLoading;
 
   return (
     <SessionTokenProvider value={sessionToken}>
@@ -315,6 +361,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
                   !isPreview &&
                   currentType !== 'WELCOME' &&
                   currentType !== 'LIVE_VIDEO' &&
+                  !isReviewSessionV2 &&
                   (
                     currentType === 'AGENT_INTERVIEW'
                       ? currentSubmission !== null
@@ -322,8 +369,30 @@ export default function CandidateAssessmentPage(): JSX.Element {
                   )
                 }
                 isSubmitting={isLoading}
+                hideFooter={isReviewSessionV2}
               >
-                {followUpWaiting ? (
+                {isReviewSessionV2Loading ? (
+                  <div data-testid="review-session-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
+                    <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
+                    <span style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+                      INITIALISING_REVIEW_SESSION...
+                    </span>
+                  </div>
+                ) : isReviewSessionV2 ? (
+                  <ReviewSessionPage
+                    sessionId={reviewSessionMeta.sessionId}
+                    pr={{
+                      title: challengeContent.githubPrTitle ?? undefined,
+                      description: challengeContent.githubPrDescription ?? undefined,
+                      diff: normalizeDiffJson(challengeContent.cachedDiffJson ?? { files: [] }),
+                    }}
+                    maxRounds={reviewSessionMeta.maxRounds}
+                    onComplete={() => {
+                      setReviewSessionMeta(null);
+                      void handleSubmit({ reviewSessionId: reviewSessionMeta.sessionId });
+                    }}
+                  />
+                ) : followUpWaiting ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
                     <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
                   </div>

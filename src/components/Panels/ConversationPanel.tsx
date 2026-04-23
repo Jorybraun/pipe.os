@@ -773,6 +773,7 @@ export function ConversationPanel({
                   return (
                     <button
                       key={opt.key}
+                      data-testid={`verdict-option-${opt.key}`}
                       onClick={() => onVerdictChange(opt.key)}
                       style={{
                         padding: '10px 12px',
@@ -815,6 +816,7 @@ export function ConversationPanel({
                 REVIEW_SUMMARY
               </div>
               <textarea
+                data-testid="verdict-summary"
                 value={localSummary}
                 onChange={(e) => handleSummaryChange(e.target.value)}
                 placeholder="Summarize your code review findings..."
@@ -868,6 +870,7 @@ export function ConversationPanel({
         {/* Submit button */}
         {submitAction ? (
           <button
+            data-testid={submitLabel === 'SUBMIT_VERDICT' ? 'submit-verdict' : 'submit-round'}
             onClick={submitAction}
             disabled={submitLabel === 'SUBMIT_VERDICT' && !isVerdictReady}
             style={{

@@ -78,7 +78,7 @@ function LadderingCard({
   isFlagging: boolean;
 }): JSX.Element {
   return (
-    <div style={CARD_STYLE}>
+    <div style={CARD_STYLE} data-testid="laddering-card">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace', marginBottom: 8, lineHeight: 1.5 }}>
@@ -100,18 +100,21 @@ function LadderingCard({
           icon={<Flag size={10} />}
           onClick={() => onFlag('inaccurate', chain.consequence)}
           disabled={isFlagging}
+          testId="flag-button-inaccurate"
         />
         <FlagButton
           label="Missing evidence"
           icon={<AlertTriangle size={10} />}
           onClick={() => onFlag('missing_evidence', chain.consequence)}
           disabled={isFlagging}
+          testId="flag-button-missing-evidence"
         />
         <FlagButton
           label="Add detail"
           icon={<Plus size={10} />}
           onClick={() => onFlag('add_detail', chain.consequence)}
           disabled={isFlagging}
+          testId="flag-button-add-detail"
         />
       </div>
     </div>
@@ -123,16 +126,19 @@ function FlagButton({
   icon,
   onClick,
   disabled,
+  testId,
 }: {
   label: string;
   icon: JSX.Element;
   onClick: () => void;
   disabled: boolean;
+  testId?: string;
 }): JSX.Element {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
+      data-testid={testId}
       style={{
         padding: '5px 10px',
         background: 'transparent',
@@ -230,16 +236,16 @@ export function RoleContextReview({
 
   return (
     <>
-      <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 20 }}>
+      <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 20 }} data-testid="role-context-review">
         {isFlagging && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-            Contacting calibration agent…
+            <span data-testid="calibration-loading">Contacting calibration agent…</span>
           </div>
         )}
 
         {/* ── Team Context ── */}
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 28 }} data-testid="role-context-section-team">
           <div style={SECTION_TITLE_STYLE}>TEAM CONTEXT</div>
           {teamChains.length === 0 ? (
             <div style={{ fontSize: 12, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
@@ -258,7 +264,7 @@ export function RoleContextReview({
         </div>
 
         {/* ── Technical Context ── */}
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 28 }} data-testid="role-context-section-technical">
           <div style={SECTION_TITLE_STYLE}>TECHNICAL CONTEXT</div>
           <div style={CARD_STYLE}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -296,7 +302,7 @@ export function RoleContextReview({
         </div>
 
         {/* ── Dispositional Context ── */}
-        <div>
+        <div data-testid="role-context-section-dispositional">
           <div style={SECTION_TITLE_STYLE}>DISPOSITIONAL CONTEXT</div>
           {barChains.length === 0 ? (
             <div style={{ fontSize: 12, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 16 }}>

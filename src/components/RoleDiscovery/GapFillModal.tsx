@@ -30,6 +30,7 @@ export function GapFillModal({ question, onSubmit, onClose }: GapFillModalProps)
   return (
     <div
       onClick={onClose}
+      data-testid="gap-fill-modal"
       style={{
         position: 'fixed',
         inset: 0,
@@ -72,6 +73,7 @@ export function GapFillModal({ question, onSubmit, onClose }: GapFillModalProps)
         </div>
 
         <div
+          data-testid="gap-fill-question"
           style={{
             padding: 16,
             background: 'rgba(255,255,255,0.03)',
@@ -88,6 +90,7 @@ export function GapFillModal({ question, onSubmit, onClose }: GapFillModalProps)
         </div>
 
         <textarea
+          data-testid="gap-fill-answer"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           placeholder="Your answer…"
@@ -125,6 +128,7 @@ export function GapFillModal({ question, onSubmit, onClose }: GapFillModalProps)
             CANCEL
           </button>
           <button
+            data-testid="gap-fill-submit"
             onClick={() => { void handleSubmit(); }}
             disabled={!answer.trim() || isSubmitting}
             style={{

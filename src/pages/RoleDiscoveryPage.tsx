@@ -164,6 +164,7 @@ function SynthesisPhase({
     return (
       <button
         onClick={() => setTab(value)}
+        data-testid={value === 'ROLE_CONTEXT' ? 'role-context-tab' : undefined}
         style={{ padding: '10px 18px', background: active ? 'rgba(255, 255, 255, 0.08)' : 'transparent', border: active ? '1px solid rgba(255, 255, 255, 0.18)' : '1px solid var(--pipe-border)', color: active ? '#fff' : 'var(--pipe-text-muted)', fontSize: 9, letterSpacing: '0.2em', fontFamily: '"Space Mono", monospace', fontWeight: 700, cursor: 'pointer' }}
       >
         {label}
@@ -179,7 +180,7 @@ function SynthesisPhase({
           <Check size={16} style={{ color: 'rgba(74, 222, 128, 0.8)' }} />
         </div>
         <div>
-          <div style={{ fontSize: 8, letterSpacing: '0.25em', color: 'rgba(74, 222, 128, 0.6)', fontFamily: '"Space Mono", monospace', marginBottom: 3 }}>
+          <div data-testid="interview-complete-header" style={{ fontSize: 8, letterSpacing: '0.25em', color: 'rgba(74, 222, 128, 0.6)', fontFamily: '"Space Mono", monospace', marginBottom: 3 }}>
             INTERVIEW COMPLETE
           </div>
           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.01em' }}>
@@ -328,6 +329,7 @@ function SynthesisPhase({
       )}
 
       <button
+        data-testid="create-pipeline-btn"
         onClick={onCreatePipeline}
         disabled={isCreating}
         style={{ width: '100%', padding: '16px 32px', background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.10), rgba(59, 130, 246, 0.2))', border: '1px solid rgba(255, 255, 255, 0.18)', color: 'var(--pipe-text)', fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: isCreating ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 6 }}
@@ -901,7 +903,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     }
                   }}
                 >
-                  <div style={{ flex: 1 }}>
+                  <div data-testid="scripted-input" style={{ flex: 1 }}>
                     {currentScriptedQ.inputType === 'tags' ? (
                       <TagsInput
                         value={scripted.answer ? scripted.answer.split('|||') : []}
@@ -921,6 +923,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
                     <button
+                      data-testid="scripted-send-btn"
                       onClick={scripted.submit}
                       disabled={!scripted.answer.trim() && !currentScriptedQ.optional}
                       style={{

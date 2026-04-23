@@ -959,7 +959,7 @@ export function AIChat({
 
                   {/* Text input + SEND */}
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1 }}>
+                    <div data-testid="ai-input" style={{ flex: 1 }}>
                       <QuestionInput
                         question={conv.currentQuestion}
                         value={aiAnswer}
@@ -968,6 +968,7 @@ export function AIChat({
                       />
                     </div>
                     <button
+                      data-testid="ai-send-btn"
                       onClick={handleRespond}
                       disabled={!aiAnswer.trim() || conv.isLoading}
                       style={{
