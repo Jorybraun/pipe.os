@@ -73,10 +73,10 @@ const RED_FLAG_MAX_CHARS = 200;
 const SENIORITY_JUSTIFICATION_MIN_WORDS = 15;
 const SENIORITY_JUSTIFICATION_MAX_WORDS = 120;
 
-const NARRATIVE_WORDS_MIN = 150;
+const NARRATIVE_WORDS_MIN = 200;
 const NARRATIVE_WORDS_MAX = 400;
-const PROFILE_WORDS_MIN = 75;
-const PROFILE_WORDS_MAX = 550;
+const PROFILE_WORDS_MIN = 400;
+const PROFILE_WORDS_MAX = 600;
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[_\-\s]/g, '');
@@ -122,7 +122,8 @@ export function allowedNumericStrings(input: Pass3Input, output: Pass3Data): Set
   // Input-derived FACTS block values (sent verbatim to Gemma in the prompt)
   push(input.file_count);
   push(input.sloc);
-  push(input.stars);
+  // stars intentionally excluded — star counts are too prone to drift to block on.
+  // push(input.stars);
   push(input.mean_ccn);
   push(input.pr_quality_score);
   push(input.business_logic_ratio);
@@ -131,12 +132,12 @@ export function allowedNumericStrings(input: Pass3Input, output: Pass3Data): Set
   push(input.open_feature_issue_count);
 
   // Construct evidence counts (shown as "slug (N)" in the FACTS top-constructs line)
-  for (const c of input.constructs) {
+  for (const c of input.constructs ?? []) {
     push(c.evidence_count);
   }
 
   // Sample PR fields (shown in the sample_prs JSON array in FACTS)
-  for (const pr of input.sample_prs) {
+  for (const pr of input.sample_prs ?? []) {
     push(pr.pr_number);
     push(pr.changed_file_count);
   }
@@ -213,7 +214,7 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
   // repo. This is the single highest-signal hallucination check.
 
   const narrativeLower = narrative.toLowerCase();
-  const primaryLangLower = input.primary_language.toLowerCase();
+  const primaryLangLower = input.primary_language?.toLowerCase() ?? '';
   const aliases = LANGUAGE_ALIASES[primaryLangLower] ?? [primaryLangLower];
   const languageMatched = aliases.some((a) => narrativeLower.includes(a));
   if (narrativeWords > 0 && !languageMatched) {
@@ -229,7 +230,7 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
   // abstracted away in a role-agnostic summary ("uses dependency injection"
   // instead of "nest_js_module").
 
-  if (input.constructs.length > 0) {
+  if ((input.constructs ?? []).length > 0) {
     const top = input.constructs.slice(0, 5).map((c) => normalize(c.slug));
     const haystack = normalize(narrative + ' ' + (output.signal_json ?? ''));
     const constructMatched = top.some((c) => haystack.includes(c));
@@ -318,7 +319,7 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
 
   if (output.challenge_suitability_verdict !== null) {
     if (
-      output.challenge_suitability_reason === null ||
+      output.challenge_suitability_reason == null ||
       output.challenge_suitability_reason.trim().length === 0
     ) {
       failures.push('challenge_suitability_reason is empty but verdict was provided');
@@ -329,8 +330,8 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
     }
   }
 
-  const validPrNumbers = new Set(input.sample_prs.map((pr) => pr.pr_number));
-  if (output.top_pr_picks.length > 0) {
+  const validPrNumbers = new Set((input.sample_prs ?? []).map((pr) => pr.pr_number));
+  if ((output.top_pr_picks ?? []).length > 0) {
     if (output.top_pr_picks.length < PR_PICK_MIN) {
       failures.push(`top_pr_picks too few: ${output.top_pr_picks.length} (min ${PR_PICK_MIN})`);
     }
@@ -351,22 +352,22 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
         );
       }
     }
-  } else if (input.sample_prs.length > 0) {
+  } else if ((input.sample_prs ?? []).length > 0) {
     // Only warn — reject verdict may legitimately have no picks.
     warnings.push('top_pr_picks is empty despite sample_prs being present');
   }
 
-  if (output.red_flags.length > RED_FLAGS_MAX) {
+  if ((output.red_flags ?? []).length > RED_FLAGS_MAX) {
     failures.push(`red_flags too many: ${output.red_flags.length} (max ${RED_FLAGS_MAX})`);
   }
-  for (const flag of output.red_flags) {
+  for (const flag of output.red_flags ?? []) {
     if (flag.length > RED_FLAG_MAX_CHARS) {
       failures.push(`red_flag too long: ${flag.length} chars (max ${RED_FLAG_MAX_CHARS})`);
       break;
     }
   }
 
-  if (output.seniority_justification !== null) {
+  if (output.seniority_justification != null) {
     const words = wordCount(output.seniority_justification);
     if (words < SENIORITY_JUSTIFICATION_MIN_WORDS) {
       failures.push(
@@ -379,7 +380,7 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
     }
   }
 
-  if (output.ideal_role_match !== null) {
+  if (output.ideal_role_match != null) {
     if (output.ideal_role_match.trim().length === 0) {
       failures.push('ideal_role_match is empty');
     } else if (output.ideal_role_match.length > ROLE_MAX_CHARS) {

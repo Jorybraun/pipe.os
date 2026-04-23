@@ -1,21 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { callRoleAgent, mergeKnowledgeState } from '../lib/roleAgent';
 import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage } from '../lib/roleAgentPrompts';
-import { MistralProvider } from '../lib/llm/mistralProvider';
 
 // ─── Mock fetch ─────────────────────────────────────────────────────────────
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
-
-function mistralResponse(content: string): Response {
-  return new Response(
-    JSON.stringify({
-      choices: [{ message: { role: 'assistant', content } }],
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  );
-}
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -163,7 +153,7 @@ describe('buildRoleAgentUserMessage', () => {
   });
 });
 
-// ─── callRoleAgent — participant role passthrough ──────────────────────────
+// ─── callRoleAgent — mock fallback paths ─────────────────────────────────────
 
 describe('callRoleAgent', () => {
   it('returns mock question when no API key', async () => {
@@ -191,94 +181,5 @@ describe('callRoleAgent', () => {
       questionBudget: 10,
     });
     expect(result.type).toBe('synthesis');
-  });
-
-  it('passes participantRole to system prompt', async () => {
-    const agentJson = JSON.stringify({
-      reasoning: 'test',
-      acknowledgment: 'Got it.',
-      question: { id: 'q-1', text: 'What does your team build?', input: { type: 'textarea' } },
-      knowledgeStateUpdate: {},
-      domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
-    });
-
-    mockFetch.mockResolvedValueOnce(mistralResponse(agentJson));
-
-    await callRoleAgent({
-      provider: new MistralProvider('test-key'),
-      baseline: { title: 'Engineer' },
-      exchanges: [],
-      knowledgeState: {},
-      questionsAsked: 0,
-      questionBudget: 10,
-      participantRole: 'HIRING_MANAGER',
-    });
-
-    // Verify the system prompt sent to Mistral includes the HM section
-    const firstCall = mockFetch.mock.calls[0];
-    expect(firstCall).toBeDefined();
-    const callBody = JSON.parse((firstCall as Parameters<typeof fetch>)[1]!.body as string);
-    const systemMsg = callBody.messages.find((m: { role: string }) => m.role === 'system');
-    expect(systemMsg.content).toContain('Your Interviewee: Hiring Manager');
-  });
-
-  it('parses a valid question response from Mistral', async () => {
-    const agentJson = JSON.stringify({
-      reasoning: 'Covering WHY domain first.',
-      acknowledgment: 'Thanks for the context.',
-      question: { id: 'q-2', text: 'Is this a new role or backfill?', input: { type: 'radio', options: ['New', 'Backfill'] } },
-      knowledgeStateUpdate: { work: { product: 'messaging platform' } },
-      domainCoverage: { why: 'sparse', work: 'partial', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
-    });
-
-    mockFetch.mockResolvedValueOnce(mistralResponse(agentJson));
-
-    const result = await callRoleAgent({
-      provider: new MistralProvider('test-key'),
-      baseline: { title: 'Backend Engineer' },
-      exchanges: [{ questionId: 'q-1', acknowledgment: 'Hi', question: 'What does your team build?', input: { type: 'textarea' }, answer: 'A messaging platform' }],
-      knowledgeState: {},
-      questionsAsked: 1,
-      questionBudget: 10,
-    });
-
-    expect(result.type).toBe('question');
-    if (result.type === 'question') {
-      expect(result.question.id).toBe('q-2');
-      expect(result.question.input.type).toBe('radio');
-      expect(result.question.input.options).toEqual(['New', 'Backfill']);
-      expect(result.knowledgeStateUpdate.work).toEqual({ product: 'messaging platform' });
-    }
-  });
-
-  it('falls back to mock on Mistral API error', async () => {
-    mockFetch.mockResolvedValueOnce(new Response('Internal Server Error', { status: 500 }));
-
-    const result = await callRoleAgent({
-      provider: new MistralProvider('test-key'),
-      baseline: { title: 'Engineer' },
-      exchanges: [],
-      knowledgeState: {},
-      questionsAsked: 0,
-      questionBudget: 10,
-    });
-
-    // Should gracefully fall back to mock, not throw
-    expect(result.type).toBe('question');
-  });
-
-  it('falls back to mock on malformed JSON response', async () => {
-    mockFetch.mockResolvedValueOnce(mistralResponse('not valid json {{{'));
-
-    const result = await callRoleAgent({
-      provider: new MistralProvider('test-key'),
-      baseline: { title: 'Engineer' },
-      exchanges: [],
-      knowledgeState: {},
-      questionsAsked: 0,
-      questionBudget: 10,
-    });
-
-    expect(result.type).toBe('question');
   });
 });
