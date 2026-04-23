@@ -66,7 +66,7 @@ const mono: React.CSSProperties = { fontFamily: '"Space Mono", monospace' };
 const FEATURE_LABELS: Record<string, string> = {
   role_discovery: 'ROLE DISCOVERY',
   culture_interview: 'CULTURE INTERVIEW',
-  voice_interview: 'VOICE INTERVIEW',
+  live_panel: 'LIVE PANEL',
   copilot: 'COPILOT',
   repo_crawl: 'REPO CRAWL',
   challenge_generation: 'CHALLENGE GEN',

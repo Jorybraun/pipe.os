@@ -156,7 +156,7 @@ export class VoiceSessionDO {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[VoiceSessionDO] openSession failed:', msg);
       await logAiUsage(this.env.DB, {
-        feature: 'voice_interview',
+        feature: 'live_panel',
         refId: config.sessionId,
         provider: 'vertex-live',
         // Model key unknown until the session constructs — use a placeholder
@@ -322,7 +322,7 @@ export class VoiceSessionDO {
       this.usageLogged = true;
       const durationSeconds = this.startedAtMs ? (Date.now() - this.startedAtMs) / 1000 : null;
       await logAiUsage(this.env.DB, {
-        feature: 'voice_interview',
+        feature: 'live_panel',
         refId: this.config.sessionId,
         provider: 'vertex-live',
         model: finalModelKey,

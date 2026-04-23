@@ -107,7 +107,7 @@ function overviewResponse(
       timeLimit: null,
       mode: null,
       challengeCount: 0,
-      stageType: i === 0 ? "CODE_REVIEW" : "TECHNICAL",
+      stageType: i === 0 ? "CODE_REVIEW" : "SCREENING",
       isScheduled: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

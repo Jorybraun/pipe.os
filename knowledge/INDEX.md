@@ -275,6 +275,8 @@ Operational documentation for the 6-dimension BARS scorer calibration harness (C
 ### 4.5 Top-level files
 
 - **`knowledge/README.md`** — the LLM-wiki philosophy (Vannevar Bush / Memex)
+- **`knowledge/STRATEGY.md`** — canonical plan (findings → actions)
+- **`knowledge/terminology.md`** — mandatory domain language; definitions + deprecated terms
 - **`knowledge/Behavioral interviews for Software Engineers How to prepare.md`** — single-article raw source. Unfiled.
 
 ---

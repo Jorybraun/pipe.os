@@ -656,7 +656,7 @@ function AICollabStageConfig() {
   return (
     <div>
       <div style={{ marginBottom: 32 }}>
-        <SubTitle>AI_COLLABORATION_ASSESSMENT</SubTitle>
+        <SubTitle>CULTURAL_STAGE</SubTitle>
       </div>
 
       <div
@@ -734,7 +734,7 @@ function PlanningStageConfig() {
   return (
     <div>
       <div style={{ marginBottom: 32 }}>
-        <SubTitle>SYSTEM_DESIGN_&amp;_PLANNING</SubTitle>
+        <SubTitle>OPEN_SOURCE_STAGE</SubTitle>
       </div>
 
       <div

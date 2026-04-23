@@ -16,7 +16,7 @@ import { computeCallCost, type TokenUsage } from './llm/pricing';
 export type UsageFeature =
   | 'role_discovery'
   | 'culture_interview'
-  | 'voice_interview'
+  | 'live_panel'
   | 'copilot'
   | 'repo_crawl'
   | 'challenge_generation';

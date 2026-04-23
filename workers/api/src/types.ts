@@ -49,11 +49,11 @@ export interface Env {
   VIDEO_ROOM: DurableObjectNamespace;
   /** Durable Object binding for dev container sessions (ADR-037, Phase 3b). */
   DEV_CONTAINER: DurableObjectNamespace;
-  /** Durable Object binding for voice interview sessions. */
+  /** Durable Object binding for live panel sessions. */
   VOICE_SESSION: DurableObjectNamespace;
   /** Selects the LiveProvider implementation. 'vertex-live' | 'openai-realtime' | 'mock'. Default: 'vertex-live'. */
   LIVE_PROVIDER?: string;
-  /** Used to authenticate DO→Worker transcript callbacks. */
+  /** Used to authenticate DO→Worker transcript callbacks for live panel sessions. */
   VOICE_SESSION_INTERNAL_SECRET?: string;
   /** GCP project ID for Vertex AI services. */
   GOOGLE_CLOUD_PROJECT?: string;
