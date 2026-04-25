@@ -240,6 +240,7 @@ def run_phase_0_analysis(task: str, telemetry: Optional[Telemetry] = None) -> Di
         "needs_architecture": needs_architecture,
         "needs_frontend": needs_frontend,
         "needs_backend": needs_backend,
+        "needs_pm": True,  # Always include PM for task decomposition
         "sequential": False,
         "analysis": f"This task requires: " + ", ".join(requirements) if requirements else "This is a simple backend fix"
     }
@@ -288,7 +289,92 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
     if state["phase"] == "analysis":
         plan = run_phase_0_analysis(task, telemetry)
         state["plan"] = plan
-        state["phase"] = "design" if plan["needs_design"] else ("architecture" if plan["needs_architecture"] else "implementation")
+        state["phase"] = "pm" if plan.get("needs_pm", True) else ("design" if plan["needs_design"] else ("architecture" if plan["needs_architecture"] else "implementation"))
+        save_state(state)
+    
+    # Phase 0.5: PM Task Decomposition
+    if state["phase"] == "pm" and state["plan"].get("needs_pm", True):
+        print("=" * 70)
+        print("  PHASE 0.5: PM TASK DECOMPOSITION")
+        print("=" * 70)
+        print("\nSpawning PM agent for task breakdown...")
+        
+        pm_context = f"""Task: {task}
+
+Analysis result: {state['plan'].get('analysis', 'N/A')}
+
+Requirements:
+- Needs design: {state['plan'].get('needs_design', False)}
+- Needs architecture: {state['plan'].get('needs_architecture', False)}
+- Needs frontend: {state['plan'].get('needs_frontend', False)}
+- Needs backend: {state['plan'].get('needs_backend', False)}
+
+Decompose this into concrete subtasks with acceptance criteria."""
+        
+        agent_info = harness.spawn_agent(
+            "pm",
+            f"Decompose and plan: {task}",
+            pm_context,
+            acceptance_criteria=[
+                "Produce a task decomposition with task name, acceptance criteria, files to touch, and expected test outcome for each subtask",
+                "Identify dependencies between subtasks",
+                "Flag any architectural decisions that need ADR documentation",
+                "Keep decomposition under 10 subtasks"
+            ]
+        )
+        
+        state["pending_agent"] = agent_info
+        state["phase"] = "pm_waiting"
+        state["status"] = "waiting_for_agent"
+        save_state(state)
+        
+        print(f"\n  Task spec written to: {agent_info['task_file']}")
+        print(f"  Expected result at:   {agent_info['result_file']}")
+        print(f"  Mailbox:              {swarm_dir}/mailboxes/pm.json")
+        print("\n  >>> PAUSED: Waiting for PM agent to complete. <<<")
+        print(f"  To resume: python orchestrator.py --resume")
+        return state
+    
+    # Resume from PM agent
+    if state["phase"] == "pm_waiting":
+        agent_info = state.get("pending_agent", {})
+        result_file = Path(agent_info.get("result_file", ""))
+        
+        mailbox = telemetry.get_agent_status("pm")
+        if mailbox.status == TaskStatus.COMPLETE and mailbox.result:
+            pm_output = mailbox.result.summary
+            telemetry._log(f"PM_COMPLETE: result_length={len(pm_output)}")
+        elif result_file.exists():
+            pm_output = result_file.read_text()
+            telemetry._log(f"PM_COMPLETE (legacy): result_length={len(pm_output)}")
+        else:
+            print(f"\n  Waiting for result file: {result_file}")
+            print("  PM agent hasn't finished yet. Run again later.")
+            return state
+        
+        state["outputs"]["pm"] = pm_output
+        del state["pending_agent"]
+        
+        if not auto_approve:
+            approval = get_user_approval("PM Plan Review", pm_output, telemetry)
+            state["approvals"]["pm"] = approval
+            
+            if approval == "rejected":
+                state["status"] = "rejected_at_pm"
+                telemetry._log("WORKFLOW_REJECTED: pm")
+                save_state(state)
+                return state
+            
+            if approval == "revise":
+                print("Looping back to PM with revision notes...")
+                state["phase"] = "pm"
+                telemetry._log("PM_REVISION: looping back")
+                save_state(state)
+                return state
+        
+        # Feed PM decomposition into downstream context
+        telemetry._log("HANDOFF: pm -> design/architecture/implementation")
+        state["phase"] = "design" if state["plan"]["needs_design"] else ("architecture" if state["plan"]["needs_architecture"] else "implementation")
         save_state(state)
     
     # Phase 1: Design (if needed)

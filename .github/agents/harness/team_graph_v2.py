@@ -5,37 +5,62 @@ from langgraph.types import Command
 import operator
 from typing import Annotated, List
 
+# Import telemetry for agent communication
+import sys
+from pathlib import Path
+HARNESS_DIR = Path(__file__).parent
+sys.path.insert(0, str(HARNESS_DIR))
+from telemetry import Telemetry, TaskSpec, TaskStatus
+
 # TeamState base class (minimal version for Pipe swarm)
 class TeamState:
     messages: List = []
     next: str = ""
 
 # ============================================================================
-# Pipe Swarm v2 — Frontend/Backend split + Designer + User Approval Gate
+# Pipe Swarm v2 — PM + Designer + Frontend/Backend + Architect + Approval Gates
 # ============================================================================
 
-# Designer works with the Orchestrator (main agent) to create designs.
-# The Orchestrator presents designs to the user for red/green approval.
-# No task proceeds without user approval.
-
-team_members = ["architect", "frontend", "backend", "designer"]
+team_members = ["pm", "designer", "architect", "frontend", "backend"]
 
 class SwarmState(TeamState):
-    """Extended state with approval gate tracking."""
+    """Extended state with approval gate tracking and telemetry."""
     # approval_status tracks user decisions at each gate
     # "pending" → waiting for user
     # "approved" → proceed
     # "rejected" → stop / revise
+    pm_approved: str = "pending"      # Gate 0.5: PM plan review
     design_approved: str = "pending"  # Gate 1: Design review
     architecture_approved: str = "pending"  # Gate 2: Architecture review
     implementation_approved: str = "pending"  # Gate 3: Final PR review
     # Track which agents have completed their work
     completed_agents: Annotated[list[str], operator.add] = []
+    # Telemetry reference
+    telemetry_dir: str = str(HARNESS_DIR / ".swarm")
+    task_id: str = ""
 
 
 # ============================================================================
 # Agent System Prompts
 # ============================================================================
+
+PM_SYSTEM_PROMPT = """You are the **Project Manager** for Pipe.
+
+Your job is to decompose incoming tasks into concrete, executable subtasks before any design or code is written.
+
+You produce:
+- Task decomposition with: task name, acceptance criteria (3-5 bullet points), files to touch, expected test outcome
+- Dependency graph between subtasks (what must happen before what)
+- Risk flags and assumptions that need validation
+- ADR requirements for any structural decisions
+
+Rules:
+- Keep decomposition under 10 subtasks
+- Each subtask must have clear acceptance criteria
+- Flag tasks that need design review vs. architecture review vs. direct implementation
+- Reference the project goals from the strategy document
+- If a task is unclear, ask clarifying questions before decomposing
+"""
 
 DESIGNER_SYSTEM_PROMPT = """You are the **UI/UX Designer** for Pipe.
 
@@ -116,12 +141,121 @@ Rules:
 
 
 # ============================================================================
+# Telemetry Helpers
+# ============================================================================
+
+def get_telemetry(state: SwarmState) -> Telemetry:
+    """Get or create telemetry instance for this swarm run."""
+    return Telemetry(state.telemetry_dir, task_id=state.task_id)
+
+
+def emit_agent_start(state: SwarmState, role: str, task: str):
+    """Emit telemetry event when an agent starts work."""
+    telem = get_telemetry(state)
+    telem.emit("agent_assigned", {
+        "role": role,
+        "task": task[:200],
+        "phase": state.next if hasattr(state, 'next') else "unknown"
+    })
+    # Also dispatch to mailbox
+    task_spec = TaskSpec(
+        task_id=f"{role}_{int(__import__('time').time())}",
+        role=role,
+        description=task,
+        context={"phase": state.next if hasattr(state, 'next') else "unknown"}
+    )
+    telem.dispatch_task(role, task_spec)
+
+
+def emit_agent_complete(state: SwarmState, role: str, output: str):
+    """Emit telemetry event when an agent completes work."""
+    telem = get_telemetry(state)
+    telem.emit("agent_completed", {
+        "role": role,
+        "output_length": len(output),
+        "completed_agents": state.completed_agents
+    })
+    # Complete the mailbox
+    from telemetry import CompletionReport
+    report = CompletionReport(
+        success=True,
+        summary=output[:5000],
+        changed_files=[],
+        test_results={},
+        errors=[]
+    )
+    telem.complete_task(role, report)
+
+
+def emit_handoff(state: SwarmState, from_role: str, to_role: str, context: dict = None):
+    """Emit telemetry event for agent-to-agent handoff."""
+    telem = get_telemetry(state)
+    telem.emit("handoff", {
+        "from": from_role,
+        "to": to_role,
+        "context": context or {}
+    })
+
+
+# ============================================================================
 # Agent Node Functions
 # ============================================================================
+
+def pm_node(state: SwarmState) -> Command[Literal["orchestrator"]]:
+    """PM decomposes task into subtasks. Returns to orchestrator for user approval."""
+    pm_task = state.messages[-1].content if state.messages else "No task provided"
+    
+    emit_agent_start(state, "pm", pm_task)
+    
+    pm_messages = [
+        SystemMessage(content=PM_SYSTEM_PROMPT),
+        HumanMessage(content=pm_task)
+    ]
+    
+    # In a real deployment, this would call an LLM
+    # For the harness, we write the task spec and let the orchestrator dispatch
+    pm_output = f"""# Task Decomposition
+
+## Task
+{pm_task}
+
+## Subtasks
+1. **Analysis** — Understand existing code and requirements
+2. **Design** — Create UI/UX specification (if frontend needed)
+3. **Architecture** — Design data model and API contracts (if backend needed)
+4. **Implementation** — Write code following design and architecture specs
+5. **QA** — Run type checks, lint, and tests
+6. **Review** — Present for user approval
+
+## Dependencies
+- Design depends on Analysis
+- Architecture depends on Analysis
+- Implementation depends on Design + Architecture
+- QA depends on Implementation
+
+## Risks
+- Ensure no `any` types in new code
+- Verify all named exports (except page components)
+- Check CHANGELOG.md is updated
+"""
+    
+    emit_agent_complete(state, "pm", pm_output)
+    
+    return Command(
+        update={
+            "messages": [HumanMessage(content=pm_output)],
+            "next": "orchestrator",
+            "completed_agents": ["pm"]
+        },
+        goto="orchestrator"
+    )
+
 
 def designer_node(state: SwarmState) -> Command[Literal["orchestrator"]]:
     """Designer creates design spec. Returns to orchestrator for user approval."""
     design_task = state.messages[-1].content if state.messages else "No design task provided"
+    
+    emit_agent_start(state, "designer", design_task)
     
     design_messages = [
         SystemMessage(content=DESIGNER_SYSTEM_PROMPT),
@@ -129,6 +263,8 @@ def designer_node(state: SwarmState) -> Command[Literal["orchestrator"]]:
     ]
     
     design_output = llm.invoke(design_messages)
+    
+    emit_agent_complete(state, "designer", design_output.content if hasattr(design_output, 'content') else str(design_output))
     
     return Command(
         update={
@@ -144,12 +280,16 @@ def architect_node(state: SwarmState) -> Command[Literal["orchestrator"]]:
     """Architect designs technical solution. Returns to orchestrator for approval."""
     arch_task = state.messages[-1].content if state.messages else "No architecture task provided"
     
+    emit_agent_start(state, "architect", arch_task)
+    
     arch_messages = [
         SystemMessage(content=ARCHITECT_SYSTEM_PROMPT),
         HumanMessage(content=arch_task)
     ]
     
     arch_output = llm.invoke(arch_messages)
+    
+    emit_agent_complete(state, "architect", arch_output.content if hasattr(arch_output, 'content') else str(arch_output))
     
     return Command(
         update={
@@ -165,12 +305,16 @@ def frontend_node(state: SwarmState) -> Command[Literal["orchestrator"]]:
     """Frontend developer implements UI. Returns to orchestrator for review."""
     fe_task = state.messages[-1].content if state.messages else "No frontend task provided"
     
+    emit_agent_start(state, "frontend", fe_task)
+    
     fe_messages = [
         SystemMessage(content=FRONTEND_SYSTEM_PROMPT),
         HumanMessage(content=fe_task)
     ]
     
     fe_output = llm.invoke(fe_messages)
+    
+    emit_agent_complete(state, "frontend", fe_output.content if hasattr(fe_output, 'content') else str(fe_output))
     
     return Command(
         update={
@@ -186,12 +330,16 @@ def backend_node(state: SwarmState) -> Command[Literal["orchestrator"]]:
     """Backend developer implements server logic. Returns to orchestrator for review."""
     be_task = state.messages[-1].content if state.messages else "No backend task provided"
     
+    emit_agent_start(state, "backend", be_task)
+    
     be_messages = [
         SystemMessage(content=BACKEND_SYSTEM_PROMPT),
         HumanMessage(content=be_task)
     ]
     
     be_output = llm.invoke(be_messages)
+    
+    emit_agent_complete(state, "backend", be_output.content if hasattr(be_output, 'content') else str(be_output))
     
     return Command(
         update={
@@ -207,11 +355,12 @@ def backend_node(state: SwarmState) -> Command[Literal["orchestrator"]]:
 # Build the Graph
 # ============================================================================
 
-def build_pipe_swarm() -> StateGraph:
-    """Build the Pipe development swarm with user approval gates."""
+def build_pipe_swarm(task_id: str = "", telemetry_dir: str = None) -> StateGraph:
+    """Build the Pipe development swarm with user approval gates and telemetry."""
     graph = StateGraph(SwarmState)
     
     # Add nodes
+    graph.add_node("pm", pm_node)
     graph.add_node("designer", designer_node)
     graph.add_node("architect", architect_node)
     graph.add_node("frontend", frontend_node)
@@ -221,3 +370,11 @@ def build_pipe_swarm() -> StateGraph:
     # Agents always return to orchestrator for approval
     
     return graph.compile()
+
+
+if __name__ == "__main__":
+    # Quick test
+    swarm = build_pipe_swarm()
+    print("Pipe Swarm v2 built successfully.")
+    print(f"Team members: {team_members}")
+    print("Note: orchestrator node is external — agents return to orchestrator for approval.")
