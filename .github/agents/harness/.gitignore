@@ -1,0 +1,6 @@
+.swarm/
+__pycache__/
+*.pyc
+*.pyo
+mailboxes/
+telemetry.log
