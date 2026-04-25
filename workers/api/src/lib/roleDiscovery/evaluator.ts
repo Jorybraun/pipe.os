@@ -116,15 +116,18 @@ export async function evaluateQuestion(
     const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     const parsed = JSON.parse(jsonText) as Record<string, unknown>;
 
-    return {
+    const result: EvalResult = {
       approved: parsed.approved === true,
       goalAssessment: parseGoalAssessment(parsed.goalAssessment),
       coverageAssessment: parseCoverageAssessment(parsed.coverageAssessment),
       toneAssessment: parseToneAssessment(parsed.toneAssessment),
       redundancyCheck: parseRedundancyCheck(parsed.redundancyCheck),
       reason: typeof parsed.reason === 'string' ? parsed.reason : 'No reason provided',
-      suggestedRewrite: typeof parsed.suggestedRewrite === 'string' ? parsed.suggestedRewrite : undefined,
     };
+    if (typeof parsed.suggestedRewrite === 'string') {
+      result.suggestedRewrite = parsed.suggestedRewrite;
+    }
+    return result;
   } catch (err) {
     console.error('[evaluateQuestion] Evaluator call failed:', err);
     // Fail closed — reject on error
