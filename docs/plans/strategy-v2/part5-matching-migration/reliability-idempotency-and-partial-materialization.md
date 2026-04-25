@@ -42,7 +42,7 @@ Without idempotency, concurrent re-ingestion requests corrupt candidate state (r
 
 ### Subtask 2 — Idempotency enforcement on `POST /:candidateId/reingest`
 **Files:**
-- `workers/api/src/routes/cockpit/discovery.ts` (or the route file handling re-ingestion)
+- `workers/api/src/routes/cockpit/ingestion.ts` (re-ingestion route handler at line ~353)
 
 **Spec:**
 - Read `Idempotency-Key` header. If missing, return 400 with error message explaining requirement.
@@ -72,8 +72,8 @@ Without idempotency, concurrent re-ingestion requests corrupt candidate state (r
 
 ## Dependencies
 
-- Depends on: `reliability-heartbeats-and-stale-detection.md` (heartbeats complement the per-step status)
 - Independent of retry and circuit breaker plans (orthogonal concern)
+- Blocks: `reliability-heartbeats-and-stale-detection.md` (per-step status columns this plan adds are the source of truth for the staleness scanner)
 
 ## Acceptance criteria
 

@@ -17,7 +17,7 @@ Without a distinct recruiter UI action, Mode 1 screening has no trigger. Recruit
 
 ### Subtask 1 — Screening invitation API endpoint
 **Files:**
-- `workers/api/src/routes/cockpit/candidateActions.ts`
+- `workers/api/src/routes/cockpit/candidates.ts` (no separate `candidateActions.ts` exists; add a new route handler here)
 
 **Spec:**
 `POST /api/v1/candidates/:candidateId/invite-screening` — Clerk-authed, recruiter role. Body: `{ mode: 'profile_builder' | 'role_fit', roleContextId?: string }`. For `profile_builder`: creates a new `culture_interview_sessions` row (or a new `screening_sessions` table if session schema differences require it — validate before implementing) with `screener_mode='profile_builder'`. Generates a candidate invite token via existing token infrastructure. Sends invite email via Resend with subject "Complete your profile" (not "Interview invitation" — Mode 1 framing). Returns `{ token, expiresAt }`. Guards: candidate must have a `candidate_profile_state` row (i.e. be ingested). Cannot invite to screening if already has an active Mode-1 session.

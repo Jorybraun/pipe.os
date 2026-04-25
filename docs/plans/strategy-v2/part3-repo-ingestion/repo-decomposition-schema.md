@@ -48,7 +48,7 @@ The current `repo_searchable_profile` is one blob — role-repo matching can onl
 
 ### Subtask 2 — Pass 3 prompt rewrite for sub-element generation
 **Files:**
-- `workers/api/scripts/crawl-repos/pass3/prompts.ts` (new or locate existing prompt file)
+- `workers/api/scripts/crawl-repos/pass3/run.ts` (Pass 3 prompt is currently inline at line ~107; either extract to a new `prompts.ts` or rewrite in place)
 
 **Spec:**
 - New prompt produces structured JSON with arrays per sub-element type. Retain the three existing summary fields (`architecture_style`, `engineering_narrative`, `repo_searchable_profile`) as top-level outputs alongside the sub-element arrays — legacy consumers (REPO_INDEX overall narrative) are not broken.

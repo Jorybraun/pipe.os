@@ -100,23 +100,25 @@ Not planned here. Strategy Part 5 covers the Neo4j migration. All `candidate_nod
 
 ## Parallel Execution Constraints
 
-These files share no overlapping file paths within their phase and can run in parallel:
+Verified file-path overlaps below — only true non-overlapping plans are listed as parallel.
 
-**Phase 1 parallel batch 1 (schema only):**
-- `candidate-nodes-schema.md`
-- `living-graph-provenance-tagging.md` (types only, no migration)
-- `candidate-profile-state-schema.md`
+**Phase 1 parallel batch 1 (schema-only, no shared TypeScript files):**
+- `candidate-nodes-schema.md` — owns `types.ts` and `candidateNodes.ts` creation
+- `candidate-profile-state-schema.md` — independent (`candidateProfileState.ts`, migration 0047)
 
-**Phase 1 parallel batch 2 (after schema):**
-- `candidate-decomposition-prompt.md`
-- `living-graph-supersedes-schema.md`
+**Phase 1 batch 1 — must run AFTER `candidate-nodes-schema.md` lands:**
+- `living-graph-provenance-tagging.md` — edits `types.ts` and `candidateNodes.ts` (overlap with `candidate-nodes-schema.md`; not parallel-safe)
+- `living-graph-supersedes-schema.md` — also edits `candidateNodes.ts` (run serially after provenance-tagging)
 
-**Phase 1 parallel batch 3 (after extraction):**
+**Phase 1 batch 2 — must run AFTER batch 1 lands:**
+- `candidate-decomposition-prompt.md` — edits `types.ts` and `orchestrate.ts` (orchestrate.ts also edited by `candidate-profile-state-schema.md`, so run after that completes)
+
+**Phase 1 batch 3 (after extraction):**
 - `candidate-sub-element-embedding.md`
 
 **Phase 2 parallel:**
 - `github-enrichment-worker.md`
-- `github-enrichment-intake.md` (wait for enrichment_jobs table from worker plan)
+- `github-enrichment-intake.md` (wait for `enrichment_jobs` table from worker plan)
 
 ---
 

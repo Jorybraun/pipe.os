@@ -39,7 +39,7 @@ Add `extractNodesFromScreenerAnswer(probe: string, answer: string, candidateId: 
 
 ### Subtask 3 — Wire into screener FSM turn processing
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureAgent.ts`
+- `workers/api/src/lib/cultureAgent.ts`
 
 **Spec:**
 In the Mode-1 turn-processing path (after recording the candidate's answer), call `extractNodesFromScreenerAnswer`. Catch any decomposition errors and log `[cultureAgent] decomposition failed on turn <N>, continuing` — decomposition failure must not abort the screening session. After successful extraction, call `computeCandidateCoverage(db, candidateId)` to update coverage and determine next probe target. The updated `next_probe_target` drives the next probe selection. Coverage update feeds back into termination check.

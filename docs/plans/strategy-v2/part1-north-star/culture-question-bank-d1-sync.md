@@ -19,7 +19,7 @@ A hardcoded TypeScript constant cannot be updated without a deployment, cannot b
 
 **Files:**
 - `workers/api/migrations/` (new migration file — after 0044)
-- `workers/api/src/lib/agents/culture/cultureQuestionBank.ts`
+- `workers/api/src/lib/cultureQuestionBank.ts`
 
 **Spec:**
 - New migration creates `culture_question_bank` table with columns: `id TEXT PRIMARY KEY`, `dimension TEXT NOT NULL`, `question_text TEXT NOT NULL`, `probe_type TEXT NOT NULL`, `is_active INTEGER NOT NULL DEFAULT 1`, `created_at TEXT NOT NULL DEFAULT (datetime('now'))`.
@@ -34,7 +34,7 @@ A hardcoded TypeScript constant cannot be updated without a deployment, cannot b
 ### Subtask 2 — Wire `loadQuestionBank` into the culture interview agent
 
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureAgent.ts` (or the file that initialises the FSM and accesses the question bank)
+- `workers/api/src/lib/cultureAgent.ts`
 
 **Spec:**
 - Replace the direct constant import with a call to `loadQuestionBank(env.DB)` at session initialisation.

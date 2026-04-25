@@ -26,7 +26,7 @@ Add `CulturalSignalProperties` to the sub-element extracted properties types: `{
 
 ### Subtask 2 — Map score results to candidate nodes
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureScorer.ts`
+- `workers/api/src/lib/cultureScorer.ts`
 
 **Spec:**
 Add `decomposeCultureResultToGraph(db, vectorize, ai, sessionId: string, candidateId: string, scoreReport: CultureScoreReport, mode: ScreenerMode): Promise<void>`. For each of 10 dimensions (5 competency + 5 profile) in the score report: create one CulturalSignal node. `narrative_text`: join the top 2 evidence_quotes with the reasoning into 2-3 sentences. `source_type='culture_interview'` for Mode-2, `source_type='automated_screener'` for Mode-1 (Mode-1 screener sessions are also culture-signal sources). `is_role_specific=true` for Mode-2, false for Mode-1. Insert + embed each node. Call `computeCandidateCoverage`. Wrap in try/catch — decomposition failure must not affect the score report write. Call from `cultureScorer.ts` after the existing report write.

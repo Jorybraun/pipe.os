@@ -69,7 +69,7 @@ Create table `candidate_coverage` with columns above. All `*_coverage` columns d
 - `workers/api/src/lib/candidateDiscovery/types.ts`
 
 **Spec:**
-Export `CandidateNodeType` union type (`'Experience' | 'Project' | 'Accomplishment' | 'Skill' | 'Education' | 'Credential' | 'CulturalSignal' | 'TechnicalDemonstration' | 'WorkingStyle' | 'CareerArc' | 'Motivation' | 'Context'`). Export `CandidateNode` interface matching the D1 schema. Export `CandidateCoverage` interface. Export `CoverageAspect` union (`'experience' | 'cultural' | 'technical' | 'motivation' | 'context'`). No `any` — all `extracted_properties_json` fields are `unknown` + type guards per parse site.
+Export `CandidateNodeType` union type (`'Experience' | 'Project' | 'Accomplishment' | 'Skill' | 'Education' | 'Credential' | 'CulturalSignal' | 'TechnicalDemonstration' | 'WorkingStyle' | 'CommunicationStyle' | 'CareerArc' | 'Motivation' | 'Context'`). Export `CandidateNode` interface matching the D1 schema. Export `CandidateCoverage` interface. Export `CoverageAspect` union (`'experience' | 'cultural' | 'technical' | 'motivation' | 'context'`). No `any` — all `extracted_properties_json` fields are `unknown` + type guards per parse site.
 
 **Status:** ⏳ PENDING
 

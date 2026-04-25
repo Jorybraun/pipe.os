@@ -20,7 +20,7 @@ Corpus growth is blocked because vectorizing Pass 3 output requires a human to m
 ### Subtask 1 — Add confidence score to Pass 3 output and store it
 
 **Files:**
-- `workers/api/src/lib/repoDiscovery/passThree.ts` (or equivalent Pass 3 file)
+- `workers/api/scripts/crawl-repos/pass3/run.ts` (Gemma summarization prompt is inline at line ~107)
 - `workers/api/migrations/` (new migration — after existing migrations)
 
 **Spec:**

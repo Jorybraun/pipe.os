@@ -28,7 +28,7 @@ Add `CodeReviewDemonstrationProperties` interface to the extracted_properties ty
 
 ### Subtask 2 — Decompose score report into candidate nodes
 **Files:**
-- `workers/api/src/lib/scoring/scoreAndPropagate.ts`
+- `workers/api/src/lib/review/scoreAndPropagate.ts`
 
 **Spec:**
 After the existing score report write (`review_sessions.score_report`), add: `decomposeCodeReviewToGraph(db, vectorize, ai, session)`. For each of the 6 dimensions in the score report: create one TechnicalDemonstration `CandidateNode`. `narrative_text`: derive from transcript evidence — select the 1-2 most specific transcript turns that demonstrate this dimension's score. LLM call to Gemma with prompt: "Given this code review transcript excerpt and BARS dimension <dim>, write a 2-sentence third-person evidence narrative." `source_type='code_review_session'`, `source_reference=session.id`, `captured_at=session.completed_at`. Insert + embed each node. Call `computeCandidateCoverage` after all 6 nodes written. Wrap in try/catch — decomposition failure must not affect the score report write.

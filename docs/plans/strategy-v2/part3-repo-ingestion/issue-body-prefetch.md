@@ -24,7 +24,7 @@ Candidates currently see `"Implement issue #N on <url>"` and must navigate to Gi
 
 ### Subtask 2 — Extend issue crawler to fetch and cache body
 **Files:**
-- `workers/api/scripts/crawl-repos/issueScorer/` (locate the Sunday 04:00 UTC cron script)
+- `workers/api/src/routes/cron/issueScorer.ts` (Sunday 04:00 UTC cron handler)
 
 **Spec:**
 - In the issue crawler/scorer that runs Sundays: after scoring each issue, fetch the issue body from GitHub REST API (`GET /repos/{owner}/{repo}/issues/{issue_number}`).

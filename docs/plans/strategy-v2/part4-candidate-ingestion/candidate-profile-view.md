@@ -26,7 +26,7 @@ Without a visible profile, candidates are flying blind through the screening and
 
 ### Subtask 2 — Candidate profile page (React)
 **Files:**
-- `src/pages/CandidateProfile.tsx`
+- `src/pages/CandidateProfilePage.tsx`
 
 **Spec:**
 Page component rendered on the candidate portal (protected by candidate session JWT). Groups nodes by type: "Experience", "Skills", "Projects", etc. Each group renders a collapsible section. Each node card shows: narrative_text, source badge (`resume` / `GitHub` / `screener`), confidence indicator (low < 0.6, medium 0.6–0.8, high > 0.8), captured_at formatted as relative time. Coverage bar at top: 5 dimension progress bars using `candidate_coverage` values. "Add missing information" CTA — links to screening entry (Mode 1) if screener_status is not complete. No styling outside the existing design system (`LiquidMetalCard`, existing badge components).

@@ -65,7 +65,7 @@ Parity testing against synthetic data catches schema bugs and query logic errors
 
 - Depends on: `neo4j-schema-and-constraints.md`
 - Depends on: `neo4j-dual-write-ingestion.md`
-- Depends on: `neo4j-matching-cutover.md` (shadow-read divergence feeds this validation)
+- Blocks: `neo4j-matching-cutover.md` (parity validation gates the cutover; the cutover plan's shadow-read step then feeds back into the post-cutover spot-check cron defined here)
 
 ## Acceptance criteria
 

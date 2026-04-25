@@ -108,7 +108,7 @@ Phase 2:
 ## Migration numbers (next available)
 
 - Last migration in phase0 plan: `0044_situation_fit_cache.sql`
-- Next: `0045` through `0054` allocated in this plan (8 migrations)
+- Next: `0045` through `0054` allocated in this plan (10 migrations)
 - Confirm no gaps before executing any migration subtask
 
 ---

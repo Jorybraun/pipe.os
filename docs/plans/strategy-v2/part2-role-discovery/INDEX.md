@@ -73,6 +73,7 @@ Phase 4 (serial within phase):
 - **Phase 5 graph migration** — `role_nodes` → Neo4j `:RoleNode` nodes (strategy lines 225–227)
 - **Recruiter training / product guardrails** — strategic framing in "honest caveats" section, not a work request
 - **Golden-set measurement / A/B match quality** — called for in caveats but no concrete work items specified; candidate for a future Part 5 plan
+- **`matchReposForCandidate` cutover to sub-elements** (strategy line 217) — the Part 2 source asks for an update so matching reads `role_nodes` instead of flat RCD text. The cutover spans Part 2 (consumer call sites) and Part 5 (per-requirement match scoring). Canonical home: [`../part5-matching-migration/per-requirement-match-pipeline.md`](../part5-matching-migration/per-requirement-match-pipeline.md). Once `phase2-role-nodes-backfill.md` lands, Part 5's per-requirement pipeline switches the read path; no separate Part 2 plan required.
 
 ---
 

@@ -42,7 +42,7 @@ Dealbreakers exist in the RCD schema with `job_relatedness_note`, `job_relatedne
 
 ### Subtask 2 — Surface dealbreaker fails in recruiter API response
 **Files:**
-- `workers/api/src/routes/cockpit/discovery.ts` (or wherever match results are returned)
+- `workers/api/src/routes/cockpit/candidates.ts` (where match results are returned to recruiters)
 
 **Spec:**
 - Add `dealbreaker_fails` and `dealbreaker_warnings` fields to the match result API response shape.

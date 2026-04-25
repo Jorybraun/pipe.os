@@ -62,7 +62,7 @@ Export `GitHubClient` class. Constructor takes `{ token?: string }` (optional PA
 - `workers/api/src/lib/enrichment/githubEnrich.ts`
 
 **Spec:**
-Export `enrichCandidateFromGitHub(handle: string, candidateId: string, db: D1Database, ai: Ai, vectorize: Vectorize): Promise<{ nodesCreated: number }>`. Fetches owned repos (max 30). For each repo with > 0 stars OR > 6 months activity: run a lightweight decomposition prompt via Gemma (similar to Pass 3 but scoped to a single README + language list + description). Produce Project sub-elements (what was built, technologies, their role as owner, scale from star count). For contributions (contributed repos with >= 5 merged-equivalent events): produce lighter Experience-like sub-elements. Write via `insertCandidateNode` with `source_type='github_enrichment'`, `source_reference=github_url`. Embed each node via `embedCandidateNode`. Bump `candidate_profile_state.profile_version`. On completion, update `candidate_profile_state.last_enriched_at` and `enrichment_jobs.status='DONE'`.
+Export `enrichCandidateFromGitHub(handle: string, candidateId: string, db: D1Database, ai: Ai, vectorize: Vectorize): Promise<{ nodesCreated: number }>`. Fetches owned repos (max 30) and the candidate's `/users/:handle` profile (for `followers` count). For each repo with > 0 stars OR > 6 months activity: run a lightweight decomposition prompt via Gemma (similar to Pass 3 but scoped to a single README + language list + description). Produce Project sub-elements (what was built, technologies, their role as owner, scale from star count). Each Project node's `extracted_properties_json` MUST include `{ stars: number, watchers: number, forks: number, owner_followers: number }` so downstream scoring can weight scale signal. For contributions (contributed repos with >= 5 merged-equivalent events): produce lighter Experience-like sub-elements. Write via `insertCandidateNode` with `source_type='github_enrichment'`, `source_reference=github_url`. Embed each node via `embedCandidateNode`. Bump `candidate_profile_state.profile_version`. On completion, update `candidate_profile_state.last_enriched_at` and `enrichment_jobs.status='DONE'`.
 
 **Status:** ⏳ PENDING
 
@@ -85,6 +85,7 @@ Internal route `POST /internal/enrichment/process` (no public auth, Cloudflare-o
 - [ ] `enrichment_jobs` migration applies cleanly
 - [ ] `GitHubClient` throws `GitHubRateLimitError` when remaining < 10 (unit test with mock headers)
 - [ ] `enrichCandidateFromGitHub` produces >= 1 Project node for a seeded test GitHub handle with public repos
+- [ ] Each Project node's `extracted_properties_json` includes `stars`, `watchers`, `forks`, and `owner_followers` numeric fields
 - [ ] Job retries up to 3 times then sets status FAILED
 - [ ] Job marked DONE after successful enrichment with `completed_at` set
 - [ ] Cron trigger configured in `wrangler.jsonc`

@@ -10,7 +10,7 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 
 ## ⚠️ Read-before-execution warnings
 
-1. **Migration numbers are not pre-allocated.** Multiple plan files propose `0045_*`, `0046_*`, etc. The actual next number must be resolved at PR time by listing `workers/api/migrations/` (highest staged today is `0044_situation_fit_cache.sql`). Do not commit a migration without confirming the number is unused on `main` and not racing another open PR.
+1. **Migration numbers are not pre-allocated.** Multiple plan files propose `0045_*`, `0046_*`, etc. The actual next number must be resolved at PR time by listing `workers/api/migrations/` (highest staged today is `0044_situation_fit_cache.sql`). Do not commit a migration without confirming the number is unused on `main` and not racing another open PR. **Known races (same-number collisions across plans):** `0045` (role-nodes / candidate-nodes / match-reports), `0046` (candidate-coverage / match-feedback-dimensions), `0047` (candidate-profile-state / skill-adjacency), and 0048–0052 across reliability + ingestion plans. See Open Question #11.
 
 2. **Cross-part duplicates were reconciled to canonical homes.** When a topic appears in multiple parts the canonical plan lives in one part and the others are redirect stubs. Canonical assignments:
    - **Dealbreaker gate enforcement** → `part5-matching-migration/dealbreaker-gate-enforcement.md`
@@ -174,6 +174,8 @@ These block specific `NEEDS-REFINEMENT` plans. Resolve before delegating the aff
 | 8 | **Probe bank content:** infra ships first; seed probe text needs founder + compliance review (NYC LL144, EU AI Act). Mode-1 screening cannot ship to real candidates until reviewed. | `profile-probe-bank` | Founder + legal |
 | 9 | **Candidate self-correction `source_type`:** new GDPR-distinct enum value vs reusing `recruiter_note`. | `candidate-profile-view` | Product + legal |
 | 10 | **GDPR DSAR table list:** plan starts from strategy-document references; live D1 schema audit required before implementation. | `gdpr-subject-rights` | Schema audit |
+| 11 | **Migration number allocation:** `0045`–`0052` are referenced by multiple plans (Part 2/3/4/5). No single canonical owner. First plan into PR claims the number; later plans must rebase. Decide whether to pre-allocate ranges (e.g. Part 4 owns 0045–0050, Part 5 owns 0051+) or keep first-come-first-served with mandatory rebase coordination in PR review. | All Phase 0–2 migrations | Founder + release coordinator |
+| 12 | **`CandidateNodeType` union completeness:** strategy enumerates `CommunicationStyle`, `CulturalSignal`, `TechnicalDemonstration`, `WorkingStyle`, `CareerArc`, `Motivation`, `Context` but the schema doc historically omitted `CommunicationStyle`. Now reconciled in `candidate-nodes-schema.md`. Confirm no other strategy types are missed before sealing the union. | `candidate-nodes-schema` | Spec review |
 
 ---
 

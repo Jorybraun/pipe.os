@@ -15,7 +15,7 @@ The screener is described as "the most important underbuilt piece of the whole p
 
 ### Subtask 1 — `ScreenerConfig` type and mode detection
 **Files:**
-- `workers/api/src/lib/agents/culture/types.ts`
+- `workers/api/src/lib/cultureAgent.ts` (no separate types.ts — types live alongside the agent)
 
 **Spec:**
 Export `ScreenerMode = 'profile_builder' | 'role_fit'`. Export `ScreenerConfig` interface: `{ mode: ScreenerMode, roleContextId?: string, rcdJson?: unknown, probeBank: 'profile_probe_bank' | 'role_probe_bank', barsAnchors: 'generic' | 'rcd_calibrated', hitlGated: boolean, maxTurns: number, minTurns: number, coverageThreshold: number }`. Export `buildScreenerConfig(mode: ScreenerMode, roleContextId?: string): ScreenerConfig` — for `profile_builder`: probeBank=profile, barsAnchors=generic, hitlGated=false, maxTurns=20, minTurns=8. For `role_fit`: probeBank=role, barsAnchors=rcd_calibrated, hitlGated=true, maxTurns=20, minTurns=8 (matches current production). No `any`.
@@ -26,7 +26,7 @@ Export `ScreenerMode = 'profile_builder' | 'role_fit'`. Export `ScreenerConfig` 
 
 ### Subtask 2 — Generalize probe selection in `cultureAgent.ts`
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureAgent.ts`
+- `workers/api/src/lib/cultureAgent.ts`
 
 **Spec:**
 Current agent reads from `role_probe_bank` hardcoded. Refactor probe selection into `selectNextProbe(db, session, config: ScreenerConfig): Promise<Probe | null>`. When `config.probeBank === 'profile_probe_bank'`: query `profile_probe_bank` WHERE `dimension = next_probe_target` (from `candidate_coverage`) AND id NOT IN already-asked probes. When `config.probeBank === 'role_probe_bank'`: existing behavior unchanged. Existing callers pass `buildScreenerConfig('role_fit', roleContextId)` — no behavioral change on the role-fit path. FSM state machine unchanged.
@@ -37,7 +37,7 @@ Current agent reads from `role_probe_bank` hardcoded. Refactor probe selection i
 
 ### Subtask 3 — Mode-1 termination conditions
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureAgent.ts`
+- `workers/api/src/lib/cultureAgent.ts`
 
 **Spec:**
 Add `coverage_complete` termination trigger for `profile_builder` mode: after each turn, call `computeCandidateCoverage(db, candidateId)` (see `screener-coverage-computation.md`). If all 5 dimensions >= `config.coverageThreshold` AND turn count >= `config.minTurns`, set termination reason `coverage_complete`. Existing termination conditions (`budget_exhausted`, `bank_exhausted`, `candidate_disengaged`) carry over unchanged. For `role_fit` mode, coverage_complete does not trigger (role-fit uses its own scoring-based completion logic).
@@ -48,7 +48,7 @@ Add `coverage_complete` termination trigger for `profile_builder` mode: after ea
 
 ### Subtask 4 — Mode-2 skip already-covered dimensions
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureAgent.ts`
+- `workers/api/src/lib/cultureAgent.ts`
 
 **Spec:**
 At Mode-2 session start, fetch the candidate's existing CulturalSignal nodes from `candidate_nodes` (source_type IN ('automated_screener', 'behavioural_interview')). Build `alreadyCoveredDimensions` from nodes with confidence >= 0.7. Inject into the Mode-2 system prompt: "Skip probes for these dimensions, candidate has adequate coverage from prior screening: [list]. Focus on: [thin dimensions]." This is the anti-double-interview-fatigue mechanism from strategy lines 199–201. Log dimensions skipped.

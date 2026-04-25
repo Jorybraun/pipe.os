@@ -18,7 +18,7 @@ ADR-029 §6 specifies that ungrounded scores (those with empty `evidenceQuotes`)
 ### Subtask 1 — Add ungrounded-score detection and re-prompt logic to `cultureScorer.ts`
 
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureScorer.ts`
+- `workers/api/src/lib/cultureScorer.ts`
 
 **Spec:**
 - After each of the 11 scoring calls (5 competency + 5 profile + synthesis), inspect the returned `evidenceQuotes` array.
@@ -36,8 +36,7 @@ ADR-029 §6 specifies that ungrounded scores (those with empty `evidenceQuotes`)
 ### Subtask 2 — Persist re-prompt telemetry to compliance audit trail
 
 **Files:**
-- `workers/api/src/lib/agents/culture/cultureComplianceAudit.ts` (or the file that writes to `culture_compliance_audit`)
-- `workers/api/src/lib/agents/culture/cultureScorer.ts`
+- `workers/api/src/lib/cultureScorer.ts` (compliance audit writes are inline in this file; no separate `cultureComplianceAudit.ts` exists — extend in place)
 
 **Spec:**
 - Add a new event type to the 13-event `culture_compliance_audit` schema: `SCORER_REPROMPT`. The event payload: `{ dimension: string; originalScore: number; repromptScore: number | null; finalGrounded: boolean }`.
