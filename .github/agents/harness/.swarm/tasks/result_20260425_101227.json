@@ -1,0 +1,20 @@
+{
+  "task": "Fix broken evaluator imports in role discovery",
+  "phase": "complete",
+  "created_at": "2026-04-25T10:12:27.554052",
+  "outputs": {
+    "backend": "[BACKEND CODE for: Fix broken evaluator imports in role discovery]",
+    "frontend": "[FRONTEND CODE for: Fix broken evaluator imports in role discovery]"
+  },
+  "approvals": {},
+  "status": "approved_and_complete",
+  "plan": {
+    "needs_design": false,
+    "needs_architecture": false,
+    "needs_frontend": false,
+    "needs_backend": true,
+    "sequential": false,
+    "analysis": "This task requires: backend"
+  },
+  "qa_passed": true
+}
