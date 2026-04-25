@@ -42,17 +42,18 @@ def save_state(state: Dict[str, Any]):
         json.dump(state, f, indent=2)
 
 
-def spawn_agent(role: str, task: str, context: str = "") -> str:
+def spawn_agent(role: str, task: str, context: str = "") -> dict:
     """
-    Spawn a sub-agent with the given role and task.
-    Returns the agent's output (from stdout or a result file).
+    Write an agent task spec and return metadata.
+    The parent orchestrator (OpenClaw agent) will read the spec,
+    spawn the actual agent via sessions_spawn, and inject results.
     """
-    # Read the role's system prompt
     prompts = {
-        "designer": Path(".github/agents/harness/prompts/designer.md"),
-        "architect": Path(".github/agents/harness/prompts/architect.md"),
-        "frontend": Path(".github/agents/harness/prompts/frontend.md"),
-        "backend": Path(".github/agents/harness/prompts/backend.md"),
+        "pm": Path("prompts/pm.md"),
+        "designer": Path("prompts/designer.md"),
+        "architect": Path("prompts/architect.md"),
+        "frontend": Path("prompts/frontend.md"),
+        "backend": Path("prompts/backend.md"),
     }
     
     prompt_file = prompts.get(role)
@@ -60,31 +61,32 @@ def spawn_agent(role: str, task: str, context: str = "") -> str:
     if prompt_file and prompt_file.exists():
         system_prompt = prompt_file.read_text()
     
-    # Build the agent task
-    agent_task = f"""{system_prompt}
-
-## TASK
-{task}
-
-## CONTEXT
-{context}
-
-## RULES
-- Work in the repository at /root/.openclaw/workspace/pipe.os
-- Follow all coding standards from AGENTS.md
-- Run `npx tsc --noEmit` before finishing
-- Return ONLY your output (code, design, or analysis)
-- Do not explain what you're doing, just produce the work
-"""
+    # Build structured task spec
+    task_spec = {
+        "role": role,
+        "system_prompt": system_prompt,
+        "task": task,
+        "context": context,
+        "rules": [
+            "Work in the repository at the project root",
+            "Follow all coding standards from AGENTS.md",
+            "Run `npx tsc --noEmit` before finishing",
+            "Return ONLY your output (code, design, or analysis)",
+            "Write results to the result file specified in the task"
+        ],
+        "repo_root": str(Path.cwd().parent.parent.parent),  # Go up from .github/agents/harness
+    }
     
-    # Write task to a temp file for the agent
-    task_file = TASKS_DIR / f"{role}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-    task_file.write_text(agent_task)
+    task_file = TASKS_DIR / f"{role}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    task_file.write_text(json.dumps(task_spec, indent=2))
     
-    # For now, since we can't actually spawn sub-agents from Python easily,
-    # we return a marker that tells the human (or the parent orchestrator)
-    # what agent to spawn next.
-    return f"AGENT_TASK_FILE:{task_file}"
+    result_file = TASKS_DIR / f"{task_file.stem}_result.md"
+    
+    return {
+        "task_file": str(task_file),
+        "result_file": str(result_file),
+        "role": role,
+    }
 
 
 def get_user_approval(phase: str, content: str) -> str:
@@ -104,9 +106,21 @@ def get_user_approval(phase: str, content: str) -> str:
     
     # In a real run, this would wait for stdin
     # For now, we save the pending approval and exit
-    print("NOTE: In a full implementation, the orchestrator would wait for user input.")
-    print("      For automation, use --auto-approve flag.")
-    return "approved"  # Default for testing
+    while True:
+        try:
+            choice = input("Your choice [A/R/Rev]: ").strip().lower()
+            if choice in ("a", "approve", ""):
+                return "approved"
+            elif choice in ("r", "reject"):
+                return "rejected"
+            elif choice in ("rev", "revise", "v"):
+                return "revise"
+            else:
+                print("Invalid choice. Enter A, R, or Rev.")
+        except (EOFError, KeyboardInterrupt):
+            # When running non-interactively, save state and exit
+            print("\n\nNon-interactive mode detected. Saving state for manual review.")
+            return "pending"
 
 
 def run_phase_0_analysis(task: str) -> Dict[str, Any]:
@@ -191,15 +205,37 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
         print("  PHASE 1: DESIGN")
         print("=" * 70)
         print("\nSpawning Designer agent...")
-        print("(In a full implementation, this would call sessions_spawn)")
-        print("\nAGENT_INSTRUCTION: Please spawn a Designer agent with this task:")
-        print(f"  Task: Create UI/UX design spec for: {task}")
-        print(f"  Context: Read existing code in target area first")
-        print(f"  Output: Design specification document")
-        print()
         
-        design_output = f"[DESIGN SPEC for: {task}]\n\nThis would be the designer's output."
+        agent_info = spawn_agent(
+            "designer",
+            f"Create UI/UX design spec for: {task}",
+            "Read existing code in target area first. Output a design specification document."
+        )
+        
+        state["pending_agent"] = agent_info
+        state["phase"] = "design_waiting"
+        state["status"] = "waiting_for_agent"
+        save_state(state)
+        
+        print(f"\n  Task spec written to: {agent_info['task_file']}")
+        print(f"  Expected result at:   {agent_info['result_file']}")
+        print("\n  >>> PAUSED: Waiting for agent to complete. <<<")
+        print(f"  To resume: python orchestrator.py --resume")
+        return state
+    
+    # Resume from design agent
+    if state["phase"] == "design_waiting":
+        agent_info = state.get("pending_agent", {})
+        result_file = Path(agent_info.get("result_file", ""))
+        
+        if not result_file.exists():
+            print(f"\n  Waiting for result file: {result_file}")
+            print("  Agent hasn't finished yet. Run again later.")
+            return state
+        
+        design_output = result_file.read_text()
         state["outputs"]["design"] = design_output
+        del state["pending_agent"]
         
         if not auto_approve:
             approval = get_user_approval("Design Review", design_output)
@@ -212,7 +248,6 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
             
             if approval == "revise":
                 print("Looping back to designer with revision notes...")
-                # In real implementation, send feedback to designer
                 state["phase"] = "design"
                 save_state(state)
                 return state
@@ -226,15 +261,41 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
         print("  PHASE 2: ARCHITECTURE")
         print("=" * 70)
         print("\nSpawning Architect agent...")
-        print("\nAGENT_INSTRUCTION: Please spawn an Architect agent with this task:")
-        print(f"  Task: Design technical solution for: {task}")
-        if "design" in state["outputs"]:
-            print(f"  Design spec: {state['outputs']['design'][:200]}...")
-        print(f"  Output: Architecture specification with data model, API contracts, file structure")
-        print()
         
-        arch_output = f"[ARCHITECTURE SPEC for: {task}]\n\nThis would be the architect's output."
+        context = ""
+        if "design" in state["outputs"]:
+            context = f"Design spec:\n{state['outputs']['design'][:1000]}\n\n"
+        
+        agent_info = spawn_agent(
+            "architect",
+            f"Design technical solution for: {task}",
+            context + "Output: Architecture specification with data model, API contracts, file structure."
+        )
+        
+        state["pending_agent"] = agent_info
+        state["phase"] = "architecture_waiting"
+        state["status"] = "waiting_for_agent"
+        save_state(state)
+        
+        print(f"\n  Task spec written to: {agent_info['task_file']}")
+        print(f"  Expected result at:   {agent_info['result_file']}")
+        print("\n  >>> PAUSED: Waiting for agent to complete. <<<")
+        print(f"  To resume: python orchestrator.py --resume")
+        return state
+    
+    # Resume from architect agent
+    if state["phase"] == "architecture_waiting":
+        agent_info = state.get("pending_agent", {})
+        result_file = Path(agent_info.get("result_file", ""))
+        
+        if not result_file.exists():
+            print(f"\n  Waiting for result file: {result_file}")
+            print("  Agent hasn't finished yet. Run again later.")
+            return state
+        
+        arch_output = result_file.read_text()
         state["outputs"]["architecture"] = arch_output
+        del state["pending_agent"]
         
         if not auto_approve:
             approval = get_user_approval("Architecture Review", arch_output)
@@ -262,59 +323,73 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
         
         context = ""
         if "architecture" in state["outputs"]:
-            context += f"Architecture: {state['outputs']['architecture'][:500]}\n\n"
+            context += f"Architecture:\n{state['outputs']['architecture'][:1000]}\n\n"
         if "design" in state["outputs"]:
-            context += f"Design: {state['outputs']['design'][:500]}\n\n"
+            context += f"Design:\n{state['outputs']['design'][:1000]}\n\n"
         
         needs_fe = state["plan"].get("needs_frontend", False)
         needs_be = state["plan"].get("needs_backend", False)
+        sequential = state["plan"].get("sequential", False)
         
-        if needs_fe and needs_be:
-            if state["plan"].get("sequential", False):
-                print("\nSequential mode: Backend → Frontend")
-                print("\nAGENT_INSTRUCTION: Spawn Backend agent first")
-                print(f"  Task: Implement backend for: {task}")
-                print(f"  Context: {context[:200]}...")
-                
-                be_output = f"[BACKEND CODE for: {task}]"
-                state["outputs"]["backend"] = be_output
-                
-                print("\nAGENT_INSTRUCTION: Spawn Frontend agent")
-                print(f"  Task: Implement frontend for: {task}")
-                print(f"  Backend: {be_output[:200]}...")
-                
-                fe_output = f"[FRONTEND CODE for: {task}]"
-                state["outputs"]["frontend"] = fe_output
-            else:
-                print("\nParallel mode: Backend + Frontend simultaneously")
-                print("\nAGENT_INSTRUCTION: Spawn BOTH Backend and Frontend agents in parallel")
-                print(f"  Backend task: Implement server-side logic for: {task}")
-                print(f"  Frontend task: Implement UI components for: {task}")
-                print(f"  Shared context: {context[:200]}...")
-                
-                be_output = f"[BACKEND CODE for: {task}]"
-                fe_output = f"[FRONTEND CODE for: {task}]"
-                state["outputs"]["backend"] = be_output
-                state["outputs"]["frontend"] = fe_output
-        elif needs_be and not needs_fe:
-            print("\nBackend-only mode")
-            print("\nAGENT_INSTRUCTION: Spawn Backend agent")
-            print(f"  Task: Implement server-side logic for: {task}")
-            print(f"  Context: {context[:200]}...")
+        state["pending_agents"] = []
+        
+        if needs_be:
+            print("\n  Spawning Backend agent...")
+            be_agent = spawn_agent(
+                "backend",
+                f"Implement server-side logic for: {task}",
+                context + "Write complete, compilable TypeScript code. Run npx tsc --noEmit before finishing."
+            )
+            state["pending_agents"].append(be_agent)
+        
+        if needs_fe and (not needs_be or not sequential):
+            # Frontend spawns in parallel with backend (if backend also running)
+            print("\n  Spawning Frontend agent...")
+            fe_agent = spawn_agent(
+                "frontend",
+                f"Implement UI components for: {task}",
+                context + "Write complete React/TypeScript code. Run npx tsc --noEmit before finishing."
+            )
+            state["pending_agents"].append(fe_agent)
+        
+        if state["pending_agents"]:
+            state["phase"] = "implementation_waiting"
+            state["status"] = "waiting_for_agents"
+            save_state(state)
             
-            be_output = f"[BACKEND CODE for: {task}]"
-            state["outputs"]["backend"] = be_output
-        elif needs_fe and not needs_be:
-            print("\nFrontend-only mode")
-            print("\nAGENT_INSTRUCTION: Spawn Frontend agent")
-            print(f"  Task: Implement UI components for: {task}")
-            print(f"  Context: {context[:200]}...")
-            
-            fe_output = f"[FRONTEND CODE for: {task}]"
-            state["outputs"]["frontend"] = fe_output
+            print(f"\n  >>> PAUSED: Waiting for {len(state['pending_agents'])} agent(s) to complete. <<<")
+            for agent in state["pending_agents"]:
+                print(f"    - {agent['role']}: {agent['result_file']}")
+            print(f"\n  To resume: python orchestrator.py --resume")
+            return state
         else:
-            print("\nNo implementation needed (analysis-only task)")
+            print("\n  No implementation needed (analysis-only task)")
+            state["phase"] = "qa"
+            save_state(state)
+    
+    # Resume from implementation agents
+    if state["phase"] == "implementation_waiting":
+        pending = state.get("pending_agents", [])
+        all_done = True
         
+        for agent_info in pending:
+            result_file = Path(agent_info.get("result_file", ""))
+            if not result_file.exists():
+                print(f"\n  Waiting for {agent_info['role']} result: {result_file}")
+                all_done = False
+        
+        if not all_done:
+            print("\n  Not all agents have finished yet. Run again later.")
+            return state
+        
+        # Collect all results
+        for agent_info in pending:
+            result_file = Path(agent_info["result_file"])
+            output = result_file.read_text()
+            state["outputs"][agent_info["role"]] = output
+            print(f"\n  {agent_info['role'].upper()} result collected ({len(output)} chars)")
+        
+        del state["pending_agents"]
         state["phase"] = "qa"
         save_state(state)
     
@@ -324,15 +399,126 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
         print("  PHASE 4: QUALITY ASSURANCE")
         print("=" * 70)
         print("\nRunning quality gates:")
-        print("  - npx tsc --noEmit")
-        print("  - No 'any' types")
-        print("  - Named exports")
-        print("  - CHANGELOG updated")
-        print()
         
-        # In real implementation, actually run tsc
-        qa_passed = True
+        qa_results = {
+            "tsc_passed": False,
+            "no_any_types": False,
+            "named_exports": False,
+            "changelog_updated": False,
+            "errors": []
+        }
+        
+        # Gate 1: TypeScript compilation
+        print("\n  [1/4] Running npx tsc --noEmit ...")
+        try:
+            result = subprocess.run(
+                ["npx", "tsc", "--noEmit"],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if result.returncode == 0:
+                qa_results["tsc_passed"] = True
+                print("      PASS")
+            else:
+                print(f"      FAIL\n{result.stdout[:500]}{result.stderr[:500]}")
+                qa_results["errors"].append("TypeScript compilation failed")
+        except FileNotFoundError:
+            print("      SKIP (npx/tsc not found — not a TS project or not in project root)")
+            qa_results["tsc_passed"] = True  # Skip if not applicable
+        except subprocess.TimeoutExpired:
+            print("      TIMEOUT")
+            qa_results["errors"].append("tsc timed out")
+        except Exception as e:
+            print(f"      ERROR: {e}")
+            qa_results["errors"].append(str(e))
+        
+        # Gate 2: No 'any' types in new/modified files
+        print("\n  [2/4] Checking for 'any' types ...")
+        try:
+            result = subprocess.run(
+                ["grep", "-rn", "\\bany\\b", "src/", "workers/", "--include=*.ts", "--include=*.tsx"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                qa_results["no_any_types"] = True
+                print("      PASS")
+            else:
+                lines = result.stdout.strip().split("\n")
+                print(f"      FAIL — {len(lines)} occurrences")
+                for line in lines[:5]:
+                    print(f"        {line}")
+                if len(lines) > 5:
+                    print(f"        ... and {len(lines) - 5} more")
+                qa_results["errors"].append(f"Found {len(lines)} 'any' type usages")
+        except FileNotFoundError:
+            print("      SKIP (grep not available)")
+            qa_results["no_any_types"] = True
+        except Exception as e:
+            print(f"      ERROR: {e}")
+        
+        # Gate 3: Named exports (basic check)
+        print("\n  [3/4] Checking for default exports ...")
+        try:
+            result = subprocess.run(
+                ["grep", "-rn", "export default", "src/", "workers/", "--include=*.ts", "--include=*.tsx"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            # Allow default exports for page components only
+            non_page_defaults = [l for l in result.stdout.strip().split("\n") if l.strip() and "pages/" not in l]
+            if not non_page_defaults:
+                qa_results["named_exports"] = True
+                print("      PASS")
+            else:
+                print(f"      WARN — {len(non_page_defaults)} non-page default exports")
+                for line in non_page_defaults[:3]:
+                    print(f"        {line}")
+                # Named exports are a recommendation, not a hard fail
+                qa_results["named_exports"] = True
+        except Exception as e:
+            print(f"      SKIP: {e}")
+            qa_results["named_exports"] = True
+        
+        # Gate 4: CHANGELOG updated
+        print("\n  [4/4] Checking CHANGELOG.md ...")
+        changelog_path = Path("CHANGELOG.md")
+        if changelog_path.exists():
+            content = changelog_path.read_text()
+            if "## [Unreleased]" in content or "## Unreleased" in content:
+                # Check if there's content after Unreleased header
+                unreleased_idx = content.find("## [Unreleased]") if "## [Unreleased]" in content else content.find("## Unreleased")
+                next_section = content.find("## [", unreleased_idx + 1)
+                section = content[unreleased_idx:next_section] if next_section > 0 else content[unreleased_idx:]
+                if len(section.strip()) > 50:  # Has actual content, not just header
+                    qa_results["changelog_updated"] = True
+                    print("      PASS")
+                else:
+                    print("      WARN — [Unreleased] section appears empty")
+                    qa_results["changelog_updated"] = True  # Allow empty for now
+            else:
+                print("      WARN — No [Unreleased] section found")
+                qa_results["changelog_updated"] = True
+        else:
+            print("      SKIP — CHANGELOG.md not found")
+            qa_results["changelog_updated"] = True  # Skip if not present
+        
+        # Final QA verdict
+        qa_passed = qa_results["tsc_passed"] and qa_results["no_any_types"]
+        state["qa_results"] = qa_results
         state["qa_passed"] = qa_passed
+        
+        print(f"\n{'='*70}")
+        if qa_passed:
+            print("  QA RESULT: PASS")
+        else:
+            print("  QA RESULT: FAIL")
+            for err in qa_results["errors"]:
+                print(f"    - {err}")
+        print(f"{'='*70}")
         
         if not qa_passed:
             state["status"] = "failed_qa"
@@ -433,7 +619,13 @@ def main():
             print("No active workflow.")
         return
     
-    if args.task_file:
+    if args.resume:
+        state = load_state()
+        if not state:
+            print("Error: No checkpoint to resume from. Start with --task.")
+            sys.exit(1)
+        task = state.get("task", "Unknown task")
+    elif args.task_file:
         with open(args.task_file) as f:
             task_spec = json.load(f)
         task = task_spec.get("name", "Unknown task")
@@ -441,7 +633,7 @@ def main():
         task = args.task
         task_spec = {"name": task}
     else:
-        print("Error: Provide --task or --task-file")
+        print("Error: Provide --task or --task-file or --resume")
         sys.exit(1)
     
     result = run_workflow(task, auto_approve=args.auto_approve, resume=args.resume)

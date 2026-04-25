@@ -1,9 +1,14 @@
-from typing import Literal, Callable
+from typing import Literal, Callable, Optional
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.types import Command
 import operator
-from typing import Annotated
+from typing import Annotated, List
+
+# TeamState base class (minimal version for Pipe swarm)
+class TeamState:
+    messages: List = []
+    next: str = ""
 
 # ============================================================================
 # Pipe Swarm v2 — Frontend/Backend split + Designer + User Approval Gate
