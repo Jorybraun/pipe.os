@@ -30,7 +30,7 @@ export function SettingsTab({ settings }: SettingsTabProps): JSX.Element {
         <LiquidMetalCard variant="default" style={{ padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 4 }}>
                 Allow Re-recording
               </div>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>
@@ -48,7 +48,7 @@ export function SettingsTab({ settings }: SettingsTabProps): JSX.Element {
         <LiquidMetalCard variant="default" style={{ padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 4 }}>
                 Preparation Countdown
               </div>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>
@@ -56,7 +56,7 @@ export function SettingsTab({ settings }: SettingsTabProps): JSX.Element {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 20, fontWeight: 800, color: '#fff' }}>
+              <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--pipe-text, #fff)' }}>
                 {settings.preparationTime}
               </span>
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>SEC</span>
@@ -68,7 +68,7 @@ export function SettingsTab({ settings }: SettingsTabProps): JSX.Element {
         <LiquidMetalCard variant="default" style={{ padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 4 }}>
                 Auto-Advance
               </div>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>

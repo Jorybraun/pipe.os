@@ -1,0 +1,46 @@
+{
+  "run_dir": "workers/api/fixtures/scorer-calibration-runs/2026-04-12T02-34-45-436",
+  "started_at": "2026-04-12T02:35:08.361Z",
+  "updated_at": "2026-04-12T02:35:08.361Z",
+  "endpoint": "http://127.0.0.1:8787/internal/calibrate/score",
+  "fixtures": [
+    {
+      "id": "seed-001-junior-jwt-verification-miss",
+      "seniority": "junior",
+      "tags": [
+        "typescript",
+        "auth",
+        "security",
+        "low-score-anchor"
+      ]
+    },
+    {
+      "id": "seed-002-senior-n-plus-one-excellent",
+      "seniority": "senior",
+      "tags": [
+        "typescript",
+        "performance",
+        "database",
+        "high-score-anchor"
+      ]
+    }
+  ],
+  "phase_a": {
+    "providers": [
+      "devstral"
+    ],
+    "ok_count": 2,
+    "failed_count": 0,
+    "models": {
+      "devstral": "devstral-latest"
+    },
+    "metrics": {
+      "devstral": {
+        "kappa": 0,
+        "icc": 0.043478260869565175,
+        "mae": 1.3333333333333333,
+        "fixtureCount": 2
+      }
+    }
+  }
+}

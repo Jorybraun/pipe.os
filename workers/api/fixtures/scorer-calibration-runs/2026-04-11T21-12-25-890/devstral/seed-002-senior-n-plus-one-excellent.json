@@ -1,0 +1,54 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "This candidate shows potential as a code reviewer but is not yet consistently strong. Their ability to verify fixes stands out, as they caught deeper issues during follow-up checks. However, their bug detection was weak—they missed critical issues, scoring only 30% on objective effectiveness. With more experience identifying real problems, they could become a reliable reviewer.",
+      "strengths": [
+        "Thoroughly checks whether fixes actually resolve issues",
+        "Balanced approach to prioritizing problems",
+        "Clear and structured communication in reviews"
+      ],
+      "growth_areas": [
+        "Needs to improve at spotting real bugs (low effectiveness score)",
+        "Should distinguish more clearly between critical and minor issues",
+        "Could ask more questions before making assumptions"
+      ]
+    },
+    "scorer_a_summary": "The reviewer demonstrated exceptional performance across all dimensions. They identified all planted bugs with accurate categorization, prioritized issues correctly with appropriate severity labels, and thoroughly evaluated revisions by verifying fixes and catching a deeper issue during pushback. The review process was rigorous, with no false positives and a clear distinction between blocking and non-blocking issues.",
+    "scorer_b_summary": ""
+  },
+  "meta": {
+    "wall_clock_ms": 13571,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

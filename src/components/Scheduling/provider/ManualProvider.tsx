@@ -10,12 +10,12 @@ const ManualWidget: FC<SchedulingProviderConfig> = ({ schedulingUrl, candidateNa
     style={{
       padding: 32,
       textAlign: 'center',
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid rgba(255,255,255,0.08)',
+      background: 'var(--pipe-surface)',
+      border: '1px solid var(--pipe-border)',
       borderRadius: 8,
     }}
   >
-    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, marginBottom: 24, fontFamily: '"Space Mono", monospace' }}>
+    <p style={{ color: 'var(--pipe-text-muted)', fontSize: 14, marginBottom: 24, fontFamily: '"Space Mono", monospace' }}>
       Your recruiter has provided a scheduling link. Click below to choose a time.
     </p>
     <a
@@ -25,9 +25,9 @@ const ManualWidget: FC<SchedulingProviderConfig> = ({ schedulingUrl, candidateNa
       style={{
         display: 'inline-block',
         padding: '12px 28px',
-        background: 'rgba(255,255,255,0.1)',
-        border: '1px solid rgba(255,255,255,0.2)',
-        color: '#fff',
+        background: 'var(--pipe-surface-hover)',
+        border: '1px solid var(--pipe-border)',
+        color: 'var(--pipe-text, #fff)',
         fontSize: 11,
         letterSpacing: '0.15em',
         fontFamily: '"Space Mono", monospace',
@@ -41,7 +41,7 @@ const ManualWidget: FC<SchedulingProviderConfig> = ({ schedulingUrl, candidateNa
         confirmation back to Pipe. To close this loop, add a Calendly/Cal.com
         webhook or polling mechanism that updates ScheduledInterview.status to
         SCHEDULED automatically. For MVP the recruiter updates status manually. */}
-    <p style={{ marginTop: 20, fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+    <p style={{ marginTop: 20, fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
       Once you've selected a time, your recruiter will confirm the appointment.
     </p>
   </div>

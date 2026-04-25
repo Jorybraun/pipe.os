@@ -1,0 +1,238 @@
+{
+  "rcd_version": "2.0.0",
+  "role_context_id": "fixture-rcd-jbr-001",
+  "pipeline_id": "fixture-pipeline-jbr-001",
+  "created_at": "2026-04-14T10:00:00.000Z",
+
+  "technical_context": {
+    "stack": ["Rust", "Tokio", "PostgreSQL", "axum", "SQLx", "serde"],
+    "constructs": [
+      "async/await Rust patterns",
+      "trait-based abstraction",
+      "error propagation with thiserror",
+      "connection pool management",
+      "unit testing with cargo test",
+      "structured JSON serialization",
+      "compile-time query validation",
+      "library crate design"
+    ],
+    "seniority_band": "junior",
+    "codebase_expectations": [
+      "All async code uses Tokio runtime; no blocking calls in async contexts",
+      "Error types use thiserror derives; no bare string errors from .unwrap() in library code",
+      "SQLx queries are compile-time checked; raw string SQL outside of sqlx::query! macros requires a reviewer comment explaining why",
+      "Unit tests are colocated in the same file as the module they test",
+      "Library crates have rustdoc examples for every public function"
+    ],
+    "dispositional_weights": {
+      "learning_velocity": 0.25,
+      "ownership": 0.05,
+      "communication": 0.10
+    }
+  },
+
+  "domain_matrix": {
+    "HIRING_MANAGER": {
+      "work": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "We don't expect juniors to know Rust inside out on day one — we expect them to be serious about learning it correctly, not just making it compile.",
+            "source_exchange_id": "q-work-01",
+            "consequence": "The team distinguishes between code that compiles and code that is idiomatic; junior engineers who hack past the borrow checker without understanding why will create hard-to-review code",
+            "value": "Idiomatic Rust as a long-term maintainability investment",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["idiomatic_rust", "learning_rust_correctly", "borrow_checker_understanding", "no_unsafe_shortcuts"],
+        "axial_links": [
+          { "from_code": "idiomatic_rust", "to_code": "borrow_checker_understanding", "relation": "causes" },
+          { "from_code": "no_unsafe_shortcuts", "to_code": "idiomatic_rust", "relation": "enables" }
+        ],
+        "stories": [
+          {
+            "situation": "A junior Rust engineer submitted a PR with six .clone() calls and two Arc<Mutex<>> wrappings that were unnecessary — they had worked around the borrow checker without understanding the ownership model.",
+            "action": "The reviewer paired with the engineer for an hour to walk through the ownership model from first principles, showing how each clone could be eliminated and what the lifetime constraints actually were.",
+            "outcome": "The engineer's subsequent PRs showed a marked improvement in ownership model understanding; they became the team's go-to person for explaining lifetimes to other new joiners six months later.",
+            "moral": "The team invests in junior engineers learning Rust correctly rather than acceptably. Code review is teaching, not gatekeeping — but the standard is idiomatic Rust, not 'it compiles'.",
+            "source_exchange_id": "q-work-01"
+          }
+        ],
+        "summary": "The team builds a Rust library crate that is used by several downstream services as a dependency. Junior engineers are expected to understand that they are writing library code — their API design decisions have downstream impact. The primary onboarding challenge for juniors joining from other languages is developing an intuition for Rust's ownership model rather than fighting it with clones and reference counting."
+      },
+      "codebase": {
+        "primary_authority": true,
+        "coverage": "covered",
+        "laddering_chains": [
+          {
+            "attribute_quote": "We are a library, not a service — our API surface is the product. Juniors need to understand that breaking a public function signature means updating every consumer, which is a much larger blast radius than changing an internal service endpoint.",
+            "source_exchange_id": "q-codebase-01",
+            "consequence": "Library crate API design requires thinking about semver and downstream consumer impact; juniors who come from service backgrounds may not have this awareness",
+            "value": "Library API stability as a trust contract with downstream consumers",
+            "energy_signal": "medium",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["library_api_design", "semver_awareness", "consumer_blast_radius", "rustdoc_required"],
+        "axial_links": [
+          { "from_code": "library_api_design", "to_code": "consumer_blast_radius", "relation": "causes" },
+          { "from_code": "semver_awareness", "to_code": "library_api_design", "relation": "enables" }
+        ],
+        "stories": [],
+        "summary": "The codebase is a library crate using SQLx for compile-time checked PostgreSQL queries and axum for the HTTP layer. Unit tests are colocated with modules. Every public function has rustdoc examples that are tested by cargo test. The team uses thiserror for structured error types — no bare panics or unwrap() in library-facing code. The compile-time SQLx macros are a deliberate choice: they catch schema mismatches before the code ships."
+      },
+      "bar": {
+        "primary_authority": true,
+        "coverage": "covered",
+        "laddering_chains": [
+          {
+            "attribute_quote": "The bar for junior here is someone who is genuinely curious about Rust's type system, not just trying to get past it. I can teach the API; I cannot teach curiosity.",
+            "source_exchange_id": "q-bar-01",
+            "consequence": "Curiosity about the Rust type system and ownership model is the primary leading indicator of success; engineers who treat the compiler as an obstacle rather than a collaborator plateau quickly",
+            "value": "Intrinsic motivation to understand the language deeply as a junior differentiator",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["rust_curiosity", "type_system_interest", "compiler_as_collaborator", "intrinsic_motivation"],
+        "axial_links": [
+          { "from_code": "rust_curiosity", "to_code": "type_system_interest", "relation": "enables" },
+          { "from_code": "compiler_as_collaborator", "to_code": "intrinsic_motivation", "relation": "instantiates" }
+        ],
+        "stories": [],
+        "summary": "The junior bar focuses heavily on learning orientation: the candidate should be able to demonstrate genuine curiosity about Rust's ownership model, even if their production Rust experience is limited. A candidate with strong CS fundamentals and six months of serious Rust study who can discuss lifetimes, trait objects, and async executors is a stronger hire than a candidate with two years of Rust experience who writes Go-style Rust."
+      },
+      "process": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["mentored_code_review", "pair_programming_onboarding"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "Junior engineers receive mentored code reviews where the reviewer explains the Rust idiom being corrected, not just flagging it. Onboarding includes pair programming sessions on the ownership model."
+      },
+      "why": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["systems_level_reliability", "rust_correctness_guarantees"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "The team chose Rust for its compile-time correctness guarantees — eliminating a class of memory safety and data race bugs that are common in C++ equivalents. Junior engineers joining this team are investing in a skill that the systems programming industry is increasingly valuing."
+      },
+      "team": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["small_team", "high_expertise", "teaching_culture"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "A team of three engineers, all with strong Rust backgrounds. The team has a teaching culture — senior engineers actively invest in junior development through code review and pairing, not just merging PRs."
+      }
+    }
+  },
+
+  "conflicts": [],
+
+  "team_culture_profile": {
+    "per_stakeholder": {
+      "HIRING_MANAGER": {
+        "clan_affinity": 4,
+        "adhocracy_affinity": 2,
+        "market_affinity": 2,
+        "hierarchy_affinity": 2,
+        "psychological_safety": 5
+      }
+    }
+  },
+
+  "bars_overrides": [
+    {
+      "dimension": "learning_velocity",
+      "anchor_level": 3,
+      "base_anchor_text": "Demonstrates ability to learn new concepts quickly and apply them.",
+      "override_anchor_text": "Demonstrates curiosity about Rust's ownership model specifically: asks questions about why the borrow checker rejects a pattern rather than working around it. Can explain the difference between a reference and a Box, and understands when to reach for Arc<Mutex<>> versus designing around shared state.",
+      "source_chain_id": "q-bar-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "code_quality",
+      "anchor_level": 2,
+      "base_anchor_text": "Writes clean, readable code that follows the team's style.",
+      "override_anchor_text": "Writes idiomatic Rust for a junior level: uses thiserror for error types, avoids unnecessary .clone() by understanding ownership, and writes rustdoc examples for public functions. Compile errors are investigated and understood before being worked around with .clone() or unsafe.",
+      "source_chain_id": "q-work-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    }
+  ],
+
+  "probe_bank_enrichment": {
+    "static_base_version": "v1.0.0",
+    "enriched_probes": [
+      {
+        "dimension": "learning_velocity",
+        "probe_text": "Tell me about the last time the Rust compiler rejected something you wrote. What was the error, and what did you learn about the ownership model from investigating it?",
+        "source_chain_id": "q-bar-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      },
+      {
+        "dimension": "code_quality",
+        "probe_text": "If you needed to write a public library function that queries PostgreSQL asynchronously, walks me through the error handling approach you would use and why.",
+        "source_chain_id": "q-codebase-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      }
+    ]
+  },
+
+  "dealbreakers": [
+    {
+      "id": "db-jbr-001",
+      "label": "Treats the Rust compiler as an obstacle rather than a guide",
+      "pattern": "Candidate describes habitually using .clone() to silence borrow checker errors without understanding ownership, or uses unsafe blocks to bypass lifetime constraints",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-bar-01",
+      "job_relatedness_note": "The team writes library-level Rust where idiomatic ownership patterns are critical for API usability and safety; an engineer who fights the borrow checker will produce unmaintainable library code.",
+      "job_relatedness_strength": "strong",
+      "evidence_quote": "The bar for junior here is someone who is genuinely curious about Rust's type system, not just trying to get past it."
+    }
+  ],
+
+  "red_flags": [
+    {
+      "id": "rf-jbr-001",
+      "label": "Only has service-layer experience, no library design experience",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-codebase-01",
+      "evidence_quote": "We are a library, not a service — our API surface is the product. Juniors need to understand that breaking a public function signature means updating every consumer."
+    }
+  ],
+
+  "consumer_slice": {
+    "seniority": "Junior, 0–2 years",
+    "archetype": "Rust-curious engineer with strong CS fundamentals, comfortable in async Tokio and motivated to learn idiomatic Rust patterns rather than working around the borrow checker",
+    "mustHaveSkills": ["Rust", "Tokio", "async/await", "PostgreSQL", "serde", "unit testing"],
+    "niceToHaveSkills": ["axum", "SQLx", "thiserror", "rustdoc", "library crate design"],
+    "disposition": [
+      "Curious about the ownership model, not frustrated by it",
+      "Writes rustdoc examples for public functions without being asked",
+      "Asks 'why does the compiler reject this' before reaching for a workaround"
+    ],
+    "careerSignal": "Has written a non-trivial Rust program with async code, custom error types, and unit tests — even as a personal project",
+    "redFlags": ["Has only written Rust as a service-style application without exposure to library API design"],
+    "dealbreakers": ["Uses unsafe blocks or excessive .clone() chains to bypass borrow checker errors without understanding the underlying ownership issue"]
+  },
+
+  "validation_metadata": {
+    "schema_version": "2.0.0",
+    "synthesis_model": "fixture-synthetic-v1",
+    "synthesis_prompt_version": "v2.0.0",
+    "verification_pass_model": "fixture-synthetic-v1",
+    "face_validity_reviewed_at": "2026-04-14T10:00:00.000Z",
+    "face_validity_reviewer": "fixture-author"
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "id": "seed-002-senior-n-plus-one-excellent",
+  "description": "Senior reviewer identifies an N+1 query + transaction boundary bug, distinguishes critical from minor, asks targeted questions, pushes back on implementer's first fix attempt. Expected high bands across technical + communication.",
+  "tags": ["typescript", "performance", "database", "high-score-anchor"],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Fetch candidate challenge results for recruiter dashboard",
+    "description": "Adds /api/v1/pipelines/:id/candidates endpoint that returns each candidate in the pipeline with their aggregated challenge scores. Used by the new dashboard ranking view.",
+    "instructions": "Review as the tech lead on the recruiter service. This endpoint will be hit on every dashboard load for pipelines with 10-200 candidates each.",
+    "diff": "diff --git a/workers/api/src/routes/cockpit/pipelineCandidates.ts b/workers/api/src/routes/cockpit/pipelineCandidates.ts\n@@ -0,0 +1,62 @@\n+import { Hono } from 'hono';\n+import type { Env } from '../../types';\n+\n+interface CandidateRow {\n+  id: string;\n+  name: string;\n+  email: string;\n+  stage_id: string;\n+}\n+\n+interface ScoreRow {\n+  assessment_id: string;\n+  score: number;\n+}\n+\n+export const pipelineCandidatesRoutes = new Hono<{ Bindings: Env }>();\n+\n+pipelineCandidatesRoutes.get('/:id/candidates', async (c) => {\n+  const pipelineId = c.req.param('id');\n+\n+  const candidates = await c.env.DB\n+    .prepare('SELECT id, name, email, stage_id FROM candidates WHERE pipeline_id = ?1')\n+    .bind(pipelineId)\n+    .all<CandidateRow>();\n+\n+  const enriched = [];\n+  for (const cand of candidates.results) {\n+    const scores = await c.env.DB\n+      .prepare(\n+        `SELECT a.id as assessment_id, s.score\n+         FROM assessments a\n+         JOIN review_scores s ON s.assessment_id = a.id\n+         WHERE a.candidate_id = ?1`,\n+      )\n+      .bind(cand.id)\n+      .all<ScoreRow>();\n+\n+    const avgScore =\n+      scores.results.length > 0\n+        ? scores.results.reduce((sum, s) => sum + s.score, 0) / scores.results.length\n+        : null;\n+\n+    enriched.push({\n+      id: cand.id,\n+      name: cand.name,\n+      email: cand.email,\n+      stageId: cand.stage_id,\n+      avgScore,\n+    });\n+  }\n+\n+  // Mark all candidates as 'viewed' for analytics\n+  await c.env.DB\n+    .prepare('UPDATE candidates SET last_viewed_at = ?1 WHERE pipeline_id = ?2')\n+    .bind(new Date().toISOString(), pipelineId)\n+    .run();\n+\n+  return c.json({ candidates: enriched });\n+});\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+      "line": 24,
+      "description": "Classic N+1: loops through candidates and executes one D1 query per candidate to fetch scores. For a pipeline with 200 candidates this is 201 round-trips. Should be a single JOIN query with GROUP BY candidate_id."
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+      "line": 51,
+      "description": "The 'mark as viewed' write runs on every GET. This is a side-effect on a read endpoint, causing unnecessary D1 writes on every dashboard render. Should be a separate explicit POST /viewed endpoint or debounced."
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+      "line": 15,
+      "description": "No authentication check. Any caller can enumerate candidates for any pipeline_id by guessing UUIDs. Route needs to verify the Clerk JWT + assert the caller's org_id owns the pipeline."
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+      "line": 32,
+      "description": "enriched.push in a loop — functional .map() would be cleaner, but not worth blocking on."
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 201,
+            "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+            "line": 24,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "This is an N+1 query — one database round-trip per candidate.",
+            "why": "For a pipeline with 200 candidates this is 201 D1 queries on every dashboard render. D1 reads are cheap but not free, and the latency stacks serially because each query awaits the previous. On a real recruiter dashboard this endpoint would be the single dominant source of p95 latency on the page. We need to replace this with one query that joins candidates and review_scores and aggregates in SQL.",
+            "suggestion": "SELECT c.id, c.name, c.email, c.stage_id, AVG(s.score) as avg_score FROM candidates c LEFT JOIN assessments a ON a.candidate_id = c.id LEFT JOIN review_scores s ON s.assessment_id = a.id WHERE c.pipeline_id = ?1 GROUP BY c.id",
+            "positive": false
+          },
+          {
+            "id": 202,
+            "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+            "line": 51,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Write-on-read: the 'mark as viewed' UPDATE fires on every GET.",
+            "why": "This is a GET endpoint; GETs should be side-effect-free. Beyond the HTTP semantics issue, this blasts a write at the database on every dashboard poll — if the frontend refreshes the dashboard every 30s, this is 2,880 unnecessary writes per recruiter per day. And the UPDATE has no WHERE clause scoping it to the caller's org, so any authenticated recruiter touching the endpoint bumps last_viewed_at for every candidate in that pipeline, trashing per-recruiter viewed analytics. Split this into an explicit POST /pipelines/:id/mark-viewed called deliberately, or drop it entirely and compute 'viewed' from request logs.",
+            "positive": false
+          },
+          {
+            "id": 203,
+            "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+            "line": 15,
+            "category": "security",
+            "severity": "blocking",
+            "what": "No auth check — this endpoint lets any caller enumerate candidates for any pipeline_id they can guess.",
+            "why": "The handler never looks at the Clerk JWT or verifies that the caller's org owns this pipeline. pipeline_id is a UUID so it's not trivially guessable, but UUIDs leak through logs, URLs, and frontend bundles all the time, and a leaked pipeline_id would expose every candidate's email. Add an auth guard that resolves the Clerk JWT to an org_id and asserts ownership in the WHERE clause (WHERE c.pipeline_id = ?1 AND c.org_id = ?2).",
+            "positive": false
+          },
+          {
+            "id": 204,
+            "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+            "line": 32,
+            "category": "style",
+            "severity": "suggestion",
+            "what": "Minor: candidates.results.map(...) would be cleaner than push-in-loop.",
+            "why": "Style preference, not blocking. Only mentioning because once you rewrite this for the N+1 fix the body will change anyway.",
+            "positive": false
+          },
+          {
+            "id": 205,
+            "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+            "line": 1,
+            "category": "positive",
+            "severity": "nit",
+            "what": "Solid type definitions at the top, I like that the row shapes are explicit rather than inferred.",
+            "why": "",
+            "positive": true
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Three blocking issues: the N+1 query (perf), the write-on-read side effect (correctness + data integrity), and the missing auth check (security). The style nit on line 32 is not blocking and will be resolved as a side-effect of the N+1 rewrite. Happy to re-review as soon as the blocking items are addressed.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 201,
+            "move": "change",
+            "content": "Good catch — I had this in a single query originally but split it because I was getting a D1 type error on the LEFT JOIN. I'll fix the type and use the JOIN version you suggested.",
+            "updated_code": "const result = await c.env.DB\n  .prepare(\n    `SELECT c.id, c.name, c.email, c.stage_id,\n            AVG(s.score) as avg_score\n     FROM candidates c\n     LEFT JOIN assessments a ON a.candidate_id = c.id\n     LEFT JOIN review_scores s ON s.assessment_id = a.id\n     WHERE c.pipeline_id = ?1\n     GROUP BY c.id`,\n  )\n  .bind(pipelineId)\n  .all<CandidateRow & { avg_score: number | null }>();"
+          },
+          {
+            "to_comment_id": 202,
+            "move": "pushback",
+            "content": "I pushed back on this: the analytics team asked for 'viewed when the recruiter opens the dashboard' as the definition. If we split it into a separate POST we need the frontend to call it every time the page loads, which is the same write volume with an extra round trip. Happy to hear counterproposals but I don't think the split helps."
+          },
+          {
+            "to_comment_id": 203,
+            "move": "change",
+            "content": "You're right, I forgot this needed the auth guard. Adding the middleware + the org_id check in the WHERE clause.",
+            "updated_code": "pipelineCandidatesRoutes.use('/*', authMiddleware);\n// ... and inside the handler:\nconst orgId = c.get('orgId');\n// ... WHERE c.pipeline_id = ?1 AND c.org_id = ?2"
+          },
+          {
+            "to_comment_id": 204,
+            "move": "comment",
+            "content": "Yep, resolved by the N+1 rewrite."
+          }
+        ]
+      },
+      {
+        "round": 2,
+        "reviewer_comments": [
+          {
+            "id": 206,
+            "file": "workers/api/src/routes/cockpit/pipelineCandidates.ts",
+            "line": 51,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Pushing back on the pushback: the issue isn't the write volume, it's that the UPDATE is unscoped.",
+            "why": "Re-read the original: the UPDATE has no caller identity in it. If recruiter A and recruiter B from the same org both look at the dashboard, the second one's GET overwrites the first one's last_viewed_at for every candidate in the pipeline. The analytics team's 'when the recruiter opens the dashboard' definition is per-recruiter, not per-pipeline. As written, last_viewed_at is meaningless. You need a candidate_views (candidate_id, recruiter_id, viewed_at) table or a dedicated POST that at least carries the recruiter_id in the write. I'm fine with the GET-side write if you fix the identity issue, but not as-is.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "N+1 fix looks good, auth guard looks good. The write-on-read is still blocking because of the identity issue I missed on round 1. My apologies for not flagging the identity issue the first time — I was focused on HTTP semantics and missed the data-integrity problem underneath.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 206,
+            "move": "change",
+            "content": "Oh — yeah, that's a real problem. I hadn't thought about the cross-recruiter case. Adding a candidate_views table with (candidate_id, recruiter_id, viewed_at, PRIMARY KEY (candidate_id, recruiter_id)) and using an UPSERT. Thanks for catching the second layer.",
+            "updated_code": "await c.env.DB\n  .prepare(\n    `INSERT INTO candidate_views (candidate_id, recruiter_id, viewed_at)\n     VALUES ${placeholders}\n     ON CONFLICT(candidate_id, recruiter_id) DO UPDATE SET viewed_at = excluded.viewed_at`,\n  )\n  .bind(...values)\n  .run();"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "All three blocking issues resolved. N+1 rewritten as a single join, auth guard added with org scoping, and the viewed-state tracking now carries recruiter identity. Nice work iterating on the data-integrity concern — the second-round catch was a real improvement and shows good handling of pushback.",
+      "submittedAt": "2026-04-11T16:15:00Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Caught 3 of 4 planted bugs including both criticals (N+1, auth) and the major (write-on-read), with explicit reasoning grounded in the diff. The minor style nit was correctly deprioritized. BARS level 4-5: 'identifies structural issues with specific rationale'."
+    },
+    "prioritization": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Clear severity triage: 3 blocking comments on correctness/security/performance, 1 suggestion on style explicitly flagged as non-blocking, 1 positive observation on type definitions. The positive comment is bonus. Level 5: 'correctly separates blocking from nit with explicit labels'."
+    },
+    "revision_evaluation": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Round 2 behavior is the key signal: reviewer re-examined the implementer's pushback, discovered a second-order issue they themselves had missed in round 1 (the cross-recruiter identity problem), acknowledged the miss, and held the line on the blocking status. Level 5: 'updates own mental model when the PR author pushes back with a valid point, but also holds the line when the pushback is off-target'."
+    },
+    "reasoning_quality": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Every 'why' field contains a multi-sentence argument: N+1 comment explains latency stacking and D1 cost model; write-on-read comment enumerates three independent consequences (HTTP semantics, write volume, unscoped UPDATE); auth comment names the specific attack vector. Round 2 round-trip shows explicit reasoning about when to hold vs. cede ground. Level 5: 'argument anchored in specific failure modes'."
+    },
+    "question_formation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Reviewer did not ask clarifying questions in round 1 — they knew what the issue was and stated it. In round 2 the response to the implementer's pushback is framed as a counter-argument, not a question. This is appropriate for a senior reviewer but costs a band on question formation specifically. Level 3-4: 'asks no questions but doesn't need to — comments are concrete'."
+    },
+    "ai_direction": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Every blocking comment includes an actionable suggestion the implementer could act on: the SQL JOIN query is literally spelled out, the auth guard pattern is named, the round-2 response suggests the table schema with explicit primary key. Implementer's changes all landed cleanly because the direction was concrete. Level 4-5: 'guidance is specific enough that the implementer never had to ask what to do'."
+    }
+  }
+}

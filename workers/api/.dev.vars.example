@@ -1,0 +1,29 @@
+CLERK_SECRET_KEY=sk_test_your_key_here
+GITHUB_TOKEN=ghp_your_github_pat_here
+MISTRAL_API_KEY=your_mistral_api_key_here
+ANTHROPIC_API_KEY=sk-ant-your_key_here
+# GOOGLE_AI_API_KEY is used ONLY by the Live Voice provider (WebSocket, Gemini Live API).
+# DO NOT set *_PROVIDER=google-ai — Cloudflare edge IPs are geo-blocked by
+# generativelanguage.googleapis.com (confirmed Google bug, no fix).
+GOOGLE_AI_API_KEY=your_google_ai_studio_api_key_here
+
+# ── Vertex AI (optional — use for role/culture agents if you want Vertex over Workers AI) ──
+# Set ROLE_AGENT_PROVIDER=vertex-ai (and optionally CULTURE_AGENT_PROVIDER=vertex-ai)
+# then provide the service account JSON. The provider self-refreshes OAuth2 tokens via JWT.
+#
+# Get a service account key:
+#   gcloud iam service-accounts create pipe-vertex \
+#     --display-name "Pipe Vertex AI"
+#   gcloud projects add-iam-policy-binding YOUR_PROJECT \
+#     --member="serviceAccount:pipe-vertex@YOUR_PROJECT.iam.gserviceaccount.com" \
+#     --role="roles/aiplatform.user"
+#   gcloud iam service-accounts keys create sa-key.json \
+#     --iam-account=pipe-vertex@YOUR_PROJECT.iam.gserviceaccount.com
+#
+# Then paste the contents of sa-key.json as a single-line JSON string:
+# VERTEX_SA_KEY_JSON={"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}
+# VERTEX_AI_REGION=us-central1
+# VERTEX_AI_MODEL=gemma-4-26b-a4b-it
+# ROLE_AGENT_PROVIDER=vertex-ai
+# CULTURE_AGENT_PROVIDER=vertex-ai
+# COPILOT_AGENT_PROVIDER=vertex-ai

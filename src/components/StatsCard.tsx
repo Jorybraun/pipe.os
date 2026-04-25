@@ -39,7 +39,7 @@ export function StatsCard({
             style={{
               fontSize: 8,
               letterSpacing: "0.2em",
-              color: "rgba(255,255,255,0.3)",
+              color: "var(--pipe-text-dim)",
               marginBottom: 12,
             }}
           >
@@ -91,14 +91,14 @@ export function StatsCard({
           style={{
             width: 48,
             height: 48,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
+            background: "var(--pipe-surface)",
+            border: "1px solid var(--pipe-border)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Icon size={20} color="rgba(255,255,255,0.3)" />
+          <Icon size={20} color="var(--pipe-text-dim)" />
         </div>
       </div>
     </LiquidMetalCard>

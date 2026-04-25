@@ -1,0 +1,32 @@
+{
+  "repo_id": 1679,
+  "full_name": "uber/baseweb",
+  "run_timestamp": "2026-04-16T00:49:21.319Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 207,
+      "profile_words": 202
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "repo_searchable_profile too short: 202 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 76, 11, 16, 97, 90"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1679,
+    "full_name": "uber/baseweb",
+    "primary_language": "typescript",
+    "stars": 8959,
+    "has_tests": true,
+    "detected_domain": "web-frontend"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The uber/baseweb repository serves as a highly structured design system library, primarily authored in typescript. Given its nature as a collection of modular UI components and developer tooling—including codemods and ESLint plugins—the architecture follows a library pattern designed for external consumption. The codebase exhibits a medium complexity profile, supported by a large scale of 246200 SLOC across 2462 files. Engineering discipline is centered around a unit-only test strategy using the jest framework, with a test touch rate of 0.45, indicating that nearly half of the modified code in contributions is accompanied by testing changes. The review culture appears to manage significant breadth, as evidenced by a mean of 10.1 changed files per PR and a p90 of 19, suggesting that updates often span multiple component modules or internal dependencies. Notable PR-sample patterns include a mix of focused bug fixes, such as tethering and popper positioning, and broader documentation or story updates. While the repository maintains a staff-level seniority band, the pr_quality_score of 0.36 and a relatively low swe_bench_eligibility_rate of 0.05 suggest that many contributions are centered on documentation, asset management, or component orchestration rather than core algorithmic logic or complex state machines. The engineering effort is heavily concentrated on maintaining component consistency, accessibility-aria standards, and react-hooks integration.\",\n  \"repo_searchable_profile\": \"The uber/baseweb repository is a web-frontend library designed to provide foundational UI components and design system tooling. The project is primarily built using typescript and features a complex multi-package stack, evidenced by 76 package.json files in the main directory, 11 in the codemods package, 16 in the vscode-extension package, and 5 in the eslint-plugin package, totaling 97 dependencies. PR-shape observations reveal a high degree of multi-file modification; the mean number of changed files is 10.1, with the 90th percentile reaching 19 files per pull request. This suggests that changes frequently require synchronized updates across various parts of the component ecosystem. The test and review culture is defined by a unit-only testing approach via jest, characterized by a test touch rate of 0.45. While the repository has a high star count of 8959, the pr_quality_score is 0.36, and the issue_link_rate is relatively low at 0.05, indicating that many PRs may be chore-related or documentation-heavy rather than strictly tied to existing issue tracking. The top three challenge surfaces identified for this codebase are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the open_pr_count and open_feature_issue_count are currently unknown, making it difficult to quantify the immediate backlog for new contributors.\"\n}"
+}

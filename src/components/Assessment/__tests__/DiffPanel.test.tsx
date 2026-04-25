@@ -194,12 +194,17 @@ describe('DiffPanel', () => {
     });
 
     it('should allow changing severity', () => {
-      render(<DiffPanel diff={mockDiff} />);
+      const onAnnotationAdd = vi.fn();
+      render(<DiffPanel diff={mockDiff} onAnnotationAdd={onAnnotationAdd} />);
       fireEvent.click(screen.getByTestId('diff-line-15'));
       
-      const select = screen.getByTestId('severity-selector') as HTMLSelectElement;
-      fireEvent.change(select, { target: { value: 'major' } });
-      expect(select.value).toBe('major');
+      fireEvent.click(screen.getByTestId('severity-major'));
+      fireEvent.change(screen.getByTestId('annotation-input'), { target: { value: 'Test' } });
+      fireEvent.click(screen.getByTestId('save-annotation-btn'));
+      
+      expect(onAnnotationAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: 'major',
+      }));
     });
 
     it('should limit annotation comment to 500 characters', () => {

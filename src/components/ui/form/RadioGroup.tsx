@@ -1,6 +1,6 @@
 interface RadioGroupProps {
-  value?: string;
-  onChange?: (value: string) => void;
+  value?: string | undefined;
+  onChange?: ((value: string) => void) | undefined;
   options: string[];
 }
 
@@ -17,14 +17,14 @@ export function RadioGroup({ value, onChange, options }: RadioGroupProps): JSX.E
               width: 16,
               height: 16,
               border: `2px solid ${
-                value === opt ? 'rgba(139, 92, 246, 0.8)' : 'rgba(255,255,255,0.3)'
+                value === opt ? 'rgba(255, 255, 255, 0.45)' : 'var(--pipe-border)'
               }`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            {value === opt && <div style={{ width: 8, height: 8, background: 'rgba(139, 92, 246, 0.8)' }} />}
+            {value === opt && <div style={{ width: 8, height: 8, background: 'rgba(255, 255, 255, 0.45)' }} />}
           </div>
           <input
             type="radio"
@@ -32,7 +32,7 @@ export function RadioGroup({ value, onChange, options }: RadioGroupProps): JSX.E
             onChange={() => onChange?.(opt)}
             style={{ display: 'none' }}
           />
-          <span style={{ fontSize: 11, color: value === opt ? '#fff' : 'rgba(255,255,255,0.5)' }}>
+          <span style={{ fontSize: 11, color: value === opt ? 'var(--pipe-text)' : 'var(--pipe-text-muted)' }}>
             {opt}
           </span>
         </label>

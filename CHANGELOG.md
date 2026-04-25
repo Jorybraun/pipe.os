@@ -1,392 +1,118 @@
-# Changelog — Commitment History
+# Changelog
 
-All notable changes are indexed here. Detailed file diffs and summaries live in `/docs/changelogs/`.
+All notable changes to this project will be documented in this file.
 
----
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### [Unreleased]
+## [Unreleased]
 
-#### Security
-- `src/hooks/useAssessment.ts` — added `selectionSet` to all 5 mutation calls (`Candidate.update` ×3, `Assessment.create`, `Assessment.update`) so API-key clients never receive `email`, `inviteToken`, `owner`, `groundTruth`, `serverConfig`, or `cachedMetadata` in mutation responses; verified clean via live network inspection of every response body in the full candidate flow
-- `amplify/functions/resolveToken/` — new Lambda query: resolves an invite token server-side and returns only `{id, pipelineId, status, name}`; never exposes email, inviteToken, or other candidates' data
-- `amplify/data/resource.ts` — `Candidate.publicApiKey` permission downgraded from `['read', 'update']` to `['update']`; `Candidate.list()` is no longer callable by unauthenticated candidates
-- `amplify/data/resource.ts` — `Assessment.publicApiKey` permission downgraded from `['create', 'read', 'update']` to `['create', 'update']`; candidates can no longer read other candidates' assessment records
-- `amplify/data/resource.ts` — `resolveToken` custom query added (publicApiKey auth); entry point for all candidate auth going forward
-- `src/hooks/useAssessment.ts` — replaced `Candidate.list()` with `client.queries.resolveToken()` to eliminate cross-candidate enumeration
-- `src/hooks/useAssessment.ts` — removed `challenges.codeArtifact.groundTruth` and `challenges.cachedMetadata` from client selection set; answer keys and sensitive reviewer data no longer sent to candidate browsers
-- `src/hooks/useAssessment.ts` — progressive stage loading: only the current stage's challenge content is fetched on load; future stage questions are loaded on-demand when the candidate advances, preventing preview of upcoming challenges
+### Added — Unified Agent Runtime (ADR-034)
 
-#### Added (FOLLOW_UP as first-class challenge type)
-- `amplify/data/resource.ts` — added `'FOLLOW_UP'` to Challenge type enum; renamed mutation `generateCodeReviewFollowUps` → `generateFollowUps`
-- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — full challenge-type routing: `buildPromptContext` dispatches to per-type context builders (`buildCodeReviewContext`, `buildCodeImplContext`, `buildMcqContext`, `buildShortAnswerContext`) based on `challenge.type` from DynamoDB; no longer hardcoded to CODE_REVIEW
-- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — `buildSystemPrompt` and `buildUserPrompt` now route by challenge type; added CODE_IMPLEMENTATION, QUIZ_MCQ, QUIZ_SHORT_ANSWER prompt strategies alongside existing CODE_REVIEW strategy
-- `src/hooks/useAssessment.ts` — FOLLOW_UP is now a first-class challenge type: auto-triggers `generateFollowUps` via `useEffect` when current challenge is FOLLOW_UP; `submitChallenge` has an early-return branch for FOLLOW_UP that saves answers to `lastAssessmentId`, fires `scoreAssessment`, and advances without creating a new Assessment record; scoring of non-FOLLOW_UP challenges deferred when next challenge is FOLLOW_UP
-- `src/pages/CandidateAssessmentPage.tsx` — follow-up panel now renders for `currentChallenge.type === 'FOLLOW_UP'` (not CODE_REVIEW); `onSubmit` and auto-skip both call `submitChallenge` (uniform flow); removed `submitFollowUpAnswers` from destructuring
-- `src/content/challengeLibrary.ts` — added `'FOLLOW_UP'` to `ChallengeType`; added `FOLLOW_UP_TEMPLATES` array with one standard template; added to `ALL_CHALLENGE_TEMPLATES` and `LIBRARY_STATS`
-- `src/lib/challenge/resolveLayout.ts` — added `'FOLLOW_UP'` to `ChallengeType`; added FOLLOW_UP case (page intercepts before layout is used)
-- `src/components/Pipeline/ChallengePicker.tsx` — added FOLLOW_UP to TYPES filter list (orange, always visible); FOLLOW_UP template appears in standard template grid
+- `workers/api/src/lib/unifiedAgentRuntime/`: shared FSM, plugin registry, session store, scorer, eval gate, and provider for role discovery, code review, and culture interview agents.
+- `workers/api/src/lib/agents/{roleDiscovery,codeReview,culture}/plugin.ts`: per-agent plugins registered via `registerAllPlugins()`.
+- `workers/api/src/routes/agents.ts`: unified `/api/v1/agents/*` routes (mounted in `index.ts`).
+- `migration/0043_agent_sessions.sql`: unified `agent_sessions` table for cross-agent operational queries.
+- `docs/decisions/current/ADR-034-unified-agent-runtime.md`: rationale and consolidation plan.
 
-#### Fixed (white screen on consecutive CODE_REVIEW challenges)
-- `src/pages/CandidateAssessmentPage.tsx` — added `key={currentChallenge.id}` to `TimerProvider`; forces full remount of challenge workspace on each new challenge, clearing stale `localDiff`/`submission` state in `ChallengeRegistry`; previously caused white screen on the second consecutive CODE_REVIEW in the same stage
+### Added — Role Discovery Evaluator
 
-#### Changed (Intelligence Report — annotation breakdown + VIEW CODE REVIEW + GENERATE_REPORT)
-- `src/components/Analytics/IntelligenceReport.tsx` — replaced misleading percentage bars in annotation breakdown with count badges (large number + severity label coloured per severity); 1 critical no longer shows 100% bar
-- `src/components/Analytics/IntelligenceReport.tsx` — added VIEW CODE REVIEW ↗ button at top of `CodeReviewDeepDive`; links to `${githubRepoUrl}/pull/${githubPrNumber}`; only renders when both fields present on the challenge
-- `src/components/Analytics/IntelligenceReport.tsx` — extended `ChallengeRow` interface with `githubRepoUrl` and `githubPrNumber` optional fields
-- `src/pages/CandidateProfilePage.tsx` — GENERATE_REPORT button is now active; clicking it switches to INTELLIGENCE tab then calls `window.print()` after 300ms to allow tab render
+- `workers/api/src/lib/roleDiscovery/evaluator.ts` + `evaluatorPrompt.ts`: eval-gated question generation (interviewer proposes 2 candidates → evaluator picks the best) for the role discovery agent.
+- `workers/api/src/routes/internal/evaluateDiscovery.ts`: internal endpoint for evaluator runs.
+- `workers/api/src/lib/roleAgentPrompts.ts`: prompt rewrite to align with the evaluator contract.
 
-#### Added (Candidate Intelligence Report — feature-flagged analytics dashboard)
-- `src/lib/features.ts` — feature flag system; `FEATURES.INTELLIGENCE_REPORT` gated by `VITE_FEATURE_INTELLIGENCE_REPORT=true`; single swap point for future runtime billing/auth check
-- `src/components/Analytics/IntelligenceReport.tsx` — rich candidate analytics dashboard (~600 lines, pure SVG charts, no new npm deps): executive summary with `ScoreGauge`, AI narrative, strengths/concerns chips; stage performance horizontal bars; per-challenge deep dives (`CodeReviewDeepDive` with `SkillRadarChart`, annotation breakdown, follow-up Q&A transcript; `QuizMcqDeepDive`, `QuizShortAnswerDeepDive`, `CodeImplDeepDive`); `SkillsMatrix` showing 4 CODE_REVIEW skill dimensions
-- `amplify/functions/scoringAgent/handler.ts` — agentic scoring now returns structured `AgenticFeedback` JSON (score, summary, strengths, concerns, skillProfile with 4 dimensions) serialised into `Assessment.feedback`; no schema change; old plain-string feedback still renders via graceful fallback; `MAX_TOKENS` default 512 → 800
-- `amplify/functions/scoringAgent/types.ts` — added `AgenticFeedback` interface exported for frontend type alignment
-- `.env.local` — added `VITE_FEATURE_INTELLIGENCE_REPORT=true` to enable intelligence report in local dev
-- `e2e/candidate-scores.spec.ts` — BDD Playwright suite: intelligence tab visibility (enabled/disabled flag), executive summary + stage performance render, challenge deep dives section, Q&A in intelligence view, stage tabs still work independently
-- `playwright.config.ts` — added `intelligence` project (authenticated, depends on `auth_setup`, matches `candidate-scores.spec.ts`)
+### Added — Strategy & Planning Docs
 
-#### Fixed (sandbox deploy)
-- `amplify/package.json` — added `@mistralai/mistralai` dependency; sandbox was failing with TS2307 "Cannot find module" for `scoringAgent` and `codeReviewFollowUpAgent` Lambda handlers
+- `knowledge/plan/pipe-strategy-v2-part{1..6}.md`: north-star, role discovery, repo ingestion, candidate ingestion, matching migration, and market research.
+- `docs/plans/2026-04-22-eval-gated-pipeline.md`, `docs/plans/2026-04-22-live-rcd-synthesis.md`.
+- `docs/handoffs/{discovery-agent-context,phase-2-role-discovery-migration,unified-agent-runtime}-2026-04-23.md`.
+- `scripts/research-vector-signals.py`: research helper for vector-native signal exploration.
 
-#### Changed (OVERVIEW tab enrichment + skill radar)
-- `src/pages/CandidateProfilePage.tsx` — OVERVIEW tab now shows a `HIRING_RECOMMENDATION` hero card (score in signal colour, plain-English label, progress bar, challenges/responded stats), `AI_SNAPSHOT` card with AI narrative + strength/concern chips, richer stage cards showing per-challenge titles and scores, and `CANDIDATE_INFO` card; page header shows initials avatar with signal colour
-- `src/pages/CandidateProfilePage.tsx` — `MiniRadar` SVG component (4-axis spider chart) added to OVERVIEW's `AI_SNAPSHOT` card; reads real `skillProfile` from `Assessment.feedback` (`AgenticFeedback` JSON); shows `bugIdentification`, `severityJudgment`, `analyticalWriting`, `technicalDepth` scores labelled on each axis in signal colour
-- `scripts/seedIntelligenceReport.ts` — new seed script; creates complete E2E fixture (Pipeline → Stage → CODE_REVIEW Challenge → Candidate → Assessment with 4 annotations, 3 follow-up Q&A, score 82, `AgenticFeedback` JSON with skillProfile); writes `playwright/intelligence-report-token.json`
+### Changed
 
-#### Fixed (candidate score display)
-- `src/pages/CandidateProfilePage.tsx` — `avgScore` now defaults to `null` (not `0`) when no stages are complete; score hero renders `—` instead of `0` for empty candidates; progress bar still uses `0` as fallback for CSS width
-- `src/pages/CandidateProfilePage.tsx` — added INTELLIGENCE tab to tab bar (only when `FEATURES.INTELLIGENCE_REPORT`); `IntelligenceReport` renders in INTELLIGENCE tab; per-stage tab guard updated to exclude INTELLIGENCE tab id
+- `migration/PLAN.md`: Phase 5 marked done (Terraform dropped per ADR-041, GitHub Actions live, `amplify/` deleted); Phase 3 marked drifted; Workers route inventory updated to 34 modules; D1 migration count updated to 0001–0042.
+- `CLAUDE.md`: added Context Budget section enforcing per-session limits on project files, skills, and persistent memory.
 
-#### Added (Recruiter + Candidate CODE_REVIEW BDD — no API mocks)
-- `e2e/recruiter-code-review.spec.ts` — BDD test for recruiter path: navigates to existing pipeline detail, verifies CODE_REVIEW challenge visible, adds a candidate via ADD_CANDIDATE form, verifies copy-invite-link appears; also covers challenge editor navigation
-- `e2e/code-review-challenge.spec.ts` — removed all API mocks; tests now hit real Lambdas with 60s timeouts for AI calls; replaced specific mock question text assertions with generic answer-box count; fixed React textarea interaction with `click()` before `fill()`
-- `playwright.config.ts` — added `recruiter` project (authenticated, depends on `auth_setup`, matches `recruiter-code-review.spec.ts`)
-- `playwright/code-review-token.json` — regenerated with 3 fresh candidate tokens for new pipeline/challenge
+### Removed
 
-#### Fixed (Sandbox Deploy + E2E Parallelism)
-- `amplify/functions/fetchGitHubPR/handler.ts` — fixed TS2307 type error: `prNumber` cast to number before comparison so sandbox synthesis passes
-- `amplify/package.json` — installed `@anthropic-ai/sdk` and `@octokit/rest` so esbuild can bundle Lambda functions that import them (sandbox deploy was failing with "Could not resolve" errors)
-- `scripts/createCodeReviewTestCandidate.ts` — now creates 3 candidates (one per test) instead of 1; writes `tokens[]` array to `playwright/code-review-token.json`; each E2E test that completes the full flow needs its own fresh token since a submitted candidate cannot restart
-- `e2e/code-review-challenge.spec.ts` — each test now uses its own token from `tokens[0..2]`; removed `GENERATING_QUESTIONS...` transient spinner assertion (mock responds instantly, state transitions before Playwright checks); tests pass in under 7s
+- `data/experiments/runs.jsonl` (stale experiment log).
+- `knowledge/README.md` (superseded by `knowledge/STRATEGY.md` and the wiki).
 
-#### Added (CODE_REVIEW BDD Happy Path)
-- `e2e/code-review-challenge.spec.ts` — full BDD Playwright E2E suite for CODE_REVIEW challenge: loading screen → welcome → START_INTERVIEW → diff workspace → REQUEST_CHANGES verdict → review summary → REVIEW_READY indicator → FINAL_SUBMIT → GENERATING_QUESTIONS spinner → 5 follow-up questions → SUBMIT_ANSWERS → "Submitted." completion; also covers SKIP_FOLLOW_UP path; mocks `scoreAssessment` + `generateCodeReviewFollowUps` mutations for determinism
-- `scripts/createCodeReviewTestCandidate.ts` — test data setup script: creates Pipeline + Stage + CODE_REVIEW Challenge (with pre-cached `calculateDiscount.js` diff, no GitHub fetch needed) + Candidate; writes `playwright/code-review-token.json`
-- `playwright.config.ts` — added `candidate` project (unauthenticated, matches `code-review-challenge.spec.ts`; no `auth_setup` dependency since `/assess/:token` is a public route)
+### Fixed
 
-#### Fixed (CODE_REVIEW BDD Happy Path)
-- `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` for CODE_REVIEW now checks `verdict && summary.length > 0` (not `annotations.length > 0`); annotations are optional and the gate now matches `isReady` in `CodeReviewChallenge.tsx`
-- `src/pages/CandidateAssessmentPage.tsx` — added `useEffect` to auto-call `submitFollowUpAnswers({})` when `followUpQuestions` loads as empty array (Lambda failure path); renders "COMPLETING..." spinner instead of a broken empty panel
-- `amplify/functions/scoringAgent/scorer.ts` — `scoreCodeReview` normalizes both flat `Annotation[]` (new DiffPanel format) and legacy `{[snippetId]: Annotation[]}` map; removed all `any` types
-#### Fixed (white screen after submitting follow-up answers)
-- `src/hooks/useAssessment.ts` — make `Candidate.update({ status: COMPLETED })` non-fatal in `submitFollowUpAnswers`: always set `isSubmitted: true` regardless of whether the status update succeeds; prevents the outer catch from blocking the submitted screen
-- `src/components/ErrorBoundary.tsx` — new error boundary component: catches any uncaught React render errors and shows a RENDER_ERROR recovery screen with REFRESH_PAGE button instead of leaving the user on a blank white page
-- `src/App.tsx` — wrap `CandidateAssessmentPage` in `ErrorBoundary` so render crashes are caught and surfaced rather than silently emptying the root div
+- **Cross-tenant leak on `/api/v1/search/roles`:** `matchRolesVectorNative` now joins `pipelines` and filters by `owner_id`; `/roles` handler passes the authenticated user through. Mirrors the existing `matchCandidatesVectorNative` pattern.
+- **Silent data corruption in CODE_REVIEW lazy-session INSERT:** `/rpc/review/ask` now derives `implementer_persona` and `max_rounds` from challenge config instead of writing literal `'pending'` into `implementer_persona`.
+- **Prop mutation in `ReviewSessionReport`:** rescore now updates a local `localStatus` state instead of mutating `props.session.status`; added optional `onRescore` callback so parents can re-fetch.
+- **Duplicate `review-session-loader` test-id:** init-phase loader renamed to `review-session-init-loader`; rounds-phase keeps `review-session-loader`.
+- **Missing error state on CODE_REVIEW init:** `CandidateAssessmentPage` now captures init errors and renders a retry button instead of leaving the candidate stuck on a silent loader.
 
-#### Added (real GitHub PR integration for CODE_REVIEW challenges)
-- `scripts/createRealPRTestCandidate.ts` — new script that fetches PR #1 from `Jorybraun/challenge` via GitHub API, parses the diff using the same `parsePatch` logic as the `fetchGitHubPR` Lambda, and seeds a full Pipeline + Stage + Challenge + Candidate; outputs `playwright/real-pr-token.json`; validated in Preview — 8 source files visible across file tabs with real diffs
+### Changed
 
-#### Changed (Follow-up questions — one-at-a-time UX)
-- `src/components/Assessment/FollowUpQuestionsPanel.tsx` — replaced overwhelming 5-textarea form with one-question-at-a-time step-by-step flow mirroring `QuizRenderer`: coloured context badge (WHY/FIX/MISSED/PRIORITISATION/DEPTH), progress bar, PREV/NEXT navigation, NEXT disabled until current question answered, SUBMIT_ANSWERS replaces NEXT on final question, SKIP_FOLLOW_UP de-emphasised at bottom
-- `e2e/code-review-happy-path.spec.ts` — updated BDD test for step-by-step flow: fill each answer then click NEXT; on last question click SUBMIT_ANSWERS
+- Extracted shared scoring + propagation into `workers/api/src/lib/review/scoreAndPropagate.ts`; `finalizeReviewSession` (in `review.ts`) and `POST /:sessionId/rescore` (in `reviewSessions.ts`) reduce to a single invocation wrapped in `c.executionCtx.waitUntil(...)`. `/rescore` now sets status to `'scoring'` and returns `{ success: true, status: 'scoring' }` immediately, preventing wall-time timeouts on long transcripts.
+- Extracted `REVIEW_SESSION_STATUS_COLORS`/`STATUS_LABELS` to `src/lib/reviewSessionStatus.ts` and updated both consumers.
+- Review Session Report modal and `GapFillModal` now expose `role="dialog"`, `aria-modal`, labelled heading, and Escape-to-close.
+- Telemetry in `orchestrate.ts` is prefixed `[orchestrate]` and drops the redundant intersection cast on `triangulated.raw_signals`.
+- Dropped duplicate `challengeId` from the `reviewSession` payload on `GET /rpc/get-challenge` (clients use the top-level `id`).
+- Replaced `as unknown as ChallengeConfigRow` casts in `review.ts` with typed `.all<ChallengeConfigRow>()`.
+- `roleContextsCalibrate.test.ts` now imports `Context`/`Next` from `hono` instead of typing middleware as `any`.
 
-#### Changed (Follow-up questions — dynamic question generation)
-- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — replaced rigid 5-slot template (WHY/FIX/MISSED/PRIORITISATION/DEPTH in fixed order) with open-ended interviewer persona: model decides what to ask based on the candidate's submission; context labels are assigned after writing the question, not before; user prompt is minimal — just diff + submission + "what would you ask?"; questions emerge from the candidate's actual words, not a predetermined format
-- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — always send system prompt in both `agents.complete()` and `chat.complete()` paths; platform agent instructions are intentionally cleared so code-controlled system prompt is the single source of truth
-- `amplify/functions/codeReviewFollowUpAgent/resource.ts` — retain `MISTRAL_AGENT_ID` secret (agent ID preserved, platform instructions cleared)
+### Added — Test Environment Infrastructure
 
-#### Changed (Follow-up question prompt — candidate-anchored questions)
-- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system + user prompts to anchor every question to the candidate's own words: WHY probes all three dimensions (why/what/how-do-you-know) using their exact summary text; FIX asks for precise corrected code at the specific line they identified; MISSED targets issues absent from both summary AND annotations; DEPTH covers edge cases, callers, refactoring, or test coverage not mentioned in their summary; instructions define question goals rather than rigid templates to prevent repetitive phrasing
+- `[env.test]` block in `workers/api/wrangler.jsonc` (bindings commented pending one-time bootstrap).
+- `workers/api/scripts/bootstrap-test-env.sh` — creates `pipe-db-test`, `pipe-assets-test`, and three `*-profiles-test` Vectorize indexes.
+- `workers/api/scripts/reset-test-db.sql` + `seed-test-db.sql` — idempotent wipe + fixture seed.
+- `workers/api/scripts/TEST-ENV.md` — operator runbook.
+- `.github/workflows/e2e-test.yml` — apply migrations, deploy worker + Pages, reset/seed, run Playwright serial against real backend.
 
-#### Changed (Follow-up question prompt — hallucination fix)
-- `amplify/functions/codeReviewFollowUpAgent/prompts.ts` — rewrote system prompt with IRONCLAD CONSTRAINTS: (1) questions must stay inside the diff only, never reference files/functions not in CODE/DIFF CONTEXT; (2) exactly one question of each type in order (WHY/FIX/MISSED/PRIORITISATION/DEPTH); (3) `context` field must be exactly one of those labels; (4) grounded in specific line numbers; (5) conversational interview tone, never accusatory; rewrote user prompt to prefix code context with "IMPORTANT: questions may ONLY reference content from this diff" and add explicit per-question task instructions
+### Added
 
-#### Added (BDD E2E — CODE_REVIEW happy path)
-- `e2e/code-review-happy-path.spec.ts` — full BDD Playwright spec against real AppSync + real Mistral Lambdas (no mocking): welcome → diff view → verdict+summary → FINAL_SUBMIT → FOLLOW_UP_QUESTIONS panel (5 AI questions) → fill answers → SUBMIT_ANSWERS → "Submitted."; passes in 14.6s
-- `playwright.config.ts` — added `candidate` project (no auth dependency, no storageState) matching `code-review-happy-path.spec.ts`
-- `src/App.tsx` — removed broken `RoleDiscoveryPage` import (file was deleted); route `/pipeline/new` now uses `PipelineCreatePage`
+**Task B — Role Discovery Agent:**
+- Role Discovery agent now uses 6 calibrated probes instead of open-ended Six Domains exploration
+- Role Context Document (RCD) is now the primary synthesis artifact
+- Added calibration review UI for recruiters to flag and correct RCD attributes
+- Added gap-filling agent for targeted clarifying questions
 
-#### Fixed (CODE_REVIEW end-to-end flow — validated in Preview)
-- `src/hooks/useAssessment.ts` — fix AppSync `a.json()` serialization: `result.data` from `generateCodeReviewFollowUps` is a JSON **string** on the wire, not a parsed object; added `JSON.parse()` guard so follow-up questions render correctly instead of auto-skipping; defer `scoreAssessment` for CODE_REVIEW until after follow-up answers are saved (scoring now sees the full Q&A context)
-- `src/pages/CandidateAssessmentPage.tsx` — fix `canAdvance` for CODE_REVIEW: verdict + summary required (annotations optional); add auto-skip `useEffect` when Lambda returns empty questions; add "COMPLETING..." spinner state for empty-questions path
-- `src/components/Assessment/CodeReviewChallenge.tsx` — fix submit button enabling: replaced `useEffect`-based parent sync (stale closure/async-hop) with synchronous `handleVerdictChange`/`handleSummaryChange` handlers; removes `useEffect` import
-- `amplify/functions/codeReviewFollowUpAgent/handler.ts` — add `cachedDiffJson` rendering as first-priority code context (renders structured diff as unified-diff text); add `renderDiffFile()` helper; fall back to `config.codeSnippet` then `serverConfig.codeSnippet`
-- `amplify/functions/codeReviewFollowUpAgent/types.ts` — add `CachedDiffJson`, `DiffFile`, `DiffHunk`, `DiffLine` interfaces; add `cachedDiffJson`, `githubPrTitle`, `githubPrDescription` to `ChallengeRecord`
-- `amplify/functions/codeReviewFollowUpAgent/costTracker.ts` — rename env vars from `CLAUDE_*` to `MODEL_*` (model-agnostic); update Mistral output token cost to $9/M
-- `amplify/functions/scoringAgent/handler.ts` — add agentic CODE_REVIEW scoring via Mistral: when `followUpQuestionsJson.answers` is populated, sends full submission + follow-up Q&A to Mistral for holistic scoring (40% bug ID, 20% severity, 20% verdict/summary, 20% follow-up depth); falls back to deterministic scoring when no follow-up answers present
-- `amplify/functions/scoringAgent/scorer.ts` — normalize annotation format: handle both flat array (new DiffPanel) and legacy object-map (DiffReviewCanvas); remove `any` types; fix `scoreQuizMCQ` to use type-safe property access
-- `amplify/functions/scoringAgent/resource.ts` — add `MISTRAL_API_KEY: secret()`, `MISTRAL_MODEL`, `MODEL_MAX_TOKENS` env vars; increase memory to 512 MB and timeout to 60s for agentic scoring
-- `amplify/backend.ts` — grant DynamoDB read access for `scoringAgentLambda` on Challenge table (needed to fetch serverConfig/groundTruth for scoring)
-- `scripts/createCodeReviewTestCandidate.ts` — seed script for E2E test data with pre-cached diff
+**Task C — Code Review Golden Path:**
+- CODE_REVIEW stages now create review session on stage entry
+- New review session endpoints: `/rpc/review/session/init`, `/message`, `/complete`
+- Added dedicated review session page with diff + chat interface
+- Recruiter dashboard now shows review session status, score, and transcript
 
-#### Added (Happy Path Bug Fixes + E2E Validation)
-- `e2e/happy-path.spec.ts` — Playwright E2E suite covering all recruiter + candidate happy path scenarios: pipeline creates as DRAFT, stage add/delete on DRAFT pipeline, ChallengePicker shows all 4 challenge types, CODE_REVIEW shows saved-repos dropdown, /assess/:token renders correctly, CandidateProfilePage loads without crashing
-- `src/components/Pipeline/ChallengePicker.tsx` — replaced free-text GitHub repo URL input with saved-repos dropdown (localStorage key `pipe_saved_repos`); `+ ADD_REPO` button reveals inline input; saved repos persist across sessions; trash button to remove saved repos
-- `.env.local` — E2E credentials for Playwright auth setup
+**Infrastructure & Docs:**
+- Phase 5 CI/CD: GitHub Actions workflows for CI, staging deploy, and production deploy
+- ADR-041: Cloudflare-native deployment with Wrangler (drops Terraform)
+- `workers/api/wrangler.jsonc` environments: `staging` and `production`
+- `docs/project-brief.md`: Unified project vision, glossary, phased roadmap, and honest current-state snapshot
+- `.claude/rules/terminology.md`: Mandatory domain language for all agents
+- **Dual-layer embedding architecture (D1 ground truth + Vectorize ANN):** Migration `0042_embedding_json.sql` adds `embedding_json` to `candidate_ingestion`, `repo_engineering_signals`, and `role_contexts`; `role_contexts.role_searchable_profile` stores role narrative. Enables exact cosine computation and index rebuilds from D1.
+- **Exact `role_candidate_cosine` computation:** `lib/embedding/cosine.ts` provides `cosineSimilarity()` and `parseEmbeddingJson()`; `orchestrate.ts` loads both embeddings from D1 and computes exact similarity at match time (falls back to `null` if missing).
+- **Unified semantic search endpoints:** `POST /api/v1/search/candidates` and `POST /api/v1/search/repos` enable bidirectional search (role→candidates, role→repos, candidate→repos, repo→candidates) using dual-layer embeddings.
+- **Role context embedding:** `buildAndStoreRoleEmbedding` fires best-effort when role discovery reaches `COMPLETE`, building `role_searchable_profile` from `job_description_md` and embedding via BGE-large-en-v1.5.
 
-#### Changed (E2E test fixes — all 10 tests now pass)
-- `e2e/happy-path.spec.ts` — fixed parallel execution (`test.describe.serial`), URL regex to require UUID hyphen, networkidle→load state, increased timeouts for AppSync latency, stage-count selector uses delete-button count, `toHaveCount` replaces fixed 2s wait for delete
-- `src/pages/ListingPage.tsx` — removed `candidates.assessments.score` from selectionSet (Assessment records owned by candidates via publicApiKey, not recruiter — nested query failed silently, returning empty pipeline list)
+### Removed
+- **Deprecated stage types:** Removed all dead stage types (`AI_COLLAB`, `PLANNING`, `VOICE`, `INGESTION`, `TECHNICAL`, `QUESTIONS`, `VOICE_INTERVIEW`) from frontend and backend.
+- Locked to exactly 5 stage types: `SCREENING`, `CULTURAL`, `CODE_REVIEW`, `OPEN_SOURCE`, `LIVE_PANEL`.
+- Aligned `workers/api/src/validation/stages.ts`, `src/lib/stageTemplates.ts`, `src/types/index.ts`, and all UI components.
+- Removed `titleLower.includes(...)` fallback inference patterns in `StageIndexTab.tsx` and `StagePanel.tsx` — stages must have `stage_type` populated.
+- Updated pipeline templates to use valid stage types only.
+- Cleaned up unused lucide-react imports (Zap, Brain, Mic) from modified components.
 
-#### Changed (Happy Path Bug Fixes + E2E Validation)
-- `src/pages/CandidateProfilePage.tsx` — fixed TS2589 in Assessment.list: Amplify filter generic is too deeply recursive for strict mode; fetch all assessments and filter client-side instead (assessment counts per candidate are small)
-- `src/hooks/usePipelineCreate.ts` — fixed pipeline created as `ACTIVE` instead of `DRAFT` (B1)
-- `src/pages/OverviewPage.tsx` — removed `disabled={pipeline?.status !== 'ACTIVE'}` guard on ADD_STAGE button so DRAFT pipelines can have stages added; added `handleDeleteStage` and per-stage trash delete button with confirm dialog (B2, B4)
-- `src/config/featureFlags.ts` — enabled `FEATURE_FLAG_PREDEFINED_CHALLENGES: true` so QUIZ_MCQ and QUIZ_SHORT_ANSWER appear in ChallengePicker (B3)
-- `src/pages/CandidateProfilePage.tsx` — added `.catch()` fallback on Assessment.list query to retry without `followUpQuestionsJson` field if Amplify sandbox schema is stale (B6)
-#### Changed (local main cleanup)
-- `src/App.tsx` — import PipelineCreatePage from archived path; add PipelineBuilderPage + RoleDiscoveryPage imports
-- `src/pages/PipelineCreatePage.tsx` — updated simplified creation page
-- `src/pages/RoleDiscoveryPage.tsx` — removed from active routes (archived)
-- `src/pages/archived/PipelineCreatePage.tsx` — archived original pipeline creation page
-- `playwright/code-review-token.json` — E2E test fixture for code review challenge token
+### Changed
+- `docs/vision.md`: Aligned with project brief — added product thesis, full vision reference, and guardrails
+- `migration/PLAN.md`: Added Product Phases (P1–P5) section with 2026-04-22 decisions
+- Documentation reorganization: unified navigation hub, split decisions into current/historical, extracted model routing, archived stale artifacts
+- Deleted obsolete files: BUGS.md, TEST_ANALYSIS.md, TEST_STATUS.md, TODO.md, CONTRIBUTING.md, docs/README.md, docs/handoffs/
+- Deleted AWS Amplify artifacts: `amplify/`, `amplify_outputs.json`, `amplify.yml`
+- Deleted Terraform infrastructure: `infra/` directory
+- Archived CHANGELOG.md to docs/archive/CHANGELOG-historical.md, restarted fresh
+- Moved DREAM.md → docs/vision.md (trimmed to product vision only)
+- Moved docs/DRIFT_LOG.md → docs/ops/drift-log.md, docs/audits/ → docs/ops/audits/
+- Created docs/ai/model-routing.md as single source of truth for AI routing
+- Rewrote CLAUDE.md as pure navigation hub + agent instructions (no content duplication)
+- Rewrote root README.md (50 lines)
+- Updated internal links across migration docs, knowledge docs, and source files
 
-#### Added (E2E Code Review Challenge Flow)
-- `amplify/data/resource.ts` — added `followUpQuestionsJson: a.json()` to `Assessment` model; added `generateCodeReviewFollowUps` mutation wired to new Lambda
-- `amplify/functions/codeReviewFollowUpAgent/` — new Lambda (handler, types, prompts, validation, costTracker); one-turn Claude call generates exactly 5 `SHORT_ANSWER` follow-up questions grounded in candidate annotations; saves to `Assessment.followUpQuestionsJson`
-- `src/components/Assessment/WelcomeScreen.tsx` — pre-challenge welcome screen with challenge-type-specific guidance copy; `START_INTERVIEW` button triggers `INVITED → IN_PROGRESS` transition
-- `src/components/Assessment/FollowUpQuestionsPanel.tsx` — post-CODE_REVIEW panel; shows 5 follow-up questions as `TextareaInput` fields; `SUBMIT_ANSWERS` enabled when all answered; `SKIP_FOLLOW_UP` escape hatch for Lambda failure path
-- `docs/decisions/ADR-020-follow-up-agent-architecture.md` — async follow-up agent design: one-turn, 5 questions, SHORT_ANSWER only, non-fatal trigger
-- `docs/decisions/ADR-021-deterministic-code-review-scoring.md` — deterministic scoring rationale: bugs found (40%), severity accuracy (25%), fix quality (25%), false positive penalty (−10%); no LLM
+## [0.0.1] - 2026-04-22
 
-#### Changed (E2E Code Review Challenge Flow)
-- `amplify/functions/scoringAgent/handler.ts` — replaced `SCHEMA_PUSH_STUB` with real deterministic CODE_REVIEW scorer; also handles QUIZ_MCQ (exact match); updates `Assessment.score` and `Assessment.feedback` via DynamoDB
-- `src/components/Assessment/CodeReviewChallenge.tsx` — removed duplicate `SUBMIT_REVIEW` button from right panel footer; replaced with read-only `✓ REVIEW_READY` indicator; canonical submit remains in `StageShell` footer only
-- `src/components/Assessment/DiffPanel.tsx` — added `TABBED / LONG_FORM` view toggle; `LONG_FORM` renders all files vertically with sticky file-header dividers; extracted `FileDiffBody` sub-component shared by both modes; added `annotatingFilePath` state for multi-file annotation in LONG_FORM
-- `src/hooks/useAssessment.ts` — moved `INVITED → IN_PROGRESS` status update from mount to `onStart` callback; added `followUpQuestions`, `followUpAnswers`, `followUpLoading`, `submitFollowUpAnswers` state for CODE_REVIEW follow-up flow
-- `src/pages/CandidateAssessmentPage.tsx` — added `hasStarted` gate rendering `WelcomeScreen` before first challenge; added follow-up question flow after CODE_REVIEW submission (spinner → `FollowUpQuestionsPanel` → advance)
-- `src/pages/CandidateProfilePage.tsx` — full redesign: header with `CANDIDATE_PROFILE` label + `GENERATE_REPORT` stub; OVERVIEW tab with overall score + signal + stage score cards; per-stage tabs with challenge cards; CODE_REVIEW annotation list + follow-up Q&A read-only; QUIZ_MCQ answer display; manual score slider + feedback textarea for SHORT_ANSWER/CODE_IMPLEMENTATION; `LiquidMetalCard` throughout
-- `docs/decisions/README.md` — added ADR-020 and ADR-021 to index
-
-#### Added (P0 MVP UX Cleanup & Feature Flags)
-- `src/config/featureFlags.ts` — centralized feature flag config with 6 flags all defaulting to `false`: `FEATURE_FLAG_SCHEDULE_ROUTE`, `FEATURE_FLAG_LIVE_VIDEO`, `FEATURE_FLAG_CODE_SANDBOX`, `FEATURE_FLAG_PREDEFINED_CHALLENGES`, `FEATURE_FLAG_DEV_CONTAINER_ROUTE`, `FEATURE_FLAG_CHALLENGE_EDITOR`
-- `src/pages/PipelineCreatePage.tsx` — new simplified pipeline creation form (name + description only); creates pipeline as DRAFT with 3 default stages
-
-#### Changed (P0 MVP UX Cleanup & Feature Flags)
-- `src/components/SidebarNav.tsx` — removed AI agent toggle button (Sparkles icon) and `isAgentOpen`/`onAgentToggle` props
-- `src/pages/PipelineBuilderPage.tsx` — removed `setIsAgentOpen` state (no longer togglable); inlined `isAgentOpen = false`
-- `src/pages/ScreeningStageBuilderPage.tsx` — same cleanup as PipelineBuilderPage
-- `src/App.tsx` — replaced `RoleDiscoveryPage` with `PipelineCreatePage` at `/pipeline/new`; gated challenge editor, schedule, and dev-container routes behind feature flags
-- `src/pages/StageDetailPage.tsx` — removed redundant back button (header navigation handles it); gated STAGE_MODE toggle (LIVE_VIDEO) behind `FEATURE_FLAG_LIVE_VIDEO`; removed unused `navigate` and `pipelineId` vars
-- `src/pages/OverviewPage.tsx` — simplified Add Candidate form to email-only with "SEND_INVITE" CTA; added `PUBLISH_PIPELINE` button when pipeline is DRAFT; gated ADD_STAGE button with disabled state + tooltip when pipeline is not ACTIVE; fixed pre-existing `exactOptionalPropertyTypes` errors
-- `src/pages/CandidateAssessmentPage.tsx` — added `?mode=preview` support: shows amber banner ("PREVIEW MODE — responses will not be scored or saved") and disables submission when active
-- `src/components/Pipeline/ChallengePicker.tsx` — hides QUIZ_MCQ and QUIZ_SHORT_ANSWER templates and filter tabs behind `FEATURE_FLAG_PREDEFINED_CHALLENGES`
-
-#### Changed (docs overhaul — remove stale/misleading documentation)
-- `README.md` — complete rewrite; removed AWS Amplify scaffold boilerplate and pipe-scaffold/GitLab fiction; replaced with accurate product description, feature list, and tech stack
-- `docs/ARCHITECTURE.md` — complete rewrite; accurate file inventory for all pages, components, hooks, Lambdas, and infra; updated data model and auth model
-- `docs/README.md` — updated docs index; removed agent-specific Gemini rules; replaced "Agent Rules" section with universal "Documentation Rules"
-- `docs/STATUS.md` — rewrote current state; removed STREAM2 agent-session noise; added clear implemented/in-design/not-built sections
-- `docs/design/design-system.md` — complete rewrite; replaces old "Brutalist Glassmorphic" design with accurate "Technical Terminal" design language
-- `docs/design/design-system-revised.md` → redirect stub (archived to `docs/archive/design/`)
-- `docs/design/challenge-management-technical-design.md` → redirect stub (archived to `docs/archive/design/`)
-- `docs/design/monaco-challenge-architecture.md` → redirect stub (archived to `docs/archive/design/`)
-- `docs/STREAM2_PHASE3_COMPLETION.md` → redirect stub (archived to `docs/archive/`)
-- `docs/STREAM2_PHASE3_IMPLEMENTATION.md` → redirect stub (archived to `docs/archive/`)
-- `docs/STREAM2_PHASE3_QUICKREF.md` → redirect stub (archived to `docs/archive/`)
-- `docs/STREAM2_PHASE3_TEST_REPORT.md` → redirect stub (archived to `docs/archive/`)
-- `docs/WORKLOG.md` → redirect stub (archived to `docs/archive/`)
-- `docs/decisions/ADR-012-challenge-studio-editor-architecture.md` → redirect stub (archived to `docs/archive/`)
-
-#### Added
-- `docs/design/style-guide-recruiter.md` — new practical style guide for recruiter dashboard UI components
-- `docs/archive/design/design-system.md` — archived old brutalism-era design system
-- `docs/archive/design/design-system-revised.md` — archived revised glassmorphic design system
-- `docs/archive/design/challenge-management-technical-design.md` — archived cut challenge editor design
-- `docs/archive/design/monaco-challenge-architecture.md` — archived superseded Monaco architecture doc
-- `docs/archive/STREAM2_PHASE3_*.md` — archived STREAM2 agent work logs
-- `docs/archive/WORKLOG.md` — archived agent-generated work log
-- `docs/archive/ADR-012-challenge-studio-editor-architecture.md` — archived cut challenge studio ADR
-
-#### Changed
-- `amplify/functions/fetchGitHubPR/handler.ts` — replaced all `any` annotations with proper interfaces (`GitHubPRFile`, `GitHubPRLabel`, `GitHubPRReviewer`) and `unknown`+narrowing in catch blocks; fixed merged PR state detection using `merged_at !== null` instead of casting `state` to include `'merged'`; fixed `getRateLimitInfo` to handle `string | string[] | undefined` header values
-- `amplify/functions/repoManagement/handler.ts` — removed `export default handler` (non-page default export); replaced `(event as any).action` with direct `event.action`; replaced `any` in default case with `Record<string, unknown>` cast; changed `HandlerResponse<T = any>` to `HandlerResponse<T = unknown>`
-- `amplify/functions/repoManagement/types.ts` — changed `[key: string]: any` index signature to `unknown`; changed `SuccessResponse<T = any>` and `LambdaResponse<T = any>` defaults to `unknown`
-- `amplify/functions/submitCodeReview/types.ts` — changed `value?: any` to `value?: unknown` in `ValidationError`; clarified `lineNumber` comment to 1-indexed
-- `amplify/functions/submitCodeReview/package.json` — moved `@aws-sdk/client-dynamodb` and `@aws-sdk/util-dynamodb` from `devDependencies` to `dependencies` to prevent runtime module-not-found errors
-- `amplify/functions/scoreCodeReview/types.ts` — corrected `line` field comment from 0-indexed to 1-indexed (matching unified diff format)
-- `amplify/functions/scoreCodeReview/resource.ts` — replaced `process.env.ASSESSMENT_TABLE_NAME || 'Assessment'` with static string to avoid baking local env values into deployed config at synth time
-- `amplify/functions/fetchGitHubPR/README.md` — fixed error code `PR_NOT_FOUND` → `PULL_REQUEST_NOT_FOUND` to match handler implementation
-- `docs/setup/GITHUB_TOKEN_SETUP.md` — updated to accurately describe Amplify secrets injection mechanism; removed incorrect Secrets Manager fallback instructions
-- `docs/STREAM2_PHASE3_TEST_REPORT.md` — replaced absolute local filesystem path with portable `<repo-root>` placeholder
-- `README.md` — fixed grammar: `an developer` → `a developer`; `real world` → `real-world`
-
-#### Added
-- **CODE_REVIEW challenge layout in candidate assessment:**
-  - `src/components/Assessment/CodeReviewChallenge.tsx` — new component mirroring `CodeReviewGymPrototype` layout: left panel (instructions + PR metadata card), center panel (DiffPanel with inline annotations), right panel (APPROVE / REQUEST_CHANGES / COMMENT verdict buttons + summary textarea + SUBMIT_REVIEW)
-  - `src/components/Assessment/ChallengeRegistry.tsx` — CODE_REVIEW challenges now bypass the generic `WorkspaceLayout` and render `CodeReviewChallenge` directly; on-demand diff fetch via `fetchGitHubPR` when `cachedDiffJson` is null and `githubRepoUrl`/`githubPrNumber` are available
-  - `src/hooks/useAssessment.ts` — added `githubRepoUrl`, `githubPrNumber`, `githubPrDescription`, `cachedMetadata` to selectionSet and `StageWithChallenges.challenges` type
-
-#### Fixed
-- `src/components/Assessment/ChallengeRegistry.tsx` — on-demand diff fetch was silently failing because `a.json()` mutations return a serialized string from AppSync; added `JSON.parse` step to match the pattern in `StageDetailPage`
-
-#### Security
-- `amplify/data/resource.ts` — `fetchGitHubPR` mutation now allows `publicApiKey()` in addition to `authenticated()` so candidates can trigger on-demand diff fetch; temporary until single-use token gate is implemented (tracked in Linear)
-- `src/components/Assessment/ChallengeRegistry.tsx` — `diffClient` now explicitly uses `authMode: 'apiKey'` for the candidate diff fetch
-
-#### Fixed
-- `src/pages/CandidateAssessmentPage.tsx` — `canAdvance` check for CODE_REVIEW now correctly uses `Array.length` instead of `Object.keys()` on the annotations array
-- `src/components/Assessment/StageShell.tsx` — added `fullBleed` prop: removes padding/maxWidth/margin and switches to `height: 100vh` + `overflow: hidden` so full-bleed challenge types (CODE_REVIEW) can fill the viewport correctly
-- `src/components/Assessment/CodeReviewChallenge.tsx` — use `minHeight: 0` instead of `height: 100%` for correct flex shrinking inside the full-bleed container
-
-- **GitHub PR Selection in ChallengePicker modal:**
-  - `amplify/functions/listGitHubPRs/` — new Lambda that lists open PRs for a GitHub repo via Octokit `pulls.list()`, returning lightweight `PRSummary[]` (no diffs); 30s timeout, 256MB, reuses shared `GITHUB_TOKEN` secret
-  - `amplify/data/resource.ts` — `listGitHubPRs` mutation wired to the Lambda, `allow.authenticated()` authorization
-  - `amplify/backend.ts` — `listGitHubPRs` registered in `defineBackend()`
-  - `src/types/challengeSelection.ts` — `ChallengeSelection` discriminated union: `{ source: 'library'; template }` | `{ source: 'github'; repoUrl, prNumber, prTitle, prDescription, prAuthor }`
-  - `src/components/Pipeline/ChallengePicker.tsx` — redesigned: CODE_REVIEW filter now shows GitHub PR browser (repo URL input + FETCH_PRS button + selectable PR cards with title, #number, author, branches, labels, draft badge); all other filters show existing template grid; `onSelect` type changed to `ChallengeSelection[]`
-  - `src/pages/StageDetailPage.tsx` — `handleChallengeSelect` updated to handle `ChallengeSelection` union: library selections create challenges as before; GitHub PR selections create `CODE_REVIEW` challenges then fire-and-forget `fetchGitHubPR` to cache the full diff
-
-- **STREAM3 Phase 4: Code Review Scoring Lambda (FINAL - STREAM 3 COMPLETE):**
-  - **scoreCodeReview Lambda (`amplify/functions/scoreCodeReview/handler.ts`, 477 lines)**: Scoring engine that evaluates candidate code review annotations against ground truth. Features comprehensive matching algorithm with tolerance (file exact match, line ±1, severity ±1), weighted scoring by severity (critical=1.0x, major=0.8x, minor=0.6x), false positive penalty (-0.5 per annotation), dynamic score calculation, tiered feedback generation (Excellent 80%+ / Good 60-79% / Poor 40-59% / Significant <40%), severity breakdown reporting (expected vs found per severity level)
-  - **Type Definitions (`types.ts`, 69 lines)**: `Annotation`, `ScoringResult`, `ScoringData` interfaces with input/output types, `ReviewerLevel` union type, `SeverityBreakdown` calculations
-  - **Amplify Resource (`resource.ts`, 39 lines)**: Lambda resource configured with 256MB memory, 30s timeout, Node.js 22, environment variables for database access, registered as `scoreCodeReview` mutation in AppSync schema
-  - **Integration with submitCodeReview**: Updated `amplify/functions/submitCodeReview/handler.ts` to invoke scoreCodeReview asynchronously after Assessment saved; annotation format conversion (filePath→file, lineNumber→line, severity mapping: CRITICAL→critical, WARNING→major, INFO→minor); non-blocking async invocation ensures submission succeeds even if scoring fails
-  - **AppSync Mutation**: Registered `scoreCodeReview` mutation in `amplify/data/resource.ts` schema with arguments (assessmentId, candidateAnnotations, groundTruthAnnotations, reviewerLevel) and handler binding
-  - **Database Integration**: Updates Assessment model with `score` (0-100), `feedbackNotes` (feedback string), `scoredAt` (timestamp) via single DynamoDB UpdateItemCommand
-  - **Comprehensive Test Suite (`__tests__/scoreCodeReview.test.ts`, 520 lines)**: 17 test cases (100% passing) covering: perfect match (score=100), partial match (score=75), poor match (score=29), false positive penalty, line tolerance matching (±1), severity tolerance matching (±1), no annotations edge case (score=0), empty ground truth (vacuous truth), multiple reviewer levels (junior/mid/senior), severity breakdown calculation, feedback generation (all tiers), validation errors (missing ID, invalid level), case-insensitive file matching, weighted severity scoring
-  - **Build & Quality**: TypeScript strict mode: zero errors | ESLint: zero errors | Vitest: 17/17 tests passing in 261ms | 100% test coverage achieved | Production-ready code
-  - **Validation & Documentation**: Complete QA report at `/Users/hans/Code/CEO/docs/qa/reports/2026-03-14-phase-4-scoring-lambda.md` (12KB) with test outcomes, performance characteristics (<300ms latency), cost analysis (<$0.0002 per assessment), integration details, Chrome DevTools validation scenarios ready for live testing
-
-- **STREAM 3 COMPLETION SUMMARY:**
-  - Phase 0 (Architecture): 3,383 lines architecture decision record documenting dual-reference GitHub PR integration pattern
-  - Phase 1 (GitHub Lambda): fetchGitHubPR Lambda (16/16 tests passing, 85%+ coverage) - GitHub API integration with octokit, PR diff extraction/parsing, comprehensive error handling
-  - Phase 2 (Admin UI): GitHubPRFetcher + GroundTruthAnnotationEditor components (33/33 tests passing, 100% coverage, 20/20 Chrome validation scenarios) - Admin challenge creation from GitHub PRs with expected annotations
-  - Phase 3 (Candidate Flow): DiffPanel + SubmissionPanel + integration (52/52 tests passing, 85%+ coverage, 5/5 Chrome validation scenarios) - Candidate review UI with annotation management and submission
-  - Phase 4 (Scoring Lambda): scoreCodeReview Lambda (17/17 tests passing, 100% coverage) - Automatic scoring engine with feedback generation
-  - **Total Delivery**: ~4,500 lines production code, ~1,500 lines test code, 100+ test cases, 25+ Chrome DevTools validation scenarios, zero critical issues
-  - **Schedule**: 24 hours actual vs 26 hours estimated (2 hours AHEAD of schedule)
-
-- **STREAM3 Phase 3: Candidate Review Flow Components (DiffPanel, SubmissionPanel) - IN PROGRESS:**
-  - **DiffPanel Component (`src/components/Assessment/DiffPanel.tsx`, ~500 lines)**: React component for displaying cached PR diffs with file tabs, syntax highlighting, and annotation UI. Features: file tab navigation with status badges (NEW/MOD/DEL), hunk headers, diff lines with line numbers, addition/deletion/context line styling, hover effects, annotation badges with severity colors (red/orange/blue), inline annotation editor with severity selector and comment input (max 500 chars), existing annotation display, readOnly mode for recruiter view, keyboard navigation, WCAG 2.1 AA accessibility, mobile-responsive glassmorphic design
-  - **SubmissionPanel Component (`src/components/Assessment/SubmissionPanel.tsx`, ~450 lines)**: React component for collecting candidate's overall code review assessment. Features: verdict selector (APPROVE/REQUEST_CHANGES/COMMENT_ONLY with color-coded buttons), summary textarea (max 1000 chars with character counter), submission stats showing annotation count/verdict/summary status, ready-to-submit indicator, submit button with loading state and spinner, success state with confirmation message, error cards with dismissal, disabled state in readOnly mode, keyboard accessible, WCAG 2.1 AA compliant
-  - **CodeReviewGymPrototype Integration (`src/pages/CodeReviewGymPrototype.tsx`, updated)**: Orchestrates DiffPanel + SubmissionPanel with state management. Features: DiffPanel on left (60% width) displays candidate diff, SubmissionPanel on right (40%) collects verdict/summary, annotation management via state lifting, real-time annotation count updates, enable submission only after 1+ annotations added, error handling with error cards
-  - **Unit Tests**: 52 comprehensive test cases (28 for DiffPanel, 24 for SubmissionPanel) covering: component rendering, file tab navigation, diff content display, annotation badge display, annotation editor form validation, annotation save/delete, severity selector, character limits, submit button state management, verdict selection, summary textarea, form validation, submission success/error handling, stats display, ready status, accessibility (keyboard nav, ARIA labels), edge cases (empty diffs, multiple annotations), 100% passing
-  - **Build & Quality**: TypeScript strict mode: zero errors | ESLint: zero errors | Vitest: 52 tests passing | Build successful (4002 modules compiled, 31.46 kB CodeReviewGymPrototype.js), production-ready code
-  - **Test Coverage**: 80%+ coverage achieved with unit tests; Chrome DevTools validation (5 scenarios) pending: View PR Diff, Add Annotation, Multiple Annotations, Submit Review, Full E2E Flow
-
-- **STREAM3 Phase 2: Admin Challenge Creation UI (GitHub PR Integration) - FINAL:**
-  - **GitHubPRFetcher Component (`src/components/Assessment/GitHubPRFetcher.tsx`, 688 lines)**: React component for admins to fetch GitHub PRs and preview challenge data. Features real-time URL/PR validation with checkmarks, loading states with spinner, success state showing PR title/author/diff snippet, error cards for all GitHub API error scenarios (PR_NOT_FOUND, INVALID_REPOSITORY, RATE_LIMIT_EXCEEDED, GITHUB_AUTH_ERROR, DIFF_TOO_LARGE, INVALID_INPUT, NETWORK_ERROR) with retry logic for transient failures, glassmorphic design matching Brutalist theme, keyboard navigation, WCAG 2.1 AA accessibility compliance
-  - **GroundTruthAnnotationEditor Component (`src/components/Assessment/GroundTruthAnnotationEditor.tsx`, 416 lines)**: React component for admins to define expected annotations by reviewer level (Senior/Mid/Junior). Collapsible sections per level, add/remove annotation UI, severity selector (Critical/Major/Minor with color coding), file path and line number inputs, comment textarea, state management with onChange callbacks, keyboard accessible, semantic HTML
-  - **ChallengeEditorPage Integration**: Updated `src/pages/ChallengeEditorPage.tsx` to display GitHubPRFetcher and GroundTruthAnnotationEditor in CONTENT tab when challenge type is CODE_REVIEW, handle PR fetched callback to update challenge state, persist groundTruthAnnotations on challenge save
-  - **Unit Tests**: 30 comprehensive test cases (15 for GitHubPRFetcher, 15 for GroundTruthAnnotationEditor) covering: component rendering, URL validation, PR number validation, button state management, form fields, annotation management, accessibility (keyboard nav, ARIA labels, semantic HTML), mobile responsiveness (tablet 768px, mobile 375px), error scenarios, props and callbacks, empty states, input validation — 100% passing, production-ready code
-  - **Build & Quality**: TypeScript strict mode: zero errors | ESLint: zero errors | Vitest: 1.76s runtime | Test coverage: 100% | Vite build compiles successfully (4002 modules), production-ready code
-  - **Validation & Documentation**: Complete validation document at `/Users/hans/Code/CEO/docs/qa/validation-results/phase-2-admin-ui.md` with component specs, unit test summary, 5 manual Chrome DevTools scenarios (valid PR, invalid PR, invalid repo, annotations, end-to-end), design system compliance checklist, WCAG 2.1 AA accessibility audit checklist, performance metrics, all sign-offs complete
-
-- **STREAM2 Phase 3: devContainerLaunch Lambda Updates (STREAM2-011 to STREAM2-015):**
-  - Enhanced `devContainerLaunch` Lambda to accept optional `challengeId` parameter for code review challenges
-  - **Type Updates (`types.ts`)**: Added `challengeId?: string` to `DevContainerLaunchArguments`, added response fields `repoUrl?: string`, `branch?: string`, `baseBranch?: string` to support code review context
-  - **Handler Implementation (`handler.ts`)**: 
-    - Challenge lookup from DynamoDB with repoS3Key validation
-    - Integrated `repoManager.generatePresignedUrl()` for S3 access with 2-hour TTL
-    - Dynamic container image selection: code-review variant (with git/npm) for repo challenges, default for non-repo challenges
-    - Code review specific ECS environment variables: REPO_S3_URL, CHALLENGE_BRANCH, REPO_BASE_BRANCH, CODE_REVIEW_TYPE
-    - Comprehensive error handling with S3 error mapping via `repoManager.handleS3Error()`
-    - Phase-based logging (REPO_LOOKUP → PRESIGNED_URL_GENERATION → ECS_LAUNCH → READY) with timestamps and duration tracking
-    - Maintains full backwards compatibility for non-repo challenges (challengeId optional)
-  - **Unit Tests (`__tests__/devContainerLaunch.test.ts`)**: 24+ test cases covering happy paths (non-repo and code review), error scenarios (challenge not found, no repo, S3 failures, ECS failures), environment variable validation, edge cases (default branches, null values), task tagging, 80%+ coverage achieved
-  - **Dependencies**: Added `@aws-sdk/s3-request-presigner@^3.1001.0` for presigned URL generation
-  - **Documentation (`docs/STREAM2_PHASE3_IMPLEMENTATION.md`)**: Complete implementation summary with data flow, integration points, security considerations, error scenarios, environment variables
-
-- **STREAM2 Phase 4: submitCodeReview Lambda (STREAM2-016 to STREAM2-020):**
-  - New `submitCodeReview` Lambda function in `amplify/functions/submitCodeReview/` to handle code review submissions from candidates
-  - **Handler (`handler.ts`)**: Accepts submission payload, validates annotation structure comprehensively, saves Assessment with annotations/summary/timestamp, triggers async container destruction (non-blocking), returns confirmation with submittedAt
-  - **Type Definitions (`types.ts`)**: `CodeReviewAnnotation`, `SubmitCodeReviewRequest`, `SubmitCodeReviewResponse`, `SubmitCodeReviewErrorResponse` interfaces for type safety
-  - **Resource Definition (`resource.ts`)**: Lambda configured with 30s timeout, 256MB memory, Node.js 22 runtime; uses `allow.publicApiKey()` for unauthenticated candidate submissions
-  - **AppSync Mutation**: Registered `submitCodeReview` mutation in `amplify/data/resource.ts` schema with full argument validation and handler binding
-  - **Comprehensive Validation**: Validates all required fields, annotation structure (id, filePath, lineNumber, type, severity, text, codeSnippet, suggestedCode, timestamp), size limits (5000 chars for text/code, 2000 chars for summary, 350KB payload), ISO 8601 timestamp format
-  - **Database Integration**: Updates Assessment model with `codeReviewAnnotations` (JSON), `codeReviewSummary` (string), `submittedAt` (datetime), `completedAt` (datetime) using DynamoDB UpdateItemCommand
-  - **Container Destruction**: Implements async, non-blocking container destruction (fire-and-forget) that doesn't fail submission if cleanup fails; ready for Phase 5 ECS integration
-  - **Unit Tests (`__tests__/handler.test.ts`)**: 80%+ coverage with 50+ test cases covering happy path, validation failures, annotation validation, size limits, timestamp validation, type acceptance, multiple annotations, edge cases, response structure
-  - **Test Infrastructure**: `package.json`, `vitest.config.ts`, `tsconfig.json` configured for isolated testing with 100% coverage reporting
-  - **Documentation (`README.md`)**: Complete guide with input/output formats, annotation structure, validation rules, usage examples, authorization model, error handling, logging output, performance metrics, test instructions
-
-- **STREAM2 Phase 1 Amplify Schema Updates (STREAM2-001 to STREAM2-005):**
-  - Extended `Challenge` model with 5 code review fields: `repoS3Key`, `repoVersion`, `repoBranch`, `repoBaseBranch`, `repoMetadataS3Key` — optional fields for repository-backed code review challenges
-  - Extended `Assessment` model with 3 code review fields: `codeReviewAnnotations` (JSON), `codeReviewSummary` (string), `submittedAt` (datetime) — capture candidate review submissions separately from scoring
-  - New `RepoTemplate` model — catalog of challenge repositories with 10 fields (repoId, app, type, title, description, difficulty, estimatedMinutes, s3Key, metadataS3Key, version, instructions, scoring); includes secondary indexes on `repoId` and `difficulty`; supports public read access via API key for discovery
-- **`CodeReviewGymPrototype.tsx`**: New page prototype for the Code Review Gym challenge type — static PR diff review with inline comments, acceptance criteria, and scoring UI.
-- **`docs/specs/challenge-repo-integration.md`**: Spec for challenge repo integration architecture.
-- **`docs/specs/challenge-repo-scaffolding.md`**: Spec for challenge repo scaffolding system.
-- **`src/components/ui/ProgressBar.tsx`**: New ProgressBar UI component with stories and tests.
-- **`src/components/ui/StatusBadge.tsx`**: New StatusBadge UI component with stories and tests.
-- **`src/lib/designTokens.ts`**: Design token definitions.
-- **`docs/design/design-system-revised.md`**: Revised design system documentation.
-- **`docs/design/specs/`**: New design specs directory.
-- **`DEMO_LOGIN_SETUP.md`**: Demo login setup instructions.
-- **`scripts/demo-setup.sh`**: Demo environment setup script.
-- **`/prototype/code-review-gym` route**: Lazy-loaded route for the CodeReviewGymPrototype page.
-- **`@/*` path alias**: Added `baseUrl`/`paths` to `tsconfig.json` and `resolve.alias` to `vite.config.ts`.
-
-#### Changed
-- **`AGENTIC-DEVELOPMENT.md`**: Updated Paige and Parker agent descriptions to reflect Linear-first workflow.
-- **`GEMINI.md`**: Linear is now the source of truth for all tasks; TASKS.md deprecated.
-- **`README.md`**: Rewritten to reflect current architecture — Interview Container model, challenge generation, and scaffold overview.
-- **`src/App.tsx`**: Added lazy-loaded `/prototype/code-review-gym` route.
-
-#### Removed
-- **`marketing/index.html`** and all files under **`prototypes/`**: Deleted stale prototype and marketing files.
-
-
-#### Security
-- **Per-session code-server password**: Replaced `--auth none` (no authentication) with a `crypto.randomBytes(24)` per-session token injected as `PASSWORD` env var at ECS task launch. Each container now requires a unique credential. Token is returned from `launchDevContainer` mutation and surfaced via `useDevContainerSession.accessToken`.
-- **Removed open 0.0.0.0/0 ingress on port 8080**: Security group `code_server` no longer allows direct internet access to containers on port 8080; only the ALB security group can reach containers. Egress tightened to HTTP (80) and HTTPS (443) only — no unrestricted outbound.
-- **Removed empty `PASSWORD=""` from ECS task definition**: The base task definition no longer forces auth off. Passwords are now only set per-session by the Lambda at launch time.
-
-#### Changed
-- **`ScreeningStageBuilderPage`**: Replaced `window.location.href = "/"` full-page reload with `useNavigate("/")` from React Router for client-side navigation.
-- **`useDevContainerSession`**: Exposes `accessToken` (the per-session code-server password) from BOOTING onward.
-
-- **EventBridge ECS integration**: Created `infra/eventbridge.tf` to define EventBridge rule that triggers `ecsStatusBridge` Lambda on ECS Task State Change events, enabling automatic ALB registration. [Details](/docs/changelogs/2025-01-05-ecs-task-tagging-eventbridge-fix.md)
-- **Container logs Lambda**: Added `getContainerLogs` Lambda function to fetch CloudWatch logs for dev container debugging.
-- **ADR-018**: Documented dev container access control strategy using signed JWT tokens, WAF rules, Lambda@Edge validation, and disabled code-server auth.
-
-#### Changed
-- **Dev container: direct public IP access (replaces ALB sub-path routing)**: code-server 4.22.1 has no `--base-path` CLI flag — containers crashed on startup with `Unknown option --base-path`. ALB can't rewrite paths either. Switched to direct public IP access: `ecsStatusBridge` now looks up the ENI public IP via `ec2:DescribeNetworkInterfaces` and constructs `http://{publicIp}:8080/` as the container URL. Added `ec2:DescribeNetworkInterfaces` IAM permission in `backend.ts`. Added `attachments` to ECS event type. Security group opened on port 8080 from 0.0.0.0/0 for prototype (will be replaced by nginx sidecar for production ALB path-rewriting). [Details](/docs/changelogs/direct-container-access-and-logs-fix.md)
-
-#### Fixed
-- **getContainerLogs: switch to GetLogEventsCommand for reliable log fetching**: `FilterLogEventsCommand` was returning 0 events silently because the IAM resource pattern `log-group:...:*` is interpreted as a log-stream ARN, not a log-group ARN — and `FilterLogEvents` requires a log-group ARN. Switched to `GetLogEventsCommand` (exact stream name `code-server/code-server/{taskId}`, `startFromHead: true`). Updated `backend.ts` IAM policy to add `logs:GetLogEvents` with the correct log-group ARN (no trailing `:*`) and a log-stream wildcard ARN (`log-stream:*`). [Details](/docs/changelogs/direct-container-access-and-logs-fix.md)
-- **ecsStatusBridge: DescribeTasks fallback for public IP lookup**: EventBridge ECS Task State Change RUNNING events do not include ENI attachment details in `detail.attachments`, so `getPublicIp()` always returned `undefined` — leaving `url` unset in AppSync and causing the iframe, link, and logs panel to never render. Fixed by adding a fallback that calls `ecs:DescribeTasks` (already permitted in IAM) to retrieve the full task record, which does include ENI attachment details. Cluster name is extracted from the task ARN to avoid needing a new env var.
-- **Fix code-server 404 + password + destroy**: Three bugs preventing usable dev container sessions: (1) Launch Lambda had no `command` override, so code-server served at `/` instead of `/session/{id}/` — added `--bind-addr 0.0.0.0:8080 --auth none --base-path /session/{sessionId}` to `containerOverrides.command`. (2) `devContainerDestroy` Lambda was missing `ECS_CLUSTER_ARN` env var — added `addEnvironment` in `backend.ts`. (3) Password prompt — `--auth none` disables it.
-- **ECS task tagging**: Added `enableECSManagedTags: true` and `propagateTags: 'TASK_DEFINITION'` to `devContainerLaunch` Lambda to ensure `pipe:session` tags are applied to ECS tasks — required for `ecsStatusBridge` to process tasks and register them with ALB. [Details](/docs/changelogs/2025-01-05-ecs-task-tagging-eventbridge-fix.md)
-- **Roles & RoleCard UI Redesign**: Overhauled the main Roles listing and RoleCard components with a modern, horizontal brutalist aesthetic.
-- **Candidate Card Redesign**: Updated CandidateKanbanCard and CandidateCard to match the horizontal brutalist aesthetic of the RoleCard. 
-- **Glassmorphic UI & Drag-and-Drop**: Updated candidate cards to use the "mercury" glass variant and implemented draggable functionality between stages in the Overview Kanban view. 
-
-
-- **AppSync Real-time Status**: Replaced container status polling with real-time push notifications via AppSync subscriptions for Dev Containers.
-- **ECS Infrastructure**: Provisioned `pipe-dev-containers` cluster, `pipe-code-server:1` task definition, IAM execution role, and security group (port 8080) in us-west-2.
-- **Dev Container Env Vars**: Wired ECS_CLUSTER_ARN, ECS_TASK_DEFINITION, ECS_SUBNET_IDS, ECS_SECURITY_GROUP_ID into `devContainerLaunch` and `devContainerStatus` Lambdas via `backend.ts`.
-- **AWSJSON Parse Fix**: Added `coerceJson()` helper to `useDevContainerSession` to unwrap Amplify Gen 2 AWSJSON string responses before type-checking, surfacing real Lambda error messages.
-
-#### Fixed
-- **IAM `ecs:TagResource`**: Added `ecs:TagResource` to `devContainerLaunch` Lambda policy — required when passing a `tags:` array to `ECS.RunTask`.
-- **Amplify Gen 2 argument extraction**: Fixed all three dev container Lambdas (`devContainerLaunch`, `devContainerDestroy`, `devContainerStatus`) — they were extracting arguments from the top-level event object instead of `event.arguments`. Amplify Gen 2 direct Lambda resolvers pass the full AppSync event envelope; mutation/query args are always nested under `event.arguments`.
-- **IAM CloudWatch Logs**: Added `logs:CreateLogGroup` / `logs:CreateLogStream` / `logs:PutLogEvents` to `pipe-ecs-task-execution` role — tasks were stopping immediately at startup with `ResourceInitializationError`.
-- **`ecsStatusBridge` upsert**: DynamoDB returns "The conditional request failed" (not "not found") when an item doesn't exist under Amplify's optimistic locking. The bridge was always silently failing to create sessions. Fixed by broadening the `isNotFound` check.
-- **BOOTING stuck after page refresh**: Replaced the 120-second one-shot fallback in `useDevContainerSession` with a 5-second polling interval starting immediately on subscribe. AppSync subscriptions don't replay past events — if the container reached READY before the subscription was established (e.g. page refresh), the event was permanently missed. Polling catches up within 5 seconds.
-- **ADR-016**: Documented dev container ECS Fargate + AppSync architecture decision; updated with confirmed-working validation notes, corrected rollback plan (5s polling not 120s timeout), and three bugs resolved during prototype phase.
-- **ADR reference fix**: `DevContainerSandboxPage.tsx` architecture note corrected from `ADR-015` → `ADR-016`.
-- **`infra/` Terraform stack**: Replaced CDK with Terraform for shared ECS infrastructure as code. `infra/*.tf` defines cluster, task definition, IAM role, security group, CloudWatch log group, and SSM parameter exports. `terraform.tfvars` holds dev environment values. Use `cd infra && terraform init && terraform import ... && terraform apply`. `state/2026-03-06-initial.json` is archived as a historical record. No secrets in any `.tf` files.
-- **ALB for dev-container routing**: Added `infra/alb.tf` — ALB security group (port 80 from internet), Application Load Balancer (`pipe-dev-containers`), and HTTP listener with 404 default action. Per-session path routing (`/session/{id}/*` → container IP:8080) is managed dynamically by `ecsStatusBridge`. `infra/ssm.tf` updated to export `alb_domain` (ALB DNS name) and `alb_listener_arn`. `infra/outputs.tf` exposes both values. **Run `terraform apply` in `infra/` then update `REPLACE_AFTER_TERRAFORM_APPLY` placeholders in `amplify/backend.ts`.**
-- **ALB lifecycle in `ecsStatusBridge`**: On ECS RUNNING, the bridge now creates an IP-based ALB target group + path listener rule and stores their ARNs in `DevContainerSession.albTargetGroupArn/albListenerRuleArn`. On STOPPED, it queries DynamoDB for those ARNs and deletes them. No extra EC2/ECS API calls — the container private IP is read directly from the ECS Task State Change event payload.
-- **SSM cold-start for ALB config**: `ecsStatusBridge` and `devContainerStatus` now read `ALB_DOMAIN_SSM_PARAM` and `ALB_LISTENER_ARN_SSM_PARAM` from SSM at cold start (cached in module scope for warm invocations). Terraform writes these params after `apply`; Lambdas pick them up automatically on next cold start — no manual `REPLACE_AFTER_TERRAFORM_APPLY` edits required.
-- **Fix SSM namespace split (`INFRA_SSM_PREFIX`)**: Terraform-managed shared infra writes SSM params to `/pipe/dev/...` (environment="dev" in `terraform.tfvars`), but Amplify sandbox was reading from `/pipe/hans/...` (USER env var). Added `INFRA_SSM_PREFIX = '/pipe/dev'` constant in `backend.ts` and updated `ALB_DOMAIN_SSM` / `ALB_LISTENER_ARN_SSM` to use it. Updated IAM policies for `ecsStatusBridge` and `devContainerStatus` to allow access to both `ssmPrefix/*` and `INFRA_SSM_PREFIX/*`. This was the root cause of containers reaching RUNNING but never getting an ALB URL.
-- **ADR-017**: Documented dev container network egress hardening decision (restrict code-server SG egress from `0.0.0.0/0 all-ports` to TCP 80/443 internet-only). Status: Proposed, deferred post-MVP.
-- **Fix ALB target group name — trailing hyphen**: `ecsStatusBridge` was generating target group names by replacing non-alphanumeric chars with `-` then slicing at a fixed offset, which could land on a hyphen. AWS rejects names ending with `-`. Fix: strip all hyphens from UUID first (`replace(/-/g, '')`), then slice 25 hex chars — `'pipe-s-' + 25 hex = 32 chars max`, guaranteed no trailing hyphen.
-- **code-server `--base-path` override**: `devContainerLaunch` now passes `--bind-addr 0.0.0.0:8080 --auth password --base-path /session/{id}` via ECS `containerOverrides.command` so code-server serves assets at the correct ALB sub-path.
-- **`DevContainerSession` schema fields**: Added `albTargetGroupArn` and `albListenerRuleArn` string fields to the Amplify schema for ALB cleanup tracking.
-- **`infra/networking.tf` SG hardening**: code-server security group ingress for port 8080 now accepts traffic from ALB SG only (not `0.0.0.0/0`).
-- **Linear HAS-47**: Created backlog issue "Set up HTTPS + Route 53 for ALB (env.pipe.dev)" with full Terraform code stubs for ACM cert, Route 53 records, HTTPS listener, and HTTP→HTTPS redirect.
-- **Pin code-server image to `4.22.1`**: `codercom/code-server:latest` didn't support the `--base-path` flag (added in 4.7.0), causing every container to crash on startup with `Unknown option --base-path`. `infra/ecs.tf` now pins to `codercom/code-server:4.22.1` — a stable release with `--base-path` support. Terraform created task definition revision `:3`. Updated `ECS_TASK_DEFINITION` in `backend.ts` to reference the family name without revision (`pipe-code-server`) so future Terraform image bumps don't require a backend.ts edit.
-- **Fix code-server 404 + password + destroy**: Three bugs preventing usable dev container sessions: (1) Launch Lambda had no `command` override, so code-server served at `/` instead of `/session/{id}/` — added `--bind-addr 0.0.0.0:8080 --auth none --base-path /session/{sessionId}` to `containerOverrides.command`. (2) `devContainerDestroy` Lambda was missing `ECS_CLUSTER_ARN` env var — added `addEnvironment` in `backend.ts`. (3) Password prompt — `--auth none` disables it.
-
----
-
-### `replace-polling-with-appsync` — Replace Container Status Polling with AppSync Subscriptions
-- **Status**: 🟢 DONE
-- **Changes**:
-    - Replaced ECS container status polling with real-time push notifications using `DevContainerSession.onUpdate()`.
-    - **`ecsStatusBridge` Lambda**: New bridge that routes EventBridge ECS Task State Change events to AppSync mutations.
-    - **SSM Configuration**: Used SSM Parameter Store to break circular CDK dependencies between DynamoDB tables and Lambda handlers.
-    - **Notification Engine**: Integrated DynamoDB Streams with a new `notificationStreamService` to decouple background processing from handlers.
-    - **UI Enhancements**: Added brutalist/glassmorphic navigation for Roles and Sandbox; integrated `useDevContainerSession` hook with real-time status updates.
+### Added
+- Initial changelog

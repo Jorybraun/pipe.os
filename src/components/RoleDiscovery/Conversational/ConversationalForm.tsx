@@ -34,10 +34,7 @@ const PHASES = [
 ];
 
 const CHROME_GRADIENT = {
-  background: 'linear-gradient(135deg, #fff 0%, rgba(200, 210, 230, 0.8) 25%, #fff 50%, rgba(180, 190, 220, 0.7) 75%, rgba(240, 240, 250, 0.9) 100%)',
-  WebkitBackgroundClip: 'text',
-  WebkitTextFillColor: 'transparent',
-  filter: 'drop-shadow(0 4px 30px rgba(200, 210, 230, 0.2))',
+  color: 'var(--pipe-text)',
 };
 
 export function ConversationalForm({ data, onChange, onComplete, currentPhase, onPhaseChange }: ConversationalFormProps) {
@@ -67,12 +64,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 1: Role Identity */}
           <FormFieldSet isActive={currentPhase === 0} order={0} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <User size={24} color="rgba(255, 255, 255, 0.4)" />
+              <User size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 ROLE IDENTITY
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               Let's start with the basics. What is the role you're hiring for?
             </p>
             
@@ -115,12 +112,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 2: Team Context */}
           <FormFieldSet isActive={currentPhase === 1} order={1} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Users size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Users size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 TEAM CONTEXT
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               Who will this person be working with?
             </p>
 
@@ -144,12 +141,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 3: Technical Environment */}
           <FormFieldSet isActive={currentPhase === 2} order={2} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Code size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Code size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 TECHNICAL ENVIRONMENT
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What tools and technologies are core to this role?
             </p>
 
@@ -165,12 +162,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 4: Success Criteria */}
           <FormFieldSet isActive={currentPhase === 3} order={3} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Target size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Target size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 SUCCESS CRITERIA
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What does success look like for this role?
             </p>
 
@@ -186,12 +183,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 5: Challenges */}
           <FormFieldSet isActive={currentPhase === 4} order={4} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Zap size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Zap size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 CHALLENGES
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What are the main difficulties of this role?
             </p>
 
@@ -207,12 +204,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           {/* Phase 6: Culture */}
           <FormFieldSet isActive={currentPhase === 5} order={5} currentOrder={currentPhase}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-              <Heart size={24} color="rgba(255, 255, 255, 0.4)" />
+              <Heart size={24} color="var(--pipe-text-dim)" />
               <h2 style={{ fontSize: 24, fontWeight: 800, ...CHROME_GRADIENT }}>
                 CULTURE
               </h2>
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
+            <p style={{ color: 'var(--pipe-text-dim)', fontSize: 13, marginBottom: 8, letterSpacing: '0.02em' }}>
               What is the team culture like?
             </p>
 
@@ -237,9 +234,9 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
             <button
               onClick={prevPhase}
               style={{
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.6)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                color: 'var(--pipe-text-muted)',
                 padding: '14px 24px',
                 borderRadius: 0,
                 cursor: 'pointer',
@@ -253,12 +250,12 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
                 transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
               }}
               onMouseOver={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.background = 'var(--pipe-surface-hover)';
+                e.currentTarget.style.color = 'var(--pipe-text)';
               }}
               onMouseOut={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                e.currentTarget.style.color = 'rgba(255,255,255,0.6)';
+                e.currentTarget.style.background = 'var(--pipe-surface)';
+                e.currentTarget.style.color = 'var(--pipe-text-muted)';
               }}
             >
               <ArrowLeft size={14} />
@@ -269,9 +266,9 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
           <button
             onClick={nextPhase}
             style={{
-              background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.2))',
-              border: '1px solid rgba(139, 92, 246, 0.4)',
-              color: '#a78bfa',
+              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(59, 130, 246, 0.2))',
+              border: '1px solid rgba(255, 255, 255, 0.18)',
+              color: 'var(--pipe-accent)',
               padding: '14px 32px',
               borderRadius: 0,
               cursor: 'pointer',
@@ -282,16 +279,16 @@ export function ConversationalForm({ data, onChange, onComplete, currentPhase, o
               fontWeight: 700,
               letterSpacing: '0.15em',
               textTransform: 'uppercase',
-              boxShadow: '0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)',
+              boxShadow: '0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)',
               transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
             }}
             onMouseOver={(e) => {
               e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 8px 24px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(139, 92, 246, 0.3)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(255, 255, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12)';
             }}
             onMouseOut={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.2)';
+              e.currentTarget.style.boxShadow = '0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)';
             }}
           >
             {currentPhase === PHASES.length - 1 ? 'FINISH_ROLE_DISCOVERY' : 'NEXT_STEP'}

@@ -57,7 +57,7 @@ export function QuizRenderer({
   if (!currentQuestion) {
     return (
       <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
-        <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+        <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
           NO_QUESTIONS_FOUND_FOR_QUIZ
         </div>
       </LiquidMetalCard>
@@ -79,7 +79,7 @@ export function QuizRenderer({
           style={{
             fontSize: 10,
             letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
           }}
         >
@@ -88,7 +88,7 @@ export function QuizRenderer({
         <div
           style={{
             fontSize: 10,
-            color: 'rgba(255,255,255,0.25)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
           }}
         >
@@ -102,7 +102,7 @@ export function QuizRenderer({
           style={{
             fontSize: 20,
             fontWeight: 700,
-            color: '#fff',
+            color: 'var(--pipe-text, #fff)',
             lineHeight: 1.4,
             margin: 0,
             letterSpacing: '0.01em',
@@ -123,7 +123,7 @@ export function QuizRenderer({
               style={{
                 textAlign: 'left',
                 padding: '20px 24px',
-                background: isSelected ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
+                background: isSelected ? 'rgba(255,255,255,0.06)' : 'var(--pipe-surface)',
                 border: isSelected ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(255,255,255,0.06)',
                 borderRadius: 4,
                 color: isSelected ? '#fff' : 'rgba(255,255,255,0.6)',
@@ -160,8 +160,8 @@ export function QuizRenderer({
           style={{
             padding: '12px 24px',
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.4)',
+            border: '1px solid var(--pipe-border)',
+            color: 'var(--pipe-text-dim)',
             fontSize: 10,
             letterSpacing: '0.15em',
             fontFamily: '"Space Mono", monospace',
@@ -178,8 +178,8 @@ export function QuizRenderer({
           style={{
             padding: '12px 24px',
             background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.4)',
+            border: '1px solid var(--pipe-border)',
+            color: 'var(--pipe-text-dim)',
             fontSize: 10,
             letterSpacing: '0.15em',
             fontFamily: '"Space Mono", monospace',

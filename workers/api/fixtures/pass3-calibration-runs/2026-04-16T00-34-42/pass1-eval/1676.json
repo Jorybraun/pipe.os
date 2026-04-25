@@ -1,0 +1,12 @@
+{
+  "repo_id": 1676,
+  "full_name": "nhost/nhost",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "Nhost is a BaaS (Backend-as-a-Service) platform SDK and infrastructure tooling, not a general application",
+    "Engineering work is heavily tied to Nhost-specific abstractions (Hasura, GraphQL Engine wiring, custom auth flows)",
+    "Monorepo contains client SDKs and platform-specific packages that would confuse general assessment candidates"
+  ],
+  "reasoning": "Nhost is a backend-as-a-service vendor platform whose repo is primarily SDK clients and platform infra glue, disqualifying it as a general-purpose assessment target."
+}

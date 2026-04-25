@@ -11,17 +11,17 @@ export default function CandidateScreeningPage(): JSX.Element {
   const navigate = useNavigate();
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0c0c0e', fontFamily: '"Space Mono", monospace', color: '#fff' }}>
+    <div style={{ minHeight: '100vh', background: '#0c0c0e', fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text, #fff)' }}>
       <ChromeMeshGrid />
 
       {/* Progress bar */}
-      <div style={{ height: 4, background: 'rgba(255,255,255,0.05)' }}>
+      <div style={{ height: 4, background: 'var(--pipe-surface)' }}>
         <div style={{ width: '33%', height: '100%', background: 'linear-gradient(90deg, rgba(150,255,150,0.6), rgba(150,255,150,0.8))' }} />
       </div>
 
       <div style={{ padding: '60px 32px', maxWidth: 800, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <div style={{ fontSize: 9, letterSpacing: '0.3em', color: 'rgba(255,255,255,0.4)', marginBottom: 16 }}>SCREENING // QUESTION 1 OF 3</div>
+          <div style={{ fontSize: 9, letterSpacing: '0.3em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>SCREENING // QUESTION 1 OF 3</div>
           <h1
             style={{
               fontSize: 36,
@@ -39,7 +39,7 @@ export default function CandidateScreeningPage(): JSX.Element {
 
         <LiquidMetalCard variant="mercury" style={{ padding: 48, textAlign: 'center' }}>
           <div style={{ marginBottom: 32 }}>
-            <p style={{ fontSize: 16, color: '#fff', lineHeight: 1.7, marginBottom: 24 }}>
+            <p style={{ fontSize: 16, color: 'var(--pipe-text, #fff)', lineHeight: 1.7, marginBottom: 24 }}>
               Tell us about a recent project where you used AI tools to enhance your development workflow.
             </p>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>Time limit: 2 minutes</div>
@@ -49,8 +49,8 @@ export default function CandidateScreeningPage(): JSX.Element {
             style={{
               width: '100%',
               height: 300,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -58,8 +58,8 @@ export default function CandidateScreeningPage(): JSX.Element {
             }}
           >
             <div>
-              <Play size={48} color="rgba(255,255,255,0.3)" />
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 16 }}>CLICK TO RECORD</div>
+              <Play size={48} color="var(--pipe-text-dim)" />
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginTop: 16 }}>CLICK TO RECORD</div>
             </div>
           </div>
 
@@ -69,8 +69,8 @@ export default function CandidateScreeningPage(): JSX.Element {
               style={{
                 padding: '12px 24px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.15)',
-                color: 'rgba(255,255,255,0.6)',
+                border: '1px solid var(--pipe-border)',
+                color: 'var(--pipe-text-muted)',
                 fontSize: 10,
                 letterSpacing: '0.15em',
                 cursor: 'pointer',
@@ -84,8 +84,8 @@ export default function CandidateScreeningPage(): JSX.Element {
               style={{
                 padding: '12px 32px',
                 background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))',
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: '#fff',
+                border: '1px solid var(--pipe-border)',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 10,
                 letterSpacing: '0.15em',
                 fontWeight: 700,

@@ -22,7 +22,7 @@ const CALENDLY_CLIENT_ID = import.meta.env['VITE_CALENDLY_CLIENT_ID'] as string 
  * TODO: Content-Security-Policy — the production CSP must allow:
  *   script-src https://asset.calendly.com
  *   frame-src  https://calendly.com
- * Add these to amplify/hosting/customHeaders.json before go-live.
+ * Add these to Cloudflare Pages _headers file before go-live.
  */
 const CalendlyWidget: FC<SchedulingProviderConfig> = ({
   schedulingUrl,
@@ -123,6 +123,7 @@ export const CalendlyPlugin: SchedulingPlugin = {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
+      scope: 'users:read event_types:read scheduled_events:read',
       state,
     });
     if (codeChallenge) {

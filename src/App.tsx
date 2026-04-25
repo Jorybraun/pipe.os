@@ -11,95 +11,63 @@ import {
   useParams,
   useLocation,
 } from "react-router-dom";
-import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
+import { ClerkAuthGate, ClerkAuthWrapper } from "./providers/clerk";
+import { useAuth } from "./providers";
 import { Layout, SidebarNav } from "./components";
+import { AgentDrawerProvider, useAgentDrawer } from "./contexts/AgentDrawerContext";
+import { AgentDrawer } from "./components/Agent/AgentDrawer";
 import ListingPage from "./pages/ListingPage";
-import OverviewPage from "./pages/OverviewPage";
-import StageDetailPage from "./pages/StageDetailPage";
+import PipelineShellPage from "./pages/PipelineShellPage";
+import PipelineInsightsPanel from "./pages/PipelineInsightsPanel";
+import StagePanel from "./pages/StagePanel";
+import StageIndexTab from "./pages/stage-tabs/StageIndexTab";
+import CandidatesTab from "./pages/stage-tabs/CandidatesTab";
+import ConfigureTab from "./pages/stage-tabs/ConfigureTab";
+import GateConfigTab from "./pages/stage-tabs/GateConfigTab";
+import CultureBenchmarkTab from "./pages/stage-tabs/CultureBenchmarkTab";
+import NewStageFormPage from "./pages/NewStageFormPage";
+import KanbanPage from "./pages/KanbanPage";
 import CandidateProfilePage from "./pages/CandidateProfilePage";
 import CandidateScreeningPage from "./pages/CandidateScreeningPage";
-import PipelineCreatePage from "./pages/archived/PipelineCreatePage";
+import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
 import ChallengeEditorPage from "./pages/ChallengeEditorPage";
 import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
+import CultureInterviewPage from "./pages/CultureInterviewPage";
 import SchedulingPage from "./pages/SchedulingPage";
+import OutreachPage from "./pages/OutreachPage";
 import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
 import CandidateReportPrototype from "./pages/CandidateReportPrototype";
+import RepoAdminPage from "./pages/admin/RepoAdminPage";
+import RepoSearchPage from "./pages/admin/RepoSearchPage";
+import RepoDetailPage from "./pages/admin/RepoDetailPage";
+import AiUsagePage from "./pages/admin/AiUsagePage";
 import { ArrowLeft, Plus, LogOut } from "lucide-react";
 import Logo from "./components/ui/Logo";
-
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../amplify/data/resource";
-
-const client = generateClient<Schema>();
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
+import { useAuth as useClerkAuth } from "@clerk/react";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { RecruiterCallDrawer } from "./components/Video/RecruiterCallDrawer";
+import { SidebarPortalProvider } from "./contexts/SidebarPortalContext";
+import { StageRefetchProvider } from "./contexts/StageRefetchContext";
 
 /**
  * SubHeader - Main interactive UI for navigation and context
  */
 const SubHeader = () => {
   const navigate = useNavigate();
-  const { id, stage, questionId } = useParams();
+  const { id, stageId, questionId } = useParams();
   const location = useLocation();
-  const { signOut } = useAuthenticator();
-  const [headerData, setHeaderData] = useState<{
-    title: string;
-    count: number;
-  }>({
-    title: "PIPE_OS",
-    count: 0,
-  });
+  const auth = useAuth();
 
-  const isPipelineContext =
-    location.pathname.startsWith("/pipeline/") &&
-    !location.pathname.startsWith("/pipeline/new");
   const isCandidateContext = location.pathname.startsWith("/candidates/");
+
+  const headerData = { title: "PIPE_OS", count: 0 };
 
   const handleNewRole = (): void => {
     navigate("/pipeline/new");
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    const fetchData = async () => {
-      try {
-        let pipelineId = isPipelineContext ? id : null;
-
-        if (isCandidateContext && id) {
-          const { data: candidate } = await client.models.Candidate.get({ id });
-          if (cancelled) return;
-          if (candidate) {
-            pipelineId = candidate.pipelineId;
-          }
-        }
-
-        if (pipelineId) {
-          // Only fetch title — OverviewPage already fetches full pipeline + candidates
-          const { data: pipeline } = await client.models.Pipeline.get({
-            id: pipelineId,
-          });
-          if (cancelled) return;
-
-          setHeaderData({
-            title: pipeline?.title || "POSITION",
-            count: 0, // Candidate count shown in OverviewPage, not header
-          });
-        } else {
-          setHeaderData({
-            title: "PIPE_OS",
-            count: 0,
-          });
-        }
-      } catch (err) {
-        console.error("[SubHeader] Error fetching header data:", err);
-      }
-    };
-
-    fetchData();
-    return () => {
-      cancelled = true;
-    };
-  }, [id, isPipelineContext, isCandidateContext]);
-
-  const currentStage = stage ? { title: stage } : null;
+  const currentStage = stageId ? { title: stageId } : null;
   const isHome = location.pathname === "/";
 
   return (
@@ -122,14 +90,16 @@ const SubHeader = () => {
           <>
             <button
               onClick={() => {
-                if (questionId && stage) {
-                  navigate(`/pipeline/${id}/${stage}`);
-                } else if (stage) {
-                  navigate(`/pipeline/${id}`);
-                } else if (isCandidateContext) {
+                if (isCandidateContext) {
                   navigate(-1);
+                } else if (questionId && stageId) {
+                  navigate(`/pipeline/${id}/stage/${stageId}`);
+                } else if (stageId) {
+                  navigate(`/pipeline/${id}`);
+                } else if (id) {
+                  navigate('/');
                 } else {
-                  navigate("/");
+                  navigate('/');
                 }
               }}
               style={{
@@ -138,7 +108,7 @@ const SubHeader = () => {
                 gap: 8,
                 background: "transparent",
                 border: "none",
-                color: "rgba(255,255,255,0.6)",
+                color: "var(--pipe-text-muted)",
                 cursor: "pointer",
                 fontSize: 10,
                 letterSpacing: "0.15em",
@@ -146,19 +116,17 @@ const SubHeader = () => {
             >
               <ArrowLeft size={12} />{" "}
               {questionId && currentStage
-                ? `BACK TO ${currentStage.title.toUpperCase()}`
-                : stage
+                ? "BACK TO STAGE"
+                : stageId
                   ? "BACK TO OVERVIEW"
-                  : isCandidateContext
-                    ? "BACK"
-                    : "BACK TO ROLES"}
+                  : "BACK"}
             </button>
 
             <div
               style={{
                 width: 1,
                 height: 40,
-                background: "rgba(255,255,255,0.08)",
+                background: "var(--pipe-surface-hover)",
               }}
             />
 
@@ -167,7 +135,7 @@ const SubHeader = () => {
                 style={{
                   fontSize: 9,
                   letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
+                  color: "var(--pipe-text-dim)",
                   marginBottom: 6,
                 }}
               >
@@ -177,49 +145,13 @@ const SubHeader = () => {
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   letterSpacing: "0.05em",
                 }}
               >
                 {headerData.title.toUpperCase()}
               </div>
             </div>
-
-            {(isPipelineContext || isCandidateContext) && (
-              <>
-                <div
-                  style={{
-                    width: 1,
-                    height: 40,
-                    background: "rgba(255,255,255,0.08)",
-                  }}
-                />
-                <div>
-                  <div
-                    style={{
-                      fontSize: 9,
-                      letterSpacing: "0.2em",
-                      color: "rgba(255,255,255,0.3)",
-                      marginBottom: 6,
-                    }}
-                  >
-                    ACTIVE CANDIDATES
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 24,
-                      fontWeight: 800,
-                      background:
-                        "linear-gradient(180deg, #fff 0%, rgba(200,210,230,0.7) 100%)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                    }}
-                  >
-                    {headerData.count}
-                  </div>
-                </div>
-              </>
-            )}
           </>
         )}
       </div>
@@ -231,8 +163,8 @@ const SubHeader = () => {
             padding: "14px 28px",
             background:
               "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))",
-            border: "1px solid rgba(255,255,255,0.2)",
-            color: "#fff",
+            border: "1px solid var(--pipe-border)",
+            color: "var(--pipe-text, #fff)",
             fontSize: 11,
             letterSpacing: "0.15em",
             fontWeight: 700,
@@ -240,27 +172,24 @@ const SubHeader = () => {
             display: "flex",
             alignItems: "center",
             gap: 10,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
           <Plus size={16} />
           CREATE NEW PIPE
         </button>
         <button
-          onClick={signOut}
+          onClick={() => void auth.signOut()}
           style={{
             padding: "14px 18px",
             background: "transparent",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "rgba(255,255,255,0.5)",
+            border: "1px solid var(--pipe-border)",
+            color: "var(--pipe-text-muted)",
             fontSize: 11,
             letterSpacing: "0.15em",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             gap: 8,
-            transition: "all 0.2s ease",
           }}
           title="Sign out"
         >
@@ -278,8 +207,28 @@ const SubHeader = () => {
 function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState("roles");
+  // Auto-open settings on OAuth callback (Calendly redirects back with ?code=&state=)
+  const hasOAuthCallback = new URLSearchParams(window.location.search).has('code') &&
+    new URLSearchParams(window.location.search).has('state');
+  const [showSettings, setShowSettings] = useState(hasOAuthCallback);
+  const [showCalls, setShowCalls] = useState(false);
+  const agent = useAgentDrawer();
+
+  const agentDrawerVisible = FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT && agent.isOpen;
+
+  const panelContent = showSettings
+    ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
+    : showCalls
+      ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
+      : agentDrawerVisible
+        ? <AgentDrawer pipelineId={agent.pipelineId} skillMode={agent.skillMode} onClose={agent.closeAgent} onSkillModeChange={agent.setSkillMode} />
+        : undefined;
+
+  const isPanelOpen = showSettings || showCalls || agentDrawerVisible;
 
   return (
+    <SidebarPortalProvider>
+    <StageRefetchProvider>
     <Layout
       header={<SubHeader />}
       sidebar={
@@ -287,12 +236,16 @@ function AppLayout(): JSX.Element {
           activeSection={activeSection}
           onRolesClick={() => {
             setActiveSection("roles");
+            setShowSettings(false);
+            setShowCalls(false);
             navigate("/");
           }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
             ? {
                 onScheduleClick: () => {
                   setActiveSection("schedule");
+                  setShowSettings(false);
+                  setShowCalls(false);
                   navigate("/schedule");
                 },
               }
@@ -301,16 +254,88 @@ function AppLayout(): JSX.Element {
             ? {
                 onSandboxClick: () => {
                   setActiveSection("sandbox");
+                  setShowSettings(false);
                   navigate("/sandbox/dev-container");
                 },
               }
             : {})}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO
+            ? {
+                onCallsClick: () => {
+                  setShowSettings(false);
+                  agent.closeAgent();
+                  setShowCalls((prev) => !prev);
+                  if (!showCalls) setActiveSection("calls");
+                  else setActiveSection("roles");
+                },
+              }
+            : {})}
+          onOutreachClick={() => {
+            setActiveSection("outreach");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/outreach");
+          }}
+          onRepoAdminClick={() => {
+            setActiveSection("repo-admin");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/admin/repos");
+          }}
+          onAiUsageClick={() => {
+            setActiveSection("ai-usage");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/admin/ai-usage");
+          }}
+          {...(FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT
+            ? {
+                onAgentClick: () => {
+                  setShowSettings(false);
+                  setShowCalls(false);
+                  if (agent.isOpen) {
+                    agent.closeAgent();
+                    setActiveSection("roles");
+                  } else {
+                    agent.openAgent();
+                    setActiveSection("agent");
+                  }
+                },
+              }
+            : {})}
+          onSettingsClick={() => {
+            setShowCalls(false);
+            agent.closeAgent();
+            setShowSettings((prev) => !prev);
+            if (!showSettings) setActiveSection("settings");
+            else setActiveSection("roles");
+          }}
         />
       }
+      agentPanel={panelContent}
+      isAgentOpen={isPanelOpen}
     >
       <Outlet />
     </Layout>
+    </StageRefetchProvider>
+    </SidebarPortalProvider>
   );
+}
+
+/** Redirect old /pipeline/:id/stages/:stageId paths to the new /stage/:stageId shape. */
+function LegacyStageRedirect(): JSX.Element {
+  const { id, stageId } = useParams<{ id: string; stageId: string }>();
+  return <Navigate to={`/pipeline/${id}/stage/${stageId}`} replace />;
+}
+
+/** Binds the theme storage to the signed-in recruiter's Clerk userId. */
+function RecruiterThemeSync(): null {
+  const { userId } = useClerkAuth();
+  const { bindUser } = useTheme();
+  useEffect(() => {
+    if (userId) bindUser(userId);
+  }, [userId, bindUser]);
+  return null;
 }
 
 /**
@@ -321,53 +346,102 @@ function App(): JSX.Element {
     <BrowserRouter>
       <Routes>
         {/* Public Candidate Assessment Route */}
-        <Route path="/assess/:token" element={<ErrorBoundary><CandidateAssessmentPage /></ErrorBoundary>} />
+        <Route
+          path="/assess/:token"
+          element={
+            <ThemeProvider>
+              <ErrorBoundary>
+                <CandidateAssessmentPage />
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
+        {/* Public Candidate Culture Interview Route */}
+        <Route
+          path="/culture/:token"
+          element={
+            <ThemeProvider>
+              <ErrorBoundary>
+                <CultureInterviewPage />
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
 
         {/* Protected Recruiter Routes */}
         <Route
           path="*"
           element={
-            <Authenticator>
-              <Routes>
-                <Route element={<AppLayout />}>
-                  <Route path="/" element={<ListingPage />} />
-                  <Route path="/pipeline/:id" element={<OverviewPage />} />
-                  <Route
-                    path="/pipeline/:id/stages/:stageId"
-                    element={<StageDetailPage />}
-                  />
-                  {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
+            <ThemeProvider>
+            <ClerkAuthGate>
+              <ClerkAuthWrapper>
+                <RecruiterThemeSync />
+                <AgentDrawerProvider>
+                <Routes>
+                  <Route element={<AppLayout />}>
+                    <Route path="/" element={<ListingPage />} />
+                    <Route path="/pipeline/:id" element={<PipelineShellPage />}>
+                      <Route index element={<PipelineInsightsPanel />} />
+                      <Route path="new-stage" element={<NewStageFormPage />} />
+                      <Route path="stage/:stageId" element={<StagePanel />}>
+                        <Route index element={<StageIndexTab />} />
+                        <Route path="candidates" element={<CandidatesTab />} />
+                        <Route path="configure" element={<ConfigureTab />} />
+                        <Route path="gate" element={<GateConfigTab />} />
+                        <Route path="benchmark" element={<CultureBenchmarkTab />} />
+                      </Route>
+                    </Route>
+                    <Route path="/pipeline/:id/kanban" element={<KanbanPage />} />
+                    {/* Legacy redirects — old /stages/:stageId paths */}
                     <Route
-                      path="/pipeline/:pipelineId/challenges/:challengeId"
-                      element={<ChallengeEditorPage />}
+                      path="/pipeline/:id/stages/:stageId"
+                      element={<LegacyStageRedirect />}
                     />
-                  )}
-                  <Route path="/pipeline/new" element={<PipelineCreatePage />} />
-                  <Route
-                    path="/candidates/:id"
-                    element={<CandidateProfilePage />}
-                  />
-                  <Route
-                    path="/screenings/:id/preview"
-                    element={<CandidateScreeningPage />}
-                  />
-                  {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
-                    <Route path="/schedule" element={<SchedulingPage />} />
-                  )}
-                  {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
                     <Route
-                      path="/sandbox/dev-container"
-                      element={<DevContainerSandboxPage />}
+                      path="/pipeline/:id/stages/:stageId/challenges"
+                      element={<LegacyStageRedirect />}
                     />
-                  )}
-                  <Route
-                    path="/prototype/report"
-                    element={<CandidateReportPrototype />}
-                  />
-                </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Authenticator>
+                    {FEATURE_FLAGS.FEATURE_FLAG_CHALLENGE_EDITOR && (
+                      <Route
+                        path="/pipeline/:id/challenges/:challengeId"
+                        element={<ChallengeEditorPage />}
+                      />
+                    )}
+                    <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+                    <Route
+                      path="/candidates/:id"
+                      element={<CandidateProfilePage />}
+                    />
+                    <Route
+                      path="/screenings/:id/preview"
+                      element={<CandidateScreeningPage />}
+                    />
+                    {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
+                      <Route path="/schedule" element={<SchedulingPage />} />
+                    )}
+                    <Route path="/outreach" element={<OutreachPage />} />
+                    {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
+                      <Route
+                        path="/sandbox/dev-container"
+                        element={<DevContainerSandboxPage />}
+                      />
+                    )}
+                    <Route
+                      path="/prototype/report"
+                      element={<CandidateReportPrototype />}
+                    />
+                    <Route path="/admin/repos" element={<RepoAdminPage />} />
+                    <Route path="/admin/repos/search" element={<RepoSearchPage />} />
+                    <Route path="/admin/repos/:id" element={<RepoDetailPage />} />
+                    <Route path="/admin/ai-usage" element={<AiUsagePage />} />
+                  </Route>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+                </AgentDrawerProvider>
+              </ClerkAuthWrapper>
+            </ClerkAuthGate>
+            </ThemeProvider>
           }
         />
       </Routes>

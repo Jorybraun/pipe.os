@@ -1,0 +1,32 @@
+{
+  "repo_id": 1677,
+  "full_name": "iib0011/omni-tools",
+  "run_timestamp": "2026-04-16T00:49:17.695Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 223,
+      "profile_words": 193
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "repo_searchable_profile too short: 193 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 99, 90, 71, 0.46, 0.50"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1677,
+    "full_name": "iib0011/omni-tools",
+    "primary_language": "typescript",
+    "stars": 9072,
+    "has_tests": true,
+    "detected_domain": "web-frontend"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"monolith\",\n  \"engineering_narrative\": \"The omni-tools repository functions as a monolithic web-frontend application, managing a medium complexity profile across approximately 57500 lines of code and 575 files. Developed primarily in typescript, the codebase leverages a stack centered around React constructs, including 41 instances of react-hooks and 7 instances of react-context. The engineering culture exhibits a strong emphasis on modularity within a single deployment, though the architecture relies heavily on client-side logic and UI components. Test discipline is characterized by a unit-only approach using the vitest framework; while there is a presence of 71 unit-tests and 4 e2e-tests, the test touch rate is 0.4, suggesting that testing coverage is targeted rather than exhaustive across all changes. The review and contribution culture appears somewhat loose, reflected in a pr_quality_score of 0.46 and an issue_link_rate of 0.35. PR-sample patterns reveal a tendency toward broad-impact changes; the mean_changed_files is 10.45, with a p90_changed_files reaching 23, indicating that even standard feature additions or refactors often touch a significant portion of the file tree. For example, PR 326 involved 26 changed files for a structural reorganization, and PR 307 touched 23 files for a search tool improvement. While the repository maintains CI, the low swe_bench_eligibility_rate of 0.1 suggests that many contributions are focused on UI/UX or minor utility adjustments rather than deep algorithmic or complex logic changes that satisfy strict automated benchmarking criteria.\",\n  \"repo_searchable_profile\": \"The omni-tools repository is a web-frontend application designed to provide a suite of various online tools. The primary language utilized is typescript, supported by a stack that includes 99 dependencies and significant use of React-based patterns such as react-hooks and react-context, alongside async-error-handling and client-routing. Observations of PR shapes indicate a high degree of file churn per contribution; the average pull request modifies 10.45 files, and the p90 value for changed files is 23. This suggests that contributions frequently span multiple modules or require significant updates to directory structures and index files. The test and review culture is defined by the use of vitest for unit-only testing, with 71 unit-tests recorded in the top constructs. While the repository has a test touch rate of 0.4, the pr_quality_score of 0.46 and an issue_link_rate of 0.35 suggest a workflow where issue traceability and high-standard code review may be inconsistent. The top three challenge surfaces identified in the codebase are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the number of open PRs and the count of open feature-issues are currently unknown, preventing a quantitative assessment of the current maintenance backlog.\"\n}"
+}

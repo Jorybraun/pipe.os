@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -8,19 +8,38 @@ import {
   Activity,
   Briefcase,
   Users,
+  Trash2,
 } from "lucide-react";
 import { RoleCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from "../../amplify/data/resource";
+import { usePipelines } from "../hooks/usePipelines";
+import { usePipelineDelete } from "../hooks/usePipelineDelete";
+import type { PipelineListItem } from "../lib/api/types";
 
-const client = generateClient<Schema>();
-
-type PipelineWithStats = Schema['Pipeline']['type'] & {
+type PipelineWithStats = {
+  id: string;
+  title: string;
+  status?: string | null;
+  level?: string | null;
+  createdAt?: string;
   candidateCount: number;
   stageCount: number;
   avgScore: number | null;
 };
+
+/** Maps the Worker API PipelineListItem to the internal PipelineWithStats shape. */
+function toPipelineWithStats(item: PipelineListItem): PipelineWithStats {
+  return {
+    id: item.id,
+    title: item.title,
+    status: item.status,
+    level: item.level,
+    createdAt: item.createdAt,
+    stageCount: item.stageCount,
+    candidateCount: item.candidateCount,
+    avgScore: null,
+  };
+}
 
 const ListingSkeleton = () => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -31,62 +50,28 @@ const ListingSkeleton = () => (
 );
 
 /**
- * ListingPage - Roles overview with a mixture of Pipeline Builder layout 
+ * ListingPage - Roles overview with a mixture of Pipeline Builder layout
  * and Meetings Page list style.
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
-  const [pipelines, setPipelines] = useState<PipelineWithStats[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { pipelines: rawPipelines, isLoading, refetch } = usePipelines();
+  const { deletePipeline } = usePipelineDelete();
   const [filter, setFilter] = useState<"all" | "ACTIVE" | "DRAFT" | "ARCHIVED">(
     "all"
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const fetchPipelines = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const { data: pipelineData } = await client.models.Pipeline.list({
-        selectionSet: [
-          'id',
-          'title',
-          'status',
-          'level',
-          'createdAt',
-          'stages.id',
-          'stages.title',
-          'stages.order',
-          'candidates.id',
-          'candidates.name',
-        ],
-      });
-
-      const enrichedPipelines = pipelineData.map((p) => {
-        // avgScore requires cross-auth query (assessments owned by candidates via publicApiKey)
-        // — computed separately on CandidateProfilePage instead
-        const avgScore = null;
-
-        return {
-          ...p,
-          stageCount: p.stages?.length || 0,
-          candidateCount: p.candidates?.length || 0,
-          avgScore,
-        };
-      });
-
-      setPipelines(enrichedPipelines as unknown as PipelineWithStats[]);
-    } catch (err) {
-      console.error("[ListingPage] Error fetching pipelines:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const pipelines = useMemo(
+    () => rawPipelines.map(toPipelineWithStats),
+    [rawPipelines],
+  );
 
   useEffect(() => {
     setMounted(true);
-    fetchPipelines();
-  }, [fetchPipelines]);
+  }, []);
 
   const filteredPipelines = pipelines.filter((p) => {
     const matchesFilter = filter === "all" || p.status === filter;
@@ -108,6 +93,57 @@ export default function ListingPage(): JSX.Element {
     navigate(`/pipeline/${id}`);
   };
 
+  const handleDeletePipeline = async (id: string, title: string): Promise<void> => {
+    if (!window.confirm(`Are you sure you want to delete the pipeline "${title}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await deletePipeline(id);
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      await refetch();
+    } catch (err) {
+      console.error("[ListingPage] Error deleting pipeline:", err);
+    }
+  };
+
+  const handleBulkDelete = async (): Promise<void> => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+
+    if (!window.confirm(`Delete ${count} selected pipeline${count > 1 ? 's' : ''}? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await Promise.all(Array.from(selectedIds).map(id => deletePipeline(id)));
+      setSelectedIds(new Set());
+      await refetch();
+    } catch (err) {
+      console.error("[ListingPage] Bulk delete error:", err);
+      alert("Failed to delete some pipelines.");
+    }
+  };
+
+  const toggleSelect = (id: string, isSelected: boolean) => {
+    const next = new Set(selectedIds);
+    if (isSelected) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredPipelines.map(p => p.id)));
+    }
+  };
+
   return (
     <div
       style={{
@@ -120,15 +156,15 @@ export default function ListingPage(): JSX.Element {
       {/* Page Header (Meetings Page style) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             RECRUITMENT_PIPELINES
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em', margin: 0 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em', margin: 0 }}>
             Active Roles
           </h1>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+          <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             {pipelines.length} roles total
           </span>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -136,7 +172,7 @@ export default function ListingPage(): JSX.Element {
                 <Activity size={12} />
                 {stats.active} ACTIVE
              </div>
-             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 <Users size={12} />
                 {stats.totalCandidates} CANDIDATES
              </div>
@@ -153,12 +189,50 @@ export default function ListingPage(): JSX.Element {
             gap: 12, 
             marginBottom: 20,
             padding: '12px 16px',
-            background: 'rgba(255,255,255,0.02)',
-            border: '1px solid rgba(255,255,255,0.05)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border-light)',
             borderRadius: 8
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-              <Search size={14} color="rgba(255,255,255,0.2)" />
+              <div 
+                onClick={toggleAll}
+                style={{
+                  padding: '4px 8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  borderRadius: 4,
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border-light)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--pipe-surface-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'var(--pipe-surface)'}
+              >
+                <div style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: 3,
+                  border: `1.5px solid ${selectedIds.size > 0 ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-text-dim)"}`,
+                  background: selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 ? "rgba(255, 255, 255, 0.40)" : "transparent",
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {selectedIds.size > 0 && selectedIds.size < filteredPipelines.length && (
+                    <div style={{ width: 6, height: 1.5, background: 'rgba(255, 255, 255, 0.40)' }} />
+                  )}
+                  {selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 && (
+                    <Check size={10} color="#fff" strokeWidth={4} />
+                  )}
+                </div>
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
+                  {selectedIds.size > 0 ? `${selectedIds.size}_SELECTED` : 'SELECT_ALL'}
+                </span>
+              </div>
+              <div style={{ width: 1, height: 16, background: 'var(--pipe-surface)' }} />
+              <Search size={14} color="var(--pipe-text-dim)" />
               <input
                 type="text"
                 placeholder="SEARCH_BY_TITLE..."
@@ -168,7 +242,7 @@ export default function ListingPage(): JSX.Element {
                   background: 'transparent',
                   border: 'none',
                   outline: 'none',
-                  color: '#fff',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 11,
                   letterSpacing: '0.05em',
                   fontFamily: '"Space Mono", monospace',
@@ -176,16 +250,41 @@ export default function ListingPage(): JSX.Element {
                 }}
               />
             </div>
-            <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)' }} />
+            {selectedIds.size > 0 && (
+              <button 
+                onClick={handleBulkDelete}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'rgba(255, 80, 80, 0.1)',
+                  border: '1px solid rgba(255, 80, 80, 0.2)',
+                  color: '#ff5050',
+                  padding: '4px 12px',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 80, 80, 0.2)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 80, 80, 0.1)'}
+              >
+                <Trash2 size={14} />
+                DELETE_SELECTED ({selectedIds.size})
+              </button>
+            )}
+            <div style={{ width: 1, height: 20, background: 'var(--pipe-surface-hover)' }} />
             <button 
               onClick={() => navigate("/pipeline/new")}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                background: 'rgba(139, 92, 246, 0.1)',
-                border: '1px solid rgba(139, 92, 246, 0.2)',
-                color: '#a78bfa',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                color: 'var(--pipe-accent)',
                 padding: '4px 12px',
                 borderRadius: 4,
                 fontSize: 10,
@@ -206,12 +305,12 @@ export default function ListingPage(): JSX.Element {
             <div style={{ 
               padding: 64, 
               textAlign: 'center', 
-              border: '1px dashed rgba(255,255,255,0.08)',
+              border: '1px dashed var(--pipe-border)',
               borderRadius: 12,
-              background: 'rgba(255,255,255,0.01)'
+              background: 'var(--pipe-surface)'
             }}>
-              <Briefcase size={40} color="rgba(255,255,255,0.12)" style={{ marginBottom: 16 }} />
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+              <Briefcase size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
+              <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
                 NO_ROLES_FOUND
               </p>
             </div>
@@ -220,6 +319,7 @@ export default function ListingPage(): JSX.Element {
               {filteredPipelines.map((p) => (
                 <RoleCard
                   key={p.id}
+                  id={p.id}
                   title={p.title}
                   department={p.level || "Engineering"}
                   location="Remote"
@@ -231,9 +331,12 @@ export default function ListingPage(): JSX.Element {
                   candidates={p.candidateCount}
                   avgScore={p.avgScore}
                   stagesConfigured={p.stageCount}
-                  totalStages={p.stageCount || 1}
-                  createdAt={p.createdAt}
+                  totalStages={p.stageCount ?? 0}
+                  createdAt={p.createdAt ?? new Date().toISOString()}
+                  isSelected={selectedIds.has(p.id)}
+                  onSelect={(sel) => toggleSelect(p.id, sel)}
                   onClick={() => handleRoleClick(p.id)}
+                  onDelete={() => handleDeletePipeline(p.id, p.title)}
                 />
               ))}
             </div>
@@ -242,26 +345,26 @@ export default function ListingPage(): JSX.Element {
 
         {/* Sidebar Configuration (Discovery Page style) */}
         <aside style={{ width: 340 }}>
-           <div 
-             style={{ 
+           <div
+             style={{
                padding: 24,
                height: 'fit-content',
-               background: 'rgba(255, 255, 255, 0.03)',
+               background: 'var(--pipe-surface-solid)',
                backdropFilter: 'blur(40px) saturate(150%)',
-               border: '1px solid rgba(255, 255, 255, 0.1)',
+               border: '1px solid var(--pipe-border)',
                borderRadius: 16,
-               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+               boxShadow: '0 4px 12px var(--pipe-shadow)',
                display: 'flex',
                flexDirection: 'column',
                gap: 24
              }}
            >
              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Filter size={14} color="#8b5cf6" />
-                <h3 style={{ 
-                  fontSize: 10, 
-                  letterSpacing: '0.2em', 
-                  color: '#fff', 
+                <Filter size={14} color="rgba(255, 255, 255, 0.40)" />
+                <h3 style={{
+                  fontSize: 10,
+                  letterSpacing: '0.2em',
+                  color: 'var(--pipe-text-dim)',
                   textTransform: 'uppercase',
                   fontFamily: '"Space Mono", monospace',
                   fontWeight: 700
@@ -272,13 +375,13 @@ export default function ListingPage(): JSX.Element {
 
              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(["all", "ACTIVE", "DRAFT", "ARCHIVED"] as const).map((f) => (
-                  <div 
+                  <div
                     key={f}
                     onClick={() => setFilter(f)}
                     style={{
                       padding: '12px 16px',
-                      background: filter === f ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255,255,255,0.02)',
-                      border: `1px solid ${filter === f ? 'rgba(139, 92, 246, 0.3)' : 'rgba(255,255,255,0.05)'}`,
+                      background: filter === f ? 'rgba(255, 255, 255, 0.06)' : 'var(--pipe-surface)',
+                      border: `1px solid ${filter === f ? 'rgba(255, 255, 255, 0.12)' : 'var(--pipe-border-light)'}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -287,47 +390,47 @@ export default function ListingPage(): JSX.Element {
                       borderRadius: 4
                     }}
                   >
-                    <span style={{ 
-                      fontSize: 10, 
-                      color: filter === f ? '#fff' : 'rgba(255,255,255,0.4)',
+                    <span style={{
+                      fontSize: 10,
+                      color: filter === f ? 'var(--pipe-text)' : 'var(--pipe-text-muted)',
                       fontWeight: 700,
                       letterSpacing: '0.05em',
                       fontFamily: '"Space Mono", monospace'
                     }}>
                       {f === 'all' ? 'ALL_STATUS' : f}
                     </span>
-                    {filter === f && <Check size={12} color="#a78bfa" />}
+                    {filter === f && <Check size={12} color="var(--pipe-accent)" />}
                   </div>
                 ))}
              </div>
 
-             <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+             <div style={{ height: '1px', background: 'var(--pipe-surface)' }} />
 
              {/* Sidebar Info/Stats */}
              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
                   PIPELINE_INSIGHTS
                 </span>
                 <div style={{ 
-                  padding: 16, 
-                  background: 'rgba(139, 92, 246, 0.03)', 
-                  border: '1px solid rgba(139, 92, 246, 0.1)',
+                  padding: 16,
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
                   borderRadius: 8,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 12
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Total Active Roles</span>
-                    <span style={{ fontSize: 10, color: '#fff', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.active}</span>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Total Active Roles</span>
+                    <span style={{ fontSize: 10, color: 'var(--pipe-text, #fff)', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.active}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Draft Pipelines</span>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Draft Pipelines</span>
                     <span style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.draft}</span>
                   </div>
-                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
+                  <div style={{ height: 1, background: 'var(--pipe-surface)' }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)' }}>Conversion Rate</span>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Conversion Rate</span>
                     <span style={{ fontSize: 10, color: '#34d399', fontWeight: 700, fontFamily: 'Space Mono' }}>24.2%</span>
                   </div>
                 </div>

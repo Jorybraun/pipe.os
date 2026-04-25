@@ -1,0 +1,33 @@
+{
+  "repo_id": 1673,
+  "full_name": "mui/base-ui",
+  "run_timestamp": "2026-04-16T00:49:10.869Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 172,
+      "profile_words": 232
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "engineering_narrative too short: 172 words (min 200)",
+        "repo_searchable_profile too short: 232 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 44, 24, 15, 126, 90"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1673,
+    "full_name": "mui/base-ui",
+    "primary_language": "typescript",
+    "stars": 9169,
+    "has_tests": true,
+    "detected_domain": "web-frontend"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The mui/base-ui repository functions as a specialized library within the web-frontend domain, primarily authored in typescript. Its architecture is designed for modular consumption, focusing on high-reusability components. The engineering culture exhibits a sophisticated test discipline, utilizing vitest to maintain a high test_touch_rate of 0.7. The repository relies heavily on unit-tests, which are a core construct, alongside specialized focuses on accessibility-aria and react-hooks. The complexity profile is categorized as medium, which is consistent with a large-scale codebase of 191700 SLOC and 1917 files. The review culture and contribution patterns suggest a staff-level seniority band, where pull requests often involve coordinated changes across multiple files. Notable PR-sample patterns include targeted bug fixes, such as resolving TypeErrors or positioning issues, frequently modifying tests to ensure regression safety. We observe that while many PRs are small, the p90_changed_files reaches 19, indicating that certain structural improvements or multi-component updates require significant cross-file coordination. The presence of CI workflows and a dedicated focus on refactoring-extraction demonstrates a commitment to long-term maintainability and architectural health within the typescript ecosystem.\",\n  \"repo_searchable_profile\": \"This repository is a library designed for web-frontend development, specifically serving as a foundational component suite. The primary language utilized throughout the project is typescript. The detected stack is characterized by a significant number of dependencies, with package.json files appearing in various locations, including docs (70), the main root (44), packages/react (25), and specific examples like tanstack-start-tailwind-css (24) and vite-css (15), totaling 126 dependencies. Observations of PR-shapes reveal a high degree of technical specificity; many contributions address discrete component behaviors such as popups, select, or slider functionality. While many PRs are concise, the mean_changed_files is 8.7, and there is evidence of larger structural work where the p90_changed_files hits 19. The test and review culture is highly structured, evidenced by the use of vitest and a high test_touch_rate of 0.7. A significant portion of the PR samples shown involve modifying tests to validate fixes. The quality of contributions is measured by a pr_quality_score of 0.58, and the project maintains a professional rigor suitable for a staff-level seniority band. The top three challenge surfaces identified through analysis are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the open_pr_count and open_feature_issue_count are unknown, making it difficult to quantitatively assess the current volume of pending work. However, the repository's high star count of 9169 and its robust CI integration suggest a well-established and active ecosystem for contributors interested in frontend infrastructure.\"\n}"
+}

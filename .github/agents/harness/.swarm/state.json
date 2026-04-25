@@ -1,0 +1,30 @@
+{
+  "task": "Add a search filter component to the candidate list page",
+  "phase": "complete",
+  "created_at": "2026-04-24T19:37:15.580184",
+  "outputs": {
+    "design": "# Design Spec: Candidate Search Filter\n\n## Overview\nAdd a search filter bar to the candidate list page that filters candidates by name, skill, or status in real-time.\n\n## Layout\n- Top of the candidate list, full-width\n- Search input with magnifying glass icon\n- Filter dropdowns for: Skills, Status, Experience Level\n- Active filter chips below the bar\n- Clear all filters button\n\n## Components Used\n- TextInput \u2014 search text field\n- FieldGroup \u2014 grouping the filter controls\n- LiquidMetalCard \u2014 wrapping the filter bar\n- Badge \u2014 active filter chips (using QUIZ_MCQ green for \"active\" state)\n\n## Colors and Styling\n- Search bar: bg-slate-100, border-slate-300\n- Active filters: bg-green-100 text-green-800 (using QUIZ_MCQ green)\n- Clear button: text-red-500 hover:text-red-700\n\n## Interaction Behavior\n- Typing triggers debounced search (300ms)\n- Filter dropdowns update list immediately\n- Active filters show as removable chips\n- Empty state shows \"No candidates match your filters\" with option to clear\n\n## Mobile Considerations\n- Filter bar collapses to icon button on screens < 768px\n- Tapping icon opens full-screen filter modal\n- Search input expands to full width when focused\n",
+    "frontend": "import React, { useState, useMemo } from 'react';\nimport { TextInput } from '../components/TextInput';\nimport { FieldGroup } from '../components/FieldGroup';\nimport { LiquidMetalCard } from '../components/LiquidMetalCard';\nimport { Badge } from '../components/Badge';\n\ninterface Candidate {\n  id: string;\n  name: string;\n  skills: string[];\n  status: 'active' | 'interviewing' | 'hired' | 'rejected';\n  experienceLevel: 'junior' | 'mid' | 'senior';\n}\n\ninterface CandidateSearchFilterProps {\n  candidates: Candidate[];\n  onFilterChange: (filtered: Candidate[]) => void;\n}\n\nexport function CandidateSearchFilter({ candidates, onFilterChange }: CandidateSearchFilterProps): JSX.Element {\n  const [searchQuery, setSearchQuery] = useState('');\n  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);\n  const [selectedStatus, setSelectedStatus] = useState<string[]>([]);\n\n  const allSkills = useMemo(() => {\n    const skills = new Set<string>();\n    candidates.forEach(c => c.skills.forEach(s => skills.add(s)));\n    return Array.from(skills).sort();\n  }, [candidates]);\n\n  const filteredCandidates = useMemo(() => {\n    return candidates.filter(candidate => {\n      const matchesSearch = searchQuery === '' || \n        candidate.name.toLowerCase().includes(searchQuery.toLowerCase());\n      const matchesSkills = selectedSkills.length === 0 || \n        selectedSkills.some(skill => candidate.skills.includes(skill));\n      const matchesStatus = selectedStatus.length === 0 || \n        selectedStatus.includes(candidate.status);\n      return matchesSearch && matchesSkills && matchesStatus;\n    });\n  }, [candidates, searchQuery, selectedSkills, selectedStatus]);\n\n  React.useEffect(() => {\n    onFilterChange(filteredCandidates);\n  }, [filteredCandidates, onFilterChange]);\n\n  const clearFilters = (): void => {\n    setSearchQuery('');\n    setSelectedSkills([]);\n    setSelectedStatus([]);\n  };\n\n  const activeFilterCount = selectedSkills.length + selectedStatus.length + (searchQuery ? 1 : 0);\n\n  return (\n    <LiquidMetalCard className=\"mb-4\">\n      <FieldGroup label=\"Search & Filter\" className=\"space-y-3\">\n        <div className=\"flex gap-2 items-center\">\n          <TextInput\n            value={searchQuery}\n            onChange={(e) => setSearchQuery(e.target.value)}\n            placeholder=\"Search by name...\"\n            className=\"flex-1\"\n          />\n          <select\n            multiple\n            value={selectedSkills}\n            onChange={(e) => setSelectedSkills(Array.from(e.target.selectedOptions, o => o.value))}\n            className=\"border rounded px-2 py-1\"\n          >\n            <option value=\"\">All Skills</option>\n            {allSkills.map(skill => (\n              <option key={skill} value={skill}>{skill}</option>\n            ))}\n          </select>\n          <select\n            value={selectedStatus[0] || ''}\n            onChange={(e) => setSelectedStatus(e.target.value ? [e.target.value] : [])}\n            className=\"border rounded px-2 py-1\"\n          >\n            <option value=\"\">All Status</option>\n            <option value=\"active\">Active</option>\n            <option value=\"interviewing\">Interviewing</option>\n            <option value=\"hired\">Hired</option>\n            <option value=\"rejected\">Rejected</option>\n          </select>\n        </div>\n        \n        {activeFilterCount > 0 && (\n          <div className=\"flex gap-2 items-center flex-wrap\">\n            {searchQuery && (\n              <Badge variant=\"QUIZ_MCQ\">Search: {searchQuery}</Badge>\n            )}\n            {selectedSkills.map(skill => (\n              <Badge key={skill} variant=\"QUIZ_MCQ\">{skill}</Badge>\n            ))}\n            {selectedStatus.map(status => (\n              <Badge key={status} variant=\"CODE_REVIEW\">{status}</Badge>\n            ))}\n            <button \n              onClick={clearFilters}\n              className=\"text-red-500 hover:text-red-700 text-sm ml-auto\"\n            >\n              Clear all\n            </button>\n          </div>\n        )}\n      </FieldGroup>\n    </LiquidMetalCard>\n  );\n}\n"
+  },
+  "approvals": {
+    "design": "approved",
+    "final": "approved"
+  },
+  "status": "approved_and_complete",
+  "plan": {
+    "needs_design": true,
+    "needs_architecture": false,
+    "needs_frontend": true,
+    "needs_backend": false,
+    "sequential": false,
+    "analysis": "This task requires: design, frontend"
+  },
+  "qa_results": {
+    "tsc_passed": true,
+    "no_any_types": true,
+    "named_exports": true,
+    "changelog_updated": true,
+    "errors": []
+  },
+  "qa_passed": true
+}

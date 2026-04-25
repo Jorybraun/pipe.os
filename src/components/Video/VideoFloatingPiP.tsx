@@ -104,7 +104,7 @@ export function VideoFloatingPiP({
         left: position.x,
         width: 280,
         background: '#0c0c0e',
-        border: '1px solid rgba(255,255,255,0.12)',
+        border: '1px solid var(--pipe-border)',
         borderRadius: 6,
         boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
         zIndex: 9000,
@@ -135,13 +135,13 @@ export function VideoFloatingPiP({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--pipe-surface)',
             }}
           >
             <span
               style={{
                 fontSize: 9,
-                color: 'rgba(255,255,255,0.2)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 letterSpacing: '0.15em',
               }}
@@ -166,7 +166,7 @@ export function VideoFloatingPiP({
               height: 54,
               objectFit: 'cover',
               borderRadius: 3,
-              border: '1px solid rgba(255,255,255,0.15)',
+              border: '1px solid var(--pipe-border)',
               background: '#000',
               transform: 'scaleX(-1)',
             }}

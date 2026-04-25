@@ -1,0 +1,69 @@
+{
+  "rcd-senior-backend-typescript": {
+    "expected_repo_full_names": [
+      "prisma/prisma",
+      "nestjs/nest",
+      "typeorm/typeorm",
+      "knex/knex",
+      "fastify/fastify",
+      "colinhacks/zod",
+      "trpc/trpc",
+      "sequelize/sequelize",
+      "BullMQ/bullmq"
+    ],
+    "rationale": "TypeScript Node.js backend repos with PostgreSQL integration, migration tooling, job queues, or ORM design patterns. prisma/prisma and typeorm/typeorm directly match the migration safety and ORM focus. nestjs/nest matches the microservice/service boundary constructs. bullmq matches the Redis job queue pattern. All are multi-file TypeScript codebases with integration test suites appropriate for code review challenges."
+  },
+  "rcd-staff-platform-go": {
+    "expected_repo_full_names": [
+      "kubernetes/kubernetes",
+      "helm/helm",
+      "prometheus/prometheus",
+      "grafana/grafana",
+      "grpc/grpc-go",
+      "open-telemetry/opentelemetry-go",
+      "hashicorp/terraform",
+      "envoyproxy/envoy",
+      "argoproj/argo-workflows"
+    ],
+    "rationale": "Go repos for platform engineering: Kubernetes, Helm, Prometheus, and Terraform are direct matches for the stack. grpc/grpc-go matches the gRPC interface design construct. opentelemetry-go matches the distributed tracing and SLO observability constructs. argo-workflows matches the DAG/orchestration pattern used in platform pipelines. All are active, multi-contributor codebases with real engineering complexity appropriate for staff-level review challenges."
+  },
+  "rcd-mid-fullstack-react": {
+    "expected_repo_full_names": [
+      "shadcn-ui/ui",
+      "vercel/next.js",
+      "remix-run/remix",
+      "pmndrs/zustand",
+      "react-hook-form/react-hook-form",
+      "TanStack/query",
+      "tailwindlabs/tailwindcss",
+      "prisma/prisma",
+      "t3-oss/create-t3-app"
+    ],
+    "rationale": "TypeScript fullstack repos with React, Node.js, and database integration. shadcn-ui and tailwindlabs match the Tailwind CSS component pattern. next.js and remix match the monolith/SSR architecture and routing patterns. react-hook-form and zustand match the state management and form validation constructs. TanStack/query matches the REST API consumption patterns. t3-oss/create-t3-app is a canonical TypeScript fullstack monolith structure closely matching the codebase description."
+  },
+  "rcd-senior-data-python": {
+    "expected_repo_full_names": [
+      "apache/airflow",
+      "apache/spark",
+      "dbt-labs/dbt-core",
+      "great-expectations/great_expectations",
+      "apache/kafka",
+      "pydantic/pydantic",
+      "sqlalchemy/sqlalchemy",
+      "astronomer/astro-sdk"
+    ],
+    "rationale": "Python data engineering repos matching Airflow DAG authoring, Spark distributed transformations, dbt data modeling, and data quality testing. great_expectations directly matches the data quality assertion pattern the hiring manager emphasized. pydantic matches the schema validation construct. sqlalchemy matches the PostgreSQL layer. astronomer/astro-sdk matches the Airflow operator abstraction pattern. All are large, well-structured Python codebases with real data engineering patterns suitable for code review challenges."
+  },
+  "rcd-junior-backend-rust": {
+    "expected_repo_full_names": [
+      "tokio-rs/tokio",
+      "tokio-rs/axum",
+      "launchbadge/sqlx",
+      "dtolnay/thiserror",
+      "serde-rs/serde",
+      "hyperium/hyper",
+      "diesel-rs/diesel"
+    ],
+    "rationale": "Rust library crates matching the exact stack: tokio is the async runtime, axum is the HTTP framework, sqlx provides compile-time checked PostgreSQL queries, thiserror is the error derive macro used by the team, and serde is the JSON serialization library. These are all library crates (not services), directly matching the codebase_expectations around library API design, rustdoc examples, and compile-time correctness. diesel matches as an alternative ORM pattern the candidate should understand."
+  }
+}

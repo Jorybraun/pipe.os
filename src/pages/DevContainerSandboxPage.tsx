@@ -16,10 +16,7 @@
 import { useDevContainerSession } from '../hooks/useDevContainerSession';
 import type { ContainerSessionState } from '../hooks/useDevContainerSession';
 import React from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
-
-const client = generateClient<Schema>();
+import { useData } from '../providers';
 
 // ─── Status label + color mapping ────────────────────────────────────────────
 
@@ -68,7 +65,7 @@ function BootProgressBar(): JSX.Element {
       style={{
         width: '100%',
         height: 2,
-        background: 'rgba(255,255,255,0.08)',
+        background: 'var(--pipe-surface-hover)',
         borderRadius: 1,
         overflow: 'hidden',
         marginTop: 8,
@@ -95,11 +92,42 @@ function BootProgressBar(): JSX.Element {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+function formatRemaining(expiresAt: string | null): string | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return null;
+  if (ms <= 0) return '0:00';
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export default function DevContainerSandboxPage(): JSX.Element {
-  const { state, containerUrl, taskArn, error, launch, destroy, reset } =
-    useDevContainerSession();
+  const {
+    state,
+    containerUrl,
+    taskArn,
+    error,
+    expiresAt,
+    expiringSoon,
+    launch,
+    destroy,
+    reset,
+  } = useDevContainerSession();
+  const dataFactory = useData();
   const [logs, setLogs] = React.useState<string[]>([]);
   const [autoRefreshLogs, setAutoRefreshLogs] = React.useState(true);
+
+  // Tick every second while a session is live so the countdown re-renders.
+  const [, setNow] = React.useState(0);
+  React.useEffect(() => {
+    if (!expiresAt) return;
+    const interval = setInterval(() => setNow((n) => n + 1), 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+
+  const remaining = formatRemaining(expiresAt);
 
   // Fetch logs when we have a taskArn
   React.useEffect(() => {
@@ -110,11 +138,14 @@ export default function DevContainerSandboxPage(): JSX.Element {
     }
 
     const fetchLogs = async () => {
+      const client = dataFactory.createClient();
       console.log('[DevContainerSandboxPage] Fetching logs for taskArn:', taskArn);
       try {
-        const { data, errors } = await client.queries.getContainerLogs({ taskArn, limit: 50 });
+        const getContainerLogs = client.queries['getContainerLogs'];
+        if (!getContainerLogs) throw new Error('getContainerLogs query not available');
+        const { data, errors } = await getContainerLogs({ taskArn, limit: 50 });
         console.log('[DevContainerSandboxPage] getContainerLogs response:', { data, errors });
-        if (errors) throw new Error(errors[0].message);
+        if (errors) throw new Error(errors[0]?.message ?? 'Unknown error');
         const result = JSON.parse(data as string);
         console.log('[DevContainerSandboxPage] Parsed result:', result);
         if (result.logs) setLogs(result.logs);
@@ -126,7 +157,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
     fetchLogs();
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
-  }, [taskArn, autoRefreshLogs]);
+  }, [taskArn, autoRefreshLogs, dataFactory]);
 
   const isActive = state === 'LAUNCHING' || state === 'BOOTING';
   const statusColor = STATUS_COLORS[state];
@@ -136,7 +167,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
       style={{
         minHeight: '100%',
         background: '#0c0c0e',
-        color: '#fff',
+        color: 'var(--pipe-text, #fff)',
         fontFamily: '"Space Mono", monospace',
         padding: '40px 48px',
       }}
@@ -147,7 +178,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
           style={{
             fontSize: 9,
             letterSpacing: '0.25em',
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             marginBottom: 8,
           }}
         >
@@ -167,7 +198,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
         <p
           style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             lineHeight: 1.7,
             margin: 0,
             maxWidth: 600,
@@ -176,15 +207,15 @@ export default function DevContainerSandboxPage(): JSX.Element {
           Isolated lifecycle test for the Fargate + code-server pipeline. Launch
           a container, verify the iframe renders, then destroy it. Once stable,
           this will be extracted into{' '}
-          <code style={{ color: '#a78bfa' }}>SystemEnvironmentShell</code>.
+          <code style={{ color: 'var(--pipe-accent)' }}>SystemEnvironmentShell</code>.
         </p>
       </div>
 
       {/* ── Status card ─────────────────────────────────────────────── */}
       <div
         style={{
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'var(--pipe-surface)',
+          border: '1px solid var(--pipe-border)',
           borderRadius: 2,
           padding: '20px 24px',
           marginBottom: 24,
@@ -218,12 +249,44 @@ export default function DevContainerSandboxPage(): JSX.Element {
             style={{
               marginTop: 12,
               fontSize: 10,
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
               letterSpacing: '0.05em',
               wordBreak: 'break-all',
             }}
           >
             TASK ARN: {taskArn}
+          </div>
+        )}
+
+        {remaining && (state === 'READY' || state === 'BOOTING') && (
+          <div
+            style={{
+              marginTop: 12,
+              fontSize: 11,
+              color: expiringSoon ? '#fbbf24' : 'var(--pipe-text-dim)',
+              letterSpacing: '0.1em',
+              fontWeight: 700,
+            }}
+          >
+            TTL REMAINING: {remaining}
+          </div>
+        )}
+
+        {expiringSoon && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 12,
+              padding: '10px 14px',
+              background: 'rgba(251,191,36,0.08)',
+              border: '1px solid rgba(251,191,36,0.4)',
+              borderRadius: 2,
+              fontSize: 11,
+              color: '#fbbf24',
+              lineHeight: 1.5,
+            }}
+          >
+            ⚠ SESSION ENDING SOON — save your work, the container will be destroyed in ~{remaining ?? '1:00'}.
           </div>
         )}
 
@@ -245,15 +308,18 @@ export default function DevContainerSandboxPage(): JSX.Element {
       <div style={{ display: 'flex', gap: 12, marginBottom: 32 }}>
         {(state === 'IDLE' || state === 'ERROR') && (
           <button
-            onClick={state === 'ERROR' ? reset : launch}
+            onClick={() => {
+              if (state === 'ERROR') reset();
+              else void launch();
+            }}
             style={{
               padding: '14px 28px',
               background:
                 state === 'ERROR'
                   ? 'rgba(248,113,113,0.15)'
-                  : 'linear-gradient(135deg, rgba(167,139,250,0.2), rgba(139,92,246,0.15))',
-              border: `1px solid ${state === 'ERROR' ? 'rgba(248,113,113,0.4)' : 'rgba(167,139,250,0.4)'}`,
-              color: state === 'ERROR' ? '#f87171' : '#a78bfa',
+                  : 'linear-gradient(135deg, var(--pipe-accent-surface), var(--pipe-accent-surface))',
+              border: `1px solid ${state === 'ERROR' ? 'rgba(248,113,113,0.4)' : 'var(--pipe-accent-surface)'}`,
+              color: state === 'ERROR' ? '#f87171' : 'var(--pipe-accent)',
               fontSize: 11,
               letterSpacing: '0.15em',
               fontWeight: 700,
@@ -315,8 +381,8 @@ export default function DevContainerSandboxPage(): JSX.Element {
             style={{
               padding: '14px 28px',
               background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: 'rgba(255,255,255,0.2)',
+              border: '1px solid var(--pipe-border)',
+              color: 'var(--pipe-text-dim)',
               fontSize: 11,
               letterSpacing: '0.15em',
               fontWeight: 700,
@@ -371,7 +437,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
         <div
           style={{
             marginTop: 32,
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 2,
             overflow: 'hidden',
             maxWidth: '100%',
@@ -379,12 +445,12 @@ export default function DevContainerSandboxPage(): JSX.Element {
         >
           <div
             style={{
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--pipe-surface)',
               padding: '12px 16px',
               fontSize: 9,
               letterSpacing: '0.2em',
-              color: 'rgba(255,255,255,0.4)',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              color: 'var(--pipe-text-dim)',
+              borderBottom: '1px solid var(--pipe-border)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
@@ -439,7 +505,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
           style={{
             fontSize: 9,
             letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.2)',
+            color: 'var(--pipe-text-dim)',
             marginBottom: 16,
           }}
         >
@@ -448,7 +514,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
         <div
           style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             lineHeight: 1.8,
           }}
         >
@@ -458,8 +524,8 @@ export default function DevContainerSandboxPage(): JSX.Element {
           <div>• Ready → ALB routes /session/:id → container port 8080</div>
           <div>• Destroy → ECS.StopTask + automatic 60-min session timeout</div>
           <div>• Cost → ~$0.05 per 60-min interview session</div>
-          <div style={{ marginTop: 8, color: 'rgba(167,139,250,0.5)' }}>
-            ADR-016 — docs/decisions/ADR-016-dev-container-architecture.md
+          <div style={{ marginTop: 8, color: 'var(--pipe-accent)' }}>
+            ADR-016 — docs/decisions/historical/ADR-016-dev-container-architecture.md
           </div>
         </div>
       </div>

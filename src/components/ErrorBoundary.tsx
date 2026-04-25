@@ -31,11 +31,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return (
         <div
           style={{
-            minHeight: '100vh',
+            minHeight: '60vh',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: '#0c0c0e',
             padding: 24,
           }}
         >
@@ -43,7 +42,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             style={{
               maxWidth: 480,
               textAlign: 'center',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid var(--pipe-border)',
               borderRadius: 8,
               padding: 48,
             }}
@@ -62,7 +61,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <p
               style={{
                 fontSize: 13,
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 lineHeight: 1.6,
                 marginBottom: 32,
@@ -92,9 +91,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               onClick={() => window.location.reload()}
               style={{
                 padding: '10px 24px',
-                background: 'rgba(255,255,255,0.08)',
-                border: '1px solid rgba(255,255,255,0.15)',
-                color: '#fff',
+                background: 'var(--pipe-surface-hover)',
+                border: '1px solid var(--pipe-border)',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 10,
                 letterSpacing: '0.1em',
                 fontFamily: '"Space Mono", monospace',

@@ -1,0 +1,60 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 5,
+      "prioritization": 5,
+      "revision_evaluation": 5,
+      "reasoning_quality": 5,
+      "question_formation": 3,
+      "ai_direction": 4
+    },
+    "evidence": {
+      "issue_identification_evidence": "",
+      "prioritization_evidence": "",
+      "revision_evaluation_evidence": "",
+      "reasoning_quality_evidence": "",
+      "question_formation_evidence": "",
+      "ai_direction_evidence": ""
+    },
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 80,
+      "band": "strong",
+      "narrative": "This candidate is a strong code reviewer with exceptional attention to detail and a deep understanding of technical issues. They excelled at identifying and prioritizing bugs, demonstrating flawless judgment in distinguishing critical problems from minor ones. For example, they caught all planted bugs and accurately labeled their severity, ensuring nothing important was overlooked. However, there is room to improve in proactive communication—they could ask more clarifying questions upfront to avoid assumptions. Their ability to verify fixes and engage thoughtfully with implementers shows strong potential, but refining their initial questioning would make them even more effective.",
+      "strengths": [
+        "Exceptional ability to identify and prioritize bugs accurately",
+        "Strong reasoning skills with clear explanations of issues and fixes",
+        "Rigorous follow-through in evaluating revisions and verifying fixes"
+      ],
+      "growth_areas": [
+        "Could ask more clarifying questions upfront to avoid assumptions",
+        "Opportunity to improve proactive communication with implementers"
+      ]
+    },
+    "scorer_a_summary": "The reviewer demonstrated exceptional performance across all dimensions. They identified all planted bugs (100% coverage) with accurate categorization and zero false positives. Prioritization was flawless, with severity labels matching actual impact and a correct blocking verdict. During revision evaluation, they verified every fix and caught a deeper issue (identity scoping) in the implementer's pushback, demonstrating rigorous follow-through. This is a model review.",
+    "scorer_b_summary": "The reviewer demonstrated high-quality reasoning by explaining failure mechanisms, user-facing consequences, and proposing specific fixes. While no direct questions were asked upfront, the reviewer engaged effectively with the implementer's pushback. The reviewer also showed strong judgment in evaluating implementer proposals, accepting valid fixes and pushing back on flawed suggestions with evidence."
+  },
+  "meta": {
+    "wall_clock_ms": 10487,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

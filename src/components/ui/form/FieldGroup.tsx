@@ -59,7 +59,7 @@ export function FieldGroup({
             marginTop: 6,
             fontSize: 10,
             fontFamily: '"Space Mono", monospace',
-            color: 'rgba(255,255,255,0.25)',
+            color: 'var(--pipe-text-dim)',
             letterSpacing: '0.05em',
           }}
         >

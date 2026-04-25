@@ -99,7 +99,7 @@ export function CandidateCard({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: 'rgba(255,255,255,0.02)',
+              background: 'var(--pipe-surface)',
               borderRight: '1px solid rgba(255,255,255,0.05)'
             }}
           >
@@ -108,7 +108,7 @@ export function CandidateCard({
                 fontSize: 24,
                 fontWeight: 800,
                 letterSpacing: "-0.02em",
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 opacity: 0.9
               }}
             >
@@ -152,7 +152,7 @@ export function CandidateCard({
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text, #fff)",
                   margin: 0,
                   letterSpacing: "0.01em",
                 }}
@@ -162,11 +162,11 @@ export function CandidateCard({
 
               <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Building size={12} color="rgba(255,255,255,0.2)" />
+                  <Building size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
-                      color: "rgba(255,255,255,0.4)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -174,11 +174,11 @@ export function CandidateCard({
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <MapPin size={12} color="rgba(255,255,255,0.2)" />
+                  <MapPin size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
-                      color: "rgba(255,255,255,0.4)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -191,13 +191,13 @@ export function CandidateCard({
             {/* Bottom Row */}
             <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                 <Target size={14} color="rgba(255,255,255,0.2)" />
+                 <Target size={14} color="var(--pipe-text-dim)" />
                  <div>
                     <div
                       style={{
                         fontSize: 12,
                         fontWeight: 800,
-                        color: "#fff",
+                        color: "var(--pipe-text, #fff)",
                         fontFamily: "Space Mono",
                       }}
                     >
@@ -206,7 +206,7 @@ export function CandidateCard({
                     <div
                       style={{
                         fontSize: 7,
-                        color: "rgba(255,255,255,0.3)",
+                        color: "var(--pipe-text-dim)",
                         letterSpacing: "0.1em",
                       }}
                     >
@@ -223,7 +223,7 @@ export function CandidateCard({
                   gap: 8,
                 }}
               >
-                <ChevronRight size={16} color="rgba(255,255,255,0.2)" />
+                <ChevronRight size={16} color="var(--pipe-text-dim)" />
               </div>
             </div>
           </div>

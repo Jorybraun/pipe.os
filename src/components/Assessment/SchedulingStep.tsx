@@ -32,8 +32,8 @@ export function SchedulingStep({
   if (isLoading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 64 }}>
-        <Loader2 className="animate-spin" size={28} color="rgba(255,255,255,0.4)" />
-        <span style={{ marginLeft: 12, fontSize: 11, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+        <Loader2 className="animate-spin" size={28} color="var(--pipe-text-dim)" />
+        <span style={{ marginLeft: 12, fontSize: 11, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
           LOADING_SCHEDULE...
         </span>
       </div>
@@ -44,7 +44,7 @@ export function SchedulingStep({
     return (
       <LiquidMetalCard variant="mercury" style={{ padding: 40, textAlign: 'center' }}>
         <AlertCircle size={40} color="rgba(255,100,100,0.5)" style={{ marginBottom: 16 }} />
-        <p style={{ color: 'rgba(255,255,255,0.5)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+        <p style={{ color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
           Could not load scheduling information. Please contact your recruiter.
         </p>
       </LiquidMetalCard>
@@ -55,8 +55,8 @@ export function SchedulingStep({
     // No ScheduledInterview record yet — recruiter hasn't sent an invite
     return (
       <LiquidMetalCard variant="mercury" style={{ padding: 40, textAlign: 'center' }}>
-        <Calendar size={40} color="rgba(255,255,255,0.2)" style={{ marginBottom: 16 }} />
-        <p style={{ color: 'rgba(255,255,255,0.5)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
+        <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
+        <p style={{ color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
           This stage requires a live interview. Your recruiter will send you a scheduling link shortly.
         </p>
       </LiquidMetalCard>
@@ -72,11 +72,11 @@ export function SchedulingStep({
     return (
       <LiquidMetalCard variant="chrome" style={{ padding: 48, textAlign: 'center' }}>
         <CheckCircle size={48} color="#10b981" style={{ marginBottom: 24 }} />
-        <h3 style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 12 }}>
+        <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 12 }}>
           Interview Scheduled
         </h3>
         {formattedDate && (
-          <p style={{ color: 'rgba(255,255,255,0.6)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+          <p style={{ color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
             {formattedDate}
           </p>
         )}
@@ -109,7 +109,7 @@ export function SchedulingStep({
     return (
       <LiquidMetalCard variant="chrome" style={{ padding: 40, textAlign: 'center' }}>
         <CheckCircle size={40} color="#10b981" style={{ marginBottom: 16 }} />
-        <p style={{ color: 'rgba(255,255,255,0.6)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+        <p style={{ color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
           Your interview has been completed. Thank you!
         </p>
       </LiquidMetalCard>
@@ -120,7 +120,7 @@ export function SchedulingStep({
     return (
       <LiquidMetalCard variant="mercury" style={{ padding: 40, textAlign: 'center' }}>
         <AlertCircle size={40} color="rgba(255,100,100,0.5)" style={{ marginBottom: 16 }} />
-        <p style={{ color: 'rgba(255,255,255,0.5)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+        <p style={{ color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
           This interview has been cancelled. Please contact your recruiter to reschedule.
         </p>
       </LiquidMetalCard>
@@ -132,8 +132,8 @@ export function SchedulingStep({
   if (!url) {
     return (
       <LiquidMetalCard variant="mercury" style={{ padding: 40, textAlign: 'center' }}>
-        <Calendar size={40} color="rgba(255,255,255,0.3)" style={{ marginBottom: 16 }} />
-        <p style={{ color: 'rgba(255,255,255,0.5)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
+        <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
+        <p style={{ color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
           Your recruiter has invited you to an interview. A scheduling link will be available soon.
         </p>
       </LiquidMetalCard>
@@ -145,8 +145,8 @@ export function SchedulingStep({
   return (
     <div>
       <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Calendar size={18} color="rgba(255,255,255,0.4)" />
-        <span style={{ fontSize: 11, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+        <Calendar size={18} color="var(--pipe-text-dim)" />
+        <span style={{ fontSize: 11, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
           SCHEDULE_YOUR_INTERVIEW
         </span>
       </div>
@@ -157,7 +157,7 @@ export function SchedulingStep({
         candidateEmail={candidateEmail}
       />
 
-      <p style={{ marginTop: 16, fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', textAlign: 'center' }}>
+      <p style={{ marginTop: 16, fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', textAlign: 'center' }}>
         After booking, your recruiter will confirm the appointment.
         {/* TODO: Remove this note once webhook auto-updates status → SCHEDULED */}
       </p>

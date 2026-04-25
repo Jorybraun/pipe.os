@@ -1,15 +1,15 @@
 interface TextInputProps {
-  value?: string;
-  onChange?: (value: string) => void;
-  placeholder?: string;
+  value?: string | undefined;
+  onChange?: ((value: string) => void) | undefined;
+  placeholder?: string | undefined;
 }
 
 const inputStyle = {
   width: '100%',
   padding: '12px 16px',
-  background: 'rgba(0,0,0,0.2)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  color: '#fff',
+  background: 'var(--pipe-surface-solid)',
+  border: '1px solid var(--pipe-border)',
+  color: 'var(--pipe-text)',
   fontSize: 12,
   fontFamily: '"Space Mono", monospace',
   outline: 'none',

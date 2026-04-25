@@ -23,7 +23,7 @@ export function TextareaPanel({
       <h2 style={{ 
         fontSize: 24, 
         fontWeight: 700, 
-        color: '#fff', 
+        color: 'var(--pipe-text, #fff)', 
         marginBottom: 40, 
         lineHeight: 1.4,
         letterSpacing: '-0.01em'
@@ -40,11 +40,11 @@ export function TextareaPanel({
           style={{
             flex: 1,
             width: '100%',
-            background: 'rgba(255,255,255,0.02)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 8,
             padding: 32,
-            color: '#fff',
+            color: 'var(--pipe-text, #fff)',
             fontSize: 16,
             lineHeight: 1.6,
             outline: 'none',

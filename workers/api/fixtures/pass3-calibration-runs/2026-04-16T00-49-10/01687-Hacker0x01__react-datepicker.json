@@ -1,0 +1,32 @@
+{
+  "repo_id": 1687,
+  "full_name": "Hacker0x01/react-datepicker",
+  "run_timestamp": "2026-04-16T00:49:31.801Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 210,
+      "profile_words": 177
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "repo_searchable_profile too short: 177 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 75, 10, 100, 0.73, 0.40"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1687,
+    "full_name": "Hacker0x01/react-datepicker",
+    "primary_language": "typescript",
+    "stars": 8362,
+    "has_tests": true,
+    "detected_domain": "web-frontend"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The Hacker0x01/react-datepicker repository is a specialized TypeScript library designed for web-frontend integration, functioning primarily as a reusable component ecosystem rather than a standalone service. The architecture follows a library pattern where the core logic is exposed via props and hooks for consumption by external React applications. The complexity profile is classified as medium, characterized by a tight coupling between component state and date-logic calculations, which is evident in the presence of 208 files and 20800 SLOC. The engineering culture exhibits a high degree of test discipline; the project utilizes Jest for unit-only testing, and the test touch rate is a significant 0.9, indicating that nearly all code changes are accompanied by corresponding test modifications. Review culture and contribution patterns suggest a focus on stability and correctness, with a PR quality score of 0.73. Notable PR-sample patterns include frequent extensions to component props (such as adding formatMultipleDates or renderCustomDayName) and essential bug fixes that often require modifying multiple files to maintain logic consistency. PRs typically involve a moderate scope of change, with a mean of 5.1 changed files, though high-impact updates or coverage improvements can reach up to 11 changed files. The presence of 43 unit-test constructs and integration of react-hooks further underscores a modern, modular approach to building frontend primitives.\",\n  \"repo_searchable_profile\": \"This repository is a web-frontend library providing date selection components for React applications. The primary language is typescript, with a detected stack comprising 75 total dependencies across the main package, documentation site, and hello-world examples. Observations of PR shapes reveal a highly consistent pattern where developers frequently modify tests alongside functional changes; out of the first 10 sample PRs, 100% modified tests. The PRs range in scope from 3 to 11 changed files, with a mean of 5.1 files per PR and a p90 of 11 files. The test and review culture is robust and highly disciplined, evidenced by a high test touch rate of 0.9 and a pr_quality_score of 0.73. While the project maintains strong testing rigor through Jest, the test style is limited to unit_only. The top three challenge surfaces identified for developers are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the number of open PRs and the count of open feature-issues are unknown, making it difficult to quantitatively assess the immediate backlog of work available for new contributors.\"\n}"
+}

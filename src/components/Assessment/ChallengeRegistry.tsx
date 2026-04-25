@@ -1,9 +1,11 @@
 import { useState, ReactNode, useMemo, useEffect } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../../amplify/data/resource';
+import { useData, useStorage } from '../../providers';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
 import { resolveLayout, PanelType } from '../../lib/challenge/resolveLayout';
 import { resolveShells } from '../../lib/challenge/resolveShells';
 import { WorkspaceLayout } from './WorkspaceLayout';
+import { ChallengeWorkspace } from './ChallengeWorkspace';
 import { TimerShell } from '../Shells/TimerShell';
 import { ProblemPanel } from '../Panels/ProblemPanel';
 import { MonacoPanel } from '../Panels/MonacoPanel';
@@ -12,11 +14,15 @@ import { TextareaPanel } from '../Panels/TextareaPanel';
 import { DiffPanel, type DiffJson, type Annotation } from '../Assessment/DiffPanel';
 import { PreviewPanel } from '../Panels/PreviewPanel';
 import { CodeReviewChallenge } from './CodeReviewChallenge';
+import { FollowUpQuestionsPanel } from './FollowUpQuestionsPanel';
+import { VoicePanel } from '../Panels/VoicePanel';
+import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
+import { VideoWaitingRoom } from '../Video/VideoWaitingRoom';
+import { WelcomeScreen, type ChallengeType } from './WelcomeScreen';
+import { normalizeShortAnswerConfig } from '../../lib/shortAnswerUtils';
+import type { FollowUpQuestion } from '../../hooks/useAssessment';
 
-// Client for on-demand diff fetch — uses apiKey so unauthenticated candidates
-// can call fetchGitHubPR. The mutation allows publicApiKey() auth.
-// TODO: replace with single-use token gate (see Linear ticket).
-const diffClient = generateClient<Schema>({ authMode: 'apiKey' });
+import { useSessionToken } from '../../contexts/SessionTokenContext';
 
 // ============================================================================
 // Types
@@ -40,6 +46,12 @@ interface ChallengeRegistryProps {
   stageTimeLimit?: number | null;
   onSubmissionChange: (submission: unknown) => void;
   onSubmit: (submission: unknown) => void;
+  /** Candidate ID — required for voice/video submission panels */
+  candidateId?: string;
+  /** FOLLOW_UP — generated questions from the previous challenge */
+  followUpQuestions?: FollowUpQuestion[] | null;
+  followUpLoading?: boolean;
+  isSubmitting?: boolean;
 }
 
 // ============================================================================
@@ -51,28 +63,37 @@ function parseDiffJson(raw: unknown): DiffJson | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as {
     files?: Array<{
-      path: string;
+      path?: string;
+      filename?: string;
       status: string;
       additions: number;
       deletions: number;
       hunks: Array<{
         header: string;
-        lines: Array<{ type: string; lineNumber: number; content: string }>;
+        lines: Array<{ type: string; lineNumber?: number; num?: number; content: string }>;
       }>;
     }>;
   };
   if (!r.files?.length) return null;
+
+  // Map API type names → DiffPanel type names
+  const mapType = (t: string): 'addition' | 'deletion' | 'context' => {
+    if (t === 'added' || t === 'addition') return 'addition';
+    if (t === 'removed' || t === 'deletion') return 'deletion';
+    return 'context';
+  };
+
   return {
     files: r.files.map((f) => ({
-      path: f.path,
+      path: f.path ?? f.filename ?? 'unknown',
       status: f.status as 'added' | 'modified' | 'deleted',
       additions: f.additions,
       deletions: f.deletions,
       hunks: f.hunks.map((h) => ({
         header: h.header,
-        lines: h.lines.map((l) => ({
-          type: l.type as 'addition' | 'deletion' | 'context',
-          num: l.lineNumber,
+        lines: h.lines.map((l, idx) => ({
+          type: mapType(l.type),
+          num: l.lineNumber ?? l.num ?? (idx + 1),
           content: l.content,
         })),
       })),
@@ -98,7 +119,16 @@ export function ChallengeRegistry({
   stageTimeLimit,
   onSubmissionChange,
   onSubmit,
+  candidateId,
+  followUpQuestions,
+  followUpLoading,
+  isSubmitting,
 }: ChallengeRegistryProps): JSX.Element {
+  const sessionToken = useSessionToken();
+  const dataFactory = useData();
+  const storage = useStorage();
+  // Diff is now fetched server-side by the RPC endpoint (self-healing).
+  void sessionToken; void dataFactory; // suppress unused — retained for other challenge types
   const layout = useMemo(() => resolveLayout(challenge), [challenge]);
   const shells = useMemo(() => resolveShells(challenge, stageTimeLimit), [challenge, stageTimeLimit]);
 
@@ -108,15 +138,44 @@ export function ChallengeRegistry({
       : ((challenge.config ?? {}) as Record<string, unknown>);
   }, [challenge.config]);
 
+  // Question video URL — resolved once per challenge when questionVideoS3Key is set
+  const [questionVideoUrl, setQuestionVideoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const s3Key = config.questionVideoS3Key as string | undefined;
+    if (!s3Key) return;
+    void (async () => {
+      try {
+        const result = await storage.getUrl({
+          path: s3Key,
+          options: { expiresIn: 3600 },
+        });
+        setQuestionVideoUrl(result.url.toString());
+      } catch (err) {
+        console.warn('[ChallengeRegistry] Failed to resolve question video URL:', err);
+      }
+    })();
+    // Re-fetch only when the challenge changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challenge.id]);
+
   // Diff state (CODE_REVIEW only)
   const [localDiff, setLocalDiff] = useState<DiffJson | null>(null);
-  const [isFetchingDiff, setIsFetchingDiff] = useState(false);
+  const isFetchingDiff = false; // Diff is fetched server-side by RPC
 
-  // Submission State
+  // Submission State — QUIZ_SHORT_ANSWER branches on inputMode
   const [submission, setSubmission] = useState<Record<string, unknown>>(() => {
     if (challenge.type === 'QUIZ_MCQ') return { answers: {} };
     if (challenge.type === 'CODE_REVIEW') return { annotations: [], verdict: null, summary: '' };
-    if (challenge.type === 'QUIZ_SHORT_ANSWER') return { text: '' };
+    if (challenge.type === 'QUIZ_SHORT_ANSWER') {
+      const saConfig = normalizeShortAnswerConfig(
+        typeof challenge.config === 'string'
+          ? (JSON.parse(challenge.config) as unknown)
+          : (challenge.config ?? {})
+      );
+      if (saConfig.inputMode === 'video') return { inputMode: 'video', videoS3Key: '', filename: '' };
+      if (saConfig.inputMode === 'voice') return { inputMode: 'voice', text: '' };
+      return { inputMode: 'text', text: '' };
+    }
     if (challenge.type === 'CODE_IMPLEMENTATION')
       return { code: (config.starterCode as string) || '' };
     return {};
@@ -144,32 +203,9 @@ export function ChallengeRegistry({
       }
     }
 
-    // Fall back to on-demand fetch if repo/PR info available
-    if (!challenge.githubRepoUrl || !challenge.githubPrNumber) return;
-
-    setIsFetchingDiff(true);
-    void (async () => {
-      try {
-        const { data: raw } = await diffClient.mutations.fetchGitHubPR({
-          repoUrl: challenge.githubRepoUrl!,
-          prNumber: challenge.githubPrNumber!,
-          skipCache: false,
-        });
-        // AppSync returns a.json() as a serialized string — must parse
-        const payload = (typeof raw === 'string' ? JSON.parse(raw) : raw) as {
-          success?: boolean;
-          data?: { diff?: unknown };
-        } | null;
-        if (payload?.success && payload.data?.diff) {
-          const parsed = parseDiffJson(payload.data.diff);
-          if (parsed) setLocalDiff(parsed);
-        }
-      } catch (err) {
-        console.error('[ChallengeRegistry] fetchGitHubPR failed:', err);
-      } finally {
-        setIsFetchingDiff(false);
-      }
-    })();
+    // Diff is fetched server-side by the RPC endpoint (self-healing).
+    // If cachedDiffJson was null, the RPC already fetched and stored it.
+    // No client-side fallback needed.
     // Run once per challenge id
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [challenge.id]);
@@ -207,10 +243,110 @@ export function ChallengeRegistry({
   }
 
   // ---------------------------------------------------------------------------
-  // Panel Rendering (non-CODE_REVIEW)
+  // FOLLOW_UP bypass — renders step-through panel using existing panel components
   // ---------------------------------------------------------------------------
 
-  const renderPanel = (panelType: PanelType | null): ReactNode => {
+  if (challenge.type === 'FOLLOW_UP') {
+    if (followUpLoading || !followUpQuestions || followUpQuestions.length === 0) {
+      return (
+        <div
+          style={{
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: 16,
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              border: '2px solid rgba(255,255,255,0.1)',
+              borderTop: '2px solid rgba(255,255,255,0.4)',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+            }}
+          />
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: '0.2em',
+              color: 'var(--pipe-text-dim)',
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
+            GENERATING_QUESTIONS...
+          </div>
+        </div>
+      );
+    }
+
+    const followUpContent = (
+      <WorkspaceLayout
+        leftPanel={null}
+        centerPanel={
+          <FollowUpQuestionsPanel
+            questions={followUpQuestions ?? []}
+            isSubmitting={isSubmitting ?? false}
+            onSubmit={(answers) => onSubmit({ answers })}
+            onSkip={() => onSubmit({ answers: {} })}
+            {...(candidateId !== undefined ? { candidateId } : {})}
+            challengeId={challenge.id}
+          />
+        }
+        rightPanel={null}
+      />
+    );
+
+    if (shells.timer.enabled) {
+      return (
+        <TimerShell timeLimit={shells.timer.timeLimit} onExpire={() => onSubmit({})}>
+          {followUpContent}
+        </TimerShell>
+      );
+    }
+    return followUpContent;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WELCOME bypass — intro screen as first challenge step
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'WELCOME') {
+    // Determine the next real challenge type for the welcome screen display
+    const nextType = (config.nextChallengeType as string) ?? 'QUIZ_SHORT_ANSWER';
+    return (
+      <WelcomeScreen
+        pipelineName={challenge.title || 'Technical Assessment'}
+        stageName={challenge.title || 'Interview'}
+        challengeType={nextType as ChallengeType}
+        onStart={() => onSubmit({})}
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // LIVE_VIDEO bypass — waiting room as a challenge step
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'LIVE_VIDEO') {
+    return (
+      <VideoWaitingRoom
+        localStream={null}
+        isRecruiterWaiting={false}
+        isCandidatePresent={false}
+        role="CANDIDATE"
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Panel Rendering (non-CODE_REVIEW, non-FOLLOW_UP)
+  // ---------------------------------------------------------------------------
+
+  const renderPanel = (panelType: PanelType | null, headerless = false): ReactNode => {
     if (!panelType) return null;
 
     switch (panelType) {
@@ -256,6 +392,7 @@ export function ChallengeRegistry({
             onChange={(code) =>
               setSubmission((prev) => ({ ...prev, code }))
             }
+            hideHeader={headerless}
           />
         );
 
@@ -317,7 +454,7 @@ export function ChallengeRegistry({
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 12,
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: 'Space Mono',
               }}
             >
@@ -356,6 +493,7 @@ export function ChallengeRegistry({
           <PreviewPanel
             code={(submission.code as string) || (config.starterCode as string) || ''}
             language={(config.language as string) || 'javascript'}
+            hideHeader={headerless}
           />
         );
 
@@ -365,7 +503,7 @@ export function ChallengeRegistry({
             style={{
               padding: 40,
               textAlign: 'center',
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               fontFamily: 'Space Mono',
               fontSize: 10,
             }}
@@ -373,6 +511,48 @@ export function ChallengeRegistry({
             TEST_PANEL_COMING_SOON
           </div>
         );
+
+      case 'voice': {
+        const voiceConfig = normalizeShortAnswerConfig(config);
+        return (
+          <VoicePanel
+            question={(voiceConfig as { question?: string }).question || challenge.title}
+            transcript={(submission.text as string) || ''}
+            onTranscriptChange={(text) =>
+              setSubmission((prev) => ({ ...prev, inputMode: 'voice', text }))
+            }
+            {...(questionVideoUrl !== null ? { questionVideoUrl } : {})}
+            uploadUrl={`${API_BASE}/rpc/upload-media`}
+            sessionToken={sessionToken}
+            challengeId={challenge.id}
+            onAudioUploaded={(r2Key) =>
+              setSubmission((prev) => ({ ...prev, audioS3Key: r2Key }))
+            }
+          />
+        );
+      }
+
+      case 'video-submission': {
+        const vidConfig = normalizeShortAnswerConfig(config);
+        return (
+          <VideoSubmissionPanel
+            question={(vidConfig as { question?: string }).question || challenge.title}
+            videoS3Key={(submission.videoS3Key as string) || ''}
+            filename={(submission.filename as string) || ''}
+            onUploaded={(s3Key, filename, transcript) =>
+              setSubmission({ inputMode: 'video', videoS3Key: s3Key, filename, transcript })
+            }
+            {...(questionVideoUrl !== null ? { questionVideoUrl } : {})}
+            maxDurationSeconds={
+              typeof (vidConfig as { maxDurationSeconds?: unknown }).maxDurationSeconds === 'number'
+                ? (vidConfig as { maxDurationSeconds: number }).maxDurationSeconds
+                : 120
+            }
+            candidateId={candidateId ?? ''}
+            challengeId={challenge.id}
+          />
+        );
+      }
 
       default:
         return null;
@@ -383,13 +563,37 @@ export function ChallengeRegistry({
   // Assembly (non-CODE_REVIEW)
   // ---------------------------------------------------------------------------
 
-  const workspace = (
-    <WorkspaceLayout
-      leftPanel={renderPanel(layout.leftPanel)}
-      centerPanel={renderPanel(layout.centerPanel) as ReactNode}
-      rightPanel={renderPanel(layout.rightPanel)}
-    />
-  );
+  let workspace: ReactNode;
+
+  if (layout.layoutType === 'browser') {
+    workspace = (
+      <ChallengeWorkspace
+        layoutType="browser"
+        descriptionPanel={renderPanel(layout.leftPanel)}
+        codeEditorPanel={renderPanel(layout.centerPanel, true)}
+        previewPanel={renderPanel(layout.rightPanel, true)}
+        language={(config.language as string) || 'javascript'}
+      />
+    );
+  } else if (layout.layoutType === 'algorithm') {
+    workspace = (
+      <ChallengeWorkspace
+        layoutType="algorithm"
+        descriptionPanel={renderPanel(layout.leftPanel)}
+        codeEditorPanel={renderPanel(layout.centerPanel, true)}
+        testCasesPanel={renderPanel(layout.rightPanel)}
+        language={(config.language as string) || 'javascript'}
+      />
+    );
+  } else {
+    workspace = (
+      <WorkspaceLayout
+        leftPanel={renderPanel(layout.leftPanel)}
+        centerPanel={renderPanel(layout.centerPanel) as ReactNode}
+        rightPanel={renderPanel(layout.rightPanel)}
+      />
+    );
+  }
 
   let content = workspace;
 

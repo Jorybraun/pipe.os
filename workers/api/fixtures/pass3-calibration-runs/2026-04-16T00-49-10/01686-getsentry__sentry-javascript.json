@@ -1,0 +1,33 @@
+{
+  "repo_id": 1686,
+  "full_name": "getsentry/sentry-javascript",
+  "run_timestamp": "2026-04-16T00:49:28.505Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 195,
+      "profile_words": 190
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "engineering_narrative too short: 195 words (min 200)",
+        "repo_searchable_profile too short: 190 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 21, 90, 1073, 0.50, 0.40"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1686,
+    "full_name": "getsentry/sentry-javascript",
+    "primary_language": "typescript",
+    "stars": 8618,
+    "has_tests": true,
+    "detected_domain": "other"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The getsentry/sentry-javascript repository is a substantial TypeScript library designed for deep integration across diverse runtime environments. Given its role as a foundational SDK, the architecture follows a library pattern, focusing on modularity to support various platforms such as browser, Node, and Deno. The engineering culture exhibits a medium complexity profile, managing a significant codebase of 650300 SLOC across 6503 files. Test discipline is characterized by a unit-only test style utilizing the vitest framework, with a test touch rate of 0.3. While the repository maintains high-level CI workflows, the complexity of the codebase is managed through a staff-level seniority band, suggesting rigorous internal standards. Review culture and PR patterns indicate that changes often involve multi-file modifications, with a mean of 7.3 changed files and a p90 of 13. Notable PR patterns show a recurring theme of feature expansions, such as adding integration options for various AI services like Anthropic, LangChain, and Google GenAI, often requiring modifications to core logic. The presence of 1073 unit-test constructs highlights the emphasis on ensuring correctness within the TypeScript ecosystem. Although the pr_quality_score is 0.40, the structural maturity is evident in the way the library handles diverse integrations and environmental nuances.\",\n  \"repo_searchable_profile\": \"This repository is a library used for software monitoring and error tracking integrations. The primary language used is typescript, and the detected stack includes various development packages for browser-integration-tests, bundler-tests, and bundle-analyzer-scenarios, with a total of 21 detected dependencies. Observations of PR shapes reveal that contributions frequently involve multi-file changes; for instance, sample PRs show file counts ranging from 3 up to 13, which aligns with the p90 of 13 changed files. Many feature-based PRs, such as those adding truncation options to core integrations, modify between 5 and 13 files, while some fixes and e2e improvements touch up to 10 files. The test and review culture is grounded in a unit-only testing strategy using vitest, evidenced by 1073 unit-test constructs and a test touch rate of 0.3. The repository maintains continuous integration via ci-workflows. The top three challenge surfaces for contributors are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. Regarding contribution readiness, the open pr_count and open feature_issue_count are currently unknown, so a quantitative assessment of current workload cannot be provided. The repository is a large-scale project with 8618 stars and a significant footprint of 6503 files.\"\n}"
+}

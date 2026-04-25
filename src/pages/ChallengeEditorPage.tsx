@@ -1,628 +1,648 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  Settings, 
-  Code, 
-  Shield, 
-  Save, 
-  Eye, 
-  AlertCircle,
-  Maximize2,
-  Minimize2,
-} from 'lucide-react';
-import { LiquidMetalCard, SubTitle } from '../components';
-import { Skeleton } from '../components/ui/Skeleton';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
-import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
-import { TimerProvider } from '../components/Assessment/TimerContext';
-import { GitHubPRFetcher } from '../components/Assessment/GitHubPRFetcher';
-import { GroundTruthAnnotationEditor } from '../components/Assessment/GroundTruthAnnotationEditor';
-
-const client = generateClient<Schema>();
-
-type Challenge = Schema['Challenge']['type'];
-
 /**
- * ChallengeEditorPage - Advanced editor for creating and modifying pipeline challenges.
- * Supports multiple challenge types with specialized editors per type.
+ * ChallengeEditorPage — Phase 2 (Cloudflare migration)
+ *
+ * Replaces all Amplify data calls with Cloudflare Worker API calls via:
+ *   useEditorChallengeV2 — load challenge
+ *   useChallengeSave     — save + clone
+ *
+ * URL patterns:
+ *   /pipeline/:id/challenges/:challengeId         — existing challenge
+ *   /pipeline/:id/challenges/NEW_CODE_IMPLEMENTATION?stageId=... — new challenge
+ *
+ * Cloudflare Worker API only — zero vendor SDK imports.
  */
+
+import { useState, useEffect, useCallback, type ComponentType } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Copy, Save, Terminal, Settings } from 'lucide-react';
+import { Skeleton } from '../components/ui/Skeleton';
+import { useEditorChallengeV2 } from '../hooks/useEditorChallengeV2';
+import { useChallengeSave } from '../hooks/useChallengeSave';
+import type { EditorFormProps } from '../components/Editor/types';
+import { ModeSelector } from '../components/Editor/ModeSelector';
+import { FollowUpConfiguration } from '../components/Editor/FollowUpConfiguration';
+import { SubTitle } from '../components';
+import {
+  createDefaultFS,
+  createDefaultTestFS,
+} from '../lib/challenge/virtualFS';
+
+// Editor components
+import { CodeImplEditor } from '../components/Editor/CodeImplEditor';
+import { CodeReviewEditor } from '../components/Editor/CodeReviewEditor';
+import { QuizMCQEditor } from '../components/Editor/QuizMCQEditor';
+import { ShortAnswerEditor } from '../components/Editor/ShortAnswerEditor';
+import { FollowUpEditor } from '../components/Editor/FollowUpEditor';
+
+// ─── Form map — challenge type → editor component ──────────────────────────────
+
+const EDITOR_FORM_MAP: Record<string, ComponentType<EditorFormProps>> = {
+  CODE_IMPLEMENTATION: CodeImplEditor,
+  QUIZ_MCQ: QuizMCQEditor,
+  QUIZ_SHORT_ANSWER: ShortAnswerEditor,
+  FOLLOW_UP: FollowUpEditor,
+  // CODE_REVIEW handled separately
+};
+
+// ─── Tab type ──────────────────────────────────────────────────────────────────
+
+type EditorTab = 'DETAILS' | 'CONTENT_EDITOR' | 'SCORING_RUBRIC';
+
+// ─── Page ──────────────────────────────────────────────────────────────────────
+
 export default function ChallengeEditorPage(): JSX.Element {
-  const { challengeId } = useParams<{ pipelineId: string; challengeId: string }>();
+  const { id: pipelineId, challengeId } = useParams<{ id: string; challengeId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const [challenge, setChallenge] = useState<Challenge | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSubmitting] = useState(false);
-  const [activeTab, setActiveSection] = useState<'DETAILS' | 'CONTENT' | 'SCORING' | 'PREVIEW'>('DETAILS');
-  const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
-  
-  // GitHub PR Integration state
-  const [prFetched, setPrFetched] = useState(false);
-  const [groundTruthAnnotations, setGroundTruthAnnotations] = useState<any>(() => {
-    if (challenge?.groundTruthAnnotations) {
-      const parsed = typeof challenge.groundTruthAnnotations === 'string' 
-        ? JSON.parse(challenge.groundTruthAnnotations)
-        : challenge.groundTruthAnnotations;
-      return parsed;
-    }
-    return { senior: [], mid: [], junior: [] };
-  });
+  // stageId for NEW_* routes is passed as a query param.
+  const stageIdFromQuery = searchParams.get('stageId') ?? undefined;
 
-  const fetchData = useCallback(async () => {
-    if (!challengeId) return;
-    try {
-      setIsLoading(true);
-      const { data } = await client.models.Challenge.get({ id: challengeId });
-      if (data) {
-        setChallenge(data);
-      }
-    } catch (err) {
-      console.error('[ChallengeEditor] Error fetching challenge:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [challengeId]);
+  const { challenge, setChallenge, isLoading, isNew, error } = useEditorChallengeV2(
+    challengeId,
+    pipelineId,
+  );
+
+  const { save, clone, isSaving, error: saveError } = useChallengeSave();
+
+  const [activeTab, setActiveTab] = useState<EditorTab>('DETAILS');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // prFetched is false until the challenge loads; we sync it once on load
+  // so that CODE_REVIEW challenges with cached PR data show the cached panel.
+  const [prFetched, setPrFetched] = useState(false);
+  const [prFetchedInitialised, setPrFetchedInitialised] = useState(false);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleSave = async () => {
-    if (!challenge) return;
-    setIsSubmitting(true);
-    try {
-      const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-      let updateParams: any = {
-        id: challenge.id,
-        title: challenge.title,
-        instructions: challenge.instructions,
-      };
-
-      if (challenge.type === 'CODE_REVIEW' || challenge.type === 'QUIZ_MCQ') {
-        updateParams = { ...updateParams, serverConfig: JSON.stringify(config) };
-      } else {
-        updateParams = { ...updateParams, config: JSON.stringify(config) };
-      }
-
-      // Add GitHub PR fields if CODE_REVIEW
-      if (challenge.type === 'CODE_REVIEW' && challenge.githubRepoUrl) {
-        updateParams = {
-          ...updateParams,
-          githubRepoUrl: challenge.githubRepoUrl,
-          githubPrNumber: challenge.githubPrNumber,
-          githubPrTitle: challenge.githubPrTitle,
-          githubPrDescription: challenge.githubPrDescription,
-          cachedDiffJson: challenge.cachedDiffJson,
-          cachedMetadata: challenge.cachedMetadata,
-          diffCachedAt: new Date().toISOString(),
-          groundTruthAnnotations: groundTruthAnnotations,
-        };
-      }
-
-      await client.models.Challenge.update(updateParams);
-      // In real app, we might also update or create a CodeArtifact here
-      navigate(-1);
-    } catch (err) {
-      console.error('[ChallengeEditor] Error saving challenge:', err);
-    } finally {
-      setIsSubmitting(false);
+    if (!isLoading && challenge && !prFetchedInitialised) {
+      setPrFetched(
+        !!(
+          challenge.githubRepoUrl &&
+          challenge.githubPrNumber &&
+          (challenge.cachedDiffJson || challenge.githubPrTitle)
+        ),
+      );
+      setPrFetchedInitialised(true);
     }
-  };
+  }, [isLoading, challenge, prFetchedInitialised]);
+  const [groundTruthAnnotations, setGroundTruthAnnotations] = useState<Record<string, unknown[]>>(
+    { senior: [], mid: [], junior: [] },
+  );
 
-  const handlePRFetched = (prData: {
-    githubRepoUrl: string;
-    githubPrNumber: number;
-    githubPrTitle: string;
-    githubPrDescription: string;
-    cachedDiffJson: any;
-    cachedMetadata: any;
-  }) => {
+  /**
+   * Handle MODE switch for CODE_IMPLEMENTATION challenges.
+   * Declared before early returns to satisfy Rules of Hooks.
+   */
+  const handleModeChange = useCallback((newMode: 'backend' | 'frontend'): void => {
+    if (!challenge) return;
+    const codeFiles = (challenge.config?.files as Record<string, unknown> | undefined) ?? {};
+    const hasExistingFiles = Object.keys(codeFiles).length > 0;
+    if (hasExistingFiles) {
+      const confirmed = window.confirm(
+        `Switch to ${newMode} mode? This will replace starter files with defaults.`,
+      );
+      if (!confirmed) return;
+    }
+    const defaults = createDefaultFS(newMode);
+    const defaultTests = createDefaultTestFS(newMode);
     setChallenge({
-      ...challenge!,
-      githubRepoUrl: prData.githubRepoUrl,
-      githubPrNumber: prData.githubPrNumber,
-      githubPrTitle: prData.githubPrTitle,
-      githubPrDescription: prData.githubPrDescription,
-      cachedDiffJson: prData.cachedDiffJson,
-      cachedMetadata: prData.cachedMetadata,
-      diffCachedAt: new Date().toISOString(),
+      ...challenge,
+      config: {
+        ...challenge.config,
+        mode: newMode,
+        files: defaults,
+        sampleTestFiles: {},
+      },
+      serverConfig: {
+        ...challenge.serverConfig,
+        hiddenTestFiles: defaultTests,
+      },
     });
-    setPrFetched(true);
-  };
+  }, [challenge, setChallenge]);
+
+  // ─── Loading / error states ──────────────────────────────────────────────────
 
   if (isLoading) {
     return (
       <div style={{ padding: 40 }}>
         <Skeleton width={200} height={32} style={{ marginBottom: 40 }} />
-        <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 40 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {[1, 2, 3, 4].map(i => <Skeleton key={i} height={40} />)}
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40 }}>
+          <Skeleton height={600} />
           <Skeleton height={600} />
         </div>
       </div>
     );
   }
 
-  if (!challenge) return <div>Challenge not found.</div>;
+  if (error) {
+    return (
+      <div style={{ padding: 40, color: '#f87171', fontFamily: 'Space Mono' }}>
+        Error loading challenge: {error}
+      </div>
+    );
+  }
 
-  const TABS = [
-    { id: 'DETAILS', label: 'CHALLENGE_DETAILS', icon: Settings },
-    { id: 'CONTENT', label: 'CONTENT_EDITOR', icon: Code },
-    { id: 'SCORING', label: 'SCORING_RUBRIC', icon: Shield },
-    { id: 'PREVIEW', label: 'CANDIDATE_PREVIEW', icon: Eye },
-  ];
+  if (!challenge) {
+    return (
+      <div style={{ padding: 40, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono' }}>
+        Challenge not found.
+      </div>
+    );
+  }
+
+  // ─── Handlers ─────────────────────────────────────────────────────────────────
+
+  const handleSave = async (): Promise<void> => {
+    if (!challenge) return;
+
+    const stageId = challenge.stageId ?? stageIdFromQuery;
+    const newId = await save(
+      challenge.id,
+      challenge,
+      stageId,
+      groundTruthAnnotations,
+    );
+
+    if (newId) {
+      // Show success indicator briefly.
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+
+      // If this was a new challenge, navigate to the real ID.
+      if (isNew && newId !== challenge.id) {
+        navigate(`/pipeline/${pipelineId}/challenges/${newId}`, { replace: true });
+      }
+    }
+  };
+
+  const handleClone = (): void => {
+    if (!challenge || isNew) return;
+    const newId = crypto.randomUUID().replace(/-/g, '');
+    navigate(`/pipeline/${pipelineId}/challenges/${newId}`, {
+      replace: true,
+      state: { pendingTitle: `${challenge.title} (Clone)`, cloneOf: challenge.id },
+    });
+    void clone(challenge.id, newId);
+  };
+
+  // ─── Resolve form content for CONTENT_EDITOR tab ──────────────────────────────
+
+  let contentEditorContent: JSX.Element;
+
+  if (challenge.type === 'CODE_REVIEW') {
+    contentEditorContent = (
+      <CodeReviewEditor
+        challenge={challenge}
+        onChange={setChallenge}
+        prFetched={prFetched}
+        onPrFetchedChange={setPrFetched}
+        groundTruthAnnotations={groundTruthAnnotations}
+        onGroundTruthChange={setGroundTruthAnnotations}
+      />
+    );
+  } else if (challenge.type === 'CODE_IMPLEMENTATION') {
+    contentEditorContent = (
+      <CodeImplEditor challenge={challenge} onChange={setChallenge} />
+    );
+  } else {
+    const Form = EDITOR_FORM_MAP[challenge.type];
+    if (Form) {
+      contentEditorContent = <Form challenge={challenge} onChange={setChallenge} />;
+    } else {
+      contentEditorContent = (
+        <div
+          style={{
+            marginTop: 24,
+            padding: '40px',
+            border: '1px dashed var(--pipe-border)',
+            borderRadius: 12,
+            textAlign: 'center',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--pipe-text-dim)',
+              fontFamily: 'Space Mono',
+            }}
+          >
+            Content authoring coming soon for type: {challenge.type}
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // ─── Styles ───────────────────────────────────────────────────────────────────
+
+  const headerBtnStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '10px 18px',
+    background: 'var(--pipe-surface)',
+    color: 'var(--pipe-text, #fff)',
+    border: '1px solid var(--pipe-border)',
+    borderRadius: 4,
+    fontSize: 10,
+    fontWeight: 800,
+    fontFamily: 'Space Mono',
+    cursor: 'pointer',
+    letterSpacing: '0.05em',
+  };
+
+  const tabBtnStyle = (active: boolean): React.CSSProperties => ({
+    padding: '8px 16px',
+    background: active ? 'var(--pipe-surface-hover)' : 'transparent',
+    border: 'none',
+    borderBottom: active ? '2px solid #fbbf24' : '2px solid transparent',
+    color: active ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-dim)',
+    fontSize: 10,
+    fontWeight: 700,
+    fontFamily: 'Space Mono',
+    letterSpacing: '0.1em',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  });
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ paddingBottom: 100 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
+    <div style={{ paddingBottom: 100, maxWidth: 1400, margin: '0 auto', padding: '0 32px 100px' }}>
+
+      {/* ─── PAGE HEADER ──────────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: 24,
+          paddingTop: 24,
+          paddingBottom: 20,
+          borderBottom: '1px solid var(--pipe-border)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              marginTop: 4,
+              background: 'none',
+              border: 'none',
+              color: 'var(--pipe-text-dim)',
+              cursor: 'pointer',
+            }}
+          >
             <ArrowLeft size={20} />
           </button>
           <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: 'Space Mono' }}>
+            {/* Breadcrumb / type indicator */}
+            <div
+              style={{
+                fontSize: 9,
+                letterSpacing: '0.2em',
+                color: 'var(--pipe-text-dim)',
+                marginBottom: 8,
+                fontFamily: 'Space Mono',
+              }}
+            >
               CHALLENGE_EDITOR / {challenge.type}
             </div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: 0 }}>{challenge.title}</h1>
+            {/* Page title (h1) */}
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 28,
+                fontWeight: 800,
+                color: 'var(--pipe-text, #fff)',
+                lineHeight: 1.2,
+              }}
+            >
+              {challenge.title || '(untitled)'}
+            </h1>
           </div>
         </div>
 
-        <button 
-          onClick={handleSave}
-          disabled={isSaving}
-          style={{ 
-            display: 'flex', alignItems: 'center', gap: 10, padding: '12px 24px', 
-            background: '#fff', color: '#000', border: 'none', borderRadius: 4, 
-            fontSize: 11, fontWeight: 800, fontFamily: 'Space Mono', cursor: 'pointer' 
-          }}
+        {/* Action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {saveError && (
+            <span
+              data-testid="save-error"
+              style={{
+                fontSize: 10,
+                color: '#f87171',
+                fontFamily: 'Space Mono',
+                letterSpacing: '0.1em',
+              }}
+            >
+              SAVE_FAILED: {saveError}
+            </span>
+          )}
+          {saveSuccess && (
+            <span
+              data-testid="save-success"
+              style={{
+                fontSize: 10,
+                color: '#4ade80',
+                fontFamily: 'Space Mono',
+                letterSpacing: '0.1em',
+              }}
+            >
+              SAVED
+            </span>
+          )}
+          {!isNew && (
+            <button onClick={handleClone} disabled={isSaving} style={headerBtnStyle}>
+              <Copy size={16} />
+              CLONE
+            </button>
+          )}
+          <button
+            data-testid="save-changes-button"
+            onClick={() => void handleSave()}
+            disabled={isSaving}
+            style={{ ...headerBtnStyle, background: '#fff', color: '#000', border: 'none' }}
+          >
+            <Save size={16} />
+            {isSaving ? 'SAVING...' : 'SAVE_CHANGES'}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── TAB BAR ──────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 0,
+          marginBottom: 24,
+          borderBottom: '1px solid var(--pipe-border)',
+        }}
+      >
+        <button
+          onClick={() => setActiveTab('DETAILS')}
+          style={tabBtnStyle(activeTab === 'DETAILS')}
         >
-          <Save size={16} />
-          {isSaving ? 'SAVING...' : 'SAVE_CHANGES'}
+          DETAILS
+        </button>
+        <button
+          onClick={() => setActiveTab('CONTENT_EDITOR')}
+          style={tabBtnStyle(activeTab === 'CONTENT_EDITOR')}
+        >
+          CONTENT_EDITOR
+        </button>
+        <button
+          onClick={() => setActiveTab('SCORING_RUBRIC')}
+          style={tabBtnStyle(activeTab === 'SCORING_RUBRIC')}
+        >
+          SCORING_RUBRIC
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 40, alignItems: 'flex-start' }}>
-        {/* Navigation Sidebar */}
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {TABS.map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveSection(tab.id as any)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px',
-                  background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent',
-                  border: 'none', borderRadius: 8,
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.4)',
-                  fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', fontFamily: 'Space Mono',
-                  textAlign: 'left', cursor: 'pointer', transition: 'all 0.2s'
-                }}
-              >
-                <tab.icon size={14} color={isActive ? '#fff' : 'rgba(255,255,255,0.2)'} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </aside>
+      {/* ─── DETAILS TAB ─────────────────────────────────────────────────────── */}
+      {activeTab === 'DETAILS' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
 
-        {/* Main Editor Surface */}
-        <main>
-          <LiquidMetalCard variant="dark" style={{ minHeight: 600, padding: 48 }}>
-            {activeTab === 'DETAILS' && (
-              <div style={{ maxWidth: 600 }}>
-                <SubTitle>IDENTIFICATION</SubTitle>
-                <div style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 32 }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>CHALLENGE_TITLE</label>
-                    <input 
-                      value={challenge.title}
-                      onChange={e => setChallenge({...challenge, title: e.target.value})}
-                      style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>TIME_LIMIT_OVERRIDE (MINS)</label>
-                    <input 
-                      type="number"
-                      value={(() => {
-                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                        return curConfig.timeLimit || '';
-                      })()}
-                      onChange={e => {
-                        const val = e.target.value ? parseInt(e.target.value) : null;
-                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                        setChallenge({
-                          ...challenge,
-                          config: JSON.stringify({ ...curConfig, timeLimit: val })
-                        });
-                      }}
-                      placeholder="Inherit from stage"
-                      style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>CANDIDATE_INSTRUCTIONS</label>
-                    <textarea 
-                      value={challenge.instructions || ''}
-                      onChange={e => setChallenge({...challenge, instructions: e.target.value})}
-                      style={{ width: '100%', height: 200, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 13, outline: 'none', resize: 'none', lineHeight: 1.6 }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+          {/* Challenge title field */}
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 9,
+                letterSpacing: '0.2em',
+                color: 'var(--pipe-text-dim)',
+                fontFamily: 'Space Mono',
+                marginBottom: 10,
+              }}
+            >
+              CHALLENGE_TITLE
+            </label>
+            <input
+              data-testid="challenge-title-input"
+              value={challenge.title}
+              onChange={(e) => setChallenge({ ...challenge, title: e.target.value })}
+              placeholder="Challenge title..."
+              style={{
+                width: '100%',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 8,
+                padding: '14px 18px',
+                color: 'var(--pipe-text, #fff)',
+                fontSize: 16,
+                fontWeight: 700,
+                fontFamily: 'inherit',
+                outline: 'none',
+                transition: 'border-color 0.2s',
+              }}
+            />
+          </div>
 
-            {activeTab === 'CONTENT' && (
+          {/* Instructions field */}
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 9,
+                letterSpacing: '0.2em',
+                color: 'var(--pipe-text-dim)',
+                fontFamily: 'Space Mono',
+                marginBottom: 10,
+              }}
+            >
+              INSTRUCTIONS
+            </label>
+            <textarea
+              data-testid="challenge-instructions-input"
+              value={challenge.instructions ?? ''}
+              onChange={(e) => setChallenge({ ...challenge, instructions: e.target.value })}
+              placeholder="Candidate-facing instructions (markdown supported)..."
+              rows={10}
+              style={{
+                width: '100%',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 8,
+                padding: '14px 18px',
+                color: 'var(--pipe-text, #fff)',
+                fontSize: 14,
+                fontFamily: 'inherit',
+                outline: 'none',
+                resize: 'vertical',
+                lineHeight: 1.6,
+              }}
+            />
+          </div>
+
+          {/* Time limit field */}
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 9,
+                letterSpacing: '0.2em',
+                color: 'var(--pipe-text-dim)',
+                fontFamily: 'Space Mono',
+                marginBottom: 10,
+              }}
+            >
+              TIME_LIMIT (MINUTES)
+            </label>
+            <input
+              type="number"
+              value={(challenge.config?.timeLimit as number | undefined) ?? ''}
+              onChange={(e) => {
+                const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                setChallenge({
+                  ...challenge,
+                  config: { ...challenge.config, timeLimit: val ?? undefined },
+                });
+              }}
+              placeholder="Leave empty for untimed"
+              style={{
+                width: 200,
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 8,
+                padding: '12px 16px',
+                color: 'var(--pipe-text, #fff)',
+                fontSize: 14,
+                fontFamily: 'Space Mono',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+
+          {/* ── CODE_IMPLEMENTATION-specific config ──────────────────────── */}
+          {challenge.type === 'CODE_IMPLEMENTATION' && (
+            <>
+              {/* Divider */}
+              <div style={{ borderTop: '1px solid var(--pipe-border)', paddingTop: 8 }} />
+
+              {/* MODE */}
               <div>
-                <SubTitle>CHALLENGE_CONTENT</SubTitle>
-                <div style={{ marginTop: 32 }}>
-                  {challenge.type === 'CODE_REVIEW' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
-                      {/* GitHub PR Fetcher */}
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: 16, fontFamily: 'Space Mono' }}>
-                          STEP_1:_FETCH_GITHUB_PR
-                        </div>
-                        <GitHubPRFetcher
-                          initialChallenge={{
-                            githubRepoUrl: challenge.githubRepoUrl || undefined,
-                            githubPrNumber: challenge.githubPrNumber || undefined,
-                          }}
-                          onPRFetched={handlePRFetched}
-                          onCleared={() => {
-                            setChallenge({
-                              ...challenge,
-                              githubRepoUrl: undefined,
-                              githubPrNumber: undefined,
-                              githubPrTitle: undefined,
-                              githubPrDescription: undefined,
-                              cachedDiffJson: undefined,
-                              cachedMetadata: undefined,
-                            });
-                            setPrFetched(false);
-                          }}
-                        />
-                      </div>
-
-                      {/* Ground Truth Annotations */}
-                      {prFetched && (
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: 16, fontFamily: 'Space Mono' }}>
-                            STEP_2:_DEFINE_GROUND_TRUTH
-                          </div>
-                          <GroundTruthAnnotationEditor
-                            initialAnnotations={groundTruthAnnotations}
-                            onAnnotationsChange={setGroundTruthAnnotations}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {challenge.type === 'QUIZ_MCQ' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>QUESTION_TEXT</label>
-                        <textarea 
-                          value={(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return config.question || '';
-                          })()}
-                          onChange={e => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            setChallenge({
-                              ...challenge,
-                              config: JSON.stringify({ ...config, question: e.target.value })
-                            });
-                          }}
-                          placeholder="Enter the quiz question here..."
-                          style={{ width: '100%', height: 100, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none', resize: 'none', lineHeight: 1.5 }}
-                        />
-                      </div>
-
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                          <label style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontFamily: 'Space Mono' }}>ANSWER_OPTIONS</label>
-                          <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>SELECT_CORRECT_ANSWER</div>
-                        </div>
-                        
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            const srvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
-                            const options = config.options || [];
-                            const correctId = srvConfig.correctOptionId;
-
-                            // Auto-initialize if empty
-                            if (options.length === 0) {
-                              const initialOptions = [
-                                { id: 'a', text: '' },
-                                { id: 'b', text: '' },
-                                { id: 'c', text: '' },
-                                { id: 'd', text: '' }
-                              ];
-                              setTimeout(() => {
-                                setChallenge({
-                                  ...challenge,
-                                  config: JSON.stringify({ ...config, options: initialOptions })
-                                });
-                              }, 0);
-                              return null;
-                            }
-
-                            return (
-                              <>
-                                {options.map((opt: any, idx: number) => (
-                                  <div key={opt.id || idx} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                                    <button 
-                                      onClick={() => {
-                                        const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
-                                        setChallenge({
-                                          ...challenge,
-                                          serverConfig: JSON.stringify({ ...curSrvConfig, correctOptionId: opt.id })
-                                        });
-                                      }}
-                                      title="Mark as correct answer"
-                                      style={{ 
-                                        width: 24, height: 24, borderRadius: '50%', 
-                                        background: correctId === opt.id ? '#4ade80' : 'transparent',
-                                        border: `2px solid ${correctId === opt.id ? '#4ade80' : 'rgba(255,255,255,0.1)'}`,
-                                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        transition: 'all 0.2s'
-                                      }}
-                                    >
-                                      {correctId === opt.id && <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#000' }} />}
-                                    </button>
-                                    
-                                    <div style={{ 
-                                      width: 24, fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' 
-                                    }}>
-                                      {opt.id.toUpperCase()}
-                                    </div>
-
-                                    <input 
-                                      value={opt.text}
-                                      onChange={e => {
-                                        const newOptions = [...options];
-                                        newOptions[idx] = { ...opt, text: e.target.value };
-                                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                                        const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
-                                        setChallenge({
-                                          ...challenge,
-                                          config: JSON.stringify({ ...curConfig, options: newOptions }),
-                                          serverConfig: JSON.stringify({ ...curSrvConfig, options: newOptions })
-                                        });
-                                      }}
-                                      placeholder={`Option ${opt.id.toUpperCase()} text...`}
-                                      style={{ flex: 1, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 13, outline: 'none', borderRadius: 4 }}
-                                    />
-                                    
-                                    <button 
-                                      onClick={() => {
-                                        const newOptions = options.filter((_: any, i: number) => i !== idx);
-                                        const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                                        setChallenge({
-                                          ...challenge,
-                                          config: JSON.stringify({ ...curConfig, options: newOptions })
-                                        });
-                                      }}
-                                      style={{ background: 'none', border: 'none', color: 'rgba(255,80,80,0.3)', cursor: 'pointer', padding: 8 }}
-                                    >
-                                      <Shield size={14} />
-                                    </button>
-                                  </div>
-                                ))}
-                                <button 
-                                  onClick={() => {
-                                    const nextId = String.fromCharCode(97 + options.length);
-                                    const newOptions = [...options, { id: nextId, text: '' }];
-                                    const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                                    const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
-                                    setChallenge({
-                                      ...challenge,
-                                      config: JSON.stringify({ ...curConfig, options: newOptions }),
-                                      serverConfig: JSON.stringify({ ...curSrvConfig, options: newOptions })
-                                    });
-                                  }}
-                                  style={{ marginTop: 8, padding: '10px 20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: 700, fontFamily: 'Space Mono', cursor: 'pointer', alignSelf: 'flex-start' }}
-                                >
-                                  + ADD_OPTION
-                                </button>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>EXPLANATION (SHOWN AFTER SUBMISSION)</label>
-                        <textarea 
-                          value={(() => {
-                            const srvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
-                            return srvConfig.explanation || '';
-                          })()}
-                          onChange={e => {
-                            const curSrvConfig = typeof challenge.serverConfig === 'string' ? JSON.parse(challenge.serverConfig) : (challenge.serverConfig || {});
-                            setChallenge({
-                              ...challenge,
-                              serverConfig: JSON.stringify({ ...curSrvConfig, explanation: e.target.value })
-                            });
-                          }}
-                          placeholder="Provide context for why the correct answer is right..."
-                          style={{ width: '100%', height: 80, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 13, outline: 'none', resize: 'none', borderRadius: 4, lineHeight: 1.5 }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {challenge.type === 'QUIZ_SHORT_ANSWER' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>QUESTION_PROMPT</label>
-                        <textarea 
-                          value={(() => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return config.question || '';
-                          })()}
-                          onChange={e => {
-                            const config = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            setChallenge({
-                              ...challenge,
-                              config: JSON.stringify({ ...config, question: e.target.value })
-                            });
-                          }}
-                          style={{ width: '100%', height: 120, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none', resize: 'none' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>MAX_LENGTH</label>
-                        <input 
-                          type="number"
-                          value={(() => {
-                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return curConfig.maxLength || '';
-                          })()}
-                          onChange={e => {
-                            const val = e.target.value ? parseInt(e.target.value) : null;
-                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            setChallenge({
-                              ...challenge,
-                              config: JSON.stringify({ ...curConfig, maxLength: val })
-                            });
-                          }}
-                          placeholder="No limit"
-                          style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none' }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 12, fontFamily: 'Space Mono' }}>RUBRIC</label>
-                        <textarea 
-                          value={(() => {
-                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            return curConfig.rubric || '';
-                          })()}
-                          onChange={e => {
-                            const curConfig = typeof challenge.config === 'string' ? JSON.parse(challenge.config) : (challenge.config || {});
-                            setChallenge({
-                              ...challenge,
-                              config: JSON.stringify({ ...curConfig, rubric: e.target.value })
-                            });
-                          }}
-                          placeholder="Enter scoring rubric..."
-                          style={{ width: '100%', height: 120, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', color: '#fff', fontSize: 14, outline: 'none', resize: 'none' }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {challenge.type === 'CODE_IMPLEMENTATION' && (
-                    <div style={{ padding: 40, border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
-                      <AlertCircle size={24} color="rgba(255,255,255,0.2)" style={{ marginBottom: 16 }} />
-                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-                        Code implementation challenges are configured with templates.
-                      </div>
-                      <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>Custom authoring & editing is coming soon!</p>
-                    </div>
-                  )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Terminal size={14} style={{ color: 'var(--pipe-text-dim)' }} />
+                  <SubTitle>MODE</SubTitle>
                 </div>
+                <ModeSelector
+                  mode={(challenge.config?.mode as 'backend' | 'frontend') ?? 'backend'}
+                  onChange={handleModeChange}
+                />
               </div>
-            )}
 
-            {activeTab === 'SCORING' && (
+              {/* ENGINE */}
               <div>
-                <SubTitle>SCORING_&_RUBRIC</SubTitle>
-                <div style={{ marginTop: 32 }}>
-                  <div style={{ padding: 40, border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center' }}>
-                    <Shield size={24} color="rgba(255,255,255,0.2)" style={{ marginBottom: 16 }} />
-                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono' }}>
-                      SCORING_CONFIGURATION_COMING_SOON
-                    </div>
-                  </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
+                  <SubTitle>ENGINE</SubTitle>
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'PREVIEW' && (
-              <div style={{ position: 'relative' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-                  <SubTitle>CANDIDATE_PREVIEW</SubTitle>
-                  <button
-                    onClick={() => setIsPreviewFullscreen(true)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px',
-                      background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: 4, color: 'rgba(255,255,255,0.6)', fontSize: 9,
-                      fontFamily: 'Space Mono', cursor: 'pointer', transition: 'all 0.2s'
-                    }}
-                  >
-                    <Maximize2 size={12} />
-                    FULL_SCREEN
-                  </button>
-                </div>
-
-                <div style={{ opacity: 0.8 }}>
-                  <TimerProvider>
-                    <ChallengeRegistry 
-                      challenge={challenge as any}
-                      onSubmissionChange={() => {}}
-                      onSubmit={() => {}}
-                    />
-                  </TimerProvider>
-                </div>
-
-                {/* Fullscreen Overlay */}
-                {isPreviewFullscreen && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 9999,
-                    background: '#0c0c0e',
-                    padding: 40,
-                    display: 'flex',
-                    flexDirection: 'column'
+                    padding: 12,
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 4,
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#60a5fa' }} />
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.2em' }}>
-                          CANDIDATE_PREVIEW_MODE
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => setIsPreviewFullscreen(false)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                          background: '#fff', border: 'none', borderRadius: 4,
-                          color: '#000', fontSize: 10, fontWeight: 800,
-                          fontFamily: 'Space Mono', cursor: 'pointer'
-                        }}
-                      >
-                        <Minimize2 size={14} />
-                        EXIT_FULL_SCREEN
-                      </button>
+                    <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                      RUNTIME
                     </div>
-                    
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                      <TimerProvider>
-                        <ChallengeRegistry 
-                          challenge={challenge as any}
-                          onSubmissionChange={() => {}}
-                          onSubmit={() => {}}
-                        />
-                      </TimerProvider>
+                    <div style={{ fontSize: 11, color: 'var(--pipe-text, #fff)', fontWeight: 700 }}>
+                      {(challenge.config?.mode as string | undefined) === 'frontend'
+                        ? 'Browser (Sandpack)'
+                        : 'Node.js / V8'}
                     </div>
                   </div>
-                )}
+                  <div style={{
+                    padding: 12,
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 4,
+                  }}>
+                    <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+                      SCORING
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono', lineHeight: 1.6 }}>
+                      Sample 30% + Hidden 70%
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
-          </LiquidMetalCard>
-        </main>
-      </div>
+
+              {/* FOLLOW_UP */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                  <Settings size={14} style={{ color: 'var(--pipe-text-dim)' }} />
+                  <SubTitle>FOLLOW_UP</SubTitle>
+                </div>
+                <FollowUpConfiguration
+                  enabled={!!challenge.config?.enableFollowUp}
+                  onChange={(val) =>
+                    setChallenge({
+                      ...challenge,
+                      config: { ...challenge.config, enableFollowUp: val },
+                    })
+                  }
+                  accentColor="var(--pipe-accent)"
+                />
+              </div>
+            </>
+          )}
+
+        </div>
+      )}
+
+      {/* ─── CONTENT_EDITOR TAB ──────────────────────────────────────────────── */}
+      {activeTab === 'CONTENT_EDITOR' && contentEditorContent}
+
+      {/* ─── SCORING_RUBRIC TAB ──────────────────────────────────────────────── */}
+      {activeTab === 'SCORING_RUBRIC' && (
+        <div style={{ maxWidth: 800, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div
+            style={{
+              padding: '32px 40px',
+              border: '1px dashed var(--pipe-border)',
+              borderRadius: 12,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--pipe-text-dim)',
+                fontFamily: 'Space Mono',
+                marginBottom: 16,
+              }}
+            >
+              SCORING_CRITERIA
+            </div>
+            <textarea
+              value={(challenge.serverConfig?.scoringRubric as string) ?? ''}
+              onChange={(e) =>
+                setChallenge({
+                  ...challenge,
+                  serverConfig: { ...challenge.serverConfig, scoringRubric: e.target.value },
+                })
+              }
+              placeholder="Describe how this challenge should be scored..."
+              rows={8}
+              style={{
+                width: '100%',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 8,
+                padding: '14px 18px',
+                color: 'var(--pipe-text, #fff)',
+                fontSize: 14,
+                fontFamily: 'inherit',
+                outline: 'none',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+
     </div>
   );
 }

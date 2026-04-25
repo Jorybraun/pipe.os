@@ -1,0 +1,15 @@
+{
+  "repo_id": 1677,
+  "full_name": "iib0011/omni-tools",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 193 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: dependency count of 99, unit-test count of 71 (cited as a standalone number in the profile), pr_quality_score 0.46, and challenge surface scores 0.50/0.40/0.30 are not present in the FACTS block"
+  ],
+  "reasoning": "At ~193 words the profile is dramatically under the 400-word floor; this is a clear constraint_pass failure independent of the invented numbers. The profile also injects specific figures — 99 total dependencies, 71 unit-tests, pr_quality_score 0.46 — as numeric facts without FACTS-block grounding. Accuracy is good: TypeScript is correctly identified as the primary language, vitest is correctly named as the test framework (consistent with has_tests=true), the web-frontend domain is accurately captured with react-hooks and react-context prominently featured, and PR-shape observations (mean 10.45, high p90) are consistent with the narrative. architecture_style='monolith' is defensible for omni-tools: the repo is a single-deployment web application bundling a diverse suite of utility tools rather than a library or service mesh, so a monolithic SPA characterisation is reasonable. All five completeness dimensions appear in the profile: repo type/purpose (online tools app), language/stack (TypeScript + React patterns), PR-shape (mean 10.45, p90 23), test/review culture (vitest, unit-only, test_touch_rate 0.4), and contribution readiness (open counts unknown). Three of four dimensions pass, yielding approved=true."
+}

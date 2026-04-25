@@ -1,0 +1,3158 @@
+[
+  {
+    "repo_id": 1673,
+    "full_name": "mui/base-ui",
+    "primary_language": "typescript",
+    "stars": 9169,
+    "sloc": 191700,
+    "file_count": 1917,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs/package.json\",\"count\":70},{\"file\":\"examples/tanstack-start-tailwind-css/package.json\",\"count\":24},{\"file\":\"examples/vite-css/package.json\",\"count\":15},{\"file\":\"package.json\",\"count\":44},{\"file\":\"packages/react/package.json\",\"count\":25}],\"totalDeps\":126}",
+    "pr_quality_score": 0.577659574468085,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 308
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 31
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 13
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 6
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 4
+      },
+      {
+        "slug": "client-routing",
+        "evidence_count": 3
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      },
+      {
+        "slug": "form-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "input-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 2
+      },
+      {
+        "slug": "suspense-boundaries",
+        "evidence_count": 2
+      },
+      {
+        "slug": "error-types",
+        "evidence_count": 1
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 1
+      },
+      {
+        "slug": "memoization",
+        "evidence_count": 1
+      },
+      {
+        "slug": "snapshot-tests",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 3100,
+        "title": "[popups] Lock full-width touch popups",
+        "changed_file_count": 14,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3098,
+        "additions": 813,
+        "deletions": 335,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"pagination\",\"input-validation\",\"xss-escaping\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4409,
+        "title": "[autocomplete] Own part exports and docs metadata",
+        "changed_file_count": 37,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 471,
+        "deletions": 76,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4452,
+        "title": "[select] Uncaught TypeError: Converting circular structure to JSON",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4451,
+        "additions": 188,
+        "deletions": 12,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4469,
+        "title": "[avatar] Fix flash when image is cached",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 108,
+        "deletions": 14,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"xss-escaping\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4482,
+        "title": "[switch][checkbox][radio][select][combobox] Add suppressHydrationWarning to hidden inputs",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 7,
+        "deletions": 4,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"xss-escaping\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4531,
+        "title": "[select] Fix RTL aligned popup positioning",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 883,
+        "deletions": 137,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4548,
+        "title": "[slider] Fix keyboard floating-point rounding",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4547,
+        "additions": 97,
+        "deletions": 5,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"xss-escaping\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4551,
+        "title": "[switch][checkbox] Prevent input state changes in readOnly mode",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 49,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4555,
+        "title": "[collapsible] Fix open state when keepMounted with no transitions",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 58,
+        "deletions": 7,
+        "construct_slugs_json": "[\"cancellation-tokens\",\"react-hooks\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4556,
+        "title": "[popups] Fix perf regression",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 89,
+        "deletions": 10,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4560,
+        "title": "[combobox][select] Fix browser autofill with object values when autofill uses the label",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 132,
+        "deletions": 5,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"xss-escaping\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4562,
+        "title": "[release] v1.4.0",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 274,
+        "deletions": 4,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4572,
+        "title": "[combobox] Respect rendered chips for keyboard navigation",
+        "changed_file_count": 13,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4244,
+        "additions": 641,
+        "deletions": 11,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4574,
+        "title": "[code-infra] Add performance benchmark",
+        "changed_file_count": 18,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 661,
+        "deletions": 0,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"e2e-tests\",\"env-config\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4576,
+        "title": "[docs] UI fixes",
+        "changed_file_count": 19,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 80,
+        "deletions": 79,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4579,
+        "title": "[docs] Add Community page",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 112,
+        "deletions": 25,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4581,
+        "title": "[menu] Preserve dialog focus on pointer leave",
+        "changed_file_count": 5,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 281,
+        "deletions": 4,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"xss-escaping\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4587,
+        "title": "[navigation-menu] Fix transition width when reopening (#3073)",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3073,
+        "additions": 304,
+        "deletions": 54,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"xss-escaping\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"unit-tests\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4591,
+        "title": "[docs-infra] Remove JS variant from demos",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 24,
+        "deletions": 148,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"memoization\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4593,
+        "title": "[docs-infra] Remove temporary theme file",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 27,
+        "deletions": 153,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1676,
+    "full_name": "nhost/nhost",
+    "primary_language": "typescript",
+    "stars": 9124,
+    "sloc": 356900,
+    "file_count": 3569,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "detected_domain": "web-backend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"cli/cmd/project/templates/init/functions/package.json\",\"count\":0},{\"file\":\"cli/examples/myproject/functions/package.json\",\"count\":5},{\"file\":\"cli/examples/mysvc/package.json\",\"count\":1},{\"file\":\"dashboard/package.json\",\"count\":143},{\"file\":\"docs/package.json\",\"count\":22},{\"file\":\"go.mod\",\"count\":204}],\"totalDeps\":375}",
+    "pr_quality_score": 0.48333333333333334,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 323
+      },
+      {
+        "slug": "sql-queries",
+        "evidence_count": 188
+      },
+      {
+        "slug": "rest-api-design",
+        "evidence_count": 181
+      },
+      {
+        "slug": "migrations",
+        "evidence_count": 91
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 40
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 27
+      },
+      {
+        "slug": "error-types",
+        "evidence_count": 22
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 19
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "dockerfiles",
+        "evidence_count": 7
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 6
+      },
+      {
+        "slug": "graphql-schema",
+        "evidence_count": 5
+      },
+      {
+        "slug": "authn-flows",
+        "evidence_count": 4
+      },
+      {
+        "slug": "authz-checks",
+        "evidence_count": 4
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 4
+      },
+      {
+        "slug": "data-fetching",
+        "evidence_count": 3
+      },
+      {
+        "slug": "form-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "input-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "promise-chains",
+        "evidence_count": 3
+      },
+      {
+        "slug": "token-handling",
+        "evidence_count": 3
+      },
+      {
+        "slug": "api-versioning",
+        "evidence_count": 2
+      },
+      {
+        "slug": "async-error-handling",
+        "evidence_count": 2
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 2
+      },
+      {
+        "slug": "secrets-handling",
+        "evidence_count": 2
+      },
+      {
+        "slug": "cancellation-tokens",
+        "evidence_count": 1
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 1
+      },
+      {
+        "slug": "sql-injection",
+        "evidence_count": 1
+      },
+      {
+        "slug": "test-doubles",
+        "evidence_count": 1
+      },
+      {
+        "slug": "transactions",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 773,
+        "title": "Sync the Nhost services versions within the repository",
+        "changed_file_count": 14,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 1028,
+        "deletions": 447,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\",\"env-config\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1522,
+        "title": "fix(dashboard): correct redeployment button",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 132,
+        "deletions": 84,
+        "construct_slugs_json": "[\"react-hooks\",\"pagination\",\"idempotency\",\"authn-flows\",\"authz-checks\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\",\"error-types\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2272,
+        "title": "chore(docs): minor fix to performance documentation",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 28,
+        "deletions": 6,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2384,
+        "title": "fix: update auth version and webauthn origins",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 41,
+        "deletions": 16,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2461,
+        "title": "feat (dashboard): set redirectTo during sign-in with twitter to support preview environments",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 15,
+        "deletions": 4,
+        "construct_slugs_json": "[\"react-hooks\",\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2521,
+        "title": "feat: add elevate workflow to react-apollo and vue-apollo example projects",
+        "changed_file_count": 27,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 866,
+        "deletions": 139,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\",\"env-config\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2567,
+        "title": "fix(dashboard): show correct message when sending invite fails",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 50,
+        "deletions": 39,
+        "construct_slugs_json": "[\"react-hooks\",\"api-versioning\",\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2575,
+        "title": "feat: dashboard: add healthcheck config to run services",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 146,
+        "deletions": 1,
+        "construct_slugs_json": "[\"react-hooks\",\"pagination\",\"idempotency\",\"authn-flows\",\"authz-checks\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\",\"error-types\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2577,
+        "title": "fix: dashboard: refactor database datagrid to allow insert/update/delete for tables `auth` and `storage`",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 53,
+        "deletions": 34,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 2988,
+        "title": "fix (dashboard): configuring \"Disable New Users\" modifies the wrong setting",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": 2912,
+        "additions": 160,
+        "deletions": 17,
+        "construct_slugs_json": "[\"react-hooks\",\"pagination\",\"idempotency\",\"authn-flows\",\"authz-checks\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\",\"error-types\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3995,
+        "title": "feat(dashboard): add function permissions settings",
+        "changed_file_count": 33,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3468,
+        "additions": 1311,
+        "deletions": 46,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"authn-flows\",\"authz-checks\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4109,
+        "title": "fix(dashboard): allow updating arrays in database",
+        "changed_file_count": 6,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 357,
+        "deletions": 4,
+        "construct_slugs_json": "[\"react-hooks\",\"authn-flows\",\"authz-checks\",\"token-handling\",\"input-validation\",\"sql-injection\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4112,
+        "title": "chore(ci): added a small wrapper around govulncheck to allow filtering some CVEs",
+        "changed_file_count": 41,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 1167,
+        "deletions": 11,
+        "construct_slugs_json": "[\"pagination\",\"idempotency\",\"authn-flows\",\"authz-checks\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"ci-workflows\",\"error-types\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4113,
+        "title": "fix(nhost-js): deduplicate fragment definitions in GraphQL client",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3559,
+        "additions": 475,
+        "deletions": 2,
+        "construct_slugs_json": "[\"pagination\",\"authn-flows\",\"token-handling\",\"input-validation\",\"sql-injection\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"error-types\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4115,
+        "title": "feat(dashboard): track volatile functions as GraphQL mutation",
+        "changed_file_count": 10,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 369,
+        "deletions": 109,
+        "construct_slugs_json": "[\"react-hooks\",\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4127,
+        "title": "feat(dashboard): improve database sidebar with search and filters by object type",
+        "changed_file_count": 10,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4123,
+        "additions": 486,
+        "deletions": 169,
+        "construct_slugs_json": "[\"react-hooks\",\"authn-flows\",\"authz-checks\",\"token-handling\",\"input-validation\",\"sql-injection\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"data-fetching\",\"unit-tests\",\"integration-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4128,
+        "title": "fix(dashboard): remove tsconfig-paths-webpack-plugin and vite-tsconfig-paths",
+        "changed_file_count": 6,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 14,
+        "deletions": 73,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4132,
+        "title": "fix(dashboard): prevent remote schema type collisions in e2e tests",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 31,
+        "deletions": 1,
+        "construct_slugs_json": "[\"promise-chains\",\"react-hooks\",\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"data-fetching\",\"unit-tests\",\"integration-tests\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4134,
+        "title": "fix(docs): downgrade to vite7 due to incompatibilities",
+        "changed_file_count": 25,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 470,
+        "deletions": 750,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4143,
+        "title": "chore(deps): bump next.js and sveltekit due to CVEs",
+        "changed_file_count": 8,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 174,
+        "deletions": 165,
+        "construct_slugs_json": "[\"authn-flows\",\"token-handling\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"data-fetching\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1677,
+    "full_name": "iib0011/omni-tools",
+    "primary_language": "typescript",
+    "stars": 9072,
+    "sloc": 57500,
+    "file_count": 575,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":99}],\"totalDeps\":99}",
+    "pr_quality_score": 0.46216216216216216,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 71
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 41
+      },
+      {
+        "slug": "react-context",
+        "evidence_count": 7
+      },
+      {
+        "slug": "async-error-handling",
+        "evidence_count": 6
+      },
+      {
+        "slug": "test-doubles",
+        "evidence_count": 5
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 4
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 4
+      },
+      {
+        "slug": "client-routing",
+        "evidence_count": 3
+      },
+      {
+        "slug": "form-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "input-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "authz-checks",
+        "evidence_count": 2
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 2
+      },
+      {
+        "slug": "promise-chains",
+        "evidence_count": 2
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 2
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 2
+      },
+      {
+        "slug": "secrets-handling",
+        "evidence_count": 2
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 1
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 1
+      },
+      {
+        "slug": "dockerfiles",
+        "evidence_count": 1
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 1
+      },
+      {
+        "slug": "suspense-boundaries",
+        "evidence_count": 1
+      },
+      {
+        "slug": "type-narrowing",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 22,
+        "title": "rot13 tool, testCases then updated index file",
+        "changed_file_count": 14,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 394,
+        "deletions": 21,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 298,
+        "title": "Fix pdf plural",
+        "changed_file_count": 12,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 58,
+        "deletions": 44,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 307,
+        "title": "Feat/Fix: Fix/Improve search tool",
+        "changed_file_count": 23,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 323,
+        "deletions": 108,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 310,
+        "title": "Improve clarity for List Group tool (issue #308)",
+        "changed_file_count": 5,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 169,
+        "deletions": 90,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 312,
+        "title": "feat: byte conversion across systems (SI, IEC) feature",
+        "changed_file_count": 7,
+        "modifies_tests": 1,
+        "resolves_issue_number": 279,
+        "additions": 356,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 317,
+        "title": "Add Discord Timestamp Generator tool",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 271,
+        "deletions": 5,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 322,
+        "title": "    feat: add slug generator tool",
+        "changed_file_count": 7,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 224,
+        "deletions": 1,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 326,
+        "title": "chore: TSV tool moved to csv folder since similar for consistency",
+        "changed_file_count": 26,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 67,
+        "deletions": 67,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 327,
+        "title": "Options visual fix",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": 321,
+        "additions": 83,
+        "deletions": 67,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"memoization\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 328,
+        "title": "feat: added Chinese (Zh) translations",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 54,
+        "deletions": 0,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 330,
+        "title": "feat: add JSON to CSV converter",
+        "changed_file_count": 8,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 528,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 333,
+        "title": "fix: broken i18n  meta tag for audio converter tool",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 30,
+        "deletions": 26,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 338,
+        "title": "feat translations for all languages for audio converter",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 101,
+        "deletions": 1,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 339,
+        "title": "feature: Batch compressing images",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": 284,
+        "additions": 252,
+        "deletions": 35,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 340,
+        "title": "Feature: batch resizing images",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 120,
+        "deletions": 30,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 343,
+        "title": "feat: support multiple images to PDF conversion",
+        "changed_file_count": 9,
+        "modifies_tests": 1,
+        "resolves_issue_number": 331,
+        "additions": 286,
+        "deletions": 160,
+        "construct_slugs_json": "[\"promise-chains\",\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 344,
+        "title": "feat Convert to WebP tool",
+        "changed_file_count": 16,
+        "modifies_tests": 0,
+        "resolves_issue_number": 314,
+        "additions": 421,
+        "deletions": 1,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"memoization\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 345,
+        "title": "feat(video): add audio track to video tool",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": 305,
+        "additions": 458,
+        "deletions": 1,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"memoization\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 350,
+        "title": "Fix convert to jpg",
+        "changed_file_count": 19,
+        "modifies_tests": 0,
+        "resolves_issue_number": 253,
+        "additions": 289,
+        "deletions": 248,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"memoization\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 351,
+        "title": "feat: Convert Date to Unix Tool",
+        "changed_file_count": 15,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 351,
+        "deletions": 145,
+        "construct_slugs_json": "[\"react-hooks\",\"pagination\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"client-routing\",\"unit-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1679,
+    "full_name": "uber/baseweb",
+    "primary_language": "typescript",
+    "stars": 8959,
+    "sloc": 246200,
+    "file_count": 2462,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":76},{\"file\":\"packages/baseui-codemods/package.json\",\"count\":11},{\"file\":\"packages/baseweb-vscode-extension/package.json\",\"count\":16},{\"file\":\"packages/eslint-plugin-baseui/package.json\",\"count\":5}],\"totalDeps\":97}",
+    "pr_quality_score": 0.35526315789473684,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 155
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 19
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 9
+      },
+      {
+        "slug": "snapshot-tests",
+        "evidence_count": 5
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      },
+      {
+        "slug": "form-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 3
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 2
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 2
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 1
+      },
+      {
+        "slug": "react-context",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 3679,
+        "title": "fix(tether): fix popper position on update (#3678)",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3678,
+        "additions": 74,
+        "deletions": 2,
+        "construct_slugs_json": "[\"form-validation\",\"env-config\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5346,
+        "title": "File uploader blog post",
+        "changed_file_count": 8,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 225,
+        "deletions": 0,
+        "construct_slugs_json": "[\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5350,
+        "title": "add new recommendations for color and typography",
+        "changed_file_count": 10,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 158,
+        "deletions": 329,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5351,
+        "title": "chore(docs): add docs for dialog component",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 309,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5352,
+        "title": "Move file uploader basic stories to proper folder",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 41,
+        "deletions": 40,
+        "construct_slugs_json": "[\"form-validation\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5355,
+        "title": "Update file uploader code",
+        "changed_file_count": 14,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 169,
+        "deletions": 50,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"accessibility-aria\",\"memoization\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5356,
+        "title": "Add file uploader stories",
+        "changed_file_count": 9,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 549,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5357,
+        "title": "Add dynamic loading to file uploader documentation",
+        "changed_file_count": 30,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 822,
+        "deletions": 65,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"accessibility-aria\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5361,
+        "title": "doc: Add SystemBanner component for system-wide notifications",
+        "changed_file_count": 11,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 1047,
+        "deletions": 211,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5364,
+        "title": "Sync file uploader changes",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 2,
+        "deletions": 11,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5372,
+        "title": "[chore] fix ts errors on main",
+        "changed_file_count": 19,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 175,
+        "deletions": 220,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"form-validation\",\"accessibility-aria\",\"memoization\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5376,
+        "title": "feat: update tag",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 612,
+        "deletions": 260,
+        "construct_slugs_json": "[\"react-hooks\",\"pagination\",\"form-validation\",\"accessibility-aria\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5378,
+        "title": "Update Button group component, ubook stories and docs",
+        "changed_file_count": 19,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 509,
+        "deletions": 74,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5379,
+        "title": "Updating docs and examples for tag component",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 31,
+        "deletions": 53,
+        "construct_slugs_json": "[\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5380,
+        "title": "tag-group: adding new component",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 365,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5383,
+        "title": "V16: blog entry",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 70,
+        "deletions": 0,
+        "construct_slugs_json": "[\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5385,
+        "title": "Update to docs links",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 2,
+        "deletions": 43,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5386,
+        "title": "[chore] Update d3 packages",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 182,
+        "deletions": 222,
+        "construct_slugs_json": "[\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5391,
+        "title": "[datepicker] Add fixes for composed date range selections",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 882,
+        "deletions": 15,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 5392,
+        "title": "Progress Bar: adding intent prop and ally updates",
+        "changed_file_count": 14,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 230,
+        "deletions": 44,
+        "construct_slugs_json": "[\"react-hooks\",\"form-validation\",\"accessibility-aria\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1683,
+    "full_name": "rsuite/rsuite",
+    "primary_language": "typescript",
+    "stars": 8695,
+    "sloc": 173600,
+    "file_count": 1736,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": null,
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs/package.json\",\"count\":61},{\"file\":\"examples/create-react-app/package.json\",\"count\":11},{\"file\":\"examples/custom-i18n/package.json\",\"count\":16},{\"file\":\"examples/custom-multiple-themes/package.json\",\"count\":51},{\"file\":\"examples/with-babel-preset-rsuite/package.json\",\"count\":19}],\"totalDeps\":116}",
+    "pr_quality_score": 0.5810810810810811,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 387
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 290
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 34
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 6
+      },
+      {
+        "slug": "promise-chains",
+        "evidence_count": 6
+      },
+      {
+        "slug": "async-error-handling",
+        "evidence_count": 5
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      },
+      {
+        "slug": "error-responses",
+        "evidence_count": 3
+      },
+      {
+        "slug": "form-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "input-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 3
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 2
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 2
+      },
+      {
+        "slug": "xss-escaping",
+        "evidence_count": 2
+      },
+      {
+        "slug": "dockerfiles",
+        "evidence_count": 1
+      },
+      {
+        "slug": "memoization",
+        "evidence_count": 1
+      },
+      {
+        "slug": "react-context",
+        "evidence_count": 1
+      },
+      {
+        "slug": "suspense-boundaries",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 4425,
+        "title": "docs(jsonld): add breadcrumb structured data",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 297,
+        "deletions": 9,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"xss-escaping\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4429,
+        "title": "fix(Breadcrumb): move default size to css and update docs",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 16,
+        "deletions": 9,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"responsive-layout\",\"memoization\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4430,
+        "title": "fix(DatePicker): align OK button to right when no ranges",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 20,
+        "deletions": 4,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4436,
+        "title": "docs(guide): upgrading from v5 to v6",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 419,
+        "deletions": 1,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4443,
+        "title": "feat(DateInput): support AM/PM toggle with 'a' and 'p' keys",
+        "changed_file_count": 5,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 126,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"memoization\",\"unit-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4445,
+        "title": "feat(build): export SCSS source files to npm package",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4437,
+        "additions": 63,
+        "deletions": 3,
+        "construct_slugs_json": "[\"promise-chains\",\"input-validation\",\"form-validation\",\"unit-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4446,
+        "title": "fix(CheckTree): allow parent nodes to be selected when all children are disabled",
+        "changed_file_count": 9,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4346,
+        "additions": 343,
+        "deletions": 27,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"memoization\",\"unit-tests\",\"null-handling\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4448,
+        "title": "fix(Checkbox): set indeterminate property for screen reader support",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4345,
+        "additions": 136,
+        "deletions": 2,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"memoization\",\"unit-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4449,
+        "title": "feat(Tree): add Home and End keyboard support for accessibility",
+        "changed_file_count": 14,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4344,
+        "additions": 210,
+        "deletions": 2,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"memoization\",\"unit-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4450,
+        "title": "fix(Breadcrumb): forward props correctly when using as prop in BreadcrumbItem",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4427,
+        "additions": 106,
+        "deletions": 32,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"unit-tests\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4451,
+        "title": "docs(llms): add simple and full versions of LLMs.txt",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 713,
+        "deletions": 454,
+        "construct_slugs_json": "[\"async-error-handling\",\"promise-chains\",\"input-validation\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4452,
+        "title": "fix(picker): separate pickerType from name prop to fix data-picker attribute",
+        "changed_file_count": 13,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4440,
+        "additions": 58,
+        "deletions": 20,
+        "construct_slugs_json": "[\"react-hooks\",\"react-context\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"memoization\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4455,
+        "title": "fix(rate): prevent name prop from overriding internal component styling",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 118,
+        "deletions": 43,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"accessibility-aria\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4464,
+        "title": "chore(docs): integrate next-sitemap for sitemap.xml",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 430,
+        "deletions": 1,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"env-config\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4469,
+        "title": "chore(examples): upgrade create-react-app to rsuite v6 with enhanced UI",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 326,
+        "deletions": 551,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\",\"env-config\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4494,
+        "title": "docs: add ThemeSection i18n and improve feature icons",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 22,
+        "deletions": 26,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\",\"memoization\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4495,
+        "title": "docs: add page markdown generator and copy button",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 612,
+        "deletions": 5,
+        "construct_slugs_json": "[\"async-error-handling\",\"promise-chains\",\"react-hooks\",\"input-validation\",\"form-validation\",\"responsive-layout\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4510,
+        "title": "docs(guide): add Tailwind CSS integration",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 362,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"form-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4517,
+        "title": "fix(styles): use CSS variable for html font-size to allow customization",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": 4466,
+        "additions": 26,
+        "deletions": 18,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"responsive-layout\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 4562,
+        "title": "chore: remove redundant babel transform plugins already included in p…",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 0,
+        "deletions": 12,
+        "construct_slugs_json": "[\"input-validation\",\"form-validation\",\"env-config\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1686,
+    "full_name": "getsentry/sentry-javascript",
+    "primary_language": "typescript",
+    "stars": 8618,
+    "sloc": 650300,
+    "file_count": 6503,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "detected_domain": "other",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"dev-packages/browser-integration-tests/package.json\",\"count\":14},{\"file\":\"dev-packages/bundle-analyzer-scenarios/browser-basic/package.json\",\"count\":0},{\"file\":\"dev-packages/bundle-analyzer-scenarios/package.json\",\"count\":4},{\"file\":\"dev-packages/bundler-tests/package.json\",\"count\":6},{\"file\":\"dev-packages/clear-cache-gh-action/package.json\",\"count\":3}],\"totalDeps\":21}",
+    "pr_quality_score": 0.4,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 1073
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 59
+      },
+      {
+        "slug": "error-types",
+        "evidence_count": 27
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 24
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 20
+      },
+      {
+        "slug": "sql-queries",
+        "evidence_count": 19
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 16
+      },
+      {
+        "slug": "dockerfiles",
+        "evidence_count": 14
+      },
+      {
+        "slug": "migrations",
+        "evidence_count": 14
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "authn-flows",
+        "evidence_count": 9
+      },
+      {
+        "slug": "async-error-handling",
+        "evidence_count": 6
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 4
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 4
+      },
+      {
+        "slug": "data-fetching",
+        "evidence_count": 3
+      },
+      {
+        "slug": "snapshot-tests",
+        "evidence_count": 3
+      },
+      {
+        "slug": "api-versioning",
+        "evidence_count": 2
+      },
+      {
+        "slug": "authz-checks",
+        "evidence_count": 2
+      },
+      {
+        "slug": "secrets-handling",
+        "evidence_count": 2
+      },
+      {
+        "slug": "sql-injection",
+        "evidence_count": 1
+      },
+      {
+        "slug": "transactions",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 14981,
+        "title": "feat(browser): Add View Hierarchy integration",
+        "changed_file_count": 8,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 208,
+        "deletions": 3,
+        "construct_slugs_json": "[\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 19373,
+        "title": " feat(cloudflare): Split alarms into multiple traces and link them",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": 19105,
+        "additions": 880,
+        "deletions": 61,
+        "construct_slugs_json": "[\"async-error-handling\",\"promise-chains\",\"transactions\",\"sql-injection\",\"data-fetching\",\"unit-tests\",\"test-doubles\",\"e2e-tests\",\"error-types\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20108,
+        "title": "feat(node): Include global scope for `eventLoopBlockIntegration`",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 33,
+        "deletions": 11,
+        "construct_slugs_json": "[\"async-error-handling\",\"promise-chains\",\"event-loop-blocking\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20128,
+        "title": "fix(deno): Avoid inferring invalid span op from Deno tracer",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 33,
+        "deletions": 12,
+        "construct_slugs_json": "[\"transactions\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20181,
+        "title": "feat(core): Add `enableTruncation` option to Anthropic AI integration",
+        "changed_file_count": 7,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 138,
+        "deletions": 11,
+        "construct_slugs_json": "[\"async-error-handling\",\"promise-chains\",\"transactions\",\"authz-checks\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"error-types\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20182,
+        "title": "feat(core): Add `enableTruncation` option to LangChain integration",
+        "changed_file_count": 8,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 142,
+        "deletions": 6,
+        "construct_slugs_json": "[\"transactions\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20183,
+        "title": "feat(core): Add `enableTruncation` option to LangGraph integration",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 112,
+        "deletions": 4,
+        "construct_slugs_json": "[\"transactions\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20184,
+        "title": "feat(core): Add enableTruncation option to Google GenAI integration",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 120,
+        "deletions": 6,
+        "construct_slugs_json": "[\"transactions\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20193,
+        "title": "fix(e2e): Add op check to waitForTransaction in React Router e2e tests",
+        "changed_file_count": 10,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 67,
+        "deletions": 22,
+        "construct_slugs_json": "[\"transactions\",\"data-fetching\",\"unit-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20195,
+        "title": "feat(core): Add `enableTruncation` option to Vercel AI integration",
+        "changed_file_count": 13,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 251,
+        "deletions": 14,
+        "construct_slugs_json": "[\"promise-chains\",\"transactions\",\"data-fetching\",\"e2e-tests\",\"error-types\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20211,
+        "title": "fix(core, node): support loading Express options lazily",
+        "changed_file_count": 9,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 219,
+        "deletions": 62,
+        "construct_slugs_json": "[\"transactions\",\"authz-checks\",\"data-fetching\",\"unit-tests\",\"test-doubles\",\"e2e-tests\",\"error-types\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20227,
+        "title": "feat(core): Automatically disable truncation when span streaming is enabled in OpenAI integration",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 97,
+        "deletions": 2,
+        "construct_slugs_json": "[\"async-error-handling\",\"promise-chains\",\"transactions\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20228,
+        "title": "feat(core): Automatically disable truncation when span streaming is enabled in Anthropic AI integration",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 143,
+        "deletions": 3,
+        "construct_slugs_json": "[\"async-error-handling\",\"promise-chains\",\"transactions\",\"data-fetching\",\"e2e-tests\",\"error-types\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20229,
+        "title": "feat(core): Automatically disable truncation when span streaming is enabled in Google GenAI integration",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 147,
+        "deletions": 2,
+        "construct_slugs_json": "[\"promise-chains\",\"transactions\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20230,
+        "title": "feat(core): Automatically disable truncation when span streaming is enabled in LangChain integration",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 86,
+        "deletions": 2,
+        "construct_slugs_json": "[\"promise-chains\",\"transactions\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20231,
+        "title": "feat(core): Automatically disable truncation when span streaming is enabled in LangGraph integration",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 86,
+        "deletions": 1,
+        "construct_slugs_json": "[\"promise-chains\",\"transactions\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20232,
+        "title": "feat(core): Automatically disable truncation when span streaming is enabled in Vercel AI integration",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 116,
+        "deletions": 1,
+        "construct_slugs_json": "[\"promise-chains\",\"transactions\",\"data-fetching\",\"e2e-tests\",\"error-types\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20239,
+        "title": "test: Fix flaky ANR test by increasing blocking duration",
+        "changed_file_count": 8,
+        "modifies_tests": 0,
+        "resolves_issue_number": 20215,
+        "additions": 9,
+        "deletions": 9,
+        "construct_slugs_json": "[\"data-fetching\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20246,
+        "title": "chore(ci): Remove node-overhead GitHub Action",
+        "changed_file_count": 16,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 0,
+        "deletions": 944,
+        "construct_slugs_json": "[\"sql-queries\",\"data-fetching\",\"e2e-tests\",\"ci-workflows\",\"dockerfiles\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 20250,
+        "title": "chore: Fix lint warnings",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 5,
+        "deletions": 6,
+        "construct_slugs_json": "[\"async-error-handling\",\"sql-injection\",\"xss-escaping\",\"data-fetching\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1687,
+    "full_name": "Hacker0x01/react-datepicker",
+    "primary_language": "typescript",
+    "stars": 8362,
+    "sloc": 20800,
+    "file_count": 208,
+    "mean_ccn": 3.5,
+    "seniority_band": "senior",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs-site/package.json\",\"count\":26},{\"file\":\"examples/hello-world/package.json\",\"count\":4},{\"file\":\"package.json\",\"count\":66}],\"totalDeps\":75}",
+    "pr_quality_score": 0.7315789473684211,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 43
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 12
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 6
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 4
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      },
+      {
+        "slug": "memoization",
+        "evidence_count": 3
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 3
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 2
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 1
+      },
+      {
+        "slug": "async-error-handling",
+        "evidence_count": 1
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 6008,
+        "title": "fix: Add inline mode support to `CalendarComponent` component with correct accessibility attrs",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 24,
+        "deletions": 3,
+        "construct_slugs_json": "[\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6009,
+        "title": "Add coverage tests for calendar interactions",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 531,
+        "deletions": 13,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6025,
+        "title": "Add tests for month and year logic and improve coverage",
+        "changed_file_count": 9,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 320,
+        "deletions": 1,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"pagination\",\"accessibility-aria\",\"unit-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6053,
+        "title": "Remove flushSync usage in ShadowRoot component",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 38,
+        "deletions": 31,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"memoization\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6058,
+        "title": "fix: reset monthSelectedIn when changeMonth is called in custom header",
+        "changed_file_count": 4,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3829,
+        "additions": 106,
+        "deletions": 1,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6067,
+        "title": "feat: add formatMultipleDates prop to DatePicker",
+        "changed_file_count": 5,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 88,
+        "deletions": 1,
+        "construct_slugs_json": "[\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6073,
+        "title": "fix: prevent in-selecting-range highlight for days outside current month",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 4350,
+        "additions": 102,
+        "deletions": 2,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6079,
+        "title": "fix: support time selection with selectsRange for showTimeInput",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3673,
+        "additions": 401,
+        "deletions": 46,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6091,
+        "title": "feat: Add renderCustomDayName prop for custom weekday header rendering",
+        "changed_file_count": 7,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 314,
+        "deletions": 8,
+        "construct_slugs_json": "[\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6092,
+        "title": "feat: Add monthHeaderPosition prop for flexible calendar header placement",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 610,
+        "deletions": 20,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"responsive-layout\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6102,
+        "title": "feat: add popperTargetRef prop for custom popper positioning",
+        "changed_file_count": 5,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3897,
+        "additions": 126,
+        "deletions": 1,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6104,
+        "title": "fix: prevent infinite height growth in time picker",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 5551,
+        "additions": 58,
+        "deletions": 3,
+        "construct_slugs_json": "[\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6107,
+        "title": "fix: allow manually typing dates before 1800 when minDate permits",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 5718,
+        "additions": 61,
+        "deletions": 14,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6113,
+        "title": "fix: Navigate calendar view when typing partial dates (#5459)",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 139,
+        "deletions": 0,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6114,
+        "title": "chore: upgrade to Node 24.x LTS and fix deprecated set-output",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 13,
+        "deletions": 13,
+        "construct_slugs_json": "[\"ci-workflows\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6144,
+        "title": "fix: restore v8 default styles",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 18,
+        "deletions": 38,
+        "construct_slugs_json": "[\"responsive-layout\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6156,
+        "title": "fix: TypeScript type improvements for DatePicker props",
+        "changed_file_count": 8,
+        "modifies_tests": 1,
+        "resolves_issue_number": 6143,
+        "additions": 88,
+        "deletions": 43,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6166,
+        "title": "fix: prevent crash when date props are passed as strings",
+        "changed_file_count": 5,
+        "modifies_tests": 1,
+        "resolves_issue_number": 5964,
+        "additions": 188,
+        "deletions": 7,
+        "construct_slugs_json": "[\"async-error-handling\",\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6205,
+        "title": "fix: restore onChange type inference for single date picker",
+        "changed_file_count": 6,
+        "modifies_tests": 1,
+        "resolves_issue_number": 6202,
+        "additions": 104,
+        "deletions": 15,
+        "construct_slugs_json": "[\"react-hooks\",\"accessibility-aria\",\"unit-tests\",\"type-narrowing\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 6206,
+        "title": "fix: correct timezone handling for date selection and display",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": 6193,
+        "additions": 222,
+        "deletions": 5,
+        "construct_slugs_json": "[\"accessibility-aria\",\"unit-tests\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1688,
+    "full_name": "garmeeh/next-seo",
+    "primary_language": "typescript",
+    "stars": 8352,
+    "sloc": 24300,
+    "file_count": 243,
+    "mean_ccn": 3.5,
+    "seniority_band": "senior",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "vitest",
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"examples/app-router-showcase/package.json\",\"count\":11},{\"file\":\"package.json\",\"count\":24}],\"totalDeps\":29}",
+    "pr_quality_score": 0.179,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 62
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 31
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 4
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 4
+      },
+      {
+        "slug": "accessibility-aria",
+        "evidence_count": 3
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 2
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 1
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 1
+      },
+      {
+        "slug": "snapshot-tests",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 1479,
+        "title": "feat: Allow QAPage to set URL for author",
+        "changed_file_count": 6,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 94,
+        "deletions": 7,
+        "construct_slugs_json": "[\"unit-tests\",\"integration-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1511,
+        "title": "gijsbotje:Feature/offers-hasMerchantReturnPolicy",
+        "changed_file_count": 6,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 165,
+        "deletions": 12,
+        "construct_slugs_json": "[\"unit-tests\",\"integration-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1597,
+        "title": "Release: Version Packages",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 8,
+        "deletions": 6,
+        "construct_slugs_json": "[\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1608,
+        "title": "Release: Version Packages",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 14,
+        "deletions": 14,
+        "construct_slugs_json": "[\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1610,
+        "title": "Add review and aggregateRating support to OrganizationJsonLd",
+        "changed_file_count": 8,
+        "modifies_tests": 1,
+        "resolves_issue_number": 1609,
+        "additions": 404,
+        "deletions": 0,
+        "construct_slugs_json": "[\"unit-tests\",\"integration-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1611,
+        "title": "Release: Version Packages",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 7,
+        "deletions": 6,
+        "construct_slugs_json": "[\"e2e-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1689,
+    "full_name": "Shopify/react-native-skia",
+    "primary_language": "typescript",
+    "stars": 8302,
+    "sloc": 81400,
+    "file_count": 814,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "detected_domain": "mobile",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"apps/docs/package.json\",\"count\":28},{\"file\":\"apps/example/package.json\",\"count\":45},{\"file\":\"apps/headless/package.json\",\"count\":9},{\"file\":\"apps/remotion/package.json\",\"count\":45},{\"file\":\"apps/web-app/package.json\",\"count\":19}],\"totalDeps\":103}",
+    "pr_quality_score": 0.3125,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 86
+      },
+      {
+        "slug": "e2e-tests",
+        "evidence_count": 63
+      },
+      {
+        "slug": "react-hooks",
+        "evidence_count": 57
+      },
+      {
+        "slug": "integration-tests",
+        "evidence_count": 49
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 10
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 6
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 4
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      },
+      {
+        "slug": "input-validation",
+        "evidence_count": 3
+      },
+      {
+        "slug": "null-handling",
+        "evidence_count": 3
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 3
+      },
+      {
+        "slug": "promise-chains",
+        "evidence_count": 2
+      },
+      {
+        "slug": "react-context",
+        "evidence_count": 2
+      },
+      {
+        "slug": "authn-flows",
+        "evidence_count": 1
+      },
+      {
+        "slug": "memoization",
+        "evidence_count": 1
+      },
+      {
+        "slug": "test-doubles",
+        "evidence_count": 1
+      },
+      {
+        "slug": "type-narrowing",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 3682,
+        "title": "fix(📹): update frame after seek while paused",
+        "changed_file_count": 14,
+        "modifies_tests": 0,
+        "resolves_issue_number": 3425,
+        "additions": 502,
+        "deletions": 91,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"memoization\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3697,
+        "title": "fix(🗑️): add back dispose() on native for GPU bound resources",
+        "changed_file_count": 28,
+        "modifies_tests": 0,
+        "resolves_issue_number": 3696,
+        "additions": 482,
+        "deletions": 322,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3701,
+        "title": "fix JSError  [Worklets] Tried to synchronously call a non-worklet function `_temp` on the UI thread",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 76,
+        "deletions": 84,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"memoization\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3702,
+        "title": "fix: Avoid nullptr dereference if `makeRasterImage(...)` returns null",
+        "changed_file_count": 9,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 38,
+        "deletions": 26,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"unit-tests\",\"integration-tests\",\"e2e-tests\",\"null-handling\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3703,
+        "title": "fix: Reuse `MTLDevice` for `CVPixelBuffer` APIs",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 22,
+        "deletions": 17,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3705,
+        "title": "fix: Schedule deletion only if object was GC'd - allow `dispose()` fast path",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 40,
+        "deletions": 55,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3709,
+        "title": "fix: update memory pressure after disposing",
+        "changed_file_count": 14,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 46,
+        "deletions": 13,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3716,
+        "title": "fix(🏞️):  revert bogus use of executeOnUIRuntimeSync",
+        "changed_file_count": 14,
+        "modifies_tests": 0,
+        "resolves_issue_number": 3712,
+        "additions": 454,
+        "deletions": 75,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\",\"memoization\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3721,
+        "title": "chore(🐎): upgrade to reanimated 4",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 105,
+        "deletions": 105,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3725,
+        "title": "fix(🍏): complete Display P3 color space support for on-screen and offscreen surfaces",
+        "changed_file_count": 14,
+        "modifies_tests": 1,
+        "resolves_issue_number": 3350,
+        "additions": 261,
+        "deletions": 18,
+        "construct_slugs_json": "[\"input-validation\",\"unit-tests\",\"integration-tests\",\"e2e-tests\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3726,
+        "title": "fix(🎯): decouple color blending from layer blending in Atlas",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 225,
+        "deletions": 4,
+        "construct_slugs_json": "[\"react-hooks\",\"pagination\",\"input-validation\",\"memoization\",\"unit-tests\",\"integration-tests\",\"e2e-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3757,
+        "title": "fix(🐘): switch the prebuilt binaries to a postinstall step",
+        "changed_file_count": 10,
+        "modifies_tests": 0,
+        "resolves_issue_number": 3750,
+        "additions": 296,
+        "deletions": 255,
+        "construct_slugs_json": "[\"promise-chains\",\"event-loop-blocking\",\"react-hooks\",\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3770,
+        "title": "fix(🗿): fix m144 graphite build",
+        "changed_file_count": 11,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 235,
+        "deletions": 102,
+        "construct_slugs_json": "[\"event-loop-blocking\",\"input-validation\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3795,
+        "title": "fix(🍏): rename WebGPU view to not clash with standalone WebGPU module",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": 3794,
+        "additions": 17,
+        "deletions": 17,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3798,
+        "title": "chore(🐙): fix import warnings ",
+        "changed_file_count": 3,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 3,
+        "deletions": 9,
+        "construct_slugs_json": "[\"input-validation\",\"type-narrowing\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3799,
+        "title": "fix(⬆️): Upgrade to Skia m147",
+        "changed_file_count": 5,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 109,
+        "deletions": 50,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3800,
+        "title": "fix(⬆️): Upgrade to Skia m147",
+        "changed_file_count": 26,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 381,
+        "deletions": 288,
+        "construct_slugs_json": "[\"promise-chains\",\"event-loop-blocking\",\"input-validation\",\"unit-tests\",\"integration-tests\",\"e2e-tests\",\"ci-workflows\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3803,
+        "title": "chore(🗑️): avoid spurious Hermes GC cycles from canvas texture memory pressure",
+        "changed_file_count": 34,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 275,
+        "deletions": 239,
+        "construct_slugs_json": "[\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3808,
+        "title": "fix(🍏): relax iphone simulator iOS requirement",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": 3747,
+        "additions": 25,
+        "deletions": 28,
+        "construct_slugs_json": "[\"event-loop-blocking\",\"input-validation\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 3811,
+        "title": "chore(🐙): publish graphite @next ",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 68,
+        "deletions": 28,
+        "construct_slugs_json": "[\"react-hooks\",\"input-validation\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  },
+  {
+    "repo_id": 1693,
+    "full_name": "davidjerleke/embla-carousel",
+    "primary_language": "typescript",
+    "stars": 8163,
+    "sloc": 212900,
+    "file_count": 2129,
+    "mean_ccn": 3.5,
+    "seniority_band": "staff",
+    "has_ci": 1,
+    "has_tests": 1,
+    "test_framework": "jest",
+    "detected_domain": "other",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":21},{\"file\":\"packages/embla-carousel/package.json\",\"count\":7},{\"file\":\"packages/embla-carousel-accessibility/package.json\",\"count\":8},{\"file\":\"packages/embla-carousel-auto-height/package.json\",\"count\":8},{\"file\":\"packages/embla-carousel-auto-scroll/package.json\",\"count\":8}],\"totalDeps\":26}",
+    "pr_quality_score": 0.3131578947368421,
+    "open_pr_count": null,
+    "open_feature_issue_count": null,
+    "business_logic_ratio": null,
+    "cross_module_change_rate": null,
+    "constructs": [
+      {
+        "slug": "unit-tests",
+        "evidence_count": 41
+      },
+      {
+        "slug": "responsive-layout",
+        "evidence_count": 32
+      },
+      {
+        "slug": "refactoring-extraction",
+        "evidence_count": 10
+      },
+      {
+        "slug": "pagination",
+        "evidence_count": 4
+      },
+      {
+        "slug": "env-config",
+        "evidence_count": 3
+      },
+      {
+        "slug": "api-versioning",
+        "evidence_count": 2
+      },
+      {
+        "slug": "ci-workflows",
+        "evidence_count": 2
+      },
+      {
+        "slug": "sql-injection",
+        "evidence_count": 1
+      },
+      {
+        "slug": "xss-escaping",
+        "evidence_count": 1
+      }
+    ],
+    "sample_prs": [
+      {
+        "pr_number": 805,
+        "title": "[Bug]: Render when slides are wider than view size",
+        "changed_file_count": 7,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 537,
+        "deletions": 5,
+        "construct_slugs_json": "[\"pagination\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 836,
+        "title": "chore(docs): note about reactive options",
+        "changed_file_count": 8,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 153,
+        "deletions": 43,
+        "construct_slugs_json": "[]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 875,
+        "title": "[Feat]: Add slideFocus event",
+        "changed_file_count": 9,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 14,
+        "deletions": 28,
+        "construct_slugs_json": "[\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 880,
+        "title": "[Feat]: Fade in pairs",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": 879,
+        "additions": 35,
+        "deletions": 19,
+        "construct_slugs_json": "[]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 883,
+        "title": "[Bug]: Slide hanging if overdragged/scrolled ",
+        "changed_file_count": 11,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 465,
+        "deletions": 30,
+        "construct_slugs_json": "[\"pagination\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 901,
+        "title": "[Feat]: Add TypeScript moduleResolution: bundler support",
+        "changed_file_count": 11,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 47,
+        "deletions": 32,
+        "construct_slugs_json": "[\"pagination\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 912,
+        "title": "[Bug]: Add nodenext compatibility for ESM imports",
+        "changed_file_count": 22,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 98,
+        "deletions": 25,
+        "construct_slugs_json": "[\"pagination\",\"env-config\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 926,
+        "title": "[Feat]: Remove animation offset location",
+        "changed_file_count": 14,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 39,
+        "deletions": 105,
+        "construct_slugs_json": "[\"pagination\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 933,
+        "title": "[Bug]: Add interpolation to fixed time step to improve animation smoothness",
+        "changed_file_count": 20,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 158,
+        "deletions": 56,
+        "construct_slugs_json": "[\"pagination\",\"unit-tests\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 937,
+        "title": "[Feat]: watchFocus option",
+        "changed_file_count": 8,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 72,
+        "deletions": 30,
+        "construct_slugs_json": "[\"pagination\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 992,
+        "title": "[Feat]: Adding updated `onemblaInit` naming for Svelte 5",
+        "changed_file_count": 6,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 42,
+        "deletions": 10,
+        "construct_slugs_json": "[]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1057,
+        "title": "[Feat]: Give animation variables more descriptive names and round rendered position",
+        "changed_file_count": 8,
+        "modifies_tests": 1,
+        "resolves_issue_number": 1056,
+        "additions": 95,
+        "deletions": 69,
+        "construct_slugs_json": "[\"pagination\",\"unit-tests\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 1,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1061,
+        "title": "[Feat]: ClassNames - Add possibility to pass an array of strings and add a loop option",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": 1060,
+        "additions": 108,
+        "deletions": 42,
+        "construct_slugs_json": "[\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1062,
+        "title": "[Feat]: Autoplay - Delay between transitions per slide + Possibility to create a progress bar",
+        "changed_file_count": 30,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 892,
+        "deletions": 249,
+        "construct_slugs_json": "[\"pagination\",\"null-handling\",\"type-narrowing\",\"refactoring-extraction\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1092,
+        "title": "[Feat]: Add direction parameter to scrollToSnap & scrollToSlide",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 37,
+        "deletions": 17,
+        "construct_slugs_json": "[\"pagination\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1096,
+        "title": "[Bug]: Offset by 1 issue for canScrollNext when tab size has fractional width",
+        "changed_file_count": 7,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 186,
+        "deletions": 4,
+        "construct_slugs_json": "[\"pagination\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1293,
+        "title": "[Bug]: Types - Add `undefined` for `EmblaPluginsType` members",
+        "changed_file_count": 7,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 10,
+        "deletions": 8,
+        "construct_slugs_json": "[\"pagination\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1311,
+        "title": "[Bug]: Incorrect play/stop event timing in Autoplay Using `isPlaying()`",
+        "changed_file_count": 4,
+        "modifies_tests": 0,
+        "resolves_issue_number": 1139,
+        "additions": 5,
+        "deletions": 5,
+        "construct_slugs_json": "[\"api-versioning\",\"null-handling\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1317,
+        "title": "[Docs]: Document how to honor `prefers-reduced-motion` settings",
+        "changed_file_count": 3,
+        "modifies_tests": 0,
+        "resolves_issue_number": null,
+        "additions": 21,
+        "deletions": 0,
+        "construct_slugs_json": "[\"api-versioning\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      },
+      {
+        "pr_number": 1336,
+        "title": "[Feat]: Remove ScrollOptimizer",
+        "changed_file_count": 13,
+        "modifies_tests": 1,
+        "resolves_issue_number": null,
+        "additions": 144,
+        "deletions": 375,
+        "construct_slugs_json": "[\"pagination\",\"api-versioning\",\"unit-tests\"]",
+        "swe_bench_eligible": 0,
+        "changed_file_paths_json": null
+      }
+    ],
+    "prior_content_hash": null,
+    "prior_signals_version": null
+  }
+]

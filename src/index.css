@@ -4,11 +4,17 @@
   padding: 0;
 }
 
+html {
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   font-family: 'Space Mono', monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: #0c0c0e;
+  color: #e0e0e0;
 }
 
 #root {

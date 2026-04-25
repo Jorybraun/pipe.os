@@ -23,7 +23,7 @@ export function RubricTab({ rubric }: RubricTabProps): JSX.Element {
     <div>
       <SubTitle>SCORING_RUBRIC</SubTitle>
 
-      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.7, margin: '16px 0 24px' }}>
+      <p style={{ fontSize: 11, color: 'var(--pipe-text-muted)', lineHeight: 1.7, margin: '16px 0 24px' }}>
         Define the criteria used to evaluate candidate responses. Each criterion has a weight that contributes to the overall score.
       </p>
 
@@ -31,14 +31,14 @@ export function RubricTab({ rubric }: RubricTabProps): JSX.Element {
         {rubric.map((dimension) => (
           <LiquidMetalCard key={dimension.id} variant="default" style={{ padding: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text, #fff)' }}>
                 {dimension.name}
               </div>
               <div style={{ fontSize: 16, fontWeight: 800, color: 'rgba(150,255,150,0.8)' }}>
                 {dimension.weight}%
               </div>
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', lineHeight: 1.6 }}>
               {dimension.description}
             </div>
           </LiquidMetalCard>

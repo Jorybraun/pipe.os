@@ -2,46 +2,46 @@ import type { Stage } from "../types";
 
 /**
  * Mock stage data for development.
- * This data structure matches the future Amplify Data schema.
+ * Matches the D1 schema (see workers/api/migrations/).
  */
 export const mockStages: Stage[] = [
   {
     id: "stage-1",
     pipelineId: "role-1",
-    name: "Code Review",
-    type: "CODE_REVIEW",
+    name: "Screening",
+    type: "SCREENING",
     order: 1,
     status: "COMPLETED",
     score: 85,
     progress: 100,
-    icon: "FileText",
+    icon: "Phone",
   },
   {
     id: "stage-2",
     pipelineId: "role-1",
-    name: "Voice Interview",
-    type: "VOICE_INTERVIEW",
+    name: "Cultural Fit",
+    type: "CULTURAL",
     order: 2,
     status: "ACTIVE",
     score: 82,
     progress: 60,
-    icon: "MessageSquare",
+    icon: "Users",
   },
   {
     id: "stage-3",
     pipelineId: "role-1",
-    name: "System Design",
-    type: "PLANNING",
+    name: "Code Review",
+    type: "CODE_REVIEW",
     order: 3,
     status: "PENDING",
     progress: 0,
-    icon: "GitBranch",
+    icon: "GitPullRequest",
   },
   {
     id: "stage-4",
     pipelineId: "role-1",
-    name: "Final Interview",
-    type: "VOICE_INTERVIEW",
+    name: "Live Panel",
+    type: "LIVE_PANEL",
     order: 4,
     status: "PENDING",
     progress: 0,

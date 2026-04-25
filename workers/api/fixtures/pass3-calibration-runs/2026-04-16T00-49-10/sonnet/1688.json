@@ -1,0 +1,15 @@
+{
+  "repo_id": 1688,
+  "full_name": "garmeeh/next-seo",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 201 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: dependency count of 29, unit-test count of 62, integration-test count of 31, and challenge surface score 0.40 are not present in the FACTS block"
+  ],
+  "reasoning": "The profile is ~201 words, roughly 199 words short of the 400-word minimum. It also injects specific construct counts — 62 unit-tests, 31 integration-tests, 29 total dependencies — that do not appear in the FACTS block. Interestingly, the '62 unit-tests' value appears in the narrative section as well, suggesting Gemma treated this as a FACTS-derived number when it was not. Accuracy is sound: TypeScript is correctly named as primary language, vitest is correctly identified as the testing framework in the narrative, the web-frontend domain and SEO metadata library purpose are accurately characterised, and the Next.js ecosystem context is correctly described. architecture_style='library' is correct — next-seo is a metadata/SEO utility library for Next.js applications, clearly distributable and not a deployed service. All five completeness dimensions are present: repo type (SEO metadata library), language/stack (TypeScript, Next.js ecosystem), PR shapes (mean 4.83, p90 8), test/review culture (vitest, unit-heavy, test_touch_rate 0.5), and contribution readiness (open counts unknown, with swe_bench_eligibility_rate noted). Three of four dimensions pass, yielding approved=true."
+}

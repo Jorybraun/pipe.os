@@ -1,53 +1,48 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSchedulingConnection } from '../useSchedulingConnection';
+import type { ApiClient } from '../../lib/api/client';
 
-// Use vi.hoisted to ensure these are available during vi.mock evaluation
-const mocks = vi.hoisted(() => {
-  return {
-    mockObserveQuery: vi.fn(),
-    mockExchangeMutation: vi.fn(),
-  };
-});
+// Mock Clerk auth to avoid <ClerkProvider> requirement
+vi.mock('@clerk/react', () => ({
+  useAuth: () => ({ getToken: vi.fn().mockResolvedValue('test-token') }),
+}));
 
-vi.mock('aws-amplify/data', () => {
-  return {
-    generateClient: () => ({
-      models: {
-        SchedulingConnection: {
-          observeQuery: () => ({
-            subscribe: mocks.mockObserveQuery
-          })
-        }
-      },
-      mutations: {
-        exchangeSchedulingOAuth: mocks.mockExchangeMutation
-      }
-    })
-  };
-});
+// Mock useApiClient so tests don't hit real HTTP endpoints
+const apiMocks = vi.hoisted(() => ({
+  mockGet: vi.fn(),
+  mockPost: vi.fn(),
+  mockDel: vi.fn(),
+}));
+
+const mockApiClient: ApiClient = {
+  get: apiMocks.mockGet,
+  post: apiMocks.mockPost,
+  patch: vi.fn(),
+  put: vi.fn(),
+  del: apiMocks.mockDel,
+  postStream: vi.fn(),
+};
+
+vi.mock('../useApiClient', () => ({
+  useApiClient: () => mockApiClient,
+}));
 
 describe('useSchedulingConnection hook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default mock implementation to prevent unsubscribe errors
-    mocks.mockObserveQuery.mockReturnValue({ unsubscribe: vi.fn() });
   });
 
   it('6.1.1 Initial State before subscription fires', () => {
-    // Already set in beforeEach
     const { result } = renderHook(() => useSchedulingConnection());
-    
+
     expect(result.current.isLoading).toBe(true);
     expect(result.current.connection).toBe(null);
     expect(result.current.error).toBe(null);
   });
 
   it('6.1.2 Subscription syncs with no connections', async () => {
-    mocks.mockObserveQuery.mockImplementation(({ next }) => {
-      next({ items: [], isSynced: true });
-      return { unsubscribe: vi.fn() };
-    });
+    apiMocks.mockGet.mockResolvedValue({ connection: null });
 
     const { result } = renderHook(() => useSchedulingConnection());
 
@@ -63,13 +58,10 @@ describe('useSchedulingConnection hook', () => {
       accountEmail: 'test@example.com',
       accountName: 'Test User',
       connectedAt: '2026-03-03T10:00:00Z',
-      lastSyncAt: null
+      lastSyncAt: null,
     };
 
-    mocks.mockObserveQuery.mockImplementation(({ next }) => {
-      next({ items: [mockConnection], isSynced: true });
-      return { unsubscribe: vi.fn() };
-    });
+    apiMocks.mockGet.mockResolvedValue({ connection: mockConnection });
 
     const { result } = renderHook(() => useSchedulingConnection());
 
@@ -77,25 +69,27 @@ describe('useSchedulingConnection hook', () => {
     expect(result.current.connection).toEqual(expect.objectContaining({
       id: 'conn-1',
       status: 'ACTIVE',
-      accountEmail: 'test@example.com'
+      accountEmail: 'test@example.com',
     }));
   });
 
   it('6.2.1 Successful exchange → connection state updated', async () => {
-    mocks.mockExchangeMutation.mockResolvedValue({
-      data: JSON.stringify({
-        success: true,
-        data: {
-          connectionId: 'new-conn',
-          providerId: 'CALENDLY',
-          status: 'ACTIVE',
-          accountEmail: 'new@example.com'
-        }
-      }),
-      errors: undefined
+    apiMocks.mockGet.mockResolvedValue({ connection: null });
+    apiMocks.mockPost.mockResolvedValue({
+      connection: {
+        id: 'new-conn',
+        providerId: 'CALENDLY',
+        status: 'ACTIVE',
+        accountEmail: 'new@example.com',
+        accountName: 'New User',
+        webhookRegistered: true,
+      },
     });
 
     const { result } = renderHook(() => useSchedulingConnection());
+
+    // Wait for initial fetch to complete
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
       await result.current.exchangeOAuth('CALENDLY', 'code', 'uri');
@@ -106,17 +100,25 @@ describe('useSchedulingConnection hook', () => {
   });
 
   it('6.3.1 fetchEventTypes maps duration correctly', async () => {
-    mocks.mockExchangeMutation.mockResolvedValue({
-      data: JSON.stringify({
-        success: true,
-        data: [
-          { id: 'et-1', name: '30 min', durationMinutes: 30, url: 'url' }
-        ]
-      })
+    apiMocks.mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/scheduling/connection') {
+        return { connection: null };
+      }
+      if (path === '/api/v1/scheduling/event-types') {
+        return {
+          eventTypes: [
+            { id: 'et-1', name: '30 min', durationMinutes: 30, url: 'url' },
+          ],
+        };
+      }
+      return {};
     });
 
     const { result } = renderHook(() => useSchedulingConnection());
-    
+
+    // Wait for initial fetch to complete
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
     let eventTypes;
     await act(async () => {
       eventTypes = await result.current.fetchEventTypes('conn-1');
@@ -126,16 +128,23 @@ describe('useSchedulingConnection hook', () => {
       id: 'et-1',
       name: '30 min',
       duration: 30,
-      url: 'url'
+      url: 'url',
     }]);
   });
 
   it('6.4.1 Successful disconnect clears connection', async () => {
-    mocks.mockObserveQuery.mockImplementation(({ next }) => {
-      next({ items: [{ id: 'c1', status: 'ACTIVE' }], isSynced: true });
-      return { unsubscribe: vi.fn() };
+    apiMocks.mockGet.mockResolvedValue({
+      connection: {
+        id: 'c1',
+        status: 'ACTIVE',
+        providerId: 'CALENDLY',
+        accountEmail: 'a@b.com',
+        accountName: 'A',
+        connectedAt: '2026-03-03T10:00:00Z',
+        lastSyncAt: null,
+      },
     });
-    mocks.mockExchangeMutation.mockResolvedValue({ data: JSON.stringify({ success: true }) });
+    apiMocks.mockDel.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useSchedulingConnection());
     await waitFor(() => expect(result.current.connection).not.toBeNull());

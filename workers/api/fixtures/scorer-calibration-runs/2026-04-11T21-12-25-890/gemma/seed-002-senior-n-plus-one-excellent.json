@@ -1,0 +1,11 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "meta": {
+    "wall_clock_ms": 104871,
+    "attempts": 5,
+    "status": "failed",
+    "error": "[calibrate] Worker 500: {\"error\":{\"code\":\"SCORING_FAILED\",\"message\":\"Unexpected end of JSON input\",\"provider\":\"workers-ai\"}}"
+  }
+}

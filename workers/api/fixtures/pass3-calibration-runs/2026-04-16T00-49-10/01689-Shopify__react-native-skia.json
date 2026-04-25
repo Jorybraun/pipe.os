@@ -1,0 +1,33 @@
+{
+  "repo_id": 1689,
+  "full_name": "Shopify/react-native-skia",
+  "run_timestamp": "2026-04-16T00:49:38.285Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 193,
+      "profile_words": 215
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "engineering_narrative too short: 193 words (min 200)",
+        "repo_searchable_profile too short: 215 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 103, 90, 86, 63, 49"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1689,
+    "full_name": "Shopify/react-native-skia",
+    "primary_language": "typescript",
+    "stars": 8302,
+    "has_tests": true,
+    "detected_domain": "mobile"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The Shopify/react-native-skia repository is a specialized mobile graphics library implemented primarily in typescript. The architecture follows a library pattern designed for integration into larger mobile ecosystems, featuring a medium complexity profile that interfaces with low-level graphics primitives. The engineering culture is characterized by high-seniority staff-level contributions, focusing heavily on performance-critical fixes and memory management. While the repository maintains a robust test suite utilizing the jest framework, the current test style is described as minimal, with a test touch rate of 0.25. Review culture appears focused on correctness in high-stakes areas like GPU resource management and threading, though the pr_quality_score of 0.31 suggests a rigorous or highly selective threshold for merging. Notable PR-sample patterns involve addressing critical low-level failures, such as nullptr dereferences and worklet synchronization issues. A significant portion of the work involves managing complex lifecycles, such as disposing of GPU-bound resources or handling memory pressure. While the repository utilizes unit-tests (86) and integration-tests (49) to maintain stability, the pull requests frequently modify a high number of files—evidenced by a mean_changed_files of 10.95 and a p90_changed_files of 28—suggesting that changes often ripple through the bridge between the typescript layer and underlying native implementations.\",\n  \"repo_searchable_profile\": \"This repository is a mobile-domain library intended for high-performance graphics rendering within the React Native ecosystem. The primary language is typescript, and the detected stack includes a variety of supporting applications such as docs, example, headless, remotion, and a web-app, with a total of 103 dependencies. Observations of PR shapes indicate a high degree of structural impact per change; the mean_changed_files is 10.95, while the p90_changed_files reaches 28. This suggests that even small bug fixes often necessitate wide-reaching adjustments across the codebase. The PR samples also reveal a pattern where many fixes do not immediately modify tests, highlighting a potential tension between rapid bug resolution and test coverage expansion. The test and review culture is anchored by the jest framework, with 86 unit-tests, 63 e2e-tests, and 49 integration-tests identified in the constructs. However, the test_touch_rate is 0.25 and the test_style is minimal, indicating that test updates are not always a default accompaniment to code changes. The senior-level engineering expertise is reflected in the complexity of the issues addressed. The top three challenge surfaces for contributors are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30, representing significant technical hurdles in graphics and concurrency. Regarding contribution readiness, the open_pr_count and open_feature_issue_count are unknown, so the current volume of active community work cannot be quantitatively determined.\"\n}"
+}

@@ -164,7 +164,7 @@ export function ConnectionSetup(): JSX.Element {
             Connected to {connection.providerId?.replace('_', '.') ?? 'provider'}
           </span>
           {connection.accountEmail && (
-            <span style={{ ...labelStyle, color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>
+            <span style={{ ...labelStyle, color: 'var(--pipe-text-dim)', fontSize: 10 }}>
               ({connection.accountEmail})
             </span>
           )}
@@ -256,7 +256,7 @@ export function ConnectionSetup(): JSX.Element {
   return (
     <div style={containerStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Link2 size={14} color="rgba(255,255,255,0.5)" />
+        <Link2 size={14} color="var(--pipe-text-dim)" />
         <span style={labelStyle}>
           Connect a scheduling provider for automatic interview sync
         </span>
@@ -288,8 +288,8 @@ const containerStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   gap: 16,
   padding: '12px 20px',
-  background: 'rgba(255,255,255,0.03)',
-  border: '1px solid rgba(255,255,255,0.06)',
+  background: 'var(--pipe-surface)',
+  border: '1px solid var(--pipe-border)',
   borderRadius: 8,
   marginBottom: 16,
 };
@@ -298,7 +298,7 @@ const labelStyle: React.CSSProperties = {
   fontSize: 11,
   letterSpacing: '0.05em',
   fontFamily: '"Space Mono", monospace',
-  color: 'rgba(255,255,255,0.5)',
+  color: 'var(--pipe-text-muted)',
 };
 
 const connectButtonStyle: React.CSSProperties = {

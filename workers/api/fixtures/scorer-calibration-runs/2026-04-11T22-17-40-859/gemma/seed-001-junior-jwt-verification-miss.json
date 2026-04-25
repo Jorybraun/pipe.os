@@ -1,0 +1,54 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 0,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": true,
+      "cave_ratio": 1,
+      "fix_verifications": 0
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "Overall, the candidate appears to be an adequate reviewer, but there are significant areas for improvement. While they showed some consistency in basic tasks like prioritizing issues, their failure to identify critical bugs is concerning. For instance, they missed several major issues and instead focused on minor style points. Additionally, they did not effectively evaluate revisions or ask clarifying questions, which are crucial for thorough code reviews.",
+      "strengths": [
+        "Consistent in basic task prioritization",
+        "Maintained high efficiency in reviewing code",
+        "Demonstrated some ability to form questions"
+      ],
+      "growth_areas": [
+        "Failed to identify critical bugs; focused on minor issues",
+        "Did not verify fixes or challenge assumptions effectively",
+        "Lacked detailed explanations for identified issues"
+      ]
+    },
+    "scorer_a_summary": "The reviewer failed to identify any of the critical or major planted bugs. They focused solely on style and minor suggestions, including a false positive regarding an unused export. The severity labels were mostly incorrect, and the reviewer approved the PR despite missing critical issues. In the revision evaluation, the reviewer did not verify any of the implementer's claimed fixes and conceded to all pushbacks without evaluation.",
+    "scorer_b_summary": "The review lacked detailed explanations for the issues, failed to ask clarifying questions, and accepted all implementer proposals without evaluation. These behaviors indicate a low level of communication quality in terms of reasoning, question formation, and handling AI-generated code."
+  },
+  "meta": {
+    "wall_clock_ms": 42248,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

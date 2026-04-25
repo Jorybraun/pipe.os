@@ -1,0 +1,10 @@
+{
+  "repo_id": 1677,
+  "full_name": "iib0011/omni-tools",
+  "signal_quality": "good",
+  "issues": [
+    "seniority_band: staff is overstated — 57,500 SLOC and 575 files with a mean_ccn of 3.5 and simple per-tool feature PRs is characteristic of senior at most; the repo is a collection of independent utility tools with low coupling, not a staff-level system",
+    "pr_quality_score: 0.462 reads slightly low — 6 of 8 PRs modify tests and all titles describe real feature or fix work (byte conversion, slug generator, search improvement); 0.55–0.60 would be more consistent"
+  ],
+  "reasoning": "Domain and stack signals are accurate for a React utility-tool collection, and test coverage is well-supported by PR evidence, but seniority_band=staff is inflated relative to the repo's actual complexity and architecture depth."
+}

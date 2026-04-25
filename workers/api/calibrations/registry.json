@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-12T03:25:00.742Z",
+  "activeModel": null,
+  "models": {
+    "devstral": {
+      "model": "devstral",
+      "provider": "mistral",
+      "modelId": "devstral-latest",
+      "kappa": 0.6869565217391305,
+      "icc": 0.8664353859496964,
+      "mae": 0.6666666666666666,
+      "fixtureCount": 2,
+      "lastCalibrated": "2026-04-12T03:25:00.742Z",
+      "approved": false,
+      "calibrationRunPath": "workers/api/fixtures/scorer-calibration-runs/2026-04-12T03-24-36-792/devstral",
+      "notes": "Mistral's code-focused model. Reliable, ~15s per scoring run."
+    },
+    "gemma-4-26b": {
+      "model": "gemma-4-26b",
+      "provider": "workers-ai",
+      "modelId": "@cf/google/gemma-4-26b-a4b-it",
+      "kappa": null,
+      "icc": null,
+      "mae": null,
+      "fixtureCount": 0,
+      "lastCalibrated": null,
+      "approved": false,
+      "calibrationRunPath": null,
+      "notes": "Workers AI free tier. 10k neurons/day limit. Flaky under load."
+    },
+    "qwen-2.5-coder-32b": {
+      "model": "qwen-2.5-coder-32b",
+      "provider": "workers-ai",
+      "modelId": "@cf/qwen/qwen2.5-coder-32b-instruct",
+      "kappa": null,
+      "icc": null,
+      "mae": null,
+      "fixtureCount": 0,
+      "lastCalibrated": null,
+      "approved": false,
+      "calibrationRunPath": null,
+      "notes": "Workers AI. Code-tuned Qwen. More reliable than Gemma on free tier."
+    },
+    "sonnet-4": {
+      "model": "sonnet-4",
+      "provider": "anthropic",
+      "modelId": "claude-sonnet-4-5",
+      "kappa": null,
+      "icc": null,
+      "mae": null,
+      "fixtureCount": 0,
+      "lastCalibrated": null,
+      "approved": false,
+      "calibrationRunPath": null,
+      "notes": "Anthropic Sonnet. High quality, ~$0.15/run. Requires API credits."
+    },
+    "gemma-4-vertex": {
+      "model": "gemma-4-vertex",
+      "provider": "vertex-ai",
+      "modelId": "google/gemma-4-26b-a4b-it-maas",
+      "kappa": null,
+      "icc": null,
+      "mae": null,
+      "fixtureCount": 0,
+      "lastCalibrated": null,
+      "approved": false,
+      "calibrationRunPath": null,
+      "notes": "Gemma 4 via Vertex AI. Requires gcloud auth."
+    }
+  }
+}

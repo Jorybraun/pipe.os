@@ -2,12 +2,12 @@ import { useState, CSSProperties, ReactNode } from "react";
 
 interface LiquidMetalCardProps {
   children: ReactNode;
-  style?: CSSProperties;
-  variant?: "default" | "chrome" | "mercury" | "dark";
-  hover?: boolean;
-  className?: string;
-  onClick?: () => void;
-  "data-testid"?: string;
+  style?: CSSProperties | undefined;
+  variant?: "default" | "chrome" | "mercury" | "dark" | undefined;
+  hover?: boolean | undefined;
+  className?: string | undefined;
+  onClick?: (() => void) | undefined;
+  "data-testid"?: string | undefined;
 }
 
 export function LiquidMetalCard({
@@ -21,18 +21,20 @@ export function LiquidMetalCard({
 }: LiquidMetalCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
+  // Borders use `var(--pipe-border)` so they remain visible in both light and
+  // dark mode. Backgrounds stay as variant-specific gradients.
   const variants = {
     default: {
       background: `
-        linear-gradient(135deg, 
-          rgba(180, 180, 190, 0.08) 0%, 
+        linear-gradient(135deg,
+          rgba(180, 180, 190, 0.08) 0%,
           rgba(120, 120, 140, 0.04) 25%,
           rgba(200, 200, 210, 0.08) 50%,
           rgba(100, 100, 120, 0.04) 75%,
           rgba(160, 160, 180, 0.08) 100%
         )
       `,
-      border: "1px solid rgba(255, 255, 255, 0.12)",
+      border: "1px solid var(--pipe-border)",
     },
     chrome: {
       background: `
@@ -45,7 +47,7 @@ export function LiquidMetalCard({
           rgba(140, 140, 160, 0.08) 100%
         )
       `,
-      border: "1px solid rgba(255, 255, 255, 0.2)",
+      border: "1px solid var(--pipe-border)",
     },
     mercury: {
       background: `
@@ -57,7 +59,7 @@ export function LiquidMetalCard({
           rgba(190, 200, 225, 0.1) 100%
         )
       `,
-      border: "1px solid rgba(200, 210, 240, 0.15)",
+      border: "1px solid var(--pipe-border)",
     },
     dark: {
       background: `
@@ -67,7 +69,7 @@ export function LiquidMetalCard({
           rgba(30, 30, 40, 0.7) 100%
         )
       `,
-      border: "1px solid rgba(255, 255, 255, 0.1)",
+      border: "1px solid var(--pipe-border)",
     },
   };
 
@@ -90,8 +92,8 @@ export function LiquidMetalCard({
         transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
         transform: isHovered ? "translateY(-2px)" : "none",
         boxShadow: isHovered
-          ? "0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.15)"
-          : "inset 0 1px 0 rgba(255,255,255,0.1)",
+          ? "0 8px 24px var(--pipe-shadow)"
+          : "none",
         ...style,
       }}
     >

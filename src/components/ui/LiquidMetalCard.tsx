@@ -33,7 +33,7 @@ export interface LiquidMetalCardProps {
   /**
    * Optional click handler.
    */
-  onClick?: () => void;
+  onClick?: (() => void) | undefined;
 }
 
 /**
@@ -56,6 +56,10 @@ export function LiquidMetalCard({
   className = '',
   onClick,
 }: LiquidMetalCardProps): JSX.Element {
+  // All variants use `var(--pipe-border)` so the border is consistent across
+  // light/dark mode and matches SectionCard's internal dividers. Backgrounds
+  // remain variant-specific gradients — they sit on top of the themed page
+  // background so they blend in either mode.
   const variants: Record<LiquidMetalCardVariant, { background: string; border: string }> = {
     default: {
       background: `linear-gradient(135deg,
@@ -65,7 +69,7 @@ export function LiquidMetalCard({
         rgba(100, 100, 120, 0.04) 75%,
         rgba(160, 160, 180, 0.08) 100%
       )`,
-      border: '1px solid rgba(255, 255, 255, 0.12)',
+      border: '1px solid var(--pipe-border)',
     },
     chrome: {
       background: `linear-gradient(135deg,
@@ -76,7 +80,7 @@ export function LiquidMetalCard({
         rgba(200, 200, 220, 0.12) 80%,
         rgba(140, 140, 160, 0.08) 100%
       )`,
-      border: '1px solid rgba(255, 255, 255, 0.2)',
+      border: '1px solid var(--pipe-border)',
     },
     mercury: {
       background: `linear-gradient(160deg,
@@ -86,7 +90,7 @@ export function LiquidMetalCard({
         rgba(170, 180, 210, 0.08) 70%,
         rgba(190, 200, 225, 0.1) 100%
       )`,
-      border: '1px solid rgba(200, 210, 240, 0.15)',
+      border: '1px solid var(--pipe-border)',
     },
     dark: {
       background: `linear-gradient(135deg,
@@ -94,7 +98,7 @@ export function LiquidMetalCard({
         rgba(60, 60, 80, 0.5) 50%,
         rgba(30, 30, 40, 0.7) 100%
       )`,
-      border: '1px solid rgba(255, 255, 255, 0.1)',
+      border: '1px solid var(--pipe-border)',
     },
   };
 
@@ -110,9 +114,8 @@ export function LiquidMetalCard({
         WebkitBackdropFilter: 'blur(40px) saturate(150%)',
         border: v.border,
         position: 'relative',
-        overflow: 'hidden',
         transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)',
+        boxShadow: 'none',
         cursor: onClick ? 'pointer' : 'default',
         ...style,
       }}

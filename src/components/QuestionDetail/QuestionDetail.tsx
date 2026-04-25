@@ -83,7 +83,7 @@ export function QuestionDetail(): JSX.Element {
           >
             404
           </div>
-          <div style={{ fontSize: 16, color: "rgba(255,255,255,0.6)" }}>
+          <div style={{ fontSize: 16, color: "var(--pipe-text-muted)" }}>
             Question not found
           </div>
         </div>
@@ -113,9 +113,9 @@ export function QuestionDetail(): JSX.Element {
           onClick={() => navigate(-1)}
           aria-label="Go back to questions list"
           style={{
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "rgba(255,255,255,0.6)",
+            background: "var(--pipe-surface)",
+            border: "1px solid var(--pipe-border)",
+            color: "var(--pipe-text-muted)",
             padding: "8px 12px",
             cursor: "pointer",
             display: "flex",
@@ -148,7 +148,7 @@ export function QuestionDetail(): JSX.Element {
         <div
           style={{
             padding: 24,
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid var(--pipe-border)",
           }}
         >
           <div
@@ -179,7 +179,7 @@ export function QuestionDetail(): JSX.Element {
               style={{
                 fontSize: 9,
                 letterSpacing: "0.1em",
-                color: "rgba(255,255,255,0.4)",
+                color: "var(--pipe-text-dim)",
               }}
             >
               {question.timeLimit} MIN
@@ -203,7 +203,7 @@ export function QuestionDetail(): JSX.Element {
               style={{
                 flex: 1,
                 height: 1,
-                background: "rgba(255,255,255,0.06)",
+                background: "var(--pipe-surface)",
               }}
             />
 
@@ -258,12 +258,12 @@ export function QuestionDetail(): JSX.Element {
 
             {/* Rubric criteria count */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <BarChart3 size={12} color="rgba(255,255,255,0.4)" />
+              <BarChart3 size={12} color="var(--pipe-text-dim)" />
               <span
                 style={{
                   fontSize: 9,
                   letterSpacing: "0.1em",
-                  color: "rgba(255,255,255,0.4)",
+                  color: "var(--pipe-text-dim)",
                 }}
               >
                 {question.rubric.length} CRITERIA

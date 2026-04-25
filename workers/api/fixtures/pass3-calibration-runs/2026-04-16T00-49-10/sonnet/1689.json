@@ -1,0 +1,15 @@
+{
+  "repo_id": 1689,
+  "full_name": "Shopify/react-native-skia",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 215 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: total dependency count of 103, unit-test count of 86, e2e-test count of 63, integration-test count of 49 are not present in the FACTS block"
+  ],
+  "reasoning": "The profile is ~215 words, approximately 185 words short of the 400-word floor. The profile cites specific test-suite counts (86 unit-tests, 63 e2e-tests, 49 integration-tests) and a total dependency count of 103, none of which appear in the FACTS block — these same figures appear verbatim in the narrative, indicating Gemma carried invented counts from narrative generation into the profile without FACTS grounding. Accuracy is strong: TypeScript is correctly identified as primary language, Jest is correctly named as the testing framework consistent with has_tests=true, the mobile domain is correctly reflected for a React Native graphics library, and the low test_touch_rate (0.25, 'minimal') and high mean changed files (10.95) are accurately characterised. The description of GPU resource management and nullptr dereference fixes is consistent with the repo's known nature as a Skia-based graphics bridge. architecture_style='library' is correct — react-native-skia is a graphics rendering library for React Native, distributed as a package for integration into mobile apps. All five completeness dimensions are addressed: repo type (mobile graphics library), language/stack (TypeScript + native bridge), PR shapes (mean 10.95, p90 28), test/review culture (Jest, minimal style, 0.25 touch rate), and contribution readiness (open counts unknown). Three of four dimensions pass, yielding approved=true."
+}

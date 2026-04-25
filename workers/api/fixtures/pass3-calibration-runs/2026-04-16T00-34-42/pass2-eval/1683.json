@@ -1,0 +1,11 @@
+{
+  "repo_id": 1683,
+  "full_name": "rsuite/rsuite",
+  "signal_quality": "suspect",
+  "issues": [
+    "test signal: test_framework=null despite has_tests=1 and the top construct being unit-tests with 387 evidence counts — this is a clear extraction failure; rsuite uses mocha+chai (v4/v5) or jest depending on version; null here is wrong and will cause downstream scoring errors",
+    "stack accuracy: responsive-layout is the second-highest construct (290 evidence counts) which is unusually high for a React component library; this likely reflects CSS/SCSS file patterns being over-counted as layout constructs rather than genuine responsive-layout design work",
+    "pr_quality_score: 0.581 is consistent with the PR sample (6 of 8 modify tests, PRs describe real component-level fixes and features)"
+  ],
+  "reasoning": "The null test_framework is the primary signal failure — with 387 unit-test evidence counts and has_tests=1, failing to detect the framework is an extraction bug; the inflated responsive-layout construct count is a secondary concern suggesting CSS pattern over-matching."
+}

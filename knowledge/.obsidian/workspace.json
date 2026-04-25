@@ -1,0 +1,281 @@
+{
+  "main": {
+    "id": "fea894ccdc9f3322",
+    "type": "split",
+    "children": [
+      {
+        "id": "4c53311b2381707c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "23bb4689c30485f6",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "culture/questions.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "questions"
+            }
+          },
+          {
+            "id": "8c6bc0b9eaed224d",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "technical/FRONT END.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "FRONT END"
+            }
+          },
+          {
+            "id": "74ca4508455ccd43",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "New tab"
+            }
+          },
+          {
+            "id": "a6bfed987851fcca",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Behavioral interviews for Software Engineers How to prepare.md",
+                "mode": "preview",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Behavioral interviews for Software Engineers How to prepare"
+            }
+          },
+          {
+            "id": "e7fe83971e051bad",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "New tab"
+            }
+          }
+        ],
+        "currentTab": 4
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "3146bf3654798cab",
+    "type": "split",
+    "children": [
+      {
+        "id": "0d282004dc4f0e13",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a4035d3ecb93a827",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "78b40ea9a0d99f8e",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "5ca4eb898a6cf745",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 379.5
+  },
+  "right": {
+    "id": "2458148d14d25504",
+    "type": "split",
+    "children": [
+      {
+        "id": "1566241c5c9e66ef",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "229b3da0e58d7b64",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "e206e24ddcbd35e2",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "68156857c42825c6",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "388766f311e24835",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "d933cf54f974e6fa",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "e7fe83971e051bad",
+  "lastOpenFiles": [
+    "rnd/outputs/repo-vectorization-research-infra.md",
+    "rnd/outputs/repo-vectorization-research-theory.md",
+    "Screenshot 2026-04-09 at 3.29.57 AM.png",
+    "role-discovery/role-discovery-sales-intake.provenance.md",
+    "role-discovery/role-discovery-sales-intake-verification.md",
+    "role-discovery/role-discovery-sales-intake.md",
+    "role-discovery",
+    "outputs/role-discovery-sales-intake-brief.md",
+    "outputs/role-discovery-sales-intake-research-jtbd.md",
+    "outputs/role-discovery-sales-intake-research-intake.md",
+    "outputs/role-discovery-sales-intake-research-evp.md",
+    "outputs/role-discovery-sales-intake-research-sales.md",
+    "calibration/decision-log.md",
+    "calibration/fixture-authoring.md",
+    "calibration/cost-and-runs.md",
+    "calibration/runbook.md",
+    "calibration/methodology.md",
+    "calibration/README.md",
+    "calibration",
+    "outputs/role-discovery-data-contract.provenance.md",
+    "outputs/role-discovery-data-contract.md",
+    "outputs/role-discovery-data-contract-brief.md",
+    "outputs/role-discovery-data-contract-research-validation.md",
+    "outputs/role-discovery-data-contract-research-culture.md",
+    "outputs/role-discovery-data-contract-research-codereview.md",
+    "outputs/role-discovery-data-contract-research-methodology.md",
+    "Friday 10 2 44pm.md",
+    "outputs/repo-discovery-pipeline.provenance.md",
+    "outputs/repo-discovery-pipeline.md",
+    "Screenshot 2026-04-09 at 3.30.21 AM.png",
+    "Screenshot 2026-04-09 at 3.30.57 AM.png",
+    "Screenshot 2026-04-09 at 3.31.46 AM.png",
+    "Screenshot 2026-04-09 at 3.33.18 AM.png",
+    "Screenshot 2026-04-09 at 3.34.19 AM.png",
+    "Screenshot 2026-04-09 at 3.35.47 AM.png",
+    "Screenshot 2026-04-09 at 3.37.22 AM.png",
+    "Screenshot 2026-04-09 at 3.39.33 AM.png",
+    "Screenshot 2026-04-09 at 3.32.31 AM.png",
+    "intake_outreach",
+    "culture/questions/exponent",
+    "culture/questions/archetypes",
+    "technical",
+    "outputs",
+    "behavioural/question-repo/Staff",
+    "behavioural/question-repo/Senior",
+    "behavioural/question-repo/Mid"
+  ]
+}

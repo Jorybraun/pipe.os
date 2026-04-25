@@ -1,0 +1,12 @@
+{
+  "repo_id": 1687,
+  "full_name": "Hacker0x01/react-datepicker",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "Single-purpose React UI component (date picker), not an application or service",
+    "Low SLOC (20.8k) and narrow problem domain limit assessment depth",
+    "Engineering complexity is confined to date/timezone edge cases and component API — too narrow for general SWE assessment"
+  ],
+  "reasoning": "react-datepicker is a focused single-component library with low SLOC and a domain too narrow for meaningful general software engineering assessment."
+}

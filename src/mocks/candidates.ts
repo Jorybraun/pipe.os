@@ -2,7 +2,7 @@ import type { Candidate } from '../types';
 
 /**
  * Mock candidate data for development.
- * This data structure matches the future Amplify Data schema.
+ * Matches the D1 schema (see workers/api/migrations/).
  */
 export const mockCandidates: Candidate[] = [
   {

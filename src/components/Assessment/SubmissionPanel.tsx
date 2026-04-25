@@ -157,7 +157,7 @@ export function SubmissionPanel({
           </h3>
           <p style={{
             fontSize: 11,
-            color: 'rgba(255,255,255,0.5)',
+            color: 'var(--pipe-text-muted)',
             textAlign: 'center',
             margin: 0,
             lineHeight: 1.5,
@@ -225,8 +225,8 @@ export function SubmissionPanel({
       {!state.success && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
           {/* Verdict */}
-          <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 16 }}>
+          <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
               REVIEW_VERDICT
             </div>
 
@@ -241,7 +241,7 @@ export function SubmissionPanel({
                     disabled={readOnly || state.isLoading}
                     style={{
                       padding: '14px 16px',
-                      background: isActive ? opt.bg : 'rgba(255,255,255,0.02)',
+                      background: isActive ? opt.bg : 'var(--pipe-surface)',
                       border: `1px solid ${isActive ? opt.border : 'rgba(255,255,255,0.06)'}`,
                       borderRadius: 4,
                       display: 'flex',
@@ -267,7 +267,7 @@ export function SubmissionPanel({
                       </div>
                       <span style={{
                         fontSize: 9,
-                        color: isActive ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.25)',
+                        color: isActive ? 'rgba(255,255,255,0.5)' : 'var(--pipe-text-dim)',
                         marginLeft: 22,
                         marginTop: 4,
                       }}>
@@ -281,8 +281,8 @@ export function SubmissionPanel({
           </div>
 
           {/* Summary */}
-          <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>
+          <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
               REVIEW_SUMMARY
             </div>
 
@@ -297,10 +297,10 @@ export function SubmissionPanel({
               style={{
                 flex: 1,
                 minHeight: 120,
-                background: 'rgba(255,255,255,0.02)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 4,
-                color: '#fff',
+                color: 'var(--pipe-text, #fff)',
                 fontSize: 11,
                 padding: 12,
                 fontFamily: '"Space Mono", monospace',
@@ -318,7 +318,7 @@ export function SubmissionPanel({
               alignItems: 'center',
               marginTop: 8,
               fontSize: 9,
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
             }}>
               <span>MAX {maxCharacters} CHARACTERS</span>
               <span data-testid="char-count">{characterCount} / {maxCharacters}</span>
@@ -326,8 +326,8 @@ export function SubmissionPanel({
           </div>
 
           {/* Stats */}
-          <div style={{ padding: 24, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>
+          <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 12 }}>
               SUBMISSION_STATS
             </div>
 
@@ -336,22 +336,22 @@ export function SubmissionPanel({
               flexDirection: 'column',
               gap: 8,
               padding: 12,
-              background: 'rgba(255,255,255,0.02)',
-              border: '1px solid rgba(255,255,255,0.06)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               borderRadius: 4,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Annotations</span>
+                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Annotations</span>
                 <span style={{
                   fontSize: 10,
-                  color: annotations.length > 0 ? '#a78bfa' : 'rgba(255,255,255,0.3)',
+                  color: annotations.length > 0 ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.3)',
                   fontWeight: 700,
                 }}>
                   {annotations.length}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Verdict</span>
+                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Verdict</span>
                 <span style={{
                   fontSize: 10,
                   fontWeight: 700,
@@ -361,7 +361,7 @@ export function SubmissionPanel({
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>Summary</span>
+                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Summary</span>
                 <span style={{
                   fontSize: 10,
                   fontWeight: 700,
@@ -398,7 +398,7 @@ export function SubmissionPanel({
       {!state.success && (
         <div style={{
           padding: '16px 24px',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderTop: '1px solid var(--pipe-border)',
           display: 'flex',
           gap: 12,
         }}>
@@ -412,7 +412,7 @@ export function SubmissionPanel({
               justifyContent: 'center',
               gap: 10,
               padding: '12px 20px',
-              background: isReady && !state.isLoading ? '#fff' : 'rgba(255,255,255,0.05)',
+              background: isReady && !state.isLoading ? '#fff' : 'var(--pipe-surface)',
               color: isReady && !state.isLoading ? '#000' : 'rgba(255,255,255,0.2)',
               border: 'none',
               borderRadius: 4,

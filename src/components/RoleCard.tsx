@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import {
   Building,
   MapPin,
@@ -8,12 +9,15 @@ import {
   Users,
   Target,
   Trophy,
+  Check,
+  Trash2,
 } from "lucide-react";
 import { LiquidMetalCard } from "./ui/LiquidMetalCard";
 
 export type RoleStatus = "active" | "draft" | "closed";
 
 interface RoleCardProps {
+  id: string;
   title: string;
   department: string;
   location: string;
@@ -23,12 +27,16 @@ interface RoleCardProps {
   stagesConfigured: number;
   totalStages: number;
   createdAt: string;
+  isSelected?: boolean;
+  onSelect?: (selected: boolean) => void;
   onClick?: () => void;
+  onDelete?: () => void;
   style?: React.CSSProperties;
   className?: string;
 }
 
 export function RoleCard({
+  id: _id,
   title,
   department,
   location,
@@ -38,7 +46,10 @@ export function RoleCard({
   stagesConfigured,
   totalStages,
   createdAt,
+  isSelected = false,
+  onSelect,
   onClick,
+  onDelete,
   style = {},
   className = "",
 }: RoleCardProps) {
@@ -46,31 +57,44 @@ export function RoleCard({
     switch (status) {
       case "active":
         return {
-          color: "#34d399",
-          bg: "rgba(16, 185, 129, 0.1)",
-          border: "rgba(16, 185, 129, 0.2)",
+          color: "#10b981",
+          bg: "rgba(16, 185, 129, 0.12)",
+          border: "rgba(16, 185, 129, 0.28)",
           label: "ACTIVE",
         };
       case "draft":
         return {
-          color: "#fbbf24",
-          bg: "rgba(245, 158, 11, 0.1)",
-          border: "rgba(245, 158, 11, 0.2)",
+          color: "#d97706",
+          bg: "rgba(245, 158, 11, 0.12)",
+          border: "rgba(245, 158, 11, 0.28)",
           label: "DRAFT",
         };
       case "closed":
         return {
-          color: "rgba(255,255,255,0.4)",
-          bg: "rgba(255,255,255,0.05)",
-          border: "rgba(255,255,255,0.1)",
+          color: "var(--pipe-text-dim)",
+          bg: "var(--pipe-surface)",
+          border: "var(--pipe-border)",
           label: "CLOSED",
         };
     }
   };
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
   const statusStyle = getStatusStyle(status);
   const isComplete = stagesConfigured === totalStages;
-  const progressPercent = (stagesConfigured / totalStages) * 100;
 
   const formattedDate = new Date(createdAt)
     .toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -79,21 +103,54 @@ export function RoleCard({
   return (
     <div style={{ marginBottom: 12, ...style }} className={className}>
       <LiquidMetalCard
-        variant="default"
-        onClick={onClick}
+        variant="chrome"
+        {...(onClick ? { onClick } : {})}
         style={{
           padding: 0,
           borderRadius: 8,
           cursor: onClick ? "pointer" : "default",
+          border: "1px solid var(--pipe-border-light)",
         }}
       >
         <div style={{ display: "flex", alignItems: "stretch" }}>
+          {/* Multi-select Checkbox */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect?.(!isSelected);
+            }}
+            style={{
+              width: 48,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: isSelected ? "rgba(255, 255, 255, 0.06)" : "transparent",
+              borderRight: "1px solid var(--pipe-border-light)",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <div style={{
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              border: `2px solid ${isSelected ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-border)"}`,
+              background: isSelected ? "rgba(255, 255, 255, 0.40)" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.15s ease",
+            }}>
+              {isSelected && <Check size={14} color="#fff" strokeWidth={3} />}
+            </div>
+          </div>
+
           {/* Status Indicator Bar */}
           <div
             style={{
-              width: 4,
+              width: 3,
               background: statusStyle.color,
-              opacity: status === "active" ? 0.8 : 0.3,
+              opacity: 0.6,
             }}
           />
 
@@ -134,7 +191,7 @@ export function RoleCard({
                 style={{
                   fontSize: 14,
                   fontWeight: 700,
-                  color: "#fff",
+                  color: "var(--pipe-text)",
                   margin: 0,
                   letterSpacing: "0.01em",
                 }}
@@ -144,11 +201,11 @@ export function RoleCard({
 
               <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Building size={12} color="rgba(255,255,255,0.2)" />
+                  <Building size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
-                      color: "rgba(255,255,255,0.4)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -156,11 +213,11 @@ export function RoleCard({
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <MapPin size={12} color="rgba(255,255,255,0.2)" />
+                  <MapPin size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
-                      color: "rgba(255,255,255,0.4)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -173,13 +230,13 @@ export function RoleCard({
             {/* Quick Stats Row */}
             <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Users size={14} color="rgba(255,255,255,0.2)" />
+                <Users size={14} color="var(--pipe-text-dim)" />
                 <div>
                   <div
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: "#fff",
+                      color: "var(--pipe-text)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -188,7 +245,7 @@ export function RoleCard({
                   <div
                     style={{
                       fontSize: 7,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       letterSpacing: "0.1em",
                     }}
                   >
@@ -198,13 +255,13 @@ export function RoleCard({
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Trophy size={14} color="rgba(255,255,255,0.2)" />
+                <Trophy size={14} color="var(--pipe-text-dim)" />
                 <div>
                   <div
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: avgScore ? "#fff" : "rgba(255,255,255,0.2)",
+                      color: avgScore ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -213,7 +270,7 @@ export function RoleCard({
                   <div
                     style={{
                       fontSize: 7,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       letterSpacing: "0.1em",
                     }}
                   >
@@ -223,13 +280,13 @@ export function RoleCard({
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Target size={14} color="rgba(255,255,255,0.2)" />
+                <Target size={14} color="var(--pipe-text-dim)" />
                 <div>
                   <div
                     style={{
                       fontSize: 12,
                       fontWeight: 800,
-                      color: isComplete ? "#34d399" : "#fff",
+                      color: isComplete ? "#10b981" : "var(--pipe-text)",
                       fontFamily: "Space Mono",
                     }}
                   >
@@ -238,7 +295,7 @@ export function RoleCard({
                   <div
                     style={{
                       fontSize: 7,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       letterSpacing: "0.1em",
                     }}
                   >
@@ -256,59 +313,103 @@ export function RoleCard({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Calendar size={12} color="rgba(255,255,255,0.2)" />
+                  <Calendar size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 9,
-                      color: "rgba(255,255,255,0.3)",
+                      color: "var(--pipe-text-dim)",
                       fontFamily: "Space Mono",
                     }}
                   >
                     {formattedDate}
                   </span>
                 </div>
-                <ChevronRight size={16} color="rgba(255,255,255,0.2)" />
+                <ChevronRight size={16} color="var(--pipe-text-dim)" />
               </div>
             </div>
           </div>
 
           {/* Action Area */}
           <div
+            ref={menuRef}
             style={{
               width: 48,
-              borderLeft: "1px solid rgba(255,255,255,0.05)",
+              borderLeft: "1px solid var(--pipe-border-light)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              position: "relative",
             }}
           >
             <button
+              aria-label="Pipeline actions"
               style={{
-                background: "transparent",
+                background: menuOpen ? "var(--pipe-surface-hover)" : "transparent",
                 border: "none",
-                color: "rgba(255,255,255,0.2)",
+                color: menuOpen ? "var(--pipe-text)" : "var(--pipe-text-dim)",
                 cursor: "pointer",
                 padding: 8,
+                borderRadius: 4,
+                transition: "all 0.15s ease",
               }}
               onClick={(e) => {
                 e.stopPropagation();
+                setMenuOpen(!menuOpen);
               }}
             >
               <MoreHorizontal size={16} />
             </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  zIndex: 50,
+                  minWidth: 160,
+                  background: "var(--pipe-bg)",
+                  border: "1px solid var(--pipe-border)",
+                  borderRadius: 8,
+                  boxShadow: "0 8px 32px var(--pipe-shadow)",
+                  overflow: "hidden",
+                  marginTop: 4,
+                }}
+              >
+                {onDelete && (
+                  <button
+                    role="menuitem"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      onDelete();
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "10px 14px",
+                      background: "transparent",
+                      border: "none",
+                      color: "#f87171",
+                      fontSize: 11,
+                      fontFamily: "Space Mono",
+                      fontWeight: 700,
+                      letterSpacing: "0.05em",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      transition: "background 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(248,113,113,0.1)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <Trash2 size={14} />
+                    DELETE
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* Mini progress bar at the very bottom */}
-        <div style={{ height: 1, background: "rgba(255,255,255,0.03)" }}>
-          <div
-            style={{
-              width: `${progressPercent}%`,
-              height: "100%",
-              background: isComplete ? "#34d399" : "rgba(255,255,255,0.2)",
-              transition: "width 0.6s ease-out",
-            }}
-          />
         </div>
       </LiquidMetalCard>
     </div>

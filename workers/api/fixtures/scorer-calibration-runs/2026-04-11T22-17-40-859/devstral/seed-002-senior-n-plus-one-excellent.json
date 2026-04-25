@@ -1,0 +1,54 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "This candidate shows potential as a code reviewer but has room to grow in key areas. Their strongest skill is thoroughness in verifying fixes, as seen in their ability to catch deeper issues during revision evaluation. However, their most critical area for improvement is issue identification, as they missed all planted bugs in the assessment. While their communication and reasoning are adequate, their effectiveness in finding real problems needs significant development to meet expectations.",
+      "strengths": [
+        "Thorough in verifying fixes and catching deeper issues during revision evaluation",
+        "Adequate reasoning and explanation quality",
+        "Balanced prioritization of issues"
+      ],
+      "growth_areas": [
+        "Issue identification (missed all planted bugs in assessment)",
+        "Distinguishing between critical and minor issues more accurately",
+        "Improving overall bug detection effectiveness"
+      ]
+    },
+    "scorer_a_summary": "The reviewer demonstrated exceptional performance across all dimensions. They identified all planted bugs (100% coverage) with accurate severity categorization and no false positives. Prioritization was flawless, with all severity labels matching actual impact and a correct blocking verdict. During revision evaluation, the reviewer verified every claimed fix and caught a deeper issue (identity scoping) in the implementer's pushback, demonstrating rigorous follow-through. The review process was thorough, reasoned, and maintained high standards throughout.",
+    "scorer_b_summary": ""
+  },
+  "meta": {
+    "wall_clock_ms": 15445,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

@@ -2,17 +2,17 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 
 interface TagsInputProps {
-  value?: string[];
-  onChange?: (value: string[]) => void;
-  placeholder?: string;
+  value?: string[] | undefined;
+  onChange?: ((value: string[]) => void) | undefined;
+  placeholder?: string | undefined;
 }
 
 const inputStyle = {
   width: '100%',
   padding: '12px 16px',
-  background: 'rgba(0,0,0,0.2)',
-  border: '1px solid rgba(255,255,255,0.1)',
-  color: '#fff',
+  background: 'var(--pipe-surface-solid)',
+  border: '1px solid var(--pipe-border)',
+  color: 'var(--pipe-text)',
   fontSize: 12,
   fontFamily: '"Space Mono", monospace',
   outline: 'none',
@@ -80,10 +80,10 @@ export function TagsInput({
               style={{
                 padding: '6px 12px',
                 background:
-                  'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.15))',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
+                  'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(59, 130, 246, 0.15))',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
                 fontSize: 10,
-                color: 'rgba(139, 92, 246, 0.9)',
+                color: 'rgba(255, 255, 255, 0.55)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,

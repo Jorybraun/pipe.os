@@ -1,0 +1,11 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "meta": {
+    "wall_clock_ms": 65101,
+    "attempts": 1,
+    "status": "failed",
+    "error": "[scorerAgent] Workers AI binding not available."
+  }
+}

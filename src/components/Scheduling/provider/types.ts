@@ -4,7 +4,7 @@ import type { SchedulingProvider } from '../../../lib/scheduling/types';
 export interface SchedulingProviderConfig {
   schedulingUrl: string;
   candidateName: string;
-  candidateEmail?: string;
+  candidateEmail?: string | undefined;
 }
 
 export interface SchedulingProviderDef {

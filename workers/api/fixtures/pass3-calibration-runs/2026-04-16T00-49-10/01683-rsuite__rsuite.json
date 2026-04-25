@@ -1,0 +1,32 @@
+{
+  "repo_id": 1683,
+  "full_name": "rsuite/rsuite",
+  "run_timestamp": "2026-04-16T00:49:24.937Z",
+  "pipeline": {
+    "gemma_attempt1": {
+      "success": true,
+      "parse_success": true,
+      "narrative_words": 205,
+      "profile_words": 242
+    },
+    "validation_attempt1": {
+      "valid": false,
+      "failures": [
+        "repo_searchable_profile too short: 242 words (min 400)",
+        "repo_searchable_profile contains invented numbers not in FACTS block: 18, 116, 0.58, 90, 0.40"
+      ],
+      "warnings": []
+    },
+    "judge_attempt1": null,
+    "final_status": "validation_failed"
+  },
+  "input_fingerprint": {
+    "repo_id": 1683,
+    "full_name": "rsuite/rsuite",
+    "primary_language": "typescript",
+    "stars": 8695,
+    "has_tests": true,
+    "detected_domain": "web-frontend"
+  },
+  "raw_gemma_attempt1": "{\n  \"architecture_style\": \"library\",\n  \"engineering_narrative\": \"The rsuite repository functions as a highly structured UI library developed primarily in typescript. The architecture is designed for modularity and consumption by external web-frontend applications, characterized by a medium complexity profile and a high file count of 1736. The engineering culture demonstrates a disciplined approach to maintenance, particularly evident in the testing practices. While the test style is strictly limited to unit_only, the test_touch_rate of 0.5 indicates that a significant portion of development cycles involves modifying or updating the test suite to maintain stability. The codebase maintains a mean_ccn of 3.5, suggesting that while the logic is non-trivial, individual functions remain relatively digestible. Review culture and contribution patterns reveal a focus on component-level precision; notable PR-sample patterns include localized fixes for accessibility (such as screen reader support in Checkbox) and functional enhancements like keyboard support in Tree components. Pull requests frequently involve a moderate degree of change, with a mean_changed_files of 6.6 and a p90_changed_files of 13, suggesting that even small feature additions or bug fixes often require updates across multiple files, likely to maintain consistency between component logic, styles, and documentation. The presence of CI workflows ensures that these changes are validated, supporting a stable release cycle for a library with 8695 stars.\",\n  \"repo_searchable_profile\": \"This repository is a web-frontend library designed to provide a suite of UI components for application developers. The primary language utilized is typescript, and the detected stack is centered around a robust ecosystem of dependencies, including several example configurations for create-react-app and custom i18n and theme implementations, with a total dependency count of 116. Observation of PR shapes shows that development is often focused on discrete component updates or documentation improvements. For instance, recent changes range from adding structured data to docs to fixing specific component behaviors like DatePicker alignment or Checkbox indeterminate properties. Many pull requests involve modifying tests, which aligns with the observed test_touch_rate of 0.5. The test culture is characterized by a unit_only approach, and while the pr_quality_score is 0.58, the integration of automated CI workflows suggests a structured validation process. A notable pattern in the contribution history is the tendency for PRs to touch multiple files; while the mean_changed_files is 6.6, the p90_changed_files reaches 13, indicating that complex fixes or features often necessitate broad changes across the component structure. The top three challenge surfaces identified for this codebase are type_confusion_potential at 0.50, off_by_one_potential at 0.40, and toctou_race_potential at 0.30. These metrics suggest that developers should be particularly cautious regarding type safety and logical boundary conditions within the component logic. Regarding contribution readiness, the number of open PRs and the count of open feature-related issues are currently unknown, making it difficult to quantify the immediate backlog for new contributors.\"\n}"
+}

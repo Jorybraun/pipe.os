@@ -1,10 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useApiClient } from './useApiClient';
+import type { ApiClient } from '../lib/api/client';
 import type { ScheduledInterview, InterviewStatus } from '../lib/scheduling/types';
-
-// Recruiter hook — uses Cognito user pool auth (default)
-const client = generateClient<Schema>();
 
 interface UseScheduledInterviewsResult {
   interviews: ScheduledInterview[];
@@ -14,69 +11,118 @@ interface UseScheduledInterviewsResult {
     id: string,
     patch: {
       status: InterviewStatus;
-      scheduledAt?: string;
-      meetingUrl?: string;
-      recruiterNotes?: string;
+      scheduledAt?: string | undefined;
+      meetingUrl?: string | undefined;
+      recruiterNotes?: string | undefined;
     }
   ) => Promise<void>;
+  refetch: () => Promise<void>;
 }
 
 /**
- * useScheduledInterviews — real-time subscription to all ScheduledInterviews
- * owned by the authenticated recruiter.
- *
- * TODO: Add filter support (by pipeline, status, date range) so the subscription
- * doesn't pull the entire table when a recruiter has many interviews. For MVP
- * the filtering happens client-side inside SchedulingFilters.
+ * useScheduledInterviews — fetches all ScheduledInterviews
+ * owned by the authenticated recruiter via Cloudflare Worker API.
  */
 export function useScheduledInterviews(): UseScheduledInterviewsResult {
+  const api: ApiClient = useApiClient();
+
   const [interviews, setInterviews] = useState<ScheduledInterview[]>([]);
-  const [isLoading, setIsLoading]   = useState(true);
-  const [error, setError]           = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    if (!client.models.ScheduledInterview) {
-      console.warn('[useScheduledInterviews] ScheduledInterview model not deployed yet — run `npx ampx sandbox`');
+  const fetchInterviews = useCallback(async () => {
+    try {
+      const result = await api.get<{
+        interviews: Array<{
+          id: string;
+          candidateId: string;
+          pipelineId: string;
+          stageId: string;
+          status: InterviewStatus;
+          scheduledAt: string | null;
+          meetingUrl: string | null;
+          schedulingProvider: string | null;
+          schedulingUrl: string | null;
+          recruiterNotes: string | null;
+          syncSource: string | null;
+          lastSyncedAt: string | null;
+          createdAt: string;
+          updatedAt: string;
+          candidateName: string | null;
+          candidateEmail: string | null;
+          pipelineTitle: string | null;
+          stageTitle: string | null;
+        }>;
+      }>('/api/v1/scheduling/interviews');
+
+      setInterviews(
+        result.interviews.map((r) => ({
+          id: r.id,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          candidateId: r.candidateId,
+          pipelineId: r.pipelineId,
+          stageId: r.stageId,
+          status: r.status,
+          scheduledAt: r.scheduledAt,
+          meetingUrl: r.meetingUrl,
+          schedulingProvider: (r.schedulingProvider as ScheduledInterview['schedulingProvider']) ?? null,
+          schedulingUrl: r.schedulingUrl,
+          recruiterNotes: r.recruiterNotes,
+          syncSource: (r.syncSource as ScheduledInterview['syncSource']) ?? null,
+          lastSyncedAt: r.lastSyncedAt,
+          candidateName: r.candidateName,
+          candidateEmail: r.candidateEmail,
+          pipelineTitle: r.pipelineTitle,
+          stageTitle: r.stageTitle,
+        })),
+      );
+    } catch (err) {
+      console.error('[useScheduledInterviews] fetch error:', err);
+      setError(err instanceof Error ? err : new Error('Failed to fetch interviews'));
+    } finally {
       setIsLoading(false);
-      return;
     }
+  }, [api]);
 
-    const subscription = client.models.ScheduledInterview.observeQuery().subscribe({
-      next: ({ items, isSynced }) => {
-        setInterviews([...items]);
-        if (isSynced) setIsLoading(false);
-      },
-      error: (err: unknown) => {
-        console.error('[useScheduledInterviews] Subscription error:', err);
-        setError(err instanceof Error ? err : new Error('Subscription failed'));
-        setIsLoading(false);
-      },
-    });
+  // Load interviews immediately, then sync with provider in background and refetch
+  useEffect(() => {
+    void fetchInterviews();
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // Background sync — don't block initial render
+    const syncThenRefresh = async (): Promise<void> => {
+      try {
+        await api.post('/api/v1/scheduling/interviews/sync', {});
+        // Refetch to pick up any newly synced data
+        await fetchInterviews();
+      } catch {
+        // Best-effort — fails gracefully if no connection
+      }
+    };
+    void syncThenRefresh();
+  }, [fetchInterviews, api]);
 
   const updateStatus = useCallback(
     async (
       id: string,
       patch: {
         status: InterviewStatus;
-        scheduledAt?: string;
-        meetingUrl?: string;
-        recruiterNotes?: string;
+        scheduledAt?: string | undefined;
+        meetingUrl?: string | undefined;
+        recruiterNotes?: string | undefined;
       }
     ): Promise<void> => {
-      const { errors } = await client.models.ScheduledInterview.update({
-        id,
-        ...patch,
-      });
-      if (errors) {
-        console.error('[useScheduledInterviews] updateStatus failed:', errors);
-        throw new Error(errors[0].message);
+      try {
+        await api.patch(`/api/v1/scheduling/interviews/${id}`, patch);
+        // Refetch to get updated data
+        await fetchInterviews();
+      } catch (err) {
+        console.error('[useScheduledInterviews] updateStatus failed:', err);
+        throw err instanceof Error ? err : new Error('Update failed');
       }
     },
-    []
+    [api, fetchInterviews],
   );
 
-  return { interviews, isLoading, error, updateStatus };
+  return { interviews, isLoading, error, updateStatus, refetch: fetchInterviews };
 }

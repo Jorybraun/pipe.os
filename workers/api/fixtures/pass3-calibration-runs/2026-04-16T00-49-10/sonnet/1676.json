@@ -1,0 +1,15 @@
+{
+  "repo_id": 1676,
+  "full_name": "nhost/nhost",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 193 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: pr_quality_score 0.48, unit-test count 323, SQL query count 188, REST API design count 181, and '90' as used in the p90 value context are not present in the FACTS block"
+  ],
+  "reasoning": "The profile is severely under-length at ~193 words, falling roughly 207 words short of the minimum. In addition, the profile cites specific construct counts (323 unit-tests, 188 SQL queries, 181 REST API design) and a pr_quality_score of 0.48 as if they are facts — none of these numbers appear in the FACTS block, indicating hallucination. Both sub-checks for constraint_pass fail. Accuracy is sound: TypeScript is correctly named as primary language, Vitest for unit testing matches has_tests=true, the web-backend domain is reflected accurately, and Go is correctly noted as a secondary language based on go.mod presence. architecture_style='layered_service' is defensible for nhost, which is a backend-as-a-service platform comprising a dashboard, CLI tools, and backend service templates — a multi-service layered structure is a reasonable characterisation. All five completeness dimensions are covered: repo type, language/stack (TypeScript + Go + React), PR shapes (mean 11.85, p90 33), test/review culture (Vitest, 0.35 touch rate), and contribution readiness (open counts noted as unknown). Three of four pass, yielding approved=true."
+}

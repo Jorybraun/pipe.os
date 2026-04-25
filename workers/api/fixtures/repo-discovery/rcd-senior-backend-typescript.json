@@ -1,0 +1,246 @@
+{
+  "rcd_version": "2.0.0",
+  "role_context_id": "fixture-rcd-sbe-ts-001",
+  "pipeline_id": "fixture-pipeline-sbe-ts-001",
+  "created_at": "2026-04-14T10:00:00.000Z",
+
+  "technical_context": {
+    "stack": ["TypeScript", "Node.js", "PostgreSQL", "Redis", "Docker", "GitHub Actions"],
+    "constructs": [
+      "REST API design",
+      "database migrations",
+      "integration testing",
+      "connection pooling",
+      "job queues",
+      "structured logging",
+      "API versioning",
+      "service-to-service auth"
+    ],
+    "seniority_band": "senior",
+    "codebase_expectations": [
+      "PostgreSQL with Knex or TypeORM migrations; no raw schema changes outside versioned files",
+      "Integration tests cover all database-touching paths; unit tests for pure logic",
+      "Services communicate over documented REST contracts with typed request/response schemas",
+      "Redis used for caching and distributed job queues, not as primary data store",
+      "Every endpoint has a corresponding OpenAPI annotation maintained in code"
+    ],
+    "dispositional_weights": {
+      "ownership": 0.15,
+      "communication": 0.05,
+      "pragmatism": 0.10
+    }
+  },
+
+  "domain_matrix": {
+    "HIRING_MANAGER": {
+      "work": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "We are always fighting migration debt — someone needs to own the schema and not just throw up migrations without thinking about rollback.",
+            "source_exchange_id": "q-work-01",
+            "consequence": "Poor migration hygiene causes outages during deploys; senior engineers must de-risk schema changes proactively",
+            "value": "Operational reliability enables team velocity and customer trust",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["migration_ownership", "schema_safety", "deploy_risk", "rollback_discipline"],
+        "axial_links": [
+          { "from_code": "migration_ownership", "to_code": "deploy_risk", "relation": "blocks" },
+          { "from_code": "schema_safety", "to_code": "rollback_discipline", "relation": "enables" }
+        ],
+        "stories": [
+          {
+            "situation": "A mid-level engineer pushed a NOT NULL migration on a high-traffic column without a backfill step, causing a five-minute outage on a Tuesday afternoon.",
+            "action": "The senior on-call engineer caught the deployment mid-rollout via PagerDuty, rolled back the migration manually, and wrote a post-mortem with a two-step migration pattern the team adopted as standard.",
+            "outcome": "Zero further migration outages in the next six months; the pattern is now a code review checklist item.",
+            "moral": "The team values engineers who understand the operational footprint of schema changes, not just the correctness of the data model.",
+            "source_exchange_id": "q-work-01"
+          }
+        ],
+        "summary": "The team ships a multi-tenant SaaS API with PostgreSQL as the primary store and Redis for job queues. Senior engineers are expected to own their service boundaries end-to-end: schema design, migration safety, observability, and on-call. The biggest recurring pain point is migration debt introduced by engineers who think in terms of correctness but not operational risk. A strong candidate will have shipped multiple backward-compatible multi-step migrations and can explain why the two-step pattern matters."
+      },
+      "codebase": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "The codebase is a Node monolith we have been strangling into services over two years — you need to understand the seams or you'll create coupling instead of removing it.",
+            "source_exchange_id": "q-codebase-01",
+            "consequence": "Engineers who don't understand the strangler-fig pattern introduce new cross-service dependencies, undoing months of decoupling work",
+            "value": "Architectural clarity reduces cognitive load and enables independent deployments",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["strangler_fig", "service_seams", "coupling_risk", "independent_deploy"],
+        "axial_links": [
+          { "from_code": "strangler_fig", "to_code": "service_seams", "relation": "instantiates" },
+          { "from_code": "coupling_risk", "to_code": "independent_deploy", "relation": "blocks" }
+        ],
+        "stories": [],
+        "summary": "The codebase is a TypeScript/Node.js monolith undergoing a strangler-fig migration to microservices. The integration test suite is the primary safety net — unit tests exist for pure business logic but the real confidence comes from running against a real Postgres instance in CI. Engineers need to read and understand existing service contracts before touching shared modules, and must add integration tests for any new database access path they introduce."
+      },
+      "bar": {
+        "primary_authority": true,
+        "coverage": "covered",
+        "laddering_chains": [
+          {
+            "attribute_quote": "I need someone who can push back in code review — not just say 'approved', but actually catch the things I miss.",
+            "source_exchange_id": "q-bar-01",
+            "consequence": "Passive reviewers create a false safety net; bugs ship that a thorough second read would have caught",
+            "value": "Peer review quality is a force multiplier on team reliability",
+            "energy_signal": "medium",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["review_quality", "pushback_culture", "technical_depth", "ownership_bar"],
+        "axial_links": [
+          { "from_code": "review_quality", "to_code": "ownership_bar", "relation": "enables" }
+        ],
+        "stories": [],
+        "summary": "The hiring bar for this role requires demonstrated senior-level ownership: the candidate must show they have shipped production services under load, caught bugs in peer review that mattered, and made technical decisions they can defend. Candidates who have only worked in large orgs with heavy process guardrails often struggle — this team expects engineers to self-direct and surface risk proactively rather than wait for direction."
+      },
+      "process": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["two-week-sprints", "async-first"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "Two-week sprints, async-first communication. Engineers are expected to manage their own scope and flag blockers early rather than waiting for standups."
+      },
+      "why": {
+        "primary_authority": false,
+        "coverage": "not_probed",
+        "laddering_chains": [],
+        "open_codes": [],
+        "axial_links": [],
+        "stories": [],
+        "summary": ""
+      },
+      "team": {
+        "primary_authority": false,
+        "coverage": "partial",
+        "laddering_chains": [],
+        "open_codes": ["small-team", "high-trust", "direct-feedback"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "A team of six backend engineers and two staff engineers. Direct feedback is expected and welcomed — there is no culture of softening code review comments to the point where the criticism is lost."
+      }
+    }
+  },
+
+  "conflicts": [],
+
+  "team_culture_profile": {
+    "per_stakeholder": {
+      "HIRING_MANAGER": {
+        "clan_affinity": 3,
+        "adhocracy_affinity": 2,
+        "market_affinity": 4,
+        "hierarchy_affinity": 2,
+        "psychological_safety": 4
+      }
+    }
+  },
+
+  "bars_overrides": [
+    {
+      "dimension": "ownership",
+      "anchor_level": 4,
+      "base_anchor_text": "Takes ownership of a service area and drives it to completion without being asked.",
+      "override_anchor_text": "Owns migration safety for their service boundary: writes two-step migrations, verifies rollback paths in staging, and documents the decision in the PR. Does not ship schema changes without a tested rollback plan.",
+      "source_chain_id": "q-work-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "code_review",
+      "anchor_level": 4,
+      "base_anchor_text": "Reviews PRs with attention to correctness, naming, and API design.",
+      "override_anchor_text": "Catches operational risk in code review, not just correctness: migration ordering, missing indices, N+1 queries introduced by ORM lazy loading, cache stampede risk on Redis keys. Comments are direct and constructive, never softened to the point of ambiguity.",
+      "source_chain_id": "q-bar-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "technical_depth",
+      "anchor_level": 3,
+      "base_anchor_text": "Understands the technical trade-offs in their domain and can explain decisions.",
+      "override_anchor_text": "Can articulate why the strangler-fig pattern was chosen over a big-bang rewrite and what the seam boundaries are. Understands connection pool sizing trade-offs and can explain why a 100-connection pool on a t3.medium is a problem.",
+      "source_chain_id": "q-codebase-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    }
+  ],
+
+  "probe_bank_enrichment": {
+    "static_base_version": "v1.0.0",
+    "enriched_probes": [
+      {
+        "dimension": "ownership",
+        "probe_text": "Walk me through the last database migration you shipped to production. What was the rollback strategy and how did you test it?",
+        "source_chain_id": "q-work-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      },
+      {
+        "dimension": "code_review",
+        "probe_text": "Tell me about a time you caught a bug in code review that would have caused a production issue. What did you see and how did you frame the feedback?",
+        "source_chain_id": "q-bar-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      }
+    ]
+  },
+
+  "dealbreakers": [
+    {
+      "id": "db-sbe-ts-001",
+      "label": "Cannot explain migration safety patterns",
+      "pattern": "Candidate describes shipping NOT NULL columns or renaming columns in a single migration to a live database without a backfill or two-step strategy",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-work-01",
+      "job_relatedness_note": "Schema migrations on a live high-traffic PostgreSQL database require backward-compatible patterns; incorrect migrations cause service outages directly tied to this role's responsibilities.",
+      "job_relatedness_strength": "strong",
+      "evidence_quote": "We are always fighting migration debt — someone needs to own the schema and not just throw up migrations without thinking about rollback."
+    }
+  ],
+
+  "red_flags": [
+    {
+      "id": "rf-sbe-ts-001",
+      "label": "Only worked in heavily scaffolded environments",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-bar-01",
+      "evidence_quote": "Candidates who have only worked in large orgs with heavy process guardrails often struggle — this team expects engineers to self-direct."
+    }
+  ],
+
+  "consumer_slice": {
+    "seniority": "Senior, 5–8 years",
+    "archetype": "Backend-focused senior engineer with PostgreSQL and Node.js depth, comfortable in a strangler-fig migration context",
+    "mustHaveSkills": ["TypeScript", "Node.js", "PostgreSQL", "Redis", "REST APIs", "integration testing", "database migrations"],
+    "niceToHaveSkills": ["Docker", "GitHub Actions", "OpenAPI", "Knex", "TypeORM"],
+    "disposition": [
+      "Pushes back in code review with specific, direct feedback",
+      "Owns migration safety end-to-end without being asked",
+      "Flags operational risk proactively, not reactively"
+    ],
+    "careerSignal": "Has shipped backward-compatible multi-step migrations on a high-traffic PostgreSQL database under real production load",
+    "redFlags": ["Only worked in large-org environments with heavy process scaffolding"],
+    "dealbreakers": ["Cannot explain two-step migration patterns or why single-step NOT NULL additions are dangerous"]
+  },
+
+  "validation_metadata": {
+    "schema_version": "2.0.0",
+    "synthesis_model": "fixture-synthetic-v1",
+    "synthesis_prompt_version": "v2.0.0",
+    "verification_pass_model": "fixture-synthetic-v1",
+    "face_validity_reviewed_at": "2026-04-14T10:00:00.000Z",
+    "face_validity_reviewer": "fixture-author"
+  }
+}

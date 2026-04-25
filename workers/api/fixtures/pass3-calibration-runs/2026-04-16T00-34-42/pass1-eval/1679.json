@@ -1,0 +1,12 @@
+{
+  "repo_id": 1679,
+  "full_name": "uber/baseweb",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "UI component design system / component library, not an application or service",
+    "Engineering complexity is concentrated in accessibility, theming, and component API design — niche for general SWE assessment",
+    "Uber-internal design system with domain-specific conventions that candidates would not be familiar with"
+  ],
+  "reasoning": "Baseweb is Uber's React design system and component library, which is a UI kit rather than an application, making it unsuitable for general software engineering assessment."
+}

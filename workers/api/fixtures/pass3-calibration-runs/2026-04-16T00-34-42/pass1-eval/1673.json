@@ -1,0 +1,12 @@
+{
+  "repo_id": 1673,
+  "full_name": "mui/base-ui",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "UI component library, not an application or service",
+    "Candidates assessed on component API design and accessibility internals — not general software engineering",
+    "Part of the MUI ecosystem; highly MUI-specific engineering context"
+  ],
+  "reasoning": "base-ui is a headless UI component library for React, making it a component kit rather than an application or service suitable for general software engineering assessment."
+}

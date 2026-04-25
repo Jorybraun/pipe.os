@@ -100,7 +100,7 @@ export function MetalScoreRing({
               fontFamily: '"Space Mono", monospace',
               fontSize: 8,
               letterSpacing: "0.25em",
-              color: "rgba(255,255,255,0.4)",
+              color: "var(--pipe-text-dim)",
               marginTop: 4,
             }}
           >

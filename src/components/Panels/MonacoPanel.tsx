@@ -1,10 +1,14 @@
 import Editor from '@monaco-editor/react';
+import type { ReactNode } from 'react';
 
 interface MonacoPanelProps {
   language: string;
   value: string;
   onChange: (code: string | undefined) => void;
   readOnly?: boolean;
+  label?: string;
+  headerRight?: ReactNode;
+  hideHeader?: boolean;
 }
 
 /**
@@ -14,33 +18,41 @@ export function MonacoPanel({
   language,
   value,
   onChange,
-  readOnly = false
+  readOnly = false,
+  label,
+  headerRight,
+  hideHeader = false,
 }: MonacoPanelProps): JSX.Element {
   return (
     <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#0c0c0e' }}>
-      <header style={{ 
-        padding: '12px 20px', 
-        borderBottom: '1px solid rgba(255,255,255,0.06)', 
-        display: 'flex', 
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        background: 'rgba(255,255,255,0.02)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa' }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
-            {language.toUpperCase()}_EDITOR
-          </span>
-        </div>
-        {readOnly && (
-          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)', fontFamily: 'Space Mono' }}>READ_ONLY</span>
-        )}
-      </header>
+      {!hideHeader && (
+        <header style={{
+          padding: '12px 20px',
+          borderBottom: '1px solid var(--pipe-border)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'var(--pipe-surface)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa' }} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', letterSpacing: '0.1em' }}>
+              {label || `${(language ?? 'javascript').toUpperCase()}_EDITOR`}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {headerRight}
+            {readOnly && (
+              <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>READ_ONLY</span>
+            )}
+          </div>
+        </header>
+      )}
       
       <div style={{ flex: 1, position: 'relative' }}>
         <Editor
           height="100%"
-          language={language.toLowerCase()}
+          language={(language ?? 'javascript').toLowerCase()}
           value={value}
           onChange={onChange}
           theme="vs-dark"

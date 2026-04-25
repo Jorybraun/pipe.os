@@ -1,0 +1,12 @@
+{
+  "repo_id": 1688,
+  "full_name": "garmeeh/next-seo",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "Single-purpose Next.js plugin for SEO meta-tag management — a plugin, not an application",
+    "Low SLOC (24.3k) and domain limited to HTML head tag generation",
+    "Candidates would need Next.js-specific knowledge and SEO domain knowledge; too narrow for general assessment"
+  ],
+  "reasoning": "next-seo is a narrow Next.js SEO plugin with low code volume and a single-concern domain, disqualifying it as a general engineering assessment target."
+}

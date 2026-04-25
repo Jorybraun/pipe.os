@@ -1,7 +1,73 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GitHubPRFetcher } from '../GitHubPRFetcher';
+import { PipeProviderRoot } from '../../../providers/DataContext';
+import type { PipeProviders, DataProvider, ModelOperations } from '../../../providers/types';
+
+// ─── Mock provider setup ──────────────────────────────────────────────────────
+
+function createMockModelOps(): ModelOperations {
+  return {
+    get: vi.fn().mockResolvedValue({ data: null }),
+    list: vi.fn().mockResolvedValue({ data: [] }),
+    create: vi.fn().mockResolvedValue({ data: null }),
+    update: vi.fn().mockResolvedValue({ data: null }),
+    delete: vi.fn().mockResolvedValue({ data: null }),
+    observeQuery: vi.fn().mockReturnValue({
+      subscribe: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
+    }),
+  };
+}
+
+function createMockDataProvider(): DataProvider {
+  const modelNames = [
+    'Pipeline', 'Stage', 'Candidate', 'Challenge', 'ChallengeSubmission',
+    'Assessment', 'CodeArtifact', 'VideoSession', 'VideoSignal',
+    'CandidateMedia', 'ScheduledInterview', 'SchedulingConnection',
+    'RoleContext', 'RepoTemplate', 'DevContainerSession',
+  ] as const;
+
+  const models = {} as DataProvider['models'];
+  for (const name of modelNames) {
+    (models as Record<string, ModelOperations>)[name] = createMockModelOps();
+  }
+
+  return {
+    models,
+    mutations: {
+      fetchGitHubPR: vi.fn().mockResolvedValue({ data: null, errors: undefined }),
+    },
+    queries: {},
+  };
+}
+
+function createMockProviders(): PipeProviders {
+  const mockDataProvider = createMockDataProvider();
+  return {
+    data: {
+      createClient: () => mockDataProvider,
+      createPublicClient: () => mockDataProvider,
+      createSessionClient: () => mockDataProvider,
+    },
+    storage: {
+      upload: vi.fn().mockResolvedValue({ path: '' }),
+      getUrl: vi.fn().mockResolvedValue({ url: new URL('https://example.com') }),
+    },
+  };
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  const providers = createMockProviders();
+  return render(
+    <PipeProviderRoot providers={providers}>
+      {ui}
+    </PipeProviderRoot>
+  );
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('GitHubPRFetcher Component', () => {
   const mockOnPRFetched = vi.fn();
@@ -13,7 +79,7 @@ describe('GitHubPRFetcher Component', () => {
 
   describe('Input State & Validation', () => {
     it('renders with empty inputs', () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -23,7 +89,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('pre-populates fields when initialChallenge is provided', () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher
           initialChallenge={{
             githubRepoUrl: 'https://github.com/facebook/react',
@@ -41,7 +107,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('validates GitHub URL format with regex', async () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -68,7 +134,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('validates PR number is positive integer only', async () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -92,7 +158,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('enables fetch button only when both fields are valid', async () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -117,7 +183,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('filters non-numeric characters from PR number input', async () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -135,8 +201,8 @@ describe('GitHubPRFetcher Component', () => {
 
   describe('Form Control Actions', () => {
     it('clears form when CLEAR button is clicked', async () => {
-      render(
-        <GitHubPRFetcher 
+      renderWithProviders(
+        <GitHubPRFetcher
           onPRFetched={mockOnPRFetched}
           onCleared={mockOnCleared}
         />
@@ -157,7 +223,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('shows validation checkmarks appear when inputs are valid', async () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -184,7 +250,7 @@ describe('GitHubPRFetcher Component', () => {
 
   describe('Accessibility & UX', () => {
     it('has proper labels for form fields', () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -193,7 +259,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('shows helper text with format guidelines', () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -202,7 +268,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('shows GITHUB_PR_DETAILS header label', () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -210,8 +276,8 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('disables fetch button when parent isLoading prop is true', () => {
-      render(
-        <GitHubPRFetcher 
+      renderWithProviders(
+        <GitHubPRFetcher
           onPRFetched={mockOnPRFetched}
           isLoading={true}
         />
@@ -224,7 +290,7 @@ describe('GitHubPRFetcher Component', () => {
 
   describe('Responsive Design', () => {
     it('renders buttons in flex layout', () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 
@@ -236,8 +302,8 @@ describe('GitHubPRFetcher Component', () => {
 
   describe('Component Props & Callbacks', () => {
     it('accepts and calls onCleared callback', async () => {
-      render(
-        <GitHubPRFetcher 
+      renderWithProviders(
+        <GitHubPRFetcher
           onPRFetched={mockOnPRFetched}
           onCleared={mockOnCleared}
         />
@@ -250,7 +316,7 @@ describe('GitHubPRFetcher Component', () => {
     });
 
     it('handles undefined onCleared prop gracefully', async () => {
-      render(
+      renderWithProviders(
         <GitHubPRFetcher onPRFetched={mockOnPRFetched} />
       );
 

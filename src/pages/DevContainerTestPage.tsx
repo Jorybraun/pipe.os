@@ -1,12 +1,10 @@
 import { useState } from 'react';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+import { useData } from '../providers';
 
-const client = generateClient<Schema>();
-
-export default function DevContainerTestPage() {
+export default function DevContainerTestPage(): JSX.Element {
+  const dataFactory = useData();
   const [sessionId, setSessionId] = useState('');
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
 
   const handleLaunch = async () => {
@@ -14,11 +12,14 @@ export default function DevContainerTestPage() {
       alert('Enter a session ID');
       return;
     }
-    
+
+    const client = dataFactory.createClient();
     setLoading(true);
     try {
-      const { data, errors } = await client.mutations.launchDevContainer({ sessionId });
-      if (errors) throw new Error(errors[0].message);
+      const launchDevContainer = client.mutations['launchDevContainer'];
+      if (!launchDevContainer) throw new Error('launchDevContainer mutation not available');
+      const { data, errors } = await launchDevContainer({ sessionId });
+      if (errors) throw new Error(errors[0]?.message ?? 'Unknown error');
       setResult(data);
     } catch (err) {
       setResult({ error: err instanceof Error ? err.message : 'Unknown error' });
@@ -30,7 +31,7 @@ export default function DevContainerTestPage() {
   return (
     <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
       <h1>Dev Container Test</h1>
-      
+
       <div style={{ marginBottom: '1rem' }}>
         <label>
           Session ID:
@@ -48,7 +49,7 @@ export default function DevContainerTestPage() {
         {loading ? 'Launching...' : 'Launch Container'}
       </button>
 
-      {result && (
+      {Boolean(result) && (
         <pre style={{ marginTop: '2rem', background: '#f5f5f5', padding: '1rem', borderRadius: '4px' }}>
           {JSON.stringify(result, null, 2)}
         </pre>

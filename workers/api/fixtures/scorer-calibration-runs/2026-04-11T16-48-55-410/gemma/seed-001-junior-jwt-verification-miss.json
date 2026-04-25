@@ -1,0 +1,11 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "meta": {
+    "wall_clock_ms": 3200,
+    "attempts": 3,
+    "status": "failed",
+    "error": "[calibrate] Cloudflare AI 401: {\"result\":null,\"success\":false,\"errors\":[{\"code\":10000,\"message\":\"Authentication error\"}],\"messages\":[]}"
+  }
+}

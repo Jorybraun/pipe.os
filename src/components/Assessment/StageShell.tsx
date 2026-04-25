@@ -1,4 +1,5 @@
 import { ChevronRight, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import Logo from '../ui/Logo';
 import { useTimer } from './TimerContext';
 
 interface StageShellProps {
@@ -12,6 +13,8 @@ interface StageShellProps {
   isSubmitting: boolean;
   /** When true, the content area fills the viewport edge-to-edge with no padding or maxWidth. Use for full-bleed challenge types like CODE_REVIEW. */
   fullBleed?: boolean;
+  /** When true, hides the footer navigation. Used by challenge types that control their own flow. */
+  hideFooter?: boolean | undefined;
 }
 
 /**
@@ -28,6 +31,7 @@ export function StageShell({
   canAdvance,
   isSubmitting,
   fullBleed = false,
+  hideFooter = false,
 }: StageShellProps): JSX.Element {
   const { secondsRemaining, formatTime } = useTimer();
 
@@ -39,11 +43,11 @@ export function StageShell({
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top Progress Bar */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 2, background: 'rgba(255,255,255,0.05)', zIndex: 100 }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 2, background: 'var(--pipe-surface)', zIndex: 100 }}>
         <div style={{ 
           height: '100%', 
           width: `${progressPercent}%`, 
-          background: 'linear-gradient(90deg, #60a5fa, #a78bfa)', 
+          background: 'linear-gradient(90deg, #60a5fa, var(--pipe-accent))', 
           transition: 'width 0.5s ease-out',
           boxShadow: '0 0 10px rgba(167, 139, 250, 0.5)'
         }} />
@@ -57,22 +61,28 @@ export function StageShell({
         alignItems: 'center',
         background: 'rgba(12, 12, 14, 0.8)',
         backdropFilter: 'blur(20px)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+        borderBottom: '1px solid var(--pipe-border)',
         position: 'sticky',
         top: 2,
         zIndex: 90
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <div style={{ width: 28, height: 28, opacity: 0.4 }}>
+            <Logo />
+          </div>
+
+          <div style={{ width: 1, height: 32, background: 'var(--pipe-surface-hover)' }} />
+
           <div>
-            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', marginBottom: 4, fontFamily: 'Space Mono' }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', marginBottom: 4, fontFamily: 'Space Mono' }}>
               ASSESSMENT_STAGE
             </div>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.01em' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--pipe-text, #fff)', margin: 0, letterSpacing: '-0.01em' }}>
               {title}
             </h2>
           </div>
           
-          <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.1)' }} />
+          <div style={{ width: 1, height: 32, background: 'var(--pipe-surface-hover)' }} />
           
           <div style={{ display: 'flex', gap: 8 }}>
             {Array.from({ length: totalChallenges }).map((_, i) => (
@@ -101,7 +111,7 @@ export function StageShell({
             borderRadius: 4,
             transition: 'all 0.3s'
           }}>
-            <Clock size={14} color={isCritical ? '#f87171' : isWarning ? '#fbbf24' : 'rgba(255,255,255,0.4)'} />
+            <Clock size={14} color={isCritical ? '#f87171' : isWarning ? '#fbbf24' : 'var(--pipe-text-dim)'} />
             <span style={{ 
               fontSize: 14, 
               fontWeight: 700, 
@@ -126,10 +136,10 @@ export function StageShell({
       </main>
 
       {/* Footer Navigation */}
-      <footer style={{ 
+      {!hideFooter && <footer style={{ 
         padding: '24px 40px', 
         background: 'rgba(12, 12, 14, 0.9)',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid var(--pipe-border)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -159,7 +169,7 @@ export function StageShell({
             alignItems: 'center',
             gap: 12,
             padding: '14px 32px',
-            background: canAdvance ? '#fff' : 'rgba(255,255,255,0.05)',
+            background: canAdvance ? '#fff' : 'var(--pipe-surface)',
             color: canAdvance ? '#000' : 'rgba(255,255,255,0.2)',
             border: 'none',
             borderRadius: 4,
@@ -174,7 +184,7 @@ export function StageShell({
           {isSubmitting ? 'UPLOADING...' : isLastChallenge ? 'FINAL_SUBMIT' : 'NEXT_CHALLENGE'}
           <ChevronRight size={16} />
         </button>
-      </footer>
+      </footer>}
     </div>
   );
 }

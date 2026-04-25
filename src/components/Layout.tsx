@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
-import { LiquidMetal } from "@paper-design/shaders-react";
+import { useTheme } from "../contexts/ThemeContext";
+import { useSidebarPortal } from "../contexts/SidebarPortalContext";
 
 interface ProfileLayoutProps {
   header: ReactNode;
@@ -18,70 +19,49 @@ export function Layout({
   agentPanel,
   isAgentOpen = false,
 }: ProfileLayoutProps) {
+  const { theme } = useTheme();
+  const isDark = theme.mode === 'dark';
+  const overlayColor = theme.mode === 'anatomy'
+    ? `rgba(243,234,213,${theme.background.overlay})`
+    : isDark
+    ? `rgba(12,12,14,${theme.background.overlay})`
+    : `rgba(245,245,247,${theme.background.overlay})`;
+  const { setPortalNode, isPortalOpen } = useSidebarPortal();
+
+  // The aside is open if either the agentPanel has content OR a portal is active
+  const asideOpen = isAgentOpen || isPortalOpen;
+
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "#0c0c0e",
+        background: overlayColor,
         fontFamily: '"Space Mono", monospace',
-        color: "#fff",
+        color: "var(--pipe-text, #fff)",
         position: "relative",
-        overflow: "hidden",
+        overflow: "clip",
       }}
     >
-      {/* Animated liquid metal background */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 0,
-          pointerEvents: "none",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          opacity: 0.4,
-        }}
-      >
-        <LiquidMetal
-          width={1920}
-          height={1080}
-          image="/mario-pipe.svg"
-          colorBack="#aaaaac"
-          colorTint="#ffffff"
-          shape="diamond"
-          repetition={2}
-          softness={0.1}
-          shiftRed={0.3}
-          shiftBlue={0.3}
-          distortion={0.07}
-          contour={0.4}
-          angle={70}
-          speed={0.3}
-          scale={0.6}
-          fit="cover"
-        />
+      {/* Header — fixed to top */}
+      <div style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 20,
+        background: overlayColor,
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid var(--pipe-border-light, rgba(255,255,255,0.04))",
+      }}>
+        {header}
       </div>
-      {/* Chrome mesh grid */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px)
-        `,
-          backgroundSize: "80px 80px",
-          pointerEvents: "none",
-        }}
-      />
-      {/* Header */}
-      <div style={{ position: "relative", zIndex: 1 }}>{header}</div>
       {/* Layout with sidebar and agent panel */}
       <div
         style={{
           display: "flex",
           position: "relative",
           zIndex: 1,
+          paddingTop: 100,
         }}
       >
         {/* Sidebar */}
@@ -91,8 +71,8 @@ export function Layout({
               width: "80px",
               position: "fixed",
               left: 0,
-              top: "100px",
-              height: "calc(100vh - 100px)",
+              top: 100,
+              height: "calc(100vh - 120px)",
               padding: "0 16px",
               zIndex: 10,
               flexShrink: 0,
@@ -102,25 +82,25 @@ export function Layout({
           </aside>
         )}
 
-        {/* Agent Panel */}
-        {isAgentOpen && (
+        {/* Agent Panel / Portal Target */}
+        {asideOpen && (
           <aside
             style={{
               width: "400px",
               position: "fixed",
               left: "80px",
-              top: "100px",
-              height: "calc(100vh - 100px)",
-              background:
-                "linear-gradient(135deg, rgba(20,20,30,0.95), rgba(15,15,25,0.98))",
-              backdropFilter: "blur(40px) saturate(150%)",
-              borderRight: "1px solid rgba(139, 92, 246, 0.2)",
-              boxShadow: "4px 0 24px rgba(0,0,0,0.3)",
+              top: 100,
+              height: "calc(100vh - 120px)",
+              background: overlayColor,
+              backdropFilter: "blur(12px)",
+              borderRight: "1px solid var(--pipe-border, rgba(255,255,255,0.06))",
+              boxShadow: `4px 0 24px var(--pipe-shadow, rgba(0,0,0,0.3))`,
               zIndex: 9,
               transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
             }}
           >
             {agentPanel}
+            <div ref={setPortalNode} style={{ height: agentPanel ? 0 : '100%' }} />
           </aside>
         )}
 
@@ -128,9 +108,10 @@ export function Layout({
         <main
           style={{
             flex: 1,
+            minWidth: 0,
             maxWidth: 1400,
             margin: "0 auto",
-            marginLeft: showSidebar ? (isAgentOpen ? "480px" : "80px") : "auto",
+            marginLeft: showSidebar ? (asideOpen ? "480px" : "80px") : "auto",
             padding: "24px 20px",
             position: "relative",
             transition: "margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -141,19 +122,20 @@ export function Layout({
       </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-        
+
         * {
           box-sizing: border-box;
         }
-        
+
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.6; transform: scale(0.95); }
         }
-        
+
         button:hover {
           filter: brightness(1.1);
         }
+
       `}</style>
     </div>
   );

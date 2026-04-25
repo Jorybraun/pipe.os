@@ -50,7 +50,7 @@ export function QuestionTab({ question }: QuestionTabProps): JSX.Element {
           style={{
             fontSize: 8,
             letterSpacing: "0.2em",
-            color: "rgba(255,255,255,0.3)",
+            color: "var(--pipe-text-dim)",
             marginBottom: 12,
           }}
         >
@@ -63,8 +63,8 @@ export function QuestionTab({ question }: QuestionTabProps): JSX.Element {
             width: "100%",
             height: 120,
             background: "rgba(0,0,0,0.2)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "#fff",
+            border: "1px solid var(--pipe-border)",
+            color: "var(--pipe-text, #fff)",
             fontSize: 15,
             lineHeight: 1.7,
             padding: 16,
@@ -83,7 +83,7 @@ export function QuestionTab({ question }: QuestionTabProps): JSX.Element {
             style={{
               fontSize: 8,
               letterSpacing: "0.2em",
-              color: "rgba(255,255,255,0.3)",
+              color: "var(--pipe-text-dim)",
               marginBottom: 12,
             }}
           >
@@ -98,7 +98,7 @@ export function QuestionTab({ question }: QuestionTabProps): JSX.Element {
             style={{
               fontSize: 8,
               letterSpacing: "0.2em",
-              color: "rgba(255,255,255,0.3)",
+              color: "var(--pipe-text-dim)",
               marginBottom: 12,
             }}
           >
@@ -126,13 +126,13 @@ export function QuestionTab({ question }: QuestionTabProps): JSX.Element {
                 style={{
                   fontSize: 8,
                   letterSpacing: "0.2em",
-                  color: "rgba(255,255,255,0.3)",
+                  color: "var(--pipe-text-dim)",
                   marginBottom: 4,
                 }}
               >
                 REQUIRED
               </div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>
+              <div style={{ fontSize: 11, color: "var(--pipe-text-muted)" }}>
                 Candidates must answer this question
               </div>
             </div>
@@ -179,7 +179,7 @@ export function QuestionTab({ question }: QuestionTabProps): JSX.Element {
                   style={{
                     fontSize: 8,
                     letterSpacing: "0.2em",
-                    color: "rgba(255,255,255,0.3)",
+                    color: "var(--pipe-text-dim)",
                     marginBottom: 4,
                   }}
                 >
@@ -205,9 +205,9 @@ export function QuestionTab({ question }: QuestionTabProps): JSX.Element {
               type="button"
               style={{
                 padding: "8px 14px",
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.15)",
-                color: "#fff",
+                background: "var(--pipe-surface-hover)",
+                border: "1px solid var(--pipe-border)",
+                color: "var(--pipe-text, #fff)",
                 fontSize: 9,
                 letterSpacing: "0.1em",
                 cursor: "pointer",

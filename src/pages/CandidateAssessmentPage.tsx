@@ -1,43 +1,69 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { useAssessment } from '../hooks/useAssessment';
-import { ChallengeRegistry } from '../components/Assessment/ChallengeRegistry';
+import { useAssessment, type StageConfigDTO, type ChallengeContentDTO } from '../hooks/useAssessment';
+import { SessionTokenProvider } from '../contexts/SessionTokenContext';
+import { CandidateIdProvider } from '../contexts/CandidateIdContext';
 import { StageShell } from '../components/Assessment/StageShell';
 import { TimerProvider } from '../components/Assessment/TimerContext';
-import { VideoShell } from '../components/Shells/VideoShell';
-import { SchedulingStep } from '../components/Assessment/SchedulingStep';
-import { WelcomeScreen, type ChallengeType } from '../components/Assessment/WelcomeScreen';
-import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { InterviewProvider } from '../contexts/InterviewContext';
+import { StageRenderer } from '../components/Assessment/StageRenderer';
+import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
+import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
+import { normalizeDiffJson } from '../lib/challenge/componentMap';
+import type { RawStage } from '../lib/challenge/resolveStageConfig';
+import { useReviewSessionV2 } from '../hooks/useReviewSessionV2';
+import { ReviewSessionPage } from './ReviewSessionPage';
+
+/**
+ * Build a RawStage from the stage config DTO + current challenge content.
+ * The composable system needs a StageConfig with challenges array.
+ * We build it with a single challenge (the current one, hydrated with content).
+ */
+function buildRawStage(
+  stageConfig: StageConfigDTO,
+  content: ChallengeContentDTO,
+  currentOrder: number,
+): RawStage {
+  return {
+    id: 'current-stage',
+    title: stageConfig.stageTitle ?? 'Stage',
+    order: 0,
+    timeLimit: stageConfig.timeLimit ?? null,
+    challenges: [{
+      id: content.id ?? `challenge-${currentOrder}`,
+      type: content.type ?? stageConfig.challenges?.[currentOrder]?.type ?? 'QUIZ_MCQ',
+      title: content.title ?? 'Challenge',
+      instructions: content.instructions ?? null,
+      config: typeof content.config === 'string'
+        ? content.config
+        : JSON.stringify(content.config ?? {}),
+      order: 0,
+      codeArtifact: content.codeArtifact as any ?? null,
+      cachedDiffJson: content.cachedDiffJson ?? null,
+      githubPrTitle: (content.githubPrTitle as string) ?? null,
+      githubRepoUrl: (content.githubRepoUrl as string) ?? null,
+      githubPrNumber: (content.githubPrNumber as number) ?? null,
+      githubPrDescription: (content.githubPrDescription as string) ?? null,
+    }],
+  };
+}
 
 // ============================================================================
 // Component
 // ============================================================================
 
-/**
- * CandidateAssessmentPage - Unauthenticated entry point for candidates.
- *
- * Route: /assess/:token
- *
- * Flow:
- *   1. Load data (stages + challenges)
- *   2. Show WelcomeScreen (hasStarted = false)
- *   3. onStart → update status IN_PROGRESS, set hasStarted = true
- *   4. Render challenge via StageShell + ChallengeRegistry
- *   5. On CODE_REVIEW submit: show FollowUpQuestionsPanel (or spinner while loading)
- *   6. On follow-up submit/skip: advance to next challenge or isSubmitted screen
- */
 export default function CandidateAssessmentPage(): JSX.Element {
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const isPreview = searchParams.get('mode') === 'preview';
   const {
     candidate,
-    stages,
-    currentStageIndex,
-    currentChallengeIndex,
+    stageConfig,
+    challengeContent,
+    currentOrder,
     isLoading,
     error,
     isSubmitted,
@@ -47,12 +73,12 @@ export default function CandidateAssessmentPage(): JSX.Element {
     submitChallenge,
     onStart,
     reset,
+    sessionToken,
   } = useAssessment(token || '');
 
   const [currentSubmission, setCurrentSubmission] = useState<unknown>(null);
 
-  // Auto-skip when Lambda returns 0 follow-up questions (error/empty path).
-  // Empty array means no questions were generated — advance without showing the panel.
+  // Auto-skip empty follow-ups
   useEffect(() => {
     if (followUpQuestions !== null && followUpQuestions.length === 0 && !isLoading) {
       void submitChallenge({ answers: {} });
@@ -60,24 +86,75 @@ export default function CandidateAssessmentPage(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [followUpQuestions]);
 
+  // Build StageConfig from DTOs (must be before early returns — Rules of Hooks)
+  const resolvedConfig = useMemo(() => {
+    if (!stageConfig || !challengeContent) return null;
+    const rawStage = buildRawStage(stageConfig, challengeContent, currentOrder);
+    return resolveStageConfig(rawStage as any);
+  }, [stageConfig, challengeContent, currentOrder]);
+
+  // Current challenge type (from stage config, not content — available before hydration)
+  const currentType = stageConfig?.challenges?.[currentOrder]?.type;
+
+  // Review session v2 state (CODE_REVIEW golden path)
+  const [reviewSessionMeta, setReviewSessionMeta] = useState<{
+    sessionId: string;
+    maxRounds: number;
+  } | null>(null);
+  const [reviewSessionInitLoading, setReviewSessionInitLoading] = useState(false);
+  const { initSession } = useReviewSessionV2(undefined, sessionToken);
+
+  // Auto-init review session for CODE_REVIEW challenges that require it
+  useEffect(() => {
+    if (
+      currentType === 'CODE_REVIEW' &&
+      challengeContent?.reviewSession?.requiresInit &&
+      !reviewSessionMeta &&
+      !reviewSessionInitLoading &&
+      !isLoading &&
+      challengeContent?.id
+    ) {
+      setReviewSessionInitLoading(true);
+      initSession(challengeContent.id)
+        .then((result) => {
+          setReviewSessionMeta({ sessionId: result.sessionId, maxRounds: result.maxRounds });
+        })
+        .catch((err: unknown) => {
+          console.error('[CandidateAssessmentPage] initSession failed:', err);
+        })
+        .finally(() => {
+          setReviewSessionInitLoading(false);
+        });
+    }
+  }, [currentType, challengeContent, reviewSessionMeta, reviewSessionInitLoading, isLoading, initSession]);
+
+  // Auto-start: WELCOME is now a challenge in the queue, not a separate screen
+  useEffect(() => {
+    if (!hasStarted && candidate && !isLoading) {
+      void onStart();
+    }
+  }, [hasStarted, candidate, isLoading, onStart]);
+
+  // Candidate IDs for VideoInterviewStep (must be before early returns)
+  const candidateIds = useMemo(() => {
+    if (!candidate?.id || !stageConfig?.stageId) return null;
+    return { candidateId: candidate.id, stageId: stageConfig.stageId };
+  }, [candidate?.id, stageConfig?.stageId]);
+
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
 
-  const handleSubmit = async (): Promise<void> => {
-    await submitChallenge((currentSubmission as Record<string, unknown>) || {});
+  const handleSubmit = async (submissionOverride?: unknown): Promise<void> => {
+    const toSubmit = submissionOverride !== undefined
+      ? (submissionOverride as Record<string, unknown>)
+      : (currentSubmission as Record<string, unknown>) ?? {};
+    await submitChallenge(toSubmit);
     setCurrentSubmission(null);
   };
 
-  const handleFollowUpSkip = (): void => {
-    // Skip follow-up: pass empty answers, triggers advancement
-    submitChallenge({ answers: {} }).catch((err: unknown) => {
-      console.warn('[CandidateAssessmentPage] Skip follow-up failed:', err);
-    });
-  };
-
   // ---------------------------------------------------------------------------
-  // Loading state
+  // Loading state (initial)
   // ---------------------------------------------------------------------------
 
   if (isLoading && !candidate && !isSubmitted) {
@@ -85,8 +162,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
         <ChromeMeshGrid />
         <div style={{ textAlign: 'center', zIndex: 1 }}>
-          <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
-          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+          <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
+          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             INITIALIZING_SECURE_SESSION...
           </div>
         </div>
@@ -98,42 +175,62 @@ export default function CandidateAssessmentPage(): JSX.Element {
   // Error state
   // ---------------------------------------------------------------------------
 
-  if (error) {
+  // Terminal errors (invalid token, completed, expired) show a full-page error.
+  // Non-terminal errors (submission failures) are shown inline so the candidate can retry.
+  const isTerminalError = error && (
+    error.message === 'INVALID_TOKEN' ||
+    error.message === 'ALREADY_COMPLETED' ||
+    error.message === 'SESSION_EXPIRED'
+  );
+
+  if (isTerminalError) {
     const isInvalid = error.message === 'INVALID_TOKEN';
     const isCompleted = error.message === 'ALREADY_COMPLETED';
+    const isSessionExpired = error.message === 'SESSION_EXPIRED';
 
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
         <ChromeMeshGrid />
         <LiquidMetalCard variant="mercury" style={{ maxWidth: 480, padding: 48, textAlign: 'center', zIndex: 1 }}>
           <AlertCircle size={48} color="rgba(255,100,100,0.5)" style={{ marginBottom: 24 }} />
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: '#fff', marginBottom: 16 }}>
-            {isInvalid ? 'Invalid Invite Link' : isCompleted ? 'Assessment Completed' : 'Connection Error'}
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 16 }}>
+            {isInvalid ? 'Invalid Invite Link'
+              : isCompleted ? 'Assessment Completed'
+              : isSessionExpired ? 'Session Expired'
+              : 'Connection Error'}
           </h2>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
-            {isInvalid
-              ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
-              : isCompleted
-              ? 'You have already submitted this assessment. Thank you for your time!'
+          <p style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
+            {isInvalid ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
+              : isCompleted ? 'You have already submitted this assessment. Thank you for your time!'
+              : isSessionExpired ? 'Your session has expired. Please contact your recruiter for a new invite link.'
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
-          {!isInvalid && !isCompleted && (
-            <button
-              onClick={() => reset()}
-              style={{
-                padding: '12px 24px',
-                background: 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                color: '#fff',
-                fontSize: 10,
-                letterSpacing: '0.1em',
-                fontFamily: '"Space Mono", monospace',
-                cursor: 'pointer'
-              }}
-            >
-              RETRY_CONNECTION
-            </button>
-          )}
+          <button onClick={() => reset()} style={{
+            padding: '12px 24px', background: 'var(--pipe-surface-hover)',
+            border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
+            fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
+          }}>RETRY_CONNECTION</button>
+        </LiquidMetalCard>
+      </div>
+    );
+  }
+
+  // Non-terminal error (e.g. submission failure) — show before initial load only
+  if (error && !hasStarted) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
+        <ChromeMeshGrid />
+        <LiquidMetalCard variant="mercury" style={{ maxWidth: 480, padding: 48, textAlign: 'center', zIndex: 1 }}>
+          <AlertCircle size={48} color="rgba(255,100,100,0.5)" style={{ marginBottom: 24 }} />
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: 'var(--pipe-text, #fff)', marginBottom: 16 }}>Connection Error</h2>
+          <p style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
+            There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.
+          </p>
+          <button onClick={() => reset()} style={{
+            padding: '12px 24px', background: 'var(--pipe-surface-hover)',
+            border: '1px solid var(--pipe-border)', color: 'var(--pipe-text, #fff)',
+            fontSize: 10, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: 'pointer'
+          }}>RETRY_CONNECTION</button>
         </LiquidMetalCard>
       </div>
     );
@@ -145,14 +242,12 @@ export default function CandidateAssessmentPage(): JSX.Element {
 
   if (isSubmitted) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
+      <div data-testid="assessment-submitted" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
         <ChromeMeshGrid />
         <LiquidMetalCard variant="chrome" style={{ maxWidth: 480, padding: 60, textAlign: 'center', zIndex: 1 }}>
           <CheckCircle size={64} color="#10b981" style={{ marginBottom: 32 }} />
-          <h2 style={{ fontSize: 32, fontWeight: 800, color: '#fff', marginBottom: 16, letterSpacing: '-0.02em' }}>
-            Submitted.
-          </h2>
-          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace' }}>
+          <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--pipe-text, #fff)', marginBottom: 16, letterSpacing: '-0.02em' }}>Submitted.</h2>
+          <p style={{ fontSize: 14, color: 'var(--pipe-text-muted)', lineHeight: 1.6, fontFamily: '"Space Mono", monospace' }}>
             Your assessment has been securely delivered. The team will review your submission and get back to you soon.
           </p>
         </LiquidMetalCard>
@@ -160,199 +255,174 @@ export default function CandidateAssessmentPage(): JSX.Element {
     );
   }
 
-  const currentStage = stages[currentStageIndex];
-  if (!currentStage || !currentStage.challenges) return <></>;
-
-  const currentChallenge = currentStage.challenges[currentChallengeIndex];
-  if (!currentChallenge) return <></>;
 
   // ---------------------------------------------------------------------------
-  // Welcome screen (before candidate starts)
+  // Loading challenge
   // ---------------------------------------------------------------------------
 
-  if (!hasStarted) {
-    // Derive the pipeline name from the first stage if available
-    const pipelineName = candidate?.pipelineId ?? 'Technical Assessment';
-    const stageName = currentStage.title ?? 'Stage 1';
-    const challengeType = (currentChallenge.type ?? 'CODE_REVIEW') as ChallengeType;
-
+  if (!stageConfig || !challengeContent || !resolvedConfig) {
     return (
-      <WelcomeScreen
-        pipelineName={pipelineName}
-        stageName={stageName}
-        challengeType={challengeType}
-        onStart={onStart}
-      />
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
+        <ChromeMeshGrid />
+        <div style={{ textAlign: 'center', zIndex: 1 }}>
+          <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
+          <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+            LOADING_CHALLENGE...
+          </div>
+        </div>
+      </div>
     );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Follow-up question flow (FOLLOW_UP challenge type)
-  // ---------------------------------------------------------------------------
-
-  if (currentChallenge.type === 'FOLLOW_UP') {
-    // Generating questions — show spinner
-    if (followUpLoading) {
-      return (
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
-          <ChromeMeshGrid />
-          <div style={{ textAlign: 'center', zIndex: 1 }}>
-            <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
-            <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
-              GENERATING_QUESTIONS...
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Empty questions: Lambda failed — show completing spinner while useEffect auto-advances
-    if (followUpQuestions !== null && followUpQuestions.length === 0) {
-      return (
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e' }}>
-          <ChromeMeshGrid />
-          <div style={{ textAlign: 'center', zIndex: 1 }}>
-            <Loader2 className="animate-spin" size={32} color="rgba(255,255,255,0.4)" />
-            <div style={{ marginTop: 16, fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
-              COMPLETING...
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Questions ready — show follow-up panel (keep mounted while isLoading so isSubmitting can show spinner)
-    if (followUpQuestions !== null && followUpQuestions.length > 0) {
-      return (
-        <>
-          <ChromeMeshGrid />
-          <FollowUpQuestionsPanel
-            questions={followUpQuestions}
-            onSubmit={(answers) => submitChallenge({ answers })}
-            onSkip={handleFollowUpSkip}
-            isSubmitting={isLoading}
-          />
-          <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-            .animate-spin { animation: spin 1s linear infinite; }
-            @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-          `}</style>
-        </>
-      );
-    }
   }
 
   // ---------------------------------------------------------------------------
   // Challenge workspace
   // ---------------------------------------------------------------------------
 
-  const isLastChallenge =
-    currentStageIndex === stages.length - 1 &&
-    currentChallengeIndex === currentStage.challenges.length - 1;
+  const isFollowUp = currentType === 'FOLLOW_UP';
+  const followUpReady = isFollowUp && followUpQuestions && followUpQuestions.length > 0;
+  const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
+  const totalChallenges = stageConfig.challenges?.length ?? 1;
+  const isLastChallenge = currentOrder === totalChallenges - 1;
 
-  // Determine if this stage uses live video
-  const isLiveVideoStage = currentStage.mode === 'LIVE_VIDEO';
+  // Determine if we're in the review session v2 flow
+  const isReviewSessionV2 =
+    currentType === 'CODE_REVIEW' &&
+    challengeContent?.reviewSession?.requiresInit &&
+    reviewSessionMeta != null;
 
-  // TYPE SAFETY: For CODE_REVIEW, ChallengeRegistry always sets this shape.
-  const submission = currentSubmission as {
-    annotations?: unknown[];
-    verdict?: string | null;
-    summary?: string;
-    [key: string]: unknown;
-  } | null;
-
-  const challengeWorkspace = (
-    <TimerProvider key={currentChallenge.id}>
-      <StageShell
-        title={currentChallenge.title}
-        totalChallenges={currentStage.challenges.length}
-        currentChallengeIndex={currentChallengeIndex}
-        onNext={handleSubmit}
-        isLastChallenge={isLastChallenge}
-        fullBleed={currentChallenge.type === 'CODE_REVIEW'}
-        canAdvance={
-          !isPreview &&
-          submission !== null &&
-          (currentChallenge.type !== 'CODE_REVIEW'
-            || (!!submission.verdict && (submission.summary ?? '').trim().length > 0))
-        }
-        isSubmitting={isLoading}
-      >
-        <ChallengeRegistry
-          challenge={currentChallenge}
-          stageTimeLimit={currentStage.order !== null ? (currentStage as { timeLimit?: number | null }).timeLimit ?? null : null}
-          onSubmissionChange={setCurrentSubmission}
-          onSubmit={handleSubmit}
-        />
-      </StageShell>
-    </TimerProvider>
-  );
-
-  // For LIVE_VIDEO stages: show scheduling widget if no challenges exist yet,
-  // otherwise wrap the challenge workspace in VideoShell.
-  const hasNoChallenges = !currentStage.challenges || currentStage.challenges.length === 0;
+  const isReviewSessionV2Loading =
+    currentType === 'CODE_REVIEW' &&
+    challengeContent?.reviewSession?.requiresInit &&
+    reviewSessionInitLoading;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0c0c0e' }}>
+    <SessionTokenProvider value={sessionToken}>
+    <CandidateIdProvider value={candidateIds}>
+    <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
       <ChromeMeshGrid />
 
       {isPreview && (
         <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 100,
-          background: 'rgba(251,191,36,0.12)',
-          borderBottom: '1px solid rgba(251,191,36,0.3)',
-          padding: '10px 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          fontSize: 10,
-          letterSpacing: '0.15em',
-          fontWeight: 700,
-          fontFamily: '"Space Mono", monospace',
-          color: '#fbbf24',
-        }}>
-          PREVIEW_MODE — This is a preview. Responses will not be scored or saved.
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+          background: 'rgba(251,191,36,0.12)', borderBottom: '1px solid rgba(251,191,36,0.3)',
+          padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 8, fontSize: 10, letterSpacing: '0.15em', fontWeight: 700,
+          fontFamily: '"Space Mono", monospace', color: '#fbbf24',
+        }}>PREVIEW_MODE — This is a preview. Responses will not be scored or saved.</div>
+      )}
+
+      {/* Inline submission error banner — shown when submit fails mid-assessment */}
+      {error && hasStarted && (
+        <div
+          data-testid="submission-error"
+          style={{
+            position: 'fixed',
+            top: 12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 200,
+            background: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: 8,
+            padding: '12px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            maxWidth: 600,
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <AlertCircle size={18} color="#f87171" />
+          <span style={{ fontSize: 12, color: '#f87171', fontFamily: '"Space Mono", monospace', fontWeight: 700, letterSpacing: '0.05em' }}>
+            SUBMISSION_FAILED — {error.message}. Please try again.
+          </span>
         </div>
       )}
 
-      {isLiveVideoStage && hasNoChallenges && candidate ? (
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, paddingTop: isPreview ? 60 : 24 }}>
-          <div style={{ width: '100%', maxWidth: 680, zIndex: 1 }}>
-            <SchedulingStep
-              candidateId={candidate.id}
-              stageId={currentStage.id}
-              candidateName={candidate.name ?? 'Candidate'}
-              {...(candidate.email ? { candidateEmail: candidate.email } : {})}
-            />
-          </div>
-        </div>
-      ) : isLiveVideoStage && candidate ? (
-        <VideoShell
-          stageId={currentStage.id}
-          candidateId={candidate.id}
-          role="CANDIDATE"
-        >
-          {challengeWorkspace}
-        </VideoShell>
-      ) : (
-        challengeWorkspace
-      )}
+      <InterviewProvider
+        key={`${currentOrder}-${challengeContent.title}`}
+        stageConfig={resolvedConfig}
+        currentIndex={0}
+        onSubmit={handleSubmit}
+        onSubmissionChange={setCurrentSubmission}
+      >
+        {/* VideoShell wraps for LIVE_VIDEO stages (adds floating PiP), otherwise renders directly */}
+        {(() => {
+          const inner = (
+            <TimerProvider>
+              <StageShell
+                title={challengeContent.title ?? 'Challenge'}
+                totalChallenges={totalChallenges}
+                currentChallengeIndex={currentOrder}
+                onNext={() => handleSubmit()}
+                isLastChallenge={isLastChallenge}
+                fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION'}
+                canAdvance={
+                  !isPreview &&
+                  currentType !== 'WELCOME' &&
+                  currentType !== 'LIVE_VIDEO' &&
+                  !isReviewSessionV2 &&
+                  (
+                    currentType === 'AGENT_INTERVIEW'
+                      ? currentSubmission !== null
+                      : (followUpReady || (!isFollowUp && currentSubmission !== null))
+                  )
+                }
+                isSubmitting={isLoading}
+                hideFooter={isReviewSessionV2}
+              >
+                {isReviewSessionV2Loading ? (
+                  <div data-testid="review-session-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
+                    <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
+                    <span style={{ fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+                      INITIALISING_REVIEW_SESSION...
+                    </span>
+                  </div>
+                ) : isReviewSessionV2 ? (
+                  <ReviewSessionPage
+                    sessionId={reviewSessionMeta.sessionId}
+                    pr={{
+                      title: challengeContent.githubPrTitle ?? undefined,
+                      description: challengeContent.githubPrDescription ?? undefined,
+                      diff: normalizeDiffJson(challengeContent.cachedDiffJson ?? { files: [] }),
+                    }}
+                    maxRounds={reviewSessionMeta.maxRounds}
+                    onComplete={() => {
+                      setReviewSessionMeta(null);
+                      void handleSubmit({ reviewSessionId: reviewSessionMeta.sessionId });
+                    }}
+                  />
+                ) : followUpWaiting ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
+                    <Loader2 className="animate-spin" size={32} color="var(--pipe-text-dim)" />
+                  </div>
+                ) : followUpReady ? (
+                  <FollowUpQuestionsPanel
+                    questions={followUpQuestions}
+                    isSubmitting={isLoading}
+                    onSubmit={(answers) => handleSubmit({ answers })}
+                    onSkip={() => handleSubmit({ answers: {} })}
+                  />
+                ) : (
+                  <StageRenderer />
+                )}
+              </StageShell>
+            </TimerProvider>
+          );
+
+          // VideoShell only activates once past the LIVE_VIDEO waiting room step
+          // (recruiter initiates the call, not the candidate)
+          return inner;
+        })()}
+      </InterviewProvider>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </div>
+    </CandidateIdProvider>
+    </SessionTokenProvider>
   );
 }

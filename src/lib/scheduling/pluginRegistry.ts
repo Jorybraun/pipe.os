@@ -11,7 +11,7 @@
  * ManualProvider is NOT a plugin — it's a fallback that lacks OAuth/webhook support.
  *
  * @see docs/specs/scheduling-ioc-technical-spec.md
- * @see docs/decisions/ADR-014-scheduling-ioc-plugin-registry.md
+ * @see docs/decisions/historical/ADR-014-scheduling-ioc-plugin-registry.md
  */
 
 import type { FC } from 'react';

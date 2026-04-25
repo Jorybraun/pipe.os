@@ -44,7 +44,7 @@ export function ConnectionStatusBadge({
   status,
   providerLabel,
 }: ConnectionStatusBadgeProps): JSX.Element {
-  const config = STATUS_CONFIG[status ?? ''] ?? STATUS_CONFIG['REVOKED'];
+  const config = STATUS_CONFIG[status ?? ''] ?? STATUS_CONFIG['REVOKED']!;
   const Icon   = config.icon;
 
   return (

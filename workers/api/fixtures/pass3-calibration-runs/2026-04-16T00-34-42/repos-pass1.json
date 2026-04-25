@@ -1,0 +1,122 @@
+[
+  {
+    "repo_id": 1673,
+    "full_name": "mui/base-ui",
+    "primary_language": "typescript",
+    "stars": 9169,
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs/package.json\",\"count\":70},{\"file\":\"examples/tanstack-start-tailwind-css/package.json\",\"count\":24},{\"file\":\"examples/vite-css/package.json\",\"count\":15},{\"file\":\"package.json\",\"count\":44},{\"file\":\"packages/react/package.json\",\"count\":25}],\"totalDeps\":126}",
+    "seniority_band": "staff",
+    "sloc": 191700,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1676,
+    "full_name": "nhost/nhost",
+    "primary_language": "typescript",
+    "stars": 9124,
+    "detected_domain": "web-backend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"cli/cmd/project/templates/init/functions/package.json\",\"count\":0},{\"file\":\"cli/examples/myproject/functions/package.json\",\"count\":5},{\"file\":\"cli/examples/mysvc/package.json\",\"count\":1},{\"file\":\"dashboard/package.json\",\"count\":143},{\"file\":\"docs/package.json\",\"count\":22},{\"file\":\"go.mod\",\"count\":204}],\"totalDeps\":375}",
+    "seniority_band": "staff",
+    "sloc": 356900,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1677,
+    "full_name": "iib0011/omni-tools",
+    "primary_language": "typescript",
+    "stars": 9072,
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":99}],\"totalDeps\":99}",
+    "seniority_band": "staff",
+    "sloc": 57500,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1679,
+    "full_name": "uber/baseweb",
+    "primary_language": "typescript",
+    "stars": 8959,
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":76},{\"file\":\"packages/baseui-codemods/package.json\",\"count\":11},{\"file\":\"packages/baseweb-vscode-extension/package.json\",\"count\":16},{\"file\":\"packages/eslint-plugin-baseui/package.json\",\"count\":5}],\"totalDeps\":97}",
+    "seniority_band": "staff",
+    "sloc": 246200,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1683,
+    "full_name": "rsuite/rsuite",
+    "primary_language": "typescript",
+    "stars": 8695,
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs/package.json\",\"count\":61},{\"file\":\"examples/create-react-app/package.json\",\"count\":11},{\"file\":\"examples/custom-i18n/package.json\",\"count\":16},{\"file\":\"examples/custom-multiple-themes/package.json\",\"count\":51},{\"file\":\"examples/with-babel-preset-rsuite/package.json\",\"count\":19}],\"totalDeps\":116}",
+    "seniority_band": "staff",
+    "sloc": 173600,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1686,
+    "full_name": "getsentry/sentry-javascript",
+    "primary_language": "typescript",
+    "stars": 8618,
+    "detected_domain": "other",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"dev-packages/browser-integration-tests/package.json\",\"count\":14},{\"file\":\"dev-packages/bundle-analyzer-scenarios/browser-basic/package.json\",\"count\":0},{\"file\":\"dev-packages/bundle-analyzer-scenarios/package.json\",\"count\":4},{\"file\":\"dev-packages/bundler-tests/package.json\",\"count\":6},{\"file\":\"dev-packages/clear-cache-gh-action/package.json\",\"count\":3}],\"totalDeps\":21}",
+    "seniority_band": "staff",
+    "sloc": 650300,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1687,
+    "full_name": "Hacker0x01/react-datepicker",
+    "primary_language": "typescript",
+    "stars": 8362,
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"docs-site/package.json\",\"count\":26},{\"file\":\"examples/hello-world/package.json\",\"count\":4},{\"file\":\"package.json\",\"count\":66}],\"totalDeps\":75}",
+    "seniority_band": "senior",
+    "sloc": 20800,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1688,
+    "full_name": "garmeeh/next-seo",
+    "primary_language": "typescript",
+    "stars": 8352,
+    "detected_domain": "web-frontend",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"examples/app-router-showcase/package.json\",\"count\":11},{\"file\":\"package.json\",\"count\":24}],\"totalDeps\":29}",
+    "seniority_band": "senior",
+    "sloc": 24300,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1689,
+    "full_name": "Shopify/react-native-skia",
+    "primary_language": "typescript",
+    "stars": 8302,
+    "detected_domain": "mobile",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"apps/docs/package.json\",\"count\":28},{\"file\":\"apps/example/package.json\",\"count\":45},{\"file\":\"apps/headless/package.json\",\"count\":9},{\"file\":\"apps/remotion/package.json\",\"count\":45},{\"file\":\"apps/web-app/package.json\",\"count\":19}],\"totalDeps\":103}",
+    "seniority_band": "staff",
+    "sloc": 81400,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  },
+  {
+    "repo_id": 1693,
+    "full_name": "davidjerleke/embla-carousel",
+    "primary_language": "typescript",
+    "stars": 8163,
+    "detected_domain": "other",
+    "detected_stack_json": "{\"manifests\":[{\"file\":\"package.json\",\"count\":21},{\"file\":\"packages/embla-carousel/package.json\",\"count\":7},{\"file\":\"packages/embla-carousel-accessibility/package.json\",\"count\":8},{\"file\":\"packages/embla-carousel-auto-height/package.json\",\"count\":8},{\"file\":\"packages/embla-carousel-auto-scroll/package.json\",\"count\":8}],\"totalDeps\":26}",
+    "seniority_band": "staff",
+    "sloc": 212900,
+    "open_pr_count": null,
+    "open_feature_issue_count": null
+  }
+]

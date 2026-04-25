@@ -23,19 +23,19 @@ dist-ssr
 *.sln
 *.sw?
 
-# amplify
-.amplify
-amplify_outputs*
-amplifyconfiguration*
-
 # Environment variables (contains secrets)
 .env
 .env.local
-amplify/functions/**/.env
+workers/api/.dev.vars
 
-# rulesync generated files
+# GCP service account keys (never commit)
+workers/api/sa-key.json
+sa-key.json
+
+# Generated / local-only directories
+.amplify/
 .claude/
-.github/
+.hermes/
 
 # Test artifacts
 test-results/
@@ -49,3 +49,7 @@ playwright/.auth/*.json
 
 # Vite
 vite.config.ts.timestamp-*
+workers/api/.wrangler/
+
+# Binary toolchain artifacts (keep out of repo)
+google-cloud-cli-*.tar.gz

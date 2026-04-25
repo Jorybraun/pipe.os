@@ -48,12 +48,12 @@ export function FormSection({
           style={{
             width: 36,
             height: 36,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
+            background: "var(--pipe-surface)",
+            border: "1px solid var(--pipe-border)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "rgba(255,255,255,0.4)",
+            color: "var(--pipe-text-dim)",
           }}
         >
           <Icon size={16} />
@@ -64,7 +64,7 @@ export function FormSection({
             textAlign: "left",
             fontSize: 10,
             letterSpacing: "0.15em",
-            color: isOpen ? "#fff" : "rgba(255,255,255,0.5)",
+            color: isOpen ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
           }}
         >
           {title}
@@ -81,7 +81,7 @@ export function FormSection({
         )}
         <div
           style={{
-            color: "rgba(255,255,255,0.3)",
+            color: "var(--pipe-text-dim)",
             transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
             transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}

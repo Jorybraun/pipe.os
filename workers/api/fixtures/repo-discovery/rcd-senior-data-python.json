@@ -1,0 +1,247 @@
+{
+  "rcd_version": "2.0.0",
+  "role_context_id": "fixture-rcd-sdp-001",
+  "pipeline_id": "fixture-pipeline-sdp-001",
+  "created_at": "2026-04-14T10:00:00.000Z",
+
+  "technical_context": {
+    "stack": ["Python", "Apache Spark", "Apache Airflow", "dbt", "PostgreSQL", "Snowflake", "Kafka"],
+    "constructs": [
+      "DAG authoring and dependency management",
+      "distributed data transformation",
+      "data quality testing",
+      "schema evolution in data warehouses",
+      "streaming vs batch trade-off analysis",
+      "partition strategy design",
+      "integration testing with realistic data fixtures",
+      "lineage tracking"
+    ],
+    "seniority_band": "senior",
+    "codebase_expectations": [
+      "Airflow DAGs are modular: each operator is independently testable and does not carry global state",
+      "dbt models have schema.yml contracts with data quality tests; models without tests do not merge",
+      "Spark jobs are written with explicit schema definitions, not schema inference — inference is disallowed in production paths",
+      "Integration tests run against a local Spark session and a real Postgres instance to catch serialization and type mismatch bugs",
+      "Data pipeline changes include a lineage impact analysis comment in the PR"
+    ],
+    "dispositional_weights": {
+      "data_quality": 0.20,
+      "ownership": 0.10,
+      "communication": 0.10
+    }
+  },
+
+  "domain_matrix": {
+    "HIRING_MANAGER": {
+      "work": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "The biggest risk in our pipelines is silent data corruption — a job that succeeds but produces wrong numbers. I need engineers who are obsessed with data quality, not just job completion.",
+            "source_exchange_id": "q-work-01",
+            "consequence": "Silent data corruption is more dangerous than a job failure because it propagates downstream before anyone notices; engineers must design data quality checks into the pipeline, not bolt them on after",
+            "value": "Data trustworthiness as the foundation of business decision-making",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["silent_corruption_risk", "data_quality_obsession", "job_completion_vs_correctness", "downstream_trust"],
+        "axial_links": [
+          { "from_code": "silent_corruption_risk", "to_code": "downstream_trust", "relation": "blocks" },
+          { "from_code": "data_quality_obsession", "to_code": "downstream_trust", "relation": "enables" }
+        ],
+        "stories": [
+          {
+            "situation": "A Spark job was silently dropping rows with null partition keys instead of failing, causing a reporting table to show 15% fewer records than the source for three weeks before a downstream analyst noticed a discrepancy.",
+            "action": "The senior data engineer added a row count assertion step after every transformation stage, made null partition keys an explicit job failure rather than a silent drop, and wrote a post-mortem that became the team's data quality runbook.",
+            "outcome": "The team adopted mandatory assertion steps across all production DAGs; no silent data loss incidents in the following eight months.",
+            "moral": "Engineers here are expected to design data pipelines with the assumption that silent failures will happen and build the detection layer into the job, not rely on downstream users to catch discrepancies.",
+            "source_exchange_id": "q-work-01"
+          }
+        ],
+        "summary": "The data engineering team owns the pipelines that feed business intelligence dashboards, product analytics, and ML feature stores. The primary risk is not job failure but silent data corruption — numbers that are subtly wrong because a transformation dropped rows or coerced types silently. Senior engineers are expected to understand both the batch path (Spark + Airflow + dbt) and the streaming path (Kafka + Flink) and to make deliberate trade-off decisions about when each is appropriate."
+      },
+      "codebase": {
+        "primary_authority": true,
+        "coverage": "deep",
+        "laddering_chains": [
+          {
+            "attribute_quote": "We had a year of schema inference disasters before we banned it in production. Now every Spark job declares its output schema explicitly and the test suite validates it.",
+            "source_exchange_id": "q-codebase-01",
+            "consequence": "Schema inference causes type mismatches that propagate silently; explicit schema declarations with test coverage prevent an entire class of production incident",
+            "value": "Explicit contracts over implicit inference as a reliability principle",
+            "energy_signal": "high",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["explicit_schema", "no_schema_inference_prod", "contract_first_pipelines", "test_coverage_data"],
+        "axial_links": [
+          { "from_code": "explicit_schema", "to_code": "contract_first_pipelines", "relation": "enables" },
+          { "from_code": "no_schema_inference_prod", "to_code": "test_coverage_data", "relation": "causes" }
+        ],
+        "stories": [],
+        "summary": "The codebase is Python: Airflow DAGs orchestrate Spark jobs, dbt handles Snowflake transformations, and Kafka handles real-time event ingestion. Integration tests are the team's primary confidence signal — they run against a local Spark session and a real Postgres instance, not mocks, because schema and serialization bugs only surface with real data types. The dbt schema.yml files are the data contract — models without documented tests are treated as draft, not production-ready."
+      },
+      "bar": {
+        "primary_authority": true,
+        "coverage": "covered",
+        "laddering_chains": [
+          {
+            "attribute_quote": "Senior here means you can design the data model for a new domain from scratch and get it right the first time. Not right meaning perfect — right meaning the downstream consumers won't need us to rewrite it in six months.",
+            "source_exchange_id": "q-bar-01",
+            "consequence": "Data model design longevity is a senior-level bar — the candidate must understand slowly changing dimensions, partition strategy, and schema evolution patterns well enough to make forward-compatible decisions",
+            "value": "Durable data models reduce downstream rework cost",
+            "energy_signal": "medium",
+            "confidence": "high"
+          }
+        ],
+        "open_codes": ["data_model_design", "schema_evolution", "scd_patterns", "partition_strategy", "forward_compatibility"],
+        "axial_links": [
+          { "from_code": "data_model_design", "to_code": "forward_compatibility", "relation": "enables" },
+          { "from_code": "scd_patterns", "to_code": "schema_evolution", "relation": "instantiates" }
+        ],
+        "stories": [],
+        "summary": "The senior bar requires demonstrated experience designing data models that age well: slowly changing dimension patterns, partition strategies that don't require full table rewrites as volume grows, and schema evolution plans that don't break existing consumers. Candidates who have only operated existing pipelines without designing the underlying data model from scratch will likely be assessed at mid-level."
+      },
+      "process": {
+        "primary_authority": false,
+        "coverage": "partial",
+        "laddering_chains": [],
+        "open_codes": ["data_incident_postmortems", "lineage_impact_required", "pr_data_quality_checklist"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "Data pipeline PRs require a lineage impact analysis comment. Data incidents have post-mortems. The PR checklist includes a data quality section that is not optional."
+      },
+      "why": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["data_as_product", "ml_feature_enablement"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "The data team is investing in treating data as a product. The ML team is a key internal customer — reliable feature stores with clear data contracts are a direct enabler of ML model quality."
+      },
+      "team": {
+        "primary_authority": false,
+        "coverage": "sparse",
+        "laddering_chains": [],
+        "open_codes": ["data_team", "embedded_analytics", "close_ml_partnership"],
+        "axial_links": [],
+        "stories": [],
+        "summary": "A team of five data engineers working closely with the ML and analytics teams. The data team acts as the reliability layer between raw event sources and the consumers who depend on clean, timely data."
+      }
+    }
+  },
+
+  "conflicts": [],
+
+  "team_culture_profile": {
+    "per_stakeholder": {
+      "HIRING_MANAGER": {
+        "clan_affinity": 3,
+        "adhocracy_affinity": 3,
+        "market_affinity": 3,
+        "hierarchy_affinity": 2,
+        "psychological_safety": 4
+      }
+    }
+  },
+
+  "bars_overrides": [
+    {
+      "dimension": "data_quality",
+      "anchor_level": 4,
+      "base_anchor_text": "Designs pipelines with data quality checks at key stages.",
+      "override_anchor_text": "Designs pipelines that fail fast and loudly on data quality violations rather than silently dropping or coercing bad records. Every transformation stage has a row count assertion. Null partition keys cause a job failure with a clear error message. Schema changes include a migration path for downstream consumers.",
+      "source_chain_id": "q-work-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "technical_depth",
+      "anchor_level": 4,
+      "base_anchor_text": "Understands the technical trade-offs in their domain.",
+      "override_anchor_text": "Can articulate when to use streaming versus batch: understands Kafka consumer group lag, partition count trade-offs, and the cost of exactly-once semantics in Spark Structured Streaming. Has designed at least one SCD type 2 table and can explain why SCD type 1 would have been wrong for that use case.",
+      "source_chain_id": "q-bar-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    },
+    {
+      "dimension": "ownership",
+      "anchor_level": 3,
+      "base_anchor_text": "Takes ownership of data pipelines from development through production monitoring.",
+      "override_anchor_text": "Owns the full pipeline lifecycle: designs the schema, writes the DAG, adds data quality assertions, documents the lineage impact in the PR, and monitors the SLA after deploy. Does not consider a pipeline 'done' until it has run successfully through at least one full business cycle (typically one week) without intervention.",
+      "source_chain_id": "q-work-01",
+      "approved_by": "fixture-recruiter-001",
+      "approved_at": "2026-04-14T10:00:00.000Z"
+    }
+  ],
+
+  "probe_bank_enrichment": {
+    "static_base_version": "v1.0.0",
+    "enriched_probes": [
+      {
+        "dimension": "data_quality",
+        "probe_text": "Tell me about a silent data quality bug you caught or caused. What was the failure mode, how was it detected, and what did you change in the pipeline design to prevent recurrence?",
+        "source_chain_id": "q-work-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      },
+      {
+        "dimension": "technical_depth",
+        "probe_text": "Walk me through the last data model you designed from scratch. What partitioning strategy did you choose, why, and what would you do differently with hindsight?",
+        "source_chain_id": "q-bar-01",
+        "approved_by": "fixture-recruiter-001",
+        "approved_at": "2026-04-14T10:00:00.000Z"
+      }
+    ]
+  },
+
+  "dealbreakers": [
+    {
+      "id": "db-sdp-001",
+      "label": "Has never designed a data model from scratch",
+      "pattern": "Candidate has only operated or extended existing pipelines and cannot explain partition strategy choices, SCD patterns, or schema evolution approaches",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-bar-01",
+      "job_relatedness_note": "The role requires designing new data models for new business domains; inability to do this from scratch means the candidate cannot perform a core function of the senior role.",
+      "job_relatedness_strength": "strong",
+      "evidence_quote": "Senior here means you can design the data model for a new domain from scratch and get it right the first time."
+    }
+  ],
+
+  "red_flags": [
+    {
+      "id": "rf-sdp-001",
+      "label": "Has accepted silent data loss as a normal Spark behaviour",
+      "source_stakeholder": "HIRING_MANAGER",
+      "source_chain_id": "q-work-01",
+      "evidence_quote": "The biggest risk in our pipelines is silent data corruption — a job that succeeds but produces wrong numbers."
+    }
+  ],
+
+  "consumer_slice": {
+    "seniority": "Senior, 5–8 years",
+    "archetype": "Data engineer with Spark and Airflow depth, data quality obsessed, comfortable designing data models from scratch in Snowflake and dbt",
+    "mustHaveSkills": ["Python", "Apache Spark", "Apache Airflow", "dbt", "Snowflake", "data modeling", "data quality testing"],
+    "niceToHaveSkills": ["Kafka", "Flink", "PostgreSQL", "SCD patterns", "Great Expectations", "Delta Lake"],
+    "disposition": [
+      "Treats silent data corruption as a more serious failure than a noisy job error",
+      "Designs data quality assertions into pipelines from day one",
+      "Documents lineage impact of every schema change"
+    ],
+    "careerSignal": "Has designed a multi-domain data model from scratch including partitioning strategy and SCD patterns, and operated it through schema evolution",
+    "redFlags": ["Has only operated existing pipelines without designing the underlying data model"],
+    "dealbreakers": ["Cannot explain partition strategy choices or why schema inference is dangerous in production Spark jobs"]
+  },
+
+  "validation_metadata": {
+    "schema_version": "2.0.0",
+    "synthesis_model": "fixture-synthetic-v1",
+    "synthesis_prompt_version": "v2.0.0",
+    "verification_pass_model": "fixture-synthetic-v1",
+    "face_validity_reviewed_at": "2026-04-14T10:00:00.000Z",
+    "face_validity_reviewer": "fixture-author"
+  }
+}

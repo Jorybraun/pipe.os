@@ -1,0 +1,15 @@
+{
+  "repo_id": 1679,
+  "full_name": "uber/baseweb",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 202 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: package.json sub-counts for codemods (11), vscode-extension (16), and eslint-plugin (5), total 97, and the root count 76 are fabricated breakdown figures not present in the FACTS block"
+  ],
+  "reasoning": "The profile is ~202 words, roughly 198 words short of the minimum, making constraint_pass a clear failure. The profile also fabricates a package.json count breakdown across named sub-packages (76 main, 11 codemods, 16 vscode-extension, 5 eslint-plugin, totalling 97) — none of these sub-counts are in the FACTS block. Accuracy holds up well: TypeScript is correctly identified as the primary language, Jest is correctly named as the test framework, the web-frontend domain is represented with accessibility-aria and react-hooks correctly foregrounded, and the design-system nature of baseweb is accurately described. architecture_style='library' is correct for uber/baseweb, which is Uber's open-source Base Web design system — a distributable component library. All five completeness dimensions are addressed: repo type (web-frontend design system library), language/stack (TypeScript, multi-package), PR shapes (mean 10.1, p90 19), test/review culture (Jest unit-only, test_touch_rate 0.45), and contribution readiness (open counts unknown). Three of four dimensions pass, yielding approved=true."
+}

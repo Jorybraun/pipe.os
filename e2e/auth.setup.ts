@@ -1,48 +1,59 @@
-import { test as setup, expect } from '@playwright/test';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { setupClerkTestingToken } from "@clerk/testing/playwright";
+import { test as setup, expect } from "@playwright/test";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables from .env.local
-dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
+const authFile = path.join(__dirname, "../playwright/.auth/user.json");
 
-const authFile = path.join(__dirname, '../playwright/.auth/user.json');
+/**
+ * Authenticate via Clerk sign-in using testing tokens.
+ * @clerk/testing bypasses bot detection and device verification.
+ */
+setup("authenticate via Clerk", async ({ page }) => {
+  setup.setTimeout(60000);
 
-setup('authenticate', async ({ page }) => {
-  setup.setTimeout(120000);
-  // Go to the home page (which should redirect to login because of <Authenticator>)
-  await page.goto('/');
+  // Inject Clerk testing token to bypass verification
+  await setupClerkTestingToken({ page });
 
-  try {
-    // Wait for the Authenticator to load - using the specific signin selector
-    await page.waitForSelector('[data-amplify-authenticator-signin]', { timeout: 15000 });
-  } catch (e) {
-    const body = await page.innerHTML('body');
-    console.log('Page body content on failure:', body);
-    throw e;
-  }
+  await page.goto("/");
 
-  // Fill in credentials from environment variables
-  const email = process.env.E2E_EMAIL;
-  const password = process.env.E2E_PASSWORD;
+  // Step 1: Click the SIGN IN button on the custom gate
+  const signInButton = page.locator('button:has-text("SIGN IN")');
+  await expect(signInButton).toBeVisible({ timeout: 15000 });
+  await signInButton.click();
 
-  if (!email || !password) {
-    throw new Error('E2E_EMAIL or E2E_PASSWORD environment variables are not set');
-  }
+  // Step 2: Clerk modal opens — fill email
+  const emailInput = page.locator('input[name="identifier"]');
+  await expect(emailInput).toBeVisible({ timeout: 15000 });
+  await emailInput.fill(process.env.E2E_EMAIL ?? "e2e-test@pipe.dev");
 
-  // Amplify UI Authenticator usually uses 'username' and 'password' name attributes
-  await page.locator('input[name="username"]').fill(email);
-  await page.locator('input[name="password"]').fill(password);
+  // Step 3: Click continue
+  await page.locator('button:has-text("Continue")').click();
 
-  // Click the sign-in button
-  await page.locator('button[type="submit"]').click();
+  // Step 4: Fill password
+  const passwordInput = page.locator('input[name="password"]');
+  await expect(passwordInput).toBeVisible({ timeout: 10000 });
+  await passwordInput.fill(process.env.E2E_PASSWORD ?? "PipeE2E_Test2026!");
 
-  // Wait for the app to load (e.g., look for a header or something that indicates successful login)
-  await expect(page.locator('text=CREATE NEW PIPE').first()).toBeVisible({ timeout: 20000 });
+  // Step 5: Submit
+  await page.locator('button:has-text("Continue")').click();
 
-  // Save storage state to a file
+  // Step 6: Wait for app shell
+  await expect(
+    page
+      .locator('text=CREATE NEW PIPE')
+      .or(page.locator('text=SIGN OUT'))
+      .first()
+  ).toBeVisible({ timeout: 30000 });
+
+  // Wait for network to settle so Clerk has completed its async token refresh.
+  // The __session JWT is short-lived (60s in dev mode); saving state only after
+  // networkidle ensures the stored cookie is a freshly-issued token.
+  await page.waitForLoadState('networkidle');
+
+  // Save storage state
   await page.context().storageState({ path: authFile });
 });

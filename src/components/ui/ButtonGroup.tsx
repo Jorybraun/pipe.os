@@ -94,7 +94,7 @@ export function ButtonGroup({
             aria-pressed={selected}
             style={{
               padding: '8px 14px',
-              background: selected ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+              background: selected ? 'rgba(255,255,255,0.15)' : 'var(--pipe-surface)',
               border: `1px solid ${selected ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)'}`,
               color: selected ? '#fff' : 'rgba(255,255,255,0.5)',
               fontSize: 9,

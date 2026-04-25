@@ -1,0 +1,53 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 0,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 0
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "The candidate is a weak reviewer who currently lacks the technical depth necessary to catch high-risk errors. While they demonstrate a consistent baseline of professional process, scoring a 3 across all communication and procedural dimensions, they struggled to identify critical logic and security vulnerabilities. Most importantly, they tended to accept fixes at face value without properly verifying them, resulting in a low overall effectiveness score of 30. To succeed, they must move beyond surface-level formatting and learn to prioritize deep technical scrutiny.",
+      "strengths": [
+        "Demonstrates a consistent baseline of professional communication and process.",
+        "Maintains a steady approach to asking questions and following review steps."
+      ],
+      "growth_areas": [
+        "Identifying critical security vulnerabilities and deep logic flaws.",
+        "Rigorous verification of code fixes to ensure they actually solve the problem.",
+        "Prioritizing high-impact technical issues over minor stylistic preferences."
+      ]
+    },
+    "scorer_a_summary": "The review was highly ineffective. The reviewer missed all critical and major defects, including a major security flaw where the JWT signature is never verified. They focused almost exclusively on style nits and, during the revision phase, they rubber-stamped implementer changes without actually verifying the code, failing to notice that a 'fix' actually left a major type violation intact.",
+    "scorer_b_summary": ""
+  },
+  "meta": {
+    "wall_clock_ms": 78670,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "repo_id": 1673,
+  "full_name": "mui/base-ui",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 232 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: sub-counts for package.json locations (44, 24, 15) and total dependency figure (126) are fabricated; '90' appears embedded in the label 'p90_changed_files' but the surrounding prose treats it as an independent numeric assertion"
+  ],
+  "reasoning": "The profile is clearly too short at ~232 words; the rubric requires 400–600 and this falls roughly 170 words short. Gemma also hallucinated a breakdown of package.json file counts across named subdirectories (docs 70, root 44, packages/react 25, tanstack-start-tailwind-css 24, vite-css 15, totalling 126) — none of these sub-counts appear in the FACTS block, making constraint_pass fail on both the word-count and invented-number axes. Despite that, the narrative is accurate: TypeScript is correctly identified as primary language, vitest as the test framework, the web-frontend domain is well-represented, and the staff-level seniority band and high test_touch_rate are consistent with a large MUI sub-library. architecture_style='library' is defensible and correct for a headless UI component suite. All five completeness dimensions are addressed — repo type, language/stack, PR-shape observations, test/review culture, and contribution readiness (open counts acknowledged as unknown) — so completeness_pass is true. Three of four dimensions pass, yielding approved=true."
+}

@@ -1,6 +1,6 @@
 import { ArrowRight, Code2, FileSearch, HelpCircle, MessageSquare } from 'lucide-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
-import { ChromeMeshGrid } from '../ChromeMeshGrid';
+import { AppBackground } from '../ui/AppBackground';
 
 // ============================================================================
 // Types
@@ -33,7 +33,7 @@ const CHALLENGE_CONFIG: Record<
   CODE_IMPLEMENTATION: {
     label: 'CODE_IMPLEMENTATION',
     icon: <Code2 size={28} />,
-    color: '#a78bfa',
+    color: 'var(--pipe-accent)',
     guidance:
       'Implement a function to the spec provided. You can run and test your code in the editor.',
   },
@@ -93,7 +93,7 @@ export function WelcomeScreen({
         padding: 24,
       }}
     >
-      <ChromeMeshGrid />
+      <AppBackground />
       <LiquidMetalCard
         variant="chrome"
         style={{ maxWidth: 560, width: '100%', padding: 56, zIndex: 1 }}
@@ -103,7 +103,7 @@ export function WelcomeScreen({
           style={{
             fontSize: 9,
             letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.3)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
             marginBottom: 32,
           }}
@@ -138,7 +138,7 @@ export function WelcomeScreen({
           style={{
             fontSize: 28,
             fontWeight: 800,
-            color: '#fff',
+            color: 'var(--pipe-text, #fff)',
             marginBottom: 16,
             letterSpacing: '-0.02em',
             lineHeight: 1.2,
@@ -151,7 +151,7 @@ export function WelcomeScreen({
         <p
           style={{
             fontSize: 13,
-            color: 'rgba(255,255,255,0.5)',
+            color: 'var(--pipe-text-muted)',
             lineHeight: 1.7,
             fontFamily: '"Space Mono", monospace',
             marginBottom: 40,
@@ -163,13 +163,14 @@ export function WelcomeScreen({
         {/* Separator */}
         <div
           style={{
-            borderTop: '1px solid rgba(255,255,255,0.06)',
+            borderTop: '1px solid var(--pipe-border)',
             marginBottom: 32,
           }}
         />
 
         {/* Start button */}
         <button
+          data-testid="start-interview-btn"
           onClick={onStart}
           style={{
             width: '100%',

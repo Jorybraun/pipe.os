@@ -1,46 +1,47 @@
+/**
+ * CandidateProfilePage — Recruiter view of a single candidate's assessment results.
+ *
+ * Migrated from Amplify to Cloudflare Workers API.
+ * Data is loaded via GET /api/v1/candidates/:id which returns the candidate
+ * record with all stages, challenges, and submissions in one round-trip.
+ */
+
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { Calendar, FileDown, CheckCircle } from "lucide-react";
-import { resolveSchedulingProvider, ALL_PROVIDERS } from '../components/Scheduling/provider';
-import { InterviewStatusBadge } from '../components/Scheduling/InterviewStatusBadge';
-import type { InterviewStatus } from '../lib/scheduling/types';
-import { LiquidMetalCard } from "../components";
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from "../../amplify/data/resource";
+import { useAuth as useClerkAuth } from "@clerk/react";
+import {
+  Calendar,
+  FileDown,
+  CheckCircle,
+  Briefcase,
+  Mail,
+  Clock,
+  Brain,
+  GraduationCap,
+  Send,
+  Phone,
+  PhoneCall,
+  Play,
+  Edit3,
+  Check,
+  X as XIcon,
+} from "lucide-react";
+import { LiquidMetalCard, SubTitle } from "../components";
+import { PhoneCallDrawer } from "../components/Phone/PhoneCallDrawer";
 import { calculateSignal } from "../lib/utils";
-import { FEATURES } from "../lib/features";
-import { IntelligenceReport } from "../components/Analytics/IntelligenceReport";
-
-const client = generateClient<Schema>();
+import {
+  IntelligenceReportRenderer,
+  IntelligenceBlockConfig,
+} from "../components/Analytics/IntelligenceReportBlock";
+import { useCandidateProfile } from "../hooks/useCandidateProfile";
+import { useApiClient } from "../hooks/useApiClient";
+import type { ProfileChallenge, ReviewSessionListItem } from "../lib/api/types";
+import { ReviewSessionReport } from "../components/Analytics/ReviewSessionReport";
+import { getReviewSessionStatusColors } from "../lib/reviewSessionStatus";
 
 // ============================================================================
 // Local types
 // ============================================================================
-
-interface ChallengeRow {
-  id: string;
-  type?: string | null;
-  title?: string | null;
-  config?: unknown;
-  instructions?: string | null;
-}
-
-interface StageRow {
-  id: string;
-  title?: string | null;
-  order?: number | null;
-  mode?: string | null;
-  challenges?: ChallengeRow[] | null;
-}
-
-interface ScheduledInterviewRow {
-  id: string;
-  stageId?: string | null;
-  status?: string | null;
-  schedulingUrl?: string | null;
-  meetingUrl?: string | null;
-  scheduledAt?: string | null;
-}
 
 interface FollowUpAnswer {
   questionId: string;
@@ -60,38 +61,49 @@ interface ParsedFollowUpJson {
   answers?: FollowUpAnswer[];
 }
 
-/** Partial assessment row returned from selectionSet query */
-interface AssessmentRow {
-  id: string;
-  challengeId?: string | null;
-  score?: number | null;
-  submission?: unknown;
-  feedback?: string | null;
-  completedAt?: string | null;
-  followUpQuestionsJson?: string | number | boolean | object | unknown[] | null;
-}
-
 // ============================================================================
 // Signal colour helpers
 // ============================================================================
 
 const SIGNAL_COLORS: Record<string, { text: string; bg: string; border: string }> = {
-  STRONG: { text: '#10b981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.3)' },
-  YES:    { text: '#60a5fa', bg: 'rgba(96,165,250,0.1)', border: 'rgba(96,165,250,0.3)' },
-  MAYBE:  { text: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)' },
-  NO:     { text: '#f87171', bg: 'rgba(248,113,113,0.1)', border: 'rgba(248,113,113,0.3)' },
+  STRONG: {
+    text: "#10b981",
+    bg: "rgba(16,185,129,0.1)",
+    border: "rgba(16,185,129,0.3)",
+  },
+  YES: {
+    text: "#60a5fa",
+    bg: "rgba(96,165,250,0.1)",
+    border: "rgba(96,165,250,0.3)",
+  },
+  MAYBE: {
+    text: "#fbbf24",
+    bg: "rgba(251,191,36,0.1)",
+    border: "rgba(251,191,36,0.3)",
+  },
+  NO: {
+    text: "#f87171",
+    bg: "rgba(248,113,113,0.1)",
+    border: "rgba(248,113,113,0.3)",
+  },
 };
 
-/** Type-safe signal colour lookup — always returns a valid colour object */
 function getSignalColors(signal: string): { text: string; bg: string; border: string } {
-  return SIGNAL_COLORS[signal] ?? { text: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)' };
+  return (
+    SIGNAL_COLORS[signal] ?? {
+      text: "#fbbf24",
+      bg: "rgba(251,191,36,0.1)",
+      border: "rgba(251,191,36,0.3)",
+    }
+  );
 }
 
 const CHALLENGE_TYPE_COLORS: Record<string, string> = {
-  CODE_REVIEW:       '#60a5fa',
-  CODE_IMPLEMENTATION: '#a78bfa',
-  QUIZ_MCQ:          '#4ade80',
-  QUIZ_SHORT_ANSWER: '#fbbf24',
+  CODE_REVIEW: "#60a5fa",
+  CODE_IMPLEMENTATION: "var(--pipe-accent)",
+  QUIZ_MCQ: "#4ade80",
+  QUIZ_SHORT_ANSWER: "#fbbf24",
+  AGENT_INTERVIEW: "#06b6d4",
 };
 
 // ============================================================================
@@ -101,137 +113,89 @@ const CHALLENGE_TYPE_COLORS: Record<string, string> = {
 function SignalBadge({ signal }: { signal: string }): JSX.Element {
   const colors = getSignalColors(signal);
   return (
-    <span style={{
-      display: 'inline-block',
-      padding: '4px 10px',
-      background: colors.bg,
-      border: `1px solid ${colors.border}`,
-      borderRadius: 3,
-      fontSize: 10,
-      fontWeight: 700,
-      color: colors.text,
-      letterSpacing: '0.1em',
-      fontFamily: '"Space Mono", monospace',
-    }}>
+    <span
+      style={{
+        display: "inline-block",
+        padding: "4px 10px",
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 4,
+        fontSize: 10,
+        fontWeight: 700,
+        color: colors.text,
+        letterSpacing: "0.1em",
+        fontFamily: '"Space Mono", monospace',
+      }}
+    >
       {signal}
     </span>
   );
 }
 
 function TypeBadge({ type }: { type: string }): JSX.Element {
-  const color = CHALLENGE_TYPE_COLORS[type] ?? 'rgba(255,255,255,0.3)';
+  const color = CHALLENGE_TYPE_COLORS[type] ?? "rgba(255,255,255,0.3)";
   return (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      background: `${color}14`,
-      border: `1px solid ${color}40`,
-      borderRadius: 3,
-      fontSize: 9,
-      fontWeight: 700,
-      color,
-      letterSpacing: '0.08em',
-      fontFamily: '"Space Mono", monospace',
-    }}>
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        background: `${color}14`,
+        border: `1px solid ${color}40`,
+        borderRadius: 4,
+        fontSize: 9,
+        fontWeight: 700,
+        color,
+        letterSpacing: "0.08em",
+        fontFamily: '"Space Mono", monospace',
+      }}
+    >
       {type}
     </span>
   );
 }
 
-// ============================================================================
-// Skill radar (mini version for OVERVIEW tab)
-// ============================================================================
-
-interface SkillProfileShape {
-  bugIdentification: number;
-  severityJudgment: number;
-  analyticalWriting: number;
-  technicalDepth: number;
-}
-
-const RADAR_DIMS: Array<{ key: keyof SkillProfileShape; angleDeg: number; label: string }> = [
-  { key: 'bugIdentification',  angleDeg: -90, label: 'BUG_ID'   },
-  { key: 'severityJudgment',   angleDeg:   0, label: 'SEVERITY' },
-  { key: 'analyticalWriting',  angleDeg:  90, label: 'WRITING'  },
-  { key: 'technicalDepth',     angleDeg: 180, label: 'DEPTH'    },
-];
-
-function MiniRadar({ skillProfile, color }: { skillProfile: SkillProfileShape; color: string }): JSX.Element {
-  const cx = 110, cy = 110, maxR = 72;
-
-  function toXY(value: number, angleDeg: number): { x: number; y: number } {
-    const r = (value / 100) * maxR;
-    const rad = (angleDeg * Math.PI) / 180;
-    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
-  }
-
-  const gridLevels = [0.25, 0.5, 0.75, 1.0];
-  const dataPoints = RADAR_DIMS.map(d => toXY(skillProfile[d.key], d.angleDeg));
-  const dataPolygon = dataPoints.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-
+function ReviewSessionStatusBadge({ status }: { status: string }): JSX.Element {
+  const colors = getReviewSessionStatusColors(status);
+  const label =
+    status === 'in_progress'
+      ? 'In Progress'
+      : status === 'scoring_failed'
+        ? 'Scoring Failed'
+        : status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   return (
-    <div style={{ textAlign: 'center', flexShrink: 0 }}>
-      <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>
-        SKILL_RADAR
-      </div>
-      <svg width="180" height="180" viewBox="0 0 220 220">
-        {gridLevels.map(level => {
-          const pts = RADAR_DIMS.map(d => {
-            const r = level * maxR;
-            const rad = (d.angleDeg * Math.PI) / 180;
-            return `${(cx + r * Math.cos(rad)).toFixed(1)},${(cy + r * Math.sin(rad)).toFixed(1)}`;
-          }).join(' ');
-          return <polygon key={level} points={pts} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />;
-        })}
-        {RADAR_DIMS.map(d => {
-          const rad = (d.angleDeg * Math.PI) / 180;
-          return (
-            <line
-              key={d.key}
-              x1={cx} y1={cy}
-              x2={(cx + maxR * Math.cos(rad)).toFixed(1)}
-              y2={(cy + maxR * Math.sin(rad)).toFixed(1)}
-              stroke="rgba(255,255,255,0.08)" strokeWidth="1"
-            />
-          );
-        })}
-        <polygon points={dataPolygon} fill={`${color}28`} stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-        {dataPoints.map((pt, i) => (
-          <circle key={i} cx={pt.x.toFixed(1)} cy={pt.y.toFixed(1)} r="3" fill={color} />
-        ))}
-        {RADAR_DIMS.map(d => {
-          const rad = (d.angleDeg * Math.PI) / 180;
-          const lx = cx + (maxR + 20) * Math.cos(rad);
-          const ly = cy + (maxR + 20) * Math.sin(rad);
-          const anchor = d.angleDeg === 0 ? 'start' : d.angleDeg === 180 ? 'end' : 'middle';
-          return (
-            <g key={d.key}>
-              <text x={lx.toFixed(1)} y={(ly - 4).toFixed(1)} textAnchor={anchor} fill="rgba(255,255,255,0.3)" fontSize="7" fontFamily="Space Mono, monospace" letterSpacing="0.08em">
-                {d.label}
-              </text>
-              <text x={lx.toFixed(1)} y={(ly + 8).toFixed(1)} textAnchor={anchor} fill={color} fontSize="9" fontFamily="Space Mono, monospace" fontWeight="700">
-                {skillProfile[d.key]}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
+    <span
+      style={{
+        display: 'inline-block',
+        padding: '3px 10px',
+        background: colors.bg,
+        border: `1px solid ${colors.border}`,
+        borderRadius: 4,
+        fontSize: 9,
+        fontWeight: 700,
+        color: colors.text,
+        letterSpacing: '0.08em',
+        fontFamily: '"Space Mono", monospace',
+      }}
+    >
+      {label}
+    </span>
   );
 }
 
-// ============================================================================
-// Follow-up Q&A read-only panel
-// ============================================================================
-
-function FollowUpReadOnly({ followUpQuestionsJson }: { followUpQuestionsJson?: string | number | boolean | object | unknown[] | null }): JSX.Element | null {
+function FollowUpReadOnly({
+  followUpQuestionsJson,
+}: {
+  followUpQuestionsJson?: string | Record<string, unknown> | unknown[] | null;
+}): JSX.Element | null {
   if (!followUpQuestionsJson) return null;
 
   let parsed: ParsedFollowUpJson;
   try {
-    parsed = (typeof followUpQuestionsJson === 'string'
-      ? JSON.parse(followUpQuestionsJson)
-      : followUpQuestionsJson) as ParsedFollowUpJson;
+    parsed = (
+      typeof followUpQuestionsJson === "string"
+        ? JSON.parse(followUpQuestionsJson)
+        : followUpQuestionsJson
+    ) as ParsedFollowUpJson;
   } catch {
     return null;
   }
@@ -242,46 +206,64 @@ function FollowUpReadOnly({ followUpQuestionsJson }: { followUpQuestionsJson?: s
   if (questions.length === 0 && answers.length === 0) return null;
 
   return (
-    <div style={{ marginTop: 24, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 24 }}>
-      <div style={{
-        fontSize: 9,
-        letterSpacing: '0.18em',
-        color: 'rgba(255,255,255,0.3)',
-        fontFamily: '"Space Mono", monospace',
-        marginBottom: 16,
-      }}>
-        FOLLOW_UP_QUESTIONS
+    <div
+      style={{
+        marginTop: 24,
+        borderTop: "1px solid var(--pipe-border)",
+        paddingTop: 24,
+      }}
+    >
+      <div style={{ marginBottom: 16 }}>
+        <SubTitle>FOLLOW_UP_QUESTIONS</SubTitle>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {questions.map((q, idx) => {
-          const answerRecord = answers.find(a => a.questionId === q.id);
+          const answerRecord = answers.find((a) => a.questionId === q.id);
           return (
             <div key={q.id}>
-              <div style={{
-                fontSize: 12,
-                color: 'rgba(255,255,255,0.6)',
-                marginBottom: 8,
-                lineHeight: 1.5,
-              }}>
-                <span style={{ color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', fontSize: 9, marginRight: 8 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--pipe-text-muted)",
+                  marginBottom: 8,
+                  lineHeight: 1.5,
+                }}
+              >
+                <span
+                  style={{
+                    color: "var(--pipe-text-dim)",
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 9,
+                    marginRight: 8,
+                  }}
+                >
                   Q{idx + 1}
                 </span>
                 {q.question}
               </div>
               {answerRecord?.answer ? (
-                <div style={{
-                  padding: '12px 16px',
-                  background: 'rgba(255,255,255,0.03)',
-                  borderLeft: '2px solid rgba(255,255,255,0.1)',
-                  fontSize: 13,
-                  color: 'rgba(255,255,255,0.8)',
-                  lineHeight: 1.6,
-                  whiteSpace: 'pre-wrap',
-                }}>
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    background: "var(--pipe-surface)",
+                    borderLeft: "2px solid rgba(255,255,255,0.1)",
+                    fontSize: 13,
+                    color: "var(--pipe-text, #fff)",
+                    lineHeight: 1.6,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
                   {answerRecord.answer}
                 </div>
               ) : (
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace', fontStyle: 'italic' }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--pipe-text-dim)",
+                    fontFamily: '"Space Mono", monospace',
+                    fontStyle: "italic",
+                  }}
+                >
                   NOT_ANSWERED
                 </div>
               )}
@@ -293,58 +275,71 @@ function FollowUpReadOnly({ followUpQuestionsJson }: { followUpQuestionsJson?: s
   );
 }
 
-// ============================================================================
-// Quiz MCQ view helper
-// ============================================================================
-
-function QuizMcqView({ challenge, submission }: {
-  challenge: ChallengeRow;
+function QuizMcqView({
+  challenge,
+  submission,
+}: {
+  challenge: ProfileChallenge;
   submission: Record<string, unknown> | null;
 }): JSX.Element {
-  const config = (typeof challenge.config === 'string'
-    ? (JSON.parse(challenge.config) as Record<string, unknown>)
-    : ((challenge.config ?? {}) as Record<string, unknown>));
+  const config = challenge.config ?? {};
   const options = Array.isArray(config.options)
     ? (config.options as Array<{ id: string; text?: string; label?: string }>)
     : [];
   const answers = submission?.answers as Record<string, string> | undefined;
-  const selectedId = answers?.['current'] ?? (submission?.selectedOptionId as string | undefined);
+  const selectedId =
+    answers?.["current"] ?? (submission?.selectedOptionId as string | undefined);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ fontSize: 14, color: '#fff', fontWeight: 500, lineHeight: 1.5 }}>
-        {(config.question as string | undefined) ?? 'Question text missing'}
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div
+        style={{
+          fontSize: 14,
+          color: "var(--pipe-text, #fff)",
+          fontWeight: 500,
+          lineHeight: 1.5,
+        }}
+      >
+        {(config.question as string | undefined) ?? "Question text missing"}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {options.map((opt) => {
           const isSelected = selectedId === opt.id;
-          const isCorrect = (config.correctOptionId as string | undefined) === opt.id ||
-                            (config.correct as string | undefined) === opt.id;
+          const isCorrect =
+            (config.correctOptionId as string | undefined) === opt.id ||
+            (config.correct as string | undefined) === opt.id;
           return (
             <div
               key={opt.id}
               style={{
-                padding: '12px 16px',
-                background: isSelected ? 'rgba(255,255,255,0.05)' : 'transparent',
-                border: `1px solid ${isSelected ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)'}`,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                padding: "12px 16px",
+                background: isSelected ? "rgba(255,255,255,0.05)" : "transparent",
+                border: `1px solid ${isSelected ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.05)"}`,
+                borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
               }}
             >
-              <div style={{ fontSize: 13, color: isSelected ? '#fff' : 'rgba(255,255,255,0.5)' }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: isSelected ? "var(--pipe-text, #fff)" : "var(--pipe-text-muted)",
+                }}
+              >
                 {opt.text ?? opt.label ?? opt.id}
               </div>
               {isSelected && (
-                <span style={{
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: isCorrect ? '#10b981' : '#f87171',
-                  fontFamily: '"Space Mono", monospace',
-                  letterSpacing: '0.08em',
-                }}>
-                  {isCorrect ? 'CORRECT' : 'INCORRECT'}
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: isCorrect ? "#10b981" : "#f87171",
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  {isCorrect ? "CORRECT" : "INCORRECT"}
                 </span>
               )}
             </div>
@@ -355,1045 +350,1679 @@ function QuizMcqView({ challenge, submission }: {
   );
 }
 
-// ============================================================================
-// Challenge card
-// ============================================================================
-
+/**
+ * ChallengeCard — displays one challenge with its submission and recruiter
+ * review panel. Score / feedback changes are propagated via callbacks (no
+ * Amplify dependency).
+ */
 function ChallengeCard({
   challenge,
-  assessment,
   onScoreChange,
   onFeedbackChange,
+  onViewReviewSession,
 }: {
-  challenge: ChallengeRow;
-  assessment: AssessmentRow | undefined;
-  onScoreChange: (assessmentId: string, score: number) => void;
-  onFeedbackChange: (assessmentId: string, feedback: string) => void;
+  challenge: ProfileChallenge;
+  onScoreChange: (submissionId: string, score: number) => void;
+  onFeedbackChange: (submissionId: string, feedback: string) => void;
+  onViewReviewSession?: (session: ReviewSessionListItem) => void;
 }): JSX.Element {
-  const isManual = challenge.type === 'QUIZ_SHORT_ANSWER' || challenge.type === 'CODE_IMPLEMENTATION';
-  const submission = assessment?.submission
-    ? (typeof assessment.submission === 'string'
-        ? (JSON.parse(assessment.submission) as Record<string, unknown>)
-        : (assessment.submission as Record<string, unknown>))
-    : null;
+  const sub = challenge.submission;
+  const isManual =
+    challenge.type === "QUIZ_SHORT_ANSWER" || challenge.type === "CODE_IMPLEMENTATION";
+  const response = sub?.response ?? null;
 
   return (
-    <LiquidMetalCard variant="dark" style={{ padding: 32 }}>
-      {/* Card header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 24,
-        gap: 16,
-      }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            {challenge.type && <TypeBadge type={challenge.type} />}
-            {isManual && (
-              <span style={{
-                fontSize: 8,
-                padding: '2px 6px',
-                background: 'rgba(167,139,250,0.08)',
-                border: '1px solid rgba(167,139,250,0.2)',
-                color: '#a78bfa',
-                borderRadius: 3,
-                fontFamily: '"Space Mono", monospace',
-                letterSpacing: '0.08em',
-              }}>
-                MANUAL_REVIEW
-              </span>
-            )}
-          </div>
-          <h4 style={{ fontSize: 16, fontWeight: 700, color: '#fff', margin: 0, lineHeight: 1.3 }}>
-            {challenge.title ?? 'Untitled Challenge'}
+    <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "24px 32px",
+          borderBottom: "1px solid var(--pipe-border)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {challenge.type && <TypeBadge type={challenge.type} />}
+          <h4 style={{ fontSize: 16, fontWeight: 800, color: "var(--pipe-text, #fff)", margin: 0 }}>
+            {challenge.title ?? "Untitled Challenge"}
           </h4>
+          {challenge.type === 'CODE_REVIEW' && challenge.reviewSession && (
+            <ReviewSessionStatusBadge status={challenge.reviewSession.status} />
+          )}
         </div>
-        {assessment && (
-          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div style={{
-              fontSize: 28,
-              fontWeight: 800,
-              color: isManual && assessment.score === 0 ? 'rgba(255,255,255,0.15)' : '#fff',
-              lineHeight: 1,
-              letterSpacing: '-0.02em',
-            }}>
-              {assessment.score}
-            </div>
-            <div style={{
-              fontSize: 8,
-              letterSpacing: '0.1em',
-              color: 'rgba(255,255,255,0.3)',
-              marginTop: 4,
-              fontFamily: '"Space Mono", monospace',
-            }}>
-              SCORE
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* No submission */}
-      {!assessment && (
-        <div style={{
-          padding: 24,
-          border: '1px dashed rgba(255,255,255,0.06)',
-          textAlign: 'center',
-          color: 'rgba(255,255,255,0.2)',
-          fontSize: 11,
-          fontFamily: '"Space Mono", monospace',
-          letterSpacing: '0.1em',
-        }}>
-          NO_SUBMISSION_YET
-        </div>
-      )}
-
-      {/* Submission content */}
-      {assessment && submission && (
-        <div style={{ display: 'grid', gridTemplateColumns: isManual ? '1fr 280px' : '1fr', gap: 32 }}>
-          {/* Left: submission view */}
-          <div style={{ background: 'rgba(0,0,0,0.2)', padding: 24, borderRadius: 4, minWidth: 0 }}>
-
-            {/* CODE_REVIEW */}
-            {challenge.type === 'CODE_REVIEW' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Verdict + summary */}
-                {(Boolean(submission.verdict) || Boolean(submission.summary)) && (
-                  <div style={{ marginBottom: 16 }}>
-                    {Boolean(submission.verdict) && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <span style={{ fontSize: 9, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace' }}>VERDICT</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', textTransform: 'uppercase', fontFamily: '"Space Mono", monospace' }}>
-                          {String(submission.verdict)}
-                        </span>
-                      </div>
-                    )}
-                    {Boolean(submission.summary) && (
-                      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.6 }}>
-                        {String(submission.summary)}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* Annotations */}
-                <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-                  CANDIDATE_ANNOTATIONS
-                </div>
-                {Array.isArray(submission.annotations) && (submission.annotations as unknown[]).length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(submission.annotations as Array<Record<string, unknown>>).map((ann, idx) => {
-                      const sev = (ann.severity as string) ?? 'minor';
-                      const borderColor = sev === 'critical' ? '#ef4444' : sev === 'major' ? '#f59e0b' : '#60a5fa';
-                      return (
-                        <div key={idx} style={{
-                          padding: '12px 16px',
-                          background: 'rgba(255,255,255,0.03)',
-                          borderLeft: `2px solid ${borderColor}`,
-                          borderRadius: '0 3px 3px 0',
-                        }}>
-                          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
-                            {Boolean(ann.file) && (
-                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
-                                {String(ann.file).split('/').pop() ?? ''}:{String(ann.line ?? '')}
-                              </span>
-                            )}
-                            <span style={{
-                              fontSize: 8,
-                              fontWeight: 700,
-                              color: borderColor,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.1em',
-                              fontFamily: '"Space Mono", monospace',
-                            }}>
-                              {sev}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5 }}>
-                            {String(ann.comment ?? '')}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', fontStyle: 'italic', fontFamily: '"Space Mono", monospace' }}>
-                    No annotations provided.
-                  </div>
-                )}
-                {/* Follow-up Q&A */}
-                <FollowUpReadOnly followUpQuestionsJson={assessment.followUpQuestionsJson ?? null} />
-              </div>
-            )}
-
-            {/* QUIZ_MCQ */}
-            {challenge.type === 'QUIZ_MCQ' && <QuizMcqView challenge={challenge} submission={submission} />}
-
-            {/* QUIZ_SHORT_ANSWER */}
-            {challenge.type === 'QUIZ_SHORT_ANSWER' && (
-              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
-                {(submission.text as string) || <span style={{ color: 'rgba(255,255,255,0.2)', fontStyle: 'italic' }}>No answer provided.</span>}
-              </div>
-            )}
-
-            {/* CODE_IMPLEMENTATION */}
-            {challenge.type === 'CODE_IMPLEMENTATION' && (
-              <div style={{ background: '#000', padding: 20, borderRadius: 4, border: '1px solid rgba(255,255,255,0.05)' }}>
-                <pre style={{ margin: 0, fontSize: 12, color: '#a78bfa', fontFamily: '"Space Mono", monospace', lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                  {(submission.code as string) || '// No code submitted'}
-                </pre>
-              </div>
-            )}
-          </div>
-
-          {/* Right: manual review panel */}
-          {isManual && (
-            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: 32 }}>
-              <div style={{
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {challenge.type === 'CODE_REVIEW' && challenge.reviewSession && onViewReviewSession && (
+            <button
+              onClick={() => onViewReviewSession(challenge.reviewSession!)}
+              style={{
+                padding: '6px 14px',
+                background: 'rgba(96,165,250,0.08)',
+                border: '1px solid rgba(96,165,250,0.25)',
+                borderRadius: 4,
+                color: '#60a5fa',
                 fontSize: 9,
-                letterSpacing: '0.18em',
-                color: 'rgba(255,255,255,0.3)',
+                fontWeight: 700,
+                letterSpacing: '0.08em',
                 fontFamily: '"Space Mono", monospace',
-                marginBottom: 24,
-              }}>
-                RECRUITER_REVIEW
+                cursor: 'pointer',
+              }}
+            >
+              VIEW REVIEW SESSION
+            </button>
+          )}
+          {sub && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.1em",
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                SCORE
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <label style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>SCORE</label>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontFamily: '"Space Mono", monospace' }}>{assessment.score}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={assessment.score ?? 0}
-                    onChange={async (e) => {
-                      const newScore = parseInt(e.target.value, 10);
-                      onScoreChange(assessment.id, newScore);
-                      await client.models.Assessment.update({ id: assessment.id, score: newScore });
-                    }}
-                    style={{ width: '100%', cursor: 'pointer', accentColor: '#a78bfa' }}
-                  />
-                </div>
-                <div>
-                  <label style={{
-                    display: 'block',
-                    fontSize: 9,
-                    color: 'rgba(255,255,255,0.3)',
-                    marginBottom: 12,
-                    fontFamily: '"Space Mono", monospace',
-                    letterSpacing: '0.1em',
-                  }}>
-                    FEEDBACK
-                  </label>
-                  <textarea
-                    value={assessment.feedback ?? ''}
-                    onChange={async (e) => {
-                      const newVal = e.target.value;
-                      onFeedbackChange(assessment.id, newVal);
-                      await client.models.Assessment.update({ id: assessment.id, feedback: newVal });
-                    }}
-                    placeholder="Add internal notes..."
-                    style={{
-                      width: '100%',
-                      height: 120,
-                      background: 'rgba(0,0,0,0.2)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      padding: 12,
-                      color: '#fff',
-                      fontSize: 12,
-                      fontFamily: '"Space Mono", monospace',
-                      outline: 'none',
-                      resize: 'none',
-                      borderRadius: 3,
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
+              <div
+                style={{ fontSize: 24, fontWeight: 900, color: "var(--pipe-text, #fff)", lineHeight: 1 }}
+              >
+                {sub.score}
               </div>
             </div>
           )}
         </div>
-      )}
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: "32px" }}>
+        {!sub && (
+          <div
+            style={{
+              padding: 40,
+              border: "1px dashed var(--pipe-border)",
+              borderRadius: 8,
+              textAlign: "center",
+              color: "var(--pipe-text-dim)",
+              fontSize: 11,
+              fontFamily: '"Space Mono", monospace',
+              letterSpacing: "0.1em",
+            }}
+          >
+            NO_SUBMISSION_YET
+          </div>
+        )}
+
+        {sub && response && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isManual ? "1fr 320px" : "1fr",
+              gap: 40,
+            }}
+          >
+            {/* Submission content */}
+            <div style={{ minWidth: 0 }}>
+              {challenge.type === "CODE_REVIEW" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                  {(Boolean(response.verdict) || Boolean(response.summary)) && (
+                    <div
+                      style={{
+                        background: "var(--pipe-surface)",
+                        padding: 24,
+                        borderRadius: 8,
+                        border: "1px solid var(--pipe-border-light)",
+                      }}
+                    >
+                      {Boolean(response.verdict) && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            marginBottom: 12,
+                          }}
+                        >
+                          <SubTitle>VERDICT</SubTitle>
+                          <span
+                            data-testid="review-verdict"
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 800,
+                              color: "var(--pipe-text, #fff)",
+                              textTransform: "uppercase",
+                              fontFamily: '"Space Mono", monospace',
+                              letterSpacing: "0.05em",
+                            }}
+                          >
+                            {String(response.verdict)}
+                          </span>
+                        </div>
+                      )}
+                      {Boolean(response.summary) && (
+                        <div
+                          data-testid="review-summary"
+                          style={{
+                            fontSize: 14,
+                            color: "var(--pipe-text-muted)",
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {String(response.summary)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ marginBottom: 16 }}>
+                      <SubTitle>CANDIDATE_ANNOTATIONS</SubTitle>
+                    </div>
+                    {Array.isArray(response.annotations) &&
+                    (response.annotations as unknown[]).length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {(
+                          response.annotations as Array<Record<string, unknown>>
+                        ).map((ann, idx) => {
+                          const sev = (ann.severity as string) ?? "minor";
+                          const borderColor =
+                            sev === "critical"
+                              ? "#ef4444"
+                              : sev === "major"
+                                ? "#f59e0b"
+                                : "#60a5fa";
+                          return (
+                            <div
+                              key={idx}
+                              style={{
+                                padding: "16px 20px",
+                                background: "var(--pipe-surface)",
+                                borderLeft: `3px solid ${borderColor}`,
+                                borderRadius: "0 4px 4px 0",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 12,
+                                  alignItems: "center",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                {Boolean(ann.file) && (
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      color: "var(--pipe-text-dim)",
+                                      fontFamily: '"Space Mono", monospace',
+                                    }}
+                                  >
+                                    {String(ann.file).split("/").pop() ?? ""}:
+                                    {String(ann.line ?? "")}
+                                  </span>
+                                )}
+                                <span
+                                  style={{
+                                    fontSize: 9,
+                                    fontWeight: 800,
+                                    color: borderColor,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.1em",
+                                    fontFamily: '"Space Mono", monospace',
+                                  }}
+                                >
+                                  {sev}
+                                </span>
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  color: "var(--pipe-text, #fff)",
+                                  lineHeight: 1.6,
+                                }}
+                              >
+                                {String(ann.comment ?? "")}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "var(--pipe-text-dim)",
+                          fontStyle: "italic",
+                          fontFamily: '"Space Mono", monospace',
+                        }}
+                      >
+                        No annotations provided.
+                      </div>
+                    )}
+                  </div>
+                  <FollowUpReadOnly
+                    followUpQuestionsJson={
+                      response.followUpQuestionsJson as
+                        | string
+                        | Record<string, unknown>
+                        | null
+                    }
+                  />
+                </div>
+              )}
+
+              {challenge.type === "QUIZ_MCQ" && (
+                <QuizMcqView challenge={challenge} submission={response} />
+              )}
+
+              {challenge.type === "QUIZ_SHORT_ANSWER" &&
+                (() => {
+                  const inputMode =
+                    (response.inputMode as string | undefined) ?? "text";
+                  if (inputMode === "video")
+                    return (
+                      <div
+                        style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                      >
+                        <SubTitle>CANDIDATE_VIDEO_RESPONSE</SubTitle>
+                        <div
+                          style={{
+                            padding: 40,
+                            textAlign: "center",
+                            background: "rgba(0,0,0,0.2)",
+                            borderRadius: 12,
+                            border: "1px dashed var(--pipe-border-light)",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: '"Space Mono", monospace',
+                              fontSize: 10,
+                              color: "var(--pipe-text-dim)",
+                            }}
+                          >
+                            VIDEO_SUBMISSION
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  if (inputMode === "voice")
+                    return (
+                      <div
+                        style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                      >
+                        <SubTitle>VOICE_TRANSCRIPT</SubTitle>
+                        <div
+                          style={{
+                            fontSize: 15,
+                            color: "var(--pipe-text, #fff)",
+                            lineHeight: 1.7,
+                            whiteSpace: "pre-wrap",
+                            background: "rgba(0,0,0,0.2)",
+                            padding: 24,
+                            borderRadius: 8,
+                            border: "1px solid var(--pipe-border-light)",
+                          }}
+                        >
+                          {(response.text as string) || (
+                            <span
+                              style={{
+                                color: "var(--pipe-text-dim)",
+                                fontStyle: "italic",
+                              }}
+                            >
+                              No transcript captured.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  return (
+                    <div
+                      style={{
+                        fontSize: 15,
+                        color: "var(--pipe-text, #fff)",
+                        lineHeight: 1.7,
+                        whiteSpace: "pre-wrap",
+                        background: "rgba(0,0,0,0.2)",
+                        padding: 24,
+                        borderRadius: 8,
+                        border: "1px solid var(--pipe-border-light)",
+                      }}
+                    >
+                      {(response.text as string) || (
+                        <span
+                          style={{
+                            color: "var(--pipe-text-dim)",
+                            fontStyle: "italic",
+                          }}
+                        >
+                          No answer provided.
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+
+              {challenge.type === "CODE_IMPLEMENTATION" && (
+                <div
+                  style={{
+                    background: "#000",
+                    padding: 24,
+                    borderRadius: 8,
+                    border: "1px solid var(--pipe-border)",
+                  }}
+                >
+                  <pre
+                    style={{
+                      margin: 0,
+                      fontSize: 13,
+                      color: "var(--pipe-accent)",
+                      fontFamily: '"Space Mono", monospace',
+                      lineHeight: 1.6,
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {(response.code as string) || "// No code submitted"}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Recruiter review panel */}
+            {isManual && sub && (
+              <div
+                style={{
+                  borderLeft: "1px solid rgba(255,255,255,0.05)",
+                  paddingLeft: 40,
+                }}
+              >
+                <div style={{ marginBottom: 24 }}>
+                  <SubTitle>RECRUITER_REVIEW</SubTitle>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <label
+                        style={{
+                          fontSize: 9,
+                          color: "var(--pipe-text-dim)",
+                          fontFamily: '"Space Mono", monospace',
+                          letterSpacing: "0.1em",
+                        }}
+                      >
+                        SCORE
+                      </label>
+                      <span
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 900,
+                          color: "var(--pipe-text, #fff)",
+                          fontFamily: '"Space Mono", monospace',
+                        }}
+                      >
+                        {sub.score ?? 0}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={sub.score ?? 0}
+                      onChange={(e) => {
+                        onScoreChange(sub.id, parseInt(e.target.value, 10));
+                      }}
+                      style={{
+                        width: "100%",
+                        cursor: "pointer",
+                        accentColor: "var(--pipe-accent)",
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 9,
+                        color: "var(--pipe-text-dim)",
+                        marginBottom: 12,
+                        fontFamily: '"Space Mono", monospace',
+                        letterSpacing: "0.1em",
+                      }}
+                    >
+                      FEEDBACK
+                    </label>
+                    <textarea
+                      value={sub.feedback ?? ""}
+                      onChange={(e) => {
+                        onFeedbackChange(sub.id, e.target.value);
+                      }}
+                      placeholder="Add internal notes..."
+                      style={{
+                        width: "100%",
+                        height: 200,
+                        background: "rgba(0,0,0,0.3)",
+                        border: "1px solid var(--pipe-border)",
+                        padding: 16,
+                        color: "var(--pipe-text, #fff)",
+                        fontSize: 13,
+                        fontFamily: "inherit",
+                        outline: "none",
+                        resize: "none",
+                        borderRadius: 8,
+                        boxSizing: "border-box",
+                        lineHeight: 1.6,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </LiquidMetalCard>
   );
 }
 
 // ============================================================================
-// Main component
+// Main page
 // ============================================================================
 
-/**
- * CandidateProfilePage — Recruiter view of a candidate's assessment results.
- *
- * Layout:
- *   Header: CANDIDATE_PROFILE · [email] · [pipeline] · GENERATE_REPORT (stub)
- *   Tabs: OVERVIEW | STAGE_1 | STAGE_2 | ...
- *   OVERVIEW: overall score/signal + stage score cards + candidate info
- *   Per-stage: challenge cards with type-specific content + follow-up Q&A
- */
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
-  const [candidate, setCandidate] = useState<Schema['Candidate']['type'] | null>(null);
-  const [assessments, setAssessments] = useState<AssessmentRow[]>([]);
-  const [stages, setStages] = useState<StageRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'OVERVIEW' | 'INTELLIGENCE' | string>('OVERVIEW');
-  const [scheduledInterview, setScheduledInterview] = useState<ScheduledInterviewRow | null>(null);
-  const [inviteUrl, setInviteUrl] = useState('');
-  const [inviteSaving, setInviteSaving] = useState(false);
+  const { getToken } = useClerkAuth();
+  const api = useApiClient();
+  const { candidate, stages, phoneCalls, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
+    useCandidateProfile(id);
 
-  const fetchData = useCallback(async () => {
+  const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const [viewingReviewSession, setViewingReviewSession] = useState<ReviewSessionListItem | null>(null);
+  const [showPhoneDrawer, setShowPhoneDrawer] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState('');
+  const [resendingInvite, setResendingInvite] = useState(false);
+  const [resendResult, setResendResult] = useState<'sent' | 'error' | null>(null);
+  const [assessLink, setAssessLink] = useState<string | null>(null);
+
+  const handleResendInvite = useCallback(async (): Promise<void> => {
+    if (!id) return;
+    setResendingInvite(true);
+    setResendResult(null);
+    try {
+      await api.post(`/api/v1/candidates/${id}/send-invite`, {});
+      setResendResult('sent');
+      setTimeout(() => setResendResult(null), 3000);
+    } catch (err) {
+      console.error('[CandidateProfilePage] Resend invite failed:', err);
+      setResendResult('error');
+    } finally {
+      setResendingInvite(false);
+    }
+  }, [id, api]);
+
+  const handleSavePhone = useCallback(async (): Promise<void> => {
+    if (!id) return;
+    const trimmed = phoneInput.trim();
+    try {
+      await api.patch(`/api/v1/candidates/${id}`, {
+        phoneNumber: trimmed || null,
+      });
+      setEditingPhone(false);
+      void refetch();
+    } catch (err) {
+      console.error('[CandidateProfilePage] Save phone failed:', err);
+    }
+  }, [id, phoneInput, api, refetch]);
+
+  const handleViewResume = useCallback(async (): Promise<void> => {
     if (!id) return;
     try {
-      setIsLoading(true);
-      setError(null);
+      const token = await getToken();
+      const baseUrl =
+        typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
+          ? import.meta.env.VITE_API_URL
+          : "http://localhost:8787";
 
-      const { data: cand } = await client.models.Candidate.get({ id });
-      if (!cand) return;
-      setCandidate(cand);
+      const response = await fetch(`${baseUrl}/api/v1/candidates/${id}/resume`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
-      // Note: Assessment.list filter type is too deeply recursive for TS strict mode (TS2589).
-      // Fetch all and filter client-side — assessment counts per candidate are small.
-      const [allAssessments, stagesData] = await Promise.all([
-        client.models.Assessment.list(),
-        client.models.Stage.list({
-          filter: { pipelineId: { eq: cand.pipelineId } },
-          selectionSet: ['id', 'title', 'order', 'mode', 'challenges.*'],
-        }),
-      ]);
-      const assData = { data: allAssessments.data.filter(a => a.candidateId === id) };
+      if (!response.ok) {
+        console.error("[CandidateProfilePage] Resume fetch failed:", response.status);
+        return;
+      }
 
-      setAssessments(assData.data);
-
-      const sortedStages: StageRow[] = stagesData.data
-        .filter((s): s is NonNullable<typeof s> => s !== null)
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-      setStages(sortedStages);
-
-      // Load ScheduledInterview for the LIVE_VIDEO stage
-      const liveStage = sortedStages.find((s) => s.mode === 'LIVE_VIDEO');
-      if (liveStage) {
-        try {
-          const { data: siList } = await client.models.ScheduledInterview.list({
-            filter: { candidateId: { eq: id } },
-          });
-          const si = siList.find((s) => s.stageId === liveStage.id) ?? null;
-          setScheduledInterview(si as ScheduledInterviewRow | null);
-          if (si?.schedulingUrl) setInviteUrl(si.schedulingUrl);
-        } catch {
-          // ScheduledInterview not yet deployed — ignore
-        }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const win = window.open(objectUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+      if (!win) {
+        console.warn("[CandidateProfilePage] Popup blocked — falling back to download.");
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = "resume";
+        anchor.click();
       }
     } catch (err) {
-      console.error('[CandidateProfilePage] Error fetching data:', err);
-      setError(err instanceof Error ? err : new Error('Failed to load candidate profile'));
-    } finally {
-      setIsLoading(false);
+      console.error("[CandidateProfilePage] Error opening resume:", err);
     }
-  }, [id]);
+  }, [id, getToken]);
 
+  const [aiBlocks] = useState<IntelligenceBlockConfig[]>([]);
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+
+  // Auto-select first stage on load
+  const [hasAutoSelected, setHasAutoSelected] = useState(false);
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Optimistic score/feedback updates
-  const handleScoreChange = (assessmentId: string, score: number): void => {
-    setAssessments(prev => prev.map(a => a.id === assessmentId ? { ...a, score } : a));
-  };
-
-  const handleFeedbackChange = (assessmentId: string, feedback: string): void => {
-    setAssessments(prev => prev.map(a => a.id === assessmentId ? { ...a, feedback } : a));
-  };
-
-
-  const handleSendInvite = async (): Promise<void> => {
-    if (!id || !candidate || !inviteUrl) return;
-    const liveStage = stages.find((s) => s.mode === 'LIVE_VIDEO');
-    if (!liveStage) return;
-    setInviteSaving(true);
-    try {
-      const provider = resolveSchedulingProvider(inviteUrl, ALL_PROVIDERS);
-      const { data, errors } = await client.models.ScheduledInterview.create({
-        candidateId: id,
-        pipelineId: candidate.pipelineId,
-        stageId: liveStage.id,
-        status: 'INVITED',
-        schedulingUrl: inviteUrl,
-        schedulingProvider: provider.type,
-      });
-      if (errors) throw new Error(errors[0]?.message ?? 'Unknown error');
-      setScheduledInterview(data as ScheduledInterviewRow);
-    } catch (err) {
-      console.error('[CandidateProfilePage] Failed to send invite:', err);
-    } finally {
-      setInviteSaving(false);
+    const firstStage = stages[0];
+    if (!hasAutoSelected && firstStage !== undefined) {
+      setSelectedTab(firstStage.id);
+      setHasAutoSelected(true);
     }
-  };
+  }, [stages, hasAutoSelected]);
 
-  // -------------------------------------------------------------------------
-  // Loading state
-  // -------------------------------------------------------------------------
-
-  if (isLoading) {
-    return (
-      <div style={{ padding: '40px 0' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <div style={{ display: 'flex', gap: 12 }}>
-            {[1, 2, 3].map(i => (
-              <div key={i} style={{ flex: 1, height: 80, background: 'rgba(255,255,255,0.02)', borderRadius: 4 }} />
-            ))}
-          </div>
-          <div style={{ height: 200, background: 'rgba(255,255,255,0.02)', borderRadius: 4 }} />
-        </div>
-      </div>
+  // Compute per-stage stats
+  const stageStats = stages.map((stage) => {
+    const scoredChallenges = stage.challenges.filter(
+      (ch) => ch.submission?.score != null,
     );
-  }
-
-  // -------------------------------------------------------------------------
-  // Error state
-  // -------------------------------------------------------------------------
-
-  if (error) {
-    return (
-      <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <LiquidMetalCard variant="mercury" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
-          <div style={{ color: '#f87171', marginBottom: 16, fontSize: 11, fontWeight: 700, fontFamily: '"Space Mono", monospace', letterSpacing: '0.15em' }}>
-            ERROR_LOADING_PROFILE
-          </div>
-          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
-            {error.message}
-          </p>
-          <button
-            onClick={() => fetchData()}
-            style={{
-              padding: '12px 24px',
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: '#fff',
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              fontFamily: '"Space Mono", monospace',
-              cursor: 'pointer',
-            }}
-          >
-            RETRY_CONNECTION
-          </button>
-        </LiquidMetalCard>
-      </div>
-    );
-  }
-
-  if (!candidate) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '60vh',
-        color: 'rgba(255,255,255,0.4)',
-        fontFamily: '"Space Mono", monospace',
-        fontSize: 12,
-        letterSpacing: '0.15em',
-      }}>
-        CANDIDATE_NOT_FOUND
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // Score calculations
-  // -------------------------------------------------------------------------
-
-  const stageStats = stages.map(stage => {
-    const challengeIds = (stage.challenges ?? []).map((c) => c.id);
-    const stageAssessments = assessments.filter(a => a.challengeId !== null && challengeIds.includes(a.challengeId ?? ''));
-    const score = stageAssessments.length > 0
-      ? Math.round(stageAssessments.reduce((sum, a) => sum + (a.score ?? 0), 0) / stageAssessments.length)
-      : null;
-    return {
-      id: stage.id,
-      title: stage.title,
-      score,
-      isComplete: stageAssessments.length > 0 && stageAssessments.length === challengeIds.length,
-    };
+    const score =
+      scoredChallenges.length > 0
+        ? Math.round(
+            scoredChallenges.reduce(
+              (sum, ch) => sum + (ch.submission?.score ?? 0),
+              0,
+            ) / scoredChallenges.length,
+          )
+        : null;
+    const isComplete =
+      stage.challenges.length > 0 &&
+      stage.challenges.every((ch) => ch.submission !== null);
+    return { id: stage.id, title: stage.title, score, isComplete };
   });
 
-  const completedStages = stageStats.filter(s => s.score !== null);
-  const avgScore = completedStages.length > 0
-    ? Math.round(completedStages.reduce((sum, s) => sum + (s.score ?? 0), 0) / completedStages.length)
-    : null;
+  const pipelineComplete =
+    stageStats.length > 0 && stageStats.every((s) => s.isComplete);
+
+  const avgScore =
+    stageStats.filter((s) => s.score !== null).length > 0
+      ? Math.round(
+          stageStats
+            .filter((s) => s.score !== null)
+            .reduce((sum, s) => sum + (s.score ?? 0), 0) /
+            stageStats.filter((s) => s.score !== null).length,
+        )
+      : null;
+
   const signal = calculateSignal(avgScore);
   const signalColors = getSignalColors(signal);
 
-  const liveVideoStage = stages.find((s) => s.mode === 'LIVE_VIDEO');
-
-  // ── Overview enrichment helpers ───────────────────────────────────────────
-
-  const SIGNAL_LABELS: Record<string, string> = {
-    STRONG: 'Strong hire signal',
-    YES: 'Recommended',
-    MAYBE: 'Borderline — review carefully',
-    NO: 'Not recommended',
-  };
-
-  interface SnapshotFeedback {
-    summary: string;
-    strengths: string[];
-    concerns: string[];
-    skillProfile?: SkillProfileShape;
-  }
-
-  function parseSnapshot(feedback: string | null | undefined): SnapshotFeedback | null {
-    if (!feedback) return null;
-    try {
-      const p = JSON.parse(feedback) as Record<string, unknown>;
-      if (p && 'skillProfile' in p && typeof p['summary'] === 'string') {
-        return p as unknown as SnapshotFeedback;
-      }
-    } catch { /* ignore */ }
-    return null;
-  }
-
-  const aiSnapshot: SnapshotFeedback | null = (() => {
-    for (const a of assessments) {
-      const snap = parseSnapshot(a.feedback);
-      if (snap) return snap;
+  useEffect(() => {
+    if (selectedTab === "INTELLIGENCE" && aiBlocks.length === 0 && !isAiGenerating) {
+      setIsAiGenerating(true);
+      setTimeout(() => setIsAiGenerating(false), 1000);
     }
-    return null;
-  })();
+  }, [selectedTab, aiBlocks.length, isAiGenerating]);
 
+  useEffect(() => {
+    if (!viewingReviewSession) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setViewingReviewSession(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewingReviewSession]);
+
+  // ── Loading skeleton ────────────────────────────────────────────────────────
+  if (isLoading && !candidate) {
+    return (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 340px",
+          gap: 0,
+          height: "calc(100vh - 100px)",
+          margin: "-24px -20px",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: 40 }}>
+          <div
+            style={{
+              height: 400,
+              background: "var(--pipe-surface)",
+              borderRadius: 16,
+            }}
+          />
+        </div>
+        <div
+          style={{
+            background: "var(--pipe-surface)",
+            borderLeft: "1px solid var(--pipe-border)",
+          }}
+        />
+      </div>
+    );
+  }
+
+  // ── Error / not found ───────────────────────────────────────────────────────
+  if (error || !candidate) {
+    return (
+      <div
+        data-testid="candidate-not-found"
+        style={{ padding: 40, color: "#f87171" }}
+      >
+        {error?.message ?? "Candidate not found."}
+      </div>
+    );
+  }
+
+  const candidateLabel =
+    candidate.name && candidate.name !== candidate.email
+      ? candidate.name
+      : (candidate.email ?? "Candidate");
+  const initials = candidateLabel
+    .split(/[\s@]+/)
+    .map((w: string) => w[0]?.toUpperCase() ?? "")
+    .slice(0, 2)
+    .join("");
   const invitedDate = candidate.createdAt ? new Date(candidate.createdAt) : null;
-  const completedDate = candidate.updatedAt && candidate.status === 'COMPLETED' ? new Date(candidate.updatedAt) : null;
-  const daysToComplete = invitedDate && completedDate
-    ? Math.max(0, Math.round((completedDate.getTime() - invitedDate.getTime()) / 86400000))
-    : null;
-  const completedAtDisplay = daysToComplete === 0 ? 'same day'
-    : daysToComplete === 1 ? '1 day'
-    : daysToComplete !== null ? `${daysToComplete} days` : null;
-
-  const totalChallenges = stages.flatMap(s => s.challenges ?? []).length;
-  const completedChallenges = assessments.filter(a => a.completedAt).length;
-
-  // Initials for avatar
-  const candidateLabel = candidate.name && candidate.name !== candidate.email ? candidate.name : candidate.email ?? 'Candidate';
-  const initials = candidateLabel.split(/[\s@]+/).map((w: string) => w[0]?.toUpperCase() ?? '').slice(0, 2).join('');
-
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
+  const completedDate =
+    candidate.updatedAt && candidate.status === "COMPLETED"
+      ? new Date(candidate.updatedAt)
+      : null;
+  const hasParsedProfile = !!(candidate.currentRole || candidate.skills?.length || candidate.yearsOfExperience);
 
   return (
-    <div>
-      {/* ------------------------------------------------------------------ */}
-      {/* Page header                                                         */}
-      {/* ------------------------------------------------------------------ */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        marginBottom: 32,
-        gap: 24,
-      }}>
-        <div>
-          <div style={{
-            fontSize: 9,
-            letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.3)',
-            fontFamily: '"Space Mono", monospace',
-            marginBottom: 10,
-          }}>
-            CANDIDATE_PROFILE
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: signalColors.bg,
-              border: `1px solid ${signalColors.border}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 13, fontWeight: 800, color: signalColors.text,
-              fontFamily: '"Space Mono", monospace',
-              flexShrink: 0,
-            }}>
-              {initials || '?'}
-            </div>
-            <div style={{
-              fontSize: 22,
-              fontWeight: 800,
-              color: '#fff',
-              letterSpacing: '-0.01em',
-            }}>
-              {candidateLabel}
-            </div>
-          </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            fontSize: 11,
-            color: 'rgba(255,255,255,0.35)',
-            fontFamily: '"Space Mono", monospace',
-            flexWrap: 'wrap',
-          }}>
-            {candidate.email && <span>{candidate.email}</span>}
-            <span style={{ color: 'rgba(255,255,255,0.15)' }}>·</span>
-            <span>{candidate.pipelineId}</span>
-            <span style={{ color: 'rgba(255,255,255,0.15)' }}>·</span>
-            <span style={{ color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase' }}>{candidate.status ?? 'UNKNOWN'}</span>
-          </div>
-        </div>
-
-        {/* GENERATE_REPORT — prints current page as PDF */}
-        <button
-          onClick={() => {
-            setSelectedTab('INTELLIGENCE');
-            setTimeout(() => window.print(), 300);
-          }}
-          title="Print intelligence report as PDF"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 16px',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.15)',
-            color: 'rgba(255,255,255,0.7)',
-            fontSize: 9,
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            fontFamily: '"Space Mono", monospace',
-            cursor: 'pointer',
-            borderRadius: 3,
-            flexShrink: 0,
-          }}
-        >
-          <FileDown size={13} />
-          GENERATE_REPORT
-        </button>
-      </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Tab bar                                                             */}
-      {/* ------------------------------------------------------------------ */}
-      <div style={{
-        display: 'flex',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        marginBottom: 32,
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 340px",
         gap: 0,
-        overflowX: 'auto',
-      }}>
-        {(['OVERVIEW', ...stages.map(s => s.id)] as string[]).map((tabId) => {
-          const isActive = selectedTab === tabId;
-          const isOverview = tabId === 'OVERVIEW';
-          const stageStat = isOverview ? null : stageStats.find(s => s.id === tabId);
-          const stageTitle = isOverview ? 'OVERVIEW' : (stages.find(s => s.id === tabId)?.title ?? 'STAGE').toUpperCase();
-
-          return (
-            <button
-              key={tabId}
-              onClick={() => setSelectedTab(tabId)}
-              style={{
-                padding: '12px 20px',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: isActive ? '2px solid #fff' : '2px solid transparent',
-                color: isActive ? '#fff' : 'rgba(255,255,255,0.35)',
-                fontSize: 10,
-                fontWeight: isActive ? 700 : 400,
-                fontFamily: '"Space Mono", monospace',
-                letterSpacing: '0.1em',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                whiteSpace: 'nowrap',
-                transition: 'color 0.15s',
-              }}
-            >
-              {stageTitle}
-              {stageStat?.score !== null && stageStat?.score !== undefined && (
-                <span style={{
-                  fontSize: 8,
-                  padding: '2px 6px',
-                  background: 'rgba(255,255,255,0.06)',
-                  color: 'rgba(255,255,255,0.5)',
-                  borderRadius: 3,
-                  fontWeight: 700,
-                }}>
-                  {stageStat.score}
-                </span>
-              )}
-              {stageStat?.isComplete && (
-                <CheckCircle size={10} color="rgba(16,185,129,0.7)" />
-              )}
-            </button>
-          );
-        })}
-
-        {/* INTELLIGENCE tab — only when feature flag enabled */}
-        {FEATURES.INTELLIGENCE_REPORT && (
-          <button
-            onClick={() => setSelectedTab('INTELLIGENCE')}
+        height: "calc(100vh - 100px)",
+        margin: "-24px 0 -24px 0",
+        alignItems: "stretch",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Main content ───────────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 0,
+          padding: "32px 48px",
+          minWidth: 0,
+          overflowY: "auto",
+        }}
+      >
+        {/* Header */}
+        <div style={{ marginBottom: 32 }}>
+          <div
             style={{
-              padding: '12px 20px',
-              background: 'transparent',
-              border: 'none',
-              borderBottom: selectedTab === 'INTELLIGENCE' ? '2px solid #a78bfa' : '2px solid transparent',
-              color: selectedTab === 'INTELLIGENCE' ? '#a78bfa' : 'rgba(255,255,255,0.35)',
               fontSize: 10,
-              fontWeight: selectedTab === 'INTELLIGENCE' ? 700 : 400,
+              letterSpacing: "0.15em",
+              color: "var(--pipe-text-dim)",
               fontFamily: '"Space Mono", monospace',
-              letterSpacing: '0.1em',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              whiteSpace: 'nowrap',
-              transition: 'color 0.15s',
+              marginBottom: 8,
             }}
           >
-            INTELLIGENCE
-            <span style={{
-              fontSize: 7,
-              padding: '1px 4px',
-              background: 'rgba(167,139,250,0.15)',
-              color: '#a78bfa',
-              border: '1px solid rgba(167,139,250,0.3)',
-              borderRadius: 2,
-              fontFamily: '"Space Mono", monospace',
-              letterSpacing: '0.08em',
-            }}>
-              BETA
+            CANDIDATE_PROFILE / {candidate.status}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                background: signalColors.bg,
+                border: `2px solid ${signalColors.border}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+                fontWeight: 900,
+                color: signalColors.text,
+                fontFamily: '"Space Mono", monospace',
+                flexShrink: 0,
+              }}
+            >
+              {initials}
+            </div>
+            <div>
+              <h1
+                data-testid="candidate-name"
+                style={{
+                  fontSize: 24,
+                  fontWeight: 900,
+                  color: "var(--pipe-text, #fff)",
+                  margin: 0,
+                  lineHeight: 1.2,
+                }}
+              >
+                {candidateLabel}
+              </h1>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                <Mail size={11} /> {candidate.email}
+                {candidate.currentRole && (
+                  <>
+                    <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
+                    <Briefcase size={11} /> {candidate.currentRole}
+                  </>
+                )}
+                <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
+                {editingPhone ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <Phone size={11} />
+                    <input
+                      autoFocus
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void handleSavePhone();
+                        if (e.key === 'Escape') setEditingPhone(false);
+                      }}
+                      placeholder="+1234567890"
+                      style={{
+                        width: 120,
+                        padding: "2px 4px",
+                        fontSize: 11,
+                        fontFamily: '"Space Mono", monospace',
+                        background: "transparent",
+                        border: "1px solid var(--pipe-border)",
+                        borderRadius: 3,
+                        color: "var(--pipe-text)",
+                        outline: "none",
+                      }}
+                    />
+                    <button onClick={() => void handleSavePhone()} style={{ background: "none", border: "none", color: "#4ade80", cursor: "pointer", padding: 2 }}>
+                      <Check size={11} />
+                    </button>
+                    <button onClick={() => setEditingPhone(false)} style={{ background: "none", border: "none", color: "var(--pipe-text-dim)", cursor: "pointer", padding: 2 }}>
+                      <XIcon size={11} />
+                    </button>
+                  </span>
+                ) : (
+                  <span
+                    onClick={() => { setPhoneInput(candidate.phoneNumber ?? ''); setEditingPhone(true); }}
+                    style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                    title="Click to edit phone number"
+                  >
+                    <Phone size={11} />
+                    {candidate.phoneNumber ? (
+                      <>{candidate.phoneNumber}</>
+                    ) : (
+                      <span style={{ opacity: 0.4, fontStyle: "italic" }}>add phone</span>
+                    )}
+                    <Edit3 size={9} style={{ opacity: 0.4 }} />
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Stage tabs */}
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            marginBottom: 24,
+            borderBottom: "1px solid var(--pipe-border)",
+            paddingBottom: 0,
+          }}
+        >
+          {stageStats.map((stat) => {
+            const isActive = selectedTab === stat.id;
+            return (
+              <button
+                key={stat.id}
+                onClick={() => setSelectedTab(stat.id)}
+                style={{
+                  padding: "10px 20px",
+                  cursor: "pointer",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: isActive
+                    ? "2px solid #fff"
+                    : "2px solid transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: -1,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: isActive ? "var(--pipe-text, #fff)" : "rgba(255,255,255,0.35)",
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  {stat.title?.toUpperCase() ?? "STAGE"}
+                </span>
+                {stat.score !== null && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      color: isActive ? "var(--pipe-text, #fff)" : "rgba(255,255,255,0.25)",
+                      background: isActive
+                        ? "rgba(255,255,255,0.1)"
+                        : "rgba(255,255,255,0.04)",
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                    }}
+                  >
+                    {stat.score}
+                  </span>
+                )}
+                {stat.isComplete && <CheckCircle size={11} color="#4ade80" />}
+              </button>
+            );
+          })}
+
+          <div
+            style={{
+              width: 1,
+              height: 20,
+              background: "var(--pipe-surface-hover)",
+              alignSelf: "center",
+              margin: "0 8px",
+            }}
+          />
+          <button
+            disabled={!pipelineComplete}
+            onClick={() => pipelineComplete && setSelectedTab("INTELLIGENCE")}
+            title={pipelineComplete ? undefined : "Complete all stages to unlock"}
+            style={{
+              padding: "10px 20px",
+              cursor: pipelineComplete ? "pointer" : "default",
+              background: "transparent",
+              border: "none",
+              borderBottom:
+                selectedTab === "INTELLIGENCE"
+                  ? "2px solid var(--pipe-accent)"
+                  : "2px solid transparent",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: -1,
+              opacity: pipelineComplete ? 1 : 0.3,
+            }}
+          >
+            <Brain
+              size={12}
+              color={
+                selectedTab === "INTELLIGENCE"
+                  ? "var(--pipe-accent)"
+                  : "rgba(255,255,255,0.25)"
+              }
+            />
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                color:
+                  selectedTab === "INTELLIGENCE"
+                    ? "var(--pipe-accent)"
+                    : "rgba(255,255,255,0.35)",
+                fontFamily: '"Space Mono", monospace',
+                letterSpacing: "0.05em",
+              }}
+            >
+              INTELLIGENCE
             </span>
           </button>
+        </div>
+
+        {/* INTELLIGENCE tab */}
+        {selectedTab === "INTELLIGENCE" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            {isAiGenerating ? (
+              <div style={{ padding: 60, textAlign: "center" }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--pipe-accent)",
+                    fontFamily: '"Space Mono", monospace',
+                    letterSpacing: "0.2em",
+                    marginBottom: 16,
+                  }}
+                >
+                  SYNTHESIZING_INTELLIGENCE...
+                </div>
+                <div
+                  style={{
+                    width: 200,
+                    height: 2,
+                    background: "var(--pipe-accent-surface)",
+                    margin: "0 auto",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "40%",
+                      height: "100%",
+                      background: "var(--pipe-accent)",
+                      animation: "slide 1.5s infinite ease-in-out",
+                    }}
+                  />
+                </div>
+                <style>{`@keyframes slide { from { transform: translateX(-150%); } to { transform: translateX(250%); } }`}</style>
+              </div>
+            ) : (
+              <IntelligenceReportRenderer blocks={aiBlocks} />
+            )}
+          </div>
         )}
+
+        {/* Stage content */}
+        {selectedTab !== "INTELLIGENCE" &&
+          (() => {
+            const activeStage = stages.find((s) => s.id === selectedTab);
+            if (!activeStage) return null;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                {activeStage.mode === "LIVE_VIDEO" && (
+                  <LiquidMetalCard
+                    variant="default"
+                    style={{
+                      padding: 32,
+                      borderRadius: 16,
+                      border: "1px solid rgba(96,165,250,0.2)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: 24,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <Calendar size={18} color="#60a5fa" />
+                        <SubTitle>LIVE_INTERVIEW_SESSION</SubTitle>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => {
+                            // Reset the interview back to INVITED and resend booking link
+                            const interviewId = activeStage.scheduledInterview?.id;
+                            if (interviewId) {
+                              void api.patch(`/api/v1/scheduling/interviews/${interviewId}`, {
+                                status: 'INVITED',
+                                scheduledAt: null,
+                                meetingUrl: null,
+                              }).then(() => void handleResendInvite());
+                            } else {
+                              void handleResendInvite();
+                            }
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '6px 14px',
+                            background: 'rgba(251,191,36,0.1)',
+                            border: '1px solid rgba(251,191,36,0.25)',
+                            borderRadius: 4,
+                            color: '#fbbf24',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <Calendar size={10} />
+                          RESCHEDULE
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Reset invite token, show new link, and resend email
+                            void api.post<{ inviteToken: string }>(`/api/v1/candidates/${id}/refresh-link`, {})
+                              .then((res) => {
+                                const baseUrl = window.location.origin;
+                                setAssessLink(`${baseUrl}/assess/${res.inviteToken}`);
+                                void handleResendInvite();
+                              });
+                          }}
+                          disabled={resendingInvite}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '6px 14px',
+                            background: resendResult === 'sent'
+                              ? 'rgba(74,222,128,0.1)'
+                              : resendResult === 'error'
+                                ? 'rgba(248,113,113,0.1)'
+                                : 'rgba(96,165,250,0.1)',
+                            border: resendResult === 'sent'
+                              ? '1px solid rgba(74,222,128,0.25)'
+                              : resendResult === 'error'
+                                ? '1px solid rgba(248,113,113,0.25)'
+                                : '1px solid rgba(96,165,250,0.25)',
+                            borderRadius: 4,
+                            color: resendResult === 'sent'
+                              ? '#4ade80'
+                              : resendResult === 'error'
+                                ? '#f87171'
+                                : '#60a5fa',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: resendingInvite ? 'wait' : 'pointer',
+                            opacity: resendingInvite ? 0.5 : 1,
+                            transition: 'all 0.2s',
+                          }}
+                        >
+                          <Send size={10} />
+                          {resendingInvite ? 'SENDING...' : resendResult === 'sent' ? 'SENT' : resendResult === 'error' ? 'FAILED' : 'SEND_LINK'}
+                        </button>
+                      </div>
+                    </div>
+                    {activeStage.scheduledInterview?.scheduledAt ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
+                            fontFamily: '"Space Mono", monospace',
+                            padding: '3px 8px', borderRadius: 3,
+                            background: 'rgba(74,222,128,0.1)', color: '#4ade80',
+                          }}>
+                            {activeStage.scheduledInterview.status}
+                          </span>
+                        </div>
+                        <div style={{
+                          fontSize: 14, fontWeight: 600,
+                          color: 'var(--pipe-text, #fff)',
+                          fontFamily: '"Space Mono", monospace',
+                        }}>
+                          {new Date(activeStage.scheduledInterview.scheduledAt).toLocaleString(undefined, {
+                            weekday: 'long', month: 'long', day: 'numeric',
+                            hour: 'numeric', minute: '2-digit',
+                          })}
+                        </div>
+                        {activeStage.scheduledInterview.meetingUrl && (
+                          <a
+                            href={activeStage.scheduledInterview.meetingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6,
+                              padding: '8px 16px', width: 'fit-content',
+                              background: 'rgba(96,165,250,0.1)',
+                              border: '1px solid rgba(96,165,250,0.25)',
+                              borderRadius: 4,
+                              color: '#60a5fa',
+                              fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+                              fontFamily: '"Space Mono", monospace',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            JOIN MEETING →
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{
+                        fontSize: 12,
+                        color: "var(--pipe-text-dim)",
+                        fontFamily: '"Space Mono", monospace',
+                      }}>
+                        {activeStage.scheduledInterview
+                          ? 'Awaiting candidate booking.'
+                          : 'No interview scheduled yet.'}
+                      </div>
+                    )}
+                    {assessLink && (
+                      <div style={{
+                        marginTop: 16,
+                        padding: '10px 14px',
+                        background: 'rgba(96,165,250,0.06)',
+                        border: '1px solid rgba(96,165,250,0.15)',
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                      }}>
+                        <input
+                          readOnly
+                          value={assessLink}
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                          style={{
+                            flex: 1,
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#60a5fa',
+                            fontSize: 11,
+                            fontFamily: '"Space Mono", monospace',
+                            outline: 'none',
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            void navigator.clipboard.writeText(assessLink);
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            background: 'rgba(96,165,250,0.1)',
+                            border: '1px solid rgba(96,165,250,0.25)',
+                            borderRadius: 3,
+                            color: '#60a5fa',
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          COPY
+                        </button>
+                      </div>
+                    )}
+                  </LiquidMetalCard>
+                )}
+                {activeStage.challenges.map((challenge) => (
+                  <ChallengeCard
+                    key={challenge.id}
+                    challenge={challenge}
+                    onScoreChange={(submissionId, score) => {
+                      void updateSubmissionScore(submissionId, score);
+                    }}
+                    onFeedbackChange={(submissionId, feedback) => {
+                      void updateSubmissionFeedback(submissionId, feedback);
+                    }}
+                    onViewReviewSession={(session) => setViewingReviewSession(session)}
+                  />
+                ))}
+              </div>
+            );
+          })()}
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* OVERVIEW tab                                                        */}
-      {/* ------------------------------------------------------------------ */}
-      {selectedTab === 'OVERVIEW' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-          {/* ---- Hiring recommendation hero ---- */}
-          <LiquidMetalCard variant="mercury" style={{ padding: 36 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 32, alignItems: 'start' }}>
-              <div>
-                <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 18 }}>
-                  HIRING_RECOMMENDATION
-                </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 20, marginBottom: 16, flexWrap: 'wrap' }}>
-                  <div style={{
-                    fontSize: 64, fontWeight: 900, lineHeight: 1, letterSpacing: '-0.04em',
-                    color: avgScore !== null ? signalColors.text : 'rgba(255,255,255,0.15)',
-                  }}>
-                    {avgScore ?? '—'}
-                  </div>
-                  {avgScore !== null && (
-                    <div style={{ fontSize: 14, fontWeight: 700, color: signalColors.text, fontFamily: '"Space Mono", monospace', letterSpacing: '0.04em' }}>
-                      {SIGNAL_LABELS[signal] ?? signal}
-                    </div>
-                  )}
-                </div>
-                <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden', maxWidth: 340 }}>
-                  <div style={{ height: '100%', width: `${avgScore ?? 0}%`, background: signalColors.text, borderRadius: 2, transition: 'width 0.4s ease' }} />
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'flex-end' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>CHALLENGES</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', fontFamily: '"Space Mono", monospace' }}>
-                    {completedChallenges}<span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13 }}>/{totalChallenges}</span>
-                  </div>
-                </div>
-                {completedAtDisplay && (
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>RESPONDED</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.55)', fontFamily: '"Space Mono", monospace' }}>{completedAtDisplay}</div>
-                  </div>
-                )}
-              </div>
+      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+      <aside style={{ overflowY: "auto", marginBottom: 24 }}>
+        <LiquidMetalCard
+          variant="chrome"
+          style={{
+            padding: "32px 24px 24px",
+            height: "100%",
+            borderLeft: "1px solid var(--pipe-border)",
+            borderRadius: 0,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {/* Signal score */}
+          <div style={{ marginBottom: 28 }}>
+            <div
+              style={{
+                fontSize: 9,
+                letterSpacing: "0.2em",
+                color: "var(--pipe-text-dim)",
+                fontFamily: '"Space Mono", monospace',
+                marginBottom: 16,
+              }}
+            >
+              OVERALL_SIGNAL
             </div>
-          </LiquidMetalCard>
-
-          {/* ---- AI snapshot + skill radar ---- */}
-          {aiSnapshot && (
-            <LiquidMetalCard variant="dark" style={{ padding: 32 }}>
-              <div style={{ fontSize: 9, letterSpacing: '0.18em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 18 }}>
-                AI_SNAPSHOT
+            <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
+              <div
+                style={{
+                  fontSize: 48,
+                  fontWeight: 900,
+                  color: signalColors.text,
+                  lineHeight: 1,
+                  letterSpacing: "-0.04em",
+                }}
+              >
+                {avgScore ?? "—"}
               </div>
-              <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: 240 }}>
-                  <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 1.75, margin: '0 0 20px' }}>
-                    {aiSnapshot.summary}
-                  </p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {aiSnapshot.strengths.slice(0, 2).map((s, i) => (
-                      <span key={i} style={{ fontSize: 11, padding: '5px 12px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#10b981', borderRadius: 3, fontFamily: '"Space Mono", monospace', lineHeight: 1.4 }}>
-                        ↑ {s}
-                      </span>
-                    ))}
-                    {aiSnapshot.concerns.slice(0, 1).map((c, i) => (
-                      <span key={i} style={{ fontSize: 11, padding: '5px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171', borderRadius: 3, fontFamily: '"Space Mono", monospace', lineHeight: 1.4 }}>
-                        △ {c}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                {aiSnapshot.skillProfile && (
-                  <MiniRadar skillProfile={aiSnapshot.skillProfile} color={signalColors.text} />
-                )}
-              </div>
-            </LiquidMetalCard>
-          )}
+              <SignalBadge signal={signal} />
+            </div>
 
-          {/* ---- Stage cards (richer) ---- */}
-          {stages.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {stages.map((stage) => {
-                const stat = stageStats.find(s => s.id === stage.id);
-                const stageChallenges = stage.challenges ?? [];
-                return (
-                  <LiquidMetalCard
-                    key={stage.id}
-                    hover
-                    onClick={() => setSelectedTab(stage.id)}
-                    style={{ padding: '20px 24px', cursor: 'pointer' }}
+            {/* Per-stage breakdown */}
+            {stageStats.length > 0 && (
+              <div
+                style={{
+                  marginTop: 20,
+                  paddingTop: 16,
+                  borderTop: "1px solid var(--pipe-border)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                {stageStats.map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: stageChallenges.length > 0 ? 10 : 0 }}>
-                          <span style={{ fontSize: 9, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', textTransform: 'uppercase' }}>
-                            {stage.title ?? 'Stage'}
-                          </span>
-                          {stat?.isComplete && <CheckCircle size={11} color="rgba(16,185,129,0.7)" />}
-                        </div>
-                        {stageChallenges.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {stageChallenges.map(ch => {
-                              const cha = assessments.find(a => a.challengeId === ch.id);
-                              return (
-                                <span key={ch.id} style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', padding: '2px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 3 }}>
-                                  {ch.title ?? 'Challenge'}
-                                  {cha?.score !== null && cha?.score !== undefined && (
-                                    <span style={{ color: 'rgba(255,255,255,0.25)', marginLeft: 6 }}>{cha.score}</span>
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
-                        <div style={{
-                          fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em',
-                          color: stat?.score !== null && stat?.score !== undefined ? '#fff' : 'rgba(255,255,255,0.15)',
-                        }}>
-                          {stat?.score !== null && stat?.score !== undefined ? stat.score : '—'}
-                        </div>
-                        {stat?.score !== null && stat?.score !== undefined && (
-                          <SignalBadge signal={calculateSignal(stat.score)} />
-                        )}
-                      </div>
+                    <span
+                      style={{
+                        fontSize: 9,
+                        color: "var(--pipe-text-dim)",
+                        fontFamily: '"Space Mono", monospace',
+                      }}
+                    >
+                      {s.title?.toUpperCase()}
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {s.isComplete && <CheckCircle size={10} color="#4ade80" />}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 900,
+                          color: s.score != null ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
+                          fontFamily: '"Space Mono", monospace',
+                        }}
+                      >
+                        {s.score ?? "—"}
+                      </span>
                     </div>
-                  </LiquidMetalCard>
-                );
-              })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Background — only when parsed data exists */}
+          {hasParsedProfile && (
+            <div
+              style={{
+                marginBottom: 28,
+                paddingTop: 24,
+                borderTop: "1px solid var(--pipe-border)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 14,
+                }}
+              >
+                <Briefcase size={12} color="var(--pipe-text-dim)" />
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.2em",
+                    color: "var(--pipe-text-dim)",
+                    fontFamily: '"Space Mono", monospace',
+                  }}
+                >
+                  BACKGROUND
+                </span>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {candidate.currentRole && (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--pipe-text, #fff)" }}>
+                      {candidate.currentRole}
+                    </div>
+                    {candidate.yearsOfExperience != null && candidate.yearsOfExperience > 0 && (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "var(--pipe-text-dim)",
+                          fontFamily: '"Space Mono", monospace',
+                          marginTop: 4,
+                        }}
+                      >
+                        {candidate.yearsOfExperience} YRS
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {candidate.skills && candidate.skills.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {candidate.skills.slice(0, 10).map((skill) => (
+                      <span
+                        key={skill}
+                        style={{
+                          padding: "3px 8px",
+                          background: "rgba(96,165,250,0.06)",
+                          border: "1px solid rgba(96,165,250,0.12)",
+                          borderRadius: 4,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: "rgba(96,165,250,0.7)",
+                          fontFamily: '"Space Mono", monospace',
+                        }}
+                      >
+                        {skill.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {candidate.education && candidate.education.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 2 }}>
+                    <GraduationCap size={11} color="var(--pipe-text-dim)" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <div style={{ fontSize: 10, color: "var(--pipe-text-dim)", lineHeight: 1.5 }}>
+                      {candidate.education.join(" · ")}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* ---- Candidate info ---- */}
-          <LiquidMetalCard variant="dark" style={{ padding: 32 }}>
-            <div style={{ fontSize: 9, letterSpacing: '0.18em', color: 'rgba(255,255,255,0.3)', fontFamily: '"Space Mono", monospace', marginBottom: 20 }}>
-              CANDIDATE_INFO
+          {/* Timeline */}
+          <div
+            style={{
+              paddingTop: 24,
+              borderTop: "1px solid var(--pipe-border)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              <Clock size={12} color="var(--pipe-text-dim)" />
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.2em",
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                TIMELINE
+              </span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 24 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[
-                { label: 'EMAIL', value: candidate.email ?? '—' },
-                { label: 'STATUS', value: candidate.status ?? '—' },
-                { label: 'INVITED', value: invitedDate ? invitedDate.toLocaleDateString() : '—' },
-                { label: 'COMPLETED', value: completedDate ? completedDate.toLocaleDateString() : '—' },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>{label}</div>
-                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: '"Space Mono", monospace', wordBreak: 'break-all' }}>{value}</div>
+                { label: "INVITED", value: invitedDate?.toLocaleDateString() },
+                { label: "SUBMITTED", value: completedDate?.toLocaleDateString() ?? "PENDING" },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "6px 0",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 9,
+                      color: "var(--pipe-text-dim)",
+                      fontFamily: '"Space Mono", monospace',
+                    }}
+                  >
+                    {item.label}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--pipe-text, #fff)",
+                      fontFamily: '"Space Mono", monospace',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {item.value}
+                  </span>
                 </div>
               ))}
             </div>
-          </LiquidMetalCard>
+          </div>
+
+          {/* Call Log */}
+          {phoneCalls.length > 0 && (
+            <div style={{ paddingTop: 20, borderTop: "1px solid var(--pipe-border)", marginTop: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <PhoneCall size={12} color="var(--pipe-text-dim)" />
+                <span style={{ fontSize: 9, letterSpacing: "0.2em", color: "var(--pipe-text-dim)", fontFamily: '"Space Mono", monospace' }}>
+                  CALL_LOG
+                </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {phoneCalls.map((call) => {
+                  const date = new Date(call.createdAt);
+                  const dur = call.durationSeconds ?? 0;
+                  const durStr = dur > 0 ? `${Math.floor(dur / 60)}m ${dur % 60}s` : '—';
+                  const statusColor = call.status === 'COMPLETED' ? '#4ade80' : call.status === 'FAILED' ? '#f87171' : '#fbbf24';
+                  return (
+                    <div key={call.id} style={{
+                      padding: "8px 10px",
+                      background: "rgba(255,255,255,0.02)",
+                      border: "1px solid var(--pipe-border)",
+                      borderRadius: 6,
+                      fontFamily: '"Space Mono", monospace',
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={{ fontSize: 9, color: "var(--pipe-text-dim)" }}>
+                          {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span style={{ fontSize: 8, color: statusColor, letterSpacing: "0.1em" }}>
+                          {call.status}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--pipe-text)" }}>
+                          {durStr}
+                        </span>
+                        {call.recordingS3Key && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const token = await getToken();
+                                const baseUrl = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+                                const res = await fetch(`${baseUrl}/api/v1/phone/calls/${call.id}/recording`, {
+                                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                                });
+                                if (!res.ok) { console.error('[CandidateProfilePage] Recording fetch failed:', res.status); return; }
+                                const blob = await res.blob();
+                                const url = URL.createObjectURL(blob);
+                                const audio = new Audio(url);
+                                void audio.play();
+                                audio.addEventListener('ended', () => URL.revokeObjectURL(url));
+                              } catch (err) {
+                                console.error('[CandidateProfilePage] Error playing recording:', err);
+                              }
+                            }}
+                            style={{
+                              background: "none",
+                              border: "1px solid var(--pipe-border)",
+                              borderRadius: 4,
+                              color: "var(--pipe-text-dim)",
+                              cursor: "pointer",
+                              padding: "3px 6px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                              fontSize: 8,
+                              fontFamily: '"Space Mono", monospace',
+                            }}
+                          >
+                            <Play size={9} /> PLAY
+                          </button>
+                        )}
+                      </div>
+                      {call.recruiterNotes && (
+                        <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", marginTop: 6, lineHeight: 1.4, opacity: 0.8 }}>
+                          {call.recruiterNotes}
+                        </div>
+                      )}
+                      {call.transcription && call.transcriptionStatus === 'COMPLETED' && (
+                        <details style={{ marginTop: 6 }}>
+                          <summary style={{ fontSize: 8, color: "var(--pipe-text-dim)", cursor: "pointer", letterSpacing: "0.1em" }}>
+                            TRANSCRIPT
+                          </summary>
+                          <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", marginTop: 4, lineHeight: 1.5, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>
+                            {call.transcription}
+                          </div>
+                        </details>
+                      )}
+                      {call.transcriptionStatus === 'PROCESSING' && (
+                        <div style={{ fontSize: 8, color: "#fbbf24", marginTop: 4, letterSpacing: "0.1em" }}>
+                          TRANSCRIBING...
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Actions — pushed to bottom */}
+          <div style={{ marginTop: "auto", paddingTop: 24, display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              disabled={!candidate.phoneNumber}
+              onClick={() => setShowPhoneDrawer(true)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px",
+                background: candidate.phoneNumber ? "rgba(74,222,128,0.08)" : "var(--pipe-surface)",
+                border: candidate.phoneNumber ? "1px solid rgba(74,222,128,0.2)" : "1px solid var(--pipe-border)",
+                borderRadius: 8,
+                color: candidate.phoneNumber ? "#4ade80" : "var(--pipe-text, #fff)",
+                fontSize: 10,
+                fontWeight: 800,
+                fontFamily: '"Space Mono", monospace',
+                cursor: candidate.phoneNumber ? "pointer" : "default",
+                opacity: candidate.phoneNumber ? 1 : 0.4,
+              }}
+            >
+              <Phone size={13} /> CALL
+            </button>
+            <button
+              disabled={!candidate.resumeS3Key}
+              onClick={() => void handleViewResume()}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px",
+                background: "var(--pipe-surface)",
+                border: "1px solid var(--pipe-border)",
+                borderRadius: 8,
+                color: "var(--pipe-text, #fff)",
+                fontSize: 10,
+                fontWeight: 800,
+                fontFamily: '"Space Mono", monospace',
+                cursor: candidate.resumeS3Key ? "pointer" : "default",
+                opacity: candidate.resumeS3Key ? 1 : 0.4,
+              }}
+            >
+              <FileDown size={13} /> VIEW_RESUME
+            </button>
+          </div>
+        </LiquidMetalCard>
+      </aside>
+
+      {/* Review Session Report Modal */}
+      {viewingReviewSession && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="review-session-report-heading"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 40,
+          }}
+          onClick={() => setViewingReviewSession(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 900,
+              maxWidth: '90vw',
+              height: '80vh',
+              background: 'var(--pipe-bg, #0c0c0e)',
+              borderRadius: 12,
+              border: '1px solid var(--pipe-border)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <h2
+              id="review-session-report-heading"
+              style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}
+            >
+              Review Session Report
+            </h2>
+            <ReviewSessionReport session={viewingReviewSession} />
+          </div>
         </div>
       )}
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Per-stage tab                                                       */}
-      {/* ------------------------------------------------------------------ */}
-      {/* ------------------------------------------------------------------ */}
-      {/* INTELLIGENCE tab                                                    */}
-      {/* ------------------------------------------------------------------ */}
-      {selectedTab === 'INTELLIGENCE' && FEATURES.INTELLIGENCE_REPORT && (
-        <IntelligenceReport
-          candidate={candidate}
-          assessments={assessments}
-          stages={stages}
-          stageStats={stageStats}
-          avgScore={avgScore}
-          signal={signal}
-          signalColors={signalColors}
-        />
+      {/* Phone Call Drawer — fixed overlay */}
+      {showPhoneDrawer && candidate.phoneNumber && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          right: 0,
+          width: 360,
+          height: "100vh",
+          background: "var(--pipe-bg, #0c0c0e)",
+          borderLeft: "1px solid var(--pipe-border)",
+          zIndex: 50,
+          boxShadow: "-4px 0 24px rgba(0,0,0,0.4)",
+        }}>
+          <PhoneCallDrawer
+            candidateId={candidate.id}
+            candidateName={candidateLabel}
+            phoneNumber={candidate.phoneNumber}
+            pipelineId={candidate.pipelineId}
+            onClose={() => setShowPhoneDrawer(false)}
+            onCallComplete={() => void refetch()}
+          />
+        </div>
       )}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Per-stage tab                                                       */}
-      {/* ------------------------------------------------------------------ */}
-      {selectedTab !== 'OVERVIEW' && selectedTab !== 'INTELLIGENCE' && (() => {
-        const stage = stages.find(s => s.id === selectedTab);
-        if (!stage) return null;
-        const stat = stageStats.find(s => s.id === selectedTab);
-        const challenges = stage.challenges ?? [];
-
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Stage header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{
-                  fontSize: 9,
-                  letterSpacing: '0.18em',
-                  color: 'rgba(255,255,255,0.3)',
-                  fontFamily: '"Space Mono", monospace',
-                  marginBottom: 8,
-                }}>
-                  {(stage.title ?? 'STAGE').toUpperCase()}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
-                    {stat?.score !== null && stat?.score !== undefined ? stat.score : '—'}
-                  </span>
-                  {stat?.score !== null && stat?.score !== undefined && (
-                    <SignalBadge signal={calculateSignal(stat.score)} />
-                  )}
-                </div>
-              </div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
-                {challenges.length} CHALLENGE{challenges.length !== 1 ? 'S' : ''}
-              </div>
-            </div>
-
-            {/* Live interview section */}
-            {liveVideoStage && liveVideoStage.id === stage.id && (
-              <LiquidMetalCard variant="dark" style={{ padding: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: scheduledInterview ? 16 : 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <Calendar size={14} color="rgba(255,255,255,0.4)" />
-                    <span style={{ fontSize: 9, letterSpacing: '0.18em', color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
-                      LIVE_INTERVIEW
-                    </span>
-                  </div>
-                  {scheduledInterview && (
-                    <InterviewStatusBadge status={(scheduledInterview.status ?? 'INVITED') as InterviewStatus} />
-                  )}
-                </div>
-
-                {scheduledInterview ? (
-                  <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
-                    {scheduledInterview.scheduledAt && (
-                      <div>
-                        <div style={{ fontSize: 9, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)', marginBottom: 4, fontFamily: '"Space Mono", monospace' }}>SCHEDULED_AT</div>
-                        <div style={{ fontSize: 14, color: '#fff', fontFamily: '"Space Mono", monospace' }}>
-                          {new Date(scheduledInterview.scheduledAt).toLocaleString()}
-                        </div>
-                      </div>
-                    )}
-                    {scheduledInterview.meetingUrl && (
-                      <a
-                        href={scheduledInterview.meetingUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ fontSize: 11, color: '#60a5fa', fontFamily: '"Space Mono", monospace', textDecoration: 'none' }}
-                      >
-                        JOIN_MEETING →
-                      </a>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 9, letterSpacing: '0.12em', color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
-                        SCHEDULING_URL (Calendly / Cal.com)
-                      </div>
-                      <input
-                        type="url"
-                        value={inviteUrl}
-                        onChange={(e) => setInviteUrl(e.target.value)}
-                        placeholder="https://calendly.com/you/30min"
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          background: 'rgba(0,0,0,0.3)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          color: '#fff',
-                          fontSize: 12,
-                          fontFamily: '"Space Mono", monospace',
-                          outline: 'none',
-                          boxSizing: 'border-box',
-                          borderRadius: 3,
-                        }}
-                      />
-                    </div>
-                    <button
-                      onClick={handleSendInvite}
-                      disabled={inviteSaving || !inviteUrl}
-                      style={{
-                        padding: '10px 20px',
-                        background: inviteUrl ? 'rgba(96,165,250,0.1)' : 'rgba(255,255,255,0.05)',
-                        border: `1px solid ${inviteUrl ? 'rgba(96,165,250,0.3)' : 'rgba(255,255,255,0.1)'}`,
-                        color: inviteUrl ? '#60a5fa' : 'rgba(255,255,255,0.3)',
-                        fontSize: 10,
-                        letterSpacing: '0.1em',
-                        fontFamily: '"Space Mono", monospace',
-                        cursor: inviteUrl && !inviteSaving ? 'pointer' : 'not-allowed',
-                        whiteSpace: 'nowrap',
-                        borderRadius: 3,
-                      }}
-                    >
-                      {inviteSaving ? 'SENDING...' : 'SEND_INVITE'}
-                    </button>
-                  </div>
-                )}
-              </LiquidMetalCard>
-            )}
-
-            {/* Challenge cards */}
-            {challenges.length === 0 && (
-              <div style={{
-                padding: 40,
-                textAlign: 'center',
-                color: 'rgba(255,255,255,0.2)',
-                fontFamily: '"Space Mono", monospace',
-                fontSize: 11,
-                letterSpacing: '0.1em',
-              }}>
-                NO_CHALLENGES_IN_STAGE
-              </div>
-            )}
-
-            {challenges.map((challenge) => {
-              const assessment = assessments.find(a => a.challengeId === challenge.id);
-              return (
-                <ChallengeCard
-                  key={challenge.id}
-                  challenge={challenge}
-                  assessment={assessment}
-                  onScoreChange={handleScoreChange}
-                  onFeedbackChange={handleFeedbackChange}
-                />
-              );
-            })}
-          </div>
-        );
-      })()}
     </div>
   );
 }

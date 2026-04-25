@@ -1,0 +1,54 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "This candidate is an adequate code reviewer with consistent but not exceptional performance across all dimensions. Their strongest area is prioritization, where they effectively distinguished critical issues from minor ones, as reflected in their balanced scores. However, their most significant growth area is issue identification, where their effectiveness score of 30 suggests they missed many real bugs. With some refinement in spotting deeper problems, they could become a much stronger reviewer.",
+      "strengths": [
+        "Prioritizes issues well, distinguishing critical from minor problems",
+        "Consistent performance across all review dimensions",
+        "Efficient in review process, avoiding unnecessary delays"
+      ],
+      "growth_areas": [
+        "Needs to improve bug detection, as they missed many real issues",
+        "Could enhance reasoning depth to better explain why issues matter",
+        "Should verify fixes more rigorously rather than accepting them at face value"
+      ]
+    },
+    "scorer_a_summary": "The reviewer demonstrated exceptional performance across all dimensions. They identified all planted bugs with accurate severity categorization, prioritized issues correctly by distinguishing blockers from nits, and thoroughly evaluated revisions by verifying fixes and catching a deeper issue during pushback. The review process was rigorous, with no false positives and a perfect cave ratio of 0.0, indicating no uncritical acceptance of implementer responses.",
+    "scorer_b_summary": ""
+  },
+  "meta": {
+    "wall_clock_ms": 11788,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

@@ -128,9 +128,9 @@ export interface CostTracker {
 // ============================================================================
 
 export type AgentErrorCode =
-  | 'ANTHROPIC_RATE_LIMIT'
-  | 'ANTHROPIC_TIMEOUT'
-  | 'ANTHROPIC_API_ERROR'
+  | 'VERTEX_RATE_LIMIT'
+  | 'VERTEX_TIMEOUT'
+  | 'VERTEX_API_ERROR'
   | 'COST_BUDGET_EXCEEDED'
   | 'TIME_BUDGET_EXCEEDED'
   | 'EXTRACTION_FAILED'

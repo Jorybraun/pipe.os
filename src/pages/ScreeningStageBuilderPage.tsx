@@ -98,7 +98,7 @@ function QuestionCard({
               padding: 4,
               background: 'transparent',
               border: 'none',
-              color: 'rgba(255,255,255,0.2)',
+              color: 'var(--pipe-text-dim)',
               cursor: 'grab',
               marginTop: 4,
             }}
@@ -111,8 +111,8 @@ function QuestionCard({
             style={{
               width: 36,
               height: 36,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -132,8 +132,8 @@ function QuestionCard({
                   fontSize: 8,
                   letterSpacing: '0.15em',
                   padding: '4px 8px',
-                  background: 'rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.5)',
+                  background: 'var(--pipe-surface)',
+                  color: 'var(--pipe-text-muted)',
                   textTransform: 'uppercase',
                 }}
               >
@@ -149,7 +149,7 @@ function QuestionCard({
               )}
             </div>
 
-            <p style={{ fontSize: 13, color: '#fff', lineHeight: 1.6, margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--pipe-text, #fff)', lineHeight: 1.6, margin: 0 }}>
               {question.text}
             </p>
 
@@ -173,8 +173,8 @@ function QuestionCard({
                     style={{
                       padding: '4px 10px',
                       background: 'transparent',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      color: 'rgba(255,255,255,0.4)',
+                      border: '1px solid var(--pipe-border)',
+                      color: 'var(--pipe-text-dim)',
                       fontSize: 8,
                       letterSpacing: '0.1em',
                       cursor: 'pointer',
@@ -218,7 +218,7 @@ function QuestionCard({
                 padding: 8,
                 background: 'transparent',
                 border: 'none',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 cursor: 'pointer',
               }}
             >
@@ -230,7 +230,7 @@ function QuestionCard({
                 padding: 8,
                 background: 'transparent',
                 border: 'none',
-                color: 'rgba(255,255,255,0.3)',
+                color: 'var(--pipe-text-dim)',
                 cursor: 'pointer',
               }}
             >
@@ -304,7 +304,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
             style={{
               fontSize: 11,
               letterSpacing: '0.2em',
-              color: 'rgba(139, 92, 246, 0.8)',
+              color: 'rgba(255, 255, 255, 0.45)',
               marginBottom: 8,
             }}
           >
@@ -314,7 +314,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
             style={{
               fontSize: 24,
               fontWeight: 700,
-              color: '#fff',
+              color: 'var(--pipe-text, #fff)',
               margin: '0 0 24px 0',
             }}
           >
@@ -324,7 +324,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
             style={{
               fontSize: 13,
               lineHeight: 1.6,
-              color: 'rgba(255,255,255,0.6)',
+              color: 'var(--pipe-text-muted)',
             }}
           >
             I can help you generate role-specific screening questions based on your requirements and best practices.
@@ -350,7 +350,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
             style={{
               fontSize: 9,
               letterSpacing: '0.2em',
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
               marginBottom: 6,
             }}
           >
@@ -368,13 +368,13 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
             {questions.length}
           </div>
         </div>
-        <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,0.08)' }} />
+        <div style={{ width: 1, height: 40, background: 'var(--pipe-surface-hover)' }} />
         <div>
           <div
             style={{
               fontSize: 9,
               letterSpacing: '0.2em',
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
               marginBottom: 6,
             }}
           >
@@ -395,13 +395,13 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
             {recordedCount}/{questions.length}
           </div>
         </div>
-        <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,0.08)' }} />
+        <div style={{ width: 1, height: 40, background: 'var(--pipe-surface-hover)' }} />
         <div>
           <div
             style={{
               fontSize: 9,
               letterSpacing: '0.2em',
-              color: 'rgba(255,255,255,0.3)',
+              color: 'var(--pipe-text-dim)',
               marginBottom: 6,
             }}
           >
@@ -442,9 +442,9 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                 onClick={() => console.log('AI Generate questions')}
                 style={{
                   padding: '8px 14px',
-                  background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.15))',
-                  border: '1px solid rgba(139, 92, 246, 0.3)',
-                  color: 'rgba(139, 92, 246, 0.9)',
+                  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(59, 130, 246, 0.15))',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: 'rgba(255, 255, 255, 0.55)',
                   fontSize: 8,
                   letterSpacing: '0.15em',
                   cursor: 'pointer',
@@ -460,9 +460,9 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                 onClick={() => setShowAddManual(true)}
                 style={{
                   padding: '8px 14px',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: 'rgba(255,255,255,0.6)',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text-muted)',
                   fontSize: 8,
                   letterSpacing: '0.15em',
                   cursor: 'pointer',
@@ -484,7 +484,7 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                 style={{
                   fontSize: 8,
                   letterSpacing: '0.2em',
-                  color: 'rgba(255,255,255,0.3)',
+                  color: 'var(--pipe-text-dim)',
                   marginBottom: 12,
                 }}
               >
@@ -498,8 +498,8 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                   width: '100%',
                   height: 80,
                   background: 'rgba(0,0,0,0.2)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#fff',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text, #fff)',
                   fontSize: 13,
                   lineHeight: 1.6,
                   padding: 12,
@@ -514,8 +514,8 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                   style={{
                     padding: '8px 16px',
                     background: 'transparent',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'rgba(255,255,255,0.5)',
+                    border: '1px solid var(--pipe-border)',
+                    color: 'var(--pipe-text-muted)',
                     fontSize: 9,
                     letterSpacing: '0.1em',
                     cursor: 'pointer',
@@ -528,8 +528,8 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                   style={{
                     padding: '8px 16px',
                     background: 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    color: '#fff',
+                    border: '1px solid var(--pipe-border)',
+                    color: 'var(--pipe-text, #fff)',
                     fontSize: 9,
                     letterSpacing: '0.1em',
                     fontWeight: 700,
@@ -572,11 +572,11 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                 }}
               >
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>Videos recorded</span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--pipe-text, #fff)' }}>
                   {recordedCount}/{questions.length}
                 </span>
               </div>
-              <div style={{ height: 4, background: 'rgba(255,255,255,0.06)' }}>
+              <div style={{ height: 4, background: 'var(--pipe-surface)' }}>
                 <div
                   style={{
                     width: `${(recordedCount / questions.length) * 100}%`,
@@ -640,16 +640,16 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                   style={{
                     width: 24,
                     height: 24,
-                    background: 'rgba(255,255,255,0.05)',
+                    background: 'var(--pipe-surface)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <Video size={12} color="rgba(255,255,255,0.4)" />
+                  <Video size={12} color="var(--pipe-text-dim)" />
                 </div>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, margin: 0 }}>
+                <p style={{ fontSize: 11, color: 'var(--pipe-text-muted)', lineHeight: 1.6, margin: 0 }}>
                   Record a video for each question to give candidates context
                 </p>
               </div>
@@ -658,16 +658,16 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                   style={{
                     width: 24,
                     height: 24,
-                    background: 'rgba(255,255,255,0.05)',
+                    background: 'var(--pipe-surface)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <Clock size={12} color="rgba(255,255,255,0.4)" />
+                  <Clock size={12} color="var(--pipe-text-dim)" />
                 </div>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, margin: 0 }}>
+                <p style={{ fontSize: 11, color: 'var(--pipe-text-muted)', lineHeight: 1.6, margin: 0 }}>
                   Keep intro videos under 90 seconds for better engagement
                 </p>
               </div>
@@ -676,16 +676,16 @@ export default function ScreeningStageBuilderPage(): JSX.Element {
                   style={{
                     width: 24,
                     height: 24,
-                    background: 'rgba(255,255,255,0.05)',
+                    background: 'var(--pipe-surface)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <Wand2 size={12} color="rgba(255,255,255,0.4)" />
+                  <Wand2 size={12} color="var(--pipe-text-dim)" />
                 </div>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, margin: 0 }}>
+                <p style={{ fontSize: 11, color: 'var(--pipe-text-muted)', lineHeight: 1.6, margin: 0 }}>
                   Use AI to generate role-specific questions quickly
                 </p>
               </div>

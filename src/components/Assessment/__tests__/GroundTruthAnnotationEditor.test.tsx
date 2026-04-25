@@ -98,7 +98,7 @@ describe('GroundTruthAnnotationEditor Component', () => {
       );
 
       expect(mockOnAnnotationsChange).toHaveBeenCalled();
-      const lastCall = mockOnAnnotationsChange.mock.calls[mockOnAnnotationsChange.mock.calls.length - 1][0];
+      const lastCall = mockOnAnnotationsChange.mock.calls[mockOnAnnotationsChange.mock.calls.length - 1]?.[0];
       
       expect(lastCall).toHaveProperty('senior');
       expect(lastCall).toHaveProperty('mid');

@@ -70,7 +70,7 @@ export function VideoIncomingCall({
           style={{
             fontSize: 20,
             fontWeight: 700,
-            color: '#fff',
+            color: 'var(--pipe-text, #fff)',
             marginBottom: 8,
             letterSpacing: '-0.02em',
           }}
@@ -81,7 +81,7 @@ export function VideoIncomingCall({
           style={{
             fontSize: 10,
             letterSpacing: '0.15em',
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
           }}
         >

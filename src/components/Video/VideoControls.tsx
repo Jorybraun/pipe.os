@@ -49,7 +49,7 @@ export function VideoControls({
         gap: 12,
         padding: '10px 16px',
         background: 'rgba(0,0,0,0.6)',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        borderTop: '1px solid var(--pipe-border)',
       }}
     >
       {/* Microphone */}
@@ -60,7 +60,7 @@ export function VideoControls({
         title={micEnabled ? 'Mute mic' : 'Unmute mic'}
       >
         {micEnabled ? (
-          <Mic size={15} color="rgba(255,255,255,0.7)" />
+          <Mic size={15} color="var(--pipe-text-dim)" />
         ) : (
           <MicOff size={15} color="#ef4444" />
         )}
@@ -101,7 +101,7 @@ export function VideoControls({
         title={cameraEnabled ? 'Turn off camera' : 'Turn on camera'}
       >
         {cameraEnabled ? (
-          <Video size={15} color="rgba(255,255,255,0.7)" />
+          <Video size={15} color="var(--pipe-text-dim)" />
         ) : (
           <VideoOff size={15} color="#ef4444" />
         )}

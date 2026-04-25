@@ -65,18 +65,18 @@ export function VideoDeviceCheck({
         gap: 24,
         padding: 48,
         background: 'rgba(12,12,14,0.97)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: '1px solid var(--pipe-border)',
         maxWidth: 420,
         margin: '0 auto',
       }}
     >
-      <Video size={32} color="rgba(255,255,255,0.3)" />
+      <Video size={32} color="var(--pipe-text-dim)" />
 
       <div
         style={{
           fontSize: 10,
           letterSpacing: '0.2em',
-          color: 'rgba(255,255,255,0.5)',
+          color: 'var(--pipe-text-muted)',
           fontFamily: '"Space Mono", monospace',
           textAlign: 'center',
         }}
@@ -87,8 +87,8 @@ export function VideoDeviceCheck({
       {/* Status */}
       {state === 'checking' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Loader2 size={16} color="rgba(255,255,255,0.4)" className="animate-spin" />
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+          <Loader2 size={16} color="var(--pipe-text-dim)" className="animate-spin" />
+          <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             Requesting camera &amp; mic access...
           </span>
         </div>
@@ -106,7 +106,7 @@ export function VideoDeviceCheck({
               height: 180,
               objectFit: 'cover',
               borderRadius: 3,
-              border: '1px solid rgba(255,255,255,0.1)',
+              border: '1px solid var(--pipe-border)',
               background: '#000',
               transform: 'scaleX(-1)',
             }}
@@ -123,9 +123,9 @@ export function VideoDeviceCheck({
             onClick={handleJoin}
             style={{
               padding: '12px 32px',
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              color: '#fff',
+              background: 'var(--pipe-surface-hover)',
+              border: '1px solid var(--pipe-border)',
+              color: 'var(--pipe-text, #fff)',
               fontSize: 10,
               letterSpacing: '0.15em',
               fontFamily: '"Space Mono", monospace',
@@ -141,7 +141,7 @@ export function VideoDeviceCheck({
                 'rgba(255,255,255,0.08)')
             }
           >
-            JOIN_INTERVIEW_ROOM
+            READY
           </button>
         </>
       )}
@@ -159,7 +159,7 @@ export function VideoDeviceCheck({
           <p
             style={{
               fontSize: 12,
-              color: 'rgba(255,255,255,0.4)',
+              color: 'var(--pipe-text-dim)',
               textAlign: 'center',
               lineHeight: 1.6,
               fontFamily: '"Space Mono", monospace',

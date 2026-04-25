@@ -1,0 +1,61 @@
+{
+  "fixture_id": "seed-001-junior-jwt-verification-miss",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 2,
+      "question_formation": 1,
+      "ai_direction": 1
+    },
+    "evidence": {
+      "issue_identification_evidence": "",
+      "prioritization_evidence": "",
+      "revision_evaluation_evidence": "",
+      "reasoning_quality_evidence": "",
+      "question_formation_evidence": "",
+      "ai_direction_evidence": ""
+    },
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 0,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": true,
+      "cave_ratio": 1,
+      "fix_verifications": 0
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 33,
+      "band": "weak",
+      "narrative": "This candidate demonstrates an adequate but inconsistent approach to code review, with room for significant improvement. Their strongest area is efficiency, as shown by their ability to quickly assess code (scoring 100 in efficiency), but this speed comes at the cost of depth and thoroughness. The most critical area for growth is their lack of engagement with the code’s context—they scored a 1 in both asking clarifying questions and evaluating AI suggestions, which means they often miss key issues or accept changes without verification. While they identify some surface-level problems, their reviews would benefit from slower, more deliberate analysis and better communication with the code’s author. With coaching, they could develop into a more effective reviewer, but they currently lack the judgment and curiosity needed for high-impact feedback.",
+      "strengths": [
+        "Efficient in reviewing code quickly (scored 100 in efficiency).",
+        "Able to identify some surface-level issues (scored 3 in issue identification).",
+        "Shows basic ability to prioritize issues (scored 3 in prioritization)."
+      ],
+      "growth_areas": [
+        "Fails to ask clarifying questions to understand context (scored 1 in question formation).",
+        "Does not critically evaluate revisions or AI suggestions (scored 1 in AI direction).",
+        "Provides shallow explanations for identified issues (scored 2 in reasoning quality)."
+      ]
+    },
+    "scorer_a_summary": "",
+    "scorer_b_summary": "The reviewer provided predominantly surface-level comments without deep explanations of failure mechanisms or consequences. No clarifying questions were asked to understand design intent or context, and the reviewer blindly accepted all implementer proposals without evaluation. This results in low scores across all dimensions."
+  },
+  "meta": {
+    "wall_clock_ms": 13458,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "repo_id": 1677,
+  "full_name": "iib0011/omni-tools",
+  "suitable": true,
+  "recommendation": "keep",
+  "concerns": [
+    "Relatively modest SLOC (57.5k) may limit depth of multi-PR assessment scenarios",
+    "As a utility toolkit, PRs may skew toward isolated feature additions rather than systemic design challenges"
+  ],
+  "reasoning": "omni-tools is a general-purpose browser-based developer utility suite written in TypeScript — a real application with broad domain appeal and realistic feature engineering complexity."
+}

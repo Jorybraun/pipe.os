@@ -1,0 +1,54 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "devstral",
+  "model": "devstral-latest",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {},
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0,
+      "fix_verifications": 1
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "This candidate is an adequate code reviewer with consistent but not exceptional performance across all dimensions. Their strongest skill is explaining issues clearly, as noted by their high reasoning quality score (3/5) and specific praise for detailing failure mechanisms and user impact. The most important area for growth is asking clarifying questions before critiquing, as they tend to assume intent rather than verify it. While they demonstrate solid judgment in evaluating fixes, their overall bug detection effectiveness (30/100) suggests room for improvement in identifying critical issues. With coaching, they could become a more thorough and collaborative reviewer.",
+      "strengths": [
+        "Explains issues clearly with detailed reasoning",
+        "Evaluates proposed fixes with good judgment",
+        "Consistent performance across all review dimensions"
+      ],
+      "growth_areas": [
+        "Needs to ask more clarifying questions before critiquing",
+        "Should improve ability to identify critical bugs (low effectiveness score)",
+        "Could benefit from distinguishing higher-priority issues more clearly"
+      ]
+    },
+    "scorer_a_summary": "",
+    "scorer_b_summary": "The reviewer demonstrates high reasoning quality by consistently explaining the failure mechanisms, user-facing consequences, and proposing fixes with specific details. The reviewer does not ask many clarifying questions before critiquing the code, assuming intent and making confident claims. The reviewer effectively evaluates and pushes back on implementer proposals with reasoned responses, demonstrating good judgment."
+  },
+  "meta": {
+    "wall_clock_ms": 13852,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

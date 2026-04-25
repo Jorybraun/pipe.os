@@ -1,0 +1,12 @@
+{
+  "repo_id": 1693,
+  "full_name": "davidjerleke/embla-carousel",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "Single-purpose UI carousel component library — not an application or service",
+    "Engineering scope is entirely contained within carousel physics, scroll snapping, and plugin API design",
+    "Too narrow a problem domain for meaningful general software engineering assessment despite high SLOC from plugin ecosystem"
+  ],
+  "reasoning": "embla-carousel is a focused carousel component library whose engineering complexity is confined to a single UI widget domain, making it unsuitable for general SWE assessment."
+}

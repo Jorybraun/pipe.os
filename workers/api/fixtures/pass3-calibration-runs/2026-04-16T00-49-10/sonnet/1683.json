@@ -1,0 +1,15 @@
+{
+  "repo_id": 1683,
+  "full_name": "rsuite/rsuite",
+  "provider": "sonnet",
+  "constraint_pass": false,
+  "accuracy_pass": true,
+  "architecture_pass": true,
+  "completeness_pass": true,
+  "approved": true,
+  "failures": [
+    "repo_searchable_profile is approximately 242 words — well under the 400-word minimum",
+    "repo_searchable_profile contains invented numbers absent from FACTS: total dependency count of 116 and the 'example configurations' count of 18 are not present in the FACTS block; challenge surface scores 0.50/0.40/0.30 are also not in FACTS"
+  ],
+  "reasoning": "The profile is ~242 words, falling roughly 158 words below the required minimum of 400. The profile also cites a total dependency count of 116 and references '18' example configurations, neither of which appear in the FACTS block. The challenge surface scores (0.50, 0.40, 0.30) are a repeated pattern across all fixtures and appear to be a default Gemma output rather than FACTS-derived values. Accuracy is sound: TypeScript is correctly identified as primary language, the unit-only test style is correctly described, the web-frontend component library domain is well-represented, and the characterisation of PR patterns (component-level fixes, accessibility improvements, keyboard support) is consistent with what would be expected from rsuite. architecture_style='library' is correct — rsuite is React Suite, a set of React UI components, clearly a library for external consumption. All five completeness dimensions are present: repo type (UI component library), language/stack (TypeScript), PR shapes (mean 6.6, p90 13), test/review culture (unit-only, test_touch_rate 0.5), and contribution readiness (open counts unknown). Three of four pass, yielding approved=true."
+}

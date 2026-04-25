@@ -1,0 +1,12 @@
+{
+  "repo_id": 1683,
+  "full_name": "rsuite/rsuite",
+  "suitable": false,
+  "recommendation": "deny-list",
+  "concerns": [
+    "React UI component suite — a component library, not an application or service",
+    "Engineering challenges are narrowly focused on component behavior, ARIA compliance, and design tokens",
+    "Not a domain where broad software engineering skills are exercised"
+  ],
+  "reasoning": "RSuite is a React component library (buttons, tables, modals, etc.), which is a UI kit and therefore not a suitable general software engineering assessment target."
+}

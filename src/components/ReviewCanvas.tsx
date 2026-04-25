@@ -50,7 +50,7 @@ export function ReviewCanvas({
   if (!snippets || snippets.length === 0) {
     return (
       <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
-        <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+        <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
           NO_SNIPPETS_AVAILABLE_FOR_REVIEW
         </div>
       </LiquidMetalCard>
@@ -58,6 +58,15 @@ export function ReviewCanvas({
   }
 
   const currentSnippet = snippets[currentSnippetIndex];
+  if (!currentSnippet) {
+    return (
+      <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
+        <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+          NO_SNIPPETS_AVAILABLE_FOR_REVIEW
+        </div>
+      </LiquidMetalCard>
+    );
+  }
 
   const handleLineClick = (line: number): void => {
     setActiveLine({ snippetId: currentSnippet.id, line });
@@ -121,11 +130,11 @@ export function ReviewCanvas({
         <div
           style={{
             padding: '16px 24px',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            borderBottom: '1px solid var(--pipe-border)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            background: 'rgba(255,255,255,0.02)',
+            background: 'var(--pipe-surface)',
           }}
         >
           <div>
@@ -133,14 +142,14 @@ export function ReviewCanvas({
               style={{
                 fontSize: 10,
                 letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.4)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 marginBottom: 4
               }}
             >
               CODE_REVIEW_CANVAS
             </div>
-            <div style={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>
+            <div style={{ color: 'var(--pipe-text, #fff)', fontSize: 14, fontWeight: 700 }}>
               {currentSnippet.title || 'Untitled Snippet'}
             </div>
           </div>
@@ -148,14 +157,14 @@ export function ReviewCanvas({
             <div
               style={{
                 fontSize: 10,
-                color: 'rgba(255,255,255,0.25)',
+                color: 'var(--pipe-text-dim)',
                 fontFamily: '"Space Mono", monospace',
                 marginBottom: 4
               }}
             >
               SNIPPET {currentSnippetIndex + 1} OF {snippets.length}
             </div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               {currentSnippet.language?.toUpperCase() || 'TYPESCRIPT'}
             </div>
           </div>
@@ -199,7 +208,7 @@ export function ReviewCanvas({
             lineNumberStyle={{
               minWidth: '3em',
               paddingRight: '1em',
-              color: 'rgba(255,255,255,0.15)',
+              color: 'var(--pipe-text-dim)',
               textAlign: 'right',
               userSelect: 'none',
             }}
@@ -219,26 +228,26 @@ export function ReviewCanvas({
                 width: 'calc(100% - 48px)',
                 maxWidth: 400,
                 background: '#161618',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--pipe-border)',
                 borderRadius: 8,
                 boxShadow: '0 24px 48px rgba(0,0,0,0.8)',
                 padding: 24,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text, #fff)' }}>
                   ANNOTATION: LINE {activeLine.line}
                 </div>
                 <button 
                   onClick={() => setActiveLine(null)}
-                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}
                 >
                   <X size={16} />
                 </button>
               </div>
 
               <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
+                <label style={{ display: 'block', fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
                   SEVERITY
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -266,7 +275,7 @@ export function ReviewCanvas({
               </div>
 
               <div style={{ marginBottom: 24 }}>
-                <label style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
+                <label style={{ display: 'block', fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 8, fontFamily: '"Space Mono", monospace' }}>
                   OBSERVATION / FIX
                 </label>
                 <textarea
@@ -278,9 +287,9 @@ export function ReviewCanvas({
                     width: '100%',
                     height: 100,
                     background: 'rgba(0,0,0,0.2)',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    border: '1px solid var(--pipe-border)',
                     borderRadius: 4,
-                    color: '#fff',
+                    color: 'var(--pipe-text, #fff)',
                     padding: 12,
                     fontSize: 13,
                     fontFamily: 'inherit',
@@ -317,8 +326,8 @@ export function ReviewCanvas({
         <div
           style={{
             padding: '20px 24px',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            background: 'rgba(255,255,255,0.01)',
+            borderTop: '1px solid var(--pipe-border)',
+            background: 'var(--pipe-surface)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
@@ -327,13 +336,13 @@ export function ReviewCanvas({
           <div style={{ display: 'flex', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <AlertCircle size={10} color="#f87171" />
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+              <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 {(annotations[currentSnippet.id] || []).filter(a => a.severity === 'critical').length} CRITICAL
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <AlertTriangle size={10} color="#fbbf24" />
-              <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Mono", monospace' }}>
+              <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 {(annotations[currentSnippet.id] || []).filter(a => a.severity === 'major').length} MAJOR
               </span>
             </div>
@@ -346,7 +355,7 @@ export function ReviewCanvas({
               style={{
                 padding: '8px 16px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--pipe-border)',
                 color: currentSnippetIndex === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)',
                 fontSize: 9,
                 letterSpacing: '0.1em',
@@ -362,7 +371,7 @@ export function ReviewCanvas({
               style={{
                 padding: '8px 16px',
                 background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.1)',
+                border: '1px solid var(--pipe-border)',
                 color: currentSnippetIndex === snippets.length - 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.4)',
                 fontSize: 9,
                 letterSpacing: '0.1em',

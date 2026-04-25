@@ -1,0 +1,61 @@
+{
+  "fixture_id": "seed-002-senior-n-plus-one-excellent",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "dimensions": {
+      "issue_identification": 3,
+      "prioritization": 3,
+      "revision_evaluation": 3,
+      "reasoning_quality": 3,
+      "question_formation": 3,
+      "ai_direction": 3
+    },
+    "evidence": {
+      "issue_identification_evidence": "",
+      "prioritization_evidence": "",
+      "revision_evaluation_evidence": "",
+      "reasoning_quality_evidence": "",
+      "question_formation_evidence": "",
+      "ai_direction_evidence": ""
+    },
+    "metrics": {
+      "bugs_found": [],
+      "bugs_missed": [],
+      "bugs_found_pct": 1,
+      "false_positive_count": 0,
+      "true_finding_count": 0,
+      "approved_with_unfound_critical": false,
+      "cave_ratio": 0.33,
+      "fix_verifications": 4
+    },
+    "effectiveness": {
+      "ris": 0,
+      "efficiency": 100,
+      "delta": 0,
+      "score": 30
+    },
+    "overall": {
+      "score": 47,
+      "band": "adequate",
+      "narrative": "The candidate gave an adequate performance in code reviews. They excelled in identifying issues, finding all the planted bugs without any false positives. However, their overall effectiveness score was low, indicating that they may not have detected enough real-world bugs. This suggests there is room for improvement in their ability to spot bugs beyond just test cases.",
+      "strengths": [
+        "Strong issue identification skills, finding all planted bugs accurately.",
+        "Good prioritization of issues, matching severity labels to impact.",
+        "Thorough verification of fixes, ensuring issues were properly addressed."
+      ],
+      "growth_areas": [
+        "Improving overall bug detection in real-world scenarios, as indicated by the low effectiveness score.",
+        "Enhancing reasoning and explanation quality to better articulate why issues matter.",
+        "Developing more nuanced questioning to avoid assumptions."
+      ]
+    },
+    "scorer_a_summary": "The reviewer demonstrated excellent issue identification by finding all four planted bugs with correct categorization and no false positives. They accurately prioritized issues, assigning appropriate severity labels that matched the actual impact and gating the PR on unresolved critical/major issues. In the revision evaluation phase, the reviewer thoroughly verified each claimed fix, ensuring that all issues were properly addressed before approving the PR.",
+    "scorer_b_summary": ""
+  },
+  "meta": {
+    "wall_clock_ms": 145091,
+    "attempts": 3,
+    "status": "ok"
+  }
+}
