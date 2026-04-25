@@ -61,7 +61,7 @@ function buildRoleContextRow(overrides: Partial<RoleContextRow> = {}): RoleConte
     owner_id: 'test-user',
     pipeline_id: null,
     baseline: JSON.stringify({ title: 'Senior Engineer' }),
-    question_budget: 10,
+    question_budget: 8,
     questions_asked: 0,
     status: 'COMPLETE',
     knowledge_state: '{}',

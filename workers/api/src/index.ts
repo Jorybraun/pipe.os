@@ -41,6 +41,13 @@ import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 
+// Unified Agent Runtime plugin registration (ADR-034)
+import { registerAllPlugins } from './lib/agents';
+registerAllPlugins();
+
+// Unified Agent Runtime routes (ADR-034)
+import agents from './routes/agents';
+
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -132,6 +139,9 @@ app.route('/api/v1/review-sessions', reviewSessions);
 
 // Role Discovery Agent: AI-powered role context extraction (ADR-027)
 app.route('/api/v1/role-contexts', roleContexts);
+
+// Unified Agent Runtime routes (ADR-034)
+app.route('', agents);
 
 // Voice sessions: session creation, WebSocket upgrade, transcript callback
 app.route('/api/v1/voice-sessions', voiceSessions);

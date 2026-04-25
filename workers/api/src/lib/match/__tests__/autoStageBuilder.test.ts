@@ -24,7 +24,7 @@ function makeRoleContext(overrides?: Partial<RoleContextRow> & { non_negotiable_
     baseline: null,
     knowledge_state: null,
     exchanges: null,
-    question_budget: 10,
+    question_budget: 8,
     questions_asked: 0,
     status: 'COMPLETE',
     persona_json: JSON.stringify(PERSONA),

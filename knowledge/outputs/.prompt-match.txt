@@ -1,0 +1,22 @@
+Research: Matching algorithms for candidate-repository-role fit.
+
+Context: We have three entities to match: candidates (with skills, experience, assessed capabilities), repositories (with extracted signals, embeddings), and roles (with requirements from Role Discovery interviews). We need "high-intelligence matching" — not just keyword overlap, but semantic understanding of fit.
+
+Research questions:
+1. What algorithms combine structured filtering (hard constraints: language, seniority) with semantic ranking (soft fit: codebase style, problem domain)?
+2. How do you represent "worked on terraform for ecommerce high-end client" as a matchable signal? (structured narrative + LLM reasoning)
+3. What are state-of-the-art approaches in job-candidate matching? (LinkedIn, Indeed, Lever, Greenhouse — how do they rank candidates?)
+4. Two-stage retrieval: fast SQL/elastic filter → slow LLM rerank. What are best practices?
+5. How do you calibrate matching quality? (when is a match "good"?)
+
+Search strategy:
+- Academic: recommendation systems, job-candidate matching, two-stage retrieval (ColBERT, SPLADE)
+- Industry: LinkedIn's talent matching, Indeed's search ranking, Greenhouse's matching
+- ML: learning-to-rank, cross-encoders vs bi-encoders, embedding-based retrieval
+
+Output format: Structured markdown brief with:
+- Executive summary (3 bullets)
+- Algorithm comparison: approach | speed | quality | complexity | when to use
+- Recommended architecture for Pipe (specific: SQL filter → embedding retrieval → LLM rerank)
+- Calibration methodology (how to know if matching is working)
+- All citations with URLs

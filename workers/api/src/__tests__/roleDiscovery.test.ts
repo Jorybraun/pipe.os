@@ -101,7 +101,7 @@ describe('buildRoleAgentUserMessage', () => {
       exchanges: [],
       knowledgeState: {},
       questionsAsked: 0,
-      questionBudget: 10,
+      questionBudget: 8,
     });
     expect(msg).toContain('Marketing Director');
     expect(msg).toContain('BASELINE FORM DATA');
@@ -113,7 +113,7 @@ describe('buildRoleAgentUserMessage', () => {
       exchanges: [],
       knowledgeState: { team: { size: 6, culture_hm: 'async-first' } },
       questionsAsked: 0,
-      questionBudget: 10,
+      questionBudget: 8,
     });
     expect(msg).toContain('Previously Established Facts');
     expect(msg).toContain('async-first');
@@ -125,7 +125,7 @@ describe('buildRoleAgentUserMessage', () => {
       exchanges: [],
       knowledgeState: {},
       questionsAsked: 0,
-      questionBudget: 10,
+      questionBudget: 8,
     });
     expect(msg).not.toContain('Previously Established Facts');
   });
@@ -136,7 +136,7 @@ describe('buildRoleAgentUserMessage', () => {
       exchanges: [],
       knowledgeState: {},
       questionsAsked: 9,
-      questionBudget: 10,
+      questionBudget: 8,
     });
     expect(msg).toContain('Budget nearly exhausted');
   });
@@ -146,8 +146,8 @@ describe('buildRoleAgentUserMessage', () => {
       baseline: { title: 'Engineer' },
       exchanges: [],
       knowledgeState: {},
-      questionsAsked: 10,
-      questionBudget: 10,
+      questionsAsked: 8,
+      questionBudget: 8,
     });
     expect(msg).toContain('BUDGET EXHAUSTED');
   });
@@ -163,7 +163,7 @@ describe('callRoleAgent', () => {
       exchanges: [],
       knowledgeState: {},
       questionsAsked: 0,
-      questionBudget: 10,
+      questionBudget: 8,
     });
     expect(result.type).toBe('question');
     if (result.type === 'question') {
@@ -177,8 +177,8 @@ describe('callRoleAgent', () => {
       baseline: { title: 'Designer' },
       exchanges: [],
       knowledgeState: {},
-      questionsAsked: 10,
-      questionBudget: 10,
+      questionsAsked: 8,
+      questionBudget: 8,
     });
     expect(result.type).toBe('synthesis');
   });

@@ -19,7 +19,7 @@ import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
-import { callRoleAgent, callRoleAgentStream, mergeKnowledgeState, callGapFillingAgent, type RoleAgentResponse } from '../../lib/roleAgent';
+import { callRoleAgent, mergeKnowledgeState, callGapFillingAgent, type RoleAgentResponse } from '../../lib/roleAgent';
 import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
 import { deriveJobDescriptionFromRcd } from '../../lib/roleAgent/deriveJobDescription';
 import { calibrateRcd } from '../../lib/roleAgent/calibrateRcd';
@@ -698,13 +698,7 @@ roleContexts.post('/:id/respond', async (c) => {
       let agentResponse: RoleAgentResponse | null = null;
 
       try {
-        for await (const event of callRoleAgentStream(agentInput)) {
-          if (event.event === 'chunk') {
-            await stream.writeSSE({ event: 'chunk', data: event.text });
-          } else if (event.event === 'done') {
-            agentResponse = event.result;
-          }
-        }
+        agentResponse = await callRoleAgent(agentInput);
       } catch (err) {
         logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
         throw err;

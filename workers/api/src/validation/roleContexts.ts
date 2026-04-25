@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const QUESTION_BUDGETS = [5, 10, 15, 20] as const;
+export const QUESTION_BUDGETS = [6, 8, 10, 15] as const;
 
 export const ROLE_CONTEXT_STATUSES = ['BASELINE', 'INTERVIEWING', 'COMPLETE', 'ABANDONED'] as const;
 
@@ -33,7 +33,7 @@ export const createRoleContextSchema = z.object({
       message: `questionBudget must be one of: ${QUESTION_BUDGETS.join(', ')}`,
     })
     .optional()
-    .default(10),
+    .default(8),
 });
 
 export type CreateRoleContextInput = z.infer<typeof createRoleContextSchema>;

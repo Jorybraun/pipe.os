@@ -1,0 +1,22 @@
+Research: How to vectorize repository signals for candidate-role matching.
+
+Context: We have structured repo signals (language, stars, file count, test coverage, complexity metrics) and unstructured signals (README, code snippets, commit messages, issue discussions). We need to combine these into representations that enable semantic matching against candidate skills and role requirements.
+
+Research questions:
+1. What are state-of-the-art methods for multi-modal code representation? (code embeddings, repo embeddings, graph neural networks on ASTs)
+2. How do you combine structured features (tabular) with unstructured text (README, code) in a single vector space?
+3. What embedding models work best for code? (CodeBERT, GraphCodeBERT, CodeT5, StarCoder-based, OpenAI ada)
+4. How do you handle hierarchical structure? (repo → module → file → function → snippet)
+5. Dimensionality reduction and indexing strategies for real-time matching at scale
+
+Search strategy:
+- arXiv: code representation learning, software embedding, repository embedding
+- Papers With Code: code search, code retrieval benchmarks
+- Industry: GitHub Copilot's code understanding, Sourcegraph's search, Stack Overflow's tagging
+
+Output format: Structured markdown brief with:
+- Executive summary (3 bullets)
+- Methods comparison table: method | modality | performance on code search benchmarks | compute cost | implementation complexity
+- Architecture recommendations for our use case (matching candidates to repos)
+- Open-source tools and libraries we can use
+- All citations with URLs

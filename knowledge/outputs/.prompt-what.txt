@@ -1,0 +1,21 @@
+Research: What signals to extract from software repositories for hiring assessment relevance.
+
+Context: We are building an AI-native developer interview platform. Candidates review real open-source PRs as part of technical assessments. We need to match candidates to repositories that are relevant to their skills AND to the hiring role. Currently we extract basic signals (language, stars, license, commit activity) but need richer engineering-quality signals.
+
+Research questions:
+1. What repo/codebase features predict engineering quality, complexity, or maintainability? (academic literature on code metrics, software engineering predictors)
+2. What signals indicate a repo is suitable for technical assessment? (size, complexity, test coverage, documentation, issue response time)
+3. What repo features correlate with "good code review experiences"? (clear diff boundaries, meaningful changes, readable code)
+4. Are there established taxonomies of software engineering signals used in hiring or education contexts?
+
+Search strategy:
+- arXiv: code metrics, software quality predictors, repository mining, technical debt detection
+- Google Scholar: "repository signals hiring", "code review quality predictors", "software engineering assessment"
+- Industry sources: GitHub's own research, Google engineering practices, Microsoft code review studies
+
+Output format: Structured markdown brief with:
+- Executive summary (3 bullets)
+- Findings table: signal name | source | evidence strength | applicability to hiring assessment
+- Gaps: what is NOT well-researched
+- Recommendations: top 10 signals to implement, ranked by evidence quality
+- All citations with URLs

@@ -58,11 +58,11 @@ CI/CD:     GitHub Actions + Cloudflare Wrangler + Terraform
 | 0 | Provider abstraction layer | ✅ Done | `src/providers/{amplify,clerk}` both present; Clerk path is the live one |
 | 1 | Listing + Pipeline Create | ✅ Done | `listing.spec.ts` 5/5; `/pipeline/new` now routes to Role Discovery Agent (replaced original PipelineCreatePage) |
 | 2 | Stage Detail + Overview + Challenge Editor | 🟡 Done + drifted | All routes live (`pipelines`, `stages`, `challenges`, `overview`); editor BDD specs broken from UI redesign drift |
-| 3 | Candidate Profile + Assessment | ✅ Done | `candidate-profile.spec.ts` 22/22, `candidate-resume.spec.ts` 14/14 |
+| 3 | Candidate Profile + Assessment | 🟡 Done + drifted | Core flow works; profile specs have text-selector drift (6/26 failing). `candidate-resume.spec.ts` 14/14 |
 | 3b | Dev Containers (ECS → CF Containers) | ⏸️ Paused | `DevContainerSandboxPage` exists but no `containers` route in Worker; not blocking MVP |
 | 3c | Implementer Agent (multi-turn code review) | ✅ Done | `implementerAgent.ts` + `/api/v1/review-sessions` live; Phase E (frontend wiring) shipped — 8/8 E2E green at time of commit |
 | 4 | Real-time signaling + Scheduling | ✅ Done (expanded) | Video DO with Hibernation API, WebRTC signaling, Calendly/Cal.com OAuth, scheduling webhooks |
-| 5 | CI/CD + Wrangler + Cleanup | 🟡 In progress | `amplify/` deleted; GitHub Actions workflows created; Pages projects TBD |
+| 5 | CI/CD + Wrangler + Cleanup | ✅ Done | `amplify/` deleted; GitHub Actions workflows live (`ci.yml`, `deploy-staging.yml`, `deploy-production.yml`); Terraform dropped per ADR-041; Pages deploy commented out pending dashboard setup |
 | 6 | Challenge Experience — Real Repo Pipelines | 🟡 Partial | `presets.ts` exists, `github` route imports PRs, but "3 curated pipelines" not assembled |
 | 7 | Sourcing & Matching — Two-Lane Candidate Ingestion | ⏸️ Deferred | Autonomous matcher + manual search bar share one backend; one-click invite drops into existing flow. **Deferred until Phases 5–6 ship.** |
 
@@ -98,17 +98,20 @@ The migration is functionally past the original Phase 4 boundary, but several ma
 
 ### What's working (verified by route mounts + recent commits)
 
-**Workers backend** — `workers/api/src/index.ts` mounts 17 route modules:
-- `pipelines`, `stages` (×3 nested), `challenges`, `github`, `overview`
-- `candidates`, `email`, `challengeSubmissions`, `reviewSessions`
+**Workers backend** — `workers/api/src/index.ts` mounts 34 route modules:
+- `pipelines`, `pipelinesAutoBuild`, `pipelineStages`, `stageOps`, `stageChallenges`, `challenges`
+- `github`, `repoDiscovery`, `adminRepos`, `adminAiUsage`
+- `overview`, `pipelineCandidates`, `candidateOps`, `ingestion`, `search`
+- `devContainerSessions`, `emailRoutes`, `emailOAuth`
 - `scheduling` (public + auth — Calendly/Cal.com OAuth + webhooks)
 - `phone` (public + auth — Twilio webhooks, recordings, Deepgram transcription)
 - `video` (recruiter auth + candidate WS) backed by `VideoRoom` Durable Object
-- `roleContexts` (Role Discovery Agent — multi-stakeholder)
+- `roleContexts`, `voiceSessions`, `ttsRouter`
+- `challengeSubmissions`, `reviewSessions`
 - `rpc` (candidate-facing public + auth)
+- `calibrate` (internal calibration endpoints)
 
-**D1 migrations 0001–0012 applied:**
-1. `create_pipelines` 2. `recruiter_core` 3. `candidate_flow` 4. `review_sessions` 5. `comprehension_mode` 6. `stage_config` 7. `scheduling` 8. `phone_screening` 9. `screening_format` 10. `stage_config_columns` 11. `role_contexts` 12. `role_context_participants`
+**D1 migrations 0001–0042 applied** (42 migrations covering: pipelines, recruiter core, candidate flow, review sessions, comprehension mode, stage config, scheduling, phone screening, screening format, stage config columns, role contexts, role context participants, persona JD, culture interview, culture review columns, culture usage tracking, email connections, challenge authoring, discovered repos, agent sessions, skills-only discovery, qualified repos, role discovery data contract, dev container sessions, challenge dev container, dev container exchange tokens, voice sessions, role context recruitment brief, signals v2, repo issues, qualified repos admin status/reason, AI usage events, repo signals feedback/assessment, repos readme/tree, pipeline match config, match config extensions, candidate ingestion, candidate rich profile, match feedback, ingestion triangulated scores, embedding JSON)
 
 **AI surface** (all server-side Mistral, with mock fallback):
 - `roleAgent` — Discovery Agent w/ ReAct + tool calling (research_company, search_technology)
@@ -139,12 +142,12 @@ These were not in any phase doc when this plan was authored. They are now produc
 
 ### Known issues and unfinished work
 
-**Migration cleanup (Phase 5 — blocking "done"):**
-- `amplify/` directory still present (auth/data/functions/storage)
-- `amplify_outputs.json` (82KB) still in repo root
-- `amplify.yml` still in repo root
-- No Terraform yet
-- No GitHub Actions deployment workflow committed
+**Migration cleanup (Phase 5 — done):**
+- ✅ `amplify/` directory deleted
+- ✅ `amplify_outputs.json` deleted
+- ✅ `amplify.yml` deleted
+- ✅ Terraform dropped per ADR-041 (Wrangler is the single deployment tool)
+- ✅ GitHub Actions workflows committed (`ci.yml`, `deploy-staging.yml`, `deploy-production.yml`)
 
 **Test drift (blocks confidence in shipping):**
 - `TEST_STATUS.md` (2026-03-31) says 61/7 files verified; commit messages from same day claim 159 BDD tests passing — these need reconciling
@@ -163,7 +166,7 @@ These were not in any phase doc when this plan was authored. They are now produc
 **Phase 3b (Dev Containers) — paused:**
 - `DevContainerSandboxPage.tsx` and `DevContainerTestPage.tsx` exist
 - No `containers` route in `workers/api/src/index.ts`
-- No Cloudflare Containers binding in `wrangler.jsonc` (last verified)
+- Cloudflare Containers binding exists in `wrangler.jsonc` but no candidate-facing route wires it
 - Decision needed: ship without dev containers (use Phase 7 instead) or revive
 
 ### What this means for sequencing
@@ -171,7 +174,7 @@ These were not in any phase doc when this plan was authored. They are now produc
 The honest read: **the system is feature-rich but unstable at the seams.** Too many half-finished integrations. Before Phase 7 (Sourcing & Matching) can even be contemplated, the following must close:
 
 1. **Test triage week** — reconcile TEST_STATUS.md vs. commit claims; delete obsolete bug-regression specs; fix or quarantine editor locator drift; get to a green baseline that reflects the current UI.
-2. **Phase 5 cleanup** — Terraform, GitHub Actions deploy, delete `amplify/` once Workers parity is verified end-to-end.
+2. **Phase 5 cleanup** — ~~Terraform~~ dropped per ADR-041; GitHub Actions deploy live; `amplify/` deleted.
 3. **Phase 6 closeout** — assemble at least 1 (not 3) curated repo preset with the full review→follow-up→implement loop, prove it end-to-end with a real recruiter.
 4. **Phase 3b decision** — explicitly kill or revive dev containers. No more limbo.
 

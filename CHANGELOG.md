@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Unified Agent Runtime (ADR-034)
+
+- `workers/api/src/lib/unifiedAgentRuntime/`: shared FSM, plugin registry, session store, scorer, eval gate, and provider for role discovery, code review, and culture interview agents.
+- `workers/api/src/lib/agents/{roleDiscovery,codeReview,culture}/plugin.ts`: per-agent plugins registered via `registerAllPlugins()`.
+- `workers/api/src/routes/agents.ts`: unified `/api/v1/agents/*` routes (mounted in `index.ts`).
+- `migration/0043_agent_sessions.sql`: unified `agent_sessions` table for cross-agent operational queries.
+- `docs/decisions/current/ADR-034-unified-agent-runtime.md`: rationale and consolidation plan.
+
+### Added — Role Discovery Evaluator
+
+- `workers/api/src/lib/roleDiscovery/evaluator.ts` + `evaluatorPrompt.ts`: eval-gated question generation (interviewer proposes 2 candidates → evaluator picks the best) for the role discovery agent.
+- `workers/api/src/routes/internal/evaluateDiscovery.ts`: internal endpoint for evaluator runs.
+- `workers/api/src/lib/roleAgentPrompts.ts`: prompt rewrite to align with the evaluator contract.
+
+### Added — Strategy & Planning Docs
+
+- `knowledge/plan/pipe-strategy-v2-part{1..6}.md`: north-star, role discovery, repo ingestion, candidate ingestion, matching migration, and market research.
+- `docs/plans/2026-04-22-eval-gated-pipeline.md`, `docs/plans/2026-04-22-live-rcd-synthesis.md`.
+- `docs/handoffs/{discovery-agent-context,phase-2-role-discovery-migration,unified-agent-runtime}-2026-04-23.md`.
+- `scripts/research-vector-signals.py`: research helper for vector-native signal exploration.
+
+### Changed
+
+- `migration/PLAN.md`: Phase 5 marked done (Terraform dropped per ADR-041, GitHub Actions live, `amplify/` deleted); Phase 3 marked drifted; Workers route inventory updated to 34 modules; D1 migration count updated to 0001–0042.
+- `CLAUDE.md`: added Context Budget section enforcing per-session limits on project files, skills, and persistent memory.
+
+### Removed
+
+- `data/experiments/runs.jsonl` (stale experiment log).
+- `knowledge/README.md` (superseded by `knowledge/STRATEGY.md` and the wiki).
+
 ### Fixed
 
 - **Cross-tenant leak on `/api/v1/search/roles`:** `matchRolesVectorNative` now joins `pipelines` and filters by `owner_id`; `/roles` handler passes the authenticated user through. Mirrors the existing `matchCandidatesVectorNative` pattern.

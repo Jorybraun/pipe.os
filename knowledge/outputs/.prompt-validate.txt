@@ -1,0 +1,22 @@
+Research: Which repository signals actually correlate with hiring outcomes or assessment quality.
+
+Context: We want to validate that the signals we extract from repositories actually matter for hiring decisions. Not all metrics are meaningful — some are vanity metrics (stars, forks) while others may genuinely predict engineering skill or assessment relevance.
+
+Research questions:
+1. Is there empirical research linking specific code metrics to developer performance or skill?
+2. What signals do existing technical assessment platforms use? (HackerRank, CodeSignal, Codility, TestGorilla — what do they optimize for?)
+3. Are there studies on "good" vs "bad" code review items? (what makes a PR suitable for assessment)
+4. What is the correlation between repo popularity and assessment quality? (is a 50k-star repo better than a 500-star repo for interviews?)
+5. Do complexity metrics (cyclomatic, cognitive) predict candidate performance on assessments?
+
+Search strategy:
+- Academic: developer productivity metrics, code quality correlation studies, assessment validity research
+- Industry reports: HackerRank/Stack Overflow developer surveys, GitHub Octoverse
+- Psychometrics: work-sample validity, construct validity in technical assessment
+
+Output format: Structured markdown brief with:
+- Executive summary (3 bullets)
+- Evidence table: signal | correlation with outcome | evidence type (study/industry/anecdotal) | confidence
+- Invalidated signals: metrics that DON'T correlate (avoid these)
+- Validation methodology we should use
+- All citations with URLs

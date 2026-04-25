@@ -165,3 +165,27 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production  # A
 4. **BDD tests are production code.** Stale tests are bugs. If a test hasn't passed in 2 weeks, delete it or fix it.
 5. **Monthly doc audit.** First session of each month: review `docs/`, `e2e/`, and `knowledge/outputs/` for drift. Log findings in `docs/ops/drift-log.md`.
 6. **Pre-commit docs check.** `scripts/check-docs.sh` runs in the pre-commit hook. It fails if stale artifacts or old-stack references are detected.
+
+## Context Budget
+
+**Maximum context allocation per session:**
+
+| Category | Budget | Rule |
+|----------|--------|------|
+| Project context files | 2,000 chars | Summaries only; never load full ADRs |
+| Loaded skills | 1,500 chars | Use `skill_view` with `file_path` for sections |
+| Persistent memory | 800 chars | Compressed bullet facts only |
+| Conversation history | remaining | Compact proactively when >50% used |
+
+**DO:**
+- Load `CLAUDE.md` summary only (first 50 lines max)
+- Reference ADRs by path: "see ADR-032 for scoring dimensions"
+- Load specific sections via `read_file` with `offset` + `limit`
+- Use `search_files` to find relevant lines, then read those lines only
+- Check `skills_list` first, then `skill_view(name, file_path)` for sections
+
+**DON'T:**
+- Load full ADR text into context (20-30K each)
+- Load full STRATEGY.md (170K)
+- Load full skill files (50-100K each)
+- Load multiple ADRs or skills simultaneously

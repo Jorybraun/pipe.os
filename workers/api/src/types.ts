@@ -769,7 +769,7 @@ export type ConversationPhase =
   | 'DISCOVERY'
   | 'PRIORITIZE'
   | 'EVP_FRICTION'
-  | 'QUALIFY_CLOSE';
+  | 'WRAP_UP';
 
 /** Gartner five-category Employer Value Proposition dimensions (RD-37). */
 export type EvpCategory =
@@ -1225,4 +1225,31 @@ export function toJobResponse(row: DiscoveryJobRow): DiscoveryJobResponse {
     completedAt: row.completed_at,
     createdAt: row.created_at,
   };
+}
+
+// ─── Eval-gated question pipeline types ─────────────────────────────────────
+
+/** A candidate question produced by the role-discovery agent, before eval-gate approval. */
+export interface CandidateQuestion {
+  id: string;
+  text: string;
+  goal: string;
+  expectedCoverage: {
+    domain: string;
+    from: DomainCoverage;
+    to: DomainCoverage;
+  };
+  probeAlignment?: string;
+  questionType: 'introductory' | 'grand_tour' | 'example' | 'drilling' | 'direct' | 'hypothesis' | 'contrast';
+}
+
+/** Result of evaluating a single candidate question through the quality gate. */
+export interface EvalResult {
+  approved: boolean;
+  goalAssessment: 'aligned' | 'mismatched' | 'vague';
+  coverageAssessment: 'realistic' | 'overstated' | 'understated';
+  toneAssessment: 'conversational' | 'interrogative' | 'leading';
+  redundancyCheck: 'novel' | 'duplicate' | 'near_duplicate';
+  reason: string;
+  suggestedRewrite?: string;
 }
