@@ -158,6 +158,12 @@ def run_phase_0_analysis(task: str) -> Dict[str, Any]:
 def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) -> Dict[str, Any]:
     """Run the full swarm workflow."""
     
+    # Pull latest before starting any work
+    print("=" * 70)
+    print("  SYNC: Pulling latest changes")
+    print("=" * 70)
+    subprocess.run(['python3', 'cd_coordinator.py', '--pull'], cwd='/root/.openclaw/workspace/pipe.os/.github/agents/harness')
+    
     state = load_state()
     
     if resume and state:
@@ -380,6 +386,24 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
     print("\n" + "=" * 70)
     print(f"  WORKFLOW COMPLETE: {state['status']}")
     print("=" * 70)
+    
+    # Auto-commit and push if approved
+    if state['status'] == 'approved_and_complete':
+        print("\n" + "=" * 70)
+        print("  CD: Committing and pushing changes")
+        print("=" * 70)
+        
+        commit_msg = f"feat({state['plan'].get('analysis', 'agent')}): {task[:50]}"
+        subprocess.run([
+            'python3', 'cd_coordinator.py',
+            '--agent-commit', f"AUTO|orchestrator|{task[:50]}"
+        ], cwd='/root/.openclaw/workspace/pipe.os/.github/agents/harness')
+        
+        subprocess.run([
+            'python3', 'cd_coordinator.py', '--push'
+        ], cwd='/root/.openclaw/workspace/pipe.os/.github/agents/harness')
+        
+        print("\nChanges pushed. Ready for your review and merge.")
     
     return state
 
