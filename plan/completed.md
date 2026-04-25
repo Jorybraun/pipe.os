@@ -2,6 +2,14 @@
 
 **Updated:** 2026-04-25
 
+## Phase 0 Tasks
+
+- [x] **0.5** Fix broken evaluator imports OR delete dead code
+  - Deleted 3 dead files (412 lines)
+  - `evaluator.ts`, `evaluatorPrompt.ts`, `evaluateDiscovery.ts`
+  - Route was not registered, types were undefined
+  - No runtime behavior changes
+
 ## Infrastructure
 
 - [x] Cloned pipe.os repository
