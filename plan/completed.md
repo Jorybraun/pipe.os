@@ -2,12 +2,27 @@
 
 **Updated:** 2026-04-25
 
-## Done
+## Infrastructure
 
 - [x] Cloned pipe.os repository
-- [x] Purged redundant agent docs (5 files deleted)
-- [x] Created unified AGENTS.md (coding rules only)
-- [x] Initialized knowledge/plan directory structure
-- [x] Created pipe-swarm skill in `skills/pipe-swarm/`
-- [x] Copied team code to skill scripts/
-- [x] Created pipe-standards reference document
+- [x] Set up SSH deploy key for GitHub access
+- [x] Created agent identity: Hans <hans@openclaw.ai>
+
+## Documentation Cleanup
+
+- [x] Purged redundant agent docs from root (5 files)
+- [x] Created `AGENTS.md` — coding standards only
+- [x] Initialized `knowledge/` directory
+- [x] Initialized `plan/` directory
+
+## Swarm Harness
+
+- [x] Created v1 harness (PM, Architect, Dev, QA)
+- [x] Created v2 harness (Frontend, Backend, Designer + approval gates)
+- [x] Pushed harness to `feat/agent-harness-test`
+
+## Product Management System
+
+- [x] Created `plan/tasks.md` — 47 active tasks across 6 phases
+- [x] Created `plan/contradictions.md` — 11 documented contradictions
+- [x] Defined owners, acceptance criteria, and status tracking
