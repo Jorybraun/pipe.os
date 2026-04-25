@@ -19,6 +19,13 @@ Everything you need is reachable from here.
 | [`docs/ops/drift-log.md`](docs/ops/drift-log.md) | Documentation drift audit trail |
 | [`docs/ops/audits/`](docs/ops/audits/)           | Code audit reports              |
 
+### Plans
+
+| Document                                                                                | Answers                                                                              |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`docs/plans/phase0-subagent-execution-plan.md`](docs/plans/phase0-subagent-execution-plan.md) | Live Phase 0 cutover work — Subagents A–J                                            |
+| [`docs/plans/strategy-v2/README.md`](docs/plans/strategy-v2/README.md)                  | Master plan index — every Strategy v2 work item, phase-ordered (Phase 0 → 6) |
+
 ---
 
 ## Guardrail Rule
