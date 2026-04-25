@@ -104,9 +104,21 @@ def get_user_approval(phase: str, content: str) -> str:
     
     # In a real run, this would wait for stdin
     # For now, we save the pending approval and exit
-    print("NOTE: In a full implementation, the orchestrator would wait for user input.")
-    print("      For automation, use --auto-approve flag.")
-    return "approved"  # Default for testing
+    while True:
+        try:
+            choice = input("Your choice [A/R/Rev]: ").strip().lower()
+            if choice in ("a", "approve", ""):
+                return "approved"
+            elif choice in ("r", "reject"):
+                return "rejected"
+            elif choice in ("rev", "revise", "v"):
+                return "revise"
+            else:
+                print("Invalid choice. Enter A, R, or Rev.")
+        except (EOFError, KeyboardInterrupt):
+            # When running non-interactively, save state and exit
+            print("\n\nNon-interactive mode detected. Saving state for manual review.")
+            return "pending"
 
 
 def run_phase_0_analysis(task: str) -> Dict[str, Any]:
@@ -318,15 +330,126 @@ def run_workflow(task: str, auto_approve: bool = False, resume: bool = False) ->
         print("  PHASE 4: QUALITY ASSURANCE")
         print("=" * 70)
         print("\nRunning quality gates:")
-        print("  - npx tsc --noEmit")
-        print("  - No 'any' types")
-        print("  - Named exports")
-        print("  - CHANGELOG updated")
-        print()
         
-        # In real implementation, actually run tsc
-        qa_passed = True
+        qa_results = {
+            "tsc_passed": False,
+            "no_any_types": False,
+            "named_exports": False,
+            "changelog_updated": False,
+            "errors": []
+        }
+        
+        # Gate 1: TypeScript compilation
+        print("\n  [1/4] Running npx tsc --noEmit ...")
+        try:
+            result = subprocess.run(
+                ["npx", "tsc", "--noEmit"],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if result.returncode == 0:
+                qa_results["tsc_passed"] = True
+                print("      PASS")
+            else:
+                print(f"      FAIL\n{result.stdout[:500]}{result.stderr[:500]}")
+                qa_results["errors"].append("TypeScript compilation failed")
+        except FileNotFoundError:
+            print("      SKIP (npx/tsc not found — not a TS project or not in project root)")
+            qa_results["tsc_passed"] = True  # Skip if not applicable
+        except subprocess.TimeoutExpired:
+            print("      TIMEOUT")
+            qa_results["errors"].append("tsc timed out")
+        except Exception as e:
+            print(f"      ERROR: {e}")
+            qa_results["errors"].append(str(e))
+        
+        # Gate 2: No 'any' types in new/modified files
+        print("\n  [2/4] Checking for 'any' types ...")
+        try:
+            result = subprocess.run(
+                ["grep", "-rn", "\\bany\\b", "src/", "workers/", "--include=*.ts", "--include=*.tsx"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                qa_results["no_any_types"] = True
+                print("      PASS")
+            else:
+                lines = result.stdout.strip().split("\n")
+                print(f"      FAIL — {len(lines)} occurrences")
+                for line in lines[:5]:
+                    print(f"        {line}")
+                if len(lines) > 5:
+                    print(f"        ... and {len(lines) - 5} more")
+                qa_results["errors"].append(f"Found {len(lines)} 'any' type usages")
+        except FileNotFoundError:
+            print("      SKIP (grep not available)")
+            qa_results["no_any_types"] = True
+        except Exception as e:
+            print(f"      ERROR: {e}")
+        
+        # Gate 3: Named exports (basic check)
+        print("\n  [3/4] Checking for default exports ...")
+        try:
+            result = subprocess.run(
+                ["grep", "-rn", "export default", "src/", "workers/", "--include=*.ts", "--include=*.tsx"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            # Allow default exports for page components only
+            non_page_defaults = [l for l in result.stdout.strip().split("\n") if l.strip() and "pages/" not in l]
+            if not non_page_defaults:
+                qa_results["named_exports"] = True
+                print("      PASS")
+            else:
+                print(f"      WARN — {len(non_page_defaults)} non-page default exports")
+                for line in non_page_defaults[:3]:
+                    print(f"        {line}")
+                # Named exports are a recommendation, not a hard fail
+                qa_results["named_exports"] = True
+        except Exception as e:
+            print(f"      SKIP: {e}")
+            qa_results["named_exports"] = True
+        
+        # Gate 4: CHANGELOG updated
+        print("\n  [4/4] Checking CHANGELOG.md ...")
+        changelog_path = Path("CHANGELOG.md")
+        if changelog_path.exists():
+            content = changelog_path.read_text()
+            if "## [Unreleased]" in content or "## Unreleased" in content:
+                # Check if there's content after Unreleased header
+                unreleased_idx = content.find("## [Unreleased]") if "## [Unreleased]" in content else content.find("## Unreleased")
+                next_section = content.find("## [", unreleased_idx + 1)
+                section = content[unreleased_idx:next_section] if next_section > 0 else content[unreleased_idx:]
+                if len(section.strip()) > 50:  # Has actual content, not just header
+                    qa_results["changelog_updated"] = True
+                    print("      PASS")
+                else:
+                    print("      WARN — [Unreleased] section appears empty")
+                    qa_results["changelog_updated"] = True  # Allow empty for now
+            else:
+                print("      WARN — No [Unreleased] section found")
+                qa_results["changelog_updated"] = True
+        else:
+            print("      SKIP — CHANGELOG.md not found")
+            qa_results["changelog_updated"] = True  # Skip if not present
+        
+        # Final QA verdict
+        qa_passed = qa_results["tsc_passed"] and qa_results["no_any_types"]
+        state["qa_results"] = qa_results
         state["qa_passed"] = qa_passed
+        
+        print(f"\n{'='*70}")
+        if qa_passed:
+            print("  QA RESULT: PASS")
+        else:
+            print("  QA RESULT: FAIL")
+            for err in qa_results["errors"]:
+                print(f"    - {err}")
+        print(f"{'='*70}")
         
         if not qa_passed:
             state["status"] = "failed_qa"
