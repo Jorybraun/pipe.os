@@ -1,0 +1,21 @@
+{
+  "task": "Add a search filter component to the candidate list page",
+  "phase": "design_waiting",
+  "created_at": "2026-04-24T19:36:50.894698",
+  "outputs": {},
+  "approvals": {},
+  "status": "waiting_for_agent",
+  "plan": {
+    "needs_design": true,
+    "needs_architecture": false,
+    "needs_frontend": true,
+    "needs_backend": false,
+    "sequential": false,
+    "analysis": "This task requires: design, frontend"
+  },
+  "pending_agent": {
+    "task_file": ".swarm/tasks/designer_20260424_193650.json",
+    "result_file": ".swarm/tasks/designer_20260424_193650_result.md",
+    "role": "designer"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "role": "designer",
+  "system_prompt": "",
+  "task": "Create UI/UX design spec for: Add a search filter component to the candidate list page",
+  "context": "Read existing code in target area first. Output a design specification document.",
+  "rules": [
+    "Work in the repository at the project root",
+    "Follow all coding standards from AGENTS.md",
+    "Run `npx tsc --noEmit` before finishing",
+    "Return ONLY your output (code, design, or analysis)",
+    "Write results to the result file specified in the task"
+  ],
+  "repo_root": "/Users/hans/Code/PIPE/PIPE-OS"
+}
