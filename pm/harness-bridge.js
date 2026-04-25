@@ -1,132 +1,107 @@
-import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
 const HARNESS_DIR = '/root/.openclaw/workspace/pipe.os/.github/agents/harness';
 const SWARM_DIR = path.join(HARNESS_DIR, '.swarm');
 const TELEMETRY_FILE = path.join(SWARM_DIR, 'telemetry.jsonl');
-const TASKS_DIR = path.join(SWARM_DIR, 'tasks');
+const STATE_FILE = path.join(SWARM_DIR, 'state.json');
+const MAILBOXES_DIR = path.join(SWARM_DIR, 'mailboxes');
 
 /**
- * Bridge between PM Dashboard (Node.js) and Agent Harness (Python).
+ * Read-only observer of harness telemetry.
  *
- * Usage:
- *   const bridge = new HarnessBridge();
- *   bridge.startRun(taskId, description);
- *   const status = bridge.getRunStatus(taskId);
+ * The harness is triggered externally (OpenClaw agent session, CLI, etc).
+ * This bridge just reads .swarm/ state and formats it for the dashboard.
  */
 export class HarnessBridge {
   constructor() {
-    this.activeRuns = new Map();
-    this._ensureDirs();
+    this._cache = new Map();
+    this._cacheTTL = 2000; // ms
   }
 
-  _ensureDirs() {
-    fs.mkdirSync(TASKS_DIR, { recursive: true });
-    fs.mkdirSync(path.join(SWARM_DIR, 'mailboxes'), { recursive: true });
+  _readJSON(filePath) {
+    try {
+      if (!fs.existsSync(filePath)) return null;
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch { return null; }
   }
 
   /**
-   * Start a harness run.
-   * Returns immediately with { taskId, status: 'running' }.
-   * Caller polls getRunStatus() for live updates.
+   * List all harness runs found in .swarm/ state.
    */
-  startRun(taskId, taskDescription, repoPath = '/root/.openclaw/workspace/pipe.os', autoApprove = true, phase = 'all') {
-    const taskFile = path.join(TASKS_DIR, `pm_${taskId}.json`);
+  listRuns() {
+    const runs = [];
 
-    // Write task spec for harness
-    const taskSpec = {
-      task_id: taskId,
-      description: taskDescription,
-      repo_path: repoPath,
-      created_at: new Date().toISOString(),
-    };
-    fs.writeFileSync(taskFile, JSON.stringify(taskSpec, null, 2));
+    // From state.json
+    const state = this._readJSON(STATE_FILE);
+    if (state && state.task_id) {
+      runs.push({
+        taskId: state.task_id,
+        phase: state.phase,
+        status: state.status,
+        updatedAt: state.updated_at,
+      });
+    }
 
-    // Build harness args
-    const args = [
-      '-m', 'harness',
-      '--task', taskDescription,
-      '--repo', repoPath,
-      '--phase', phase,
-    ];
-    if (autoApprove) args.push('--auto-approve');
+    // From telemetry (latest task_id)
+    const events = this.readTelemetryEvents();
+    const taskIds = [...new Set(events.map(e => e.task_id).filter(Boolean))];
+    for (const tid of taskIds) {
+      if (runs.find(r => r.taskId === tid)) continue;
+      const taskEvents = events.filter(e => e.task_id === tid);
+      const latest = taskEvents[taskEvents.length - 1];
+      runs.push({
+        taskId: tid,
+        phase: this._getLatestPhase(taskEvents),
+        status: latest?.event_type === 'workflow_complete' ? 'completed'
+          : latest?.event_type === 'workflow_rejected' ? 'rejected'
+          : 'running',
+        updatedAt: latest?.timestamp,
+      });
+    }
 
-    const proc = spawn('python3', args, {
-      cwd: HARNESS_DIR,
-      env: { ...process.env, PYTHONPATH: HARNESS_DIR },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', chunk => stdout += chunk);
-    proc.stderr.on('data', chunk => stderr += chunk);
-
-    proc.on('close', (code) => {
-      let result = null;
-      try {
-        const lines = stdout.trim().split('\n').filter(l => l.trim());
-        const lastLine = lines[lines.length - 1];
-        result = JSON.parse(lastLine);
-      } catch (e) {
-        result = {
-          error: 'Failed to parse harness output',
-          raw: stdout.slice(-2000),
-          stderr,
-          workflow_status: 'error',
-        };
-      }
-
-      const run = this.activeRuns.get(taskId);
-      if (run) {
-        run.status = 'completed';
-        run.exitCode = code;
-        run.result = result;
-        run.completedAt = Date.now();
-      }
-    });
-
-    this.activeRuns.set(taskId, {
-      process: proc,
-      taskId,
-      taskDescription,
-      repoPath,
-      startTime: Date.now(),
-      status: 'running',
-      result: null,
-    });
-
-    return { taskId, status: 'running' };
+    return runs.sort((a, b) => (b.updatedAt || '') > (a.updatedAt || '') ? 1 : -1);
   }
 
   /**
-   * Get live status of a harness run.
+   * Get status of a harness run by reading .swarm/ directly.
    */
   getRunStatus(taskId) {
-    const run = this.activeRuns.get(taskId);
-    if (!run) return null;
-
+    const state = this._readJSON(STATE_FILE);
     const events = this.readTelemetryEvents(taskId);
-    const latestPhase = this.getLatestPhase(events);
-    const activeAgents = this.getActiveAgents(events);
-    const pendingApprovals = this.getPendingApprovals(events);
-    const qaResults = this.getQAResults(events);
-    const isComplete = run.status === 'completed';
+    const mailboxes = this.readMailboxes();
+
+    const latestPhase = this._getLatestPhase(events);
+    const activeAgents = this._getActiveAgents(events, mailboxes);
+    const pendingApprovals = this._getPendingApprovals(events);
+    const qaResults = this._getQAResults(events);
+
+    const isComplete = state?.status === 'complete'
+      || events.some(e => e.event_type === 'workflow_complete')
+      || events.some(e => e.event_type === 'workflow_rejected');
+
+    const isRejected = state?.status === 'rejected'
+      || events.some(e => e.event_type === 'workflow_rejected');
+
+    // Calculate duration from events
+    let duration = 0;
+    if (events.length >= 2) {
+      const first = new Date(events[0].timestamp).getTime();
+      const last = new Date(events[events.length - 1].timestamp).getTime();
+      duration = (last - first) / 1000;
+    }
 
     return {
       taskId,
-      status: isComplete ? 'completed' : 'running',
+      status: isComplete ? (isRejected ? 'rejected' : 'completed') : 'running',
       phase: latestPhase,
       agents: activeAgents,
       pendingApprovals,
       qaResults,
       events: events.slice(-30),
-      result: run.result,
-      duration: isComplete
-        ? (run.completedAt - run.startTime) / 1000
-        : (Date.now() - run.startTime) / 1000,
+      result: state?.result || null,
+      duration,
+      rawState: state,
     };
   }
 
@@ -138,30 +113,39 @@ export class HarnessBridge {
       .filter(l => l.trim());
 
     return lines
-      .map(l => {
-        try { return JSON.parse(l); } catch { return null; }
-      })
+      .map(l => { try { return JSON.parse(l); } catch { return null; } })
       .filter(e => e && (!taskId || e.task_id === taskId));
   }
 
-  getLatestPhase(events) {
-    const phaseOrder = ['analysis', 'pm', 'design', 'architecture', 'implementation', 'qa', 'complete'];
-    let latest = 'analysis';
-    for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i].event_type === 'phase_transition') {
-        const p = events[i].details?.phase;
-        if (p) { latest = p; break; }
-      }
-      if (events[i].event_type === 'task_started') {
-        const p = events[i].details?.phase;
-        if (p) { latest = p; break; }
-      }
+  readMailboxes() {
+    const mailboxes = {};
+    if (!fs.existsSync(MAILBOXES_DIR)) return mailboxes;
+
+    const files = fs.readdirSync(MAILBOXES_DIR).filter(f => f.endsWith('.json'));
+    for (const file of files) {
+      const role = file.replace('.json', '');
+      const data = this._readJSON(path.join(MAILBOXES_DIR, file));
+      if (data) mailboxes[role] = data;
     }
-    return latest;
+    return mailboxes;
   }
 
-  getActiveAgents(events) {
+  _getLatestPhase(events) {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].event_type === 'phase_transition') {
+        return events[i].details?.phase || 'analysis';
+      }
+      if (events[i].event_type === 'task_started') {
+        return events[i].details?.phase || 'analysis';
+      }
+    }
+    return 'analysis';
+  }
+
+  _getActiveAgents(events, mailboxes) {
     const agents = new Map();
+
+    // From telemetry events
     for (const e of events) {
       const role = e.details?.role || e.agent;
       if (!role) continue;
@@ -182,18 +166,28 @@ export class HarnessBridge {
         });
       }
     }
+
+    // From mailbox files (may be fresher)
+    for (const [role, data] of Object.entries(mailboxes)) {
+      if (data.status) {
+        agents.set(role, {
+          role,
+          status: data.status,
+          since: data.last_heartbeat || Date.now(),
+          summary: data.result?.summary,
+          changedFiles: data.result?.changed_files || [],
+        });
+      }
+    }
+
     return Array.from(agents.values());
   }
 
-  getPendingApprovals(events) {
+  _getPendingApprovals(events) {
     const approvals = [];
     for (const e of events) {
       if (e.event_type === 'approval_requested') {
-        approvals.push({
-          phase: e.details?.phase,
-          content: e.details?.content,
-          timestamp: e.timestamp,
-        });
+        approvals.push({ phase: e.details?.phase, content: e.details?.content, timestamp: e.timestamp });
       }
       if (e.event_type === 'approval_granted' || e.event_type === 'approval_rejected') {
         const idx = approvals.findIndex(a => a.phase === e.details?.phase);
@@ -203,7 +197,7 @@ export class HarnessBridge {
     return approvals;
   }
 
-  getQAResults(events) {
+  _getQAResults(events) {
     const results = {};
     for (const e of events) {
       if (e.event_type === 'quality_gate_passed') {
@@ -216,23 +210,22 @@ export class HarnessBridge {
     return results;
   }
 
-  killRun(taskId) {
-    const run = this.activeRuns.get(taskId);
-    if (run && run.process) {
-      run.process.kill();
-      run.status = 'killed';
-    }
-  }
+  /**
+   * Write a completed harness result into pm.json work log.
+   * Called by the harness sync endpoint.
+   */
+  formatWorkEntry(taskId, status) {
+    const result = status.result || {};
+    const workflowStatus = result.workflow_status || status.status;
 
-  getAllRuns() {
-    return Array.from(this.activeRuns.values()).map(r => ({
-      taskId: r.taskId,
-      status: r.status,
-      description: r.taskDescription,
-      startTime: r.startTime,
-      duration: r.status === 'completed'
-        ? (r.completedAt - r.startTime) / 1000
-        : (Date.now() - r.startTime) / 1000,
-    }));
+    return {
+      date: new Date().toISOString().split('T')[0],
+      summary: `Harness ${workflowStatus} — ${status.phase} — ${result.changed_files?.length || 0} files`,
+      agentRan: true,
+      filesChanged: result.changed_files || [],
+      harnessResult: result,
+      harnessEvents: status.events?.slice(-20),
+      harnessDuration: status.duration,
+    };
   }
 }

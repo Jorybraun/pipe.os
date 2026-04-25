@@ -647,26 +647,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ──────────────────────────────────────────────────────────
-  // HARNESS API ENDPOINTS
+  // HARNESS API ENDPOINTS (read-only observer)
+  // Dashboard does NOT spawn harness. Harness is triggered externally.
+  // Dashboard just reads .swarm/ state and displays it.
   // ──────────────────────────────────────────────────────────
-  else if (req.url === '/api/harness-run' && req.method === 'POST') {
-    try {
-      const body = await parseBody(req);
-      const { taskId, taskType, description, featureId, autoApprove = true } = body;
-      
-      const desc = description || (body.title || 'Untitled task');
-      const run = harnessBridge.startRun(taskId, desc, REPO_PATH, autoApprove);
-      
-      jsonRes(res, { 
-        ok: true, 
-        taskId, 
-        harnessTaskId: run.taskId, 
-        status: 'running',
-        autoApprove,
-      });
-    } catch (e) { jsonRes(res, { error: e.message }, 500); }
+
+  // List all active/completed harness runs
+  else if (req.url === '/api/harness-runs' && req.method === 'GET') {
+    jsonRes(res, { runs: harnessBridge.listRuns() });
   }
 
+  // Get status of a specific harness run
   else if (req.url?.startsWith('/api/harness-status/') && req.method === 'GET') {
     const harnessTaskId = req.url.split('/').pop();
     const status = harnessBridge.getRunStatus(harnessTaskId);
@@ -674,10 +665,7 @@ const server = http.createServer(async (req, res) => {
     jsonRes(res, status);
   }
 
-  else if (req.url === '/api/harness-runs' && req.method === 'GET') {
-    jsonRes(res, { runs: harnessBridge.getAllRuns() });
-  }
-
+  // SSE stream for live harness status (polls .swarm/ every 3s)
   else if (req.url?.startsWith('/api/harness-stream/') && req.method === 'GET') {
     const harnessTaskId = req.url.split('/').pop();
     
@@ -705,42 +693,32 @@ const server = http.createServer(async (req, res) => {
       
       send({ type: 'status', ...status, newEvents });
       
-      if (status.status === 'completed') {
+      if (status.status === 'completed' || status.status === 'rejected') {
         send({ type: 'complete', result: status.result });
         clearInterval(interval);
         res.end();
       }
     }, 3000);
 
-    res.on('close', () => {
-      clearInterval(interval);
-      // Don't kill harness on disconnect — let it finish
-    });
+    res.on('close', () => clearInterval(interval));
   }
 
+  // Sync a completed harness result into pm.json work log
   else if (req.url === '/api/harness-sync' && req.method === 'POST') {
     try {
       const body = await parseBody(req);
       const { taskId, harnessTaskId, taskType, featureId } = body;
       
       const status = harnessBridge.getRunStatus(harnessTaskId);
-      if (!status || status.status !== 'completed') {
+      if (!status) {
+        jsonRes(res, { error: 'Harness run not found' }, 404); return;
+      }
+      if (status.status !== 'completed' && status.status !== 'rejected') {
         jsonRes(res, { error: 'Harness run not complete' }, 400); return;
       }
 
       const pmData = loadPMData(PM_FILE);
-      const result = status.result || {};
-      const workflowStatus = result.workflow_status || 'unknown';
-      
-      const workEntry = {
-        date: new Date().toISOString().split('T')[0],
-        summary: `Harness ${workflowStatus} — ${status.phase} — ${result.changed_files?.length || 0} files`,
-        agentRan: true,
-        filesChanged: result.changed_files || [],
-        harnessResult: result,
-        harnessEvents: status.events?.slice(-20),
-        harnessDuration: status.duration,
-      };
+      const workEntry = harnessBridge.formatWorkEntry(taskId, status);
 
       // Update the task or bug
       if (taskType === 'task') {
@@ -748,9 +726,8 @@ const server = http.createServer(async (req, res) => {
         if (task) {
           task.workUpdates = task.workUpdates || [];
           task.workUpdates.push(workEntry);
-          if (workflowStatus === 'complete') task.status = 'done';
-          else if (workflowStatus.includes('rejected')) task.status = 'blocked';
-          else if (workflowStatus.includes('failed')) task.status = 'blocked';
+          if (status.status === 'completed') task.status = 'done';
+          else if (status.status === 'rejected') task.status = 'blocked';
         }
       } else if (taskType === 'bug') {
         const feature = pmData.features.find(f => f.id === featureId);
@@ -758,7 +735,7 @@ const server = http.createServer(async (req, res) => {
         if (bug) {
           bug.workUpdates = bug.workUpdates || [];
           bug.workUpdates.push(workEntry);
-          if (workflowStatus === 'complete') bug.status = 'closed';
+          if (status.status === 'completed') bug.status = 'closed';
         }
       }
 

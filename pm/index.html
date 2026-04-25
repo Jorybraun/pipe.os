@@ -1055,71 +1055,87 @@ function HarnessRunModal({item,itemType,featureId,onClose,onDone}){
   const [status,setStatus]=useState(null);
   const [events,setEvents]=useState([]);
   const [running,setRunning]=useState(true);
-  const [killed,setKilled]=useState(false);
+  const [inputTaskId,setInputTaskId]=useState('');
+  const [synced,setSynced]=useState(false);
 
-  const kill=()=>{
-    if(harnessTaskId){
-      fetch(`/api/harness-kill/${harnessTaskId}`,{method:'POST'});
-      setKilled(true);
-      setRunning(false);
-    }
+  // Observe an existing harness run
+  const observeRun=(tid)=>{
+    setHarnessTaskId(tid);
+    setRunning(true);
+    
+    const es=new EventSource(`/api/harness-stream/${tid}`);
+    es.onmessage=(e)=>{
+      const ev=JSON.parse(e.data);
+      if(ev.type==='status'){
+        setStatus(ev);
+        setEvents(ev.events||[]);
+      }
+      if(ev.type==='complete'){
+        setRunning(false);
+        es.close();
+      }
+      if(ev.type==='error'){
+        setRunning(false);
+        es.close();
+      }
+    };
+    es.onerror=()=>{setRunning(false);es.close();};
+    
+    return es;
   };
 
+  // Try to auto-detect: look for a harness run matching this task
   useEffect(()=>{
     let cancelled=false;
+    let es=null;
+    
     (async()=>{
       try{
-        // Start harness run
-        const r=await fetch('/api/harness-run',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            taskId:item.id,
-            taskType:itemType,
-            description:item.title||item.brief,
-            featureId,
-            autoApprove:true,
-          })
-        });
+        // List all harness runs
+        const r=await fetch('/api/harness-runs');
         const data=await r.json();
-        if(!data.ok){throw new Error(data.error||'Failed to start harness');}
         if(cancelled)return;
-        setHarnessTaskId(data.harnessTaskId);
-
-        // Open SSE stream
-        const es=new EventSource(`/api/harness-stream/${data.harnessTaskId}`);
-        es.onmessage=(e)=>{
-          if(cancelled){es.close();return;}
-          const ev=JSON.parse(e.data);
-          if(ev.type==='status'){
-            setStatus(ev);
-            setEvents(ev.events||[]);
-          }
-          if(ev.type==='complete'){
-            setRunning(false);
-            es.close();
-            // Auto-sync results back to PM
-            fetch('/api/harness-sync',{
-              method:'POST',
-              headers:{'Content-Type':'application/json'},
-              body:JSON.stringify({
-                taskId:item.id,
-                harnessTaskId:data.harnessTaskId,
-                taskType:itemType,
-                featureId,
-              })
-            }).then(()=>onDone());
-          }
-          if(ev.type==='error'){
-            setRunning(false);
-            es.close();
-          }
-        };
-        es.onerror=()=>{setRunning(false);es.close();};
+        
+        // Find the most recent run (or one matching this task)
+        const runs=data.runs||[];
+        const match=runs[0]; // Take the most recent
+        
+        if(match){
+          setHarnessTaskId(match.taskId);
+          es=observeRun(match.taskId);
+        }else{
+          setRunning(false);
+        }
       }catch(e){if(!cancelled){setRunning(false);}}
     })();
-    return()=>{cancelled=true;};
+    
+    return()=>{cancelled=true;if(es)es.close();};
   },[]);
+
+  const manualObserve=()=>{
+    if(!inputTaskId.trim())return;
+    observeRun(inputTaskId.trim());
+  };
+
+  const doSync=async()=>{
+    if(!harnessTaskId||!status)return;
+    try{
+      const r=await fetch('/api/harness-sync',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          taskId:item.id,
+          harnessTaskId,
+          taskType:itemType,
+          featureId,
+        })
+      });
+      if(r.ok){
+        setSynced(true);
+        onDone();
+      }
+    }catch(e){}
+  };
 
   useEffect(()=>{
     const h=e=>{if(e.key==='Escape'&&!running)onClose();};
@@ -1129,6 +1145,7 @@ function HarnessRunModal({item,itemType,featureId,onClose,onDone}){
   const phaseOrder=['analysis','pm','design','architecture','implementation','qa','complete'];
   const currentPhase=status?.phase||'analysis';
   const currentIdx=phaseOrder.indexOf(currentPhase);
+  const isDone=status?.status==='completed'||status?.status==='rejected';
 
   const qaGates=[
     {key:'tsc',label:'TypeScript'},
@@ -1141,18 +1158,29 @@ function HarnessRunModal({item,itemType,featureId,onClose,onDone}){
   const qaResults=status?.qaResults||{};
 
   return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:9500,display:"flex",justifyContent:"center",alignItems:"center"}} onClick={e=>{if(e.target===e.currentTarget&&!running)onClose();}}>
-    <div style={{width:720,maxHeight:"85vh",background:"#0a0a14",border:`1px solid ${running?"rgba(139,92,246,0.5)":killed?"rgba(239,68,68,0.5)":T.green+"50"}`,borderRadius:10,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+    <div style={{width:720,maxHeight:"85vh",background:"#0a0a14",border:`1px solid ${running?"rgba(139,92,246,0.5)":isDone?T.green+"50":T.border}`,borderRadius:10,overflow:"hidden",display:"flex",flexDirection:"column"}}>
       {/* Header */}
       <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
-        <span style={{width:8,height:8,borderRadius:"50%",background:running?T.violet:killed?T.red:T.green,flexShrink:0,animation:running?"pulse 1s infinite":undefined}}/>
-        <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.12em",flex:1,color:running?T.violet:killed?T.red:T.green}}>
-          {running?`🤖 HARNESS RUNNING — ${item.title}`:killed?`✕ KILLED — ${item.title}`:`✓ DONE — ${item.title}`}
+        <span style={{width:8,height:8,borderRadius:"50%",background:running?T.violet:isDone?T.green:T.dim,flexShrink:0,animation:running?"pulse 1s infinite":undefined}}/>
+        <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.12em",flex:1,color:running?T.violet:isDone?T.green:T.dim}}>
+          {running?`🔭 OBSERVING HARNESS — ${item.title}`:isDone?`✓ COMPLETE — ${item.title}`:`⏸ NO ACTIVE HARNESS — ${item.title}`}
         </span>
-        {running&&<Btn v="ghost" sx={{padding:"3px 10px",fontSize:8,borderColor:"rgba(239,68,68,0.5)",color:T.red}} onClick={kill}>■ Kill</Btn>}
         {!running&&<Btn v="ghost" sx={{padding:"3px 10px",fontSize:8}} onClick={onClose}>Close ✕</Btn>}
       </div>
 
       <div style={{flex:1,overflowY:"auto",padding:"14px",display:"flex",flexDirection:"column",gap:12}}>
+        {/* Manual task ID input if no auto-detected run */}
+        {!harnessTaskId&&!running&&<div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input 
+            type="text" 
+            placeholder="Enter harness task ID to observe..."
+            value={inputTaskId}
+            onChange={e=>setInputTaskId(e.target.value)}
+            style={{flex:1,padding:"6px 10px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:4,color:T.bright,fontSize:10,fontFamily:"inherit"}}
+          />
+          <Btn v="ghost" onClick={manualObserve}>Observe</Btn>
+        </div>}
+
         {/* Phase Pipeline */}
         <div style={{display:"flex",alignItems:"center",gap:4}}>
           {phaseOrder.map((p,i)=>{
@@ -1211,11 +1239,19 @@ function HarnessRunModal({item,itemType,featureId,onClose,onDone}){
             <span style={{color:T.text}}>{JSON.stringify(e.details||{}).slice(0,120)}</span>
           </div>)}
         </div>
+
+        {/* Sync button when complete */}
+        {isDone&&!synced&&<Btn v="sync" onClick={doSync}>
+          Sync results to work log
+        </Btn>}
+        {synced&&<div style={{fontSize:9,color:T.green,textAlign:"center"}}>✓ Results synced</div>}
       </div>
 
       {/* Result footer */}
       {status?.result&&<div style={{padding:"10px 14px",borderTop:`1px solid ${T.border}`,background:"rgba(16,185,129,0.06)"}}>
-        <div style={{fontSize:9,color:T.green,fontWeight:700,marginBottom:4}}>✓ {status.result.workflow_status||'complete'}</div>
+        <div style={{fontSize:9,color:status.result.workflow_status==='complete'?T.green:T.red,fontWeight:700,marginBottom:4}}>
+          {status.result.workflow_status==='complete'?'✓':'✗'} {status.result.workflow_status||status.status}
+        </div>
         {status.result.changed_files?.length>0&&<div style={{fontSize:8,color:T.dim}}>Files changed: {status.result.changed_files.join(', ')}</div>}
         <div style={{fontSize:8,color:T.dim,marginTop:2}}>Duration: {Math.round(status.duration||0)}s</div>
       </div>}

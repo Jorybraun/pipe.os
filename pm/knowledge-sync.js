@@ -4,18 +4,14 @@ import path from 'path';
 const KNOWLEDGE_DIR = '/root/.openclaw/workspace/pipe.os/knowledge/plan';
 
 /**
- * Sync tasks from /knowledge/plan documents into PM dashboard.
- *
- * Reads current.md for active tasks and blockers.
- * Optionally reads all strategy docs for long-term tasks.
- *
- * Returns an array of task objects ready to push into pmData.tasks.
+ * Sync tasks from /knowledge/plan/current.md into PM dashboard.
+ * Only pulls from current.md — the 6 strategy docs are reference, not task lists.
  */
 export function syncKnowledgePlan(pmData, opts = {}) {
   const { includeStrategyDocs = false } = opts;
   const newTasks = [];
 
-  // ── current.md ──
+  // ── current.md — the actual work plan ──
   const currentPath = path.join(KNOWLEDGE_DIR, 'current.md');
   if (fs.existsSync(currentPath)) {
     const current = fs.readFileSync(currentPath, 'utf-8');
@@ -44,7 +40,7 @@ export function syncKnowledgePlan(pmData, opts = {}) {
       }
     }
 
-    // Blockers
+    // Blockers (P0)
     const blockersMatch = current.match(/## Blockers\n([\s\S]*?)(?=\n## |$)/);
     if (blockersMatch) {
       const lines = blockersMatch[1].split('\n').filter(l => l.trim().startsWith('-'));
@@ -69,39 +65,12 @@ export function syncKnowledgePlan(pmData, opts = {}) {
     }
   }
 
-  // ── Strategy docs (optional) ──
-  if (includeStrategyDocs) {
-    const strategyFiles = fs.readdirSync(KNOWLEDGE_DIR).filter(f => f.startsWith('pipe-strategy-v2-part'));
-    for (const file of strategyFiles) {
-      const content = fs.readFileSync(path.join(KNOWLEDGE_DIR, file), 'utf-8');
-      // Look for markdown checkboxes or numbered tasks
-      const taskMatches = content.matchAll(/^\s*[-*]\s*(?:\[.\]\s*)?(.+)$/gm);
-      for (const match of taskMatches) {
-        const title = match[1].trim();
-        if (!title || title.length < 5) continue;
-        const existing = pmData.tasks.find(t => t.title === title && t.source === 'knowledge');
-        if (!existing) {
-          newTasks.push({
-            id: `K-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            title,
-            brief: `From ${file}: ${title}`,
-            priority: 'P2',
-            status: 'todo',
-            source: 'knowledge',
-            tags: ['knowledge-plan', 'strategy'],
-            featureId: null,
-            subtasks: [],
-          });
-        }
-      }
-    }
-  }
-
   return newTasks;
 }
 
 /**
  * Decompose a strategy document into dashboard tasks.
+ * Only used when explicitly requested — strategy docs are reference, not todo lists.
  */
 export function decomposeStrategyDoc(docPath, pmData) {
   if (!fs.existsSync(docPath)) return [];
@@ -115,7 +84,6 @@ export function decomposeStrategyDoc(docPath, pmData) {
     const phaseTitle = match[2].trim();
     const phaseId = `phase-${phaseNum}`;
 
-    // Check if this phase already exists as a task
     const existingPhase = pmData.tasks.find(t => t.id === phaseId && t.source === 'knowledge');
     if (!existingPhase) {
       tasks.push({
@@ -131,7 +99,7 @@ export function decomposeStrategyDoc(docPath, pmData) {
       });
     }
 
-    // Find tasks within this phase (between this header and the next ##)
+    // Find tasks within this phase
     const phaseStart = content.indexOf(match[0]);
     const nextHeader = content.indexOf('## ', phaseStart + match[0].length);
     const phaseContent = nextHeader > 0

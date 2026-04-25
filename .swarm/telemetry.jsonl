@@ -1,0 +1,2 @@
+{"timestamp": 1777121767.4369829, "agent": "orchestrator", "type": "swarm_start", "data": {"task": "Fix broken evaluator imports", "agents": ["pm", "qa"]}}
+{"timestamp": 1777121779.5927851, "agent": "orchestrator", "type": "swarm_start", "data": {"task": "Add a candidate search filter by skill with UI and backend API", "agents": ["pm", "designer", "architect", "backend", "frontend", "qa"]}}
