@@ -5,15 +5,14 @@
 
 ## Active
 
-Switched to `feat/cloudflare-migration` branch. Previous doc cleanup stashed on main.
-
-Latest commit: `70479d1 feat(agents): unified agent runtime + role discovery evaluator (ADR-034)`
+- Review and merge `feat/cloudflare-migration` to `main` to consolidate large PR
+- Harness code pushed in commit `f6a0739`
 
 ## Notes
 
-- `CLAUDE.md` exists on this branch — was not deleted here
-- `knowledge/` and `plan/` directories need to be recreated on this branch
-- Need to assess what this branch contains vs main
+- Swarm harness lives in `.github/agents/harness/`
+- Knowledge/plan structure initialized
+- Agent identity: Hans <hans@openclaw.ai>
 
 ## Blockers
 
