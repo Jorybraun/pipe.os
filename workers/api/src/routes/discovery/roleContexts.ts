@@ -438,8 +438,17 @@ roleContexts.get('/:id', async (c) => {
   // Legacy: exchanges on role_contexts for backward compat during migration
   const exchanges = parseJsonColumn<RoleExchange[]>(row.exchanges, []);
 
-  // Role Discovery v2 artifacts (null until synthesis runs)
-  const persona = row.persona_json ? parseJsonColumn(row.persona_json, null) : null;
+  // Phase 0.1: read RCD consumer_slice primary, fall back to legacy persona_json.
+  let persona: unknown = null;
+  if (row.rcd_json) {
+    try {
+      const rcd = JSON.parse(row.rcd_json) as { consumer_slice?: unknown };
+      persona = rcd.consumer_slice ?? null;
+    } catch { /* fall through */ }
+  }
+  if (!persona && row.persona_json) {
+    persona = parseJsonColumn(row.persona_json, null);
+  }
   const jobDescription = row.job_description_md ?? null;
 
   return c.json({

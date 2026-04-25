@@ -46,11 +46,19 @@ async function buildContextSnapshot(db: D1Database, pipelineId: string): Promise
 
   // Role context (persona + JD)
   const roleCtx = await db.prepare(
-    `SELECT persona_json, job_description_md FROM role_contexts WHERE pipeline_id = ?1 AND status = 'COMPLETE' ORDER BY updated_at DESC LIMIT 1`,
-  ).bind(pipelineId).first<{ persona_json: string | null; job_description_md: string | null }>();
+    `SELECT rcd_json, persona_json, job_description_md FROM role_contexts WHERE pipeline_id = ?1 AND status = 'COMPLETE' ORDER BY updated_at DESC LIMIT 1`,
+  ).bind(pipelineId).first<{ rcd_json: string | null; persona_json: string | null; job_description_md: string | null }>();
 
-  if (roleCtx?.persona_json) {
-    const persona = parseJson<CandidatePersona | null>(roleCtx.persona_json, null);
+  if (roleCtx) {
+    // Phase 0.1: read RCD primary, fall back to legacy persona_json.
+    let persona: CandidatePersona | null = null;
+    if (roleCtx.rcd_json) {
+      const rcd = parseJson<{ consumer_slice?: CandidatePersona } | null>(roleCtx.rcd_json, null);
+      if (rcd?.consumer_slice) persona = rcd.consumer_slice;
+    }
+    if (!persona && roleCtx.persona_json) {
+      persona = parseJson<CandidatePersona | null>(roleCtx.persona_json, null);
+    }
     if (persona) {
       ctx.personaSeniority = persona.seniority;
       ctx.personaArchetype = persona.archetype;

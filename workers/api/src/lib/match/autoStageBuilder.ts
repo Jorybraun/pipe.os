@@ -78,6 +78,15 @@ function normalizeSeniority(raw: string): 'junior' | 'mid' | 'senior' | 'staff' 
 }
 
 function parsePersona(roleContext: RoleContextRow): CandidatePersona | null {
+  // Phase 0.1: read RCD primary, fall back to legacy persona_json.
+  if (roleContext.rcd_json) {
+    try {
+      const rcd = JSON.parse(roleContext.rcd_json) as { consumer_slice?: CandidatePersona };
+      if (rcd.consumer_slice) return rcd.consumer_slice;
+    } catch {
+      // fall through to legacy path
+    }
+  }
   if (!roleContext.persona_json) return null;
   try {
     return JSON.parse(roleContext.persona_json) as CandidatePersona;

@@ -63,16 +63,28 @@ repoDiscovery.post('/discover', async (c) => {
 
   // Find role context with persona
   const roleCtx = await c.env.DB.prepare(
-    `SELECT id, persona_json FROM role_contexts WHERE pipeline_id = ?1 AND status = 'COMPLETE' ORDER BY updated_at DESC LIMIT 1`,
-  ).bind(body.pipelineId).first<{ id: string; persona_json: string | null }>();
+    `SELECT id, rcd_json, persona_json FROM role_contexts WHERE pipeline_id = ?1 AND status = 'COMPLETE' ORDER BY updated_at DESC LIMIT 1`,
+  ).bind(body.pipelineId).first<{ id: string; rcd_json: string | null; persona_json: string | null }>();
 
-  if (!roleCtx?.persona_json) {
-    return apiError(c, 'BAD_REQUEST', 'Pipeline has no completed role discovery. Use manual skill entry or run role discovery first.');
+  // Phase 0.1: read RCD primary, fall back to legacy persona_json.
+  let persona: CandidatePersona | null = null;
+  if (roleCtx?.rcd_json) {
+    const rcd = parseJsonColumn<{ consumer_slice?: CandidatePersona } | null>(roleCtx.rcd_json, null);
+    if (rcd?.consumer_slice) persona = rcd.consumer_slice;
+  }
+  if (!persona && roleCtx?.persona_json) {
+    persona = parseJsonColumn<CandidatePersona | null>(roleCtx.persona_json, null);
   }
 
-  const persona = parseJsonColumn<CandidatePersona | null>(roleCtx.persona_json, null);
+  if (!persona) {
+    return apiError(c, 'BAD_REQUEST', 'Pipeline has no completed role discovery. Use manual skill entry or run role discovery first.');
+  }
   if (!persona?.mustHaveSkills?.length) {
     return apiError(c, 'BAD_REQUEST', 'Role persona has no mustHaveSkills. Cannot discover repos.');
+  }
+
+  if (!roleCtx) {
+    return apiError(c, 'SERVER_ERROR', 'Role context missing after persona resolution.');
   }
 
   // Create discovery job

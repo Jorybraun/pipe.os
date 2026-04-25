@@ -10,49 +10,20 @@ Everything you need is reachable from here.
 
 ### Product
 
-| Document | Answers |
-|---|---|
+| Document                           | Answers                                                  |
+| ---------------------------------- | -------------------------------------------------------- |
 | [`docs/vision.md`](docs/vision.md) | What is Pipe, who is it for, what does winning look like |
-| [`knowledge/STRATEGY.md`](knowledge/STRATEGY.md) | What the research says we should build — 78 findings mapped to actions |
 
-### Architecture & Implementation
-
-| Document | Answers |
-|---|---|
-| [`migration/PLAN.md`](migration/PLAN.md) | Tech stack, design principles, phase status |
-| [`migration/phase-*.md`](migration/) | Implementation specs with BDD scenarios per phase |
-| [`docs/decisions/README.md`](docs/decisions/README.md) | ADR index — current (023+) and historical (001-022) |
-
-### AI & Agents
-
-| Document | Answers |
-|---|---|
-| [`docs/ai/model-routing.md`](docs/ai/model-routing.md) | Which model handles which task, provider routing, quotas |
-| [`docs/decisions/current/ADR-032-code-review-research-integration.md`](docs/decisions/current/ADR-032-code-review-research-integration.md) | Code review scoring dimensions, multi-PR structure, content pipeline |
-| [`docs/decisions/current/ADR-029-culture-interview-agent-architecture.md`](docs/decisions/current/ADR-029-culture-interview-agent-architecture.md) | Culture interview FSM, BARS rubrics, scoring architecture |
-
-### Research
-
-| Document | Answers |
-|---|---|
-| [`knowledge/outputs/code-review-content-sourcing.md`](knowledge/outputs/code-review-content-sourcing.md) | Code review research brief (50 sources, 2026-04-08) |
-| [`knowledge/outputs/behavioral-culture-interview-agent.md`](knowledge/outputs/behavioral-culture-interview-agent.md) | Behavioral/culture interview research brief (48 sources, 2026-04-07) |
-| [`../research/code-review-arena/docs/vision.md`](../research/code-review-arena/docs/vision.md) | Code review research system — candidate journey, agent flow, training loop |
-
-### Operations
-
-| Document | Answers |
-|---|---|
+| Document                                         | Answers                         |
+| ------------------------------------------------ | ------------------------------- |
 | [`docs/ops/drift-log.md`](docs/ops/drift-log.md) | Documentation drift audit trail |
-| [`docs/ops/audits/`](docs/ops/audits/) | Code audit reports |
+| [`docs/ops/audits/`](docs/ops/audits/)           | Code audit reports              |
 
 ---
 
 ## Guardrail Rule
 
 **If a user request contradicts the research plan, do NOT silently comply.**
-
-Full procedure lives in [`knowledge/STRATEGY.md`](knowledge/STRATEGY.md) (guardrail section) and is ratified by [`docs/decisions/current/ADR-033`](docs/decisions/current/ADR-033-research-integration-strategy-and-guardrails.md).
 
 Summary: surface the contradiction, name the risk, ask for explicit override, record in Decision Log. Never silently drop a finding.
 
@@ -170,14 +141,15 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production  # A
 
 **Maximum context allocation per session:**
 
-| Category | Budget | Rule |
-|----------|--------|------|
-| Project context files | 2,000 chars | Summaries only; never load full ADRs |
-| Loaded skills | 1,500 chars | Use `skill_view` with `file_path` for sections |
-| Persistent memory | 800 chars | Compressed bullet facts only |
-| Conversation history | remaining | Compact proactively when >50% used |
+| Category              | Budget      | Rule                                           |
+| --------------------- | ----------- | ---------------------------------------------- |
+| Project context files | 2,000 chars | Summaries only; never load full ADRs           |
+| Loaded skills         | 1,500 chars | Use `skill_view` with `file_path` for sections |
+| Persistent memory     | 800 chars   | Compressed bullet facts only                   |
+| Conversation history  | remaining   | Compact proactively when >50% used             |
 
 **DO:**
+
 - Load `CLAUDE.md` summary only (first 50 lines max)
 - Reference ADRs by path: "see ADR-032 for scoring dimensions"
 - Load specific sections via `read_file` with `offset` + `limit`
@@ -185,6 +157,7 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production  # A
 - Check `skills_list` first, then `skill_view(name, file_path)` for sections
 
 **DON'T:**
+
 - Load full ADR text into context (20-30K each)
 - Load full STRATEGY.md (170K)
 - Load full skill files (50-100K each)

@@ -51,7 +51,16 @@ export async function runBackfill(
           let persona: unknown = null;
 
           if (!profile) {
-            if (row.persona_json) {
+            // Phase 0.1: read RCD consumer_slice primary, fall back to legacy persona_json.
+            if (row.rcd_json) {
+              try {
+                const rcd = JSON.parse(row.rcd_json) as { consumer_slice?: unknown };
+                persona = rcd.consumer_slice ?? null;
+              } catch {
+                // ignore parse errors
+              }
+            }
+            if (!persona && row.persona_json) {
               try {
                 persona = JSON.parse(row.persona_json);
               } catch {
