@@ -138,10 +138,14 @@ class Orchestrator:
     
     def spawn_agent(self, role: str, task: str, context: str = "") -> str:
         """
-        Spawn an agent via sessions_spawn.
+        Output agent instructions for the parent OpenClaw agent to spawn.
         
-        This is the key change from v1: instead of writing JSON task files,
-        we call sessions_spawn directly and return the agent's output.
+        The orchestrator itself cannot call sessions_spawn (it's a Python script
+        running outside the agent context). Instead, it outputs structured
+        AGENT_INSTRUCTION markers that the parent agent parses and executes.
+        
+        Format:
+        AGENT_INSTRUCTION|role|task_id|task_description|result_file_path
         """
         system_prompt = self.prompts.get(role, "")
         
@@ -160,44 +164,43 @@ class Orchestrator:
 - Do not explain what you're doing, just produce the work
 """
         
-        print(f"\n  [SPAWNING {role.upper()} AGENT]")
-        print(f"  Task: {task[:80]}...")
+        task_id = f"{role}_{int(time.time())}"
+        result_file = self.tasks_dir / f"{task_id}_result.md"
         
-        # Call sessions_spawn via subprocess (OpenClaw CLI)
-        # In production, this would be a direct API call
-        cmd = [
-            "openclaw", "sessions", "spawn",
-            "--task", full_task,
-            "--runtime", "subagent",
-            "--mode", "run",
-            "--timeout", "3600"
-        ]
+        # Output structured instruction for parent agent
+        instruction = f"""
+{'='*70}
+AGENT_INSTRUCTION|{role}|{task_id}|{task[:80]}|{result_file}
+{'='*70}
+
+The orchestrator needs a {role.upper()} agent to complete this task.
+
+Task file: {self.tasks_dir / f'{task_id}_task.md'}
+Result file: {result_file}
+
+To execute:
+1. Write the task spec to: {self.tasks_dir / f'{task_id}_task.md'}
+2. Call sessions_spawn with the task spec
+3. The agent should write results to: {result_file}
+4. Run the orchestrator with --resume to continue
+
+Task spec:
+{full_task}
+{'='*70}
+"""
         
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=3600,
-                cwd=str(self.repo_path)
-            )
-            
-            if result.returncode == 0:
-                output = result.stdout
-                print(f"  [{role.upper()} COMPLETE] ({len(output)} chars)")
-                return output
-            else:
-                error = result.stderr or "Unknown error"
-                print(f"  [{role.upper()} FAILED] {error[:200]}")
-                return f"[ERROR: {error}]"
-                
-        except FileNotFoundError:
-            # openclaw CLI not available, fall back to mock
-            print(f"  [WARNING] openclaw CLI not available, using mock")
-            return f"[MOCK OUTPUT for {role}: {task[:50]}...]"
-        except subprocess.TimeoutExpired:
-            print(f"  [{role.upper()} TIMEOUT]")
-            return "[TIMEOUT]"
+        # Write task file
+        task_file = self.tasks_dir / f"{task_id}_task.md"
+        task_file.write_text(full_task)
+        
+        print(instruction)
+        
+        # Check if result already exists (resumed workflow)
+        if result_file.exists():
+            return result_file.read_text()
+        
+        # Return marker that parent agent will replace
+        return f"[PENDING: {result_file}]"
     
     def run_qa(self) -> dict:
         """Run quality gates."""

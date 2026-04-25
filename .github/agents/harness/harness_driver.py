@@ -21,11 +21,14 @@ Usage:
 
 Integration with OpenClaw:
     1. Run this script
-    2. When it outputs "WAITING_FOR_AGENT", read the task spec
-    3. Spawn the agent via sessions_spawn with the task spec
-    4. The agent writes results to the result_file path
-    5. Run this script again with --resume
-    6. Repeat until workflow completes
+    2. Parse AGENT_INSTRUCTION markers from output:
+       AGENT_INSTRUCTION|role|task_id|task_description|result_file
+    3. For each pending agent:
+       - Read the task spec from the task_file
+       - Call sessions_spawn with the task spec
+       - The spawned agent writes results to the result_file
+    4. Run this script again with --resume after agents complete
+    5. Repeat until workflow completes
 """
 
 import argparse
@@ -76,9 +79,33 @@ def run_orchestrator(task: str = None, auto_approve: bool = False, resume: bool 
 
 
 def detect_pending_agents(state: dict) -> list:
-    """Extract pending agent tasks from orchestrator state."""
-    if not state:
-        return []
+    """Extract pending agent tasks from orchestrator state.
+    
+    Looks for AGENT_INSTRUCTION markers in outputs and extracts
+    the role, task_id, and result_file for each pending agent.
+    """
+    pending = []
+    
+    # Check each output for pending markers
+    for key, value in state.get("outputs", {}).items():
+        if isinstance(value, str) and value.startswith("[PENDING:"):
+            # Extract result file path from marker
+            result_file = value.replace("[PENDING: ", "").replace("]", "").strip()
+            
+            # Determine role from key (design, architecture, backend, frontend)
+            role = key.replace("_output", "").replace("_spec", "")
+            
+            # Find the task file
+            task_file = result_file.replace("_result.md", "_task.md")
+            
+            pending.append({
+                "role": role,
+                "result_file": result_file,
+                "task_file": task_file,
+                "status": "pending"
+            })
+    
+    return pending
     
     agents = []
     
