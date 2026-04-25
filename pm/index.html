@@ -140,7 +140,7 @@ function SyncTerminal({output,running}){
 // ═══════════════════════════════════════════════════════════════
 //  OVERVIEW
 // ═══════════════════════════════════════════════════════════════
-function Overview({data,setView,setSelPage}){
+function Overview({data,setView,setSelPage,toast,onReload}){
   const F=data.features||[],L=data.lambdas||[],tasks=data.tasks||[];
   const tJ=F.reduce((a,f)=>a+(f.journeys||[]).length,0);
   const pJ=F.reduce((a,f)=>a+(f.journeys||[]).filter(j=>j.status==="working").length,0);
@@ -148,6 +148,24 @@ function Overview({data,setView,setSelPage}){
   const bugs=F.reduce((a,f)=>a+(f.bugs||[]).filter(b=>b.status==="open").length,0);
   const todoTasks=tasks.filter(t=>["todo","in_progress"].includes(t.status));
   const blockers=[...tasks.filter(t=>t.status==="blocked"),...F.flatMap(f=>(f.bugs||[]).filter(b=>b.status==="open"&&["P0","P1"].includes(b.severity)).map(b=>({...b,_featureName:f.name,_type:'bug'})))];
+
+  const [syncing,setSyncing]=useState(false);
+
+  const doKnowledgeSync=async()=>{
+    setSyncing(true);
+    try{
+      const r=await api.post('/api/knowledge-sync',{includeStrategyDocs:false});
+      if(r.ok){
+        toast.show(`Synced ${r.added} tasks from /knowledge/plan`,'success');
+        onReload();
+      }else{
+        toast.show(r.error||'Sync failed','error');
+      }
+    }catch(e){
+      toast.show('Sync failed: '+e.message,'error');
+    }
+    setSyncing(false);
+  };
 
   const stats=[
     {v:F.length,c:T.accent,l:"ROUTES",s:`${F.filter(f=>f.status==="working").length} working`},
@@ -158,9 +176,14 @@ function Overview({data,setView,setSelPage}){
   ];
 
   return <div style={{display:"flex",flexDirection:"column",gap:12}}>
-    {/* Stats row */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
-      {stats.map(({v,c,l,s})=><Card key={l} ch={<div style={{textAlign:"center",padding:"4px 0"}}><div style={{fontSize:24,fontWeight:700,color:c}}>{v}</div><div style={{fontSize:7,color:T.dim,letterSpacing:"0.2em",marginTop:3}}>{l}</div><div style={{fontSize:9,color:T.dim,marginTop:3}}>{s}</div></div>}/>)}
+    {/* Stats row + sync */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,flex:1}}>
+        {stats.map(({v,c,l,s})=><Card key={l} ch={<div style={{textAlign:"center",padding:"4px 0"}}><div style={{fontSize:24,fontWeight:700,color:c}}>{v}</div><div style={{fontSize:7,color:T.dim,letterSpacing:"0.2em",marginTop:3}}>{l}</div><div style={{fontSize:9,color:T.dim,marginTop:3}}>{s}</div></div>}/>)}
+      </div>
+      <Btn v="ghost" onClick={doKnowledgeSync} disabled={syncing}>
+        {syncing?'SYNCING...':'🔄 SYNC /knowledge/plan'}
+      </Btn>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -1026,7 +1049,181 @@ function LinkedDocsTab({docs,setDocs}){
   </div>;
 }
 
-// ─── AGENT RUN MODAL ────────────────────────────────────────
+// ─── HARNESS RUN MODAL ────────────────────────────────────────
+function HarnessRunModal({item,itemType,featureId,onClose,onDone}){
+  const [harnessTaskId,setHarnessTaskId]=useState(null);
+  const [status,setStatus]=useState(null);
+  const [events,setEvents]=useState([]);
+  const [running,setRunning]=useState(true);
+  const [killed,setKilled]=useState(false);
+
+  const kill=()=>{
+    if(harnessTaskId){
+      fetch(`/api/harness-kill/${harnessTaskId}`,{method:'POST'});
+      setKilled(true);
+      setRunning(false);
+    }
+  };
+
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        // Start harness run
+        const r=await fetch('/api/harness-run',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            taskId:item.id,
+            taskType:itemType,
+            description:item.title||item.brief,
+            featureId,
+            autoApprove:true,
+          })
+        });
+        const data=await r.json();
+        if(!data.ok){throw new Error(data.error||'Failed to start harness');}
+        if(cancelled)return;
+        setHarnessTaskId(data.harnessTaskId);
+
+        // Open SSE stream
+        const es=new EventSource(`/api/harness-stream/${data.harnessTaskId}`);
+        es.onmessage=(e)=>{
+          if(cancelled){es.close();return;}
+          const ev=JSON.parse(e.data);
+          if(ev.type==='status'){
+            setStatus(ev);
+            setEvents(ev.events||[]);
+          }
+          if(ev.type==='complete'){
+            setRunning(false);
+            es.close();
+            // Auto-sync results back to PM
+            fetch('/api/harness-sync',{
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body:JSON.stringify({
+                taskId:item.id,
+                harnessTaskId:data.harnessTaskId,
+                taskType:itemType,
+                featureId,
+              })
+            }).then(()=>onDone());
+          }
+          if(ev.type==='error'){
+            setRunning(false);
+            es.close();
+          }
+        };
+        es.onerror=()=>{setRunning(false);es.close();};
+      }catch(e){if(!cancelled){setRunning(false);}}
+    })();
+    return()=>{cancelled=true;};
+  },[]);
+
+  useEffect(()=>{
+    const h=e=>{if(e.key==='Escape'&&!running)onClose();};
+    window.addEventListener('keydown',h);return()=>window.removeEventListener('keydown',h);
+  },[running,onClose]);
+
+  const phaseOrder=['analysis','pm','design','architecture','implementation','qa','complete'];
+  const currentPhase=status?.phase||'analysis';
+  const currentIdx=phaseOrder.indexOf(currentPhase);
+
+  const qaGates=[
+    {key:'tsc',label:'TypeScript'},
+    {key:'no_any_types',label:'No any types'},
+    {key:'named_exports',label:'Named exports'},
+    {key:'changelog_updated',label:'CHANGELOG'},
+  ];
+
+  const agents=status?.agents||[];
+  const qaResults=status?.qaResults||{};
+
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:9500,display:"flex",justifyContent:"center",alignItems:"center"}} onClick={e=>{if(e.target===e.currentTarget&&!running)onClose();}}>
+    <div style={{width:720,maxHeight:"85vh",background:"#0a0a14",border:`1px solid ${running?"rgba(139,92,246,0.5)":killed?"rgba(239,68,68,0.5)":T.green+"50"}`,borderRadius:10,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+      {/* Header */}
+      <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+        <span style={{width:8,height:8,borderRadius:"50%",background:running?T.violet:killed?T.red:T.green,flexShrink:0,animation:running?"pulse 1s infinite":undefined}}/>
+        <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.12em",flex:1,color:running?T.violet:killed?T.red:T.green}}>
+          {running?`🤖 HARNESS RUNNING — ${item.title}`:killed?`✕ KILLED — ${item.title}`:`✓ DONE — ${item.title}`}
+        </span>
+        {running&&<Btn v="ghost" sx={{padding:"3px 10px",fontSize:8,borderColor:"rgba(239,68,68,0.5)",color:T.red}} onClick={kill}>■ Kill</Btn>}
+        {!running&&<Btn v="ghost" sx={{padding:"3px 10px",fontSize:8}} onClick={onClose}>Close ✕</Btn>}
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"14px",display:"flex",flexDirection:"column",gap:12}}>
+        {/* Phase Pipeline */}
+        <div style={{display:"flex",alignItems:"center",gap:4}}>
+          {phaseOrder.map((p,i)=>{
+            const done=i<currentIdx;
+            const active=i===currentIdx;
+            return <React.Fragment key={p}>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,
+                  background:done?T.green:active?T.violet:T.bg,
+                  color:done||active?"#fff":T.dim,
+                  border:`1px solid ${done?T.green:active?T.violet:T.border}`,
+                }}>{done?'✓':i+1}</div>
+                <span style={{fontSize:7,textTransform:"uppercase",letterSpacing:"0.1em",color:active?T.violet:done?T.green:T.dim}}>{p}</span>
+              </div>
+              {i<phaseOrder.length-1&&<div style={{flex:1,height:2,background:i<currentIdx?T.green:T.border,borderRadius:1}}/>}
+            </React.Fragment>;
+          })}
+        </div>
+
+        {/* Active Agents */}
+        {agents.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
+          <div style={{fontSize:8,fontWeight:700,color:T.dim,letterSpacing:"0.15em",textTransform:"uppercase"}}>Active Agents</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {agents.map(a=><div key={a.role} style={{padding:"6px 10px",background:T.surface,borderRadius:6,border:`1px solid ${a.status==='running'?T.violet+'50':a.status==='completed'?T.green+'50':T.border}`,display:"flex",alignItems:"center",gap:6}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:a.status==='running'?T.violet:a.status==='completed'?T.green:T.dim,animation:a.status==='running'?"pulse 1s infinite":undefined}}/>
+              <span style={{fontSize:9,fontWeight:700,color:T.bright,textTransform:"uppercase"}}>{a.role}</span>
+              <span style={{fontSize:7,color:a.status==='running'?T.violet:a.status==='completed'?T.green:T.dim}}>{a.status}</span>
+              {a.changedFiles?.length>0&&<span style={{fontSize:7,color:T.dim}}>{a.changedFiles.length} files</span>}
+            </div>)}
+          </div>
+        </div>}
+
+        {/* QA Gates */}
+        {Object.keys(qaResults).length>0&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
+          <div style={{fontSize:8,fontWeight:700,color:T.dim,letterSpacing:"0.15em",textTransform:"uppercase"}}>Quality Gates</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {qaGates.map(g=>{
+              const r=qaResults[g.key];
+              return <div key={g.key} style={{padding:"4px 8px",borderRadius:4,fontSize:8,fontWeight:700,
+                background:r?r.passed?'rgba(16,185,129,0.1)':'rgba(239,68,68,0.1)':T.bg,
+                color:r?r.passed?T.green:T.red:T.dim,
+                border:`1px solid ${r?r.passed?T.green+'30':T.red+'30':T.border}`,
+              }}>
+                {r?r.passed?'✓':'✗':''} {g.label}
+              </div>;
+            })}
+          </div>
+        </div>}
+
+        {/* Event Log */}
+        <div style={{flex:1,background:"#05050f",borderRadius:6,padding:"10px",fontSize:8,color:"rgba(255,255,255,0.55)",lineHeight:1.7,overflowY:"auto",maxHeight:200}}>
+          {events.length===0&&<span style={{color:T.dim,animation:"pulse 1s infinite"}}>Waiting for telemetry events…</span>}
+          {events.map((e,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"baseline"}}>
+            <span style={{color:T.dim,flexShrink:0}}>{new Date(e.timestamp).toLocaleTimeString()}</span>
+            <span style={{color:e.event_type==='error'?T.red:e.event_type==='phase_transition'?T.violet:T.accent,flexShrink:0,fontWeight:700}}>{e.event_type}</span>
+            <span style={{color:T.text}}>{JSON.stringify(e.details||{}).slice(0,120)}</span>
+          </div>)}
+        </div>
+      </div>
+
+      {/* Result footer */}
+      {status?.result&&<div style={{padding:"10px 14px",borderTop:`1px solid ${T.border}`,background:"rgba(16,185,129,0.06)"}}>
+        <div style={{fontSize:9,color:T.green,fontWeight:700,marginBottom:4}}>✓ {status.result.workflow_status||'complete'}</div>
+        {status.result.changed_files?.length>0&&<div style={{fontSize:8,color:T.dim}}>Files changed: {status.result.changed_files.join(', ')}</div>}
+        <div style={{fontSize:8,color:T.dim,marginTop:2}}>Duration: {Math.round(status.duration||0)}s</div>
+      </div>}
+    </div>
+  </div>;
+}
+
+// ─── AGENT RUN MODAL (legacy fallback) ────────────────────────
 function AgentRunModal({item,itemType,featureId,onClose,onDone}){
   const [output,setOutput]=useState('');
   const [running,setRunning]=useState(true);
@@ -1298,7 +1495,7 @@ function KanbanView({data,tasks,saveTasks,onReload,toast}){
   const saveTask=(updated)=>{saveTasks(tasks.map(t=>t.id===updated.id?updated:t));toast.show('Task updated','success');};
 
   return <div>
-    {agentModal&&<AgentRunModal item={agentModal.item} itemType={agentModal.itemType} featureId={agentModal.featureId} onClose={()=>setAgentModal(null)} onDone={()=>{onReload();}}/>}
+    {agentModal&&<HarnessRunModal item={agentModal.item} itemType={agentModal.itemType} featureId={agentModal.featureId} onClose={()=>setAgentModal(null)} onDone={()=>{onReload();}}/>}
     {openBug&&<BugModal bug={openBug.bug} feature={openBug.feature} onSave={saveBug} onClose={()=>setOpenBug(null)} onRunAgent={runAgent}/>}
     {editTask&&<TaskModal task={editTask} features={data.features||[]} onSave={saveTask} onClose={()=>setEditTask(null)} onRunAgent={runAgent}/>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1512,7 +1709,7 @@ function App(){
 
     {/* Content */}
     <div style={view==='routes'?{}:{padding:"16px",maxWidth:1400,margin:"0 auto"}}>
-      {view==='overview'&&<Overview data={data} setView={setView} setSelPage={setSelPage}/>}
+      {view==='overview'&&<Overview data={data} setView={setView} setSelPage={setSelPage} toast={toast} onReload={onReload}/>}
       {view==='routes'&&<RoutesView data={data} selPage={selPage} setSelPage={setSelPage} onUpdateFeature={updateFeature} onSync={pageSync} syncing={syncing} syncOutput={syncOutput} syncOutputId={syncOutputId} tasks={tasks} saveTasks={saveTasks} toast={toast}/>}
       {view==='kanban'&&<KanbanView data={data} tasks={tasks} saveTasks={saveTasks} onReload={load} toast={toast}/>}
       {view==='lambdas'&&<LambdasView data={data} onReload={load} toast={toast}/>}
