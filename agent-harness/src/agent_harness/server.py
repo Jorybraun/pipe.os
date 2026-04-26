@@ -15,10 +15,23 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
+
+# Load .env from project root (four levels up from this module:
+# src/agent_harness/server.py → src/agent_harness → src → agent-harness → project-root)
+load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
+
+# Ensure KIMI_API_KEY propagates into os.environ for child modules
+if os.getenv("KIMI_API_KEY"):
+    os.environ.setdefault("KIMI_API_KEY", os.getenv("KIMI_API_KEY"))
+if os.getenv("OPENAI_API_KEY"):
+    os.environ.setdefault("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
 
 from mcp.server.fastmcp import Context, FastMCP
 
