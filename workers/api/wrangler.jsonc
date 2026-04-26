@@ -104,14 +104,19 @@
 			"name": "pipe-api-staging",
 			"vars": {
 				"APP_BASE_URL": "https://staging.pipe.build"
-			}
-			// TODO: create staging D1 database and R2 bucket, then uncomment:
-			// "d1_databases": [
-			//   { "binding": "DB", "database_name": "pipe-staging", "database_id": "<STAGING_DB_ID>", "migrations_dir": "migrations" }
-			// ],
-			// "r2_buckets": [
-			//   { "binding": "STORAGE", "bucket_name": "pipe-assets-staging" }
-			// ]
+			},
+			// TODO: replace <STAGING_DB_ID> with the actual D1 database ID after provisioning
+			"d1_databases": [
+				{ "binding": "DB", "database_name": "pipe-staging", "database_id": "<STAGING_DB_ID>", "migrations_dir": "migrations" }
+			],
+			"r2_buckets": [
+				{ "binding": "STORAGE", "bucket_name": "pipe-assets-staging" }
+			],
+			"vectorize": [
+				{ "binding": "REPO_INDEX", "index_name": "repo-profiles-staging" },
+				{ "binding": "CANDIDATE_INDEX", "index_name": "candidate-profiles-staging" },
+				{ "binding": "ROLE_INDEX", "index_name": "role-profiles-staging" }
+			]
 		},
 		"test": {
 			"name": "pipe-api-test",

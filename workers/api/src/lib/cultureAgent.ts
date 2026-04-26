@@ -91,6 +91,12 @@ export interface CultureTurn {
   timestamp: string;
 }
 
+export interface QuestionMetadata {
+  questionText: string;
+  targetDimension: string;
+  personalizationAnchors: string[];
+}
+
 export interface CultureScratchpad {
   /** Count of how many complete STAR answers we have per dimension. */
   dimensionCoverage: Record<CompetencyDimension, number>;
@@ -98,6 +104,10 @@ export interface CultureScratchpad {
   probesUsedForCurrentQ: number;
   /** Short running observations the agent emits as it goes. */
   runningThemes: string[];
+  /** Interview mode — 'profile_builder' (Mode-1) or 'role_fit' (Mode-2). */
+  mode?: 'profile_builder' | 'role_fit';
+  /** Metadata for each generatively-produced question (audit trail). */
+  questionMetadata?: QuestionMetadata[];
 }
 
 export interface CultureTranscript {
@@ -116,6 +126,8 @@ export function defaultCultureTranscript(): CultureTranscript {
       dimensionCoverage: emptyCoverage(),
       probesUsedForCurrentQ: 0,
       runningThemes: [],
+      mode: 'profile_builder',
+      questionMetadata: [],
     },
   };
 }

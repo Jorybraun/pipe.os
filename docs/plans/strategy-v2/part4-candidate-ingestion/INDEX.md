@@ -63,6 +63,7 @@ Items fully covered in `phase0-subagent-execution-plan.md`. Do not re-plan.
 |---|---|---|---|
 | [`profile-probe-bank.md`](profile-probe-bank.md) | `profile_probe_bank` table + 60+ curated probes | 2 weeks | NEEDS-REFINEMENT |
 | [`screener-coverage-computation.md`](screener-coverage-computation.md) | `computeCandidateCoverage` + gap identification | 1 week | PENDING |
+| [`adaptive-culture-interview-agent.md`](adaptive-culture-interview-agent.md) | Dynamic generative culture agent — zero static questions | 4 weeks | PENDING |
 | [`screener-mode-generalization.md`](screener-mode-generalization.md) | Generalize `cultureAgent.ts` to mode-aware screener | 3 weeks | PENDING |
 | [`screener-answer-decomposition.md`](screener-answer-decomposition.md) | Single-turn sub-element extraction from screener answers | 1.5 weeks | PENDING |
 | [`screener-recruiter-ui.md`](screener-recruiter-ui.md) | "Invite to screening" recruiter UI action | 1 week | PENDING |

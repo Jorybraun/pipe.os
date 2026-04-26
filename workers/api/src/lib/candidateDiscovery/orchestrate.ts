@@ -183,6 +183,8 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
 
   let roleRepoAlignments = new Map<number, number>();
   let roleCandidateCosine: number | null = null;
+  let vectorRoleRepo: number | null = null;
+  let vectorRoleCandidate: number | null = null;
 
   if (roleContextRow) {
     // Load top 20 role-aligned repos
@@ -223,6 +225,30 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[ingestion] cosine failed for candidate ${candidateId}:`, msg);
         roleCandidateCosine = null;
+      }
+    }
+
+    // Vector-native ANN signals: query Vectorize with role vector to get
+    // approximate role→repo and role→candidate similarities.
+    // These are best-effort; failures fall back to null.
+    if (roleVec) {
+      try {
+        const [repoQuery, candidateQuery] = await Promise.all([
+          env.REPO_INDEX.query(roleVec, { topK: 20 }),
+          env.CANDIDATE_INDEX.query(roleVec, { topK: 20 }),
+        ]);
+        const winnerRepoId = matchResult.repoChoice.repoId;
+        const repoMatch = repoQuery.matches.find((m) => m.id === `repo_${winnerRepoId}`);
+        if (repoMatch) {
+          vectorRoleRepo = repoMatch.score;
+        }
+        const candMatch = candidateQuery.matches.find((m) => m.id === `candidate_${candidateId}`);
+        if (candMatch) {
+          vectorRoleCandidate = candMatch.score;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[ingestion] vector query failed for candidate ${candidateId}:`, msg);
       }
     }
   }
@@ -379,12 +405,16 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   }
 
   // Step 9: Triangulate
+  const vectorCandidateRepo = matchResult.repoChoice.cosine;
   let triangulated = triangulateMatch({
     philosophy,
     graphResult: matchResult,
     situationRankings: situationRankings.rankings,
     roleRepoAlignments,
     roleCandidateCosine,
+    vectorCandidateRepo,
+    vectorRoleRepo,
+    vectorRoleCandidate,
   });
 
   let winnerRepoId = triangulated.repo_id;
@@ -400,6 +430,9 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       situationRankings: situationRankings.rankings,
       roleRepoAlignments,
       roleCandidateCosine,
+      vectorCandidateRepo,
+      vectorRoleRepo,
+      vectorRoleCandidate,
     });
 
     if (shortlistScores.length > 0) {
@@ -440,6 +473,9 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
             situationRankings: situationRankings.rankings,
             roleRepoAlignments,
             roleCandidateCosine,
+            vectorCandidateRepo: tailoredWinner.cosine,
+            vectorRoleRepo,
+            vectorRoleCandidate,
           });
         }
       }

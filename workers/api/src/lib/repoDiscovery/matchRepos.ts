@@ -78,6 +78,9 @@ async function slugifySkills(
   for (const skill of skills) {
     const lower = skill.toLowerCase().trim();
     const slug = aliasMap.get(lower) ?? lower;
+    if (slug === lower && !aliasMap.has(lower)) {
+      console.warn(`[matchRepos] skill alias not found for "${skill}", falling back to lowercase slug "${lower}"`);
+    }
     if (!seen.has(slug)) {
       seen.add(slug);
       normalized.push(slug);

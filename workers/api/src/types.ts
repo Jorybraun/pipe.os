@@ -45,6 +45,12 @@ export interface Env {
    * Used in E2E/integration tests to avoid real LLM calls.
    */
   MOCK_AI?: string;
+  /**
+   * When set to "true", the culture interview uses the static 15-question bank
+   * instead of the generative adaptive planner. Compliance escape hatch for
+   * strict regulatory regimes (NYC LL 144, EU AI Act Art 14).
+   */
+  USE_STATIC_QUESTION_BANK?: string;
   /** Durable Object binding for video call signaling rooms. */
   VIDEO_ROOM: DurableObjectNamespace;
   /** Durable Object binding for dev container sessions (ADR-037, Phase 3b). */

@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 import time
@@ -24,9 +25,39 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-# Load .env from project root (four levels up from this module:
-# src/agent_harness/server.py → src/agent_harness → src → agent-harness → project-root)
-load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
+# Set up file logging before anything else so startup errors are captured
+_log_dir = Path(__file__).parent.parent.parent.parent / "logs"
+_log_dir.mkdir(exist_ok=True)
+_log_file = _log_dir / "agent-harness-server.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    handlers=[
+        logging.FileHandler(_log_file, mode="a"),
+        logging.StreamHandler(sys.stderr),
+    ],
+)
+logger = logging.getLogger("agent-harness")
+logger.info("=== Server starting ===")
+logger.info(f"Python: {sys.executable}")
+logger.info(f"CWD: {os.getcwd()}")
+
+# Load .env — prefer CWD, then project root (search upward from this module)
+_cwd_env = Path(".env").resolve()
+if _cwd_env.exists():
+    load_dotenv(_cwd_env)
+    logger.info(f"Loaded .env from CWD: {_cwd_env}")
+else:
+    _project_root = Path(__file__).resolve()
+    for _ in range(5):
+        _project_root = _project_root.parent
+        _env_file = _project_root / ".env"
+        if _env_file.exists():
+            load_dotenv(_env_file)
+            logger.info(f"Loaded .env from: {_env_file}")
+            break
+    else:
+        logger.warning("No .env file found")
 
 # Ensure KIMI_API_KEY propagates into os.environ for child modules
 if os.getenv("KIMI_API_KEY"):
@@ -1463,6 +1494,128 @@ def harness_backend_prompt() -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Custom stdio transport — auto-detects Content-Length vs line-delimited JSON
+# Kimi CLI (and Python mcp SDK) use line-delimited JSON.
+# Claude Desktop (and TypeScript MCP SDK) use Content-Length framing.
+# This transport speaks both — auto-detecting from the first message.
+# ---------------------------------------------------------------------------
+
+from contextlib import asynccontextmanager
+
+import anyio
+import anyio.lowlevel
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+
+import mcp.types as types
+from mcp.shared.message import SessionMessage
+
+
+@asynccontextmanager
+async def _stdio_server_dual():
+    """Stdio server transport supporting both Content-Length and line-delimited JSON."""
+    stdin = anyio.wrap_file(sys.stdin.buffer)
+    stdout = anyio.wrap_file(sys.stdout.buffer)
+
+    read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
+    write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
+
+    # Detected protocol: "content-length" or "line-delimited"
+    _protocol: str | None = None
+
+    async def _read_line() -> bytes:
+        """Read until \\n."""
+        line = b""
+        while b"\n" not in line:
+            try:
+                chunk = await stdin.read(1)
+            except anyio.ClosedResourceError:
+                return b""
+            if not chunk:
+                return b""
+            line += chunk
+        return line
+
+    async def stdin_reader():
+        nonlocal _protocol
+        try:
+            async with read_stream_writer:
+                while True:
+                    first_line = await _read_line()
+                    if not first_line:
+                        return
+
+                    stripped = first_line.strip()
+
+                    # Auto-detect protocol from first message
+                    if stripped.lower().startswith(b"content-length:"):
+                        _protocol = "content-length"
+                        # Parse Content-Length value
+                        cl = int(stripped.split(b":", 1)[1].strip())
+
+                        # Read separator empty line (\r\n or just \n)
+                        if first_line.endswith(b"\r\n"):
+                            # Need to read \r\n
+                            sep = b""
+                            while b"\n" not in sep:
+                                chunk = await stdin.read(1)
+                                if not chunk:
+                                    return
+                                sep += chunk
+
+                        # Read exactly cl bytes
+                        body = b""
+                        while len(body) < cl:
+                            chunk = await stdin.read(cl - len(body))
+                            if not chunk:
+                                return
+                            body += chunk
+
+                        try:
+                            message = types.JSONRPCMessage.model_validate_json(body.decode("utf-8"))
+                        except Exception as exc:
+                            await read_stream_writer.send(exc)
+                            continue
+
+                    else:
+                        _protocol = "line-delimited"
+                        try:
+                            message = types.JSONRPCMessage.model_validate_json(stripped.decode("utf-8"))
+                        except Exception as exc:
+                            await read_stream_writer.send(exc)
+                            continue
+
+                    session_message = SessionMessage(message)
+                    await read_stream_writer.send(session_message)
+        except anyio.ClosedResourceError:
+            await anyio.lowlevel.checkpoint()
+
+    async def stdout_writer():
+        try:
+            async with write_stream_reader:
+                async for session_message in write_stream_reader:
+                    json_bytes = session_message.message.model_dump_json(
+                        by_alias=True, exclude_none=True
+                    ).encode("utf-8")
+
+                    # Mirror the detected input protocol for output
+                    if _protocol == "content-length":
+                        payload = f"Content-Length: {len(json_bytes)}\r\n\r\n".encode("utf-8") + json_bytes
+                    else:
+                        # Default to line-delimited (also works for undetected)
+                        payload = json_bytes + b"\n"
+
+                    await stdout.write(payload)
+                    await stdout.flush()
+        except anyio.ClosedResourceError:
+            await anyio.lowlevel.checkpoint()
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(stdin_reader)
+        tg.start_soon(stdout_writer)
+        yield read_stream, write_stream
+
+
 async def _run_stdio(ws_host: str, ws_port: int) -> None:
     """Run MCP stdio transport + WebSocket server concurrently."""
     global ws_server
@@ -1470,10 +1623,15 @@ async def _run_stdio(ws_host: str, ws_port: int) -> None:
     try:
         await ws_server.start()
     except OSError as e:
-        print(f"[harness ws] Warning: could not start WebSocket server ({e})", file=sys.stderr)
+        logger.warning(f"Could not start WebSocket server ({e})")
         ws_server = None
-    # FastMCP stdio async uses the existing event loop
-    await mcp.run_stdio_async()
+    # Use dual-protocol transport
+    async with _stdio_server_dual() as (read_stream, write_stream):
+        await mcp._mcp_server.run(
+            read_stream,
+            write_stream,
+            mcp._mcp_server.create_initialization_options(),
+        )
 
 
 def main():
@@ -1491,7 +1649,7 @@ def main():
 
     # Initialise broker database BEFORE orchestrator (orchestrator reads from DB)
     broker_db_path = init_broker_db(args.broker_db)
-    print(f"[broker] Database initialised: {broker_db_path}", file=sys.stderr)
+    logger.info(f"Database initialised: {broker_db_path}")
 
     # Re-initialize the orchestrator now that data_dir is known
     global orchestrator
@@ -1513,13 +1671,13 @@ def main():
             file=sys.stderr,
         )
     except Exception as e:
-        print(f"[retention] Warning: pruning failed ({e})", file=sys.stderr)
+        logger.warning(f"Retention pruning failed ({e})")
 
     if args.transport == "stdio":
         try:
             asyncio.run(_run_stdio(args.host, args.ws_port))
         except KeyboardInterrupt:
-            print("\n[harness] Shutting down...", file=sys.stderr)
+            logger.info("Shutting down...")
     else:
         global ws_server
         ws_server = AgentWebSocketServer(host=args.host, port=args.ws_port)

@@ -35,8 +35,13 @@ import {
   defaultCultureTranscript,
   type CultureTranscript,
 } from '../../lib/cultureAgent';
+import {
+  startAdaptiveCultureInterview,
+  advanceAdaptiveCultureInterview,
+} from '../../lib/cultureAgentAdaptive';
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
+import { decomposeCandidateAnswer, persistDecomposition } from '../../lib/cultureAgentDecomposition';
 import {
   scoreCultureInterview,
   type OrgCultureBenchmark,
@@ -67,6 +72,7 @@ interface CultureSessionRow {
   review_decision: string | null;
   override_recommendation: string | null;
   review_notes: string | null;
+  screener_mode: 'profile_builder' | 'role_fit' | null;
   created_at: string;
   updated_at: string;
 }
@@ -218,6 +224,44 @@ export async function runScoringJob(env: Env, sessionId: string): Promise<void> 
       )
       .bind(sessionId)
       .run();
+
+    // Emit SCORER_REPROMPT audit events for any dimensions that were re-prompted
+    const repromptedCompetency = report.competencyScores.filter((s) => s.repromptCount > 0);
+    const repromptedProfile = report.profileScores.filter((s) => s.repromptCount > 0);
+    for (const s of repromptedCompetency) {
+      await db
+        .prepare(
+          `INSERT INTO culture_compliance_audit (session_id, event_type, actor_type, metadata)
+           VALUES (?1, 'scorer_reprompt', 'system', ?2)`,
+        )
+        .bind(
+          sessionId,
+          JSON.stringify({
+            dimension: s.dimension,
+            originalScore: s.originalScore ?? s.score,
+            repromptScore: s.repromptCount > 0 ? s.score : null,
+            finalGrounded: s.evidenceQuotes.length > 0,
+          }),
+        )
+        .run();
+    }
+    for (const s of repromptedProfile) {
+      await db
+        .prepare(
+          `INSERT INTO culture_compliance_audit (session_id, event_type, actor_type, metadata)
+           VALUES (?1, 'scorer_reprompt', 'system', ?2)`,
+        )
+        .bind(
+          sessionId,
+          JSON.stringify({
+            dimension: s.dimension,
+            originalScore: s.originalPosition ?? s.candidatePosition,
+            repromptScore: s.repromptCount > 0 ? s.candidatePosition : null,
+            finalGrounded: s.evidenceQuotes.length > 0,
+          }),
+        )
+        .run();
+    }
   } catch (err) {
     console.error('[cultureScoringJob] Failed to write score report:', sessionId, err);
   }
@@ -765,14 +809,41 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
     ? await loadRoleProbeBank(c.env.DB, roleContext.teamContext.roleContextId)
     : EMPTY_PROBE_BANK;
 
-  // Seed first question
-  const { transcript, nextQuestion } = startCultureInterview({
+  // Determine screener mode from challenge config (default role_fit).
+  const challengeConfig = await c.env.DB.prepare(
+    'SELECT server_config FROM challenges WHERE id = ?1',
+  )
+    .bind(session.challenge_id)
+    .first<{ server_config: string | null }>();
+  const serverConfig = parseJsonColumn<Record<string, unknown>>(
+    challengeConfig?.server_config ?? null,
+    {},
+  );
+  const mode = serverConfig.screenerMode === 'profile_builder' ? 'profile_builder' : 'role_fit';
+  const useStaticFallback = c.env.USE_STATIC_QUESTION_BANK === 'true';
+
+  // Create provider for generative first question (null when MOCK_AI or missing binding)
+  const rawStartProvider = createCultureAgentProvider(c.env);
+  const startProvider = rawStartProvider !== null
+    ? withCultureMetering(rawStartProvider, session.id, 'conversation', c.env.DB, c.executionCtx)
+    : null;
+
+  // Seed first question (adaptive generative or static fallback)
+  const { transcript, nextQuestion } = await startAdaptiveCultureInterview({
+    provider: startProvider,
+    db: c.env.DB,
+    candidateId: session.candidate_id,
+    assessmentId: session.assessment_id,
+    mode,
+    teamContext: roleContext.teamContext,
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
+    useStaticFallback,
   });
 
   const consentAt = now();
+  const sourceMode = useStaticFallback ? 'static' : 'generative';
 
   await c.env.DB.prepare(
     `UPDATE culture_interview_sessions
@@ -780,10 +851,11 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
          consent_at = ?1,
          transcript = ?2,
          started_at = ?1,
+         screener_mode = ?3,
          updated_at = ?1
-     WHERE id = ?3`,
+     WHERE id = ?4`,
   )
-    .bind(consentAt, JSON.stringify(transcript), session.id)
+    .bind(consentAt, JSON.stringify(transcript), mode, session.id)
     .run();
 
   // Compliance audit
@@ -799,6 +871,13 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
      VALUES (?1, 'interview_started', 'candidate', ?2)`,
   )
     .bind(session.id, candidateId)
+    .run();
+
+  await c.env.DB.prepare(
+    `INSERT INTO culture_compliance_audit (session_id, event_type, actor_type, metadata)
+     VALUES (?1, 'question_source_mode', 'system', ?2)`,
+  )
+    .bind(session.id, JSON.stringify({ mode: sourceMode }))
     .run();
 
   return c.json({
@@ -858,14 +937,92 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     ? await loadRoleProbeBank(c.env.DB, roleContext.teamContext.roleContextId)
     : EMPTY_PROBE_BANK;
 
-  const result = await advanceCultureInterview({
+  const mode = session.screener_mode ?? transcript.scratchpad.mode ?? 'role_fit';
+  const useStaticFallback = c.env.USE_STATIC_QUESTION_BANK === 'true';
+
+  const result = await advanceAdaptiveCultureInterview({
     provider,
+    db: c.env.DB,
+    candidateId: session.candidate_id,
+    assessmentId: session.assessment_id,
+    mode,
+    teamContext: roleContext.teamContext,
     transcript,
     candidateAnswer: answer.trim(),
+    maxQuestions: 20,
+    minQuestions: 5,
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
+    useStaticFallback,
   });
+
+  // ─── Decomposition (non-blocking, best-effort) ─────────────────────────────
+  const pendingTurn = [...result.transcript.turns].reverse().find((t) => t.candidateResponse !== null);
+  if (pendingTurn && pendingTurn.candidateResponse) {
+    const targetDimension = result.transcript.scratchpad.questionMetadata?.find(
+      (m) => m.questionText === pendingTurn.questionText,
+    )?.targetDimension ?? 'ownership';
+
+    const decomposition = await decomposeCandidateAnswer({
+      provider,
+      questionText: pendingTurn.questionText,
+      candidateAnswer: pendingTurn.candidateResponse,
+      targetDimension: targetDimension as import('../../lib/cultureQuestionBank').CompetencyDimension,
+    });
+
+    if (decomposition) {
+      // Persist to candidate_nodes when table exists (currently a no-op stub)
+      await persistDecomposition({
+        db: c.env.DB,
+        candidateId: session.candidate_id,
+        sessionId: session.id,
+        turnTimestamp: pendingTurn.timestamp,
+        mode,
+        decomposition,
+      });
+
+      // Audit log
+      if (decomposition.culturalSignals.length > 0) {
+        await c.env.DB.prepare(
+          `INSERT INTO culture_compliance_audit (session_id, event_type, actor_type, metadata)
+           VALUES (?1, 'answer_decomposed', 'system', ?2)`,
+        )
+          .bind(
+            session.id,
+            JSON.stringify({
+              signalsExtracted: decomposition.culturalSignals.length,
+              dimensions: decomposition.culturalSignals.map((s) => s.dimension),
+              clarificationNeeded: decomposition.clarificationNeeded,
+            }),
+          )
+          .run();
+      }
+    }
+  }
+
+  // ─── Audit: question_generated for new generative questions ─────────────────
+  const latestTurn = [...result.transcript.turns].reverse().find((t) => t.probeOf === null && t.candidateResponse === null);
+  if (latestTurn && latestTurn.questionId.startsWith('gen-')) {
+    const meta = result.transcript.scratchpad.questionMetadata?.find(
+      (m) => m.questionText === latestTurn.questionText,
+    );
+    if (meta) {
+      await c.env.DB.prepare(
+        `INSERT INTO culture_compliance_audit (session_id, event_type, actor_type, metadata)
+         VALUES (?1, 'question_generated', 'system', ?2)`,
+      )
+        .bind(
+          session.id,
+          JSON.stringify({
+            question_text: meta.questionText,
+            target_dimension: meta.targetDimension,
+            personalization_anchors: meta.personalizationAnchors,
+          }),
+        )
+        .run();
+    }
+  }
 
   if (result.action === 'terminate') {
     // Persist updated transcript, transition to scoring

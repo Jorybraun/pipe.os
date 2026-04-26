@@ -128,18 +128,6 @@ export async function runBackfill(
             db: env!.DB,
           });
 
-          // embedAndUpsertCandidate handles the D1 UPDATE (status, embedding_json,
-          // profile_embedded_at, embedding_model_version) when db is passed.
-          // We only need to persist the augmented text so ground truth matches.
-          await env!.DB.prepare(
-            `UPDATE candidate_ingestion
-                SET candidate_searchable_profile = ?,
-                    updated_at = ?
-              WHERE candidate_id = ?`
-          )
-            .bind(augmented, now(), row.candidate_id)
-            .run();
-
           succeeded++;
           console.log(
             `[backfill] embedded ${row.candidate_id} (dim=${result.vectorDim})`
