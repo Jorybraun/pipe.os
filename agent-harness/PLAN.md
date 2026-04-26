@@ -18,6 +18,55 @@ Outcome: backlog executes through the swarm at multi-lane parallelism (3–5 lan
 prod merges remain human-gated, ~83 runnable plans converge in weeks.
 
 ---
+## Architecture Decisions (captured from implementation)
+
+### 1. The Orchestrator is ONE singleton CEO
+
+There is exactly one Orchestrator. Not one per swarm. Not one per plan. Not one per phase. **ONE.** It sits at the top of the pyramid and has full visibility into every plan, lane, event, and interrupt across the entire system. It is the single point of conversational control.
+
+### 2. Conversational interface is the primary control surface
+
+The operator talks to the Orchestrator via `harness_chat(message, thread_id)`. The Orchestrator is a LangGraph DeepAgent with broker tools. It can answer status questions, recommend actions, start/stop lanes, post steering cues, and escalate to humans when it needs input. The operator never talks to individual agents (PM, dev, QA) directly — the Orchestrator proxies everything.
+
+### 3. Orchestrator is a LangGraph agent, not a Python class
+
+The Orchestrator is built with `deepagents.create_deep_agent()`, which returns a compiled LangGraph `CompiledStateGraph`. It has:
+- Full tool access (broker tools + lane control)
+- LangGraph checkpointing for persistent conversation state
+- `interrupt()` support for human-in-the-loop
+- No iteration cap — it manages long-running processes continuously
+
+### 4. Lane control is part of the Orchestrator's tool set
+
+The Orchestrator does not just advise — it executes. Its tools include:
+- `get_swarm_status()` — full snapshot
+- `list_all_plans()`, `list_runnable_plans()` — plan queries
+- `claim_runnable_plan(plan_id)` — claim a plan
+- `start_lane(plan_id)`, `stop_lane(lane_id)` — dispatch/cancel lanes
+- `post_steering_cue(content, plan_id, lane_id)` — steer active lanes
+- `escalate_to_human(plan_id, reason)` — pause for operator input
+- `get_active_interrupts()` — list human-in-the-loop items
+
+### 5. Escalation flow: Orchestrator → Kimi Code → User
+
+When the Orchestrator needs clarification:
+1. Calls `escalate_to_human(plan_id, reason)`
+2. Lane pauses at LangGraph checkpoint
+3. Broker emits `escalation_created` event
+4. Kimi Code (the initiator) polls events/cues and asks the user
+5. User answers → Kimi Code calls `broker_resume_tool(plan_id, payload)`
+6. LangGraph thread resumes from checkpoint
+
+### 6. API configuration: kimi.com
+
+All agents use the Kimi Code API:
+- Base URL: `https://api.kimi.com/coding/v1`
+- Model: `kimi-for-coding`
+- User-Agent: `claude-code/0.1` (required for model access)
+- `reasoning: None` in request body (disables thinking to avoid 400 on tool calls)
+- LangChain message converter patched to preserve `reasoning_content` on assistant messages
+
+---
 ## Architecture
 
 This is a real swarm: many short-lived workers, one atomic unit each, dying at the boundary, handing off via structured protocol. At full throttle, expect
@@ -214,25 +263,29 @@ agent-harness/
 
 | Tool | Caller | Purpose |
 |------|--------|---------|
-| list_plans(filter?) | Supervisor, console | All plans w/ status, phase, conflicts |
-| runnable_set() | Supervisor | PENDING + deps DONE + not NEEDS-REFINEMENT + no active conflicts |
+| **harness_chat(message, thread_id)** | Operator | Talk to the Orchestrator. Status, steering, lane control. |
+| **harness_status()** | Operator | Fast swarm snapshot (plans, lanes, events, interrupts). No LLM. |
+| **harness_run_agent(workflow_id, role)** | Operator | Async agent invocation. Returns job_id; poll harness_get_agent_status(). |
+| **harness_get_agent_status(job_id)** | Operator | Poll for async agent response. |
+| list_plans(filter?) | Orchestrator, console | All plans w/ status, phase, conflicts |
+| runnable_set() | Orchestrator | PENDING + deps DONE + not NEEDS-REFINEMENT + no active conflicts |
 | get_plan(path) | Lane Advisor, Developer | Full content + parsed sections |
-| claim_plan(path, lane_id) | Supervisor | Atomic; emits plan_started; idempotent |
-| conflicts_for(path) | Supervisor | Files + migrations vs active lanes |
+| claim_plan(path, lane_id) | Orchestrator | Atomic; emits plan_started; idempotent |
+| conflicts_for(path) | Orchestrator | Files + migrations vs active lanes |
 | reserve_migration(env) | Developer | Atomic next number; rollback on plan_failed |
-| release_migration(num, env) | Supervisor | Called on lane abort |
+| release_migration(num, env) | Orchestrator | Called on lane abort |
 | submit_handoff(handoff) | Developer | Required exit; stores in broker, emits dev_exited event |
-| get_handoff(plan_id, subtask_id, sequence?) | Supervisor, Developer, QA-Deploy | Read latest or specific Handoff |
+| get_handoff(plan_id, subtask_id, sequence?) | Orchestrator, Developer, QA-Deploy | Read latest or specific Handoff |
 | get_handoff_chain(plan_id) | QA-Deploy | Full Handoff history for a plan |
 | consult_architect(question, context) | Developer | Bounded one-shot architect agent; returns design answer; dies after one turn |
 | emit(event_type, payload) | All agents | Push to event bus |
 | subscribe(filter?, since?) | Console | SSE stream |
 | read_cues(plan_id, since) | All agents | Pending operator nudges |
-| post_cue(plan_id, cue) | Operator | Steering input |
-| escalate(plan_id, reason) | Any agent | Pause lane, register interrupt(), await human |
+| post_cue(plan_id, cue) | Operator, Orchestrator | Steering input |
+| escalate(plan_id, reason) | Orchestrator, any agent | Pause lane, register interrupt(), await human |
 | resume(plan_id, payload) | Operator | Resume LangGraph thread from checkpoint |
 | complete_plan(path, result) | QA-Deploy | Atomic transition to PR_OPEN; emits plan_completed |
-| heartbeat(lane_id, agent_id) | All agents | Liveness; supervisor watchdog reads |
+| heartbeat(lane_id, agent_id) | All agents | Liveness; Orchestrator watchdog reads |
 
 ### LangGraph state schema
 
