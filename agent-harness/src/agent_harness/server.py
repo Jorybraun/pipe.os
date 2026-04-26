@@ -58,6 +58,7 @@ from agent_harness.broker.event_bus import prune_events as broker_prune_events
 from agent_harness.broker.migration_ledger import prune_released as broker_prune_migration_ledger
 from agent_harness.swarm.checkpoint import prune_checkpoints
 from agent_harness.swarm.agents.architect import run_architect
+from agent_harness.swarm.agents.chat_agent import run_chat_agent_for_workflow
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -446,6 +447,37 @@ async def harness_interrupt(
         orchestrator._save_state()
     await orchestrator._emit(workflow_id, "interrupted", message="Workflow interrupted by operator")
     return json.dumps({"workflow_id": workflow_id, "status": "paused"}, indent=2)
+
+
+@mcp.tool()
+async def harness_run_agent(
+    workflow_id: str,
+    role: str,
+    ctx: Context | None = None,
+) -> str:
+    """Run an agent for a workflow role and return its response.
+
+    Reads the conversation history for the role, invokes the LLM with the
+    appropriate system prompt, and publishes the agent's response back to
+    the message queue.
+
+    Roles: pm, designer, architect, frontend, backend, qa_deploy
+    """
+    if not workflow_id:
+        return json.dumps({"error": "workflow_id is required"}, indent=2)
+    if not role:
+        return json.dumps({"error": "role is required"}, indent=2)
+
+    result = await run_chat_agent_for_workflow(workflow_id, role, orchestrator)
+    if "error" in result:
+        return json.dumps({"error": result["error"]}, indent=2)
+
+    return json.dumps({
+        "workflow_id": workflow_id,
+        "role": role,
+        "message_id": result.get("message_id"),
+        "response": result.get("response"),
+    }, indent=2)
 
 
 # ---------------------------------------------------------------------------
