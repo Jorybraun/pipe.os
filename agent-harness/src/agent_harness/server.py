@@ -24,6 +24,9 @@ from mcp.server.fastmcp import Context, FastMCP
 from agent_harness.orchestrator import HarnessOrchestrator
 from agent_harness.telemetry_queue import HarnessEvent
 from agent_harness.websocket_server import AgentWebSocketServer
+from agent_harness.swarm.graph import build_lane_graph, Supervisor, _init_work_items
+from agent_harness.swarm.checkpoint import get_checkpointer
+from agent_harness.swarm.agents.meta_pm import run_meta_pm
 from agent_harness.broker import (
     init_db as init_broker_db,
     list_plans as broker_list_plans,
@@ -43,13 +46,20 @@ from agent_harness.broker import (
     resume_interrupt as broker_resume_interrupt,
     get_interrupt as broker_get_interrupt,
     list_interrupts as broker_list_interrupts,
+    submit_handoff as broker_submit_handoff,
+    get_handoff as broker_get_handoff,
+    get_handoff_chain as broker_get_handoff_chain,
+    claim_plan as broker_claim_plan,
 )
+from agent_harness.swarm.agents.architect import run_architect
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 STATE_PATH = Path(".swarm") / "mcp_state.json"
 
 orchestrator = HarnessOrchestrator(str(STATE_PATH))
 ws_server: AgentWebSocketServer | None = None
+_lane_tasks: dict[str, asyncio.Task] = {}
+_lane_checkpointer = get_checkpointer(".swarm/lane_checkpoints.db")
 
 mcp = FastMCP(
     "agent-harness",
@@ -59,6 +69,47 @@ mcp = FastMCP(
         "manage approval gates, and steer agents via real-time messaging."
     ),
 )
+
+
+# ---------------------------------------------------------------------------
+# Helpers — Lane runner
+# ---------------------------------------------------------------------------
+
+def _lane_id_from_plan_id(plan_id: str) -> str:
+    return f"lane-{plan_id.replace('/', '-')}"
+
+
+async def _run_lane(plan_id: str, lane_id: str) -> dict[str, Any]:
+    """Run a single lane graph and return final state."""
+    graph = build_lane_graph(checkpointer=_lane_checkpointer)
+    work_items = _init_work_items(plan_id)
+    initial = {
+        "messages": [],
+        "plan_path": "",
+        "plan_id": plan_id,
+        "lane_id": lane_id,
+        "work_items": work_items,
+        "current_subtask_id": None,
+        "current_handoff": None,
+        "handoff_chain": [],
+        "reserved_migrations": [],
+        "pr_url": None,
+        "plan_budget_used": 0,
+        "iteration": 0,
+        "status": "running",
+        "advisor_guidance": None,
+        "next_node": "supervisor",
+    }
+
+    def _stream():
+        fs = None
+        for event in graph.stream(initial, {"configurable": {"thread_id": lane_id}}, stream_mode="values"):
+            fs = event
+        return fs
+
+    loop = asyncio.get_running_loop()
+    final_state = await loop.run_in_executor(None, _stream)
+    return final_state  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -572,6 +623,45 @@ async def broker_sync_plans(
     return json.dumps({"synced": count}, indent=2)
 
 
+@mcp.tool()
+async def broker_claim_plan_tool(
+    plan_id: str,
+    lane_id: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """Atomically claim a PENDING plan for a lane.
+
+    Returns {"claimed": true} on success, {"claimed": false} if already claimed.
+    """
+    ok = broker_claim_plan(plan_id, lane_id or f"lane-{plan_id.replace('/', '-')}")
+    return json.dumps({"claimed": ok, "plan_id": plan_id, "lane_id": lane_id}, indent=2)
+
+
+@mcp.tool()
+async def broker_consult_architect_tool(
+    plan_id: str,
+    subtask_id: str,
+    question: str,
+    lane_id: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """Consult the System Architect for deep architectural guidance.
+
+    Use this when you encounter missing API contracts, schema ambiguity,
+    or integration questions. Returns a structured 8-point architecture spec.
+    """
+    try:
+        result = run_architect(
+            plan_id=plan_id,
+            subtask_id=subtask_id or None,
+            question=question,
+            lane_id=lane_id,
+        )
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Tools — Broker Phase 2 (event bus, cues, migration ledger, interrupts)
 # ---------------------------------------------------------------------------
@@ -766,6 +856,267 @@ async def broker_list_interrupts_tool(
     return json.dumps({"count": len(rows), "interrupts": rows}, indent=2)
 
 
+@mcp.tool()
+async def broker_submit_handoff_tool(
+    plan_id: str,
+    subtask_id: str,
+    status: str,
+    handoff_to: str,
+    sequence: int = 0,
+    done: str = "",
+    next_actions: str = "",
+    state_notes: str = "",
+    files_touched: str = "",
+    migrations_reserved: str = "",
+    context_used: int = 0,
+    ctx: Context | None = None,
+) -> str:
+    """Submit a developer handoff (required exit artifact).
+
+    status: complete | context_exhausted | blocked
+    handoff_to: next_dev | qa_deploy | supervisor_reroute
+    """
+    if not plan_id or not subtask_id or not status or not handoff_to:
+        return json.dumps({"error": "plan_id, subtask_id, status, and handoff_to are required"}, indent=2)
+
+    def _parse_json(field: str, name: str) -> list:
+        if not field.strip():
+            return []
+        try:
+            return json.loads(field)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON for {name}: {e}")
+
+    try:
+        record = broker_submit_handoff(
+            plan_id=plan_id,
+            subtask_id=subtask_id,
+            status=status,
+            handoff_to=handoff_to,
+            sequence=sequence or None,
+            done=_parse_json(done, "done"),
+            next_actions=_parse_json(next_actions, "next_actions"),
+            state_notes=_parse_json(state_notes, "state_notes"),
+            files_touched=_parse_json(files_touched, "files_touched"),
+            migrations_reserved=_parse_json(migrations_reserved, "migrations_reserved"),
+            context_used=context_used or None,
+        )
+        return json.dumps({"submitted": record}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+@mcp.tool()
+async def broker_get_handoff_tool(
+    plan_id: str,
+    subtask_id: str,
+    sequence: int = 0,
+    ctx: Context | None = None,
+) -> str:
+    """Get a specific handoff, or the latest for a (plan_id, subtask_id)."""
+    if not plan_id or not subtask_id:
+        return json.dumps({"error": "plan_id and subtask_id are required"}, indent=2)
+    handoff = broker_get_handoff(plan_id, subtask_id, sequence=sequence or None)
+    if not handoff:
+        return json.dumps({"error": "Handoff not found"}, indent=2)
+    return json.dumps(handoff, indent=2)
+
+
+@mcp.tool()
+async def broker_get_handoff_chain_tool(
+    plan_id: str,
+    ctx: Context | None = None,
+) -> str:
+    """Get the full handoff chain for a plan."""
+    if not plan_id:
+        return json.dumps({"error": "plan_id is required"}, indent=2)
+    chain = broker_get_handoff_chain(plan_id)
+    return json.dumps({"count": len(chain), "handoffs": chain}, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Tools — Swarm lane control
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def harness_start_lane(
+    plan_id: str,
+    ctx: Context | None = None,
+) -> str:
+    """Start a swarm lane for a specific plan.
+
+    The lane runs in the background (PM → Devs → QA-Deploy).
+    Use harness_get_lane_status() to poll progress.
+    """
+    plan = broker_get_plan(plan_id)
+    if not plan:
+        return json.dumps({"error": f"Plan not found: {plan_id}"}, indent=2)
+    if plan.get("status") != "PENDING":
+        return json.dumps({"error": f"Plan status is {plan.get('status')}, not PENDING"}, indent=2)
+
+    lane_id = _lane_id_from_plan_id(plan_id)
+    if lane_id in _lane_tasks and not _lane_tasks[lane_id].done():
+        return json.dumps({"error": f"Lane {lane_id} is already running"}, indent=2)
+
+    # Atomic claim: prevent race conditions on concurrent starts
+    if not broker_claim_plan(plan_id, lane_id):
+        return json.dumps({"error": f"Plan {plan_id} is already claimed or not PENDING"}, indent=2)
+
+    task = asyncio.create_task(_run_lane(plan_id, lane_id), name=lane_id)
+    _lane_tasks[lane_id] = task
+
+    def _on_done(t: asyncio.Task) -> None:
+        _lane_tasks.pop(lane_id, None)
+        try:
+            final = t.result()
+            status = final.get("status", "unknown") if final else "failed"
+            broker_emit(event_type="lane_finished", plan_id=plan_id, lane_id=lane_id, payload={"status": status})
+        except Exception as e:
+            broker_emit(event_type="lane_failed", plan_id=plan_id, lane_id=lane_id, payload={"error": str(e)})
+
+    task.add_done_callback(_on_done)
+
+    return json.dumps({
+        "lane_id": lane_id,
+        "plan_id": plan_id,
+        "status": "started",
+        "message": "Lane is running in the background. Poll with harness_get_lane_status().",
+    }, indent=2)
+
+
+@mcp.tool()
+async def harness_get_lane_status(
+    lane_id: str,
+    ctx: Context | None = None,
+) -> str:
+    """Get the status of a running or finished lane."""
+    task = _lane_tasks.get(lane_id)
+    if task is None:
+        # Check if lane finished recently
+        return json.dumps({"lane_id": lane_id, "status": "not_found", "message": "No active lane with this ID."}, indent=2)
+
+    if not task.done():
+        return json.dumps({"lane_id": lane_id, "status": "running"}, indent=2)
+
+    try:
+        final = task.result()
+        return json.dumps({
+            "lane_id": lane_id,
+            "status": final.get("status", "complete") if final else "failed",
+            "pr_url": final.get("pr_url") if final else None,
+            "plan_budget_used": final.get("plan_budget_used") if final else None,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"lane_id": lane_id, "status": "failed", "error": str(e)}, indent=2)
+
+
+@mcp.tool()
+async def harness_list_active_lanes(
+    ctx: Context | None = None,
+) -> str:
+    """List all currently running lanes."""
+    active = []
+    for lane_id, task in _lane_tasks.items():
+        if not task.done():
+            active.append({"lane_id": lane_id, "status": "running"})
+    return json.dumps({"count": len(active), "lanes": active}, indent=2)
+
+
+@mcp.tool()
+async def harness_run_swarm(
+    max_lanes: int = 3,
+    part_prefix: str = "",
+    max_phase: int = 4,
+    max_plans: int = 0,
+    ctx: Context | None = None,
+) -> str:
+    """Auto-dispatch the swarm: claim runnable plans and run lanes until done.
+
+    This blocks until all claimed plans finish. Use harness_list_active_lanes()
+    to monitor progress from another context.
+
+    Args:
+        max_lanes: Parallel lanes (default 3).
+        part_prefix: Filter to plans starting with this, e.g. "part2-".
+        max_phase: Only claim plans with phase <= this.
+        max_plans: Stop after claiming this many plans (0 = unlimited).
+    """
+    supervisor = Supervisor(
+        max_lanes=max_lanes,
+        checkpointer=_lane_checkpointer,
+        part_prefix=part_prefix or None,
+        max_phase=max_phase if max_phase >= 0 else None,
+        max_plans=max_plans if max_plans > 0 else None,
+    )
+
+    # Run supervisor in background so MCP can still respond
+    async def _run():
+        while True:
+            results = await supervisor.tick()
+            if not supervisor._running and not results:
+                break
+            await asyncio.sleep(1)
+        return supervisor._plans_claimed
+
+    task = asyncio.create_task(_run(), name="swarm-supervisor")
+    _lane_tasks["swarm-supervisor"] = task
+
+    return json.dumps({
+        "status": "started",
+        "message": f"Swarm supervisor running with max_lanes={max_lanes}, part_prefix={part_prefix or 'all'}, max_phase={max_phase}",
+        "monitor": "Use harness_list_active_lanes() to watch progress.",
+    }, indent=2)
+
+
+
+
+@mcp.tool()
+async def broker_complete_plan_tool(
+    plan_id: str,
+    ctx: Context | None = None,
+) -> str:
+    """Mark a plan as COMPLETE in the broker registry.
+
+    Use this to manually complete a plan when QA-Deploy cannot,
+    or as a terminal action from the QA-Deploy agent.
+    """
+    if not plan_id:
+        return json.dumps({"error": "plan_id is required"}, indent=2)
+    from agent_harness.broker import mark_plan_complete
+    ok = mark_plan_complete(plan_id)
+    return json.dumps({"plan_id": plan_id, "marked_complete": ok}, indent=2)
+
+
+@mcp.tool()
+async def harness_meta_pm_recommend(
+    message: str = "Analyze the current swarm state and recommend next actions.",
+    ctx: Context | None = None,
+) -> str:
+    """Run the Meta-PM strategic agent and return its recommendation.
+
+    The Meta-PM reviews all plans, runnable sets, conflicts, and recent
+    events to decide which plans should run next and in what order.
+    """
+    try:
+        result = run_meta_pm(message=message)
+        # result is an AgentState-like dict with messages
+        messages = result.get("messages", [])
+        # Return the final AI message content as the recommendation
+        final_content = ""
+        for msg in reversed(messages):
+            if hasattr(msg, "content") and msg.content:
+                final_content = msg.content
+                break
+            if isinstance(msg, dict) and msg.get("content"):
+                final_content = msg["content"]
+                break
+        return json.dumps({
+            "recommendation": final_content,
+            "message_count": len(messages),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
 # ---------------------------------------------------------------------------
 # Prompts
 # ---------------------------------------------------------------------------
@@ -816,9 +1167,13 @@ async def _run_stdio(ws_host: str, ws_port: int) -> None:
     """Run MCP stdio transport + WebSocket server concurrently."""
     global ws_server
     ws_server = AgentWebSocketServer(host=ws_host, port=ws_port)
-    await ws_server.start()
-    # FastMCP stdio blocks; run it in the same loop
-    mcp.run(transport="stdio")
+    try:
+        await ws_server.start()
+    except OSError as e:
+        print(f"[harness ws] Warning: could not start WebSocket server ({e})", file=sys.stderr)
+        ws_server = None
+    # FastMCP stdio async uses the existing event loop
+    await mcp.run_stdio_async()
 
 
 def main():
@@ -838,7 +1193,7 @@ def main():
         try:
             asyncio.run(_run_stdio(args.host, args.ws_port))
         except KeyboardInterrupt:
-            print("\n[harness] Shutting down...")
+            print("\n[harness] Shutting down...", file=sys.stderr)
     else:
         global ws_server
         ws_server = AgentWebSocketServer(host=args.host, port=args.ws_port)
