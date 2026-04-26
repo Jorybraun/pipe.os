@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import warnings
 from pathlib import Path
 from typing import Any
@@ -39,11 +40,12 @@ from agent_harness import config
 from agent_harness.orchestrator import HarnessOrchestrator
 from agent_harness.telemetry_queue import HarnessEvent
 from agent_harness.websocket_server import AgentWebSocketServer
-from agent_harness.swarm.graph import build_lane_graph, Supervisor, _init_work_items
+from agent_harness.swarm.graph import build_lane_graph, Orchestrator, _init_work_items
 from agent_harness.swarm.checkpoint import get_checkpointer
 from agent_harness.swarm.agents.meta_pm import run_meta_pm
 from agent_harness.broker import (
     init_db as init_broker_db,
+    get_conn,
     list_plans as broker_list_plans,
     get_plan as broker_get_plan,
     runnable_set as broker_runnable_set,
@@ -78,6 +80,7 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 orchestrator: HarnessOrchestrator | None = None
 ws_server: AgentWebSocketServer | None = None
 _lane_tasks: dict[str, asyncio.Task] = {}
+_agent_tasks: dict[str, asyncio.Task] = {}
 _lane_checkpointer = get_checkpointer()
 
 mcp = FastMCP(
@@ -462,17 +465,46 @@ async def harness_interrupt(
     return json.dumps({"workflow_id": workflow_id, "status": "paused"}, indent=2)
 
 
+# ---------------------------------------------------------------------------
+# Agent job tracking
+# ---------------------------------------------------------------------------
+
+import uuid
+
+
+async def _run_agent_job(job_id: str, workflow_id: str, role: str) -> None:
+    """Background task: run chat agent and store response."""
+    try:
+        result = await run_chat_agent_for_workflow(workflow_id, role, orchestrator)
+        if "error" in result:
+            broker_emit(
+                event_type="agent_response_failed",
+                payload={"job_id": job_id, "workflow_id": workflow_id, "role": role, "error": result["error"]},
+            )
+        else:
+            broker_emit(
+                event_type="agent_response_ready",
+                payload={"job_id": job_id, "workflow_id": workflow_id, "role": role, "message_id": result.get("message_id")},
+            )
+    except Exception as exc:
+        broker_emit(
+            event_type="agent_response_failed",
+            payload={"job_id": job_id, "workflow_id": workflow_id, "role": role, "error": str(exc)},
+        )
+    finally:
+        _agent_tasks.pop(job_id, None)
+
+
 @mcp.tool()
 async def harness_run_agent(
     workflow_id: str,
     role: str,
     ctx: Context | None = None,
 ) -> str:
-    """Run an agent for a workflow role and return its response.
+    """Run an agent for a workflow role asynchronously.
 
-    Reads the conversation history for the role, invokes the LLM with the
-    appropriate system prompt, and publishes the agent's response back to
-    the message queue.
+    Spawns a background task so the MCP call returns immediately.
+    Poll harness_get_agent_status(job_id) for the result.
 
     Roles: pm, designer, architect, frontend, backend, qa_deploy
     """
@@ -481,16 +513,245 @@ async def harness_run_agent(
     if not role:
         return json.dumps({"error": "role is required"}, indent=2)
 
-    result = await run_chat_agent_for_workflow(workflow_id, role, orchestrator)
-    if "error" in result:
-        return json.dumps({"error": result["error"]}, indent=2)
+    job_id = f"ag-{uuid.uuid4().hex[:8]}"
+    task = asyncio.create_task(_run_agent_job(job_id, workflow_id, role), name=job_id)
+    _agent_tasks[job_id] = task
 
     return json.dumps({
+        "status": "processing",
+        "job_id": job_id,
         "workflow_id": workflow_id,
         "role": role,
-        "message_id": result.get("message_id"),
-        "response": result.get("response"),
+        "message": "Agent is running in the background. Poll harness_get_agent_status().",
     }, indent=2)
+
+
+@mcp.tool()
+async def harness_get_agent_status(
+    job_id: str,
+    ctx: Context | None = None,
+) -> str:
+    """Get the status of an async agent job."""
+    task = _agent_tasks.get(job_id)
+    if task is not None and not task.done():
+        return json.dumps({"job_id": job_id, "status": "running"}, indent=2)
+
+    # Job finished — look up the response in the conversation history
+    # We need to find the workflow_id and role from the task name/context
+    # Since we don't store that mapping, scan recent events
+    events = broker_get_events(event_type="agent_response_ready", since=0, limit=100)
+    for evt in events:
+        payload = json.loads(evt["payload"]) if evt.get("payload") else {}
+        if payload.get("job_id") == job_id:
+            workflow_id = payload.get("workflow_id")
+            role = payload.get("role")
+            if workflow_id and role:
+                conv = await orchestrator.get_conversation(workflow_id, role)
+                if conv:
+                    last_msg = conv[-1]
+                    return json.dumps({
+                        "job_id": job_id,
+                        "status": "completed",
+                        "workflow_id": workflow_id,
+                        "role": role,
+                        "message_id": last_msg.get("id"),
+                        "response": last_msg.get("content"),
+                    }, indent=2)
+            return json.dumps({"job_id": job_id, "status": "completed", "message_id": payload.get("message_id")}, indent=2)
+
+    failed_events = broker_get_events(event_type="agent_response_failed", since=0, limit=100)
+    for evt in failed_events:
+        payload = json.loads(evt["payload"]) if evt.get("payload") else {}
+        if payload.get("job_id") == job_id:
+            return json.dumps({
+                "job_id": job_id,
+                "status": "failed",
+                "error": payload.get("error", "Unknown error"),
+            }, indent=2)
+
+    return json.dumps({"job_id": job_id, "status": "not_found"}, indent=2)
+
+
+_ORCHESTRATOR_CONVERSATIONS: dict[str, list[dict[str, str]]] = {}
+
+
+def _build_orchestrator_context() -> str:
+    """Fetch swarm state and format it for the orchestrator prompt."""
+    try:
+        plans = broker_list_plans()
+        runnable = broker_runnable_set()
+        conn = get_conn()
+        lanes_rows = conn.execute(
+            "SELECT lane_id, plan_id, status, started_at, last_heartbeat, budget_used FROM lanes WHERE status = 'running'"
+        ).fetchall()
+        lanes = [dict(row) for row in lanes_rows]
+        conn.close()
+        recent_events = broker_get_events(since=time.time() - 3600, limit=20)
+        interrupts = broker_list_interrupts()
+        cues = broker_read_cues(since=time.time() - 3600)
+
+        lines = [
+            "# Swarm State",
+            f"- Total plans: {len(plans)}",
+            f"- Runnable plans: {len(runnable)}",
+            f"- Needs refinement: {sum(1 for p in plans if p.get('status') == 'NEEDS-REFINEMENT')}",
+            f"- Active lanes: {len(lanes)}",
+        ]
+        if lanes:
+            lines.append("- Active lanes:")
+            for lane in lanes:
+                lines.append(f"  - {lane['lane_id']} (plan: {lane['plan_id']}, budget: {lane.get('budget_used', 0)})")
+        if recent_events:
+            lines.append("- Recent events:")
+            for evt in recent_events[-5:]:
+                lines.append(f"  - [{evt.get('event_type')}] plan={evt.get('plan_id')} lane={evt.get('lane_id')}")
+        if interrupts:
+            lines.append(f"- Active interrupts: {len(interrupts)}")
+            for intr in interrupts[:3]:
+                lines.append(f"  - {intr.get('plan_id')}: {intr.get('reason', '')}")
+        if cues:
+            lines.append(f"- Pending cues: {len(cues)}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"# Swarm State\nError fetching state: {exc}"
+
+
+@mcp.tool()
+async def harness_chat(
+    message: str,
+    thread_id: str = "orchestrator-main",
+    ctx: Context | None = None,
+) -> str:
+    """Talk to the swarm orchestrator. Ask for status, steer lanes, or query agents.
+
+    The orchestrator has full context of all plans, lanes, events, and interrupts.
+    It answers questions and can recommend actions. To actually execute actions
+    (start a lane, post a cue, claim a plan), use the specific broker tools.
+    """
+    if not message:
+        return json.dumps({"error": "message is required"}, indent=2)
+
+    try:
+        # Load or init conversation history
+        conv = _ORCHESTRATOR_CONVERSATIONS.setdefault(thread_id, [])
+
+        # Build context-rich system prompt
+        context = _build_orchestrator_context()
+        system_prompt = (
+            "You are the Swarm Orchestrator — the central command and control for all agent teams.\n\n"
+            "You have full visibility into every plan, lane, event, and interrupt.\n"
+            "You answer the operator's questions concisely and accurately.\n"
+            "When the operator asks about status, summarize what's happening.\n"
+            "When the operator wants to take action, tell them exactly which MCP tool to call.\n\n"
+            f"{context}\n\n"
+            "Available actions you can recommend:\n"
+            "- harness_status() → quick snapshot\n"
+            "- harness_start_lane(plan_id) → start a plan lane\n"
+            "- broker_post_cue_tool(content, plan_id, lane_id) → steer a lane\n"
+            "- broker_escalate_tool(plan_id, reason, thread_id) → pause for human input\n"
+            "- broker_resume_tool(plan_id, payload) → resume a paused lane\n"
+            "- broker_claim_plan_tool(plan_id) → claim a runnable plan\n"
+        )
+
+        from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+        from langchain_openai import ChatOpenAI
+
+        api_key = os.getenv("KIMI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return json.dumps({"error": "No API key configured"}, indent=2)
+
+        model = ChatOpenAI(
+            model=os.getenv("KIMI_MODEL", "kimi-for-coding"),
+            temperature=0.3,
+            max_tokens=4096,
+            api_key=api_key,
+            base_url=os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1"),
+            model_kwargs={"extra_headers": {"User-Agent": "claude-code/0.1"}},
+        )
+
+        # Build messages: system + history + current message
+        messages = [SystemMessage(content=system_prompt)]
+        for entry in conv:
+            if entry["role"] == "user":
+                messages.append(HumanMessage(content=entry["content"]))
+            else:
+                messages.append(AIMessage(content=entry["content"]))
+        messages.append(HumanMessage(content=message))
+
+        response = model.invoke(messages)
+        response_text = str(response.content)
+
+        # Store in conversation history
+        conv.append({"role": "user", "content": message})
+        conv.append({"role": "assistant", "content": response_text})
+        # Trim to last 20 exchanges to prevent context explosion
+        if len(conv) > 40:
+            conv[:] = conv[-40:]
+
+        return json.dumps({
+            "thread_id": thread_id,
+            "response": response_text,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+@mcp.tool()
+async def harness_status(
+    ctx: Context | None = None,
+) -> str:
+    """Get a fast snapshot of the entire swarm state.
+
+    Returns plan counts, active lanes, recent events, active interrupts,
+    and pending cues. No LLM involved — pure DB queries.
+    """
+    try:
+        plans = broker_list_plans()
+        runnable = broker_runnable_set()
+
+        # Active lanes from DB
+        conn = get_conn()
+        lanes_rows = conn.execute(
+            "SELECT lane_id, plan_id, status, started_at, last_heartbeat, budget_used FROM lanes WHERE status = 'running'"
+        ).fetchall()
+        lanes = [dict(row) for row in lanes_rows]
+        conn.close()
+
+        recent_events = broker_get_events(since=time.time() - 3600, limit=20)
+        active_interrupts = broker_list_interrupts()
+        recent_cues = broker_read_cues(since=time.time() - 3600)
+
+        return json.dumps({
+            "plans": {
+                "total": len(plans),
+                "runnable": len(runnable),
+                "needs_refinement": sum(1 for p in plans if p.get("status") == "NEEDS-REFINEMENT"),
+            },
+            "lanes": {
+                "active": lanes,
+                "count": len(lanes),
+            },
+            "recent_events": {
+                "count": len(recent_events),
+                "events": [
+                    {
+                        "event_id": e.get("event_id"),
+                        "event_type": e.get("event_type"),
+                        "plan_id": e.get("plan_id"),
+                        "lane_id": e.get("lane_id"),
+                        "emitted_at": e.get("emitted_at"),
+                    }
+                    for e in recent_events
+                ],
+            },
+            "active_interrupts": active_interrupts,
+            "recent_cues": {
+                "count": len(recent_cues),
+                "cues": recent_cues[:10],
+            },
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -1155,7 +1416,7 @@ async def harness_run_swarm(
         max_phase: Only claim plans with phase <= this.
         max_plans: Stop after claiming this many plans (0 = unlimited).
     """
-    supervisor = Supervisor(
+    orchestrator = Orchestrator(
         max_lanes=max_lanes,
         checkpointer=_lane_checkpointer,
         part_prefix=part_prefix or None,
@@ -1166,18 +1427,18 @@ async def harness_run_swarm(
     # Run supervisor in background so MCP can still respond
     async def _run():
         while True:
-            results = await supervisor.tick()
-            if not supervisor._running and not results:
+            results = await orchestrator.tick()
+            if not orchestrator._running and not results:
                 break
             await asyncio.sleep(1)
-        return supervisor._plans_claimed
+        return orchestrator._plans_claimed
 
-    task = asyncio.create_task(_run(), name="swarm-supervisor")
-    _lane_tasks["swarm-supervisor"] = task
+    task = asyncio.create_task(_run(), name="swarm-orchestrator")
+    _lane_tasks["swarm-orchestrator"] = task
 
     return json.dumps({
         "status": "started",
-        "message": f"Swarm supervisor running with max_lanes={max_lanes}, part_prefix={part_prefix or 'all'}, max_phase={max_phase}",
+        "message": f"Swarm orchestrator running with max_lanes={max_lanes}, part_prefix={part_prefix or 'all'}, max_phase={max_phase}",
         "monitor": "Use harness_list_active_lanes() to watch progress.",
     }, indent=2)
 

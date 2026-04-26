@@ -502,8 +502,8 @@ MAX_LANE_RUNTIME_SECONDS = 30 * 60  # 30 minutes per lane
 LANE_STALL_TIMEOUT_SECONDS = 5 * 60  # 5 minutes without progress
 
 
-class Supervisor:
-    """Long-lived supervisor that maintains a pool of running lane graphs."""
+class Orchestrator:
+    """Long-lived orchestrator that maintains a pool of running lane graphs."""
 
     def __init__(
         self,
