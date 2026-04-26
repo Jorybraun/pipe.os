@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import threading
+import time
 from typing import Any
 
 from agent_harness.swarm.graph import build_lane_graph, _init_work_items
@@ -17,7 +18,9 @@ from agent_harness.broker import emit as broker_emit
 # Thread-pool for lanes started from sync contexts (e.g. orchestrator agent)
 _lane_executor: concurrent.futures.ThreadPoolExecutor | None = None
 _lane_tasks: dict[str, asyncio.Task | concurrent.futures.Future] = {}
+_lane_results: dict[str, dict[str, Any]] = {}
 _lane_checkpointer = get_checkpointer()
+_LANE_HISTORY_TTL_SECONDS = 60
 
 
 def _get_lane_executor() -> concurrent.futures.ThreadPoolExecutor:
@@ -81,11 +84,15 @@ def start_lane(plan_id: str, lane_id: str) -> asyncio.Task | concurrent.futures.
         _lane_tasks.pop(lane_id, None)
         try:
             final = t.result()
-            status = final.get("status", "unknown") if final else "failed"
-            broker_emit(event_type="lane_finished", plan_id=plan_id, lane_id=lane_id, payload={"status": status})
+            # Always mark successful completion as "completed" regardless of
+            # what the final state dict claims (LangGraph doesn't auto-set it).
+            _lane_results[lane_id] = {"status": "completed", "result": final, "finished_at": time.time()}
+            broker_emit(event_type="lane_finished", plan_id=plan_id, lane_id=lane_id, payload={"status": "completed"})
         except (asyncio.CancelledError, concurrent.futures.CancelledError):
+            _lane_results[lane_id] = {"status": "cancelled", "error": "cancelled", "finished_at": time.time()}
             broker_emit(event_type="lane_failed", plan_id=plan_id, lane_id=lane_id, payload={"error": "cancelled"})
         except Exception as e:
+            _lane_results[lane_id] = {"status": "failed", "error": str(e), "finished_at": time.time()}
             broker_emit(event_type="lane_failed", plan_id=plan_id, lane_id=lane_id, payload={"error": str(e)})
 
     task.add_done_callback(_on_done)
@@ -113,26 +120,48 @@ def stop_lane(lane_id: str) -> bool:
 def get_lane_status(lane_id: str) -> dict[str, Any]:
     """Get status of a lane task."""
     task = _lane_tasks.get(lane_id)
-    if task is None:
-        return {"lane_id": lane_id, "status": "not_found"}
-    if not task.done():
-        return {"lane_id": lane_id, "status": "running"}
-    try:
-        final = task.result()
-        return {"lane_id": lane_id, "status": "completed", "result": final}
-    except (asyncio.CancelledError, concurrent.futures.CancelledError):
-        return {"lane_id": lane_id, "status": "cancelled"}
-    except Exception as e:
-        return {"lane_id": lane_id, "status": "failed", "error": str(e)}
+    if task is not None:
+        if not task.done():
+            return {"lane_id": lane_id, "status": "running"}
+        try:
+            final = task.result()
+            return {"lane_id": lane_id, "status": "completed", "result": final}
+        except (asyncio.CancelledError, concurrent.futures.CancelledError):
+            return {"lane_id": lane_id, "status": "cancelled"}
+        except Exception as e:
+            return {"lane_id": lane_id, "status": "failed", "error": str(e)}
+
+    # Check history for recently finished lanes
+    hist = _lane_results.get(lane_id)
+    if hist is not None:
+        if time.time() - hist["finished_at"] > _LANE_HISTORY_TTL_SECONDS:
+            _lane_results.pop(lane_id, None)
+            return {"lane_id": lane_id, "status": "not_found"}
+        return {
+            "lane_id": lane_id,
+            "status": hist["status"],
+            "result": hist.get("result"),
+            "error": hist.get("error"),
+        }
+
+    return {"lane_id": lane_id, "status": "not_found"}
 
 
 def list_running_lanes() -> list[dict[str, Any]]:
     """List all currently running lanes."""
-    return [
+    running = [
         {"lane_id": lid, "status": "running"}
         for lid, task in _lane_tasks.items()
         if not task.done()
     ]
+    # Also include recently finished lanes so users can see completion status
+    now = time.time()
+    for lid, hist in list(_lane_results.items()):
+        if now - hist["finished_at"] <= _LANE_HISTORY_TTL_SECONDS:
+            running.append({"lane_id": lid, "status": hist["status"]})
+        else:
+            _lane_results.pop(lid, None)
+    return running
 
 
 def lane_id_from_plan_id(plan_id: str) -> str:
