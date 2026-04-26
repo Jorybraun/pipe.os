@@ -7,6 +7,8 @@ from typing import Any
 from langchain_core.tools import tool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_community.tools import ShellTool
+from langchain_community.tools.file_management.read import ReadFileTool
+from langchain_community.tools.file_management.utils import INVALID_PATH_TEMPLATE
 from langchain_community.tools.playwright.utils import create_sync_playwright_browser
 from langchain_community.tools.playwright import (
     ClickTool,
@@ -26,15 +28,70 @@ from agent_harness.broker import (
 from agent_harness.swarm.agents.architect import run_architect
 
 
+MAX_SHELL_OUTPUT = 32_000  # characters
+MAX_FILE_READ_BYTES = 64_000  # characters
+
+
+class SafeShellTool(ShellTool):
+    """ShellTool with output size limits to prevent checkpoint bloat."""
+
+    def _run(self, commands, run_manager=None):
+        result = super()._run(commands, run_manager=run_manager)
+        if isinstance(result, str) and len(result) > MAX_SHELL_OUTPUT:
+            truncated = result[:MAX_SHELL_OUTPUT]
+            last_newline = truncated.rfind("\n")
+            if last_newline > 0:
+                truncated = truncated[:last_newline]
+            result = (
+                truncated
+                + f"\n\n[TRUNCATED: output exceeded {MAX_SHELL_OUTPUT} characters]"
+            )
+        return result
+
+
+class SafeReadFileTool(ReadFileTool):
+    """ReadFileTool with size limits to prevent checkpoint bloat."""
+
+    max_read_bytes: int = MAX_FILE_READ_BYTES
+
+    def _run(self, file_path: str, run_manager=None):
+        try:
+            read_path = self.get_relative_path(file_path)
+        except Exception:
+            return INVALID_PATH_TEMPLATE.format(arg_name="file_path", value=file_path)
+        if not read_path.exists():
+            return f"Error: no such file or directory: {file_path}"
+        try:
+            size = read_path.stat().st_size
+            if size > self.max_read_bytes:
+                with read_path.open("r", encoding="utf-8") as f:
+                    content = f.read(self.max_read_bytes)
+                last_newline = content.rfind("\n")
+                if last_newline > 0:
+                    content = content[:last_newline]
+                content += (
+                    f"\n\n[TRUNCATED: file is {size} bytes, limit {self.max_read_bytes}]"
+                )
+                return content
+            with read_path.open("r", encoding="utf-8") as f:
+                return f.read()
+        except Exception as e:
+            return "Error: " + str(e)
+
+
 def get_developer_tools(root_dir: str = ".") -> list[Any]:
     """Return the full tool list for an ephemeral developer agent."""
     # File management (restricted to repo root)
-    file_tools = FileManagementToolkit(
-        root_dir=root_dir,
-    ).get_tools()
+    ftk = FileManagementToolkit(root_dir=root_dir)
+    file_tools = []
+    for t in ftk.get_tools():
+        if isinstance(t, ReadFileTool):
+            file_tools.append(SafeReadFileTool(root_dir=root_dir))
+        else:
+            file_tools.append(t)
 
-    # Shell
-    shell_tool = ShellTool()
+    # Shell (with output limits)
+    shell_tool = SafeShellTool()
 
     # Playwright browser (manual QA / smoke testing)
     try:

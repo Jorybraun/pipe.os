@@ -108,7 +108,8 @@ describe('buildAndStoreRoleEmbedding', () => {
     expect(calls.updates[1]!.sql).toContain('embedding_json = ?');
     expect(calls.updates[1]!.args[0]).toBe(JSON.stringify(new Array(1024).fill(0.01)));
     expect(typeof calls.updates[1]!.args[1]).toBe('string'); // updated_at ISO string
-    expect(calls.updates[1]!.args[2]).toBe('rc-1');
+    expect(calls.updates[1]!.args[2]).toBe('bge-large-en-v1.5-2024'); // embedding_model_version
+    expect(calls.updates[1]!.args[3]).toBe('rc-1');
 
     // AI + Vectorize called
     expect(ai.run).toHaveBeenCalledTimes(1);

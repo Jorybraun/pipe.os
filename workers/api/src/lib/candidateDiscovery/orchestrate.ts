@@ -6,14 +6,13 @@
  *   1. upsertPendingIngestion
  *   2. discoverCandidateProfile (rich extraction)
  *   3. persistRichCandidateProfile
- *   4. embedAndUpsertCandidate
- *   5. markIngestionEmbedded
- *   6. matchReposForCandidate (graph + optional cosine)
- *   7. Load role_repo_alignment for pipeline's role_context
- *   8. candidateSituationFit on top repos
- *   9. triangulateMatch
- *   10. Write candidate_challenge_assignment rows
- *   11. markIngestionMatched
+ *   4. embedAndUpsertCandidate (self-persists status + embedding to D1 when db passed)
+ *   5. matchReposForCandidate (graph + optional cosine)
+ *   6. Load role_repo_alignment for pipeline's role_context
+ *   7. candidateSituationFit on top repos
+ *   8. triangulateMatch
+ *   9. Write candidate_challenge_assignment rows
+ *   10. markIngestionMatched
  *
  * Every step after (2) is wrapped in its own try/catch. Failures write
  * markIngestionFailed and return without throwing — the upload route must
@@ -33,13 +32,19 @@ import { embedAndUpsertCandidate } from './embed';
 import {
   upsertPendingIngestion,
   persistCandidateProfile,
-  markIngestionEmbedded,
   markIngestionMatched,
   markIngestionFailed,
   upsertCandidateChallengeAssignment,
   type MarkIngestionMatchedInput,
 } from './persist';
-import { candidateSituationFit, type SituationFitCandidate } from './candidateSituationFit';
+import {
+  candidateSituationFit,
+  buildSituationFitCacheKey,
+  getCachedSituationFit,
+  storeSituationFitCache,
+  type SituationFitCandidate,
+  type SituationFitRanking,
+} from './candidateSituationFit';
 import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
 
 export interface IngestionInput {
@@ -105,7 +110,9 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
       metadata: {
         seniority: discoveryResult.keyConcepts.seniority,
         primary_language: discoveryResult.keyConcepts.primary_language,
+        profile_version: discoveryResult.profileVersion,
       },
+      db,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -114,15 +121,7 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     return;
   }
 
-  // Step 5: Mark embedded
-  try {
-    await markIngestionEmbedded(db, candidateId, embedResult.embeddedAt, JSON.stringify(embedResult.vector));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ingestion] markIngestionEmbedded failed:', msg);
-    await markIngestionFailed(db, candidateId, `Mark embedded failed: ${msg}`);
-    return;
-  }
+  // Step 5: Mark embedded — now handled inside embedAndUpsertCandidate
 
   // Step 6-11: Match, triangulate, assign — wrapped in inner try/catch
   try {
@@ -312,12 +311,72 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     if (name) c.full_name = name;
   }
 
-  let situationRankings = await candidateSituationFit({
-    provider: createCandidateAgentProvider(env)!,
-    candidateResult: discoveryResult,
-    candidateKeyConcepts: discoveryResult.keyConcepts,
-    repos: situationCandidates,
-  });
+  // Step 8: Candidate situation fit (with per-repo cache)
+  const cachedRankings: SituationFitRanking[] = [];
+  const missRepos: SituationFitCandidate[] = [];
+
+  for (const repo of situationCandidates) {
+    const cacheKey = await buildSituationFitCacheKey(
+      candidateId,
+      repo.repo_id,
+      discoveryResult.profileVersion,
+      repo.signals.signals_version,
+    );
+    const cached = await getCachedSituationFit(db, cacheKey);
+    if (cached) {
+      cachedRankings.push(cached);
+    } else {
+      missRepos.push(repo);
+    }
+  }
+
+  console.log(
+    JSON.stringify({
+      event: 'situationFit.cache',
+      candidateId,
+      total: situationCandidates.length,
+      hits: cachedRankings.length,
+      misses: missRepos.length,
+    }),
+  );
+
+  let situationRankings: Awaited<ReturnType<typeof candidateSituationFit>>;
+  if (missRepos.length === 0) {
+    situationRankings = { rankings: cachedRankings, rawText: '' };
+  } else {
+    const llmResult = await candidateSituationFit({
+      provider: createCandidateAgentProvider(env)!,
+      candidateResult: discoveryResult,
+      candidateKeyConcepts: discoveryResult.keyConcepts,
+      repos: missRepos,
+    });
+
+    // Store cache for each miss
+    for (const ranking of llmResult.rankings) {
+      const repo = missRepos.find((r) => r.repo_id === ranking.repo_id);
+      if (!repo) continue;
+      const cacheKey = await buildSituationFitCacheKey(
+        candidateId,
+        ranking.repo_id,
+        discoveryResult.profileVersion,
+        repo.signals.signals_version,
+      );
+      await storeSituationFitCache(
+        db,
+        cacheKey,
+        candidateId,
+        ranking.repo_id,
+        discoveryResult.profileVersion,
+        repo.signals.signals_version,
+        ranking,
+      );
+    }
+
+    situationRankings = {
+      rankings: [...cachedRankings, ...llmResult.rankings],
+      rawText: llmResult.rawText,
+    };
+  }
 
   // Step 9: Triangulate
   let triangulated = triangulateMatch({

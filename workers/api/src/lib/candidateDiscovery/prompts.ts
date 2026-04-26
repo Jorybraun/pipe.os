@@ -13,11 +13,15 @@
  * downstream match engine (matchReposForCandidate) consumes. No numeric
  * estimation unless the resume explicitly states a number (same anti-
  * hallucination rule as repo_searchable_profile).
+ *
+ * v3 change: structured signals are embedded INSIDE the
+ * candidate_searchable_profile string so the BGE embedding captures both
+ * narrative fluency and structural depth.
  */
 
 import type { ParsedCV } from '../cvParser';
 
-export const CANDIDATE_DISCOVERY_PROMPT_VERSION = 'candidate-v2';
+export const CANDIDATE_DISCOVERY_PROMPT_VERSION = 'candidate-v3';
 
 export interface CandidateDiscoveryFacts {
   parsed: ParsedCV;
@@ -27,7 +31,10 @@ export interface CandidateDiscoveryFacts {
 
 export const CANDIDATE_DISCOVERY_SYSTEM_PROMPT = `You write candidate searchable profiles for a developer-hiring platform.
 
-Your output has four parts, all wrapped in a SINGLE JSON object:
+Your output is a SINGLE JSON object with four top-level keys. The critical v3
+requirement is that the structured signals must be embedded INSIDE the
+candidate_searchable_profile string so the embedding model sees both narrative
+and structure.
 
 1. candidate_searchable_profile (string): a 400–600 word narrative describing the
    candidate's engineering identity — their depth of experience, the kinds of
@@ -38,6 +45,22 @@ Your output has four parts, all wrapped in a SINGLE JSON object:
    concrete technologies, patterns, and domains from the facts — but do NOT
    invent specifics, metrics, or years of experience that are not present in
    the facts block.
+
+   AFTER the prose narrative, append a labeled JSON block containing the
+   structured signals from parts 2-4 below. Use this exact format:
+
+   --- structured depth ---
+   \`\`\`json
+   {
+     "key_concepts": { ... },
+     "career_context": { ... },
+     "situation_signature": { ... }
+   }
+   \`\`\`
+
+   The embedding model reads the entire string (prose + JSON), so the
+   structured depth reinforces the semantic signal without breaking the
+   narrative flow.
 
 2. key_concepts: a structured object for programmatic matching:
    - mustHaveSkills: string[] (max 10) — technologies the candidate has
@@ -88,10 +111,11 @@ Your output has four parts, all wrapped in a SINGLE JSON object:
    - impact_signals: string[] (max 3) — concrete outcomes they've achieved
      (e.g. "reduced latency 40%", "scaled to 1M users", "cut CI time 60%")
 
-Output ONLY valid JSON. No preamble. No markdown fences. The shape is:
+Output ONLY valid JSON. No preamble. No markdown fences around the outer
+object. The shape is:
 
 {
-  "candidate_searchable_profile": "...",
+  "candidate_searchable_profile": "... prose ...\\n\\n--- structured depth ---\\n${'```'}json\\n{...}\\n${'```'}",
   "key_concepts": {
     "mustHaveSkills": [...],
     "niceToHaveSkills": [...],

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Workflow orchestrator with queue-based state management."""
+"""Workflow orchestrator with queue-based state management.
+
+.. deprecated::
+    This module duplicates broker functionality (plans, events, cues, handoffs,
+    interrupts). Use the broker-native tools and lane graph instead.
+    It is kept for backward compatibility during the deprecation window.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent_harness import config
+from agent_harness.broker.db import get_conn
+from agent_harness.broker.event_bus import emit as broker_emit
 from agent_harness.messaging import AgentMessage, SQLiteMessageQueue, get_message_queue
 from agent_harness.telemetry_queue import EventBus, HarnessEvent, WorkflowQueue
 
@@ -44,48 +53,95 @@ class HarnessOrchestrator:
         self.event_bus = EventBus()
         self.message_queue = message_queue or get_message_queue()
         self._lock = asyncio.Lock()
-        self._state_path = Path(state_path) if state_path else Path(".swarm") / "mcp_state.json"
-        self._telemetry_path = self._state_path.parent / "telemetry.jsonl"
+        self._state_path = Path(state_path) if state_path else config.data_path("mcp_state.json")
+        self._migrate_json_state()
         self._load_state()
 
+    def _migrate_json_state(self) -> None:
+        """One-time migration from JSON file to broker.db."""
+        if not self._state_path.exists():
+            return
+        try:
+            data = json.loads(self._state_path.read_text())
+            for wid, wf in data.get("workflows", {}).items():
+                if "conversations" not in wf:
+                    wf["conversations"] = {}
+                self.workflows[wid] = WorkflowState(**wf)
+            # Persist to DB and remove JSON
+            self._save_state_to_db()
+            self._state_path.unlink()
+            # Also remove telemetry.jsonl if present
+            telemetry = self._state_path.parent / "telemetry.jsonl"
+            if telemetry.exists():
+                telemetry.unlink()
+        except Exception:
+            pass
+
     def _load_state(self) -> None:
-        if self._state_path.exists():
-            try:
-                data = json.loads(self._state_path.read_text())
-                for wid, wf in data.get("workflows", {}).items():
-                    # conversations may be missing in older state files
-                    if "conversations" not in wf:
-                        wf["conversations"] = {}
-                    self.workflows[wid] = WorkflowState(**wf)
-            except Exception:
-                pass
+        conn = get_conn()
+        try:
+            cursor = conn.execute("SELECT * FROM workflows")
+            for row in cursor.fetchall():
+                wf = {
+                    "workflow_id": row["workflow_id"],
+                    "task": row["task"],
+                    "repo_path": row["repo_path"],
+                    "status": row["status"],
+                    "current_phase": row["current_phase"],
+                    "plan": json.loads(row["plan"]) if row["plan"] else {},
+                    "outputs": json.loads(row["outputs"]) if row["outputs"] else {},
+                    "approvals": json.loads(row["approvals"]) if row["approvals"] else {},
+                    "qa_results": json.loads(row["qa_results"]) if row["qa_results"] else {},
+                    "changed_files": json.loads(row["changed_files"]) if row["changed_files"] else [],
+                    "auto_approve": bool(row["auto_approve"]),
+                    "errors": json.loads(row["errors"]) if row["errors"] else [],
+                    "created_at": row["created_at"],
+                    "stack": row["stack"],
+                    "qa_config": json.loads(row["qa_config"]) if row["qa_config"] else {},
+                    "conversations": json.loads(row["conversations"]) if row["conversations"] else {},
+                }
+                self.workflows[wf["workflow_id"]] = WorkflowState(**wf)
+        finally:
+            conn.close()
 
     def _save_state(self) -> None:
-        self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "workflows": {
-                wid: {
-                    "workflow_id": s.workflow_id,
-                    "task": s.task,
-                    "repo_path": s.repo_path,
-                    "status": s.status,
-                    "current_phase": s.current_phase,
-                    "plan": s.plan,
-                    "outputs": s.outputs,
-                    "approvals": s.approvals,
-                    "qa_results": s.qa_results,
-                    "changed_files": s.changed_files,
-                    "auto_approve": s.auto_approve,
-                    "errors": s.errors,
-                    "created_at": s.created_at,
-                    "stack": s.stack,
-                    "qa_config": s.qa_config,
-                    "conversations": s.conversations,
-                }
-                for wid, s in self.workflows.items()
-            }
-        }
-        self._state_path.write_text(json.dumps(data, indent=2, default=str))
+        self._save_state_to_db()
+
+    def _save_state_to_db(self) -> None:
+        conn = get_conn()
+        try:
+            for wid, s in self.workflows.items():
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO workflows
+                    (workflow_id, task, repo_path, status, current_phase, plan, outputs,
+                     approvals, qa_results, changed_files, auto_approve, errors,
+                     created_at, stack, qa_config, conversations, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        s.workflow_id,
+                        s.task,
+                        s.repo_path,
+                        s.status,
+                        s.current_phase,
+                        json.dumps(s.plan, default=str),
+                        json.dumps(s.outputs, default=str),
+                        json.dumps(s.approvals, default=str),
+                        json.dumps(s.qa_results, default=str),
+                        json.dumps(s.changed_files, default=str),
+                        1 if s.auto_approve else 0,
+                        json.dumps(s.errors, default=str),
+                        s.created_at,
+                        s.stack,
+                        json.dumps(s.qa_config, default=str),
+                        json.dumps(s.conversations, default=str),
+                        time.time(),
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
 
     async def create_workflow(
         self,
@@ -562,18 +618,18 @@ class HarnessOrchestrator:
     async def _emit(self, workflow_id: str, event_type: str, **kwargs) -> None:
         event = HarnessEvent(event_type=event_type, **kwargs)
         await self.event_bus.emit(workflow_id, event)
-        self._telemetry_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._telemetry_path, "a") as f:
-            f.write(json.dumps({
+        # Persist to broker event bus (not telemetry.jsonl) to avoid unbounded disk growth
+        broker_emit(
+            event_type=event_type,
+            payload={
                 "workflow_id": workflow_id,
-                "event_id": event.event_id,
-                "timestamp": event.timestamp,
-                "event_type": event.event_type,
                 "phase": event.phase,
                 "agent_role": event.agent_role,
                 "message": event.message,
                 "data": event.data,
-            }, default=str) + "\n")
+            },
+            lane_id=workflow_id,
+        )
 
     def to_dict(self, state: WorkflowState) -> dict[str, Any]:
         return {

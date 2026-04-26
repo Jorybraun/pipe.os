@@ -15,6 +15,68 @@ import type { LLMProvider } from '../llm/types';
 import type { RepoEngineeringSignalsRow } from '../../types';
 import type { CandidateDiscoveryResult, CandidateKeyConcepts } from './agent';
 
+// ─── Cache helpers ───────────────────────────────────────────────────────────
+
+const CACHE_TTL_DAYS = 7;
+
+async function sha256Hex(input: string): Promise<string> {
+  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function buildSituationFitCacheKey(
+  candidateId: string,
+  repoId: number,
+  profileVersion: string,
+  signalsVersion: string,
+): Promise<string> {
+  const payload = `${candidateId}|${repoId}|${profileVersion}|${signalsVersion}`;
+  return sha256Hex(payload);
+}
+
+export async function getCachedSituationFit(
+  db: D1Database,
+  cacheKey: string,
+): Promise<SituationFitRanking | null> {
+  const row = await db
+    .prepare(
+      `SELECT result_json
+         FROM situation_fit_cache
+        WHERE cache_key = ?1
+          AND created_at > datetime('now', '-${CACHE_TTL_DAYS} days')`,
+    )
+    .bind(cacheKey)
+    .first<{ result_json: string }>();
+
+  if (!row) return null;
+
+  try {
+    const parsed = JSON.parse(row.result_json) as SituationFitRanking;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function storeSituationFitCache(
+  db: D1Database,
+  cacheKey: string,
+  candidateId: string,
+  repoId: number,
+  profileVersion: string,
+  signalsVersion: string,
+  ranking: SituationFitRanking,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO situation_fit_cache
+         (cache_key, candidate_id, repo_id, profile_version, signals_version, result_json, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+    )
+    .bind(cacheKey, candidateId, repoId, profileVersion, signalsVersion, JSON.stringify(ranking))
+    .run();
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export interface SituationFitCandidate {

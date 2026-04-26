@@ -6,7 +6,17 @@ MCP broker + LangGraph swarm for autonomous execution of the PIPE-OS strategy ba
 
 ## Database
 
-The broker uses SQLite at `.swarm/broker.db`. It is the source of truth for plan registry, runtime state, and coordination.
+The broker uses SQLite at `broker.db` inside the data directory (default: `.swarm/`).
+It is the source of truth for plan registry, runtime state, and coordination.
+
+All persistence resolves through `--data-dir`:
+```bash
+python -m agent_harness.server --data-dir .swarm
+```
+
+Canonical files:
+- `broker.db` — plans, conflicts, migrations, events, cues, lanes, handoffs, interrupts, messages
+- `.checkpoints.db` — LangGraph checkpoints (all lanes + QA threads share one file, isolated by `thread_id`)
 
 ### Tables
 
@@ -212,7 +222,7 @@ Developers must call `broker_reserve_migration_tool` to get a number. Never read
 
 ```python
 from agent_harness.broker.db import init_db
-init_db(".swarm/broker.db")
+init_db()  # resolves to DATA_DIR / "broker.db"
 ```
 
 ## Re-sync plans from markdown
@@ -274,4 +284,5 @@ FROM events ORDER BY emitted_at DESC LIMIT 20;
 | `src/agent_harness/swarm/agents/qa_deploy.py` | QA + PR opening node |
 | `src/agent_harness/swarm/budget.py` | Token accounting |
 | `src/agent_harness/swarm/escalation.py` | Human-in-the-loop triggers |
+| `src/agent_harness/config.py` | Shared data-dir configuration |
 | `src/agent_harness/swarm/checkpoint.py` | SQLite checkpointer for LangGraph |

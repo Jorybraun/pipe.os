@@ -31,6 +31,7 @@ import { parseJobDescription } from '../../lib/jdParser';
 import { sendNotificationEmail } from '../../lib/email';
 import { embedAndUpsertRole } from '../../lib/roleDiscovery/embedRole';
 import { buildRoleSearchableProfile } from '../../lib/roleDiscovery/buildRoleProfile';
+import { buildRcdSearchProfile } from '../../lib/repoDiscovery/rcdSearchProfile';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole, RoleContextDocument } from '../../types';
 
 export const roleContexts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -70,7 +71,26 @@ export async function buildAndStoreRoleEmbedding(
   jobDescription: string,
   persona: unknown,
 ): Promise<void> {
-  const profile = buildRoleSearchableProfile(jobDescription, persona);
+  // Step 0: read row to check for RCD (preferred) before falling back to JD+persona
+  const rc = await env.DB.prepare('SELECT rcd_json FROM role_contexts WHERE id = ?')
+    .bind(roleContextId)
+    .first<{ rcd_json: string | null }>();
+
+  let profile: string | null = null;
+
+  if (rc?.rcd_json) {
+    try {
+      const rcd = JSON.parse(rc.rcd_json) as RoleContextDocument;
+      profile = buildRcdSearchProfile(rcd);
+    } catch {
+      // ignore parse errors — fall through to legacy path
+    }
+  }
+
+  if (!profile) {
+    profile = buildRoleSearchableProfile(jobDescription, persona);
+  }
+
   if (!profile || profile.trim().length < 50) {
     console.warn(`[roleContexts] skipping role embed for ${roleContextId}: profile too short`);
     return;
@@ -83,20 +103,20 @@ export async function buildAndStoreRoleEmbedding(
     ).bind(profile, now(), roleContextId).run();
 
     // Step 2: read row back for metadata fields
-    const rc = await env.DB.prepare('SELECT * FROM role_contexts WHERE id = ?')
+    const rcRow = await env.DB.prepare('SELECT * FROM role_contexts WHERE id = ?')
       .bind(roleContextId)
       .first<RoleContextRow>();
-    if (!rc) {
+    if (!rcRow) {
       console.warn(`[roleContexts] role context ${roleContextId} not found after profile update`);
       return;
     }
 
     // Step 3: build metadata (only non-null values)
     const metadata: Record<string, string | number | boolean> = {};
-    if (rc.pipeline_id) metadata.pipeline_id = rc.pipeline_id;
-    if (rc.rcd_json) {
+    if (rcRow.pipeline_id) metadata.pipeline_id = rcRow.pipeline_id;
+    if (rcRow.rcd_json) {
       try {
-        const rcd = JSON.parse(rc.rcd_json) as { technical_context?: { seniority_band?: string } };
+        const rcd = JSON.parse(rcRow.rcd_json) as { technical_context?: { seniority_band?: string } };
         if (rcd.technical_context?.seniority_band) {
           metadata.seniority_band = rcd.technical_context.seniority_band;
         }
@@ -106,18 +126,14 @@ export async function buildAndStoreRoleEmbedding(
     }
 
     // Step 4: embed and upsert via shared library
-    const { vector } = await embedAndUpsertRole({
+    await embedAndUpsertRole({
       ai: env.AI,
       vectorize: env.ROLE_INDEX,
-      roleContextId: rc.id,
+      roleContextId: rcRow.id,
       profile,
       metadata,
+      db: env.DB,
     });
-
-    // Step 5: persist embedding vector and timestamp
-    await env.DB.prepare(
-      `UPDATE role_contexts SET embedding_json = ?, updated_at = ? WHERE id = ?`,
-    ).bind(JSON.stringify(vector), now(), roleContextId).run();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[roleContexts] role embed failed for ${roleContextId}:`, msg);

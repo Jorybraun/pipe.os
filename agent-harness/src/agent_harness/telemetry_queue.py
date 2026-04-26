@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Queue-based telemetry system for the Agent Harness MCP server.
 
-Provides async event queues, an event bus, and real-time streaming
-of agent progress, phase completions, and approval requests.
+.. deprecated::
+    This in-memory event bus duplicates broker/event_bus.py.
+    Use broker_emit_event_tool and broker_get_events_tool instead.
+    The telemetry.jsonl log is being replaced by the broker events table.
 """
 
 from __future__ import annotations

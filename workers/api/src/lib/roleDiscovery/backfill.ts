@@ -1,5 +1,7 @@
 import { embedAndUpsertRole } from './embedRole';
 import { buildRoleSearchableProfile } from './buildRoleProfile';
+import { buildRcdSearchProfile } from '../repoDiscovery/rcdSearchProfile';
+import type { RoleContextDocument } from '../../types';
 
 export interface BackfillRoleContextRow {
   id: string;
@@ -48,26 +50,29 @@ export async function runBackfill(
         try {
           // Build or reuse profile
           let profile = row.role_searchable_profile;
-          let persona: unknown = null;
 
           if (!profile) {
-            // Phase 0.1: read RCD consumer_slice primary, fall back to legacy persona_json.
+            // Prefer rich RCD narrative when available; fall back to legacy JD+persona.
             if (row.rcd_json) {
               try {
-                const rcd = JSON.parse(row.rcd_json) as { consumer_slice?: unknown };
-                persona = rcd.consumer_slice ?? null;
+                const rcd = JSON.parse(row.rcd_json) as RoleContextDocument;
+                profile = buildRcdSearchProfile(rcd);
               } catch {
-                // ignore parse errors
+                // ignore parse errors — fall through to legacy path
               }
             }
-            if (!persona && row.persona_json) {
-              try {
-                persona = JSON.parse(row.persona_json);
-              } catch {
-                // ignore parse errors
+
+            if (!profile) {
+              let persona: unknown = null;
+              if (row.persona_json) {
+                try {
+                  persona = JSON.parse(row.persona_json);
+                } catch {
+                  // ignore parse errors
+                }
               }
+              profile = buildRoleSearchableProfile(row.job_description_md ?? '', persona);
             }
-            profile = buildRoleSearchableProfile(row.job_description_md ?? '', persona);
           }
 
           if (!profile || profile.trim().length < 50) {
@@ -110,11 +115,8 @@ export async function runBackfill(
             roleContextId: row.id,
             profile,
             metadata,
+            db: env!.DB,
           });
-
-          await env!.DB.prepare(
-            `UPDATE role_contexts SET embedding_json = ?, updated_at = ? WHERE id = ?`,
-          ).bind(JSON.stringify(result.vector), now(), row.id).run();
 
           succeeded++;
           console.log(`[backfill] embedded ${row.id} (dim=${result.vectorDim})`);

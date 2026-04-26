@@ -7,6 +7,9 @@ from agent_harness.broker.plan_walker import (
     get_plan,
     runnable_set,
     parse_plan_file,
+    mark_plan_complete,
+    claim_plan,
+    heartbeat,
 )
 from agent_harness.broker.conflict_matrix import conflicts_for, active_conflicts
 from agent_harness.broker.event_bus import emit, get_events
@@ -18,6 +21,11 @@ from agent_harness.broker.interrupt_registry import (
     get_interrupt,
     list_interrupts,
 )
+from agent_harness.broker.handoff_registry import (
+    submit_handoff,
+    get_handoff,
+    get_handoff_chain,
+)
 
 __all__ = [
     "init_db",
@@ -28,6 +36,9 @@ __all__ = [
     "get_plan",
     "runnable_set",
     "parse_plan_file",
+    "mark_plan_complete",
+    "claim_plan",
+    "heartbeat",
     "conflicts_for",
     "active_conflicts",
     "emit",
@@ -42,4 +53,7 @@ __all__ = [
     "resume_interrupt",
     "get_interrupt",
     "list_interrupts",
+    "submit_handoff",
+    "get_handoff",
+    "get_handoff_chain",
 ]

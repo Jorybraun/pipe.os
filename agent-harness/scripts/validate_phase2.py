@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -21,6 +22,7 @@ from pathlib import Path
 # Ensure agent_harness is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from agent_harness import config
 from agent_harness.broker.db import init_db, get_conn
 from agent_harness.broker.plan_walker import sync_plans_to_db, get_plan, runnable_set
 from agent_harness.broker.event_bus import emit, get_events
@@ -33,7 +35,10 @@ from agent_harness.broker.interrupt_registry import (
     list_interrupts,
 )
 
-DB_PATH = ".swarm/broker.db"
+_TMPDIR = tempfile.mkdtemp(prefix="validate_phase2_")
+DB_PATH = Path(_TMPDIR) / "broker.db"
+# Point harness config at the temp dir so all modules resolve consistently
+config.DATA_DIR = Path(_TMPDIR)
 PASS = 0
 FAIL = 0
 
@@ -59,7 +64,7 @@ def main() -> int:
     # Setup
     # ------------------------------------------------------------------
     print("\n[setup] Initialising broker DB and syncing plans...")
-    init_db(DB_PATH)
+    init_db(str(DB_PATH))
     synced = sync_plans_to_db()
     print(f"  Synced {synced} plans")
 
@@ -130,7 +135,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     print("\n[migration_ledger] Testing reserve + release + list...")
     # Clean slate for test env
-    conn = get_conn(DB_PATH)
+    conn = get_conn(str(DB_PATH))
     conn.execute("DELETE FROM migration_ledger WHERE env = 'test'")
     conn.commit()
     conn.close()
@@ -189,7 +194,7 @@ def main() -> int:
         _err("20 concurrent reservations, all unique", f"{len(results)} results, {len(set(results))} unique")
 
     # Cleanup race env
-    conn = get_conn(DB_PATH)
+    conn = get_conn(str(DB_PATH))
     conn.execute("DELETE FROM migration_ledger WHERE env = 'race'")
     conn.commit()
     conn.close()
@@ -199,7 +204,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     print("\n[interrupt_registry] Testing register + resume + get + list...")
     # Clean slate
-    conn = get_conn(DB_PATH)
+    conn = get_conn(str(DB_PATH))
     conn.execute("DELETE FROM interrupts WHERE plan_id = ?", (plan_id,))
     conn.commit()
     conn.close()

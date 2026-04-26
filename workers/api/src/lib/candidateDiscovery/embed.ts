@@ -12,7 +12,7 @@
  * wrap this in a try/catch and route failures through markIngestionFailed.
  */
 
-import { preprocessForEmbedding } from '../embedding/preprocess';
+import { preprocessForEmbedding, EMBEDDING_MODEL_VERSION } from '../embedding/preprocess';
 
 export interface EmbedCandidateInput {
   ai: Ai;
@@ -21,6 +21,8 @@ export interface EmbedCandidateInput {
   profile: string;
   /** Optional metadata to attach to the vector — kept small (Vectorize metadata limits). */
   metadata?: Record<string, string | number | boolean>;
+  /** Optional D1 database for persisting the embedding and model version stamp. */
+  db?: D1Database;
 }
 
 export interface EmbedCandidateResult {
@@ -28,6 +30,8 @@ export interface EmbedCandidateResult {
   vectorDim: number;
   /** The raw embedding vector (also persisted to D1 as ground truth). */
   vector: number[];
+  /** Version stamp of the embedding model that produced this vector. */
+  modelVersion: string;
 }
 
 const BGE_MODEL = '@cf/baai/bge-large-en-v1.5';
@@ -36,7 +40,7 @@ const EXPECTED_DIM = 1024;
 export async function embedAndUpsertCandidate(
   input: EmbedCandidateInput,
 ): Promise<EmbedCandidateResult> {
-  const { ai, vectorize, candidateId, profile, metadata } = input;
+  const { ai, vectorize, candidateId, profile, metadata, db } = input;
 
   if (!profile || profile.trim().length === 0) {
     throw new Error(`[candidateEmbed] empty profile for candidate ${candidateId}`);
@@ -71,9 +75,28 @@ export async function embedAndUpsertCandidate(
     },
   ]);
 
+  const embeddedAt = new Date().toISOString();
+
+  if (db) {
+    await db
+      .prepare(
+        `UPDATE candidate_ingestion
+           SET status = 'embedded',
+               profile_embedded_at = ?,
+               embedding_json = ?,
+               error_text = NULL,
+               updated_at = ?,
+               embedding_model_version = ?
+         WHERE candidate_id = ?`,
+      )
+      .bind(embeddedAt, JSON.stringify(vector), embeddedAt, EMBEDDING_MODEL_VERSION, candidateId)
+      .run();
+  }
+
   return {
-    embeddedAt: new Date().toISOString(),
+    embeddedAt,
     vectorDim: vector.length,
     vector,
+    modelVersion: EMBEDDING_MODEL_VERSION,
   };
 }

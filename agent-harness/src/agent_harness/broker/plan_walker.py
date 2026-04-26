@@ -104,7 +104,14 @@ def _extract_subtasks(text: str) -> list[dict[str, Any]]:
 
 
 def _extract_dependencies(text: str) -> list[dict[str, str]]:
-    """Parse ## Dependencies block."""
+    """Parse ## Dependencies block.
+
+    Supports formats:
+        - Depends on: `filename.md` (description)
+        - Depends on: filename.md (description)
+        - Depends on: None
+        - Depends on: [title](path/to/file.md)
+    """
     deps: list[dict[str, str]] = []
     section = _extract_section(text, "Dependencies")
     if not section:
@@ -113,16 +120,30 @@ def _extract_dependencies(text: str) -> list[dict[str, str]]:
         line = line.strip()
         if line.startswith("- Depends on:") or line.startswith("- Blocks:"):
             relation = "depends_on" if "Depends on" in line else "blocks"
-            # Try to extract a plan file reference
-            m = re.search(r"\[`?([^`\]]+?)`?\]\([^)]*\)", line)
+            rest = line.split(":", 1)[1].strip()
+            rest = rest.rstrip(".")
+            if not rest or rest.lower() in ("none", "nothing"):
+                continue
+            # Try markdown link [title](path)
+            m = re.search(r"\[([^\]]+)\]\(([^)]+)\)", rest)
+            if m:
+                dep_id = m.group(2)  # use the path, not the title
+                deps.append({"depends_on": dep_id, "relation": relation})
+                continue
+            # Try backtick-wrapped filename: `filename.md`
+            m = re.search(r"`([^`]+\.md)`", rest)
             if m:
                 deps.append({"depends_on": m.group(1), "relation": relation})
-            else:
-                # Plain text fallback
-                rest = line.split(":", 1)[1].strip()
-                rest = rest.rstrip(".")
-                if rest:
-                    deps.append({"depends_on": rest, "relation": relation})
+                continue
+            # Try bare filename at start of string: filename.md ...
+            m = re.search(r"^([\w\-]+\.md)", rest)
+            if m:
+                deps.append({"depends_on": m.group(1), "relation": relation})
+                continue
+            # Fallback: store the first "word" if it looks like a reference
+            first_word = rest.split()[0] if rest else ""
+            if first_word and ".md" in first_word:
+                deps.append({"depends_on": first_word, "relation": relation})
     return deps
 
 
@@ -191,9 +212,37 @@ def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Co
     count = 0
 
     valid_plan_ids = {p["plan_id"] for p in plans}
+    # Map bare filename -> full plan_id for dependency resolution
+    # e.g. "phase2-role-nodes-migration.md" -> "part2-role-discovery/phase2-role-nodes-migration.md"
+    filename_to_plan_id: dict[str, str] = {}
+    for p in plans:
+        pid = p["plan_id"]
+        filename_to_plan_id[pid] = pid
+        filename_to_plan_id[Path(pid).name] = pid
+
+    def _resolve_dep(dep_id: str) -> str | None:
+        """Resolve a dependency reference to a full plan_id."""
+        if dep_id in valid_plan_ids:
+            return dep_id
+        # Try as bare filename
+        if dep_id in filename_to_plan_id:
+            return filename_to_plan_id[dep_id]
+        # Try stripping any relative path prefix
+        clean = dep_id.lstrip("./")
+        if clean in filename_to_plan_id:
+            return filename_to_plan_id[clean]
+        # Try matching against just the filename part of plan_ids
+        for pid in valid_plan_ids:
+            if Path(pid).name == Path(dep_id).name:
+                return pid
+        return None
 
     with conn:
         # Wipe and rebuild (plans are source of truth in markdown)
+        # Clear foreign-key references that may not have ON DELETE CASCADE
+        # in legacy databases before deleting plans.
+        conn.execute("UPDATE migration_ledger SET plan_id = NULL")
+        conn.execute("DELETE FROM lanes")
         conn.execute("DELETE FROM plan_files")
         conn.execute("DELETE FROM plan_dependencies")
         conn.execute("DELETE FROM plan_subtasks")
@@ -236,16 +285,6 @@ def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Co
                     ),
                 )
 
-            for dep in p.get("dependencies", []):
-                if dep["depends_on"] in valid_plan_ids:
-                    conn.execute(
-                        """
-                        INSERT OR IGNORE INTO plan_dependencies (plan_id, depends_on, relation)
-                        VALUES (?, ?, ?)
-                        """,
-                        (p["plan_id"], dep["depends_on"], dep["relation"]),
-                    )
-
             for f in p.get("files", []):
                 conn.execute(
                     """
@@ -256,6 +295,20 @@ def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Co
                 )
 
             count += 1
+
+        # Second pass: insert dependencies after all plans exist
+        # (avoids FK constraint failure when plan A depends on plan B inserted later)
+        for p in plans:
+            for dep in p.get("dependencies", []):
+                resolved = _resolve_dep(dep["depends_on"])
+                if resolved:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO plan_dependencies (plan_id, depends_on, relation)
+                        VALUES (?, ?, ?)
+                        """,
+                        (p["plan_id"], resolved, dep["relation"]),
+                    )
 
     if close_conn:
         conn.close()
@@ -307,19 +360,88 @@ def get_plan(plan_id: str, conn: sqlite3.Connection | None = None) -> dict[str, 
     return plan
 
 
-def runnable_set(conn: sqlite3.Connection | None = None) -> list[str]:
-    """Return plan_ids that are PENDING, not NEEDS-REFINEMENT, and have no unmet deps."""
+def mark_plan_complete(plan_id: str, conn: sqlite3.Connection | None = None) -> bool:
+    """Mark a plan as COMPLETE in the registry."""
+    close_conn = conn is None
+    if conn is None:
+        conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE plans SET status = 'COMPLETE' WHERE plan_id = ?", (plan_id,))
+
+
+def claim_plan(plan_id: str, lane_id: str = "", conn: sqlite3.Connection | None = None) -> bool:
+    """Atomically claim a plan for a lane.
+
+    Returns True if the plan was in 'PENDING' and is now 'CLAIMED'.
+    Returns False if the plan was already claimed, complete, or missing.
+    """
+    close_conn = conn is None
+    if conn is None:
+        conn = get_conn()
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cursor = conn.execute(
+            "UPDATE plans SET status = 'CLAIMED' WHERE plan_id = ? AND status = 'PENDING'",
+            (plan_id,),
+        )
+        conn.commit()
+        ok = cursor.rowcount > 0
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        if close_conn:
+            conn.close()
+    return ok
+
+
+def heartbeat(lane_id: str, agent_id: str = "", conn: sqlite3.Connection | None = None) -> None:
+    """Update the last_heartbeat timestamp for a lane."""
+    close_conn = conn is None
+    if conn is None:
+        conn = get_conn()
+    conn.execute(
+        "UPDATE lanes SET last_heartbeat = ? WHERE lane_id = ?",
+        (__import__("time").time(), lane_id),
+    )
+    conn.commit()
+    if close_conn:
+        conn.close()
+
+
+def runnable_set(
+    conn: sqlite3.Connection | None = None,
+    part_prefix: str | None = None,
+    max_phase: int | None = None,
+) -> list[str]:
+    """Return plan_ids that are PENDING, not NEEDS-REFINEMENT, and have no unmet deps.
+
+    Args:
+        part_prefix: If set, only include plans whose plan_id starts with this (e.g. 'part1-')
+        max_phase: If set, only include plans with phase <= this.
+    """
     close_conn = conn is None
     if conn is None:
         conn = get_conn()
 
     cursor = conn.cursor()
-    # All non-NEEDS-REFINEMENT, non-complete plans
-    cursor.execute("""
+
+    conditions = ["status NOT IN ('NEEDS-REFINEMENT', 'DONE', 'COMPLETE', 'PR_OPEN', 'CLAIMED')"]
+    params: list[Any] = []
+    if part_prefix:
+        conditions.append("plan_id LIKE ?")
+        params.append(f"{part_prefix}%")
+    if max_phase is not None:
+        conditions.append("phase <= ?")
+        params.append(max_phase)
+
+    where_clause = " AND ".join(conditions)
+    cursor.execute(f"""
         SELECT plan_id FROM plans
-        WHERE status NOT IN ('NEEDS-REFINEMENT', 'DONE', 'COMPLETE', 'PR_OPEN')
+        WHERE {where_clause}
         ORDER BY phase, plan_id
-    """)
+    """, params)
     candidates = [r["plan_id"] for r in cursor.fetchall()]
 
     # Filter out plans with incomplete dependencies

@@ -53,3 +53,8 @@ workers/api/.wrangler/
 
 # Binary toolchain artifacts (keep out of repo)
 google-cloud-cli-*.tar.gz
+
+# Agent harness runtime state
+.swarm/
+*.db-shm
+*.db-wal

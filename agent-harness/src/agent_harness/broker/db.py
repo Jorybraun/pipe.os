@@ -5,13 +5,17 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from agent_harness import config
+
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 _DB_PATH: Path | None = None
 
 
-def init_db(db_path: str | Path = ".swarm/broker.db") -> Path:
+def init_db(db_path: str | Path | None = None) -> Path:
     """Ensure schema is applied and return the resolved db path."""
     global _DB_PATH
+    if db_path is None:
+        db_path = config.data_path("broker.db")
     resolved = Path(db_path).resolve()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(resolved), check_same_thread=False)

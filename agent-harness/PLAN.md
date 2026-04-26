@@ -10,7 +10,7 @@ steering channel.
 This plan replaces both with a single coherent system:
 
 - MCP broker server (Python, FastMCP, SQLite) — owns plan registry, conflict matrix, migration ledger, event bus, steering cues, LangGraph interrupt() resume
-- LangGraph swarm — 4-agent topology (Supervisor, PM, Developer, QA-Deploy) executing plan files autonomously
+- LangGraph swarm — 5-agent topology (Meta-PM, Supervisor, Lane Advisor, Developer, QA-Deploy) executing plan files autonomously
 - Staging environment (provisioned, currently a skeleton) — the swarm's deployment target; merge to main remains human-gated
 - Bidirectional control — events stream out via the broker, steering cues flow in, escalations use LangGraph interrupt() for human-in-the-loop
 
@@ -21,7 +21,7 @@ prod merges remain human-gated, ~83 runnable plans converge in weeks.
 ## Architecture
 
 This is a real swarm: many short-lived workers, one atomic unit each, dying at the boundary, handing off via structured protocol. At full throttle, expect
-8–15 ephemeral developer agents alive across 3–5 plan lanes at any moment, plus the long-lived Supervisor, PM, and QA-Deploy roles.
+8–15 ephemeral developer agents alive across 3–5 plan lanes at any moment, plus the long-lived Meta-PM, Supervisor, Lane Advisor, and QA-Deploy roles.
 
 ```
                   ┌──────────────────────────────────────┐
@@ -33,15 +33,33 @@ This is a real swarm: many short-lived workers, one atomic unit each, dying at t
                          │ events (SSE)        │ cues / interrupts
                          ▼                     ▲
        ┌────────────────────────────────────────────────────┐
-       │              LangGraph Swarm                        │
-       │  Supervisor (long-lived)                            │
-       │     │                                               │
-       │     ├── Send() lane 1 ──▶ PM → [Dev¹→Dev²→...] → QA│
-       │     ├── Send() lane 2 ──▶ PM → [Dev¹→Dev²→...] → QA│
-       │     └── Send() lane 3 ──▶ PM → [Dev¹→Dev²→...] → QA│
+       │  Meta-PM (strategic ReAct agent)                    │
+       │  └─ broker tools: list_plans, runnable_set, events  │
+       │  └─ MCP: harness_meta_pm_recommend()                │
+       └────────────────────┬───────────────────────────────┘
+                            │ spawns lanes / posts cues
+                            ▼
+       ┌────────────────────────────────────────────────────┐
+       │  Supervisor (long-lived async dispatcher)           │
+       │  └─ claims plans, manages lane task pool, watchdog  │
+       └────────────────────┬───────────────────────────────┘
+                            │ creates lane graph per plan
+                            ▼
+       ┌────────────────────────────────────────────────────┐
+       │  Lane graph (one per plan, LangGraph StateGraph)    │
        │                                                     │
-       │  Each Devⁿ is ephemeral: one subtask, then dies     │
-       │  Devⁿ → Devⁿ⁺¹ via Handoff doc (broker)             │
+       │  START → lane_supervisor ──► [advisor | dev | QA]   │
+       │            ▲                    │                   │
+       │            └────────────────────┘                   │
+       │                                                     │
+       │  Each Devⁿ is ephemeral: one subtask, then dies.    │
+       │  Devⁿ → Devⁿ⁺¹ via Handoff doc (broker).            │
+       │  Same subtask, fresh 100K context window.           │
+       │                                                     │
+       │  advisor: reviews plan/handoff → guidance           │
+       │  developer: ephemeral, one subtask → Handoff        │
+       │  qa_deploy: terminal, opens PR                      │
+       │                                                     │
        │  langgraph-checkpoint-sqlite at every boundary      │
        └──────┬──────────────────────────────────────────────┘
               │
@@ -54,13 +72,14 @@ This is a real swarm: many short-lived workers, one atomic unit each, dying at t
    └─────────────────────────────────────┘
 ```
 
-### Agent topology (3 long-lived roles + N ephemeral developers)
+### Agent topology (4 long-lived roles + N ephemeral developers)
 
 | Agent | Lifetime | Responsibility |
 |-------|----------|----------------|
-| Supervisor | Long-lived (one per swarm) | Claims runnable plans via broker, dispatches lanes via LangGraph Send(), spawns ephemeral devs, watchdog liveness, re-dispatch on context-exhaust or timeout |
-| PM | Per-plan, short | Reads plan file once, expands ## Subtasks into work items, populates LangGraph state, exits |
-| Developer (ephemeral) | One subtask, dies | Writes failing BDD test → implements → runs vitest/tsc/lint → commits → emits Handoff. At 80K context, exits early with status: "context_exhausted" and supervisor spawns next dev with the Handoff. Architect work is a bounded consult_architect tool call, not a separate role. |
+| Meta-PM | Long-lived (one per swarm) | Strategic agent that sees all plans, lanes, and events. Recommends execution order. Exposed via `harness_meta_pm_recommend()` MCP tool. |
+| Supervisor | Long-lived (one per swarm) | Async dispatcher that claims runnable plans via broker, dispatches lane graphs, maintains a pool of running lanes, watchdog liveness, re-dispatch on context-exhaust or timeout. |
+| Lane Advisor | Per-lane, invoked by supervisor | Reviews plan + handoff chain + operator cues before each developer run. Emits architectural guidance injected into the next dev's prompt. Can recommend escalation. |
+| Developer (ephemeral) | One subtask, dies | Writes failing BDD test → implements → runs vitest/tsc/lint → commits → emits Handoff. At 80K context, exits early with status: "context_exhausted" and supervisor routes back for next dev. |
 | QA-Deploy | Per-plan, terminal | Reads full Handoff chain, runs test suite on clean checkout, executes manual QA via Playwright, opens PR with bundle, terminal action |
 
 Why this is a swarm: N developers per plan (where N = number of subtasks, possibly more if context-exhaust handoffs trigger). Across 3–5 lanes, you have 8–15
@@ -144,7 +163,7 @@ loops).
 - Per-subtask handoff cap: 5. If a subtask requires more than 5 sequential context-exhausted devs, supervisor escalates — the subtask is too large and needs
 splitting in the plan file.
 - NEEDS-REFINEMENT plans auto-skip. Filtered out of runnable_set(). Parked in operator queue.
-- Liveness watchdog. 30s heartbeats; supervisor kills agents silent >5 min and re-dispatches the subtask with last good Handoff (or PM expansion if no
+- Liveness watchdog. 30s heartbeats; supervisor kills agents silent >5 min and re-dispatches the subtask with last good Handoff (or re-initializes work_items if no
 Handoff yet).
 
 ---
@@ -171,13 +190,14 @@ agent-harness/
 │   ├── checkpoint.py           # SqliteSaver wiring
 │   ├── budget.py               # Per-plan token accounting
 │   ├── agents/
-│   │   ├── supervisor.py       # claim_plan → Send to PM → watchdog
-│   │   ├── pm.py               # reads plan, populates work items
+│   │   ├── meta_pm.py          # strategic PM — sees all plans, decides execution order
+│   │   ├── advisor.py          # per-lane architect; reviews plan/handoff, emits guidance
 │   │   ├── developer.py        # ReAct agent with FileMgmt + Shell + MCP tools
 │   │   └── qa_deploy.py        # ReAct agent with Shell + Playwright + MCP + gh tools
 │   ├── prompts/
 │   │   ├── supervisor.md
-│   │   ├── pm.md
+│   │   ├── meta_pm.md
+│   │   ├── advisor.md
 │   │   ├── developer.md
 │   │   └── qa_deploy.md
 │   ├── toolkit.py              # FileManagementToolkit, ShellTool, PlaywrightBrowserTool,
@@ -192,7 +212,7 @@ agent-harness/
 |------|--------|---------|
 | list_plans(filter?) | Supervisor, console | All plans w/ status, phase, conflicts |
 | runnable_set() | Supervisor | PENDING + deps DONE + not NEEDS-REFINEMENT + no active conflicts |
-| get_plan(path) | PM, Developer | Full content + parsed sections |
+| get_plan(path) | Lane Advisor, Developer | Full content + parsed sections |
 | claim_plan(path, lane_id) | Supervisor | Atomic; emits plan_started; idempotent |
 | conflicts_for(path) | Supervisor | Files + migrations vs active lanes |
 | reserve_migration(env) | Developer | Atomic next number; rollback on plan_failed |
@@ -220,7 +240,7 @@ class LaneState(TypedDict):
     plan_path: str
     plan_id: str
     lane_id: str
-    work_items: list[WorkItem]              # PM populates from ## Subtasks
+    work_items: list[WorkItem]              # hydrated by _init_work_items() before lane starts
     current_subtask_id: str | None
     current_handoff: Handoff | None         # last Handoff; input to next ephemeral dev
     handoff_chain: list[Handoff]            # full history for QA-Deploy
@@ -228,6 +248,8 @@ class LaneState(TypedDict):
     pr_url: str | None
     plan_budget_used: int                   # cumulative across all devs in lane
     iteration: int
+    advisor_guidance: str | None            # emitted by Lane Advisor, consumed by next Developer
+    next_node: str                          # routing decision from lane_supervisor_node
 ```
 
 Each ephemeral developer is a sub-graph spawned via Send() from the supervisor. The dev's input is (plan_file_content, current_handoff) — not the full lane
@@ -310,14 +332,12 @@ function written, vitest passes, Handoff emitted with status: "complete" and han
 
 ### Phase 4 — Handoff Chain + Full Swarm Topology
 
-18. agents/pm.py — reads plan, populates work_items, exits
-19. agents/supervisor.py — claims plans via broker, calls Send() per lane, watches Handoff events, dispatches next dev when Handoff arrives, routes to
-QA-Deploy when subtasks done
-20. Handoff threading: supervisor reads current_handoff from lane state, passes to next dev's input; verify a context_exhausted Handoff triggers a fresh dev
-that completes the same subtask
+18. agents/meta_pm.py — strategic ReAct agent with broker tools (list_plans, runnable_set, conflicts_for, events, cues). Decides what gets built and in what order.
+19. agents/advisor.py — per-lane architect invoked by lane_supervisor_node. Reviews plan + handoff chain + operator cues. Emits structured guidance.
+20. swarm/graph.py — lane_supervisor_node (structured routing agent with LaneRoutingDecision), advisor_node, developer_node, qa_deploy_node, escalate_node,
+escalation_gate_node. Dev N → Dev N+1 handoff chaining preserved via current_subtask_id + get_handoff().
 21. agents/qa_deploy.py — reads handoff_chain, runs full suite on clean checkout, executes manual QA from PR template, opens PR
-22. langgraph-supervisor topology with Send() for parallel lane dispatch (different plans, not different devs in same lane — devs are serial within a
-subtask)
+22. Supervisor class in graph.py — long-lived async dispatcher that claims plans, maintains lane task pool, watchdog, re-dispatch on timeout
 23. budget.py — per-dev (80K), per-plan (500K), per-subtask handoff cap (5)
 24. Liveness watchdog: 30s heartbeats, 5min timeout, re-dispatch with last Handoff
 25. Validation Phase 4a (handoff chain): synthetically force a context exhaust on a multi-subtask plan; confirm 3 ephemeral devs chain via Handoffs and

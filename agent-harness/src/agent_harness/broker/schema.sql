@@ -164,3 +164,45 @@ CREATE TABLE IF NOT EXISTS interrupts (
 
 CREATE INDEX IF NOT EXISTS idx_interrupts_plan ON interrupts(plan_id, status);
 CREATE INDEX IF NOT EXISTS idx_interrupts_thread ON interrupts(thread_id, status);
+
+-- ---------------------------------------------------------------------------
+-- Messages (persistent inter-agent message queue)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS messages (
+    id              TEXT PRIMARY KEY,
+    workflow_id     TEXT NOT NULL,
+    channel         TEXT NOT NULL,
+    sender          TEXT,
+    recipient_role  TEXT,
+    content         TEXT,
+    timestamp       REAL,
+    msg_type        TEXT,
+    data            TEXT,
+    delivered       INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_channel_ts ON messages(channel, timestamp);
+CREATE INDEX IF NOT EXISTS idx_messages_wf_delivered ON messages(workflow_id, delivered);
+
+-- ---------------------------------------------------------------------------
+-- Workflows (deprecated orchestrator state, transitional)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS workflows (
+    workflow_id     TEXT PRIMARY KEY,
+    task            TEXT NOT NULL,
+    repo_path       TEXT NOT NULL,
+    status          TEXT DEFAULT 'created',
+    current_phase   TEXT,
+    plan            TEXT,                   -- JSON
+    outputs         TEXT,                   -- JSON
+    approvals       TEXT,                   -- JSON
+    qa_results      TEXT,                   -- JSON
+    changed_files   TEXT,                   -- JSON list
+    auto_approve    INTEGER DEFAULT 0,
+    errors          TEXT,                   -- JSON list
+    created_at      REAL,
+    stack           TEXT DEFAULT 'generic',
+    qa_config       TEXT,                   -- JSON
+    conversations   TEXT,                   -- JSON
+    updated_at      REAL
+);

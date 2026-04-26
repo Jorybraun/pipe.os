@@ -37,6 +37,7 @@ describe('embedAndUpsertCandidate', () => {
     expect(result.vectorDim).toBe(1024);
     expect(result.vector).toHaveLength(1024);
     expect(typeof result.embeddedAt).toBe('string');
+    expect(result.modelVersion).toBe('bge-large-en-v1.5-2024');
     expect(upsert).toHaveBeenCalledTimes(1);
     const firstCall = upsert.mock.calls[0]!;
     const args = firstCall[0] as Array<{ id: string; values: number[] }>;

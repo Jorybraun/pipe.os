@@ -19,7 +19,7 @@
  *     coverage — no new SQL needed.
  */
 
-import type { CandidatePersona, RoleContextRow } from '../../types';
+import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
 import { matchRepos, type MatchedRepo, type MatchRequest } from '../repoDiscovery/matchRepos';
 
 export type StationType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION';
@@ -77,16 +77,19 @@ function normalizeSeniority(raw: string): 'junior' | 'mid' | 'senior' | 'staff' 
   return 'mid';
 }
 
+function parseRcd(roleContext: RoleContextRow): RoleContextDocument | null {
+  if (!roleContext.rcd_json) return null;
+  try {
+    return JSON.parse(roleContext.rcd_json) as RoleContextDocument;
+  } catch {
+    return null;
+  }
+}
+
 function parsePersona(roleContext: RoleContextRow): CandidatePersona | null {
   // Phase 0.1: read RCD primary, fall back to legacy persona_json.
-  if (roleContext.rcd_json) {
-    try {
-      const rcd = JSON.parse(roleContext.rcd_json) as { consumer_slice?: CandidatePersona };
-      if (rcd.consumer_slice) return rcd.consumer_slice;
-    } catch {
-      // fall through to legacy path
-    }
-  }
+  const rcd = parseRcd(roleContext);
+  if (rcd?.consumer_slice) return rcd.consumer_slice;
   if (!roleContext.persona_json) return null;
   try {
     return JSON.parse(roleContext.persona_json) as CandidatePersona;
@@ -109,23 +112,74 @@ function parseNonNegotiable(roleContext: RoleContextRow): string[] | null {
 }
 
 /**
- * Resolve must-have skills for the matchRepos call. Non-negotiable wins; falls
- * back to persona.mustHaveSkills if no non-negotiable list is set.
+ * Resolve must-have skills for the matchRepos call. Non-negotiable wins; then
+ * RCD technical_context.stack; falls back to persona.mustHaveSkills.
  */
 export function resolveMustHaveSkills(roleContext: RoleContextRow): string[] {
   const nonNegotiable = parseNonNegotiable(roleContext);
   if (nonNegotiable && nonNegotiable.length > 0) return nonNegotiable;
+
+  const rcd = parseRcd(roleContext);
+  if (rcd && rcd.technical_context.stack.length > 0) {
+    return rcd.technical_context.stack;
+  }
+
   const persona = parsePersona(roleContext);
   return persona?.mustHaveSkills ?? [];
+}
+
+const COVERAGE_RANK: Record<string, number> = {
+  deep: 4,
+  covered: 3,
+  partial: 2,
+  sparse: 1,
+  not_probed: 0,
+};
+
+/** Derive the primary domain from the RCD domain matrix. */
+function deriveDomainFromRcd(rcd: RoleContextDocument): string {
+  let bestDomain = DEFAULT_DOMAIN;
+  let bestRank = -1;
+
+  for (const stakeholder of Object.keys(rcd.domain_matrix)) {
+    const cells = rcd.domain_matrix[stakeholder as keyof typeof rcd.domain_matrix];
+    if (!cells) continue;
+    for (const [domain, cell] of Object.entries(cells)) {
+      if (!cell || !cell.primary_authority) continue;
+      const rank = COVERAGE_RANK[cell.coverage] ?? 0;
+      if (rank > bestRank) {
+        bestRank = rank;
+        bestDomain = domain;
+      }
+    }
+  }
+
+  return bestDomain;
 }
 
 function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
   const persona = parsePersona(roleContext);
   const mustHaveSkills = resolveMustHaveSkills(roleContext);
 
-  // Pull primary language + domain from persona if available; fall back to
-  // safe defaults. v1 doesn't read TechnicalContext.stack[] — it would require
-  // RCD parsing and is non-trivial for the slice. v2 wires it.
+  const rcd = parseRcd(roleContext);
+  if (rcd) {
+    const tc = rcd.technical_context;
+    const primaryLanguage = tc.stack[0] ? tc.stack[0].toLowerCase() : DEFAULT_LANGUAGE;
+    const seniority = normalizeSeniority(tc.seniority_band || DEFAULT_SENIORITY);
+    const domain = deriveDomainFromRcd(rcd);
+    const niceToHaveSkills = persona?.niceToHaveSkills ?? [];
+
+    return {
+      mustHaveSkills,
+      niceToHaveSkills,
+      seniority,
+      domain,
+      primaryLanguage,
+      limit: 5,
+    };
+  }
+
+  // Legacy fallback: pull primary language + domain from persona if available.
   const niceToHaveSkills = persona?.niceToHaveSkills ?? [];
   const seniority = normalizeSeniority(persona?.seniority ?? DEFAULT_SENIORITY);
 

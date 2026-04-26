@@ -122,3 +122,27 @@ def list_reserved(
     if close_conn:
         conn.close()
     return rows
+
+
+def prune_released(
+    max_age_days: float = 30.0,
+    conn: sqlite3.Connection | None = None,
+) -> int:
+    """Delete old released migration ledger entries to prevent unbounded growth.
+
+    Returns number of rows deleted.
+    """
+    close_conn = conn is None
+    if conn is None:
+        conn = get_conn()
+
+    cutoff = time.time() - (max_age_days * 24 * 3600)
+    cur = conn.execute(
+        "DELETE FROM migration_ledger WHERE released_at IS NOT NULL AND released_at < ?",
+        (cutoff,),
+    )
+    conn.commit()
+
+    if close_conn:
+        conn.close()
+    return cur.rowcount

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """WebSocket server for agent push notifications.
 
+.. deprecated::
+    WebSocket push is being replaced by the planned SSE subscribe endpoint
+    (broker_get_events_tool with streaming). Use broker events + cues for
+    real-time agent communication instead.
+
 Agents connect and subscribe to channels:
     {"subscribe": "workflow:hw-xxx:pm"}
 
@@ -16,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import time
 from typing import Any
 
@@ -57,7 +63,7 @@ class AgentWebSocketServer:
             self.port,
         )
         self._poller_task = asyncio.create_task(self._poll_loop())
-        print(f"[harness ws] Agent WebSocket server started on ws://{self.host}:{self.port}")
+        print(f"[harness ws] Agent WebSocket server started on ws://{self.host}:{self.port}", file=sys.stderr)
 
     async def stop(self) -> None:
         self._shutdown_event.set()

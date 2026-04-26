@@ -87,3 +87,52 @@ def get_events(
     if close_conn:
         conn.close()
     return rows
+
+
+def prune_events(
+    max_age_days: float = 30.0,
+    max_rows: int = 50000,
+    conn: sqlite3.Connection | None = None,
+) -> int:
+    """Delete old events to prevent unbounded growth.
+
+    Keeps the most recent max_rows events and events newer than max_age_days.
+    Returns number of rows deleted.
+    """
+    close_conn = conn is None
+    if conn is None:
+        conn = get_conn()
+
+    cutoff = time.time() - (max_age_days * 24 * 3600)
+
+    # First, delete events older than max_age_days
+    cur = conn.execute(
+        "DELETE FROM events WHERE emitted_at < ?",
+        (cutoff,),
+    )
+    deleted = cur.rowcount
+
+    # Then, if still over max_rows, delete oldest excess
+    cursor = conn.execute("SELECT COUNT(*) as cnt FROM events")
+    row = cursor.fetchone()
+    total = row["cnt"] if row else 0
+
+    if total > max_rows:
+        excess = total - max_rows
+        cur = conn.execute(
+            """
+            DELETE FROM events
+            WHERE event_id IN (
+                SELECT event_id FROM events
+                ORDER BY emitted_at ASC
+                LIMIT ?
+            )
+            """,
+            (excess,),
+        )
+        deleted += cur.rowcount
+
+    conn.commit()
+    if close_conn:
+        conn.close()
+    return deleted

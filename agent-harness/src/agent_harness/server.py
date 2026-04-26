@@ -16,11 +16,13 @@ import argparse
 import asyncio
 import json
 import sys
+import warnings
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 
+from agent_harness import config
 from agent_harness.orchestrator import HarnessOrchestrator
 from agent_harness.telemetry_queue import HarnessEvent
 from agent_harness.websocket_server import AgentWebSocketServer
@@ -50,16 +52,19 @@ from agent_harness.broker import (
     get_handoff as broker_get_handoff,
     get_handoff_chain as broker_get_handoff_chain,
     claim_plan as broker_claim_plan,
+    heartbeat as broker_heartbeat,
 )
+from agent_harness.broker.event_bus import prune_events as broker_prune_events
+from agent_harness.broker.migration_ledger import prune_released as broker_prune_migration_ledger
+from agent_harness.swarm.checkpoint import prune_checkpoints
 from agent_harness.swarm.agents.architect import run_architect
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-STATE_PATH = Path(".swarm") / "mcp_state.json"
 
-orchestrator = HarnessOrchestrator(str(STATE_PATH))
+orchestrator: HarnessOrchestrator | None = None
 ws_server: AgentWebSocketServer | None = None
 _lane_tasks: dict[str, asyncio.Task] = {}
-_lane_checkpointer = get_checkpointer(".swarm/lane_checkpoints.db")
+_lane_checkpointer = get_checkpointer()
 
 mcp = FastMCP(
     "agent-harness",
@@ -127,6 +132,10 @@ async def harness_start_workflow(
 ) -> str:
     """Start a new harness workflow.
 
+    .. deprecated::
+        Use broker_claim_plan_tool + harness_start_lane instead.
+        The workflow-centric API is being replaced by the plan-centric broker API.
+
     Args:
         task: Description of the feature or fix to implement.
         repo_path: Absolute or relative path to the git repository.
@@ -160,7 +169,11 @@ async def harness_get_status(
     workflow_id: str,
     ctx: Context | None = None,
 ) -> str:
-    """Get the current status of a workflow."""
+    """Get the current status of a workflow.
+
+    .. deprecated::
+        Use broker_get_plan_tool or broker_list_plans_tool instead.
+    """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
     state = await orchestrator.get_workflow(workflow_id)
@@ -173,7 +186,11 @@ async def harness_get_status(
 async def harness_list_workflows(
     ctx: Context | None = None,
 ) -> str:
-    """List all active workflows."""
+    """List all active workflows.
+
+    .. deprecated::
+        Use broker_list_plans_tool with status filter instead.
+    """
     states = await orchestrator.list_workflows()
     summaries = [
         {
@@ -193,7 +210,11 @@ async def harness_transition_phase(
     phase: str,
     ctx: Context | None = None,
 ) -> str:
-    """Transition a workflow to a new phase."""
+    """Transition a workflow to a new phase.
+
+    .. deprecated::
+        The workflow-centric phase model is being replaced by broker plan status.
+    """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
     state = await orchestrator.get_workflow(workflow_id)
@@ -271,7 +292,11 @@ async def harness_run_qa(
     workflow_id: str,
     ctx: Context | None = None,
 ) -> str:
-    """Run quality gates for a workflow."""
+    """Run quality gates for a workflow.
+
+    .. deprecated::
+        QA gates will be integrated into the lane graph qa_deploy_node.
+    """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
     state = await orchestrator.get_workflow(workflow_id)
@@ -287,7 +312,11 @@ async def harness_get_telemetry(
     since: float = 0.0,
     ctx: Context | None = None,
 ) -> str:
-    """Get telemetry events for a workflow (includes persisted events across sessions)."""
+    """Get telemetry events for a workflow (includes persisted events across sessions).
+
+    .. deprecated::
+        Use broker_get_events_tool instead.
+    """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
     queue = await orchestrator.event_bus.get_queue(workflow_id)
@@ -339,7 +368,11 @@ async def harness_poll_events(
     timeout: float = 5.0,
     ctx: Context | None = None,
 ) -> str:
-    """Poll for new telemetry events with a timeout. Blocks until events arrive or timeout."""
+    """Poll for new telemetry events with a timeout. Blocks until events arrive or timeout.
+
+    .. deprecated::
+        Use broker_get_events_tool or await the planned SSE subscribe endpoint.
+    """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
     queue = await orchestrator.event_bus.get_queue(workflow_id)
@@ -376,7 +409,11 @@ async def harness_mark_complete(
     success: bool = True,
     ctx: Context | None = None,
 ) -> str:
-    """Mark a workflow as complete or failed."""
+    """Mark a workflow as complete or failed.
+
+    .. deprecated::
+        Use broker_complete_plan_tool instead.
+    """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
     state = await orchestrator.get_workflow(workflow_id)
@@ -394,7 +431,11 @@ async def harness_interrupt(
     workflow_id: str,
     ctx: Context | None = None,
 ) -> str:
-    """Interrupt and pause a running workflow."""
+    """Interrupt and pause a running workflow.
+
+    .. deprecated::
+        Use broker_escalate_tool instead.
+    """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
     state = await orchestrator.get_workflow(workflow_id)
@@ -422,6 +463,9 @@ async def harness_publish_message(
     ctx: Context | None = None,
 ) -> str:
     """Publish a message to an agent's channel.
+
+    .. deprecated::
+        Use broker_post_cue_tool or broker_emit_event_tool instead.
 
     Use this to steer, advise, or query an agent during a workflow.
     The message is persisted and pushed to any connected WebSocket clients.
@@ -471,6 +515,9 @@ async def harness_get_conversation(
 ) -> str:
     """Get the full conversation thread for a role on a workflow.
 
+    .. deprecated::
+        Use broker_read_cues_tool + broker_get_events_tool instead.
+
     Returns messages from the persistent queue (survives restarts).
     """
     if not workflow_id:
@@ -492,6 +539,9 @@ async def harness_get_advisory_context(
 ) -> str:
     """Get rich advisory context for an agent role.
 
+    .. deprecated::
+        This workflow-centric helper is being replaced by broker-native tools.
+
     Returns: workflow state, recent events, conversation thread, outputs,
     approvals, QA results, and errors. Use this to ground advice generation.
     """
@@ -511,6 +561,9 @@ async def harness_poll_messages(
     ctx: Context | None = None,
 ) -> str:
     """Poll for undelivered messages on role channels for a workflow.
+
+    .. deprecated::
+        Use broker_read_cues_tool instead.
 
     Agents call this to pull messages when not connected via WebSocket.
     Messages are marked delivered on read.
@@ -857,6 +910,22 @@ async def broker_list_interrupts_tool(
 
 
 @mcp.tool()
+async def broker_heartbeat_tool(
+    lane_id: str,
+    agent_id: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """Update the last_heartbeat timestamp for a lane.
+
+    Agents should call this every ~30s while alive.
+    """
+    if not lane_id:
+        return json.dumps({"error": "lane_id is required"}, indent=2)
+    broker_heartbeat(lane_id, agent_id=agent_id)
+    return json.dumps({"lane_id": lane_id, "agent_id": agent_id, "ok": True}, indent=2)
+
+
+@mcp.tool()
 async def broker_submit_handoff_tool(
     plan_id: str,
     subtask_id: str,
@@ -1182,12 +1251,38 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--ws-port", type=int, default=8766)
-    parser.add_argument("--broker-db", default=".swarm/broker.db")
+    parser.add_argument("--data-dir", default=".swarm", help="Base directory for all persistence (broker.db, checkpoints, messages, state)")
+    parser.add_argument("--broker-db", default=None, help="Override broker DB path (default: DATA_DIR/broker.db)")
     args = parser.parse_args()
 
-    # Initialise broker database
+    # Resolve data directory before any module initializes its defaults
+    config.DATA_DIR = Path(args.data_dir).resolve()
+
+    # Initialise broker database BEFORE orchestrator (orchestrator reads from DB)
     broker_db_path = init_broker_db(args.broker_db)
     print(f"[broker] Database initialised: {broker_db_path}", file=sys.stderr)
+
+    # Re-initialize the orchestrator now that data_dir is known
+    global orchestrator
+    orchestrator = HarnessOrchestrator()
+
+    # Run retention pruning on startup to prevent unbounded DB growth
+    try:
+        deleted_events = broker_prune_events(max_age_days=30, max_rows=50000)
+        deleted_migrations = broker_prune_migration_ledger(max_age_days=30)
+        deleted_checkpoints = prune_checkpoints(keep_per_thread=5)
+        deleted_messages = 0
+        if orchestrator and orchestrator.message_queue:
+            deleted_messages = orchestrator.message_queue._prune_sync(max_age_days=30, max_rows=10000)
+        print(
+            f"[retention] Pruned {deleted_events} events, "
+            f"{deleted_migrations} migration ledger entries, "
+            f"{deleted_checkpoints} checkpoints, "
+            f"{deleted_messages} messages",
+            file=sys.stderr,
+        )
+    except Exception as e:
+        print(f"[retention] Warning: pruning failed ({e})", file=sys.stderr)
 
     if args.transport == "stdio":
         try:
