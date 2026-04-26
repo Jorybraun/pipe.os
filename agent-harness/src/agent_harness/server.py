@@ -75,6 +75,13 @@ from agent_harness.broker.migration_ledger import prune_released as broker_prune
 from agent_harness.swarm.checkpoint import prune_checkpoints
 from agent_harness.swarm.agents.architect import run_architect
 from agent_harness.swarm.agents.chat_agent import run_chat_agent_for_workflow
+from agent_harness.swarm.lane_runner import (
+    start_lane as lane_start_lane,
+    stop_lane as lane_stop_lane,
+    get_lane_status as lane_get_lane_status,
+    list_running_lanes as lane_list_running_lanes,
+    lane_id_from_plan_id as _lane_lane_id_from_plan_id,
+)
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -100,39 +107,6 @@ mcp = FastMCP(
 
 def _lane_id_from_plan_id(plan_id: str) -> str:
     return f"lane-{plan_id.replace('/', '-')}"
-
-
-async def _run_lane(plan_id: str, lane_id: str) -> dict[str, Any]:
-    """Run a single lane graph and return final state."""
-    graph = build_lane_graph(checkpointer=_lane_checkpointer)
-    work_items = _init_work_items(plan_id)
-    initial = {
-        "messages": [],
-        "plan_path": "",
-        "plan_id": plan_id,
-        "lane_id": lane_id,
-        "work_items": work_items,
-        "current_subtask_id": None,
-        "current_handoff": None,
-        "handoff_chain": [],
-        "reserved_migrations": [],
-        "pr_url": None,
-        "plan_budget_used": 0,
-        "iteration": 0,
-        "status": "running",
-        "advisor_guidance": None,
-        "next_node": "supervisor",
-    }
-
-    def _stream():
-        fs = None
-        for event in graph.stream(initial, {"configurable": {"thread_id": lane_id}}, stream_mode="values"):
-            fs = event
-        return fs
-
-    loop = asyncio.get_running_loop()
-    final_state = await loop.run_in_executor(None, _stream)
-    return final_state  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -1277,26 +1251,18 @@ async def harness_start_lane(
         return json.dumps({"error": f"Plan status is {plan.get('status')}, not PENDING"}, indent=2)
 
     lane_id = _lane_id_from_plan_id(plan_id)
-    if lane_id in _lane_tasks and not _lane_tasks[lane_id].done():
+    running = {l["lane_id"] for l in lane_list_running_lanes()}
+    if lane_id in running:
         return json.dumps({"error": f"Lane {lane_id} is already running"}, indent=2)
 
     # Atomic claim: prevent race conditions on concurrent starts
     if not broker_claim_plan(plan_id, lane_id):
         return json.dumps({"error": f"Plan {plan_id} is already claimed or not PENDING"}, indent=2)
 
-    task = asyncio.create_task(_run_lane(plan_id, lane_id), name=lane_id)
-    _lane_tasks[lane_id] = task
-
-    def _on_done(t: asyncio.Task) -> None:
-        _lane_tasks.pop(lane_id, None)
-        try:
-            final = t.result()
-            status = final.get("status", "unknown") if final else "failed"
-            broker_emit(event_type="lane_finished", plan_id=plan_id, lane_id=lane_id, payload={"status": status})
-        except Exception as e:
-            broker_emit(event_type="lane_failed", plan_id=plan_id, lane_id=lane_id, payload={"error": str(e)})
-
-    task.add_done_callback(_on_done)
+    try:
+        lane_start_lane(plan_id, lane_id)
+    except RuntimeError as e:
+        return json.dumps({"error": str(e)}, indent=2)
 
     return json.dumps({
         "lane_id": lane_id,
@@ -1311,25 +1277,40 @@ async def harness_get_lane_status(
     lane_id: str,
     ctx: Context | None = None,
 ) -> str:
-    """Get the status of a running or finished lane."""
-    task = _lane_tasks.get(lane_id)
-    if task is None:
-        # Check if lane finished recently
+    """Get the status of a running or finished lane.
+
+    Queries the shared lane registry so lanes started by the orchestrator
+    agent are visible here too.
+    """
+    status = lane_get_lane_status(lane_id)
+    if status.get("status") == "not_found":
         return json.dumps({"lane_id": lane_id, "status": "not_found", "message": "No active lane with this ID."}, indent=2)
 
-    if not task.done():
+    if status.get("status") == "running":
         return json.dumps({"lane_id": lane_id, "status": "running"}, indent=2)
 
-    try:
-        final = task.result()
-        return json.dumps({
-            "lane_id": lane_id,
-            "status": final.get("status", "complete") if final else "failed",
-            "pr_url": final.get("pr_url") if final else None,
-            "plan_budget_used": final.get("plan_budget_used") if final else None,
-        }, indent=2)
-    except Exception as e:
-        return json.dumps({"lane_id": lane_id, "status": "failed", "error": str(e)}, indent=2)
+    if status.get("status") == "cancelled":
+        return json.dumps({"lane_id": lane_id, "status": "cancelled"}, indent=2)
+
+    final = status.get("result")
+    return json.dumps({
+        "lane_id": lane_id,
+        "status": status.get("status", "complete"),
+        "pr_url": final.get("pr_url") if final else None,
+        "plan_budget_used": final.get("plan_budget_used") if final else None,
+    }, indent=2)
+
+
+@mcp.tool()
+async def harness_stop_lane(
+    lane_id: str,
+    ctx: Context | None = None,
+) -> str:
+    """Stop (cancel) a running lane by its lane_id."""
+    ok = lane_stop_lane(lane_id)
+    if ok:
+        return json.dumps({"lane_id": lane_id, "stopped": True}, indent=2)
+    return json.dumps({"lane_id": lane_id, "stopped": False, "message": "Lane not found or already finished."}, indent=2)
 
 
 @mcp.tool()
@@ -1337,11 +1318,8 @@ async def harness_list_active_lanes(
     ctx: Context | None = None,
 ) -> str:
     """List all currently running lanes."""
-    active = []
-    for lane_id, task in _lane_tasks.items():
-        if not task.done():
-            active.append({"lane_id": lane_id, "status": "running"})
-    return json.dumps({"count": len(active), "lanes": active}, indent=2)
+    lanes = lane_list_running_lanes()
+    return json.dumps({"count": len(lanes), "lanes": lanes}, indent=2)
 
 
 @mcp.tool()

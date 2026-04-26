@@ -57,6 +57,14 @@ from agent_harness.broker import (
     list_interrupts,
     get_conn,
 )
+from agent_harness.swarm.lane_runner import (
+    start_lane,
+    stop_lane,
+    get_lane_status,
+    list_running_lanes,
+    lane_id_from_plan_id,
+)
+from deepagents.middleware._tool_exclusion import _ToolExclusionMiddleware
 
 
 def _make_model() -> ChatOpenAI:
@@ -244,6 +252,59 @@ def get_active_interrupts() -> str:
         return json.dumps({"error": str(e)})
 
 
+@tool
+def start_lane_tool(plan_id: str) -> str:
+    """Start a swarm lane for a specific plan.
+
+    Args:
+        plan_id: The plan ID to dispatch as a lane.
+    """
+    try:
+        lane_id = lane_id_from_plan_id(plan_id)
+        task = start_lane(plan_id, lane_id)
+        return json.dumps({"started": True, "plan_id": plan_id, "lane_id": lane_id}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def stop_lane_tool(lane_id: str) -> str:
+    """Stop a running lane.
+
+    Args:
+        lane_id: The lane ID to stop.
+    """
+    try:
+        stopped = stop_lane(lane_id)
+        return json.dumps({"stopped": stopped, "lane_id": lane_id}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def get_lane_status_tool(lane_id: str) -> str:
+    """Get the status of a lane.
+
+    Args:
+        lane_id: The lane ID to query.
+    """
+    try:
+        status = get_lane_status(lane_id)
+        return json.dumps(status, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def list_running_lanes_tool() -> str:
+    """List all currently running lanes."""
+    try:
+        lanes = list_running_lanes()
+        return json.dumps({"count": len(lanes), "lanes": lanes}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 _ORCHESTRATOR_SYSTEM_PROMPT = """You are the Swarm Orchestrator — the single CEO that controls everything.
 
 You have full visibility into ALL plans, ALL lanes, ALL events, and ALL interrupts across the entire system. There is no one above you. You are the top of the pyramid.
@@ -261,13 +322,34 @@ Available tools:
 - get_plan_details(plan_id) → full plan content
 - check_conflicts(plan_id) → file/migration conflicts
 - claim_runnable_plan(plan_id) → claim a plan
+- start_lane_tool(plan_id) → dispatch a lane
+- stop_lane_tool(lane_id) → cancel a lane
+- get_lane_status_tool(lane_id) → lane progress
+- list_running_lanes_tool() → active lanes
 - post_steering_cue(content, plan_id?, lane_id?) → steer a lane
 - get_recent_events(since_minutes?, limit?) → recent events
 - escalate_to_human(plan_id, reason) → pause for human input
 - get_active_interrupts() → list escalations
 
 Be decisive. The operator expects clear answers and direct action.
+
+DO NOT use filesystem, shell, or todo tools. Use only the tools listed above.
 """
+
+
+# DeepAgents injects filesystem, shell, todo, and subagent tools by default.
+# The Orchestrator should ONLY use broker tools, so we strip the defaults.
+_EXCLUDED_DEFAULT_TOOLS = frozenset({
+    "write_todos",
+    "ls",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "glob",
+    "grep",
+    "execute",
+    "task",
+})
 
 
 def build_orchestrator_agent():
@@ -280,6 +362,10 @@ def build_orchestrator_agent():
         get_plan_details,
         check_conflicts,
         claim_runnable_plan,
+        start_lane_tool,
+        stop_lane_tool,
+        get_lane_status_tool,
+        list_running_lanes_tool,
         post_steering_cue,
         get_recent_events,
         escalate_to_human,
@@ -290,6 +376,7 @@ def build_orchestrator_agent():
         tools=tools,
         system_prompt=_ORCHESTRATOR_SYSTEM_PROMPT,
         name="orchestrator",
+        middleware=[_ToolExclusionMiddleware(excluded=_EXCLUDED_DEFAULT_TOOLS)],
     )
 
 

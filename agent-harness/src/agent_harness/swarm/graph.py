@@ -109,11 +109,13 @@ def _make_supervisor_model() -> ChatOpenAI:
     if not api_key:
         raise RuntimeError("KIMI_API_KEY not set")
     return ChatOpenAI(
-        model="kimi-latest",
+        model=os.getenv("KIMI_MODEL", "kimi-for-coding"),
         temperature=0.1,
-        max_tokens=1024,
+        max_tokens=4096,
         api_key=api_key,
-        base_url="https://api.moonshot.cn/v1",
+        base_url=os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1"),
+        model_kwargs={"extra_headers": {"User-Agent": "claude-code/0.1"}},
+        extra_body={"reasoning": None},
     )
 
 
@@ -133,91 +135,84 @@ class LaneRoutingDecision(BaseModel):
 
 
 def lane_supervisor_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
-    """Lane supervisor — reads state and makes structured routing decisions."""
+    """Lane supervisor — deterministic routing based on lane state.
+
+    Uses hard-coded routing rules instead of an LLM to avoid token-limit
+    failures and long latency with kimi-for-coding structured output.
+    """
     work_items = state.get("work_items", [])
     pending = [w for w in work_items if w["status"] == "pending"]
     complete = [w for w in work_items if w["status"] == "complete"]
     blocked = [w for w in work_items if w["status"] == "blocked"]
     current_id = state.get("current_subtask_id")
-    last_handoff = state.get("current_handoff")
     lane_status = state.get("status", "running")
     guidance = state.get("advisor_guidance")
 
-    # If the lane is already blocked/escalated/failed, route to escalate or end
+    def _heartbeat() -> None:
+        try:
+            heartbeat(state["lane_id"], agent_id="supervisor")
+        except Exception:
+            pass
+
+    # Terminal / guard conditions
     if lane_status in ("blocked", "escalated", "failed"):
+        _heartbeat()
         return {
             "next_node": "escalate",
             "messages": [SystemMessage(content=f"Supervisor: lane status={lane_status}, routing to escalate.")],
         }
 
-    # Budget guard: if plan budget exhausted, escalate immediately
     plan_budget_used = state.get("plan_budget_used", 0)
     if plan_budget_used >= PLAN_BUDGET_LIMIT:
+        _heartbeat()
         return {
             "next_node": "escalate",
             "messages": [SystemMessage(content=f"Supervisor: plan budget exhausted ({plan_budget_used} >= {PLAN_BUDGET_LIMIT}), routing to escalate.")],
         }
 
-    # Build supervisor prompt
-    prompt_parts = [
-        "You are a lane supervisor. Decide the next step for this plan lane.",
-        f"\nPlan: {state['plan_id']}",
-        f"Lane: {state['lane_id']}",
-        f"Total subtasks: {len(work_items)}",
-        f"Pending: {len(pending)} | Complete: {len(complete)} | Blocked: {len(blocked)}",
-    ]
+    if blocked:
+        _heartbeat()
+        return {
+            "next_node": "escalate",
+            "messages": [SystemMessage(content=f"Supervisor: {len(blocked)} blocked subtask(s), routing to escalate.")],
+        }
 
-    if current_id:
-        prompt_parts.append(f"Current subtask: {current_id}")
+    # Normal routing logic
+    next_node: str
+    reasoning: str
+    target_subtask_id: str | None = None
+
+    if not work_items:
+        # No work items at all — nothing to do
+        next_node = "end"
+        reasoning = "No work items defined for this plan."
+    elif pending and not current_id:
+        next_node = "advisor"
+        reasoning = "Pending subtasks exist and no current subtask is selected; review plan with advisor first."
+        target_subtask_id = pending[0]["subtask_id"]
+    elif current_id and not guidance:
+        next_node = "advisor"
+        reasoning = "Current subtask exists but no advisor guidance yet; review handoff with advisor."
+    elif current_id and guidance:
+        next_node = "developer"
+        reasoning = "Advisor guidance is present; proceed to developer for current subtask."
+    elif not pending and complete:
+        next_node = "qa_deploy"
+        reasoning = "All subtasks complete; hand off to QA-Deploy."
     else:
-        prompt_parts.append("Current subtask: None (need to pick next pending)")
-
-    if last_handoff:
-        prompt_parts.append(f"Last handoff status: {last_handoff.get('status', 'unknown')}")
-        prompt_parts.append(f"Last handoff subtask: {last_handoff.get('subtask_id', 'unknown')}")
-    else:
-        prompt_parts.append("Last handoff: None (first run)")
-
-    if guidance:
-        prompt_parts.append(f"Advisor guidance present: yes (will be cleared after dev)")
-    else:
-        prompt_parts.append("Advisor guidance present: no")
-
-    prompt_parts.append("\nAvailable nodes:")
-    prompt_parts.append("- advisor: Review plan/handoff and emit architectural guidance")
-    prompt_parts.append("- developer: Run developer on current subtask")
-    prompt_parts.append("- qa_deploy: All subtasks done, run QA")
-    prompt_parts.append("- escalate: Something is blocked/escalated")
-    prompt_parts.append("- end: Lane is finished")
-
-    prompt_parts.append("\nRouting rules:")
-    prompt_parts.append("1. If no current subtask and pending exist → route to advisor (to review plan before first dev)")
-    prompt_parts.append("2. If current subtask exists and no advisor guidance → route to advisor (review handoff before next dev)")
-    prompt_parts.append("3. If current subtask exists and advisor guidance present → route to developer")
-    prompt_parts.append("4. If no pending subtasks and all complete → route to qa_deploy")
-    prompt_parts.append("5. If blocked subtasks exist → route to escalate")
-    prompt_parts.append("6. If qa_deploy finished → route to end")
-
-    prompt_parts.append("\nMake your routing decision.")
-
-    model = _make_supervisor_model()
-    response = model.with_structured_output(LaneRoutingDecision).invoke([
-        SystemMessage(content="\n".join(prompt_parts))
-    ])
+        next_node = "end"
+        reasoning = "No pending or complete subtasks; lane is finished."
 
     updates: dict[str, Any] = {
-        "next_node": response.next_node,
-        "messages": [SystemMessage(content=f"Supervisor: {response.reasoning} → {response.next_node}")],
+        "next_node": next_node,
+        "messages": [SystemMessage(content=f"Supervisor: {reasoning} → {next_node}")],
     }
 
-    if response.target_subtask_id:
-        updates["current_subtask_id"] = response.target_subtask_id
-    elif response.next_node == "advisor" and not current_id and pending:
-        # Pick first pending subtask for advisor to review
-        updates["current_subtask_id"] = pending[0]["subtask_id"]
+    if target_subtask_id:
+        updates["current_subtask_id"] = target_subtask_id
 
     # Heartbeat: supervisor is alive and making routing decisions
-    heartbeat(state["lane_id"], agent_id="supervisor")
+    _heartbeat()
 
     return updates
 
@@ -645,7 +640,19 @@ class Orchestrator:
             conn.commit()
             conn.close()
 
-            task = asyncio.create_task(self._run_lane(pid, lane_id))
+            # Delegate to shared lane_runner so lanes are visible to harness_get_lane_status
+            from agent_harness.swarm import lane_runner as _lane_runner
+            try:
+                task = _lane_runner.start_lane(pid, lane_id)
+            except RuntimeError:
+                # Lane already running (e.g. started by harness_start_lane).
+                # Rollback claim so the plan remains available.
+                conn = get_conn()
+                conn.execute("UPDATE plans SET status = 'PENDING' WHERE plan_id = ?", (pid,))
+                conn.execute("DELETE FROM lanes WHERE lane_id = ?", (lane_id,))
+                conn.commit()
+                conn.close()
+                continue
             self._running[lane_id] = task
             self._lane_start_times[lane_id] = asyncio.get_event_loop().time()
             self._lane_last_progress[lane_id] = asyncio.get_event_loop().time()
