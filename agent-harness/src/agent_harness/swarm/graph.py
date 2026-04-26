@@ -30,7 +30,7 @@ from agent_harness.broker import (
 )
 from agent_harness.broker.db import get_conn
 from agent_harness.swarm.agents.advisor import run_advisor
-from agent_harness.swarm.agents.developer import run_developer
+from agent_harness.swarm.agents.developer import run_developer, _run_developer_plain
 from agent_harness.swarm.agents.qa_deploy import run_qa_deploy
 from agent_harness.swarm.budget import MAX_HANDOFFS_PER_SUBTASK, PLAN_BUDGET_LIMIT
 from agent_harness.swarm.escalation import should_escalate
@@ -324,9 +324,9 @@ def developer_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
         payload={"plan_id": plan_id, "lane_id": state["lane_id"], "subtask_id": current_id, "dev_sequence": handoff_count + 1},
     )
 
-    # Run ephemeral developer
+    # Run ephemeral developer (plain loop to avoid nested LangGraph deadlock)
     dev_thread_id = f"{state['lane_id']}:{current_id}:{handoff_count + 1}"
-    dev_final = run_developer(
+    dev_final = _run_developer_plain(
         plan_id=plan_id,
         subtask_id=current_id,
         plan_content=plan_content,

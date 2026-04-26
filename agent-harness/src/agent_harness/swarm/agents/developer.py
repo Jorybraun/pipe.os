@@ -12,7 +12,6 @@ from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, trim_messages
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import ToolNode
 from typing_extensions import Annotated, TypedDict
 
 from agent_harness.swarm.budget import FORCE_THRESHOLD
@@ -369,26 +368,44 @@ def _get_cached_tools() -> list[Any]:
 
 def tools_node(state: DevState) -> dict[str, Any]:
     """Execute tool calls and merge results into the full message list."""
-    tool_node = ToolNode(_get_cached_tools())
-    result = tool_node.invoke(state)
-
-    # Merge tool results into existing messages
-    existing = list(state.get("messages", []))
-    tool_messages = result.get("messages", [])
-    all_messages = existing + tool_messages
-
-    # Track tool calls for loop detection
+    tools_by_name = {t.name: t for t in _get_cached_tools()}
+    messages = list(state.get("messages", []))
     recent = list(state.get("recent_tool_calls", []))
-    for msg in tool_messages:
+
+    # Find the last AIMessage with tool_calls
+    last_ai = None
+    for msg in reversed(messages):
         if isinstance(msg, AIMessage) and msg.tool_calls:
-            for tc in msg.tool_calls:
+            last_ai = msg
+            break
+
+    if last_ai:
+        for tc in last_ai.tool_calls:
+            tool_name = tc.get("name")
+            tool = tools_by_name.get(tool_name)
+            if tool:
+                try:
+                    result = tool.invoke(tc)
+                except Exception as exc:
+                    result = ToolMessage(
+                        content=f"Error: {exc}",
+                        name=tool_name,
+                        tool_call_id=tc.get("id", ""),
+                    )
+                messages.append(result)
                 recent.append({
-                    "name": tc.get("name"),
+                    "name": tool_name,
                     "args": tc.get("args", tc.get("arguments", {})),
                 })
-    recent = recent[-DUPLICATE_TOOL_WINDOW:]
+            else:
+                messages.append(ToolMessage(
+                    content=f"Error: tool '{tool_name}' not found",
+                    name=tool_name,
+                    tool_call_id=tc.get("id", ""),
+                ))
 
-    return {"messages": all_messages, "recent_tool_calls": recent}
+    recent = recent[-DUPLICATE_TOOL_WINDOW:]
+    return {"messages": messages, "recent_tool_calls": recent}
 
 
 def force_handoff_node(state: DevState) -> dict[str, Any]:
@@ -554,6 +571,62 @@ def build_developer_graph(checkpointer: Any | None = None):
     builder.add_edge("force_handoff", END)
 
     return builder.compile(checkpointer=checkpointer)
+
+
+def _run_developer_plain(
+    plan_id: str,
+    subtask_id: str,
+    plan_content: str,
+    handoff_in: dict[str, Any] | None = None,
+    thread_id: str | None = None,
+) -> DevState:
+    """Run developer ReAct loop without nested LangGraph (avoids executor deadlock)."""
+    from langchain_core.runnables import RunnableConfig
+
+    config = RunnableConfig(configurable={"thread_id": thread_id or str(uuid.uuid4())})
+    state: DevState = {
+        "messages": [],
+        "plan_id": plan_id,
+        "subtask_id": subtask_id,
+        "plan_content": plan_content,
+        "handoff_in": handoff_in,
+        "budget_used": 0,
+        "budget_warned": False,
+        "status": None,
+        "turn_count": 0,
+        "recent_tool_calls": [],
+    }
+
+    for turn in range(MAX_TURNS_PER_DEV + 2):
+        # Agent turn
+        agent_updates = agent_node(state, config)
+        state.update(agent_updates)
+
+        # Route
+        route = should_continue(state)
+        if route == "__end__":
+            break
+        if route == "force_handoff":
+            handoff_updates = force_handoff_node(state)
+            state.update(handoff_updates)
+            break
+        if route == "tools":
+            tools_updates = tools_node(state)
+            state.update(tools_updates)
+            compact_updates = compact_node(state)
+            state.update(compact_updates)
+            guard_updates = budget_guard_node(state)
+            state.update(guard_updates)
+            if state.get("status") == "context_exhausted":
+                handoff_updates = force_handoff_node(state)
+                state.update(handoff_updates)
+                break
+            # Loop back to agent
+            continue
+        # Unknown route — break to avoid infinite loop
+        break
+
+    return state
 
 
 def run_developer(
