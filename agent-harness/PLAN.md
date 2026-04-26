@@ -21,7 +21,9 @@ prod merges remain human-gated, ~83 runnable plans converge in weeks.
 ## Architecture
 
 This is a real swarm: many short-lived workers, one atomic unit each, dying at the boundary, handing off via structured protocol. At full throttle, expect
-8–15 ephemeral developer agents alive across 3–5 plan lanes at any moment, plus the long-lived Meta-PM, Supervisor, Lane Advisor, and QA-Deploy roles.
+8–15 ephemeral developer agents alive across 3–5 plan lanes at any moment, plus the long-lived Meta-PM, Orchestrator, Lane Advisor, and QA-Deploy roles.
+
+**Conversational control:** The operator talks to the Orchestrator via `harness_chat`. The Orchestrator has full context of all plans, lanes, events, and interrupts, and answers questions or recommends actions. The operator never talks to individual agents directly — the Orchestrator proxies everything.
 
 ```
                   ┌──────────────────────────────────────┐
@@ -33,17 +35,19 @@ This is a real swarm: many short-lived workers, one atomic unit each, dying at t
                          │ events (SSE)        │ cues / interrupts
                          ▼                     ▲
        ┌────────────────────────────────────────────────────┐
+       │  Orchestrator (conversational hub + lane dispatcher)│
+       │  └─ MCP: harness_chat, harness_status              │
+       │  └─ broker tools: list_plans, runnable_set, events │
+       │  └─ can escalate → human via broker_escalate_tool  │
+       └────────────────────┬───────────────────────────────┘
+                            │ spawns lanes / posts cues
+                            ▼
+       ┌────────────────────────────────────────────────────┐
        │  Meta-PM (strategic ReAct agent)                    │
        │  └─ broker tools: list_plans, runnable_set, events  │
        │  └─ MCP: harness_meta_pm_recommend()                │
        └────────────────────┬───────────────────────────────┘
                             │ spawns lanes / posts cues
-                            ▼
-       ┌────────────────────────────────────────────────────┐
-       │  Supervisor (long-lived async dispatcher)           │
-       │  └─ claims plans, manages lane task pool, watchdog  │
-       └────────────────────┬───────────────────────────────┘
-                            │ creates lane graph per plan
                             ▼
        ┌────────────────────────────────────────────────────┐
        │  Lane graph (one per plan, LangGraph StateGraph)    │
@@ -76,10 +80,10 @@ This is a real swarm: many short-lived workers, one atomic unit each, dying at t
 
 | Agent | Lifetime | Responsibility |
 |-------|----------|----------------|
-| Meta-PM | Long-lived (one per swarm) | Strategic agent that sees all plans, lanes, and events. Recommends execution order. Exposed via `harness_meta_pm_recommend()` MCP tool. |
-| Supervisor | Long-lived (one per swarm) | Async dispatcher that claims runnable plans via broker, dispatches lane graphs, maintains a pool of running lanes, watchdog liveness, re-dispatch on context-exhaust or timeout. |
-| Lane Advisor | Per-lane, invoked by supervisor | Reviews plan + handoff chain + operator cues before each developer run. Emits architectural guidance injected into the next dev's prompt. Can recommend escalation. |
-| Developer (ephemeral) | One subtask, dies | Writes failing BDD test → implements → runs vitest/tsc/lint → commits → emits Handoff. At 80K context, exits early with status: "context_exhausted" and supervisor routes back for next dev. |
+| Orchestrator | One. Singleton. The CEO. | **Conversational hub + async dispatcher + ultimate authority.** The operator talks to the Orchestrator via `harness_chat`. It has full context of ALL plans, ALL lanes, ALL events across the entire system. It answers status questions, recommends actions, starts/stops/steers any lane, and can launch QA swarms for smoke testing. When the Orchestrator needs human input, it escalates via `broker_escalate_tool`; Kimi Code (the initiator) receives the question and asks the user. There is ONE Orchestrator. Not one per swarm. Not one per plan. ONE. |
+| Meta-PM | Long-lived (one per swarm) | Strategic ReAct agent that sees all plans, lanes, and events. Recommends execution order. Used internally by the Orchestrator for deep analysis. Exposed via `harness_meta_pm_recommend()` MCP tool. |
+| Lane Advisor | Per-lane, invoked by lane supervisor | Reviews plan + handoff chain + operator cues before each developer run. Emits architectural guidance injected into the next dev's prompt. Can recommend escalation. |
+| Developer (ephemeral) | One subtask, dies | Writes failing BDD test → implements → runs vitest/tsc/lint → commits → emits Handoff. At 80K context, exits early with status: "context_exhausted" and Orchestrator routes back for next dev. |
 | QA-Deploy | Per-plan, terminal | Reads full Handoff chain, runs test suite on clean checkout, executes manual QA via Playwright, opens PR with bundle, terminal action |
 
 Why this is a swarm: N developers per plan (where N = number of subtasks, possibly more if context-exhaust handoffs trigger). Across 3–5 lanes, you have 8–15

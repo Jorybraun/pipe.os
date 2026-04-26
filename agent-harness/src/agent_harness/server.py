@@ -43,6 +43,7 @@ from agent_harness.websocket_server import AgentWebSocketServer
 from agent_harness.swarm.graph import build_lane_graph, Orchestrator, _init_work_items
 from agent_harness.swarm.checkpoint import get_checkpointer
 from agent_harness.swarm.agents.meta_pm import run_meta_pm
+from agent_harness.swarm.agents.orchestrator_agent import run_orchestrator
 from agent_harness.broker import (
     init_db as init_broker_db,
     get_conn,
@@ -624,73 +625,19 @@ async def harness_chat(
 ) -> str:
     """Talk to the swarm orchestrator. Ask for status, steer lanes, or query agents.
 
-    The orchestrator has full context of all plans, lanes, events, and interrupts.
-    It answers questions and can recommend actions. To actually execute actions
-    (start a lane, post a cue, claim a plan), use the specific broker tools.
+    The orchestrator is a LangGraph DeepAgent with full tool access to the broker.
+    It can query plans, check lanes, post cues, claim plans, and escalate to humans.
     """
     if not message:
         return json.dumps({"error": "message is required"}, indent=2)
 
     try:
-        # Load or init conversation history
-        conv = _ORCHESTRATOR_CONVERSATIONS.setdefault(thread_id, [])
-
-        # Build context-rich system prompt
-        context = _build_orchestrator_context()
-        system_prompt = (
-            "You are the Swarm Orchestrator — the central command and control for all agent teams.\n\n"
-            "You have full visibility into every plan, lane, event, and interrupt.\n"
-            "You answer the operator's questions concisely and accurately.\n"
-            "When the operator asks about status, summarize what's happening.\n"
-            "When the operator wants to take action, tell them exactly which MCP tool to call.\n\n"
-            f"{context}\n\n"
-            "Available actions you can recommend:\n"
-            "- harness_status() → quick snapshot\n"
-            "- harness_start_lane(plan_id) → start a plan lane\n"
-            "- broker_post_cue_tool(content, plan_id, lane_id) → steer a lane\n"
-            "- broker_escalate_tool(plan_id, reason, thread_id) → pause for human input\n"
-            "- broker_resume_tool(plan_id, payload) → resume a paused lane\n"
-            "- broker_claim_plan_tool(plan_id) → claim a runnable plan\n"
-        )
-
-        from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-        from langchain_openai import ChatOpenAI
-
-        api_key = os.getenv("KIMI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            return json.dumps({"error": "No API key configured"}, indent=2)
-
-        model = ChatOpenAI(
-            model=os.getenv("KIMI_MODEL", "kimi-for-coding"),
-            temperature=0.3,
-            max_tokens=4096,
-            api_key=api_key,
-            base_url=os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1"),
-            model_kwargs={"extra_headers": {"User-Agent": "claude-code/0.1"}},
-        )
-
-        # Build messages: system + history + current message
-        messages = [SystemMessage(content=system_prompt)]
-        for entry in conv:
-            if entry["role"] == "user":
-                messages.append(HumanMessage(content=entry["content"]))
-            else:
-                messages.append(AIMessage(content=entry["content"]))
-        messages.append(HumanMessage(content=message))
-
-        response = model.invoke(messages)
-        response_text = str(response.content)
-
-        # Store in conversation history
-        conv.append({"role": "user", "content": message})
-        conv.append({"role": "assistant", "content": response_text})
-        # Trim to last 20 exchanges to prevent context explosion
-        if len(conv) > 40:
-            conv[:] = conv[-40:]
-
+        # run_orchestrator is sync; run in thread pool so MCP doesn't block
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, run_orchestrator, message, thread_id)
         return json.dumps({
             "thread_id": thread_id,
-            "response": response_text,
+            "response": result.get("response", ""),
         }, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)}, indent=2)
