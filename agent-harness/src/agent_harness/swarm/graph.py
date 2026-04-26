@@ -134,6 +134,20 @@ class LaneRoutingDecision(BaseModel):
     )
 
 
+def _emit_node_event(lane_id: str, plan_id: str, node: str, detail: str = "") -> None:
+    """Fire-and-forget event emission for lane progress visibility."""
+    try:
+        from agent_harness.broker import emit as broker_emit
+        broker_emit(
+            event_type="lane_node_enter",
+            lane_id=lane_id,
+            plan_id=plan_id,
+            payload={"node": node, "detail": detail},
+        )
+    except Exception:
+        pass
+
+
 def lane_supervisor_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
     """Lane supervisor — deterministic routing based on lane state.
 
@@ -235,6 +249,7 @@ def advisor_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
     current_id = state.get("current_subtask_id")
     lane_id = state["lane_id"]
 
+    _emit_node_event(lane_id, plan_id, "advisor", f"subtask={current_id}")
     result = run_advisor(plan_id=plan_id, current_subtask_id=current_id, lane_id=lane_id)
 
     updates: dict[str, Any] = {
@@ -261,8 +276,10 @@ def advisor_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
 def developer_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
     """Run one ephemeral developer for the current subtask, then update lane state."""
     plan_id = state["plan_id"]
+    lane_id = state["lane_id"]
     work_items = list(state["work_items"])
     current_id = state.get("current_subtask_id")
+    _emit_node_event(lane_id, plan_id, "developer", f"subtask={current_id}")
 
     if not current_id:
         return {

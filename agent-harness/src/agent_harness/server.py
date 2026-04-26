@@ -6,6 +6,7 @@ Run with stdio transport (for Kimi Code CLI / Claude Desktop):
 
 Run with SSE transport (for HTTP clients):
     python -m agent_harness.server --transport sse --port 8765
+    python -m agent_harness.server --transport streamable-http --port 8765
 
 WebSocket agent notifications run on port 8766 by default (or --ws-port).
 """
@@ -1296,6 +1297,18 @@ async def harness_start_lane(
     except RuntimeError as e:
         return json.dumps({"error": str(e)}, indent=2)
 
+    # Track in DB for observability
+    try:
+        conn = get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO lanes (lane_id, plan_id, status, started_at, last_heartbeat, budget_used) VALUES (?, ?, ?, ?, ?, ?)",
+            (lane_id, plan_id, "running", time.time(), time.time(), 0),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
     return json.dumps({
         "lane_id": lane_id,
         "plan_id": plan_id,
@@ -1340,6 +1353,13 @@ async def harness_stop_lane(
 ) -> str:
     """Stop (cancel) a running lane by its lane_id."""
     ok = lane_stop_lane(lane_id)
+    try:
+        conn = get_conn()
+        conn.execute("UPDATE lanes SET status = 'stopped' WHERE lane_id = ?", (lane_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     if ok:
         return json.dumps({"lane_id": lane_id, "stopped": True}, indent=2)
     return json.dumps({"lane_id": lane_id, "stopped": False, "message": "Lane not found or already finished."}, indent=2)
@@ -1637,7 +1657,7 @@ async def _run_stdio(ws_host: str, ws_port: int) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Agent Harness MCP Server")
-    parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
+    parser.add_argument("--transport", choices=["stdio", "sse", "streamable-http"], default="stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--ws-port", type=int, default=8766)
@@ -1685,8 +1705,10 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(ws_server.start())
-        print(f"[harness] MCP SSE server on http://{args.host}:{args.port}")
-        mcp.run(transport="sse", host=args.host, port=args.port)
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+        print(f"[harness] MCP {args.transport} server on http://{args.host}:{args.port}")
+        mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":

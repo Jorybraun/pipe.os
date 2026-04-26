@@ -91,6 +91,8 @@ def _make_model() -> ChatOpenAI:
         max_tokens=8192,
         api_key=api_key,
         base_url=base_url,
+        timeout=120,
+        max_retries=2,
         model_kwargs={
             "extra_headers": {
                 "User-Agent": "claude-code/0.1",
@@ -121,6 +123,8 @@ def _make_summarizer_model() -> ChatOpenAI:
         max_tokens=max_tokens,
         api_key=api_key,
         base_url=base_url,
+        timeout=120,
+        max_retries=2,
         model_kwargs={
             "extra_headers": {
                 "User-Agent": "claude-code/0.1",

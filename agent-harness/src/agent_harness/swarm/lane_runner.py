@@ -121,8 +121,19 @@ def get_lane_status(lane_id: str) -> dict[str, Any]:
     """Get status of a lane task."""
     task = _lane_tasks.get(lane_id)
     if task is not None:
+        elapsed = None
         if not task.done():
-            return {"lane_id": lane_id, "status": "running"}
+            # Try to get elapsed time from DB
+            try:
+                from agent_harness.broker.db import get_conn
+                conn = get_conn()
+                row = conn.execute("SELECT started_at FROM lanes WHERE lane_id = ?", (lane_id,)).fetchone()
+                conn.close()
+                if row and row["started_at"]:
+                    elapsed = round(time.time() - row["started_at"], 1)
+            except Exception:
+                pass
+            return {"lane_id": lane_id, "status": "running", "elapsed_seconds": elapsed}
         try:
             final = task.result()
             return {"lane_id": lane_id, "status": "completed", "result": final}
