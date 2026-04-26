@@ -1,516 +1,337 @@
-# Plan: Autonomous LangGraph Swarm + MCP Broker for Strategy-v2 Backlog
+# Swarm Long-Horizon & Communication Plan
 
-## Context
+## Design Philosophy: "Write-Only Bulletin Board"
 
-The Pipe codebase has 100 plan files in docs/plans/strategy-v2/ (71 with ## Subtasks, 17 flagged NEEDS-REFINEMENT). At ~1 week per plan executed serially,
-the backlog is 18+ months of solo work. Two prior harness iterations (.github/agents/harness/ outer driver and inner OpenClaw skill, plus pm/ Kanban
-dashboard) never converged on a usable execution model — they're disconnected from the plan files, lack conflict detection, and have no bidirectional
-steering channel.
+Swarm agents communicate **asynchronously through a shared scratchpad** — like a team wiki or GitHub issue thread. No direct messages, no real-time chat, no @mentions. Agents write their status once per turn, and read the board when they start.
 
-This plan replaces both with a single coherent system:
-
-- MCP broker server (Python, FastMCP, SQLite) — owns plan registry, conflict matrix, migration ledger, event bus, steering cues, LangGraph interrupt() resume
-- LangGraph swarm — 5-agent topology (Meta-PM, Supervisor, Lane Advisor, Developer, QA-Deploy) executing plan files autonomously
-- Staging environment (provisioned, currently a skeleton) — the swarm's deployment target; merge to main remains human-gated
-- Bidirectional control — events stream out via the broker, steering cues flow in, escalations use LangGraph interrupt() for human-in-the-loop
-
-Outcome: backlog executes through the swarm at multi-lane parallelism (3–5 lanes gated by conflict matrix), each PR carrying full test evidence to staging,
-prod merges remain human-gated, ~83 runnable plans converge in weeks.
+This prevents "hammering" (excessive chatter) because:
+- **Pull, not push** — agents read when they start; they don't get interrupted
+- **One update per turn** — each agent appends exactly one structured line per turn
+- **Supervisor mediates** — only the supervisor decides who talks to whom
+- **Old entries compact** — scratchpad gets summarized when it grows too long
 
 ---
-## Architecture Decisions (captured from implementation)
 
-### 1. The Orchestrator is ONE singleton CEO
+## Phase 1: Foundation (Context + Communication)
 
-There is exactly one Orchestrator. Not one per swarm. Not one per plan. Not one per phase. **ONE.** It sits at the top of the pyramid and has full visibility into every plan, lane, event, and interrupt across the entire system. It is the single point of conversational control.
-
-### 2. Conversational interface is the primary control surface
-
-The operator talks to the Orchestrator via `harness_chat(message, thread_id)`. The Orchestrator is a LangGraph DeepAgent with broker tools. It can answer status questions, recommend actions, start/stop lanes, post steering cues, and escalate to humans when it needs input. The operator never talks to individual agents (PM, dev, QA) directly — the Orchestrator proxies everything.
-
-### 3. Orchestrator is a LangGraph agent, not a Python class
-
-The Orchestrator is built with `deepagents.create_deep_agent()`, which returns a compiled LangGraph `CompiledStateGraph`. It has:
-- Full tool access (broker tools + lane control)
-- LangGraph checkpointing for persistent conversation state
-- `interrupt()` support for human-in-the-loop
-- No iteration cap — it manages long-running processes continuously
-
-### 4. Lane control is part of the Orchestrator's tool set
-
-The Orchestrator does not just advise — it executes. Its tools include:
-- `get_swarm_status()` — full snapshot
-- `list_all_plans()`, `list_runnable_plans()` — plan queries
-- `claim_runnable_plan(plan_id)` — claim a plan
-- `start_lane(plan_id)`, `stop_lane(lane_id)` — dispatch/cancel lanes
-- `post_steering_cue(content, plan_id, lane_id)` — steer active lanes
-- `escalate_to_human(plan_id, reason)` — pause for operator input
-- `get_active_interrupts()` — list human-in-the-loop items
-
-### 5. Escalation flow: Orchestrator → Kimi Code → User
-
-When the Orchestrator needs clarification:
-1. Calls `escalate_to_human(plan_id, reason)`
-2. Lane pauses at LangGraph checkpoint
-3. Broker emits `escalation_created` event
-4. Kimi Code (the initiator) polls events/cues and asks the user
-5. User answers → Kimi Code calls `broker_resume_tool(plan_id, payload)`
-6. LangGraph thread resumes from checkpoint
-
-### 6. API configuration: kimi.com
-
-All agents use the Kimi Code API:
-- Base URL: `https://api.kimi.com/coding/v1`
-- Model: `kimi-for-coding`
-- User-Agent: `claude-code/0.1` (required for model access)
-- `reasoning: None` in request body (disables thinking to avoid 400 on tool calls)
-- LangChain message converter patched to preserve `reasoning_content` on assistant messages
-
----
-## Architecture
-
-This is a real swarm: many short-lived workers, one atomic unit each, dying at the boundary, handing off via structured protocol. At full throttle, expect
-8–15 ephemeral developer agents alive across 3–5 plan lanes at any moment, plus the long-lived Meta-PM, Orchestrator, Lane Advisor, and QA-Deploy roles.
-
-**Conversational control:** The operator talks to the Orchestrator via `harness_chat`. The Orchestrator has full context of all plans, lanes, events, and interrupts, and answers questions or recommends actions. The operator never talks to individual agents directly — the Orchestrator proxies everything.
-
-```
-                  ┌──────────────────────────────────────┐
-                  │       MCP Broker Server              │
-                  │  plans · conflicts · migration ledger│
-                  │  events · cues · interrupt registry  │
-                  │  handoff store · heartbeats          │
-                  └──────┬─────────────────────┬─────────┘
-                         │ events (SSE)        │ cues / interrupts
-                         ▼                     ▲
-       ┌────────────────────────────────────────────────────┐
-       │  Orchestrator (conversational hub + lane dispatcher)│
-       │  └─ MCP: harness_chat, harness_status              │
-       │  └─ broker tools: list_plans, runnable_set, events │
-       │  └─ can escalate → human via broker_escalate_tool  │
-       └────────────────────┬───────────────────────────────┘
-                            │ spawns lanes / posts cues
-                            ▼
-       ┌────────────────────────────────────────────────────┐
-       │  Meta-PM (strategic ReAct agent)                    │
-       │  └─ broker tools: list_plans, runnable_set, events  │
-       │  └─ MCP: harness_meta_pm_recommend()                │
-       └────────────────────┬───────────────────────────────┘
-                            │ spawns lanes / posts cues
-                            ▼
-       ┌────────────────────────────────────────────────────┐
-       │  Lane graph (one per plan, LangGraph StateGraph)    │
-       │                                                     │
-       │  START → lane_supervisor ──► [advisor | dev | QA]   │
-       │            ▲                    │                   │
-       │            └────────────────────┘                   │
-       │                                                     │
-       │  Each Devⁿ is ephemeral: one subtask, then dies.    │
-       │  Devⁿ → Devⁿ⁺¹ via Handoff doc (broker).            │
-       │  Same subtask, fresh 100K context window.           │
-       │                                                     │
-       │  advisor: reviews plan/handoff → guidance           │
-       │  developer: ephemeral, one subtask → Handoff        │
-       │  qa_deploy: terminal, opens PR                      │
-       │                                                     │
-       │  langgraph-checkpoint-sqlite at every boundary      │
-       └──────┬──────────────────────────────────────────────┘
-              │
-              ▼
-   ┌─────────────────────────────────────┐
-   │ deploy-staging.yml on PR push       │
-   │ → wrangler deploy --env staging     │
-   │ → Playwright smoke against staging  │
-   │ → STOPS — operator merges manually  │
-   └─────────────────────────────────────┘
-```
-
-### Agent topology (4 long-lived roles + N ephemeral developers)
-
-| Agent | Lifetime | Responsibility |
-|-------|----------|----------------|
-| Orchestrator | One. Singleton. The CEO. | **Conversational hub + async dispatcher + ultimate authority.** The operator talks to the Orchestrator via `harness_chat`. It has full context of ALL plans, ALL lanes, ALL events across the entire system. It answers status questions, recommends actions, starts/stops/steers any lane, and can launch QA swarms for smoke testing. When the Orchestrator needs human input, it escalates via `broker_escalate_tool`; Kimi Code (the initiator) receives the question and asks the user. There is ONE Orchestrator. Not one per swarm. Not one per plan. ONE. |
-| Meta-PM | Long-lived (one per swarm) | Strategic ReAct agent that sees all plans, lanes, and events. Recommends execution order. Used internally by the Orchestrator for deep analysis. Exposed via `harness_meta_pm_recommend()` MCP tool. |
-| Lane Advisor | Per-lane, invoked by lane supervisor | Reviews plan + handoff chain + operator cues before each developer run. Emits architectural guidance injected into the next dev's prompt. Can recommend escalation. |
-| Developer (ephemeral) | One subtask, dies | Writes failing BDD test → implements → runs vitest/tsc/lint → commits → emits Handoff. At 80K context, exits early with status: "context_exhausted" and Orchestrator routes back for next dev. |
-| QA-Deploy | Per-plan, terminal | Reads full Handoff chain, runs test suite on clean checkout, executes manual QA via Playwright, opens PR with bundle, terminal action |
-
-Why this is a swarm: N developers per plan (where N = number of subtasks, possibly more if context-exhaust handoffs trigger). Across 3–5 lanes, you have 8–15
-dev agents alive, each on a tiny atomic unit. Workers spawn and die routinely. Coordination via broker, not direct chat.
-
-### Communication channels (structured, not free-form chat)
-
-| Channel | Who | What flows |
-|---------|-----|------------|
-| LangGraph state | Agents in same lane thread | work_items, messages (auto-trimmed), pr_url, reserved_migrations, current_handoff |
-| Handoff doc | Dev → Dev (context exhausted), Dev → QA-Deploy (subtask done), final Dev → QA-Deploy (plan done) | Stored in broker keyed by (plan_id, subtask_id, sequence) |
-| Broker events | All agents publish; supervisor + console subscribe | plan_started, subtask_started, subtask_complete, dev_spawned, dev_exited, migration_reserved, heartbeat, pr_opened |
-| Migration ledger | Devs request, broker arbitrates | reserve_migration(env) atomic |
-| Conflict matrix | Supervisor pre-flight before Send() | Pre-empts collisions before lanes start |
-| Steering cues | Operator → any agent | Read between tool calls; ack'd by ID |
-
-Agents do not chat directly with each other. The Handoff doc is the structured equivalent — bounded, persisted, replayable.
-
-### The Handoff artifact
-
-Every developer's exit produces a Handoff. Stored in the broker, never in agent free-form output.
-
-```
-Handoff {
-  plan_path: str
-  subtask_id: str
-  sequence: int                      # 1, 2, 3... if multiple devs touched same subtask
-  status: "complete" | "context_exhausted" | "blocked"
-  done: list[{type, path, summary}]  # files written, tests added, commits made
-  next: list[str]                    # next concrete actions: file:line, command, "ready for QA"
-  state: list[str]                   # open questions, gotchas, why-this-not-that
-  files_touched: list[str]           # for conflict matrix updates
-  migrations_reserved: list[int]
-  context_used: int
-  handoff_to: "next_dev" | "qa_deploy" | "supervisor_reroute"
-}
-```
-
-status: "context_exhausted" is a normal exit, not a failure. Supervisor sees the event, calls Send() to spawn a fresh dev with the Handoff as starting
-context. The new dev's prompt: plan file + Handoff. Nothing else. Fresh 100K window.
-
-### Test handoff (lightweight, no Pydantic dance)
-
-The Developer agent's exit deliverable is a PR description template with these required sections:
-
-## Plan
-docs/plans/strategy-v2/.../<plan>.md
-
-## Acceptance criteria
-- [x] <criterion> — evidence: <spec path / file:line>
-
-## BDD tests
-- e2e/<new-spec>.spec.ts — <scenarios>
-
-## Unit tests
-- workers/api/src/.../__tests__/<test>.test.ts
-
-## Manual QA on staging
-- Visit https://staging.pipe.build/<path>
-- Verify <expected behavior>
-
-## Regression touchpoints
-- <file>: <why> → re-run <test>
-
-## Rollback
-- git revert <sha>
-- (if migration applied) manual D1 reversal: <steps>
-
-QA-Deploy validates the template is filled, runs the listed tests, executes manual QA via Playwright. No separate TestingStrategy Pydantic model. The PR is
-the artifact. CI green + filled template + smoke pass = PR opened.
-
-### Hard limits (non-negotiable)
-
-- No auto-merge to main, ever. Merge auto-fires deploy-production.yml. Swarm's terminal action is gh pr create. Operator merges.
-- Migration ledger is the sole allocator. Broker holds a BEGIN IMMEDIATE SQLite lock; no agent reads workers/api/migrations/ to pick a number.
-reserve_migration("staging") is the only path.
-- Per-developer context cap: 80K tokens. At 80K, dev must exit with status: "context_exhausted" + Handoff. Supervisor spawns fresh dev. Reserves 20K for the
-Handoff write itself.
-- Per-plan budget. Default 500K total input across all devs on a single plan. Supervisor halts the lane and escalates if exceeded (catches infinite handoff
-loops).
-- Per-subtask handoff cap: 5. If a subtask requires more than 5 sequential context-exhausted devs, supervisor escalates — the subtask is too large and needs
-splitting in the plan file.
-- NEEDS-REFINEMENT plans auto-skip. Filtered out of runnable_set(). Parked in operator queue.
-- Liveness watchdog. 30s heartbeats; supervisor kills agents silent >5 min and re-dispatches the subtask with last good Handoff (or re-initializes work_items if no
-Handoff yet).
-
----
-## Components & File Paths
-
-New: agent-harness/ (top-level, replaces .github/agents/harness/)
-
-```
-agent-harness/
-├── pyproject.toml              # langgraph, langgraph-supervisor, langgraph-checkpoint-sqlite,
-│                               #   langchain-anthropic, langchain-community, langchain-mcp-adapters,
-│                               #   fastmcp, sqlite-utils
-├── broker/
-│   ├── server.py               # FastMCP server, exposes tools below
-│   ├── schema.sql              # SQLite: plans, conflicts, migrations, events, cues, lanes
-│   ├── plan_walker.py          # Parses docs/plans/strategy-v2/**/*.md
-│   ├── conflict_matrix.py      # File-path + migration-number overlap detection
-│   ├── migration_ledger.py     # Atomic per-env reserve + rollback
-│   ├── event_bus.py            # Append-only event log + SSE subscribe
-│   ├── cue_channel.py          # Operator → swarm, dedupe + ack
-│   └── interrupt_registry.py   # Maps plan_id ↔ LangGraph thread for resume
-├── swarm/
-│   ├── graph.py                # langgraph-supervisor topology + Send() dispatch
-│   ├── checkpoint.py           # SqliteSaver wiring
-│   ├── budget.py               # Per-plan token accounting
-│   ├── agents/
-│   │   ├── meta_pm.py          # strategic PM — sees all plans, decides execution order
-│   │   ├── advisor.py          # per-lane architect; reviews plan/handoff, emits guidance
-│   │   ├── developer.py        # ReAct agent with FileMgmt + Shell + MCP tools
-│   │   └── qa_deploy.py        # ReAct agent with Shell + Playwright + MCP + gh tools
-│   ├── prompts/
-│   │   ├── supervisor.md
-│   │   ├── meta_pm.md
-│   │   ├── advisor.md
-│   │   ├── developer.md
-│   │   └── qa_deploy.md
-│   ├── toolkit.py              # FileManagementToolkit, ShellTool, PlaywrightBrowserTool,
-│   │                           #   langchain-mcp-adapters → broker tools
-│   └── pr_template.py          # Fixed PR description template + validator
-└── README.md
-```
-
-### MCP Broker tool surface
-
-| Tool | Caller | Purpose |
-|------|--------|---------|
-| **harness_chat(message, thread_id)** | Operator | Talk to the Orchestrator. Status, steering, lane control. |
-| **harness_status()** | Operator | Fast swarm snapshot (plans, lanes, events, interrupts). No LLM. |
-| **harness_run_agent(workflow_id, role)** | Operator | Async agent invocation. Returns job_id; poll harness_get_agent_status(). |
-| **harness_get_agent_status(job_id)** | Operator | Poll for async agent response. |
-| list_plans(filter?) | Orchestrator, console | All plans w/ status, phase, conflicts |
-| runnable_set() | Orchestrator | PENDING + deps DONE + not NEEDS-REFINEMENT + no active conflicts |
-| get_plan(path) | Lane Advisor, Developer | Full content + parsed sections |
-| claim_plan(path, lane_id) | Orchestrator | Atomic; emits plan_started; idempotent |
-| conflicts_for(path) | Orchestrator | Files + migrations vs active lanes |
-| reserve_migration(env) | Developer | Atomic next number; rollback on plan_failed |
-| release_migration(num, env) | Orchestrator | Called on lane abort |
-| submit_handoff(handoff) | Developer | Required exit; stores in broker, emits dev_exited event |
-| get_handoff(plan_id, subtask_id, sequence?) | Orchestrator, Developer, QA-Deploy | Read latest or specific Handoff |
-| get_handoff_chain(plan_id) | QA-Deploy | Full Handoff history for a plan |
-| consult_architect(question, context) | Developer | Bounded one-shot architect agent; returns design answer; dies after one turn |
-| emit(event_type, payload) | All agents | Push to event bus |
-| subscribe(filter?, since?) | Console | SSE stream |
-| read_cues(plan_id, since) | All agents | Pending operator nudges |
-| post_cue(plan_id, cue) | Operator, Orchestrator | Steering input |
-| escalate(plan_id, reason) | Orchestrator, any agent | Pause lane, register interrupt(), await human |
-| resume(plan_id, payload) | Operator | Resume LangGraph thread from checkpoint |
-| complete_plan(path, result) | QA-Deploy | Atomic transition to PR_OPEN; emits plan_completed |
-| heartbeat(lane_id, agent_id) | All agents | Liveness; Orchestrator watchdog reads |
-
-### LangGraph state schema
-
-Per-lane state (one plan = one thread = one state object):
+### 1.1 Lane Scratchpad
+**Goal:** Shared append-only log in `LaneState` that all agents read/write.
 
 ```python
 class LaneState(TypedDict):
-    messages: Annotated[list[AnyMessage], add_messages]   # auto-trimmed
-    plan_path: str
-    plan_id: str
-    lane_id: str
-    work_items: list[WorkItem]              # hydrated by _init_work_items() before lane starts
-    current_subtask_id: str | None
-    current_handoff: Handoff | None         # last Handoff; input to next ephemeral dev
-    handoff_chain: list[Handoff]            # full history for QA-Deploy
-    reserved_migrations: list[int]
-    pr_url: str | None
-    plan_budget_used: int                   # cumulative across all devs in lane
-    iteration: int
-    advisor_guidance: str | None            # emitted by Lane Advisor, consumed by next Developer
-    next_node: str                          # routing decision from lane_supervisor_node
+    # ... existing fields ...
+    scratchpad: list[ScratchpadEntry]  # NEW
+
+class ScratchpadEntry(TypedDict):
+    agent: str        # "supervisor" | "advisor" | "developer-1" | "qa-deploy"
+    turn: int         # agent turn number
+    type: str         # "status" | "blocker" | "decision" | "artifact" | "handoff"
+    content: str      # terse, 1-2 sentences max
+    timestamp: float  # epoch seconds
 ```
 
-Each ephemeral developer is a sub-graph spawned via Send() from the supervisor. The dev's input is (plan_file_content, current_handoff) — not the full lane
-state. The dev's output is a new Handoff that the supervisor writes back into current_handoff and handoff_chain, then dispatches the next dev or routes to
-QA-Deploy.
+**Rules:**
+- Each agent appends **exactly one** entry at the end of its turn
+- Entries are terse: `"status: read types.ts, implementing handler next"`
+- The scratchpad is injected into every agent's system prompt (last 20 entries)
+- Old entries (>20) are compacted into a summary by the summarizer model
 
-Persisted via langgraph-checkpoint-sqlite to agent-harness/.checkpoints.db. Checkpoints fire at every dev boundary, so supervisor restarts resume cleanly
-mid-lane.
+### 1.2 Agent Registry / Team Awareness
+**Goal:** Every agent knows who its teammates are and what they do.
 
-### Files to delete (after swarm v1 ships)
+Add to every system prompt:
+```
+## Your Team
+You are the {role}. Your teammates in this lane:
+- Supervisor — routes tasks, monitors lane health
+- Advisor — reviews plans and handoffs, gives architectural guidance
+- Developer(s) — implement subtasks (you may be one of several)
+- QA-Deploy — validates work and opens PRs
 
-- pm/ (entire directory — gut, replaced by SSE tail script)
-- .github/agents/harness/ (entire directory — replaced by agent-harness/)
+You communicate with teammates via the Lane Scratchpad (below).
+Do not assume other agents can read your mind — write concise updates.
+```
 
-### Files to modify
+Inject the **last 20 scratchpad entries** into every system prompt so agents see what happened recently.
 
-| File | Change |
-|------|--------|
-| workers/api/wrangler.jsonc | Uncomment [env.staging] D1, Vectorize, R2 bindings; provide real IDs after wrangler d1 create pipe-db-staging etc. |
-| .github/workflows/deploy-staging.yml | Uncomment Pages deploy line once pipe-app-staging Pages project exists |
-| CLAUDE.md | Update Documentation Map + Commands to reference agent-harness/ instead of legacy pm/ and .github/agents/harness/ |
-| docs/plans/strategy-v2/README.md | Add note that swarm uses staging env; runnable plans filtered to exclude NEEDS-REFINEMENT |
+### 1.3 Auto-Cue Reading
+**Goal:** Agents check for steering cues at the start of each turn.
 
-### New strategy-v2 plan to write first
+In `agent_node`, before calling the LLM:
+```python
+# Pull new cues from broker
+cues = read_cues(plan_id=state["plan_id"], lane_id=state["lane_id"], since=last_check)
+if cues:
+    messages.append(SystemMessage(content=f"New steering cues: {cues}"))
+```
 
-docs/plans/strategy-v2/staging-environment-provisioning.md — Phase 0 prerequisite. Subtasks: D1 create + bind, Vectorize indexes (×3), R2 bucket, Clerk
-staging app, Pages project, DNS for staging.pipe.build, GitHub secrets, smoke test seed data. Acceptance criteria: wrangler deploy --env staging succeeds
-end-to-end and a Playwright smoke test passes against https://staging.pipe.build.
+This is a **pull** — the agent checks once per turn. No push notifications.
 
-This plan is the swarm's first lane once it's running. The provisioning itself is human-driven (Clerk app creation, DNS) but the wrangler.jsonc edits +
-GitHub Actions wiring are agent-doable.
+### 1.4 Working Memory (Developer)
+**Goal:** Developer agent keeps a private scratchpad of key facts.
 
----
-## Phased Build Order
+Add to `DevState`:
+```python
+working_memory: str  # Key facts the dev wants to remember across turns
+```
 
-### Phase 0 — Staging environment (operator-driven, ~1–2 days)
+The developer can update it via a tool:
+```python
+@tool
+def update_working_memory(notes: str) -> str:
+    """Append notes to your working memory. Use this to remember:
+    - Files you've read and what they contain
+    - Decisions you've made
+    - TODO items
+    - Error messages and their solutions
+    """
+```
 
-Done before swarm code runs. Deliverables:
-
-1. wrangler d1 create pipe-db-staging → write ID into wrangler.jsonc
-2. Create three Vectorize indexes: candidate-searchable-profiles-staging, role-searchable-profiles-staging, repo-searchable-profiles-staging
-3. wrangler r2 bucket create pipe-assets-staging
-4. Create Cloudflare Pages project pipe-app-staging, point to staging.pipe.build subdomain
-5. Create Clerk staging app, add CLERK_PUBLISHABLE_KEY_STAGING and CLERK_SECRET_KEY_STAGING to GitHub secrets and .dev.vars.staging
-6. Apply all existing migrations to pipe-db-staging: wrangler d1 migrations apply pipe-db-staging --env staging --remote
-7. Uncomment + verify staging blocks in wrangler.jsonc and deploy-staging.yml
-8. Manual smoke: open PR → confirm staging deploys → confirm Pages serves
-
-### Phase 1 — MCP Broker (read-only)
-
-Builds the broker with no swarm yet; console-only consumption.
-
-1. pyproject.toml deps + skeleton FastMCP server
-2. schema.sql — tables: plans, subtasks, dependencies, migrations, lanes, events, cues
-3. plan_walker.py — walk docs/plans/strategy-v2/**/*.md, parse frontmatter + sections, populate plans table; recompute on file change
-4. conflict_matrix.py — for any plan, return list of plans sharing files or migration numbers
-5. Tools exposed: list_plans, runnable_set, get_plan, conflicts_for
-6. Validation: spot-check 10 plans against the file system; confirm runnable_set() excludes the 17 NEEDS-REFINEMENT plans; confirm conflict matrix flags the
-documented 0045–0052 races and the candidateNodes.ts overlap.
-
-### Phase 2 — Event Bus + Cue Channel + Migration Ledger
-
-7. event_bus.py — append-only events, SSE subscribe (FastMCP supports streaming)
-8. cue_channel.py — post_cue / read_cues with dedupe by content hash
-9. migration_ledger.py — reserve_migration(env) atomic, with rollback on release_migration
-10. interrupt_registry.py — store (plan_id, thread_id, checkpoint_id) for resume
-11. Validation: from a Python script, post a synthetic event stream and a cue; verify SSE subscriber receives them; reserve and release a migration number
-twice in a race condition test.
-
-### Phase 3 — Single Ephemeral Dev (one subtask)
-
-12. toolkit.py — wire FileManagementToolkit, ShellTool, PlaywrightBrowserTool; use langchain-mcp-adapters to expose broker tools
-13. checkpoint.py — SqliteSaver at .checkpoints.db
-14. prompts/developer.md — system prompt: read plan + Handoff (if any), write BDD first per CLAUDE.md, implement ONE subtask, monitor context, exit at 80K
-with Handoff
-15. agents/developer.py — create_react_agent. Hard exit logic: when context > 80K tokens, force-call submit_handoff tool with status=context_exhausted
-16. Token accounting helper — count input tokens per turn, warn at 60K, force-exit at 80K
-17. Validation: hand-craft a small subtask (e.g., one helper function with one unit test). Run a single ephemeral dev. Confirm: BDD test added to e2e/,
-function written, vitest passes, Handoff emitted with status: "complete" and handoff_to: "qa_deploy".
-
-### Phase 4 — Handoff Chain + Full Swarm Topology
-
-18. agents/meta_pm.py — strategic ReAct agent with broker tools (list_plans, runnable_set, conflicts_for, events, cues). Decides what gets built and in what order.
-19. agents/advisor.py — per-lane architect invoked by lane_supervisor_node. Reviews plan + handoff chain + operator cues. Emits structured guidance.
-20. swarm/graph.py — lane_supervisor_node (structured routing agent with LaneRoutingDecision), advisor_node, developer_node, qa_deploy_node, escalate_node,
-escalation_gate_node. Dev N → Dev N+1 handoff chaining preserved via current_subtask_id + get_handoff().
-21. agents/qa_deploy.py — reads handoff_chain, runs full suite on clean checkout, executes manual QA from PR template, opens PR
-22. Supervisor class in graph.py — long-lived async dispatcher that claims plans, maintains lane task pool, watchdog, re-dispatch on timeout
-23. budget.py — per-dev (80K), per-plan (500K), per-subtask handoff cap (5)
-24. Liveness watchdog: 30s heartbeats, 5min timeout, re-dispatch with last Handoff
-25. Validation Phase 4a (handoff chain): synthetically force a context exhaust on a multi-subtask plan; confirm 3 ephemeral devs chain via Handoffs and
-produce one PR
-26. Validation Phase 4b (multi-lane): run two non-conflicting plans in parallel; confirm both lanes' Handoff chains progress independently; confirm conflict
-matrix prevents a third plan that overlaps
-
-### Phase 5 — Escalation Surface + Human-in-the-Loop
-
-24. Wire LangGraph interrupt() calls in supervisor for plans whose paths/files match the escalation regex (migrations/, lib/privacy/, routes/candidate/,
-LL144|Article 22|EEOC)
-25. Escalated lanes: deploy to staging → run smoke → open PR → call interrupt() → wait for resume(plan_id, "merge_approved") cue
-26. Console (minimal): SSE tail script that prints events + a CLI for posting cues. Defer the full pm/-replacement console.
-27. Validation: run a plan that touches migrations/ (e.g., candidate-nodes-schema.md). Confirm swarm pauses at PR-open with interrupt(), console shows the
-cue request, posting a cue resumes the thread.
-
-### Phase 6 — Cutover & Cleanup
-
-28. Move first 5 non-escalated runnable plans through the swarm; review staging behavior on each before merge
-29. Delete pm/ directory
-30. Delete .github/agents/harness/ directory
-31. Update CLAUDE.md Documentation Map
-32. Open the throttle: 3–5 concurrent lanes, autonomous through the runnable backlog
+Working memory is injected into the developer's system prompt and survives compaction.
 
 ---
-## Reusing What Exists
 
-| Need | Reuse | Path |
-|------|-------|------|
-| BDD test runner | Existing Playwright config | playwright.config.ts |
-| BDD spec patterns | 31 existing specs | e2e/*.spec.ts |
-| Unit test runner | Existing vitest | workers/api/vitest.config.ts |
-| Type check | Existing | npx tsc --noEmit |
-| Lint | Existing scripts | package.json scripts |
-| CI | Existing | .github/workflows/ci.yml |
-| Test env deployment pattern | Existing E2E pipeline | .github/workflows/e2e-test.yml (model staging deploy after this) |
-| Staging deploy workflow | Already scaffolded | .github/workflows/deploy-staging.yml |
-| File / shell / browser tools | langchain-community | Don't reinvent |
-| Multi-agent orchestration | langgraph-supervisor | Don't build a custom dispatcher |
-| Persistence | langgraph-checkpoint-sqlite | Don't roll our own |
-| Context trimming | langgraph.prebuilt.trim_messages | Don't write a context manager |
-| MCP adapter | langchain-mcp-adapters | Don't write tool wrappers |
-| Plan source of truth | docs/plans/strategy-v2/**/*.md (100 files) | Don't duplicate into a separate task DB |
+## Phase 2: Tooling & Git
 
----
-## Verification
+### 2.1 Search/Replace Tool
+**Goal:** Precise multi-line edits without sed fragility.
 
-### Phase 0 (staging provisioning)
+```python
+@tool
+def edit_file(file_path: str, old_string: str, new_string: str) -> str:
+    """Replace old_string with new_string in a file.
+    old_string must match exactly (including whitespace).
+    Use read_file first to get the exact text to replace.
+    """
+```
 
-- wrangler d1 list shows pipe-db-staging
-- wrangler vectorize list shows three *-staging indexes
-- Open a noop PR, confirm deploy-staging.yml succeeds and https://staging.pipe.build returns 200
+### 2.2 Structured Test Runner
+**Goal:** Parse test output into actionable data.
 
-### Phase 1–2 (broker)
+Wrap `npx vitest run` and parse output into:
+```python
+{"passed": 42, "failed": 3, "failures": [
+    {"test": "foo.spec.ts:47", "error": "expected true, got false"}
+]}
+```
 
-- python -m agent_harness.broker.server starts FastMCP server
-- Manual call to runnable_set() returns ~83 plan paths (excludes 17 NEEDS-REFINEMENT)
-- conflicts_for("part4-candidate-ingestion/candidate-nodes-schema.md") returns plans sharing candidateNodes.ts or migration 0045
-- reserve_migration("staging") returns 0045 first call, 0046 second; rollback returns 0045 to pool
-- SSE subscriber receives synthetic events in real time
+### 2.3 Git Strategy
+**Goal:** Clean branch-per-plan workflow.
 
-### Phase 3 (single-agent pilot)
+Add to developer prompt:
+```
+## Git Rules
+- Branch name: `swarm/{plan_id}/{subtask_id}`
+- Commit message format: `{subtask_id}: {description}`
+- Commit after every green test run
+- On context_exhausted: commit WIP with message `{subtask_id}: WIP — {brief status}`
+- Never commit to main
+```
 
-- Run reliability-retry-and-error-classification.md end-to-end
-- PR opened with filled template
-- Staging deploys successfully
-- Playwright smoke green against staging
-- Swarm stopped at PR-open (did not auto-merge)
-- LangGraph checkpoint exists at .checkpoints.db
+Add git helper tools:
+```python
+@tool
+def git_branch(name: str) -> str: ...
 
-### Phase 4 (multi-lane)
+@tool
+def git_commit(message: str, add_all: bool = False) -> str: ...
 
-- Two non-conflicting plans run in parallel; both PRs open
-- Third plan with file overlap is held by supervisor until a lane frees
-- Liveness watchdog kills a manually frozen agent and re-dispatches
-
-### Phase 5 (escalation)
-
-- candidate-nodes-schema.md (migration plan) triggers interrupt()
-- Console shows escalation cue
-- post_cue(plan_id, "merge_approved") resumes the LangGraph thread from checkpoint
-
-### Phase 6 (cutover)
-
-- pm/ deleted, no broken imports (grep -r "pm/" workers/ src/ docs/ clean except archived references)
-- .github/agents/harness/ deleted
-- CLAUDE.md updated
-- Five plans land green to staging, merged manually, prod healthy
-
-### Long-running (post-Phase 6)
-
-- At least 10 plans complete via swarm in week 1 of full-throttle operation
-- No migration-number collision events
-- No prod incidents traceable to swarm output
-- escalate() correctly fires on every plan whose acceptance-criteria mentions LL144/Article 22/EEOC
+@tool
+def git_status() -> str: ...
+```
 
 ---
-## Risks & Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Agent prompt drift across 4 roles → inconsistent output | One source-of-truth prompt directory swarm/prompts/; supervisor injects plan content + broker-served context, not free-form delegation |
-| LangGraph state explosion at 5 parallel lanes | Each lane is an independent graph thread; trim_messages + summarization node enforce token bounds |
-| Broker as single point of failure | SQLite WAL + retry on transient lock errors; broker restart resumes from persistent state; LangGraph checkpoint resumes lanes |
-| Hallucinated migration number despite ledger | Developer prompt forbids reading migrations/ directly; QA-Deploy validates that any new migration number was issued by the ledger before opening PR |
-| Auto-PR-merge by accident (e.g., GitHub auto-merge label) | No agent has gh pr merge in its tool list. Period. |
-| Vectorize cost on staging | Use small test indexes; cap candidate count in seed data |
-| Token budget overrun | Per-plan budget halt at 200K input / 50K output; supervisor escalates instead of killing |
-| Agent edits production wrangler.jsonc by mistake | Developer prompt restricts edits via path glob; QA-Deploy re-validates before PR open; wrangler.jsonc production block protected by escalation regex |
+## Phase 3: Orchestration
+
+### 3.1 Parallel Subtask Execution
+**Goal:** Run independent subtasks simultaneously in a lane.
+
+When the supervisor sees multiple pending subtasks with no dependencies:
+```
+supervisor → [developer-A, developer-B, developer-C] → qa_deploy
+```
+
+Each developer gets its own thread ID. LaneState tracks multiple `current_subtask_id`s.
+
+### 3.2 Retry with Backoff
+**Goal:** Failed lanes retry automatically.
+
+```python
+retry_count: int = 0
+max_retries: int = 3
+backoff_seconds: int = 2 ** retry_count  # 2, 4, 8
+```
+
+On failure:
+1. Emit `lane_failed` event with reason
+2. Wait `backoff_seconds`
+3. Re-dispatch with `retry_count + 1`
+4. If `retry_count >= max_retries`, route to escalate
+
+### 3.3 Circuit Breaker
+**Goal:** Stop retrying lanes that consistently fail.
+
+Track failures per plan_id. If a plan fails 3×, mark it as `broken` and require human intervention to retry.
+
+### 3.4 Lane Timeout Handling
+**Goal:** Graceful degradation when lanes stall.
+
+Current: hard kill after 30 min.
+Improvement:
+- 5 min no progress → inject "Are you stuck?" cue
+- 15 min no progress → force handoff with `status: "blocked"`
+- 30 min → kill lane, emit `lane_timeout` event
 
 ---
-## Out of Scope
 
-- Auto-deploy to production (forbidden architecturally — merge to main is human-only)
-- Auto-merge of PRs (no agent has the tool)
-- Plans flagged NEEDS-REFINEMENT (auto-skipped; operator queue)
-- Full pm/ replacement console UI (Phase 4 SSE tail is sufficient for v1; richer UI is post-cutover work)
-- LinkedIn enrichment, candidate-surfaced URLs, Neo4j migration (Phase 5 strategy-v2 work; runs through the swarm like any other plan)
-- Multi-repo coordination (single-repo only; the swarm operates inside PIPE-OS)
+## Phase 4: Observability & Safety
+
+### 4.1 Structured Logging
+**Goal:** Every action is logged in JSON for debugging.
+
+```json
+{
+  "timestamp": "2026-04-26T12:34:28Z",
+  "lane_id": "lane-part2-...",
+  "agent": "developer-1",
+  "turn": 7,
+  "action": "tool_call",
+  "tool": "read_file",
+  "tokens_used": 15234,
+  "duration_ms": 4200
+}
+```
+
+### 4.2 Cost Accounting
+**Goal:** Track spend per plan, per lane, per agent.
+
+Add to LaneState:
+```python
+cost_usd: float  # accumulated API spend
+```
+
+Approximate: input_tokens * $0.60/M + output_tokens * $2.50/M (Kimi K2.5 pricing).
+
+### 4.3 Secret Detection
+**Goal:** Block commits that touch secrets.
+
+Pre-commit check:
+```python
+if re.search(r'(?i)(api.key|password|secret|token)', diff):
+    return "BLOCKED: diff contains potential secret"
+```
+
+### 4.4 Migration Safety Gates
+**Goal:** Validate migrations before PR.
+
+QA-Deploy checks:
+1. Migration number was reserved via ledger
+2. No duplicate migration numbers
+3. Migration is idempotent (has `IF NOT EXISTS` or similar)
+
+---
+
+## Implementation Order
+
+| Phase | Item | Effort | Impact |
+|-------|------|--------|--------|
+| 1.1 | Lane Scratchpad | Medium | 🔥 High |
+| 1.2 | Agent Registry | Low | 🔥 High |
+| 1.3 | Auto-Cue Reading | Low | Medium |
+| 1.4 | Working Memory | Medium | Medium |
+| 2.1 | Search/Replace Tool | Medium | 🔥 High |
+| 2.2 | Structured Test Runner | Medium | Medium |
+| 2.3 | Git Strategy | Medium | Medium |
+| 3.1 | Parallel Subtasks | High | Medium |
+| 3.2 | Retry with Backoff | Low | Medium |
+| 3.3 | Circuit Breaker | Low | Low |
+| 3.4 | Lane Timeout | Low | Medium |
+| 4.1 | Structured Logging | Low | Medium |
+| 4.2 | Cost Accounting | Low | Low |
+| 4.3 | Secret Detection | Low | 🔥 High |
+| 4.4 | Migration Safety | Medium | Medium |
+
+**Recommended first 3:**
+1. **Lane Scratchpad** (1.1) — enables swarm communication
+2. **Agent Registry** (1.2) — gives agents team awareness
+3. **Search/Replace Tool** (2.1) — fixes the sed fragility problem
+
+Want me to implement these three now?
+
+---
+
+## ✅ Already Done
+
+These items were implemented during the current session and are in `main`:
+
+| # | Item | What Changed |
+|---|------|-------------|
+| 1 | **Compaction node** | `compact_node` added to developer graph (`tools → compact → budget_guard`). Uses `_make_summarizer_model()` to summarize old context via LLM. Keeps last 2 turns verbatim. Falls back to `_prune_old_tool_results()` on failure. |
+| 2 | **Rolling prune fallback** | `_prune_old_tool_results()` replaces old large ToolMessages (>2K chars) with compact placeholders. Keeps last 2 agent turns untouched. Handoff results never pruned. |
+| 3 | **Higher budget thresholds** | `WARN_THRESHOLD=120K`, `FORCE_THRESHOLD=180K`, `PLAN_BUDGET_LIMIT=1M`, `MAX_HANDOFFS_PER_SUBTASK=10`, `MAX_TURNS_PER_DEV=100`. |
+| 4 | **Token-aware trimming** | `trim_messages` in `agent_node` (50K cap) and `budget_guard_node` (55K cap) using `token_counter="approximate"`. |
+| 5 | **`read_file` with pagination** | `line_offset` (1-indexed, negative for tail) and `n_lines` params. Max 1000 lines / 64KB / 2K chars per line. |
+| 6 | **`grep` tool** | ripgrep → grep → Python regex fallback. Returns line numbers + context. Capped at 100 matches. |
+| 7 | **Role-specific model env vars** | `KIMI_META_PM_MODEL`, `KIMI_ORCHESTRATOR_MODEL`, `KIMI_ADVISOR_MODEL`, `KIMI_ARCHITECT_MODEL`, `KIMI_QA_MODEL`, `KIMI_CHAT_MODEL`, `KIMI_SUMMARIZER_MODEL`. |
+| 8 | **`KIMI_STRATEGIC_MODEL` catch-all** | All non-coding agents fall back to `KIMI_STRATEGIC_MODEL` before `KIMI_MODEL`. Coding agents (developer) use `KIMI_MODEL=kimi-for-coding`. |
+| 9 | **Coding rules in prompt** | 6 rules added to `developer.md`: discover before edit, minimal changes, verify after every edit, don't break repo, one logical change per turn, escalate if stuck. |
+| 10 | **Updated budget numbers in prompt** | Developer prompt now says 180K force / 120K warn / 100 max turns (was 80K/60K/50). |
+| 11 | **Global `reasoning_content` patch** | `agent_harness/__init__.py` patches LangChain OpenAI converters to preserve `reasoning_content` across Kimi API round-trips. |
+| 12 | **`extra_body={"reasoning": None}`** | All agents pass this to prevent 400 errors on tool calls. |
+| 13 | **Handoff fix** | `broker_submit_handoff_tool` handles empty JSON strings safely (`""` → `"[]"`). |
+| 14 | **Developer graph compilation fix** | `model.bind_tools(_get_cached_tools())` added so the agent generates actual tool calls instead of just chatting. |
+
+---
+
+## 📋 Next Steps
+
+### Immediate (do these first)
+
+1. **Lane Scratchpad (1.1)**
+   - Add `scratchpad: list[dict]` to `LaneState` in `swarm/graph.py`
+   - Add `ScratchpadEntry` TypedDict
+   - Each node appends one entry at end of turn
+   - Inject last 20 entries into every agent's system prompt
+   - Compact old entries via `compact_node` logic
+
+2. **Agent Registry / Team Awareness (1.2)**
+   - Add "Your Team" section to all agent prompts (`developer.md`, `advisor.md`, `qa_deploy.md`, `supervisor.md`)
+   - Inject teammate list + recent scratchpad into system prompts
+   - Add `agent_name` field to each node's state so it knows who it is
+
+3. **Search/Replace Tool (2.1)**
+   - Add `edit_file(old_string, new_string)` tool to `toolkit.py`
+   - Validate exact match before replacement
+   - Return clear error if old_string not found
+   - Update developer prompt to prefer `edit_file` over `sed`
+
+### Short-term (next 1–2 sessions)
+
+4. **Working Memory (1.4)** — Dev-only scratchpad for key facts
+5. **Auto-Cue Reading (1.3)** — Pull cues at start of each agent turn
+6. **Git Strategy (2.3)** — Branch naming, commit format, git helper tools
+7. **Structured Test Runner (2.2)** — Parse vitest/tsc output into JSON
+
+### Medium-term (when swarm is running end-to-end)
+
+8. **Parallel Subtask Execution (3.1)** — Multiple devs in one lane
+9. **Retry with Backoff (3.2)** — Failed lanes auto-retry
+10. **Lane Timeout Handling (3.4)** — Stuck lane detection & recovery
+11. **Structured Logging (4.1)** — JSON logs for all agent actions
+12. **Secret Detection (4.3)** — Block commits touching secrets
+
+### Long-term / Research
+
+13. **File Content Cache (1.x)** — Don't re-read same files across turns
+14. **Streaming Compaction (1.x)** — Background compaction while agent works
+15. **Event Subscriptions (1.x)** — Agents subscribe to event types from other agents
+16. **Circuit Breaker (3.3)** — Stop retrying consistently failing lanes
+17. **Cost Accounting (4.2)** — Track $ per plan/lane/agent
+18. **Lane Progress Dashboard (4.x)** — Real-time web UI
+19. **Lane Replay / Time Travel (4.x)** — Debug by replaying from checkpoint
+20. **Human-in-the-Loop (4.x)** — Pause lanes for approval at checkpoints
+
+---
+
+*Last updated: 2026-04-26*

@@ -33,11 +33,12 @@ def _make_model() -> ChatOpenAI:
     if not api_key:
         raise RuntimeError("KIMI_API_KEY or OPENAI_API_KEY not set")
     base_url = os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
-    model = os.getenv("KIMI_MODEL", "kimi-for-coding")
+    # Advisor does architectural reasoning — can use a stronger model (e.g. kimi-k2-6)
+    model = os.getenv("KIMI_ADVISOR_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
     return ChatOpenAI(
         model=model,
         temperature=0.2,
-        max_tokens=4096,
+        max_tokens=8192,
         api_key=api_key,
         base_url=base_url,
         model_kwargs={
@@ -45,6 +46,7 @@ def _make_model() -> ChatOpenAI:
                 "User-Agent": "claude-code/0.1",
             }
         },
+        extra_body={"reasoning": None},
     )
 
 

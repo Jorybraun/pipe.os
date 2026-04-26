@@ -50,7 +50,7 @@ async function buildContextSnapshot(db: D1Database, pipelineId: string): Promise
   ).bind(pipelineId).first<{ rcd_json: string | null; persona_json: string | null; job_description_md: string | null }>();
 
   if (roleCtx) {
-    // Phase 0.1: read RCD primary, fall back to legacy persona_json.
+    /** RCD primary, persona_json fallback — see ADR-040 */
     let persona: CandidatePersona | null = null;
     if (roleCtx.rcd_json) {
       const rcd = parseJson<{ consumer_slice?: CandidatePersona } | null>(roleCtx.rcd_json, null);

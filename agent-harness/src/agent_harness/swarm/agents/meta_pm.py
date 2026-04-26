@@ -35,7 +35,8 @@ def _make_model() -> ChatOpenAI:
     if not api_key:
         raise RuntimeError("KIMI_API_KEY or OPENAI_API_KEY not set")
     base_url = os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
-    model = os.getenv("KIMI_MODEL", "kimi-for-coding")
+    # Allow a dedicated model for the Meta-PM (e.g. kimi-k2-6 for stronger reasoning)
+    model = os.getenv("KIMI_META_PM_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
     return ChatOpenAI(
         model=model,
         temperature=0.3,
@@ -47,6 +48,7 @@ def _make_model() -> ChatOpenAI:
                 "User-Agent": "claude-code/0.1",
             }
         },
+        extra_body={"reasoning": None},
     )
 
 
@@ -123,8 +125,8 @@ def _get_meta_pm_tools() -> list[Any]:
     @tool
     def broker_sync_plans_tool() -> str:
         """Re-scan docs/plans/strategy-v2/**/*.md and sync to the broker database."""
-        count = sync_plans_to_db()
-        return json.dumps({"synced": count}, indent=2)
+        result = sync_plans_to_db()
+        return json.dumps({"synced": result}, indent=2)
 
     @tool
     def broker_claim_plan_tool(plan_id: str) -> str:

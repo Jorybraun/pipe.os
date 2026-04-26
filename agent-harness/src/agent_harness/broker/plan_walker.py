@@ -1,6 +1,7 @@
 """Walk docs/plans/strategy-v2/**/*.md, parse frontmatter + sections, populate SQLite."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -199,8 +200,28 @@ def walk_plans(root: Path | str | None = None) -> list[dict[str, Any]]:
     return plans
 
 
-def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Connection | None = None) -> int:
-    """Upsert parsed plans into the broker database. Returns count inserted/updated."""
+def _plan_hash(p: dict[str, Any]) -> str:
+    """Compute a content hash for a parsed plan (excludes swarm-managed status)."""
+    content = {
+        "plan_path": p.get("plan_path"),
+        "title": p.get("title"),
+        "source": p.get("source"),
+        "phase": p.get("phase"),
+        "estimate": p.get("estimate"),
+        "why": p.get("why"),
+        "acceptance": p.get("acceptance"),
+        "subtasks": p.get("subtasks", []),
+        "files": p.get("files", []),
+        "dependencies": p.get("dependencies", []),
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Connection | None = None) -> dict[str, int]:
+    """Diff-sync parsed plans into the broker database. Preserves swarm state.
+
+    Returns {"inserted": N, "updated": N, "unchanged": N}
+    """
     if plans is None:
         plans = walk_plans()
 
@@ -209,11 +230,17 @@ def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Co
         conn = get_conn()
 
     now = time.time()
-    count = 0
+    inserted = 0
+    updated = 0
+    unchanged = 0
+
+    # Ensure content_hash column exists (idempotent)
+    cursor = conn.execute("PRAGMA table_info(plans)")
+    cols = {r["name"] for r in cursor.fetchall()}
+    if "content_hash" not in cols:
+        conn.execute("ALTER TABLE plans ADD COLUMN content_hash TEXT")
 
     valid_plan_ids = {p["plan_id"] for p in plans}
-    # Map bare filename -> full plan_id for dependency resolution
-    # e.g. "phase2-role-nodes-migration.md" -> "part2-role-discovery/phase2-role-nodes-migration.md"
     filename_to_plan_id: dict[str, str] = {}
     for p in plans:
         pid = p["plan_id"]
@@ -221,83 +248,114 @@ def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Co
         filename_to_plan_id[Path(pid).name] = pid
 
     def _resolve_dep(dep_id: str) -> str | None:
-        """Resolve a dependency reference to a full plan_id."""
         if dep_id in valid_plan_ids:
             return dep_id
-        # Try as bare filename
         if dep_id in filename_to_plan_id:
             return filename_to_plan_id[dep_id]
-        # Try stripping any relative path prefix
         clean = dep_id.lstrip("./")
         if clean in filename_to_plan_id:
             return filename_to_plan_id[clean]
-        # Try matching against just the filename part of plan_ids
         for pid in valid_plan_ids:
             if Path(pid).name == Path(dep_id).name:
                 return pid
         return None
 
+    # Load existing plans and subtasks from DB
+    cursor = conn.cursor()
+    cursor.execute("SELECT plan_id, status, content_hash FROM plans")
+    existing_plans: dict[str, dict[str, Any]] = {
+        r["plan_id"]: {"status": r["status"], "hash": r["content_hash"]}
+        for r in cursor.fetchall()
+    }
+
+    cursor.execute("SELECT plan_id, subtask_id, status FROM plan_subtasks")
+    existing_subtasks: dict[tuple[str, str], str] = {
+        (r["plan_id"], r["subtask_id"]): r["status"]
+        for r in cursor.fetchall()
+    }
+
     with conn:
-        # Wipe and rebuild (plans are source of truth in markdown)
-        # Clear foreign-key references that may not have ON DELETE CASCADE
-        # in legacy databases before deleting plans.
-        conn.execute("UPDATE migration_ledger SET plan_id = NULL")
-        conn.execute("DELETE FROM lanes")
-        conn.execute("DELETE FROM plan_files")
-        conn.execute("DELETE FROM plan_dependencies")
-        conn.execute("DELETE FROM plan_subtasks")
-        conn.execute("DELETE FROM plans")
-
         for p in plans:
-            conn.execute(
-                """
-                INSERT INTO plans (plan_id, plan_path, title, source, phase, status, estimate, why, acceptance, parsed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    p["plan_id"],
-                    p["plan_path"],
-                    p["title"],
-                    p.get("source"),
-                    p.get("phase"),
-                    p["status"],
-                    p.get("estimate"),
-                    p.get("why"),
-                    p.get("acceptance"),
-                    now,
-                ),
-            )
+            pid = p["plan_id"]
+            new_hash = _plan_hash(p)
+            existing = existing_plans.get(pid)
 
-            for st in p.get("subtasks", []):
+            if existing is None:
+                # New plan — insert everything
                 conn.execute(
                     """
-                    INSERT INTO plan_subtasks (plan_id, subtask_id, title, spec, files, migrations, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO plans (plan_id, plan_path, title, source, phase, status, estimate, why, acceptance, parsed_at, content_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        p["plan_id"],
-                        st["subtask_id"],
-                        st["title"],
-                        st["spec"],
-                        json.dumps(st["files"]),
-                        json.dumps(st["migrations"]),
-                        st["status"],
+                        pid, p["plan_path"], p["title"], p.get("source"),
+                        p.get("phase"), p["status"], p.get("estimate"),
+                        p.get("why"), p.get("acceptance"), now, new_hash,
+                    ),
+                )
+                _insert_plan_children(conn, p)
+                inserted += 1
+
+            elif existing.get("hash") == new_hash:
+                # Plan unchanged — skip entirely
+                unchanged += 1
+
+            else:
+                # Plan changed — update content but preserve swarm status
+                db_status = existing["status"]
+                new_status = p["status"]
+                # If swarm has moved the plan from PENDING, don't revert it
+                if db_status not in (None, "", "PENDING"):
+                    new_status = db_status
+
+                conn.execute(
+                    """
+                    UPDATE plans
+                    SET plan_path = ?, title = ?, source = ?, phase = ?,
+                        status = ?, estimate = ?, why = ?, acceptance = ?,
+                        parsed_at = ?, content_hash = ?
+                    WHERE plan_id = ?
+                    """,
+                    (
+                        p["plan_path"], p["title"], p.get("source"),
+                        p.get("phase"), new_status, p.get("estimate"),
+                        p.get("why"), p.get("acceptance"), now, new_hash,
+                        pid,
                     ),
                 )
 
-            for f in p.get("files", []):
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO plan_files (plan_id, file_path)
-                    VALUES (?, ?)
-                    """,
-                    (p["plan_id"], f),
-                )
+                # Sync subtasks: delete old, insert new, preserve non-PENDING statuses
+                conn.execute("DELETE FROM plan_subtasks WHERE plan_id = ?", (pid,))
+                for st in p.get("subtasks", []):
+                    st_id = st["subtask_id"]
+                    db_st_status = existing_subtasks.get((pid, st_id))
+                    st_status = st["status"]
+                    if db_st_status not in (None, "", "PENDING"):
+                        st_status = db_st_status
+                    conn.execute(
+                        """
+                        INSERT INTO plan_subtasks (plan_id, subtask_id, title, spec, files, migrations, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            pid, st_id, st["title"], st["spec"],
+                            json.dumps(st["files"]), json.dumps(st["migrations"]),
+                            st_status,
+                        ),
+                    )
 
-            count += 1
+                # Sync files
+                conn.execute("DELETE FROM plan_files WHERE plan_id = ?", (pid,))
+                for f in p.get("files", []):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO plan_files (plan_id, file_path) VALUES (?, ?)",
+                        (pid, f),
+                    )
 
-        # Second pass: insert dependencies after all plans exist
-        # (avoids FK constraint failure when plan A depends on plan B inserted later)
+                updated += 1
+
+        # Dependencies: clear and rebuild (dependency resolution needs full graph)
+        conn.execute("DELETE FROM plan_dependencies")
         for p in plans:
             for dep in p.get("dependencies", []):
                 resolved = _resolve_dep(dep["depends_on"])
@@ -312,7 +370,28 @@ def sync_plans_to_db(plans: list[dict[str, Any]] | None = None, conn: sqlite3.Co
 
     if close_conn:
         conn.close()
-    return count
+    return {"inserted": inserted, "updated": updated, "unchanged": unchanged}
+
+
+def _insert_plan_children(conn: sqlite3.Connection, p: dict[str, Any]) -> None:
+    """Insert subtasks and files for a new plan."""
+    for st in p.get("subtasks", []):
+        conn.execute(
+            """
+            INSERT INTO plan_subtasks (plan_id, subtask_id, title, spec, files, migrations, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                p["plan_id"], st["subtask_id"], st["title"], st["spec"],
+                json.dumps(st["files"]), json.dumps(st["migrations"]),
+                st["status"],
+            ),
+        )
+    for f in p.get("files", []):
+        conn.execute(
+            "INSERT OR IGNORE INTO plan_files (plan_id, file_path) VALUES (?, ?)",
+            (p["plan_id"], f),
+        )
 
 
 def list_plans(status: str | None = None, conn: sqlite3.Connection | None = None) -> list[dict[str, Any]]:

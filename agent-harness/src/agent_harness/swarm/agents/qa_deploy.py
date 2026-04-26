@@ -63,7 +63,8 @@ def _make_model() -> ChatOpenAI:
     if not api_key:
         raise RuntimeError("KIMI_API_KEY or OPENAI_API_KEY not set")
     base_url = os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
-    model = os.getenv("KIMI_MODEL", "kimi-for-coding")
+    # QA-Deploy does validation & judgment — defaults to strategic model (e.g. kimi-k2-6)
+    model = os.getenv("KIMI_QA_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
     return ChatOpenAI(
         model=model,
         temperature=0.2,
@@ -75,6 +76,7 @@ def _make_model() -> ChatOpenAI:
                 "User-Agent": "claude-code/0.1",
             }
         },
+        extra_body={"reasoning": None},
     )
 
 
@@ -84,7 +86,10 @@ def qa_agent_node(state: QAState, config: RunnableConfig) -> dict[str, Any]:
     messages = state["messages"]
     if not messages or not isinstance(messages[0], SystemMessage):
         messages = [_build_system_message(state)] + list(messages)
-    response = model.invoke(messages, config)
+    # Bind tools so the model knows to generate tool_calls
+    tools = _get_cached_qa_tools()
+    model_with_tools = model.bind_tools(tools)
+    response = model_with_tools.invoke(messages, config)
     return {"messages": [response]}
 
 

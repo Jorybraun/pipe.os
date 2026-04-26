@@ -32,10 +32,10 @@ def register_interrupt(
 
     conn.execute(
         """
-        INSERT INTO interrupts (interrupt_id, plan_id, plan_path, lane_id, thread_id, checkpoint_id, reason, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO interrupts (interrupt_id, plan_id, lane_id, thread_id, checkpoint_id, reason, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (interrupt_id, plan_id, plan_path, lane_id, thread_id, checkpoint_id, reason, "active", now),
+        (interrupt_id, plan_id, lane_id, thread_id, checkpoint_id, reason, "active", now),
     )
     conn.commit()
 
@@ -45,7 +45,6 @@ def register_interrupt(
     return {
         "interrupt_id": interrupt_id,
         "plan_id": plan_id,
-        "plan_path": plan_path,
         "lane_id": lane_id,
         "thread_id": thread_id,
         "checkpoint_id": checkpoint_id,

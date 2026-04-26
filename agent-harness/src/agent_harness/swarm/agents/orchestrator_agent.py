@@ -12,39 +12,6 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from deepagents import create_deep_agent
 
-# ---------------------------------------------------------------------------
-# Patch: Kimi API requires reasoning_content on assistant messages with
-# tool_calls, but LangChain doesn't preserve it. We need to:
-# 1. Save reasoning_content from API responses into additional_kwargs
-# 2. Include reasoning_content when serializing messages back to dict
-# ---------------------------------------------------------------------------
-from langchain_openai.chat_models import base as _openai_base
-
-_original_msg_to_dict = _openai_base._convert_message_to_dict
-_original_dict_to_msg = _openai_base._convert_dict_to_message
-
-
-def _patched_convert_dict_to_message(_dict):
-    msg = _original_dict_to_msg(_dict)
-    if _dict.get("role") == "assistant" and "reasoning_content" in _dict:
-        # Store reasoning_content so it survives round-trips
-        msg.additional_kwargs["reasoning_content"] = _dict["reasoning_content"]
-    return msg
-
-
-def _patched_convert_message_to_dict(message, api="chat/completions"):
-    result = _original_msg_to_dict(message, api=api)
-    if result.get("role") == "assistant":
-        # Prefer stored reasoning_content, fallback to empty string
-        rc = message.additional_kwargs.get("reasoning_content", "")
-        if rc or "reasoning_content" not in result:
-            result["reasoning_content"] = rc
-    return result
-
-
-_openai_base._convert_dict_to_message = _patched_convert_dict_to_message
-_openai_base._convert_message_to_dict = _patched_convert_message_to_dict
-
 from agent_harness.broker import (
     list_plans,
     runnable_set,
@@ -71,8 +38,10 @@ def _make_model() -> ChatOpenAI:
     api_key = os.getenv("KIMI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("KIMI_API_KEY or OPENAI_API_KEY not set")
+    # Orchestrator can use a stronger model (e.g. kimi-k2-6) for strategic reasoning
+    model = os.getenv("KIMI_ORCHESTRATOR_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
     return ChatOpenAI(
-        model=os.getenv("KIMI_MODEL", "kimi-for-coding"),
+        model=model,
         temperature=0.3,
         max_tokens=4096,
         api_key=api_key,

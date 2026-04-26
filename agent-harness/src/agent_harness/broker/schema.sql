@@ -151,7 +151,6 @@ CREATE INDEX IF NOT EXISTS idx_handoffs_plan ON handoffs(plan_id, subtask_id, se
 CREATE TABLE IF NOT EXISTS interrupts (
     interrupt_id    TEXT PRIMARY KEY,
     plan_id         TEXT NOT NULL REFERENCES plans(plan_id) ON DELETE CASCADE,
-    plan_path       TEXT,                               -- full relative path from repo root
     lane_id         TEXT,
     thread_id       TEXT NOT NULL,
     checkpoint_id   TEXT,

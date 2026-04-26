@@ -930,8 +930,8 @@ async def broker_sync_plans(
     ctx: Context | None = None,
 ) -> str:
     """Re-scan docs/plans/strategy-v2/**/*.md and sync to the broker database."""
-    count = sync_plans_to_db()
-    return json.dumps({"synced": count}, indent=2)
+    result = sync_plans_to_db()
+    return json.dumps({"synced": result}, indent=2)
 
 
 @mcp.tool()
@@ -1278,8 +1278,8 @@ async def harness_start_lane(
     plan = broker_get_plan(plan_id)
     if not plan:
         return json.dumps({"error": f"Plan not found: {plan_id}"}, indent=2)
-    if plan.get("status") != "PENDING":
-        return json.dumps({"error": f"Plan status is {plan.get('status')}, not PENDING"}, indent=2)
+    if plan.get("status") not in ("PENDING", "CLAIMED"):
+        return json.dumps({"error": f"Plan status is {plan.get('status')}, not PENDING or CLAIMED"}, indent=2)
 
     lane_id = _lane_id_from_plan_id(plan_id)
     running = {l["lane_id"] for l in lane_list_running_lanes()}
@@ -1287,8 +1287,9 @@ async def harness_start_lane(
         return json.dumps({"error": f"Lane {lane_id} is already running"}, indent=2)
 
     # Atomic claim: prevent race conditions on concurrent starts
-    if not broker_claim_plan(plan_id, lane_id):
-        return json.dumps({"error": f"Plan {plan_id} is already claimed or not PENDING"}, indent=2)
+    if plan.get("status") == "PENDING":
+        if not broker_claim_plan(plan_id, lane_id):
+            return json.dumps({"error": f"Plan {plan_id} is already claimed or not PENDING"}, indent=2)
 
     try:
         lane_start_lane(plan_id, lane_id)

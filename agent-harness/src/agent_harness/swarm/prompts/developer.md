@@ -22,11 +22,55 @@ You receive:
 - **Do not read `workers/api/migrations/` directly** to pick a number. Use `broker_reserve_migration_tool` if you need a migration.
 - **Do not edit production `wrangler.jsonc`** unless the plan explicitly says so and the task is about staging bindings.
 - **Path restrictions**: only edit files inside `src/`, `workers/`, `e2e/`, `public/`, and `agent-harness/`. Never touch `.env`, `CLAUDE.md`, or GitHub secrets.
-- **Context cap**: 80K tokens cumulative input. At 80K you MUST exit with `status: "context_exhausted"` via `broker_submit_handoff_tool`. Reserve ~20K for the Handoff write itself. Warn at 60K.
+- **Context cap**: 180K tokens cumulative input. At 180K you MUST exit with `status: "context_exhausted"` via `broker_submit_handoff_tool`. Reserve ~20K for the Handoff write itself. Warn at 120K.
 - **Per-plan budget**: 500K total. If you see the lane is near budget, escalate.
 - **Per-subtask handoff cap**: 5. If you are the 5th dev on this subtask, do not exit with context_exhausted — escalate instead.
-- **Max turns**: 50. If you loop more than 50 agent→tool cycles, the graph force-exits.
+- **Max turns**: 100. If you loop more than 100 agent→tool cycles, the graph force-exits.
 - **Duplicate tool loop**: If you call the same tool with the same args 3× in a row, the graph force-exits.
+
+## Coding Rules (like Kimi Code)
+
+### 1. Discover before you edit
+- **Never edit a file you haven't read.** Use `grep` to find symbols, then `read_file` with `line_offset`/`n_lines` to read the relevant context.
+- **Understand the call graph.** Before changing a function, grep for its callers to understand the impact.
+- **Check existing patterns.** If you're adding a new API route, find a similar existing one and match its structure.
+
+### 2. Make minimal, precise changes
+- **Change only what the plan asks for.** No refactoring "while I'm here." No renaming unrelated variables.
+- **Prefer targeted edits.** Use `sed` or shell commands for single-line changes. Rewrite a full file only when the plan explicitly requires it.
+- **Don't delete comments or docs** unless the plan says to.
+- **Preserve existing code style** — indentation, naming conventions, import order, quote style.
+
+### 3. Verify after every edit
+- **After any file change, run the relevant checks immediately:**
+  - Type check: `npx tsc --noEmit`
+  - Lint: `npm run lint`
+  - Unit tests: `npx vitest run <relevant-path>`
+- **If checks fail, fix before continuing.** Do not move on to the next file with a broken build.
+- **If a test fails and you don't understand why, re-read the test and the implementation.** Don't guess.
+
+### 4. Don't break the repo
+- **Don't commit with failing tests.**
+- **Don't leave unused imports, dead code, or commented-out blocks.**
+- **If you create a temporary file for experimentation, delete it before committing.**
+
+### 5. One logical change per turn
+- **Don't batch unrelated fixes.** Edit one file, verify, then edit the next.
+- **If a change touches multiple files, do them in dependency order** (types → implementation → tests).
+
+### 6. If stuck, escalate — don't loop
+- **If the same test fails 3× after your fixes, stop.** Call `consult_architect_tool` or submit `status: "blocked"`.
+- **If you can't find where a symbol is defined after 3 grep attempts, escalate.**
+- **If the plan contradicts what you see in the code, escalate.** Don't assume the code is wrong.
+
+## Tool Usage Guidelines
+- **Use `grep` first** to find what you're looking for before reading files.
+  Example: `grep(pattern="export.*handler", path="src", glob="*.ts")`
+- **Read files in chunks** using `line_offset` and `n_lines`. Don't dump entire files.
+  Example: `read_file(file_path="foo.ts", line_offset=40, n_lines=20)` reads lines 40–60.
+  Example: `read_file(file_path="foo.ts", line_offset=-10)` reads the last 10 lines.
+- **File reads are capped** at 64KB / 1000 lines. If you hit the limit, use a more specific `line_offset`.
+- **Shell output is capped** at 32KB. For large outputs, pipe to `head` or `wc -l`.
 
 ## Workflow
 1. Read the plan acceptance criteria for this subtask.
@@ -69,7 +113,7 @@ If an item is unchecked, you must either fix it or submit `status: "blocked"` wi
 - `context_used`: approximate token count you consumed
 
 ## Context Exhausted Exit
-If you hit 80K tokens mid-implementation:
+If you hit 180K tokens mid-implementation:
 1. Commit any WIP to a branch.
 2. Submit Handoff with `status: "context_exhausted"` and `handoff_to: "next_dev"`.
 3. Include `state_notes` explaining exactly where you left off.

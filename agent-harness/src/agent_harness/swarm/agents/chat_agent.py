@@ -21,7 +21,7 @@ def _make_model() -> ChatOpenAI | None:
         return None
     # Support both Kimi Code (kimi.com) and Kimi Platform (moonshot.cn)
     base_url = os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
-    model = os.getenv("KIMI_MODEL", "kimi-for-coding")
+    model = os.getenv("KIMI_CHAT_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
     try:
         return ChatOpenAI(
             model=model,
@@ -34,6 +34,7 @@ def _make_model() -> ChatOpenAI | None:
                     "User-Agent": "claude-code/0.1",
                 }
             },
+            extra_body={"reasoning": None},
         )
     except Exception:
         return None

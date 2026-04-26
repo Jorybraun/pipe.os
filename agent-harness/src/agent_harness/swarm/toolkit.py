@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import tool
@@ -28,8 +30,10 @@ from agent_harness.broker import (
 from agent_harness.swarm.agents.architect import run_architect
 
 
-MAX_SHELL_OUTPUT = 32_000  # characters
-MAX_FILE_READ_BYTES = 64_000  # characters
+# ── Output caps (aligned with Kimi Code CLI) ──────────────────────────────
+MAX_SHELL_OUTPUT = 32_000     # characters
+MAX_FILE_READ_BYTES = 64_000  # characters — high cap for long-horizon work
+MAX_LINE_LENGTH = 2_000       # truncate individual lines
 
 
 class SafeShellTool(ShellTool):
@@ -49,46 +53,202 @@ class SafeShellTool(ShellTool):
         return result
 
 
-class SafeReadFileTool(ReadFileTool):
-    """ReadFileTool with size limits to prevent checkpoint bloat."""
-
-    max_read_bytes: int = MAX_FILE_READ_BYTES
-
-    def _run(self, file_path: str, run_manager=None):
-        try:
-            read_path = self.get_relative_path(file_path)
-        except Exception:
-            return INVALID_PATH_TEMPLATE.format(arg_name="file_path", value=file_path)
-        if not read_path.exists():
-            return f"Error: no such file or directory: {file_path}"
-        try:
-            size = read_path.stat().st_size
-            if size > self.max_read_bytes:
-                with read_path.open("r", encoding="utf-8") as f:
-                    content = f.read(self.max_read_bytes)
-                last_newline = content.rfind("\n")
-                if last_newline > 0:
-                    content = content[:last_newline]
-                content += (
-                    f"\n\n[TRUNCATED: file is {size} bytes, limit {self.max_read_bytes}]"
-                )
-                return content
-            with read_path.open("r", encoding="utf-8") as f:
-                return f.read()
-        except Exception as e:
-            return "Error: " + str(e)
-
-
 def get_developer_tools(root_dir: str = ".") -> list[Any]:
     """Return the full tool list for an ephemeral developer agent."""
-    # File management (restricted to repo root)
+    root_path = Path(root_dir).resolve()
+
+    # ── File management (custom read + grep + langchain defaults) ─────────
     ftk = FileManagementToolkit(root_dir=root_dir)
-    file_tools = []
+    file_tools: list[Any] = []
     for t in ftk.get_tools():
         if isinstance(t, ReadFileTool):
-            file_tools.append(SafeReadFileTool(root_dir=root_dir))
+            continue  # Replaced by custom read_file below
+        file_tools.append(t)
+
+    @tool
+    def read_file(file_path: str, line_offset: int = 1, n_lines: int = 1000) -> str:
+        """Read a file from disk with optional line range.
+
+        Args:
+            file_path: Path to the file. Absolute paths required when reading
+                outside the working directory.
+            line_offset: Line number to start reading from (1-indexed).
+                Use negative values to read from the end (e.g., -100 reads
+                the last 100 lines). The absolute value cannot exceed 1000.
+            n_lines: Maximum number of lines to read. Default 1000, max 1000.
+                Set this when the file is too large to read at once.
+        """
+        target = Path(file_path)
+        if not target.is_absolute():
+            target = root_path / target
+        target = target.resolve()
+
+        if not target.exists():
+            return f"Error: no such file or directory: {file_path}"
+        if not target.is_file():
+            return f"Error: not a file: {file_path}"
+
+        # Safety: cap n_lines
+        max_lines = min(n_lines, 1000)
+
+        try:
+            raw_text = target.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            return f"Error: failed to read {file_path}: {e}"
+
+        all_lines = raw_text.splitlines(keepends=True)
+        total_lines = len(all_lines)
+
+        # Determine slice
+        if line_offset < 0:
+            tail_count = abs(line_offset)
+            start = max(0, total_lines - tail_count)
+            end = min(total_lines, start + max_lines)
         else:
-            file_tools.append(t)
+            start = max(0, line_offset - 1)  # 1-indexed → 0-indexed
+            end = min(total_lines, start + max_lines)
+
+        selected = all_lines[start:end]
+
+        # Truncate individual long lines and accumulate byte budget
+        lines_out: list[str] = []
+        bytes_out = 0
+        max_bytes_reached = False
+        truncated_line_nos: list[int] = []
+
+        for i, line in enumerate(selected, start=start + 1):
+            if len(line) > MAX_LINE_LENGTH:
+                line = line[:MAX_LINE_LENGTH] + "\n"
+                truncated_line_nos.append(i)
+            line_bytes = len(line.encode("utf-8"))
+            if bytes_out + line_bytes > MAX_FILE_READ_BYTES:
+                max_bytes_reached = True
+                break
+            bytes_out += line_bytes
+            lines_out.append(line)
+
+        # Format with line numbers like `cat -n`
+        formatted: list[str] = []
+        for line_num, line in zip(range(start + 1, start + 1 + len(lines_out)), lines_out):
+            formatted.append(f"{line_num:6d}\t{line}")
+
+        msg = f"{len(lines_out)} lines read from file starting from line {start + 1}."
+        msg += f" Total lines in file: {total_lines}."
+        if max_bytes_reached:
+            msg += f" Max {MAX_FILE_READ_BYTES} bytes reached."
+        elif end < total_lines:
+            msg += " End of range reached."
+        else:
+            msg += " End of file reached."
+        if truncated_line_nos:
+            msg += f" Lines {truncated_line_nos} were truncated."
+
+        return msg + "\n" + "".join(formatted)
+
+    @tool
+    def grep(pattern: str, path: str = ".", glob: str = "*") -> str:
+        """Search file contents for a pattern using ripgrep (rg) or grep.
+
+        Args:
+            pattern: Regex pattern to search for.
+            path: Directory or file to search in. Default is current directory.
+            glob: File glob pattern to filter (e.g., '*.ts', '*.py').
+                Default '*' searches all files.
+        """
+        search_path = Path(path)
+        if not search_path.is_absolute():
+            search_path = root_path / search_path
+        search_path = search_path.resolve()
+
+        if not search_path.exists():
+            return f"Error: path does not exist: {path}"
+
+        # Try ripgrep first (fastest)
+        rg_cmd = [
+            "rg", "-n", "--max-count", "50", "--glob", glob,
+            "-C", "2",  # 2 lines of context
+            pattern, str(search_path),
+        ]
+        try:
+            result = subprocess.run(
+                rg_cmd,
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 or result.stdout:
+                lines = result.stdout.strip().splitlines()
+                if len(lines) > 100:
+                    return (
+                        f"Found {len(lines)} matches (showing first 100):\n"
+                        + "\n".join(lines[:100])
+                        + f"\n\n[TRUNCATED: {len(lines) - 100} more matches]"
+                    )
+                return result.stdout
+            if result.returncode == 1:
+                return f"No matches for pattern '{pattern}' in {path}"
+        except FileNotFoundError:
+            pass  # rg not available, try grep
+        except subprocess.TimeoutExpired:
+            return f"Error: grep timed out after 15s searching for '{pattern}'"
+
+        # Fallback to grep -r
+        grep_cmd = [
+            "grep", "-rn", "-C", "2", "--include", glob,
+            pattern, str(search_path),
+        ]
+        try:
+            result = subprocess.run(
+                grep_cmd,
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 or result.stdout:
+                lines = result.stdout.strip().splitlines()
+                if len(lines) > 100:
+                    return (
+                        f"Found {len(lines)} matches (showing first 100):\n"
+                        + "\n".join(lines[:100])
+                        + f"\n\n[TRUNCATED: {len(lines) - 100} more matches]"
+                    )
+                return result.stdout
+            if result.returncode == 1:
+                return f"No matches for pattern '{pattern}' in {path}"
+        except FileNotFoundError:
+            pass
+        except subprocess.TimeoutExpired:
+            return f"Error: grep timed out after 15s searching for '{pattern}'"
+
+        # Final fallback: Python os.walk
+        try:
+            import re
+            matches: list[str] = []
+            if search_path.is_file():
+                files = [search_path]
+            else:
+                files = list(search_path.rglob(glob.replace("*", "**")))
+                files = [f for f in files if f.is_file()]
+
+            compiled = re.compile(pattern)
+            for f in files:
+                try:
+                    text = f.read_text(encoding="utf-8", errors="replace")
+                    for lineno, line in enumerate(text.splitlines(), 1):
+                        if compiled.search(line):
+                            matches.append(f"{f}:{lineno}:{line}")
+                            if len(matches) >= 100:
+                                return (
+                                    f"Found 100+ matches:\n"
+                                    + "\n".join(matches)
+                                    + "\n\n[TRUNCATED: more matches]"
+                                )
+                except Exception:
+                    continue
+
+            if not matches:
+                return f"No matches for pattern '{pattern}' in {path}"
+            return f"Found {len(matches)} matches:\n" + "\n".join(matches)
+        except Exception as e:
+            return f"Error: grep failed: {e}"
+
+    file_tools.extend([read_file, grep])
 
     # Shell (with output limits)
     shell_tool = SafeShellTool()
@@ -106,6 +266,14 @@ def get_developer_tools(root_dir: str = ".") -> list[Any]:
         browser_tools = []
 
     # Broker tools — wrapped as LangChain @tool functions
+    def _safe_json_loads(s: str, default: Any) -> Any:
+        if not s or not s.strip():
+            return default
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            return default
+
     @tool
     def broker_submit_handoff_tool(
         plan_id: str,
@@ -127,19 +295,25 @@ def get_developer_tools(root_dir: str = ".") -> list[Any]:
         handoff_to: next_dev | qa_deploy | supervisor_reroute
         dod_checklist: JSON list of {item: str, checked: bool, justification: str}
         """
+        import sys
+        print(f"[DEV-TOOL] broker_submit_handoff_tool called with plan_id='{plan_id}' subtask_id='{subtask_id}' status='{status}' handoff_to='{handoff_to}'", file=sys.stderr)
+        if not plan_id:
+            return json.dumps({"error": "plan_id is required and cannot be empty"}, indent=2)
+        if not subtask_id:
+            return json.dumps({"error": "subtask_id is required and cannot be empty"}, indent=2)
         record = submit_handoff(
             plan_id=plan_id,
             subtask_id=subtask_id,
             status=status,
             handoff_to=handoff_to,
             sequence=sequence or None,
-            done=json.loads(done),
-            next_actions=json.loads(next_actions),
-            state_notes=json.loads(state_notes),
-            files_touched=json.loads(files_touched),
-            migrations_reserved=json.loads(migrations_reserved),
+            done=_safe_json_loads(done, []),
+            next_actions=_safe_json_loads(next_actions, []),
+            state_notes=_safe_json_loads(state_notes, []),
+            files_touched=_safe_json_loads(files_touched, []),
+            migrations_reserved=_safe_json_loads(migrations_reserved, []),
             context_used=context_used or None,
-            dod_checklist=json.loads(dod_checklist),
+            dod_checklist=_safe_json_loads(dod_checklist, []),
         )
         return json.dumps({"submitted": record}, indent=2)
 

@@ -139,14 +139,14 @@ def test_sync_plans_with_existing_migration_ledger():
         conn.commit()
         conn.close()
 
-        # This used to raise sqlite3.IntegrityError: FOREIGN KEY constraint failed
-        count = sync_plans_to_db(plans=[], conn=get_conn(db_path))
-        assert count == 0
+        # Diff-sync: empty plans list means nothing to sync, existing DB state preserved
+        result = sync_plans_to_db(plans=[], conn=get_conn(db_path))
+        assert result == {"inserted": 0, "updated": 0, "unchanged": 0}
 
-        # Verify migration ledger row still exists but plan_id is now NULL
+        # Verify migration ledger row still intact (diff-sync preserves swarm state)
         conn = get_conn(db_path)
         row = conn.execute("SELECT plan_id FROM migration_ledger WHERE number = 1").fetchone()
-        assert row["plan_id"] is None
+        assert row["plan_id"] == "test-plan"
         conn.close()
 
 

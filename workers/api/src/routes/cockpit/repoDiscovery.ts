@@ -66,7 +66,7 @@ repoDiscovery.post('/discover', async (c) => {
     `SELECT id, rcd_json, persona_json FROM role_contexts WHERE pipeline_id = ?1 AND status = 'COMPLETE' ORDER BY updated_at DESC LIMIT 1`,
   ).bind(body.pipelineId).first<{ id: string; rcd_json: string | null; persona_json: string | null }>();
 
-  // Phase 0.1: read RCD primary, fall back to legacy persona_json.
+  /** RCD primary, persona_json fallback — see ADR-040 */
   let persona: CandidatePersona | null = null;
   if (roleCtx?.rcd_json) {
     const rcd = parseJsonColumn<{ consumer_slice?: CandidatePersona } | null>(roleCtx.rcd_json, null);
