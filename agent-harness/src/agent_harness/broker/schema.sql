@@ -65,7 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_plan_files_path ON plan_files(file_path);
 CREATE TABLE IF NOT EXISTS migration_ledger (
     number      INTEGER NOT NULL,
     env         TEXT NOT NULL,
-    plan_id     TEXT REFERENCES plans(plan_id),
+    plan_id     TEXT REFERENCES plans(plan_id) ON DELETE SET NULL,
     lane_id     TEXT,
     reserved_at REAL,
     released_at REAL,
@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS handoffs (
     migrations_reserved TEXT,                   -- JSON list
     context_used    INTEGER,
     handoff_to      TEXT NOT NULL,              -- next_dev | qa_deploy | supervisor_reroute
+    dod_checklist   TEXT,                       -- JSON: Definition of Done self-certification
     created_at      REAL NOT NULL
 );
 

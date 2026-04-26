@@ -19,6 +19,8 @@ def init_db(db_path: str | Path = ".swarm/broker.db") -> Path:
     conn.execute("PRAGMA foreign_keys=ON")
     schema = _SCHEMA_PATH.read_text()
     conn.executescript(schema)
+    # Lightweight migrations: add columns that may be missing in existing DBs
+    _migrate_add_column(conn, "handoffs", "dod_checklist", "TEXT")
     conn.commit()
     conn.close()
     _DB_PATH = resolved
@@ -38,3 +40,12 @@ def get_conn(db_path: str | Path | None = None) -> sqlite3.Connection:
 
 def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {k: row[k] for k in row.keys()}
+
+
+def _migrate_add_column(conn: sqlite3.Connection, table: str, column: str, dtype: str) -> None:
+    """Add a column if it does not already exist (SQLite safe)."""
+    # PRAGMA table_info returns tuples (cid, name, type, notnull, dflt_value, pk)
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    existing = {r[1] for r in rows}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {dtype}")
