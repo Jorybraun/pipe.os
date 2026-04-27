@@ -23,7 +23,7 @@ type HandoffStatus = Literal["complete", "context_exhausted", "blocked"]
 type HandoffTo = Literal["next_dev", "qa_deploy", "supervisor_reroute"]
 
 
-MAX_TURNS_PER_DEV = 10
+MAX_TURNS_PER_DEV = 15
 DUPLICATE_TOOL_WINDOW = 5
 
 # Rolling prune: keep tool results from the last N agent turns
