@@ -327,10 +327,10 @@ def should_continue(state: DevState) -> Literal["tools", "agent", "force_handoff
     if isinstance(last, ToolMessage) and last.name == "broker_submit_handoff_tool":
         return END
 
-    # Hard turn cap — force exit to prevent infinite loops
+    # Hard turn cap — force a handoff so the lane can cycle to a fresh dev
     turn_count = state.get("turn_count", 0)
     if turn_count >= MAX_TURNS_PER_DEV:
-        return END
+        return "force_handoff"
 
     # Duplicate tool call loop detection
     recent = state.get("recent_tool_calls", [])
@@ -625,6 +625,14 @@ def _run_developer_plain(
             continue
         # Unknown route — break to avoid infinite loop
         break
+
+    # Safety net: if the loop exited without a handoff, force one now
+    if not any(
+        isinstance(m, ToolMessage) and m.name == "broker_submit_handoff_tool"
+        for m in state.get("messages", [])
+    ):
+        handoff_updates = force_handoff_node(state)
+        state.update(handoff_updates)
 
     return state
 
