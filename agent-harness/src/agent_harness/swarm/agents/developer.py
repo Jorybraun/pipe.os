@@ -390,12 +390,14 @@ def tools_node(state: DevState) -> dict[str, Any]:
             tool = tools_by_name.get(tool_name)
             if tool:
                 try:
-                    args = dict(tc.get("args", tc.get("arguments", {})))
                     # CRITICAL: prevent LLM from hallucinating plan_id / subtask_id
                     if tool_name == "broker_submit_handoff_tool":
-                        args["plan_id"] = state.get("plan_id", args.get("plan_id", ""))
-                        args["subtask_id"] = state.get("subtask_id", args.get("subtask_id", ""))
-                    result = tool.invoke(args)
+                        tc = dict(tc)
+                        tc_args = dict(tc.get("args", tc.get("arguments", {})))
+                        tc_args["plan_id"] = state.get("plan_id", tc_args.get("plan_id", ""))
+                        tc_args["subtask_id"] = state.get("subtask_id", tc_args.get("subtask_id", ""))
+                        tc["args"] = tc_args
+                    result = tool.invoke(tc)
                 except Exception as exc:
                     result = ToolMessage(
                         content=f"Error: {exc}",
