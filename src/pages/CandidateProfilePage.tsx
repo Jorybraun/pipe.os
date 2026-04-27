@@ -980,6 +980,14 @@ export default function CandidateProfilePage(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [viewingReviewSession]);
 
+  // Initialize assessLink from the candidate's existing invite token on load
+  useEffect(() => {
+    if (candidate?.inviteToken && !assessLink) {
+      const baseUrl = window.location.origin;
+      setAssessLink(`${baseUrl}/assess/${candidate.inviteToken}`);
+    }
+  }, [candidate, assessLink]);
+
   // ── Loading skeleton ────────────────────────────────────────────────────────
   if (isLoading && !candidate) {
     return (

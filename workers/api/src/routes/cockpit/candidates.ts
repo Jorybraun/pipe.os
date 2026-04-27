@@ -240,6 +240,7 @@ candidateOps.get('/:candidateId', async (c) => {
     .prepare(
       `SELECT c.id, c.name, c.email, c.status, c.pipeline_id,
               c.current_stage_id, c.resume_s3_key, c.phone_number,
+              c.invite_token,
               c.skills, c.years_of_experience, c.current_role, c.education,
               c.created_at, c.updated_at
        FROM candidates c
@@ -256,6 +257,7 @@ candidateOps.get('/:candidateId', async (c) => {
       current_stage_id: string | null;
       resume_s3_key: string | null;
       phone_number: string | null;
+      invite_token: string;
       skills: string | null;
       years_of_experience: number | null;
       current_role: string | null;
@@ -507,6 +509,7 @@ candidateOps.get('/:candidateId', async (c) => {
       pipelineId: candidate.pipeline_id,
       currentStageId: candidate.current_stage_id,
       resumeS3Key: candidate.resume_s3_key,
+      inviteToken: candidate.invite_token,
       skills: candidate.skills ? (JSON.parse(candidate.skills) as string[]) : null,
       yearsOfExperience: candidate.years_of_experience,
       currentRole: candidate.current_role,

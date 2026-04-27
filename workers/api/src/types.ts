@@ -177,6 +177,7 @@ export interface PipelineWithCountsRow extends PipelineRow {
 export interface StageRow {
   id: string;
   pipeline_id: string;
+  owner_id: string | null;
   title: string;
   description: string | null;
   sort_order: number;
@@ -184,6 +185,12 @@ export interface StageRow {
   mode: string | null;
   stage_type: string | null;
   is_scheduled: number;
+  notification_templates: string | null;
+  video_config: string | null;
+  scheduling_event_type_id: string | null;
+  screening_format: string | null;
+  template_pack_id: string | null;
+  template_pack_version: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -216,16 +223,15 @@ export interface ChallengeRow {
   repo_branch: string | null;
   repo_base_branch: string | null;
   repo_metadata_s3_key: string | null;
+  dev_container_ttl_seconds: number | null;
+  dev_container_repo_url: string | null;
+  dev_container_challenge_branch: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface StageWithOwnerRow extends StageRow {
-  owner_id: string | null;
-  notification_templates: string | null;
-  scheduling_event_type_id: string | null;
-  video_config: string | null;
-}
+/** @deprecated StageRow now includes all owner/config columns. Use StageRow directly. */
+export type StageWithOwnerRow = StageRow;
 
 export interface PhoneCallRow {
   id: string;
@@ -675,6 +681,11 @@ export interface RepoIssueRow {
 
   // PR linkage (for CODE_IMPLEMENTATION filtering)
   has_merged_pr: 0 | 1;
+
+  // Body cache (issue-body-prefetch subtask-1)
+  body_cache_json: string | null;
+  body_cached_at: number | null;
+  body_cache_ttl_days: number;
 }
 
 /** Difficulty band for challenge assignment (junior gets easier issues). */

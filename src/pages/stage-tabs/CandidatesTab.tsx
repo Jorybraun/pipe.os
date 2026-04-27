@@ -8,7 +8,7 @@
 
 import { useState } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { CheckCircle, Clock, Plus, Trash2, Users } from 'lucide-react';
+import { CheckCircle, Clock, Copy, Plus, Trash2, Users } from 'lucide-react';
 import { SectionCard } from '../../components';
 import { CandidateIntakeModal } from '../../components/Candidate/CandidateIntakeModal';
 import { useCandidateMutations } from '../../hooks/useCandidateMutations';
@@ -20,11 +20,13 @@ function CandidateRow({
   variant,
   onClick,
   onDelete,
+  onCopyLink,
 }: {
   candidate: OverviewCandidate;
   variant: 'completed' | 'pending';
   onClick: () => void;
   onDelete: () => void;
+  onCopyLink?: () => void;
 }): JSX.Element {
   const color = variant === 'completed' ? '#4ade80' : 'var(--pipe-text-dim)';
   const bg =
@@ -97,6 +99,25 @@ function CandidateRow({
           >
             {candidate.status === 'INVITED' ? 'INVITED' : 'IN PROGRESS'}
           </span>
+        )}
+        {onCopyLink && (
+          <button
+            onClick={onCopyLink}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--pipe-text-dim)',
+              padding: 4,
+              display: 'flex',
+              alignItems: 'center',
+              opacity: 0.5,
+              transition: 'opacity 0.2s',
+            }}
+            title="Copy invite link"
+          >
+            <Copy size={12} />
+          </button>
         )}
         <button
           onClick={onDelete}
@@ -254,6 +275,10 @@ export default function CandidatesTab(): JSX.Element {
                     variant="pending"
                     onClick={() => navigate(`/candidates/${c.id}`)}
                     onDelete={() => void handleRemove(c)}
+                    onCopyLink={() => {
+                      const link = `${window.location.origin}/assess/${c.inviteToken}`;
+                      void navigator.clipboard.writeText(link);
+                    }}
                   />
                 ))}
               </>

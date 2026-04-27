@@ -42,8 +42,6 @@ pipelines.get('/', async (c) => {
 
   const whereClause = conditions.join(' AND ');
 
-  // Phase 1: candidates table does not exist — candidateCount hardcoded to 0.
-  // Phase 2: replace `0 AS candidate_count` with a LEFT JOIN on the candidates table.
   const sql = `
     SELECT
       p.id,
@@ -54,9 +52,10 @@ pipelines.get('/', async (c) => {
       p.created_at,
       p.updated_at,
       COUNT(DISTINCT s.id) AS stage_count,
-      0 AS candidate_count
+      COUNT(DISTINCT c.id) AS candidate_count
     FROM pipelines p
     LEFT JOIN stages s ON s.pipeline_id = p.id
+    LEFT JOIN candidates c ON c.pipeline_id = p.id AND c.status != 'ARCHIVED'
     WHERE ${whereClause}
     GROUP BY p.id
     ORDER BY p.created_at DESC

@@ -648,6 +648,7 @@ export interface CandidateProfileRecord {
   pipelineId: string;
   currentStageId: string | null;
   resumeS3Key: string | null;
+  inviteToken: string;
   skills: string[] | null;
   yearsOfExperience: number | null;
   currentRole: string | null;
