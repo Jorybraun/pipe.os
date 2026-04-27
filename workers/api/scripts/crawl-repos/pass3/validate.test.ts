@@ -41,6 +41,7 @@ function baseInput(overrides: Partial<Pass3Input> = {}): Pass3Input {
     cross_module_change_rate: 0.4,
     constructs: [{ slug: 'react_component', evidence_count: 12 }],
     sample_prs: [],
+    issues: [],
     prior_content_hash: null,
     prior_signals_version: null,
     ...overrides,

@@ -29,6 +29,14 @@ export function computeContentHash(input: Pass3Input, signalsVersion: string): s
       swe_bench_eligible: pr.swe_bench_eligible,
     }));
 
+  const sortedIssues = [...input.issues]
+    .sort((a, b) => a.issue_number - b.issue_number)
+    .map((issue) => ({
+      issue_number: issue.issue_number,
+      state_at_crawl: issue.state_at_crawl,
+      has_merged_pr: issue.has_merged_pr,
+    }));
+
   const canonical = JSON.stringify({
     signals_version: signalsVersion,
     full_name: input.full_name,
@@ -45,6 +53,7 @@ export function computeContentHash(input: Pass3Input, signalsVersion: string): s
     pr_quality_score: input.pr_quality_score,
     constructs: sortedConstructs,
     sample_prs: sortedPrs,
+    issues: sortedIssues,
   });
 
   return createHash('sha256').update(canonical).digest('hex');

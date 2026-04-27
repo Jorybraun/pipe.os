@@ -17,13 +17,18 @@
  */
 
 import { D1Client, loadD1Config } from '../shared/d1Client.js';
-import type { Pass3Data } from '../shared/types.js';
+import type { Pass3Data, Pass3Output, RepoSubElement } from '../shared/types.js';
 import { logger } from '../shared/logger.js';
+import { preprocessForEmbedding } from '../../../src/lib/embedding/preprocess';
 import type { PersistResult } from './types.js';
 
 const VECTORIZE_INDEX_NAME = 'repo-searchable-profiles';
 const EMBEDDING_MODEL = '@cf/baai/bge-large-en-v1.5';
 const API_BASE = 'https://api.cloudflare.com/client/v4';
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
 
 /**
  * Embed the repo_searchable_profile via Workers AI REST and upsert into
@@ -205,13 +210,195 @@ export async function persistPass3(
  * failure here — e.g. schema drift that SQLite accepted as a NOP — is the
  * exact class of bug the bare persistPass3 cannot catch.
  */
+async function embedText(text: string): Promise<number[] | null> {
+  const accountId = process.env['CLOUDFLARE_ACCOUNT_ID'];
+  const apiToken = process.env['CLOUDFLARE_API_TOKEN'];
+  if (!accountId || !apiToken) {
+    logger.warn('[pass3/persist] Embedding skipped — missing CLOUDFLARE_ACCOUNT_ID/API_TOKEN');
+    return null;
+  }
+
+  try {
+    const embedRes = await globalThis.fetch(
+      `${API_BASE}/accounts/${accountId}/ai/run/${EMBEDDING_MODEL}`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: [preprocessForEmbedding(text, 'document')] }),
+      },
+    );
+    if (!embedRes.ok) {
+      const t = await embedRes.text();
+      logger.warn('[pass3/persist] Embedding call failed', { status: embedRes.status, body: t.slice(0, 300) });
+      return null;
+    }
+    const embedBody = (await embedRes.json()) as {
+      result?: { data?: number[][]; shape?: number[] };
+      success?: boolean;
+    };
+    const vector = embedBody.result?.data?.[0];
+    if (!vector || !Array.isArray(vector)) {
+      logger.warn('[pass3/persist] Embedding response missing vector');
+      return null;
+    }
+    return vector;
+  } catch (err) {
+    logger.warn('[pass3/persist] Embedding call threw', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+export async function persistRepoNodes(
+  db: D1Client,
+  data: Pass3Output,
+  dryRun = false,
+): Promise<Array<{ id: string; vector: number[] }>> {
+  if (dryRun) {
+    logger.info('[pass3/persist] DRY RUN — would upsert repo_nodes', {
+      repo_id: data.repo_id,
+      sub_element_count: data.subElements.length,
+    });
+    return [];
+  }
+
+  // Pre-generate embeddings so embedding_json is populated on insert
+  const embeddingMap = new Map<string, number[]>();
+  for (const el of data.subElements) {
+    const text = `${el.node_type}: ${el.narrative_text}`;
+    const vector = await embedText(text);
+    if (vector) {
+      const id = `${data.repo_id}_${el.node_type}_${el.slug}`;
+      embeddingMap.set(id, vector);
+    }
+  }
+
+  // Transactional delete + insert per repo
+  await db.query(
+    `DELETE FROM repo_nodes WHERE repo_id = ? AND signals_version = ?`,
+    [data.repo_id, data.signals_version],
+  );
+
+  const now = nowSeconds();
+  const statements = data.subElements.map((el) => {
+    const id = `${data.repo_id}_${el.node_type}_${el.slug}`;
+    const vector = embeddingMap.get(id);
+    return {
+      sql: `INSERT INTO repo_nodes (
+        id, repo_id, signals_version, node_type, narrative_text,
+        extracted_properties_json, embedding_json, source_reference,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      params: [
+        id,
+        data.repo_id,
+        data.signals_version,
+        el.node_type,
+        el.narrative_text,
+        el.extracted_properties ? JSON.stringify(el.extracted_properties) : null,
+        vector ? JSON.stringify(vector) : null,
+        el.source_reference ?? null,
+        now,
+        now,
+      ] as (string | number | null)[],
+    };
+  });
+
+  await db.batch(statements);
+
+  logger.debug('[pass3/persist] repo_nodes persisted', {
+    repo_id: data.repo_id,
+    count: data.subElements.length,
+    with_embeddings: embeddingMap.size,
+  });
+
+  return Array.from(embeddingMap.entries()).map(([id, vector]) => ({ id, vector }));
+}
+
+async function upsertRepoNodesToVectorize(
+  data: Pass3Output,
+  embeddings: Array<{ id: string; vector: number[] }>,
+): Promise<void> {
+  const accountId = process.env['CLOUDFLARE_ACCOUNT_ID'];
+  const apiToken = process.env['CLOUDFLARE_API_TOKEN'];
+  if (!accountId || !apiToken) {
+    logger.warn('[pass3/persist] Vectorize skipped — missing CLOUDFLARE_ACCOUNT_ID/API_TOKEN');
+    return;
+  }
+
+  const lines: string[] = [];
+  for (const el of data.subElements) {
+    const localId = `${data.repo_id}_${el.node_type}_${el.slug}`;
+    const embedding = embeddings.find((e) => e.id === localId);
+    if (!embedding) continue;
+
+    const vectorizeId = `repo_node_${localId}`;
+    lines.push(
+      JSON.stringify({
+        id: vectorizeId,
+        values: embedding.vector,
+        metadata: {
+          entity_type: 'repo',
+          entity_id: data.repo_id,
+          node_type: el.node_type,
+          signals_version: data.signals_version,
+          admin_status: 'approved',
+        },
+      }),
+    );
+  }
+
+  if (lines.length === 0) {
+    logger.warn('[pass3/persist] No sub-element vectors to upsert', { repo_id: data.repo_id });
+    return;
+  }
+
+  try {
+    const upsertRes = await globalThis.fetch(
+      `${API_BASE}/accounts/${accountId}/vectorize/v2/indexes/${VECTORIZE_INDEX_NAME}/upsert`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/x-ndjson',
+        },
+        body: lines.map((l) => l + '\n').join(''),
+      },
+    );
+    if (!upsertRes.ok) {
+      const text = await upsertRes.text();
+      logger.warn('[pass3/persist] Vectorize upsert failed for repo_nodes', {
+        repo_id: data.repo_id,
+        status: upsertRes.status,
+        body: text.slice(0, 300),
+      });
+      return;
+    }
+
+    logger.debug('[pass3/persist] repo_nodes Vectorize upserted', {
+      repo_id: data.repo_id,
+      count: lines.length,
+    });
+  } catch (err) {
+    logger.warn('[pass3/persist] repo_nodes Vectorize upsert threw', {
+      repo_id: data.repo_id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export async function persistAndVerify(
   db: D1Client,
-  data: Pass3Data,
+  data: Pass3Output,
   dryRun = false,
   skipVectorize = false,
 ): Promise<PersistResult> {
   await persistPass3(db, data, dryRun);
+  const repoNodeEmbeddings = await persistRepoNodes(db, data, dryRun);
 
   if (dryRun) {
     return {
@@ -245,6 +432,7 @@ export async function persistAndVerify(
   // human ingest gate when Pass 3 runs auto-chained from Pass 2.
   if (verified && !skipVectorize) {
     await upsertToVectorize(data);
+    await upsertRepoNodesToVectorize(data, repoNodeEmbeddings);
   }
 
   return {
@@ -269,7 +457,8 @@ async function readStdin(): Promise<string> {
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
   const raw = await readStdin();
-  const data = JSON.parse(raw) as Pass3Data;
+  const data = JSON.parse(raw) as Pass3Output;
+  if (!data.subElements) data.subElements = [];
 
   const db = new D1Client(loadD1Config());
   const result = await persistAndVerify(db, data, dryRun);

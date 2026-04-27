@@ -20,7 +20,7 @@
 
 import { D1Client, loadD1Config } from '../shared/d1Client.js';
 import { REPO_FULL_NAME_DENYLIST } from '../config.js';
-import type { FetchOptions, Pass3Input, SamplePRSummary } from './types.js';
+import type { FetchOptions, Pass3Input, SamplePRSummary, RepoIssueSummary } from './types.js';
 
 interface QualifiedRepoRow {
   repo_id: number;
@@ -132,6 +132,15 @@ export async function fetchBatch(
       [row.repo_id],
     );
 
+    const issues = await db.query<RepoIssueSummary>(
+      `SELECT issue_number, title, state_at_crawl, labels_json, comment_count, has_merged_pr
+       FROM repo_issues
+       WHERE repo_id = ?
+       ORDER BY issue_number
+       LIMIT 20`,
+      [row.repo_id],
+    );
+
     result.push({
       repo_id: row.repo_id,
       full_name: row.full_name,
@@ -157,6 +166,7 @@ export async function fetchBatch(
       sample_prs: samplePrs,
       prior_content_hash: row.prior_content_hash,
       prior_signals_version: row.prior_signals_version,
+      issues,
     });
   }
 

@@ -21,6 +21,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const apiRoot = resolve(__dirname, '../../..');
 dotenv.config({ path: resolve(apiRoot, '.dev.vars') });
 
+import { z } from 'zod';
 import { D1Client, loadD1Config } from '../shared/d1Client.js';
 import { logger } from '../shared/logger.js';
 import { fetchBatch } from './fetch.js';
@@ -31,9 +32,13 @@ import { auditSignals } from './audit.js';
 import { classifyTestStyle } from './testStyleClassifier.js';
 import { classifyChallengeSurfaces } from './challengeSurfaceClassifier.js';
 import { computeDeterministicStats, computeComplexityBand } from './deterministicStats.js';
+import { preprocessForEmbedding } from '../../../src/lib/embedding/preprocess';
 import type { Pass3Input, FetchOptions } from './types.js';
 import type {
   Pass3Data,
+  Pass3Output,
+  RepoSubElement,
+  RepoNodeType,
   ArchitectureStyle,
   ChallengeSuitabilityVerdict,
   TopPrPick,
@@ -60,6 +65,7 @@ export async function callGemma(
   systemPrompt: string,
   userPrompt: string,
   retries = 3,
+  responseMimeType = 'application/json',
 ): Promise<string> {
   const region = process.env['VERTEX_AI_REGION'] ?? 'global';
   const url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/${SUMMARIZER_MODEL}:generateContent`;
@@ -67,7 +73,7 @@ export async function callGemma(
   const combinedPrompt = `${systemPrompt}\n\n---\n\n${userPrompt}`;
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: combinedPrompt }] }],
-    generationConfig: { maxOutputTokens: 8192, responseMimeType: 'application/json' },
+    generationConfig: { maxOutputTokens: 8192, responseMimeType },
   });
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -135,7 +141,7 @@ export function buildSummarizerPrompt(
   input: Pass3Input,
   facts: PromptFacts,
 ): { system: string; user: string } {
-  const system = `You are an engineering analyst. Given structured metadata about an open-source repository, produce a JSON object describing the repo's engineering culture, discoverability profile, and fitness as a code-review assessment source.
+  const system = `You are an engineering analyst. Given structured metadata about an open-source repository, produce a JSON object describing the repo's engineering culture, discoverability profile, fitness as a code-review assessment source, and decomposed sub-elements.
 
 Output MUST be valid JSON matching this schema EXACTLY:
 
@@ -148,7 +154,16 @@ Output MUST be valid JSON matching this schema EXACTLY:
   "top_pr_picks": [{ "pr_number": number, "why": string }],
   "red_flags": [string],
   "seniority_justification": string,
-  "ideal_role_match": string
+  "ideal_role_match": string,
+  "sub_elements": {
+    "features": [{ "slug": string, "narrative": string }],
+    "architectural_patterns": [{ "slug": string, "narrative": string }],
+    "technical_stack": [{ "slug": string, "narrative": string }],
+    "constructs": [{ "slug": string, "narrative": string }],
+    "challenge_surfaces": [{ "slug": string, "narrative": string }],
+    "quality_signals": [{ "slug": string, "narrative": string }],
+    "domain_contexts": [{ "slug": string, "narrative": string }]
+  }
 }
 
 architecture_style definitions:
@@ -183,7 +198,21 @@ Constraints:
 - "seniority_justification": 2–4 sentences explaining why the mechanical seniority_band (${input.seniority_band ?? 'unknown'}) fits or misses.
 - "ideal_role_match": short phrase ≤ 60 chars (e.g. "senior backend engineer", "mid frontend engineer").
 - You MAY NOT invent numbers. Every numeric digit you write must correspond to a value from the FACTS block below. If a fact is "unknown", do not discuss it quantitatively.
-- Be role-agnostic in the narrative. The ideal_role_match field is the only place to name a target role.`;
+- Be role-agnostic in the narrative. The ideal_role_match field is the only place to name a target role.
+
+Sub-elements constraints:
+- The "sub_elements" object contains arrays of repo-specific sub-elements. Do not force a fixed count per type; thin repos may have 0–2 entries per type, rich repos may have 5–8. Do not invent features absent from the signals.
+- Each sub-element must have:
+  - "slug": short kebab-case identifier (e.g. "async-io-pipeline", "jwt-auth-middleware")
+  - "narrative": 2–3 sentences, repo-specific (not generic), citing specific technologies and scale indicators from the FACTS block.
+- Supported types:
+  - "features": Specific capabilities or user-facing functionality.
+  - "architectural_patterns": Design patterns or structural approaches.
+  - "technical_stack": Key libraries, frameworks, or infrastructure.
+  - "constructs": Code-level patterns or idioms (map to detected constructs where possible).
+  - "challenge_surfaces": Areas where bugs or complexity tend to surface.
+  - "quality_signals": Indicators of engineering quality (test coverage, CI, documentation).
+  - "domain_contexts": Business domain or problem-space context.`;
 
   const constructsList = input.constructs
     .slice(0, 10)
@@ -262,6 +291,40 @@ function topSurfaces(surfaces: Record<string, number>, k: number): string {
     .join(', ');
 }
 
+// ─── Zod schemas ───────────────────────────────────────────────────────────
+
+const repoSubElementJsonSchema = z.object({
+  slug: z.string(),
+  narrative: z.string(),
+  extracted_properties: z.record(z.unknown()).optional(),
+  source_reference: z.string().optional(),
+});
+
+const pass3SubElementsSchema = z.object({
+  features: z.array(repoSubElementJsonSchema).optional().default([]),
+  architectural_patterns: z.array(repoSubElementJsonSchema).optional().default([]),
+  technical_stack: z.array(repoSubElementJsonSchema).optional().default([]),
+  constructs: z.array(repoSubElementJsonSchema).optional().default([]),
+  challenge_surfaces: z.array(repoSubElementJsonSchema).optional().default([]),
+  quality_signals: z.array(repoSubElementJsonSchema).optional().default([]),
+  domain_contexts: z.array(repoSubElementJsonSchema).optional().default([]),
+});
+
+export const pass3GemmaOutputSchema = z.object({
+  architecture_style: z.enum(['monolith', 'layered_service', 'microservice', 'library', 'unknown']).optional(),
+  engineering_narrative: z.string().optional(),
+  repo_searchable_profile: z.string().optional(),
+  challenge_suitability_verdict: z.enum(['suitable', 'hold', 'reject']).optional(),
+  challenge_suitability_reason: z.string().optional(),
+  top_pr_picks: z.array(z.object({ pr_number: z.number(), why: z.string() })).optional(),
+  red_flags: z.array(z.string()).optional(),
+  seniority_justification: z.string().optional(),
+  ideal_role_match: z.string().optional(),
+  sub_elements: pass3SubElementsSchema.optional(),
+});
+
+export type Pass3GemmaOutput = z.infer<typeof pass3GemmaOutputSchema>;
+
 // ─── Parse Gemma response ──────────────────────────────────────────────────
 //
 // Gemma only writes three fields (architecture_style, engineering_narrative,
@@ -302,12 +365,82 @@ function parseStringArray(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === 'string');
 }
 
+function flattenSubElements(
+  subElements: Pass3GemmaOutput['sub_elements'],
+): RepoSubElement[] {
+  const result: RepoSubElement[] = [];
+  const mappings: Array<[string, RepoNodeType]> = [
+    ['features', 'Feature'],
+    ['architectural_patterns', 'ArchitecturalPattern'],
+    ['technical_stack', 'TechnicalStack'],
+    ['constructs', 'Construct'],
+    ['challenge_surfaces', 'ChallengeSurface'],
+    ['quality_signals', 'QualitySignal'],
+    ['domain_contexts', 'DomainContext'],
+  ];
+  for (const [key, nodeType] of mappings) {
+    const arr = subElements[key as keyof typeof subElements] as Array<{
+      slug: string;
+      narrative: string;
+      extracted_properties?: Record<string, unknown>;
+      source_reference?: string;
+    }>;
+    for (const item of arr) {
+      result.push({
+        node_type: nodeType,
+        slug: item.slug,
+        narrative_text: item.narrative,
+        extracted_properties: item.extracted_properties,
+        source_reference: item.source_reference,
+      });
+    }
+  }
+  return result;
+}
+
+function sanitizeSlug(slug: string): string {
+  return slug
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 64);
+}
+
+export function buildPrAndIssueSubElements(input: Pass3Input): RepoSubElement[] {
+  const result: RepoSubElement[] = [];
+
+  for (const pr of input.sample_prs.slice(0, 5)) {
+    const slug = sanitizeSlug(pr.title ?? `pr-${pr.pr_number}`) || `pr-${pr.pr_number}`;
+    const narrative = `PR #${pr.pr_number}${pr.title ? `: "${pr.title}"` : ''} — changes ${pr.changed_file_count} file${pr.changed_file_count === 1 ? '' : 's'}${pr.modifies_tests ? ', touches tests' : ''}${pr.swe_bench_eligible ? ', SWE-bench eligible' : ''}. Demonstrates code-review patterns in this repo.`;
+    result.push({
+      node_type: 'PRSample',
+      slug,
+      narrative_text: narrative,
+      source_reference: `pr:${pr.pr_number}`,
+    });
+  }
+
+  for (const issue of input.issues.slice(0, 5)) {
+    const slug = sanitizeSlug(issue.title ?? `issue-${issue.issue_number}`) || `issue-${issue.issue_number}`;
+    const narrative = `Issue #${issue.issue_number}${issue.title ? `: "${issue.title}"` : ''} — ${issue.state_at_crawl}, ${issue.comment_count} comment${issue.comment_count === 1 ? '' : 's'}${issue.has_merged_pr ? ', has merged PR' : ', no merged PR'}. ${issue.has_merged_pr ? 'Already resolved; not a candidate for new implementation.' : 'Potential candidate for code-implementation challenge.'}`;
+    result.push({
+      node_type: 'IssueCandidate',
+      slug,
+      narrative_text: narrative,
+      source_reference: `issue:${issue.issue_number}`,
+    });
+  }
+
+  return result;
+}
+
 export function parseGemmaResponse(
   raw: string,
   input: Pass3Input,
   contentHash: string,
   facts: PromptFacts,
-): Pass3Data {
+): Pass3Output {
   // Strip markdown code fences if present
   const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
   const parsed = JSON.parse(stripped) as Record<string, unknown>;
@@ -324,6 +457,10 @@ export function parseGemmaResponse(
       ? (suitabilityCandidate as ChallengeSuitabilityVerdict)
       : null;
 
+  const subElementsRaw = (parsed.sub_elements ?? {}) as Pass3GemmaOutput['sub_elements'];
+  const gemmaSubElements = flattenSubElements(subElementsRaw);
+  const prIssueSubElements = buildPrAndIssueSubElements(input);
+
   return {
     repo_id: input.repo_id,
     signals_version: SIGNALS_VERSION,
@@ -335,8 +472,6 @@ export function parseGemmaResponse(
     complexity_band: facts.complexity_band,
     swe_bench_eligibility_rate: facts.swe_bench_eligibility_rate,
     architecture_style,
-    // Review density, commit cadence, and SATD density remain LLM-unobservable
-    // in this pipeline — they require git log / code inspection we don't run.
     review_density: null,
     commit_cadence: null,
     satd_density: null,
@@ -362,6 +497,7 @@ export function parseGemmaResponse(
         : null,
     ideal_role_match:
       typeof parsed.ideal_role_match === 'string' ? parsed.ideal_role_match : null,
+    subElements: [...gemmaSubElements, ...prIssueSubElements],
   };
 }
 
@@ -375,7 +511,7 @@ interface RepoResult {
   narrative_len?: number;
 }
 
-async function processRepo(
+export async function processRepo(
   accessToken: string,
   projectId: string,
   db: D1Client,
@@ -438,11 +574,22 @@ async function processRepo(
   logger.info(`[pass3] ${tag} ${input.full_name} — Gemma done`);
 
   // Step 3: Parse
-  let output: Pass3Data;
+  let output: Pass3Output;
   try {
     output = parseGemmaResponse(raw, input, contentHash, facts);
   } catch (err) {
     return { ...base, status: 'parse_error', detail: `${err instanceof Error ? err.message : String(err)} | raw: ${raw.slice(0, 200)}` };
+  }
+
+  // Step 3b: Zod validation of sub-elements before any D1 write
+  try {
+    pass3GemmaOutputSchema.parse(JSON.parse(output.signal_json));
+  } catch (err) {
+    return {
+      ...base,
+      status: 'validation_failed',
+      detail: `Zod validation failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   // Step 4: Validate — retry once if it fails
@@ -473,6 +620,17 @@ async function processRepo(
         ...base,
         status: 'validation_failed',
         detail: `validation failed; retry parse failed | original_failures: ${validation.failures.join('; ')}`,
+      };
+    }
+
+    // Re-run Zod validation on retry output
+    try {
+      pass3GemmaOutputSchema.parse(JSON.parse(output.signal_json));
+    } catch (err) {
+      return {
+        ...base,
+        status: 'validation_failed',
+        detail: `Zod validation failed on retry: ${err instanceof Error ? err.message : String(err)} | original_failures: ${validation.failures.join('; ')}`,
       };
     }
 

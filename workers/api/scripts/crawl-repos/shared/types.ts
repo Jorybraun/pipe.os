@@ -110,6 +110,12 @@ export interface SamplePR {
   swe_bench_eligible: 0 | 1;
   /** JSON array of changed file paths. Feeds Pass-2 path classifier (business_logic_ratio, cross_module_change_rate). */
   changed_file_paths_json: string;
+  /** Gemma-generated 2–3 sentence narrative describing what the PR does. */
+  pr_narrative?: string | null;
+  /** BGE-large-en-v1.5 embedding of pr_narrative (document side). */
+  pr_narrative_embedding_json?: string | null;
+  /** Version stamp for the narrative prompt / model. */
+  pr_narrative_version?: string | null;
 }
 
 // ─── Construct extractor ──────────────────────────────────────────────────────
@@ -172,6 +178,25 @@ export interface ChallengeSurfaces {
   missing_null_check_potential: number;
 }
 
+export type RepoNodeType =
+  | 'Feature'
+  | 'ArchitecturalPattern'
+  | 'TechnicalStack'
+  | 'Construct'
+  | 'ChallengeSurface'
+  | 'QualitySignal'
+  | 'DomainContext'
+  | 'PRSample'
+  | 'IssueCandidate';
+
+export interface RepoSubElement {
+  node_type: RepoNodeType;
+  slug: string;
+  narrative_text: string;
+  extracted_properties?: Record<string, unknown>;
+  source_reference?: string;
+}
+
 export interface Pass3Data {
   repo_id: number;
   signals_version: string;
@@ -208,6 +233,11 @@ export interface Pass3Data {
   seniority_justification: string | null;
   /** Short role label, e.g. "senior backend engineer". */
   ideal_role_match: string | null;
+}
+
+/** Pass 3 output including decomposed sub-elements. */
+export interface Pass3Output extends Pass3Data {
+  subElements: RepoSubElement[];
 }
 
 // ─── D1 write helpers ─────────────────────────────────────────────────────────

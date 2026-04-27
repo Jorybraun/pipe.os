@@ -107,8 +107,9 @@ export async function persistPass2(
           repo_id, pr_number, pr_url, title, merged_at,
           resolves_issue_number, changed_file_count, modifies_tests,
           additions, deletions, construct_slugs_json, swe_bench_eligible,
-          changed_file_paths_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          changed_file_paths_json, pr_narrative, pr_narrative_embedding_json,
+          pr_narrative_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       params: [
         data.repo_id,
@@ -124,6 +125,9 @@ export async function persistPass2(
         pr.construct_slugs_json,
         pr.swe_bench_eligible,
         pr.changed_file_paths_json,
+        pr.pr_narrative ?? null,
+        pr.pr_narrative_embedding_json ?? null,
+        pr.pr_narrative_version ?? null,
       ] as (string | number | null)[],
     }));
     await db.upsertChunked(prStmts, 30);
