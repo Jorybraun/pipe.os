@@ -65,11 +65,16 @@ def _build_system_message(state: DevState) -> SystemMessage:
     handoff = state.get("handoff_in")
     parts = [base]
     # CRITICAL: inject exact IDs so the LLM doesn't hallucinate them
+    turn_count = state.get("turn_count", 0)
     parts.append(
         f"\n## Context\n"
         f"plan_id: {state.get('plan_id', '')}\n"
         f"subtask_id: {state.get('subtask_id', '')}\n"
-        f"When calling broker_submit_handoff_tool, you MUST use these EXACT values for plan_id and subtask_id."
+        f"turn_count: {turn_count} / {MAX_TURNS_PER_DEV}\n"
+        f"When calling broker_submit_handoff_tool, you MUST use these EXACT values for plan_id and subtask_id.\n"
+        f"IMPORTANT: You have a limited number of turns. If you are near the limit ({MAX_TURNS_PER_DEV}), "
+        f"wrap up your work and submit a handoff immediately using broker_submit_handoff_tool. "
+        f"Do not start new exploration if you have fewer than 3 turns remaining."
     )
     if plan:
         parts.append(f"\n## Plan\n{plan}")
@@ -415,12 +420,26 @@ def force_handoff_node(state: DevState) -> dict[str, Any]:
     plan_id = state["plan_id"]
     subtask_id = state["subtask_id"]
 
+    # Extract files touched from message history
+    files_touched: list[str] = []
+    state_notes: list[str] = ["Forced handoff: developer turn budget exhausted."]
+    for msg in state.get("messages", []):
+        if isinstance(msg, ToolMessage) and msg.name in ("read_file", "write_file", "shell"):
+            content = str(msg.content)[:200]
+            files_touched.append(f"{msg.name}: {content}")
+        elif isinstance(msg, AIMessage) and msg.content:
+            # Capture the developer's reasoning as state notes
+            content = str(msg.content)[:500]
+            if content and content not in state_notes[-1] if state_notes else True:
+                state_notes.append(f"Dev thought: {content}")
+
     record = submit_handoff(
         plan_id=plan_id,
         subtask_id=subtask_id,
         status="context_exhausted",
         handoff_to="next_dev",
-        state_notes=["Forced handoff: developer token budget exhausted."],
+        state_notes=state_notes[-5:] if len(state_notes) > 5 else state_notes,
+        files_touched=files_touched[-10:] if len(files_touched) > 10 else files_touched,
     )
 
     existing = list(state.get("messages", []))
