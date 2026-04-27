@@ -1,0 +1,462 @@
+/**
+ * RCD decomposition into role_nodes sub-elements.
+ *
+ * Pure extractor (`decomposeRcdIntoNodes`) + persistence layer (`persistRoleNodes`).
+ * Called as a post-write hook after RCD synthesis in roleContexts.ts.
+ */
+
+import { preprocessForEmbedding, EMBEDDING_MODEL } from '../embedding/preprocess';
+import type {
+  BarsOverride,
+  ConflictRecord,
+  DealbreakerRecord,
+  Domain,
+  DomainCell,
+  DomainMatrix,
+  RedFlagRecord,
+  RoleContextDocument,
+  StakeholderType,
+  TeamCultureProfile,
+  TechnicalContext,
+} from '../../types';
+import type { Env } from '../../types';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export type RoleNodeType =
+  | 'Requirement'
+  | 'Responsibility'
+  | 'CulturalSignal'
+  | 'TeamContext'
+  | 'Dealbreaker'
+  | 'RedFlag'
+  | 'TechnicalContext'
+  | 'CodebaseExpectation'
+  | 'ProcessExpectation'
+  | 'Conflict'
+  | 'BarsOverride';
+
+export interface RoleNodeRow {
+  id: string;
+  role_context_id: string;
+  rcd_version: string;
+  node_type: RoleNodeType;
+  narrative_text: string;
+  extracted_properties_json: string;
+  source_section: string;
+  source_stakeholder: string | null;
+  weight: number | null;
+}
+
+const EXPECTED_DIM = 1024;
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+export function decomposeRcdIntoNodes(
+  rcd: RoleContextDocument,
+  roleContextId: string,
+): RoleNodeRow[] {
+  const nodes: RoleNodeRow[] = [];
+
+  nodes.push(...extractRequirements(rcd, roleContextId));
+  nodes.push(...extractResponsibilities(rcd, roleContextId));
+  nodes.push(...extractCulturalSignals(rcd, roleContextId));
+  nodes.push(...extractTeamContexts(rcd, roleContextId));
+  nodes.push(...extractDealbreakers(rcd, roleContextId));
+  nodes.push(...extractRedFlags(rcd, roleContextId));
+  nodes.push(...extractTechnicalContexts(rcd, roleContextId));
+  nodes.push(...extractCodebaseExpectations(rcd, roleContextId));
+  nodes.push(...extractProcessExpectations(rcd, roleContextId));
+  nodes.push(...extractConflicts(rcd, roleContextId));
+  nodes.push(...extractBarsOverrides(rcd, roleContextId));
+
+  return nodes;
+}
+
+export async function persistRoleNodes(
+  nodes: RoleNodeRow[],
+  env: Env,
+  db: D1Database,
+): Promise<void> {
+  if (nodes.length === 0) return;
+
+  const roleContextId = nodes[0]!.role_context_id;
+
+  // 1. Mark existing nodes as superseded
+  await db
+    .prepare(
+      `UPDATE role_nodes SET superseded_at = unixepoch() WHERE role_context_id = ? AND superseded_at IS NULL`,
+    )
+    .bind(roleContextId)
+    .run();
+
+  // 2. Generate embeddings in batches of 10 (BGE rate-limit friendly)
+  const batchSize = 10;
+  const embeddedNodes: Array<RoleNodeRow & { embedding_json: string }> = [];
+
+  for (let i = 0; i < nodes.length; i += batchSize) {
+    const batch = nodes.slice(i, i + batchSize);
+    const texts = batch.map((n) => preprocessForEmbedding(n.narrative_text, 'document'));
+
+    const embedResult = (await env.AI.run(EMBEDDING_MODEL, {
+      text: texts,
+    })) as { data?: number[][] };
+
+    const vectors = embedResult?.data;
+    if (!vectors || vectors.length !== batch.length) {
+      throw new Error(
+        `[persistRoleNodes] embedding batch mismatch: expected ${batch.length}, got ${vectors?.length ?? 0}`,
+      );
+    }
+
+    for (let j = 0; j < batch.length; j++) {
+      const vector = vectors[j];
+      if (!vector || vector.length !== EXPECTED_DIM) {
+        throw new Error(
+          `[persistRoleNodes] bad vector shape for node ${batch[j]!.id}: ${vector?.length ?? 0}`,
+        );
+      }
+      embeddedNodes.push({
+        ...batch[j]!,
+        embedding_json: JSON.stringify(vector),
+      });
+    }
+  }
+
+  // 3. Upsert to Vectorize ROLE_INDEX
+  const vectorizeBatch = embeddedNodes.map((n) => ({
+    id: `role_node_${n.id}`,
+    values: JSON.parse(n.embedding_json) as number[],
+    metadata: {
+      entity_type: 'role',
+      entity_id: n.role_context_id,
+      node_type: n.node_type,
+      rcd_version: n.rcd_version,
+    },
+  }));
+
+  await env.ROLE_INDEX.upsert(vectorizeBatch);
+
+  // 4. Write to D1 role_nodes
+  const d1Batch = embeddedNodes.map((n) =>
+    db
+      .prepare(
+        `INSERT INTO role_nodes (id, role_context_id, rcd_version, node_type, narrative_text, extracted_properties_json, embedding_json, source_section, source_stakeholder, weight, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())`,
+      )
+      .bind(
+        n.id,
+        n.role_context_id,
+        n.rcd_version,
+        n.node_type,
+        n.narrative_text,
+        n.extracted_properties_json,
+        n.embedding_json,
+        n.source_section,
+        n.source_stakeholder,
+        n.weight,
+      ),
+  );
+
+  await db.batch(d1Batch);
+
+  console.error('[persistRoleNodes] wrote nodes for role', {
+    roleContextId,
+    count: nodes.length,
+  });
+}
+
+// ─── Extractors ──────────────────────────────────────────────────────────────
+
+function makeNode(
+  roleContextId: string,
+  rcdVersion: string,
+  nodeType: RoleNodeType,
+  narrative: string,
+  props: Record<string, unknown>,
+  sourceSection: string,
+  sourceStakeholder: string | null,
+  weight: number | null,
+): RoleNodeRow {
+  return {
+    id: crypto.randomUUID(),
+    role_context_id: roleContextId,
+    rcd_version: rcdVersion,
+    node_type: nodeType,
+    narrative_text: `${nodeType}: ${narrative}`,
+    extracted_properties_json: JSON.stringify(props),
+    source_section: sourceSection,
+    source_stakeholder: sourceStakeholder,
+    weight,
+  };
+}
+
+function walkDomainMatrix(
+  matrix: DomainMatrix,
+  cb: (stakeholder: StakeholderType, domain: Domain, cell: DomainCell) => void,
+): void {
+  for (const [stakeholder, domains] of Object.entries(matrix)) {
+    if (!domains) continue;
+    for (const [domain, cell] of Object.entries(domains)) {
+      if (!cell) continue;
+      cb(stakeholder as StakeholderType, domain as Domain, cell);
+    }
+  }
+}
+
+function extractRequirements(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  const nodes: RoleNodeRow[] = [];
+  const targetDomains: Domain[] = ['work', 'bar', 'codebase'];
+
+  walkDomainMatrix(rcd.domain_matrix, (stakeholder, domain, cell) => {
+    if (!targetDomains.includes(domain)) return;
+    for (const chain of cell.laddering_chains) {
+      const isMustHave = chain.energy_signal === 'high' && domain === 'bar';
+      const weight = isMustHave ? 1.0 : 0.5;
+      const narrative = `Must have ${chain.attribute_quote.trim()} because ${chain.consequence.trim()}, which matters for ${chain.value.trim()}.`;
+      nodes.push(
+        makeNode(
+          roleContextId,
+          rcd.rcd_version,
+          'Requirement',
+          narrative,
+          { domain, stakeholder, energy_signal: chain.energy_signal, confidence: chain.confidence },
+          `domain_matrix.${domain}.${stakeholder}.laddering_chains`,
+          stakeholder,
+          weight,
+        ),
+      );
+    }
+  });
+
+  return nodes;
+}
+
+function extractResponsibilities(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  const nodes: RoleNodeRow[] = [];
+  const targetDomains: Domain[] = ['work', 'team'];
+
+  walkDomainMatrix(rcd.domain_matrix, (stakeholder, domain, cell) => {
+    if (!targetDomains.includes(domain)) return;
+    for (const story of cell.stories) {
+      const narrative = `Responsibility: ${story.situation.trim()} — ${story.action.trim()} — ${story.outcome.trim()}.`;
+      nodes.push(
+        makeNode(
+          roleContextId,
+          rcd.rcd_version,
+          'Responsibility',
+          narrative,
+          { domain, stakeholder, moral: story.moral },
+          `domain_matrix.${domain}.${stakeholder}.stories`,
+          stakeholder,
+          null,
+        ),
+      );
+    }
+  });
+
+  return nodes;
+}
+
+function extractCulturalSignals(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  const nodes: RoleNodeRow[] = [];
+  const profile = rcd.team_culture_profile;
+  if (!profile) return nodes;
+
+  const dimensions: Array<keyof NonNullable<typeof profile.per_stakeholder[StakeholderType]>> = [
+    'clan_affinity',
+    'adhocracy_affinity',
+    'market_affinity',
+    'hierarchy_affinity',
+    'psychological_safety',
+  ];
+
+  for (const [stakeholder, scores] of Object.entries(profile.per_stakeholder)) {
+    if (!scores) continue;
+    for (const dim of dimensions) {
+      const value = scores[dim];
+      if (value == null) continue;
+      const narrative = `${dim.replace('_affinity', '').replace('_', ' ')} score ${value}/5 for ${stakeholder.toLowerCase().replace('_', ' ')} perspective.`;
+      nodes.push(
+        makeNode(
+          roleContextId,
+          rcd.rcd_version,
+          'CulturalSignal',
+          narrative,
+          { dimension: dim, score: value, stakeholder },
+          `team_culture_profile.per_stakeholder.${stakeholder}.${dim}`,
+          stakeholder,
+          null,
+        ),
+      );
+    }
+  }
+
+  return nodes;
+}
+
+function extractTeamContexts(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  const nodes: RoleNodeRow[] = [];
+
+  walkDomainMatrix(rcd.domain_matrix, (stakeholder, domain, cell) => {
+    if (domain !== 'team') return;
+    const openCodes = cell.open_codes.join(', ');
+    if (!openCodes) return;
+    const narrative = `Team context from ${stakeholder.toLowerCase().replace('_', ' ')}: ${openCodes}.`;
+    nodes.push(
+      makeNode(
+        roleContextId,
+        rcd.rcd_version,
+        'TeamContext',
+        narrative,
+        { domain, stakeholder, primary_authority: cell.primary_authority, coverage: cell.coverage },
+        `domain_matrix.${domain}.${stakeholder}.open_codes`,
+        stakeholder,
+        null,
+      ),
+    );
+  });
+
+  return nodes;
+}
+
+function extractDealbreakers(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  return (rcd.dealbreakers ?? []).map((db: DealbreakerRecord) =>
+    makeNode(
+      roleContextId,
+      rcd.rcd_version,
+      'Dealbreaker',
+      `${db.label}. Pattern: ${db.pattern}. Evidence: ${db.evidence_quote}`,
+      { pattern: db.pattern, source_chain_id: db.source_chain_id, job_relatedness_strength: db.job_relatedness_strength },
+      'dealbreakers',
+      db.source_stakeholder,
+      db.job_relatedness_strength === 'strong' ? 1.0 : 0.5,
+    ),
+  );
+}
+
+function extractRedFlags(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  return (rcd.red_flags ?? []).map((rf: RedFlagRecord) =>
+    makeNode(
+      roleContextId,
+      rcd.rcd_version,
+      'RedFlag',
+      `${rf.label}. Evidence: ${rf.evidence_quote}`,
+      { source_chain_id: rf.source_chain_id },
+      'red_flags',
+      rf.source_stakeholder,
+      null,
+    ),
+  );
+}
+
+function extractTechnicalContexts(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  const tc = rcd.technical_context;
+  if (!tc) return [];
+
+  const nodes: RoleNodeRow[] = [];
+
+  for (const stackItem of tc.stack ?? []) {
+    nodes.push(
+      makeNode(
+        roleContextId,
+        rcd.rcd_version,
+        'TechnicalContext',
+        `Stack component: ${stackItem}`,
+        { kind: 'stack', value: stackItem },
+        'technical_context.stack',
+        null,
+        null,
+      ),
+    );
+  }
+
+  for (const construct of tc.constructs ?? []) {
+    nodes.push(
+      makeNode(
+        roleContextId,
+        rcd.rcd_version,
+        'TechnicalContext',
+        `Construct: ${construct}`,
+        { kind: 'construct', value: construct },
+        'technical_context.constructs',
+        null,
+        null,
+      ),
+    );
+  }
+
+  return nodes;
+}
+
+function extractCodebaseExpectations(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  const tc = rcd.technical_context;
+  if (!tc?.codebase_expectations) return [];
+
+  return tc.codebase_expectations.map((expectation: string) =>
+    makeNode(
+      roleContextId,
+      rcd.rcd_version,
+      'CodebaseExpectation',
+      expectation,
+      {},
+      'technical_context.codebase_expectations',
+      null,
+      null,
+    ),
+  );
+}
+
+function extractProcessExpectations(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  const nodes: RoleNodeRow[] = [];
+
+  walkDomainMatrix(rcd.domain_matrix, (stakeholder, domain, cell) => {
+    if (domain !== 'process') return;
+    const openCodes = cell.open_codes.join(', ');
+    if (!openCodes) return;
+    nodes.push(
+      makeNode(
+        roleContextId,
+        rcd.rcd_version,
+        'ProcessExpectation',
+        `Process expectation from ${stakeholder.toLowerCase().replace('_', ' ')}: ${openCodes}.`,
+        { stakeholder, coverage: cell.coverage },
+        `domain_matrix.${domain}.${stakeholder}.open_codes`,
+        stakeholder,
+        null,
+      ),
+    );
+  });
+
+  return nodes;
+}
+
+function extractConflicts(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  return (rcd.conflicts ?? []).map((c: ConflictRecord) =>
+    makeNode(
+      roleContextId,
+      rcd.rcd_version,
+      'Conflict',
+      `${c.stakeholder_a} says: "${c.position_a}" vs ${c.stakeholder_b} says: "${c.position_b}" (${c.conflict_flag}). Resolution: ${c.resolution_strategy}.`,
+      { domain: c.domain, field: c.field, conflict_flag: c.conflict_flag, resolution_strategy: c.resolution_strategy },
+      `conflicts.${c.domain}.${c.field}`,
+      null,
+      null,
+    ),
+  );
+}
+
+function extractBarsOverrides(rcd: RoleContextDocument, roleContextId: string): RoleNodeRow[] {
+  return (rcd.bars_overrides ?? []).map((bo: BarsOverride) =>
+    makeNode(
+      roleContextId,
+      rcd.rcd_version,
+      'BarsOverride',
+      `Dimension "${bo.dimension}" level ${bo.anchor_level}: override anchor text: "${bo.override_anchor_text}" (source: ${bo.source_chain_id}).`,
+      { dimension: bo.dimension, anchor_level: bo.anchor_level, source_chain_id: bo.source_chain_id },
+      'bars_overrides',
+      null,
+      null,
+    ),
+  );
+}

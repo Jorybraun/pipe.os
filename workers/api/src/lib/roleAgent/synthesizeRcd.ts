@@ -25,6 +25,7 @@ import {
 } from '../roleAgentPrompts';
 import { deriveConsumerSlice } from './consumerSlice';
 import { verifyRcd, type VerifierIssue, type StakeholderTranscript } from './verifyRcd';
+export { decomposeRcdIntoNodes, persistRoleNodes } from './decomposeRcd';
 import type {
   BarsOverride,
   ConflictRecord,
