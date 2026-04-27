@@ -658,10 +658,10 @@
       radial-gradient(ellipse 45% 50% at 28% 62%, rgba(193,42,122,.24) 0%, transparent 65%),
       radial-gradient(ellipse 45% 50% at 72% 38%, rgba(42,109,158,.2) 0%, transparent 65%)}
   .pc-plate img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:right center;z-index:1;
-    filter:invert(1) grayscale(1) sepia(.55) contrast(1) brightness(.95) saturate(.9);opacity:.32;mix-blend-mode:screen}
-  .pc-plate img:not(.tb-r):not(.tb-b){animation:tb-jitter 6.8s steps(1,end) infinite}
-  .pc-plate .tb-r{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(295deg) brightness(.95) blur(1.8px);opacity:.17;mix-blend-mode:screen;animation:tb-drift-r 4.2s ease-in-out infinite alternate}
-  .pc-plate .tb-b{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(200deg) brightness(.95) blur(1.8px);opacity:.14;mix-blend-mode:screen;animation:tb-drift-b 4.6s ease-in-out infinite alternate}
+    filter:invert(1) grayscale(1) sepia(.55) contrast(1) brightness(.95) saturate(.9);opacity:.18;mix-blend-mode:screen}
+  .pc-plate img:not(.tb-r):not(.tb-b){animation:none}
+  .pc-plate .tb-r{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(295deg) brightness(.95) blur(1.8px);opacity:.08;mix-blend-mode:screen;animation:none}
+  .pc-plate .tb-b{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(200deg) brightness(.95) blur(1.8px);opacity:.06;mix-blend-mode:screen;animation:none}
   html[data-theme="light"] .pc-plate img{filter:grayscale(1) sepia(.42) contrast(.8) brightness(1.35);opacity:.45;mix-blend-mode:multiply}
   html[data-theme="light"] .pc-plate .tb-r{filter:grayscale(1) sepia(1) saturate(2) hue-rotate(312deg) brightness(1.22) blur(1.6px);opacity:.11;mix-blend-mode:multiply}
   html[data-theme="light"] .pc-plate .tb-b{filter:grayscale(1) sepia(1) saturate(1.8) hue-rotate(200deg) brightness(1.22) blur(1.6px);opacity:.09;mix-blend-mode:multiply}
@@ -671,9 +671,9 @@
   #pv-card-1 .pc-plate img:not(.tb-r):not(.tb-b){object-position:60% 85%;transform:scale(1.5);transform-origin:60% 85%}
   #pv-card-2 .pc-plate{width:60%;max-width:720px;-webkit-mask-image:linear-gradient(to right,transparent 0%,black 55%);mask-image:linear-gradient(to right,transparent 0%,black 55%)}
   #pv-card-2 .pc-plate img:not(.tb-r):not(.tb-b){object-fit:none;width:100%;height:110%;top:50%;bottom:auto;transform:translateY(-50%);object-position:center center}
-  #pv-card-2 .pc-plate img{filter:invert(1) grayscale(1) sepia(.55) contrast(1) brightness(.95) saturate(.9);opacity:.5;mix-blend-mode:screen}
-  #pv-card-2 .pc-plate .tb-r{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(295deg) brightness(.95) blur(1.8px);opacity:.18}
-  #pv-card-2 .pc-plate .tb-b{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(200deg) brightness(.95) blur(1.8px);opacity:.16}
+  #pv-card-2 .pc-plate img{filter:invert(1) grayscale(1) sepia(.55) contrast(1) brightness(.95) saturate(.9);opacity:.22;mix-blend-mode:screen}
+  #pv-card-2 .pc-plate .tb-r{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(295deg) brightness(.95) blur(1.8px);opacity:.35}
+  #pv-card-2 .pc-plate .tb-b{filter:invert(1) grayscale(1) contrast(1) sepia(1) saturate(4) hue-rotate(200deg) brightness(.95) blur(1.8px);opacity:.28}
   html[data-theme="light"] #pv-card-2 .pc-plate img{filter:grayscale(1) sepia(.42) contrast(.8) brightness(1.35);opacity:.42;mix-blend-mode:multiply}
   #pv-card-6 .pc-plate{-webkit-mask-image:linear-gradient(to right,transparent 35%,black 42%);mask-image:linear-gradient(to right,transparent 35%,black 42%);width:58%;max-width:680px}
   #pv-card-6 .pc-plate img:not(.tb-r):not(.tb-b){object-fit:none;width:auto;height:195%;top:50%;left:auto;right:-8%;transform:translateY(-50%)}
@@ -1205,15 +1205,23 @@
     </div>
 
     <!-- E2E workflow ticker -->
-    <div class="modules" aria-label="PIPE workflow">
-      <div><span class="n">01</span><span class="name">79% unprepared</span></div>
-      <div><span class="n">02</span><span class="name">11.4hrs review</span></div>
-      <div><span class="n">03</span><span class="name">r=.54 validity</span></div>
-      <div><span class="n">04</span><span class="name">64.2% lie</span></div>
-      <div><span class="n">05</span><span class="name">56 days</span></div>
-      <div><span class="n">06</span><span class="name">20-30% fail</span></div>
+    <div class="modules" aria-label="PIPE pipeline phases">
+      <div><span class="n">01</span><span class="name">Calibrate</span></div>
+      <div><span class="n">02</span><span class="name">Source</span></div>
+      <div><span class="n">03</span><span class="name">Reach Out</span></div>
+      <div><span class="n">04</span><span class="name">Assess</span></div>
+      <div><span class="n">05</span><span class="name">Score</span></div>
+      <div><span class="n">06</span><span class="name">Decide</span></div>
     </div>
   </header>
+
+  <section class="manifesto" style="border-top:none;border-bottom:none">
+    <blockquote>
+      The résumé is a fiction written by the candidate.<br>
+      The coding interview is a theater written by the company.<br>
+      The take-home project is unpaid labor with no standard of evaluation.
+    </blockquote>
+  </section>
 
   <!-- ───────── THE CRISIS ───────── -->
   <section class="crisis" id="crisis">
@@ -1226,22 +1234,19 @@
 
     <div class="stats">
       <div class="stat">
-        <span class="k">&#x25C6; AI overconfidence</span>
-        <span class="n">79<span class="unit">%</span></span>
-        <p><b>79% of employees feel unprepared to use AI at work.</b> Yet the more AI-literate someone is, the more overconfident they become. Aalto University (N=698) found the classic Dunning-Kruger effect <em>reverses</em> with AI use: higher AI literacy correlated with LOWER metacognitive accuracy. The engineers who seem most AI-savvy may be the worst at catching AI errors.</p>
-        <cite>Bright Horizons 2025; Aalto University, Computers in Human Behavior, 2025</cite>
+        <span class="k">&#x25C6; Bad hires cost more than you think</span>
+        <span class="n">$240<span class="unit">K</span></span>
+        <p><b>A single bad senior hire costs $150K–$300K</b> in salary, equity, onboarding, and team drag. That's before the 65 hours of engineering time burned on interviews, reviews, and false calibrations for every person you bring in. Most companies don't track this. The ones that do stop sleeping well.</p>
       </div>
       <div class="stat">
-        <span class="k">&#x25C6; The job flipped, the interview didn't</span>
-        <span class="n">11.4<span class="unit">hrs</span></span>
-        <p><b>Developers now spend 11.4 hours per week reviewing AI-generated code versus 9.8 hours writing new code.</b> Reviewing overtook writing as the single largest time sink in Q1 2026. Yet 77% of developers say the assessments they face don't reflect the skills actually needed for the job. The interview tests puzzle-solving under pressure. The job requires judgment under uncertainty.</p>
-        <cite>Digital Applied 2026 Developer Survey; HackerRank 2025 (n=13,000)</cite>
+        <span class="k">&#x25C6; AI cheating is already here</span>
+        <span class="n">38.5<span class="unit">%</span></span>
+        <p><b>38.5% of candidates use AI on take-home assessments.</b> And the worst part? The ones who cheat well look <em>better</em> than honest candidates. Your highest-scoring applicants may be the most assisted. Every unproctored hiring decision is a coin flip you can't afford to lose.</p>
       </div>
       <div class="stat">
-        <span class="k">&#x25C6; Work samples work, no one uses them</span>
-        <span class="n">r=.54</span>
-        <p><b>Work sample tests have the highest predictive validity of any hiring method</b> — r = .54 for overall job performance, from an 85-year meta-analysis by Schmidt & Hunter. Yet only 21% of employers use them. 44% still use algorithmic questions that studies show have zero correlation with job success. The science is unanimous. The practice is backwards.</p>
-        <cite>Schmidt & Hunter, Psychological Bulletin 1998; CoderPad 2025</cite>
+        <span class="k">&#x25C6; The regulations are coming</span>
+        <span class="n">3<span class="unit">laws</span></span>
+        <p><b>NYC Local Law 144. EU AI Act. Illinois HB3773.</b> All three require audit trails, human oversight, and bias documentation for AI-assisted hiring. Most teams have none of this. A single discrimination claim with no defensible audit trail costs more than the bad hire itself.</p>
       </div>
     </div>
 
@@ -1257,16 +1262,23 @@
     </div>
   </section>
 
+  <section class="manifesto" style="border-top:none;border-bottom:none">
+    <blockquote>
+      We do not infer skills from keywords.<br>
+      We do not ask candidates to perform under conditions no engineer faces.<br>
+      We do not trust self-reported expertise.
+    </blockquote>
+  </section>
+
   <!-- ───────── THE SYSTEM ───────── -->
-  <section id="system">
+  <section id="system" style="border-top:1px solid var(--rule);padding-top:clamp(48px,7vh,90px)">
     <div class="sec-head">
       <div>
         <div class="sec-num"><span class="bar"></span> 01 · The System</div>
-        <h2>One intelligent system. <em>Human triangulation.</em></h2>
+        <h2>It starts with <em>you.</em></h2>
       </div>
       <p class="sec-sub">
-        PIPE replaces résumé screening, take-homes, and first-round whiteboard interviews with one
-        rigorous, proctored challenge. You create the pipeline. We run the test. You read the cited verdict.
+        We interview your team before we assess a single candidate. We cross-examine stakeholders until we understand what this role actually requires — not the job description, but what your team needs to ship.
       </p>
     </div>
 
@@ -1377,26 +1389,26 @@
     <div class="system">
 
       <article class="mod">
-        <div class="mod-n">&#x25C6; 01 · AI-Proctored Challenges</div>
-        <h3>AI-proctored <em>challenges</em> on real code.</h3>
+        <div class="mod-n">&#x25C6; 01 · Observed Behavior</div>
+        <h3>You finally <em>watch</em> them think.</h3>
         <p>
-          Our AI agents serve as both implementer and interlocutor. In the Code Review Challenge, the AI presents a real PR for critique. In the Implementation Challenge, it generates code that the candidate must evaluate and improve. The AI doesn't just test — it pushes back, answers questions, and adapts. Every interaction is logged and scored against a calibrated rubric grounded in Schmidt & Hunter's work sample validity framework. <b>Uniform. Defensible. Survives AI assistance.</b>
+          The candidate doesn't solve puzzles. They review a real PR from an open-source library matched to your stack. They catch AI errors. They push back on assumptions. They improve code they didn't write. Every interaction is logged, scored, and measured against the hiring standard <em>you</em> set. <b>You see judgment, not performance anxiety.</b>
         </p>
       </article>
 
       <article class="mod">
         <div class="mod-n">&#x25C6; 02 · Living Candidate Graph</div>
-        <h3>The candidate is a <em>graph,</em> not a résumé.</h3>
+        <h3>You finally <em>understand</em> who they are.</h3>
         <p>
-          The candidate is not a résumé. They are a graph: skills, decisions, communication patterns, error detection rates, and pushback quality — all extracted from their actual behavior in the assessment. Our per-element matching engine maps this graph against the Role Context Document with evidence-structured scoring. No inferred skills. No keyword matching. <b>Observed behavior only.</b>
+          We don't parse keywords. We extract a living graph: communication patterns, error detection rates, pushback quality, how they handle ambiguity. Every node is observed. Every edge is evidence. Match it against the standard we built together and you know not just who they are, but who they'll become on your team. <b>No inferred skills. No keyword matching.</b>
         </p>
       </article>
 
       <article class="mod">
         <div class="mod-n">&#x25C6; 03 · Evidence-Structured Reporting</div>
-        <h3>One <em>cited verdict.</em> Rigorous.</h3>
+        <h3>You finally <em>sleep</em> at night.</h3>
         <p>
-          Every hiring decision receives a structured report: match scores per skill element, narrative context from the AI transcript, confidence intervals, and bias-audit trails. Built for NYC Local Law 144 compliance, EU AI Act Article 14 human oversight requirements, and EEOC defensibility. The report tells you not just <em>who</em> to hire, but <em>why</em> — with evidence. <b>Every decision traceable. Months later, still defensible.</b>
+          No more "I liked their energy" or "they seemed smart." Every decision gets a structured report: match scores per skill, narrative context from the transcript, confidence intervals, bias-audit trails. Built for NYC Local Law 144, EU AI Act Article 14, and EEOC defensibility. Months later, you can still explain exactly why you hired who you hired. <b>Every decision traceable. Forever defensible.</b>
         </p>
       </article>
 
@@ -1404,11 +1416,88 @@
     </div>
   </section>
 
+  <section class="manifesto" style="border-top:none;border-bottom:none">
+    <blockquote>
+      PIPE is an evidence-structured transcript of what a candidate actually does<br>
+      when presented with real engineering work: reading unfamiliar code,<br>
+      reasoning about systems they did not design, and shipping fixes<br>
+      that affect real users.
+    </blockquote>
+  </section>
+
+  <!-- ───────── THE SIGNALS ───────── -->
+  <section class="signals" id="signals">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num"><span class="bar"></span> 02 · The Signals</div>
+        <h2>Three signals. <em>One assessment.</em> Zero fiction.</h2>
+      </div>
+      <p class="sec-sub">
+        Every other platform tests whether a candidate can write code. PIPE tests whether they can do what senior engineers actually do — because in the age of AI, writing is cheap. Judgment is scarce.
+      </p>
+    </div>
+
+    <div class="signals-grid">
+      <article class="signal-card">
+        <div class="sig-num">01</div>
+        <h3>AI <em>Literacy</em></h3>
+        <div class="sig-sub">Can they evaluate what AI produces?</div>
+        <p>
+          AI doesn't eliminate the need for engineers. It elevates the required skill from <em>production</em> to <em>evaluation</em>. The U.S. Department of Labor's February 2026 AI Literacy Framework lists "evaluate AI outputs" as a core workforce competency. But no existing hiring platform — HackerRank, CodeSignal, Codility, TestGorilla — tests whether a candidate can catch hallucinations in generated code, spot subtle API misuses, or recognize when a plausible-looking solution is architecturally wrong.
+        </p>
+        <p>
+          PIPE's AI Implementer Challenge presents candidates with real code generated by an AI agent working on an actual open-source issue. The candidate must review it like a senior engineer: ask questions, push back on assumptions, catch edge cases the AI missed. This isn't a multiple-choice AI quiz. It's a live evaluation of engineering judgment in the human-AI collaboration era.
+        </p>
+        <cite class="sig-source">U.S. DOL AI Literacy Framework, Feb 2026; Long & Magerko CHI 2020; Karat NextGen Rubrics 2026</cite>
+      </article>
+
+      <article class="signal-card">
+        <div class="sig-num">02</div>
+        <h3>Reading <em>Code</em></h3>
+        <div class="sig-sub">Can they reason about systems they didn't build?</div>
+        <p>
+          Robert C. Martin established the famous ratio: engineers spend <b>10:1 more time reading code than writing it</b>. Academic research (LaToza et al.) puts the figure at <b>58-70% of all developer time spent comprehending code</b>. Will Larson, after interviewing 20+ Staff+ engineers at Google, Stripe, Slack, and Uber, summarized their unanimous view: <em>"None write as much as they used to. You'll be reading a ton of your coworkers' code and doing a fair number of code reviews."</em>
+        </p>
+        <p>
+          Yet the standard technical interview tests writing in isolation — often algorithmic puzzles that have zero correlation with job success. Code comprehension recruits <em>different brain regions</em> than code construction (eLife, 2020; Nature, 2024). Reading is a distinct, measurable expertise. And it's the expertise that separates junior engineers from senior ones.
+        </p>
+        <p>
+          PIPE's Code Review Challenge drops candidates into a real open-source library matched to their skills. They must read unfamiliar architecture, understand conventions they didn't create, and provide actionable feedback on a real PR. Because that's the job.
+        </p>
+        <cite class="sig-source">Robert C. Martin, Clean Code; LaToza et al.; Will Larson, Staff Engineer; Ivanova et al., eLife 2020; Schmidt & Hunter 1998</cite>
+      </article>
+
+      <article class="signal-card">
+        <div class="sig-num">03</div>
+        <h3>E2E Open <em>Source</em></h3>
+        <div class="sig-sub">Can they ship in a real codebase?</div>
+        <p>
+          SWE-bench — the Princeton-built benchmark for evaluating AI systems on real software engineering — uses <b>2,294 actual GitHub issues</b> from 12 popular Python repositories. Even Claude 2 solves only <b>1.96%</b> of them. Real issues are genuinely hard because they require navigating unfamiliar conventions, coordinating multi-file changes, and reasoning about code you didn't write in systems you didn't design.
+        </p>
+        <p>
+          This is exactly what a senior engineer does on day one. PIPE matches candidates to real open-source libraries aligned with their actual skills — not toy problems, not take-home projects that create adverse selection (62% completion rate, 20% of Dropbox candidates simply didn't finish). The candidate reviews a real PR, then implements a fix in the same real codebase, working through the full workflow: read, review, implement, test, document.
+        </p>
+        <p>
+          Work sample tests have the highest predictive validity of any hiring method (r = .54). The closest thing to a work sample in software engineering is a real PR in a real repo. That's what PIPE measures.
+        </p>
+        <cite class="sig-source">SWE-bench, Princeton ICLR 2024; Schmidt & Hunter 1998; interviewing.io; Slack Engineering 2019</cite>
+      </article>
+    </div>
+  </section>
+
+  <section class="manifesto" style="border-top:none;border-bottom:none">
+    <blockquote>
+      We observe. We measure. We match.<br><br>
+      The future of hiring is not a better résumé parser.<br>
+      It is a better <em>observation protocol.</em>
+    </blockquote>
+  </section>
+
   <!-- ───────── THE PIPELINE ───────── -->
   <section id="work" class="pipeline-viz">
     <div class="sec-head">
       <div>
-        <div class="sec-num"><span class="bar"></span> 02 · The Pipeline</div>
+        <div class="sec-num"><span class="bar"></span> 03 · The Pipeline</div>
         <h2>One pipeline. Six stations. <em>Calibrated end-to-end.</em></h2>
       </div>
       <p class="sec-sub">
@@ -1547,7 +1636,7 @@
           <div class="pc-row"><dt>Role overlay</dt><dd>Senior IC · Manager · Founding — shifts question weights, probe depth, what "good" means</dd></div>
           <div class="pc-row"><dt>Method</dt><dd>Multi-stakeholder, design-thinking intake. Voice or text. Disagreements stay on the record.</dd></div>
           <div class="pc-row"><dt>Compliance</dt><dd>Title VII · ADA · ADEA · GINA · NYC LL144 · CA FEHA · CO SB24-205 · IL HB 3773 · EU AI Act Annex III</dd></div>
-          <div class="pc-row"><dt>Artifact</dt><dd>Role Context Document — per-stakeholder answers, attribute&#x2192;consequence&#x2192;value chains, conflict flags</dd></div>
+          <div class="pc-row"><dt>Artifact</dt><dd>Hiring standard — per-stakeholder answers, attribute&#x2192;consequence&#x2192;value chains, conflict flags</dd></div>
         </dl>
       </article>
 
@@ -1555,7 +1644,6 @@
         <div class="pc-plate" aria-hidden="true">
           <img src="./assets/score.jpg" alt="" class="tb-r">
           <img src="./assets/score.jpg" alt="" class="tb-b">
-          <img src="./assets/score.jpg" alt="">
         </div>
         <svg class="pc-math" viewBox="0 0 240 240" aria-hidden="true">
           <text x="6" y="14" font-size="8.5">&#x25C6; SRC · &#x03C1;=0.87</text>
@@ -1697,7 +1785,7 @@
           <span class="pc-artifact">&#x2192; The work, captured verbatim</span>
         </div>
         <p class="pc-body">
-          Two AI-proctored challenges, each calibrated to the Role Context Document. The candidate reviews AI-generated code in a real open-source repo, then implements a fix in the same codebase. The AI adapts difficulty in real time. The transcript is the assessment. A separate structured behavioral track, STAR-format, tailored to the five sliders you set at calibration.
+          Two AI-proctored challenges, each calibrated to your hiring standard. The candidate reviews AI-generated code in a real open-source repo, then implements a fix in the same codebase. The AI adapts difficulty in real time. The transcript is the assessment. A separate structured behavioral track, STAR-format, tailored to the five sliders you set at calibration.
         </p>
         <dl class="pc-meta">
           <div class="pc-row"><dt>Environment</dt><dd>Production-grade browser IDE · real terminal · git · package manager — not a sandbox</dd></div>
@@ -1842,66 +1930,6 @@
       <li class="pv-fsep" aria-hidden="true">&#x2192;</li>
       <li><span class="pv-fnum">&#x2165;</span><span class="pv-fart">Offer + audit pack</span></li>
     </ol>
-  </section>
-
-  <!-- ───────── THE SIGNALS ───────── -->
-  <section class="signals" id="signals">
-    <div class="sec-head">
-      <div>
-        <div class="sec-num"><span class="bar"></span> 03 · The Signals</div>
-        <h2>Three signals. <em>One assessment.</em> Zero fiction.</h2>
-      </div>
-      <p class="sec-sub">
-        Every other platform tests whether a candidate can write code. PIPE tests whether they can do what senior engineers actually do — because in the age of AI, writing is cheap. Judgment is scarce.
-      </p>
-    </div>
-
-    <div class="signals-grid">
-      <article class="signal-card">
-        <div class="sig-num">01</div>
-        <h3>AI <em>Literacy</em></h3>
-        <div class="sig-sub">Can they evaluate what AI produces?</div>
-        <p>
-          AI doesn't eliminate the need for engineers. It elevates the required skill from <em>production</em> to <em>evaluation</em>. The U.S. Department of Labor's February 2026 AI Literacy Framework lists "evaluate AI outputs" as a core workforce competency. But no existing hiring platform — HackerRank, CodeSignal, Codility, TestGorilla — tests whether a candidate can catch hallucinations in generated code, spot subtle API misuses, or recognize when a plausible-looking solution is architecturally wrong.
-        </p>
-        <p>
-          PIPE's AI Implementer Challenge presents candidates with real code generated by an AI agent working on an actual open-source issue. The candidate must review it like a senior engineer: ask questions, push back on assumptions, catch edge cases the AI missed. This isn't a multiple-choice AI quiz. It's a live evaluation of engineering judgment in the human-AI collaboration era.
-        </p>
-        <cite class="sig-source">U.S. DOL AI Literacy Framework, Feb 2026; Long & Magerko CHI 2020; Karat NextGen Rubrics 2026</cite>
-      </article>
-
-      <article class="signal-card">
-        <div class="sig-num">02</div>
-        <h3>Reading <em>Code</em></h3>
-        <div class="sig-sub">Can they reason about systems they didn't build?</div>
-        <p>
-          Robert C. Martin established the famous ratio: engineers spend <b>10:1 more time reading code than writing it</b>. Academic research (LaToza et al.) puts the figure at <b>58-70% of all developer time spent comprehending code</b>. Will Larson, after interviewing 20+ Staff+ engineers at Google, Stripe, Slack, and Uber, summarized their unanimous view: <em>"None write as much as they used to. You'll be reading a ton of your coworkers' code and doing a fair number of code reviews."</em>
-        </p>
-        <p>
-          Yet the standard technical interview tests writing in isolation — often algorithmic puzzles that have zero correlation with job success. Code comprehension recruits <em>different brain regions</em> than code construction (eLife, 2020; Nature, 2024). Reading is a distinct, measurable expertise. And it's the expertise that separates junior engineers from senior ones.
-        </p>
-        <p>
-          PIPE's Code Review Challenge drops candidates into a real open-source library matched to their skills. They must read unfamiliar architecture, understand conventions they didn't create, and provide actionable feedback on a real PR. Because that's the job.
-        </p>
-        <cite class="sig-source">Robert C. Martin, Clean Code; LaToza et al.; Will Larson, Staff Engineer; Ivanova et al., eLife 2020; Schmidt & Hunter 1998</cite>
-      </article>
-
-      <article class="signal-card">
-        <div class="sig-num">03</div>
-        <h3>E2E Open <em>Source</em></h3>
-        <div class="sig-sub">Can they ship in a real codebase?</div>
-        <p>
-          SWE-bench — the Princeton-built benchmark for evaluating AI systems on real software engineering — uses <b>2,294 actual GitHub issues</b> from 12 popular Python repositories. Even Claude 2 solves only <b>1.96%</b> of them. Real issues are genuinely hard because they require navigating unfamiliar conventions, coordinating multi-file changes, and reasoning about code you didn't write in systems you didn't design.
-        </p>
-        <p>
-          This is exactly what a senior engineer does on day one. PIPE matches candidates to real open-source libraries aligned with their actual skills — not toy problems, not take-home projects that create adverse selection (62% completion rate, 20% of Dropbox candidates simply didn't finish). The candidate reviews a real PR, then implements a fix in the same real codebase, working through the full workflow: read, review, implement, test, document.
-        </p>
-        <p>
-          Work sample tests have the highest predictive validity of any hiring method (r = .54). The closest thing to a work sample in software engineering is a real PR in a real repo. That's what PIPE measures.
-        </p>
-        <cite class="sig-source">SWE-bench, Princeton ICLR 2024; Schmidt & Hunter 1998; interviewing.io; Slack Engineering 2019</cite>
-      </article>
-    </div>
   </section>
 
   <!-- ───────── PRODUCT SHOWCASE ───────── -->
@@ -2135,22 +2163,6 @@
 
   <!-- ───────── MANIFESTO ───────── -->
   <section class="manifesto" id="manifesto">
-    <blockquote>
-      The résumé is a fiction written by the candidate.<br>
-      The coding interview is a theater written by the company.<br>
-      The take-home project is unpaid labor with no standard of evaluation.<br><br>
-      We reject all three.<br><br>
-      PIPE is an evidence-structured transcript of what a candidate actually does<br>
-      when presented with real engineering work: reading unfamiliar code,<br>
-      reasoning about systems they did not design, and shipping fixes<br>
-      that affect real users.<br><br>
-      We do not infer skills from keywords.<br>
-      We do not ask candidates to perform under conditions no engineer faces.<br>
-      We do not trust self-reported expertise.<br><br>
-      We observe. We measure. We match.<br><br>
-      The future of hiring is not a better résumé parser.<br>
-      It is a better <em>observation protocol.</em>
-    </blockquote>
     <div class="attrib">
       &#x0410;&#x0418;&#x0414; <span class="sep">·</span> &#x03A0;&#x039B;&#x039F;&#x03A5;&#x03A4;&#x03A9;&#x039D; <span class="sep">·</span> &#x039C;&#x0391;&#x039D;&#x03A4;&#x0399;&#x03A3; <span class="sep">·</span> MMXXVI
     </div>
