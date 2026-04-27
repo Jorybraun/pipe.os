@@ -21,6 +21,7 @@ import { apiError } from '../../middleware/errors';
 import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
 import { callRoleAgent, mergeKnowledgeState, callGapFillingAgent, type RoleAgentResponse } from '../../lib/roleAgent';
 import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
+import { decomposeRcdIntoNodes, persistRoleNodes } from '../../lib/roleAgent/decomposeRcd';
 import { deriveJobDescriptionFromRcd } from '../../lib/roleAgent/deriveJobDescription';
 import { calibrateRcd } from '../../lib/roleAgent/calibrateRcd';
 import { buildConversationContext, buildPhaseDirective } from '../../lib/roleAgentPrompts';
@@ -775,6 +776,16 @@ roleContexts.post('/:id/respond', async (c) => {
           ),
         ]);
 
+        if (rcd) {
+          try {
+            const nodes = decomposeRcdIntoNodes(rcd, id);
+            await persistRoleNodes(nodes, c.env, c.env.DB);
+          } catch (decompErr) {
+            const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);
+            console.error('[roleContexts] RCD decomposition failed:', msg);
+          }
+        }
+
         const incomplete = await c.env.DB.prepare(
           `SELECT COUNT(*) as cnt FROM role_context_participants
            WHERE role_context_id = ?1 AND status != 'COMPLETE'`,
@@ -985,6 +996,16 @@ roleContexts.post('/:id/respond', async (c) => {
       ),
     ]);
 
+    if (rcd) {
+      try {
+        const nodes = decomposeRcdIntoNodes(rcd, id);
+        await persistRoleNodes(nodes, c.env, c.env.DB);
+      } catch (decompErr) {
+        const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);
+        console.error('[roleContexts] RCD decomposition failed:', msg);
+      }
+    }
+
     // Check if all participants are complete → mark role context COMPLETE
     const incomplete = await c.env.DB.prepare(
       `SELECT COUNT(*) as cnt FROM role_context_participants
@@ -1167,6 +1188,16 @@ roleContexts.post('/:id/complete', async (c) => {
       id,
     ),
   ]);
+
+  if (rcd) {
+    try {
+      const nodes = decomposeRcdIntoNodes(rcd, id);
+      await persistRoleNodes(nodes, c.env, c.env.DB);
+    } catch (decompErr) {
+      const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);
+      console.error('[roleContexts] RCD decomposition failed:', msg);
+    }
+  }
 
   // Check if all complete
   const incomplete = await c.env.DB.prepare(

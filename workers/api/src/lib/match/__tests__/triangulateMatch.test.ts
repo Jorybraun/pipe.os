@@ -21,7 +21,7 @@ function makeGraphResult(overrides?: Partial<MatchReposForCandidateResult>): Mat
       cosine: 0.6,
       rationale: 'matched acme/widgets (graph 0.700, cosine 0.600) covering 3/3 must-have skill(s)',
     },
-    review: { prNumber: 42, prTitle: 'fix off-by-one' },
+    review: { prNumber: 42, prTitle: 'fix off-by-one', selectionPath: 'size_fallback' },
     implementation: { issueNumber: 100, issueTitle: 'add caching' },
     shortlist: [
       { repoId: 101, fullName: 'acme/widgets', score: 0.7, cosine: 0.6 },

@@ -46,6 +46,8 @@ export interface MatchReposForCandidateInput {
   rerankTopK?: number;
   /** Weight of the ANN score in the blended ranking (0..1). Default 0.6. */
   cosineWeight?: number;
+  /** Pre-computed candidate profile embedding for semantic PR selection. */
+  candidateEmbeddingJson?: number[] | null;
 }
 
 export interface MatchReposForCandidateResult {
@@ -59,7 +61,7 @@ export interface MatchReposForCandidateResult {
     cosine: number | null;
     rationale: string;
   };
-  review: { prNumber: number; prTitle: string } | null;
+  review: { prNumber: number; prTitle: string; selectionPath: 'semantic' | 'size_fallback' } | null;
   implementation: { issueNumber: number; issueTitle: string } | null;
   /** Top N candidates (post-blend) for explainability + debugging. */
   shortlist: Array<{ repoId: number; fullName: string; score: number; cosine: number | null }>;
@@ -222,7 +224,7 @@ export async function matchReposForCandidate(
 
   // ─── Stage 4: Pick PR + issue for winner ────────────────────────────────────
   const [pr, issue] = await Promise.all([
-    pickReviewPr(db, topRepoId),
+    pickReviewPr(db, topRepoId, input.candidateEmbeddingJson ?? null),
     pickImplementationIssue(db, topRepoId, keyConcepts.seniority),
   ]);
 

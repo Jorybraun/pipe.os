@@ -163,6 +163,13 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   const pipelineId = candidateRow.pipeline_id;
   const philosophy = (candidateRow.match_philosophy ?? 'validate') as 'validate' | 'tailored' | 'hybrid';
 
+  // Load candidate embedding early for semantic PR selection.
+  const candidateEmbeddingRow = await db
+    .prepare(`SELECT embedding_json FROM candidate_ingestion WHERE candidate_id = ?1`)
+    .bind(candidateId)
+    .first<{ embedding_json: string | null }>();
+  const candidateVec = parseEmbeddingJson(candidateEmbeddingRow?.embedding_json);
+
   // Step 6: Graph + optional cosine match
   const matchResult = await matchReposForCandidate({
     db,
@@ -173,6 +180,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     candidateLimit: 10,
     rerankTopK: 50,
     cosineWeight: philosophy === 'validate' ? 0.3 : 0.5,
+    candidateEmbeddingJson: candidateVec,
   });
 
   // Step 7: Load role_repo_alignment for pipeline's role_context
@@ -206,18 +214,12 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     // Dual-layer exact cosine: load ground-truth vectors from D1,
     // compute exact similarity. Falls back to null if either side
     // hasn't been embedded yet (triangulateMatch then uses skill_coverage).
-    const embeddingRow = await db
-      .prepare(
-        `SELECT ci.embedding_json AS candidate_embedding, rc.embedding_json AS role_embedding
-           FROM candidate_ingestion ci
-           LEFT JOIN role_contexts rc ON rc.id = ?1
-          WHERE ci.candidate_id = ?2`,
-      )
-      .bind(roleContextRow.id, candidateId)
-      .first<{ candidate_embedding: string | null; role_embedding: string | null }>();
+    const roleEmbeddingRow = await db
+      .prepare(`SELECT embedding_json AS role_embedding FROM role_contexts WHERE id = ?1`)
+      .bind(roleContextRow.id)
+      .first<{ role_embedding: string | null }>();
 
-    const candidateVec = parseEmbeddingJson(embeddingRow?.candidate_embedding);
-    const roleVec = parseEmbeddingJson(embeddingRow?.role_embedding);
+    const roleVec = parseEmbeddingJson(roleEmbeddingRow?.role_embedding);
     if (candidateVec && roleVec) {
       try {
         roleCandidateCosine = cosineSimilarity(candidateVec, roleVec);
@@ -448,7 +450,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
 
         // Fetch PR/issue for the new winner
         const [pr, issue] = await Promise.all([
-          pickReviewPr(db, winnerRepoId),
+          pickReviewPr(db, winnerRepoId, candidateVec),
           pickImplementationIssue(db, winnerRepoId, discoveryResult.keyConcepts.seniority),
         ]);
         winnerReview = pr;

@@ -21,6 +21,7 @@
 
 import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
 import { matchRepos, type MatchedRepo, type MatchRequest } from '../repoDiscovery/matchRepos';
+import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
 
 export type StationType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION';
 
@@ -46,6 +47,12 @@ export interface AutoStation {
   /** CODE_IMPLEMENTATION only. */
   issueTitle?: string;
   sortOrder: number;
+}
+
+export interface PickReviewPrResult {
+  prNumber: number;
+  prTitle: string;
+  selectionPath: 'semantic' | 'size_fallback';
 }
 
 export interface AutoStageBuilderResult {
@@ -197,10 +204,67 @@ function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
  * Pick the top PR for a given repo from repo_sample_prs, preferring SWE-bench
  * eligible PRs (`swe_bench_eligible = 1`).
  */
+const SEMANTIC_THRESHOLD = 0.6;
+
 export async function pickReviewPr(
   db: D1Database,
   repoId: number,
-): Promise<{ prNumber: number; prTitle: string } | null> {
+  candidateEmbedding?: number[] | null,
+): Promise<PickReviewPrResult | null> {
+  // Fast fallback when no candidate embedding is available.
+  if (!candidateEmbedding) {
+    const row = await db
+      .prepare(
+        `SELECT pr_number, title
+           FROM repo_sample_prs
+          WHERE repo_id = ?
+            AND swe_bench_eligible = 1
+          ORDER BY changed_file_count ASC, pr_number DESC
+          LIMIT 1`,
+      )
+      .bind(repoId)
+      .first<{ pr_number: number; title: string }>();
+
+    if (!row) return null;
+    return { prNumber: row.pr_number, prTitle: row.title, selectionPath: 'size_fallback' };
+  }
+
+  // Semantic path: load all eligible PRs with embeddings and compute cosine similarity.
+  const rows = await db
+    .prepare(
+      `SELECT pr_number, title, pr_narrative_embedding_json
+         FROM repo_sample_prs
+        WHERE repo_id = ?
+          AND swe_bench_eligible = 1`,
+    )
+    .bind(repoId)
+    .all<{ pr_number: number; title: string; pr_narrative_embedding_json: string | null }>();
+
+  let bestPr: { pr_number: number; title: string } | null = null;
+  let bestScore = -1;
+
+  for (const row of rows.results ?? []) {
+    const prEmbedding = parseEmbeddingJson(row.pr_narrative_embedding_json);
+    if (!prEmbedding) continue;
+    try {
+      const sim = cosineSimilarity(candidateEmbedding, prEmbedding);
+      if (sim > bestScore) {
+        bestScore = sim;
+        bestPr = row;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  if (bestPr && bestScore >= SEMANTIC_THRESHOLD) {
+    console.log(
+      `[pickReviewPr] semantic match repoId=${repoId} pr=${bestPr.pr_number} score=${bestScore.toFixed(3)}`,
+    );
+    return { prNumber: bestPr.pr_number, prTitle: bestPr.title, selectionPath: 'semantic' };
+  }
+
+  // Fallback to size ordering when no semantic match clears the threshold.
   const row = await db
     .prepare(
       `SELECT pr_number, title
@@ -214,7 +278,8 @@ export async function pickReviewPr(
     .first<{ pr_number: number; title: string }>();
 
   if (!row) return null;
-  return { prNumber: row.pr_number, prTitle: row.title };
+  console.log(`[pickReviewPr] size_fallback repoId=${repoId} pr=${row.pr_number}`);
+  return { prNumber: row.pr_number, prTitle: row.title, selectionPath: 'size_fallback' };
 }
 
 /**
