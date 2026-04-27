@@ -276,7 +276,8 @@ export default function CandidatesTab(): JSX.Element {
                     onClick={() => navigate(`/candidates/${c.id}`)}
                     onDelete={() => void handleRemove(c)}
                     onCopyLink={() => {
-                      const link = `${window.location.origin}/assess/${c.inviteToken}`;
+                      const rawToken = c.inviteToken.replace(/^CLAIMED::/, '');
+                      const link = `${window.location.origin}/assess/${rawToken}`;
                       void navigator.clipboard.writeText(link);
                     }}
                   />

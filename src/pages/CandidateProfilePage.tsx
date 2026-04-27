@@ -983,8 +983,9 @@ export default function CandidateProfilePage(): JSX.Element {
   // Initialize assessLink from the candidate's existing invite token on load
   useEffect(() => {
     if (candidate?.inviteToken && !assessLink) {
+      const rawToken = candidate.inviteToken.replace(/^CLAIMED::/, '');
       const baseUrl = window.location.origin;
-      setAssessLink(`${baseUrl}/assess/${candidate.inviteToken}`);
+      setAssessLink(`${baseUrl}/assess/${rawToken}`);
     }
   }, [candidate, assessLink]);
 
