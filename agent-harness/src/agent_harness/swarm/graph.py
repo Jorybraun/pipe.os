@@ -377,7 +377,9 @@ def developer_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
         emit(event_type="subtask_complete", payload={"plan_id": plan_id, "subtask_id": current_id})
     elif new_handoff["status"] == "context_exhausted":
         # Keep same subtask for next dev iteration
+        # Preserve guidance so supervisor routes straight back to developer
         updates["current_subtask_id"] = current_id
+        updates["advisor_guidance"] = state.get("advisor_guidance") or "Continue from previous handoff."
     elif new_handoff["status"] == "blocked":
         updates["status"] = "blocked"
         updates["current_subtask_id"] = current_id
