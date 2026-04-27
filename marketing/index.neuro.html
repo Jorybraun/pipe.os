@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PIPE — Read the transcript. Not the résumé.</title>
-<meta name="description" content="PIPE is the end-to-end recruitment platform that replaces résumé screens and take-homes with one AI-proctored test. Every candidate defends real code under pushback. You read a cited, scored transcript — not a résumé.">
+<meta name="description" content="PIPE is the end-to-end hiring platform that replaces résumés and take-homes with a calibrated observation protocol. Every candidate works through real code in a real repo. You read a cited, scored transcript — not a résumé.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..900,0..100&family=JetBrains+Mono:wght@400;500;700&family=Archivo+Black&display=swap">
@@ -329,7 +329,7 @@
   .btn-ghost:hover{color:var(--ember);border-color:var(--ember)}
 
   /* Module ticker */
-  .modules{margin-top:56px;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-dim)}
+  .modules{margin-top:56px;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-dim)}
   .modules > div{padding:16px 18px;border-right:1px solid var(--rule);display:flex;align-items:center;gap:10px;position:relative;overflow:hidden}
   .modules > div:last-child{border-right:0}
   .modules > div::before{content:"";position:absolute;bottom:0;left:0;width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--ember-hot),transparent);transform:translateX(-100%);animation:mod-sweep 14s linear infinite;animation-delay:var(--d,0s)}
@@ -337,7 +337,7 @@
   .modules > div:nth-child(3)::before{--d:5.6s}
   .modules > div:nth-child(4)::before{--d:8.4s}
   .modules > div:nth-child(5)::before{--d:11.2s}
-  .modules > div:nth-child(6)::before{--d:13s}
+
   @keyframes mod-sweep{0%{transform:translateX(-100%)}20%{transform:translateX(100%)}100%{transform:translateX(100%)}}
   .modules .n{color:var(--ember);font-family:var(--display);font-size:11px;letter-spacing:.1em}
   .modules .name{color:var(--ink);font-weight:500}
@@ -577,18 +577,7 @@
   .manifesto .attrib .sep{margin:0 10px;color:var(--rule-2)}
 
   /* CTA */
-  .cta{padding:clamp(96px,14vh,160px) 0;background:radial-gradient(ellipse at top,rgba(212,169,89,.06),transparent 55%)}
-  html[data-theme="light"] .cta{background:radial-gradient(ellipse at top,rgba(138,93,30,.05),transparent 55%)}
-  .cta-inner{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:end}
-  .cta h2{max-width:18ch}
-  .cta-form{display:flex;flex-direction:column;gap:18px}
-  .cta-form p{font-family:var(--mono);font-size:12px;color:var(--ink-dim);line-height:1.7}
-  .cta-form .field{display:flex;border:1px solid var(--ink);background:transparent}
-  .cta-form input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:18px 22px;letter-spacing:.02em}
-  .cta-form input::placeholder{color:var(--ink-mute);letter-spacing:.1em;text-transform:uppercase;font-size:11px}
-  .cta-form button{background:var(--ink);color:var(--bg);border:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;padding:0 26px;cursor:pointer;transition:background .2s ease}
-  .cta-form button:hover{background:var(--ember)}
-  .cta-form .fine{font-size:10px;color:var(--ink-mute);letter-spacing:.14em;text-transform:uppercase}
+
 
   /* FOOTER */
   footer{padding:36px 0 56px;border-top:1px solid var(--rule);display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;font-family:var(--mono);font-size:10px;color:var(--ink-mute);letter-spacing:.18em;text-transform:uppercase}
@@ -610,7 +599,7 @@
   .pv-flow-path{animation:pv-rail-flow 7s linear infinite}
   html[data-theme="light"] .pv-flow-path{opacity:.6}
 
-  .pv-stations{position:absolute;inset:0 clamp(22px,3vw,40px);display:grid;grid-template-columns:repeat(6,1fr);align-items:stretch;pointer-events:none}
+  .pv-stations{position:absolute;inset:0 clamp(22px,3vw,40px);display:grid;grid-template-columns:repeat(5,1fr);align-items:stretch;pointer-events:none}
   .pv-node{pointer-events:auto;background:transparent;border:0;display:grid;grid-template-rows:22px 22px auto auto;row-gap:6px;align-items:center;justify-items:center;cursor:pointer;padding:0;color:var(--ink-dim);transition:color .2s ease;position:relative;font:inherit}
   .pv-glyph{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--ink-dim);opacity:.72;transition:color .25s ease,opacity .25s ease}
   .pv-pad{width:18px;height:18px;border:1px solid var(--rule);border-radius:50%;background:var(--bg);display:grid;place-items:center;position:relative;transition:border-color .25s ease,box-shadow .3s ease,transform .2s ease;z-index:2}
@@ -731,6 +720,20 @@
 
   .pc-meta{display:grid;gap:0;margin:0;border-top:1px dashed var(--rule)}
   .pc-row{display:grid;grid-template-columns:170px 1fr;gap:20px;padding:11px 0;border-bottom:1px dashed var(--rule);align-items:baseline;margin:0}
+
+  /* Closed-loop diagram */
+  .loop-diagram{margin-top:32px;padding:0 clamp(22px,3vw,40px);position:relative}
+  .loop-cycle{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+  .loop-row{display:flex;align-items:stretch;gap:clamp(16px,2vw,32px);position:relative;z-index:1;padding:70px 0}
+  .loop-box{flex:1;display:flex;flex-direction:column;gap:6px;padding:20px 18px;border:1px dashed var(--rule);background:var(--bg-2);position:relative}
+  .loop-label{font-family:var(--mono);font-size:9px;letter-spacing:.24em;text-transform:uppercase;color:var(--ember);margin-bottom:4px}
+  .loop-title{font-family:var(--serif);font-weight:400;font-size:15px;line-height:1.1;color:var(--ink);letter-spacing:-.01em}
+  .loop-title em{font-style:italic;font-weight:300;background:var(--chrome-warm);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .loop-desc{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);line-height:1.5;margin-top:2px}
+  @media (max-width:900px){
+    .loop-row{flex-direction:column;gap:16px;padding:40px 0}
+    .loop-cycle{display:none}
+  }
   .pc-row:last-child{border-bottom:0}
   .pc-row dt{font-family:var(--mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-dim);margin:0}
   .pc-row dd{margin:0;font-family:var(--mono);font-size:12px;color:var(--ink);line-height:1.6}
@@ -765,13 +768,13 @@
   /* ───────── NEW: PRODUCT SHOWCASE ───────── */
   .showcase{padding:clamp(80px,12vh,140px) 0;border-bottom:1px solid var(--rule);position:relative}
   .showcase-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start;margin-top:48px}
-  .terminal-card{background:var(--bg-2);border:1px solid var(--rule-2);font-family:var(--mono);overflow:hidden}
-  .terminal-header{padding:14px 20px;border-bottom:1px solid var(--rule);display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-mute)}
-  .terminal-header .dot{width:8px;height:8px;border-radius:50%;background:var(--blood-hot);opacity:.6}
-  .terminal-body{padding:22px 24px;font-size:12px;line-height:1.7;color:var(--ink-dim)}
-  .terminal-body .t-ai{color:var(--blood-hot)}
-  .terminal-body .t-cand{color:var(--ember-hot)}
-  .terminal-body .t-line-s{margin:10px 0;padding-left:16px;border-left:2px solid var(--rule-2)}
+  .product-shot{position:relative;border:1px solid var(--rule-2);background:var(--bg-2);overflow:hidden;border-radius:2px}
+  .product-shot img{width:100%;height:auto;display:block}
+  .product-shot .shot-light{display:none}
+  .product-shot .shot-dark{display:block}
+  html[data-theme="light"] .product-shot .shot-light{display:block}
+  html[data-theme="light"] .product-shot .shot-dark{display:none}
+  .product-shot .shot-label{position:absolute;top:12px;left:14px;font-family:var(--mono);font-size:8.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-mute);background:var(--bg-2);padding:5px 12px;border:1px solid var(--rule);z-index:2}
   .match-report{margin-top:24px;background:var(--bg);border:1px solid var(--rule-2);padding:20px 24px}
   .match-report .mr-title{font-family:var(--mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ember);margin-bottom:14px}
   .match-row{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--rule);font-family:var(--mono);font-size:11.5px}
@@ -780,6 +783,17 @@
   .match-row .mr-val{color:var(--ink);font-weight:500}
   .match-row .mr-note{color:var(--ink-mute);font-size:10px}
   .match-score{font-family:var(--display);font-size:28px;color:var(--ember-hot);letter-spacing:.04em}
+
+  /* Value propositions */
+  .value-props{padding:clamp(80px,12vh,140px) 0;border-bottom:1px solid var(--rule);position:relative}
+  .value-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(20px,2.5vw,36px);margin-top:48px;padding:0 clamp(22px,3vw,40px)}
+  .value-card{display:flex;flex-direction:column;gap:16px;padding:28px 24px;border:1px solid var(--rule);background:var(--bg-2);position:relative}
+  .value-card::before{content:'';position:absolute;top:-1px;left:24px;right:24px;height:2px;background:var(--ember);opacity:.6}
+  .value-num{font-family:var(--mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ember);margin-bottom:4px}
+  .value-card h3{font-family:var(--serif);font-weight:400;font-size:18px;line-height:1.15;color:var(--ink);letter-spacing:-.01em;margin:0}
+  .value-card h3 em{font-style:italic;font-weight:300;background:var(--chrome-warm);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .value-card p{font-family:var(--mono);font-size:11px;color:var(--ink-dim);line-height:1.7;margin:0}
+  @media (max-width:900px){.value-grid{grid-template-columns:1fr}}
 
   .feature-list{display:flex;flex-direction:column;gap:28px}
   .feature-item{display:flex;gap:16px;align-items:flex-start}
@@ -841,9 +855,7 @@
     .value-strip{grid-template-columns:1fr}
     .signal{grid-template-columns:24px 1fr;gap:12px}
     .signal .val, .signal .rating{grid-column:1/-1;padding-left:36px}
-    .cta-inner{grid-template-columns:1fr;gap:32px}
-    .cta-form .field{flex-direction:column}
-    .cta-form button{padding:16px 0}
+
     footer{grid-template-columns:1fr;gap:16px}
     footer .f-right{text-align:left}
     .t-line{grid-template-columns:1fr;gap:8px}
@@ -1207,11 +1219,10 @@
     <!-- E2E workflow ticker -->
     <div class="modules" aria-label="PIPE pipeline phases">
       <div><span class="n">01</span><span class="name">Calibrate</span></div>
-      <div><span class="n">02</span><span class="name">Source</span></div>
-      <div><span class="n">03</span><span class="name">Reach Out</span></div>
-      <div><span class="n">04</span><span class="name">Assess</span></div>
-      <div><span class="n">05</span><span class="name">Score</span></div>
-      <div><span class="n">06</span><span class="name">Decide</span></div>
+      <div><span class="n">02</span><span class="name">Reach Out</span></div>
+      <div><span class="n">03</span><span class="name">Assess</span></div>
+      <div><span class="n">04</span><span class="name">Score</span></div>
+      <div><span class="n">05</span><span class="name">Decide</span></div>
     </div>
   </header>
 
@@ -1448,7 +1459,7 @@
         <p>
           PIPE's AI Implementer Challenge presents candidates with real code generated by an AI agent working on an actual open-source issue. The candidate must review it like a senior engineer: ask questions, push back on assumptions, catch edge cases the AI missed. This isn't a multiple-choice AI quiz. It's a live evaluation of engineering judgment in the human-AI collaboration era.
         </p>
-        <cite class="sig-source">U.S. DOL AI Literacy Framework, Feb 2026; Long & Magerko CHI 2020; Karat NextGen Rubrics 2026</cite>
+        <cite class="sig-source">U.S. Department of Labor AI Literacy Framework, 2026</cite>
       </article>
 
       <article class="signal-card">
@@ -1456,15 +1467,14 @@
         <h3>Reading <em>Code</em></h3>
         <div class="sig-sub">Can they reason about systems they didn't build?</div>
         <p>
-          Robert C. Martin established the famous ratio: engineers spend <b>10:1 more time reading code than writing it</b>. Academic research (LaToza et al.) puts the figure at <b>58-70% of all developer time spent comprehending code</b>. Will Larson, after interviewing 20+ Staff+ engineers at Google, Stripe, Slack, and Uber, summarized their unanimous view: <em>"None write as much as they used to. You'll be reading a ton of your coworkers' code and doing a fair number of code reviews."</em>
+          Engineers spend <b>ten times more time reading code than writing it</b>. Staff+ engineers at every major tech company will tell you the same thing: their job is code review, architecture comprehension, and debugging systems they didn't build. The standard technical interview tests none of this. It tests algorithmic puzzles in isolation — puzzles that have zero correlation with the actual work.
         </p>
         <p>
-          Yet the standard technical interview tests writing in isolation — often algorithmic puzzles that have zero correlation with job success. Code comprehension recruits <em>different brain regions</em> than code construction (eLife, 2020; Nature, 2024). Reading is a distinct, measurable expertise. And it's the expertise that separates junior engineers from senior ones.
+          Reading code and writing code recruit different expertise. Comprehension is a distinct, measurable skill — and it's the skill that separates junior engineers from senior ones. Yet almost no hiring process tests it.
         </p>
         <p>
-          PIPE's Code Review Challenge drops candidates into a real open-source library matched to their skills. They must read unfamiliar architecture, understand conventions they didn't create, and provide actionable feedback on a real PR. Because that's the job.
+          PIPE's Code Review Challenge drops candidates into a real open-source library. They read unfamiliar architecture, understand conventions they didn't create, and provide actionable feedback on a real PR. Because that's the job.
         </p>
-        <cite class="sig-source">Robert C. Martin, Clean Code; LaToza et al.; Will Larson, Staff Engineer; Ivanova et al., eLife 2020; Schmidt & Hunter 1998</cite>
       </article>
 
       <article class="signal-card">
@@ -1472,25 +1482,71 @@
         <h3>E2E Open <em>Source</em></h3>
         <div class="sig-sub">Can they ship in a real codebase?</div>
         <p>
-          SWE-bench — the Princeton-built benchmark for evaluating AI systems on real software engineering — uses <b>2,294 actual GitHub issues</b> from 12 popular Python repositories. Even Claude 2 solves only <b>1.96%</b> of them. Real issues are genuinely hard because they require navigating unfamiliar conventions, coordinating multi-file changes, and reasoning about code you didn't write in systems you didn't design.
+          Real GitHub issues are genuinely hard. Even the most capable AI systems solve only a fraction of them. Why? Because real engineering requires navigating unfamiliar conventions, coordinating multi-file changes, and reasoning about code you didn't write in systems you didn't design. Exactly what a senior engineer does on day one.
         </p>
         <p>
-          This is exactly what a senior engineer does on day one. PIPE matches candidates to real open-source libraries aligned with their actual skills — not toy problems, not take-home projects that create adverse selection (62% completion rate, 20% of Dropbox candidates simply didn't finish). The candidate reviews a real PR, then implements a fix in the same real codebase, working through the full workflow: read, review, implement, test, document.
+          PIPE matches candidates to real open-source libraries aligned with their actual skills — not toy problems, not take-home projects that candidates abandon or outsource. The candidate reviews a real PR, then implements a fix in the same real codebase, working through the full workflow: read, review, implement, test, document.
         </p>
         <p>
-          Work sample tests have the highest predictive validity of any hiring method (r = .54). The closest thing to a work sample in software engineering is a real PR in a real repo. That's what PIPE measures.
+          Work sample tests are the most predictive hiring method ever measured. The closest thing to a work sample in software engineering is a real PR in a real repo. That's what PIPE measures.
         </p>
-        <cite class="sig-source">SWE-bench, Princeton ICLR 2024; Schmidt & Hunter 1998; interviewing.io; Slack Engineering 2019</cite>
       </article>
     </div>
   </section>
 
+  <!-- ───────── CLOSED LOOP ───────── -->
+  <section id="loop">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num"><span class="bar"></span> · Architecture</div>
+        <h2>A closed-loop <em>system.</em></h2>
+      </div>
+      <p class="sec-sub">
+        Calibrate sets the reference — the hiring standard shaped by your team. Assess generates the candidate signal.
+        Score measures the error against that standard. Decide acts on it. The loop closes every time.
+        No drift. No gut feel. One reference. Every signal compared to it.
+      </p>
+    </div>
+    <div class="loop-diagram" aria-label="Closed loop system diagram">
+      <svg class="loop-cycle" viewBox="0 0 900 280" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <!-- Top arc: feedback -->
+        <path d="M 120 80 Q 450 10 780 80" fill="none" stroke="#e23e46" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"/>
+        <polygon points="118,78 112,84 124,84" fill="#e23e46" opacity="0.6" transform="rotate(-20 118 82)"/>
+        <text x="450" y="32" font-family="JetBrains Mono,monospace" font-size="8" letter-spacing="0.22em" text-anchor="middle" fill="#e23e46" opacity="0.75">FEEDBACK</text>
+        <!-- Bottom arc: forward flow -->
+        <path d="M 120 200 Q 450 270 780 200" fill="none" stroke="var(--ink-dim)" stroke-width="1" stroke-dasharray="3 2" opacity="0.4"/>
+        <polygon points="778,198 772,204 784,204" fill="var(--ink-dim)" opacity="0.4" transform="rotate(-20 778 202)"/>
+        <text x="260" y="252" font-family="JetBrains Mono,monospace" font-size="8" letter-spacing="0.2em" text-anchor="middle" fill="var(--ink-dim)" opacity="0.55">REFERENCE</text>
+        <text x="450" y="264" font-family="JetBrains Mono,monospace" font-size="8" letter-spacing="0.2em" text-anchor="middle" fill="var(--ink-dim)" opacity="0.55">SIGNAL</text>
+        <text x="640" y="252" font-family="JetBrains Mono,monospace" font-size="8" letter-spacing="0.2em" text-anchor="middle" fill="var(--ink-dim)" opacity="0.55">ERROR</text>
+      </svg>
+      <div class="loop-row">
+        <div class="loop-box">
+          <span class="loop-label">&#x25C6; 01 · CALIBRATE</span>
+          <span class="loop-title">Sets the reference</span>
+          <span class="loop-desc">Hiring standard shaped by your team</span>
+        </div>
+        <div class="loop-box">
+          <span class="loop-label">&#x25C6; 02 · ASSESS</span>
+          <span class="loop-title">Generates the signal</span>
+          <span class="loop-desc">Real code, real repo, real judgment</span>
+        </div>
+        <div class="loop-box">
+          <span class="loop-label">&#x25C6; 03 · SCORE</span>
+          <span class="loop-title">Measures the error</span>
+          <span class="loop-desc">Candidate vs. standard, cited evidence</span>
+        </div>
+        <div class="loop-box">
+          <span class="loop-label">&#x25C6; 04 · DECIDE</span>
+          <span class="loop-title">Acts on it</span>
+          <span class="loop-desc">Hire, no-hire, or calibrate again</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="manifesto" style="border-top:none;border-bottom:none">
-    <blockquote>
-      We observe. We measure. We match.<br><br>
-      The future of hiring is not a better résumé parser.<br>
-      It is a better <em>observation protocol.</em>
-    </blockquote>
+    <blockquote>We observe. We measure. We match.</blockquote>
   </section>
 
   <!-- ───────── THE PIPELINE ───────── -->
@@ -1498,11 +1554,11 @@
     <div class="sec-head">
       <div>
         <div class="sec-num"><span class="bar"></span> 03 · The Pipeline</div>
-        <h2>One pipeline. Six stations. <em>Calibrated end-to-end.</em></h2>
+        <h2>One pipeline. Five stations. <em>Calibrated end-to-end.</em></h2>
       </div>
       <p class="sec-sub">
         Vetting is the smallest part of a real hire. PIPE runs the whole funnel — calibration,
-        sourcing, outreach, assessment on real repos, panel scoring, defensible decision.
+        outreach, assessment on real repos, panel scoring, defensible decision.
         Every station emits a typed artifact that auths into the next.
         <b>Hover a station.</b>
       </p>
@@ -1549,13 +1605,7 @@
           <span class="pv-glyph">&#x2160;</span>
           <span class="pv-pad" aria-hidden="true"><span></span></span>
           <span class="pv-name">Calibrate</span>
-          <span class="pv-art">Role Context Doc</span>
-        </button>
-        <button class="pv-node" data-stage="2" type="button" role="tab" aria-selected="false" aria-controls="pv-card-2">
-          <span class="pv-glyph">&#x2161;</span>
-          <span class="pv-pad" aria-hidden="true"><span></span></span>
-          <span class="pv-name">Source</span>
-          <span class="pv-art">Suggested inbox</span>
+          <span class="pv-art">Hiring standard</span>
         </button>
         <button class="pv-node" data-stage="3" type="button" role="tab" aria-selected="false" aria-controls="pv-card-3">
           <span class="pv-glyph">&#x2162;</span>
@@ -1628,71 +1678,13 @@
           <span class="pc-artifact">&#x2192; The role, understood</span>
         </div>
         <p class="pc-body">
-          We crawl your role's ecosystem with a three-pass repo crawler — Pass 1 search, Pass 2 clone and extract, Pass 3 LLM narrative synthesis. We don't guess what the job requires. We read the code your new hire will actually work on.
+          We interview your team before we read a single résumé. Engineers, managers, stakeholders — everyone gets cross-examined until we know what this role actually requires. Not the job description. The reality. The result is a hiring standard shaped by your team, not pulled from a template.
         </p>
         <dl class="pc-meta">
-          <div class="pc-row"><dt>Frame</dt><dd>Six Domains — Why · Work · Team · Bar · Culture · Deal-breaker</dd></div>
-          <div class="pc-row"><dt>Culture benchmark</dt><dd>Five sliders — Autonomy · Risk Tolerance · Work Pace · Collaboration Style · Feedback Orientation</dd></div>
-          <div class="pc-row"><dt>Role overlay</dt><dd>Senior IC · Manager · Founding — shifts question weights, probe depth, what "good" means</dd></div>
-          <div class="pc-row"><dt>Method</dt><dd>Multi-stakeholder, design-thinking intake. Voice or text. Disagreements stay on the record.</dd></div>
-          <div class="pc-row"><dt>Compliance</dt><dd>Title VII · ADA · ADEA · GINA · NYC LL144 · CA FEHA · CO SB24-205 · IL HB 3773 · EU AI Act Annex III</dd></div>
-          <div class="pc-row"><dt>Artifact</dt><dd>Hiring standard — per-stakeholder answers, attribute&#x2192;consequence&#x2192;value chains, conflict flags</dd></div>
-        </dl>
-      </article>
-
-      <article class="pv-card" id="pv-card-2" data-stage="2" data-active="false" role="tabpanel">
-        <div class="pc-plate" aria-hidden="true">
-          <img src="./assets/score.jpg" alt="" class="tb-r">
-          <img src="./assets/score.jpg" alt="" class="tb-b">
-        </div>
-        <svg class="pc-math" viewBox="0 0 240 240" aria-hidden="true">
-          <text x="6" y="14" font-size="8.5">&#x25C6; SRC · &#x03C1;=0.87</text>
-          <text x="234" y="14" font-size="7" text-anchor="end" opacity=".7">BIPARTITE · MATCH</text>
-          <g class="pm-grid-dash">
-            <line x1="60" y1="40" x2="60" y2="220"/>
-            <line x1="180" y1="40" x2="180" y2="220"/>
-            <line x1="36" y1="128" x2="204" y2="128"/>
-          </g>
-          <g class="pm-fig-soft" stroke-dasharray="2 3">
-            <line x1="60" y1="60" x2="180" y2="100"/>
-            <line x1="60" y1="100" x2="180" y2="60"/>
-            <line x1="60" y1="100" x2="180" y2="140"/>
-            <line x1="60" y1="180" x2="180" y2="180"/>
-            <line x1="60" y1="140" x2="180" y2="220"/>
-          </g>
-          <line x1="60" y1="140" x2="180" y2="140" stroke="#ff4891" stroke-width="1.1" opacity=".85"/>
-          <line x1="60" y1="60" x2="180" y2="220" stroke="#5fc8ff" stroke-width="0.9" stroke-dasharray="3 2" opacity=".75"/>
-          <g class="pm-fig">
-            <circle cx="60" cy="60" r="3"/><circle cx="60" cy="100" r="3"/>
-            <circle cx="60" cy="140" r="3.6" class="pm-pink pm-pulse"/>
-            <circle cx="60" cy="180" r="3"/>
-            <circle cx="180" cy="60" r="3"/><circle cx="180" cy="100" r="3"/>
-            <circle cx="180" cy="140" r="3.6" class="pm-pink pm-pulse d1"/>
-            <circle cx="180" cy="180" r="3"/>
-            <circle cx="180" cy="220" r="3.2" class="pm-blue pm-pulse d2"/>
-          </g>
-          <g font-size="6.5" opacity=".7" text-anchor="middle">
-            <text x="60" y="234">CANDIDATES</text>
-            <text x="180" y="234">ROLES</text>
-          </g>
-        </svg>
-        <div class="pc-head">
-          <span class="pc-num">&#x2161;.</span>
-          <div>
-            <h3>Source</h3>
-            <p class="pc-sub">Candidates surface themselves. You just say <em>yes.</em></p>
-          </div>
-          <span class="pc-artifact">&#x2192; A shortlist, every morning</span>
-        </div>
-        <p class="pc-body">
-          The candidate profile is built as a living graph, not a document. Every skill is an observable node. Every edge is a verified behavior. We extract their public footprint — commits, PRs, documentation — and transform it into structured evidence. The résumé becomes an appendix.
-        </p>
-        <dl class="pc-meta">
-          <div class="pc-row"><dt>Stack</dt><dd>LinkedIn · GitHub · Gmail — <b>bring your own accounts, or use ours.</b></dd></div>
-          <div class="pc-row"><dt>Mode</dt><dd>Autonomous matches overnight · manual search bar · same ranking logic either way</dd></div>
-          <div class="pc-row"><dt>Match</dt><dd>Bi-directional — the work fits the candidate as much as the candidate fits the work</dd></div>
-          <div class="pc-row"><dt>Not this</dt><dd>No résumé spray · no blind InMail blast · no "10 keywords matched"</dd></div>
-          <div class="pc-row"><dt>Artifact</dt><dd>Ranked shortlist with a plain-English rationale on every profile</dd></div>
+          <div class="pc-row"><dt>What we learn</dt><dd>Team dynamics, technical scope, the gap you're actually trying to fill</dd></div>
+          <div class="pc-row"><dt>Who we talk to</dt><dd>Hiring manager, tech lead, peer engineers, cross-functional partners</dd></div>
+          <div class="pc-row"><dt>The standard</dt><dd>A tailored rubric — not a template, not a checklist, not generic</dd></div>
+          <div class="pc-row"><dt>The result</dt><dd>Every candidate is assessed against your reality</dd></div>
         </dl>
       </article>
 
@@ -1730,19 +1722,18 @@
           <span class="pc-num">&#x2162;.</span>
           <div>
             <h3>Reach Out</h3>
-            <p class="pc-sub">Automated <em>or</em> manual. Calls through the app.</p>
+            <p class="pc-sub">We source, screen, and schedule. <em>Or your team does.</em> Your choice.</p>
           </div>
           <span class="pc-artifact">&#x2192; Booked and confirmed</span>
         </div>
         <p class="pc-body">
-          Send the first message from your own address, in your own voice — or let the platform draft and send on your behalf. Call candidates through a built-in dialer: inbound and outbound, recorded and threaded onto the candidate's record. Automated screening or manual — same record, same audit trail either way. Candidates self-book into whichever calendar you've connected.
+          PIPE recruits like a senior technical sourcer. We find candidates who match your hiring standard, reach out personally, and run the screener — live or automated. If you don't have the bandwidth, we are the human in the loop. If you have your own recruiting team, they run the platform. You choose.
         </p>
         <dl class="pc-meta">
-          <div class="pc-row"><dt>Stack</dt><dd>Gmail · Calendly · Cal.com · phone — <b>bring your own accounts, or use ours.</b></dd></div>
-          <div class="pc-row"><dt>Mode</dt><dd>Fully automated sequence · manual one-off · anything in between</dd></div>
-          <div class="pc-row"><dt>Calls</dt><dd>In-app dialer. Inbound + outbound. Recorded, transcribed, threaded.</dd></div>
-          <div class="pc-row"><dt>Stop conditions</dt><dd>Reply · opt-out · schedule · do-not-contact — all enforced</dd></div>
-          <div class="pc-row"><dt>Artifact</dt><dd>Booked session + every message and call on one candidate record</dd></div>
+          <div class="pc-row"><dt>Sourcing</dt><dd>Manual candidate sourcing by recruiters who understand your stack</dd></div>
+          <div class="pc-row"><dt>Screening</dt><dd>Live screener interviews or automated sessions — both calibrated to your standard</dd></div>
+          <div class="pc-row"><dt>Scheduling</dt><dd>Candidates self-book into your calendar — no back-and-forth</dd></div>
+          <div class="pc-row"><dt>Your choice</dt><dd>PIPE handles everything, or your team uses our platform</dd></div>
         </dl>
       </article>
 
@@ -1785,15 +1776,13 @@
           <span class="pc-artifact">&#x2192; The work, captured verbatim</span>
         </div>
         <p class="pc-body">
-          Two AI-proctored challenges, each calibrated to your hiring standard. The candidate reviews AI-generated code in a real open-source repo, then implements a fix in the same codebase. The AI adapts difficulty in real time. The transcript is the assessment. A separate structured behavioral track, STAR-format, tailored to the five sliders you set at calibration.
+          The candidate reviews real code in a real repo — not puzzles, not toy problems. The challenge is tailored to the candidate's claims: their stated skills, their experience, what they say they can do. We match them to real open-source work that tests those claims directly. They catch errors, push back on assumptions, improve code they didn't write. You watch judgment in real time. The transcript is the assessment.
         </p>
         <dl class="pc-meta">
-          <div class="pc-row"><dt>Environment</dt><dd>Production-grade browser IDE · real terminal · git · package manager — not a sandbox</dd></div>
-          <div class="pc-row"><dt>Code challenge</dt><dd>Live open-source PRs · planted bugs · design-tradeoff traps · calibrated to role &#x00D7; seniority</dd></div>
-          <div class="pc-row"><dt>Live mode</dt><dd>One-click coding or pair programming · shared cursor · recorded · same rubric</dd></div>
-          <div class="pc-row"><dt>Culture interview</dt><dd>5 competencies — Ownership · Collaboration · Learning · Conflict · Self-Awareness</dd></div>
-          <div class="pc-row"><dt>Not this</dt><dd>No LeetCode · no generic JavaScript · no boilerplate "culture fit"</dd></div>
-          <div class="pc-row"><dt>Artifact</dt><dd>Interview record + live challenge verdict + culture report, per candidate</dd></div>
+          <div class="pc-row"><dt>The challenge</dt><dd>Tailored to the candidate's claims — matched to real open-source work that tests their stated skills</dd></div>
+          <div class="pc-row"><dt>The proctor</dt><dd>AI that adapts difficulty in real time, pushes back, answers questions — doesn't just test</dd></div>
+          <div class="pc-row"><dt>The behavior</dt><dd>Communication patterns, error detection, how they handle ambiguity</dd></div>
+          <div class="pc-row"><dt>The record</dt><dd>Every interaction logged, scored, and measured against your standard</dd></div>
         </dl>
       </article>
 
@@ -1839,15 +1828,13 @@
           <span class="pc-artifact">&#x2192; A scorecard you can defend</span>
         </div>
         <p class="pc-body">
-          Per-element matching with evidence-structured reports. The report scores each skill element with confidence intervals, provides narrative context from the AI conversation, and generates a defensible hire/no-hire recommendation with full audit trail. Specialists grade both tracks in parallel — each score anchored to a verbatim moment: <b>no evidence, no score.</b>
+          Every number is tied to a moment in the transcript. No gut feel. No "they seemed smart." Just evidence — structured, cited, and ready for scrutiny. The scorecard tells you not just who to hire, but exactly why.
         </p>
         <dl class="pc-meta">
-          <div class="pc-row"><dt>Code panel</dt><dd>Six parallel specialist graders · communication · technical · judgment</dd></div>
-          <div class="pc-row"><dt>Culture panel</dt><dd>Eleven parallel calls — one per competency, one per axis, plus a narrative synthesis</dd></div>
-          <div class="pc-row"><dt>Rubric</dt><dd>Behavior-anchored — five anchors, three levels, no checklist, no tone detection, no demographic signals</dd></div>
-          <div class="pc-row"><dt>Calibration</dt><dd>Silent offline reference · automatic live escalation on drift</dd></div>
-          <div class="pc-row"><dt>Monitoring</dt><dd>Subgroup fairness tracked from day one · adverse-impact surfaced before it compounds</dd></div>
-          <div class="pc-row"><dt>Artifact</dt><dd>Per-candidate scorecard + narrative. Every number quotes a moment. No evidence, no score.</dd></div>
+          <div class="pc-row"><dt>The rubric</dt><dd>Behavior-anchored, calibrated to your role, no demographic signals</dd></div>
+          <div class="pc-row"><dt>The grading</dt><dd>Parallel specialists score communication, technical skill, and judgment independently</dd></div>
+          <div class="pc-row"><dt>The report</dt><dd>Match scores, narrative context, confidence intervals — every number quotes a moment</dd></div>
+          <div class="pc-row"><dt>The fairness</dt><dd>Subgroup tracking from day one, adverse impact surfaced before it compounds</dd></div>
         </dl>
       </article>
 
@@ -1905,31 +1892,35 @@
           <span class="pc-artifact">&#x2192; The offer + the paper trail</span>
         </div>
         <p class="pc-body">
-          Every candidate for the role, in one view — sortable, filterable, drillable down to the moment they earned each number. Click in for the portrait: what they're good at, what they're not, what the panel actually said. Sensitive scores cannot finalize without you — that's a hard rule, not a setting. When you extend the offer, the compliance file exports itself. <b>The defense is written the moment the offer goes out.</b>
+          Every candidate in one view — their strengths, their gaps, what the panel actually observed. When you extend the offer, the compliance file is already built. The defense is written the moment the decision is made.
         </p>
         <dl class="pc-meta">
-          <div class="pc-row"><dt>Views</dt><dd>Pipeline overview · candidate profile · cited narrative · skill portrait</dd></div>
-          <div class="pc-row"><dt>Copilot</dt><dd>Hiring assistant on every screen — search the pipeline, draft the note, explain the score</dd></div>
-          <div class="pc-row"><dt>Human gate</dt><dd>Sensitive scores cannot finalize without your explicit confirmation</dd></div>
-          <div class="pc-row"><dt>Compliance</dt><dd>Consent log · adverse-impact report · disclosure pack · 30-day deletion path</dd></div>
-          <div class="pc-row"><dt>Artifact</dt><dd>Hire decision + audit bundle — the defense is written the moment the offer goes out</dd></div>
+          <div class="pc-row"><dt>The view</dt><dd>Pipeline overview, skill portrait, cited narrative — the full picture</dd></div>
+          <div class="pc-row"><dt>The gate</dt><dd>Sensitive scores cannot finalize without your explicit confirmation — hard rule, not a setting</dd></div>
+          <div class="pc-row"><dt>The export</dt><dd>Compliance file generates automatically — audit-ready, regulation-ready</dd></div>
+          <div class="pc-row"><dt>The defense</dt><dd>Every decision traceable, explainable, defensible months later</dd></div>
         </dl>
       </article>
     </div>
 
     <ol class="pv-flow-legend" aria-label="Artifact flow">
-      <li><span class="pv-fnum">&#x2160;</span><span class="pv-fart">Role Context Doc</span></li>
+      <li><span class="pv-fnum">&#x2160;</span><span class="pv-fart">Hiring standard</span></li>
       <li class="pv-fsep" aria-hidden="true">&#x2192;</li>
-      <li><span class="pv-fnum">&#x2161;</span><span class="pv-fart">Ranked shortlist</span></li>
+      <li><span class="pv-fnum">&#x2161;</span><span class="pv-fart">Booked session</span></li>
       <li class="pv-fsep" aria-hidden="true">&#x2192;</li>
-      <li><span class="pv-fnum">&#x2162;</span><span class="pv-fart">Booked session</span></li>
+      <li><span class="pv-fnum">&#x2162;</span><span class="pv-fart">Work captured</span></li>
       <li class="pv-fsep" aria-hidden="true">&#x2192;</li>
-      <li><span class="pv-fnum">&#x2163;</span><span class="pv-fart">Work captured</span></li>
+      <li><span class="pv-fnum">&#x2163;</span><span class="pv-fart">Scorecard</span></li>
       <li class="pv-fsep" aria-hidden="true">&#x2192;</li>
-      <li><span class="pv-fnum">&#x2164;</span><span class="pv-fart">Scorecard</span></li>
-      <li class="pv-fsep" aria-hidden="true">&#x2192;</li>
-      <li><span class="pv-fnum">&#x2165;</span><span class="pv-fart">Offer + audit pack</span></li>
+      <li><span class="pv-fnum">&#x2164;</span><span class="pv-fart">Offer + audit pack</span></li>
     </ol>
+  </section>
+
+  <section class="manifesto" style="border-top:none;border-bottom:none">
+    <blockquote>
+      The future of hiring is not a better résumé parser.<br>
+      It is a better <em>observation protocol.</em>
+    </blockquote>
   </section>
 
   <!-- ───────── PRODUCT SHOWCASE ───────── -->
@@ -1937,38 +1928,23 @@
     <div class="sec-head">
       <div>
         <div class="sec-num"><span class="bar"></span> 04 · Showcase</div>
-        <h2>What an actual <em>assessment</em> looks like.</h2>
+        <h2>This is what <em>calibration</em> looks like.</h2>
       </div>
       <p class="sec-sub">
-        No whiteboards. No puzzles. No take-homes that 20% of candidates abandon. Just a senior engineer and an AI interlocutor, working through real code in a real repo.
+        Every role gets a structured persona shaped by your team — not a job description, not a template. Candidates flow through calibrated stations. Every signal is measured. Every score is cited. This is the actual product.
       </p>
     </div>
 
     <div class="showcase-grid">
       <div class="showcase-left">
-        <div class="terminal-card">
-          <div class="terminal-header">
-            <span class="dot"></span>
-            <span>PIPE Assessment Transcript · LIVE</span>
-          </div>
-          <div class="terminal-body">
-            <div class="t-line-s">
-              <span class="t-ai">&#x25C6; AI:</span> "Here's a PR that adds caching to the request handler. What do you think?"
-            </div>
-            <div class="t-line-s">
-              <span class="t-cand">&#x25C6; CANDIDATE:</span> "The cache key doesn't account for query parameters. Also, there's no TTL — this could grow unbounded."
-            </div>
-            <div class="t-line-s">
-              <span class="t-ai">&#x25C6; AI:</span> "Good catch. What would you suggest?"
-            </div>
-            <div class="t-line-s">
-              <span class="t-cand">&#x25C6; CANDIDATE:</span> "Use a bounded LRU with 5min TTL. Also, the cache should be injected, not instantiated directly."
-            </div>
-          </div>
+        <div class="product-shot">
+          <span class="shot-label">PIPE_OS · Pipeline Overview</span>
+          <img src="./assets/showcase-light.png" alt="PIPE pipeline overview showing calibrated hiring standard for a Senior Frontend Engineer role" class="shot-light">
+          <img src="./assets/showcase-dark.png" alt="PIPE pipeline overview showing calibrated hiring standard for a Senior Frontend Engineer role" class="shot-dark">
         </div>
 
         <div class="match-report">
-          <div class="mr-title">&#x25C6; Match Report Preview</div>
+          <div class="mr-title">&#x25C6; Scorecard Preview</div>
           <div class="match-row">
             <span class="mr-label">Match Score</span>
             <span class="match-score">87%</span>
@@ -2001,25 +1977,69 @@
           <div class="feature-item">
             <span class="arrow">&#x2192;</span>
             <div>
-              <h4>Real open-source repos, not toy problems</h4>
-              <p>We match candidates to actual libraries they'll work with. The code has real conventions, real complexity, and real users. SWE-bench proved real GitHub issues are the hardest testbed. We use them.</p>
+              <h4>A persona shaped by your team, not pulled from a template.</h4>
+              <p>We interview your engineers, managers, and stakeholders until we know what this role actually requires. The result is a structured archetype with must-have skills, inner signals, and team disposition — a hiring standard your whole panel agrees on.</p>
             </div>
           </div>
           <div class="feature-item">
             <span class="arrow">&#x2192;</span>
             <div>
-              <h4>AI as interlocutor, not evaluator</h4>
-              <p>The AI doesn't just score — it discusses. It pushes back. The candidate's responses become a transcript of their engineering judgment. The rubric scores: technical accuracy, communication clarity, pushback quality, and error detection rate.</p>
+              <h4>A pipeline with stations, not a single test.</h4>
+              <p>Candidates move through calibrated stations — Code Review, Code Implementation, and more. Each station measures a specific signal. You see exactly where they excel and where they gap, station by station.</p>
             </div>
           </div>
           <div class="feature-item">
             <span class="arrow">&#x2192;</span>
             <div>
-              <h4>Evidence-structured reports with compliance trails</h4>
-              <p>Every report includes match scores with confidence intervals, narrative excerpts from the transcript, and a full bias-audit trail. Built for NYC Local Law 144, EU AI Act Article 14, and EEOC defensibility.</p>
+              <h4>Eleven signals. One match score. Zero gut feel.</h4>
+              <p>Every candidate is measured against the same rubric. Profile depth shows how many signals you have evidence for. The match score tells you not just who to hire, but exactly why — every number cites a moment in the transcript.</p>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────── VALUE PROPS ───────── -->
+  <section class="value-props" id="value-props">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num"><span class="bar"></span> What changes</div>
+        <h2>Three things PIPE does <em>differently.</em></h2>
+      </div>
+      <p class="sec-sub">
+        Every other platform optimizes for speed or volume. PIPE optimizes for signal — 
+        the kind of evidence that lets you make a hire you can defend six months later.
+      </p>
+    </div>
+
+    <div class="value-grid">
+      <div class="value-card">
+        <span class="value-num">&#x25C6; 01</span>
+        <h3>Reduce hiring <em>time.</em></h3>
+        <p>
+          65 hours of senior engineering time per hire — most of it spent on candidates who fail.
+          PIPE runs a calibrated pipeline: one standard, every candidate measured against it,
+          no drift, no repeated loops. You stop interviewing the wrong people.
+        </p>
+      </div>
+      <div class="value-card">
+        <span class="value-num">&#x25C6; 02</span>
+        <h3>Find the <em>outliers.</em></h3>
+        <p>
+          The best engineers don't always have the best résumés. PIPE filters for observable judgment —
+          how they reason through real code, real PRs, real trade-offs. The candidate who never went to Stanford
+          but can catch a subtle race condition? That's who keyword matching misses.
+        </p>
+      </div>
+      <div class="value-card">
+        <span class="value-num">&#x25C6; 03</span>
+        <h3>The neurodivergence <em>factor.</em></h3>
+        <p>
+          Whiteboard interviews test anxiety. Take-homes test free time. Neither tests engineering.
+          PIPE's structured observation protocol — real code, real repos, calibrated rubrics —
+          levels the playing field for candidates who think differently.
+        </p>
       </div>
     </div>
   </section>
@@ -2032,45 +2052,39 @@
         <h2>The numbers <em>don't lie.</em></h2>
       </div>
       <p class="sec-sub">
-        Every claim is backed by peer-reviewed research, government data, or industry-wide surveys. No marketing fluff. No unverifiable metrics.
+        The cost of a bad senior hire is not just salary — it is team velocity, morale, and the opportunity cost of the person you didn't hire. The cost of a broken process is 65 hours of senior engineering time, every single hire.
       </p>
     </div>
 
     <div class="proof-grid">
       <div class="proof-card">
-        <div class="proof-num">79%</div>
-        <div class="proof-label">of employees feel unprepared to use AI at work</div>
-        <cite class="proof-source">Bright Horizons 2025 (n=2,000)</cite>
+        <div class="proof-num">$150K–$300K</div>
+        <div class="proof-label">total cost of a single bad senior hire — salary, onboarding, lost velocity, re-recruiting</div>
       </div>
       <div class="proof-card">
-        <div class="proof-num">r = .54</div>
-        <div class="proof-label">predictive validity of work sample tests — highest of any hiring method</div>
-        <cite class="proof-source">Schmidt & Hunter, Psychological Bulletin 1998 (85-year meta-analysis)</cite>
+        <div class="proof-num">65 hours</div>
+        <div class="proof-label">of senior engineering time spent interviewing per hire — most of it on candidates who fail</div>
       </div>
       <div class="proof-card">
-        <div class="proof-num">11.4hrs</div>
-        <div class="proof-label">weekly review of AI-generated code vs 9.8hrs writing</div>
-        <cite class="proof-source">Digital Applied 2026 Developer Survey</cite>
+        <div class="proof-num">38%</div>
+        <div class="proof-label">of candidates abandon your take-home — the best ones have the most options and the least patience</div>
       </div>
       <div class="proof-card">
-        <div class="proof-num">62%</div>
-        <div class="proof-label">completion rate for take-home assignments</div>
-        <cite class="proof-source">interviewing.io 2024</cite>
+        <div class="proof-num">3 laws</div>
+        <div class="proof-label">NYC Local Law 144 · EU AI Act · Illinois HB3773 — audit-ready compliance built in, not bolted on</div>
       </div>
       <div class="proof-card">
-        <div class="proof-num">56 days</div>
-        <div class="proof-label">average time-to-fill for software engineers</div>
-        <cite class="proof-source">SHRM / DockYard 2024</cite>
+        <div class="proof-num">Zero</div>
+        <div class="proof-label">candidates auto-rejected by an algorithm. Every sensitive score requires your explicit confirmation — a hard rule, not a setting</div>
       </div>
       <div class="proof-card">
-        <div class="proof-num">$22,750</div>
-        <div class="proof-label">hidden interview cost per engineer hire (65 hours of senior engineering time)</div>
-        <cite class="proof-source">Qualified.io / TeamCalc 2025</cite>
+        <div class="proof-num">One</div>
+        <div class="proof-label">pipeline. One reference standard. Every candidate measured against the same calibrated rubric — no drift, no gut feel</div>
       </div>
     </div>
 
     <div class="proof-bar">
-      <b>PIPE is built on the research.</b> Not in spite of it.
+      <b>The first pipeline is free.</b> You pay nothing until you see the transcript, the scorecard, and the compliance file. Then you decide if this is how you want to hire.
     </div>
   </section>
 
@@ -2082,18 +2096,18 @@
         <h2>Get early <em>access.</em></h2>
       </div>
       <p class="sec-sub">
-        PIPE is currently onboarding a limited set of engineering teams. Request a personalized demo.
+        We calibrate one pipeline to your team — free. You watch one candidate work through real code, scored against your standard, with a compliance file ready for your legal team. Then you decide.
       </p>
     </div>
 
     <div class="request-grid">
       <div class="request-copy">
-        <p>PIPE is currently onboarding a limited set of engineering teams. If you're hiring software engineers and you're tired of résumé inflation, take-home fatigue, and interview loops that test anxiety instead of engineering judgment — request access.</p>
+        <p>You don't buy PIPE. You pilot it. We calibrate a hiring standard with your team, run one candidate through the full protocol, and deliver the transcript, scorecard, and compliance file. If it doesn't change how you think about hiring, you owe nothing.</p>
         <ul>
-          <li><span class="arrow">&#x2192;</span> <b>A personalized demo</b> calibrated to your team's open-source stack</li>
-          <li><span class="arrow">&#x2192;</span> <b>A pilot assessment</b> for one open role</li>
-          <li><span class="arrow">&#x2192;</span> <b>A compliance-ready report template</b> for your legal team</li>
-          <li><span class="arrow">&#x2192;</span> <b>Direct access</b> to the founding team</li>
+          <li><span class="arrow">&#x2192;</span> <b>Calibration session</b> with your tech lead and hiring manager</li>
+          <li><span class="arrow">&#x2192;</span> <b>One live assessment</b> on code from your actual stack</li>
+          <li><span class="arrow">&#x2192;</span> <b>Full scorecard + compliance file</b> ready for legal review</li>
+          <li><span class="arrow">&#x2192;</span> <b>No commitment.</b> No credit card. No deck. Just evidence.</li>
         </ul>
       </div>
 
@@ -2150,12 +2164,12 @@
             <textarea id="rf-message" rows="4" placeholder="Tell us about your hiring stack and what you're looking to change..."></textarea>
           </div>
           <button type="submit" class="form-submit">Request Access</button>
-          <p class="form-footer">We don't share your data. No spam. You'll hear back within 48 hours.</p>
+          <p class="form-footer">We don't share your data. No spam. You'll hear back within 24 hours.</p>
         </form>
         <div class="form-success" id="form-success">
           <div class="success-icon">&#x2713;</div>
           <h4>Thank you.</h4>
-          <p>We'll be in touch within 48 hours with a personalized demo link.</p>
+          <p>We'll be in touch within 24 hours to schedule your calibration session.</p>
         </div>
       </div>
     </div>
@@ -2168,26 +2182,8 @@
     </div>
   </section>
 
-  <!-- ───────── CTA ───────── -->
-  <section class="cta" id="cta">
-    <div class="cta-inner">
-      <div>
-        <div class="sec-num"><span class="bar"></span> 07 · Join</div>
-        <h2 style="margin-top:18px">Ready to replace <em>the résumé?</em></h2>
-      </div>
-      <form class="cta-form" onsubmit="event.preventDefault();this.querySelector('input').value='';this.querySelector('.fine').textContent='&#x2619; Thank you. We'll be in touch within 48 hours with your demo link.'">
-        <p>Join the teams that are moving from fiction to evidence. From keyword matching to observable behavior. From take-home theater to real engineering judgment.</p>
-        <div class="field">
-          <input type="email" required placeholder="you@company.com" autocomplete="email">
-          <button type="submit">Request Early Access</button>
-        </div>
-        <p class="fine">Or read the full technical specification &#x2192;</p>
-      </form>
-    </div>
-  </section>
-
   <footer>
-    <div>&#x25C8; PIPE · New York / Toronto · <span class="f-grk">&#x0410;&#x0418;&#x0414; · &#x03A0;&#x039B;&#x039F;&#x03A5;&#x03A4;&#x03A9;&#x039D; · &#x039C;&#x0391;&#x039D;&#x03A4;&#x0399;&#x03A3;</span></div>
+    <div>&#x25C8; PIPE · Vancouver, Canada · <span class="f-grk">&#x0410;&#x0418;&#x0414; · &#x03A0;&#x039B;&#x039F;&#x03A5;&#x03A4;&#x03A9;&#x039D; · &#x039C;&#x0391;&#x039D;&#x03A4;&#x0399;&#x03A3;</span></div>
     <div>End-to-end intelligent recruiting</div>
     <div class="f-right">
       <a href="#system">System</a> · 

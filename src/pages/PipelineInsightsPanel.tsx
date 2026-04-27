@@ -197,42 +197,6 @@ function PersonaChipList({
 function PersonaView({ persona }: { persona: CandidatePersona }): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* Headline: archetype + seniority */}
-      <div>
-        <div
-          style={{
-            fontSize: 9,
-            letterSpacing: '0.2em',
-            color: 'var(--pipe-text-dim)',
-            marginBottom: 6,
-            fontFamily: '"Space Mono", monospace',
-          }}
-        >
-          ARCHETYPE
-        </div>
-        <div
-          style={{
-            fontSize: 20,
-            fontWeight: 800,
-            color: 'var(--pipe-text)',
-            letterSpacing: '-0.01em',
-            marginBottom: 4,
-          }}
-        >
-          {persona.archetype}
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--pipe-text-muted)',
-            fontFamily: '"Space Mono", monospace',
-            letterSpacing: '0.05em',
-          }}
-        >
-          {persona.seniority}
-        </div>
-      </div>
-
       {/* Career signal (narrative) */}
       {persona.careerSignal && (
         <div
@@ -423,19 +387,6 @@ export default function PipelineInsightsPanel(): JSX.Element {
             alignItems: 'flex-start',
           }}
         >
-          {/* Archetype block */}
-          {roleContext.persona && (
-            <div style={{ flex: '0 0 auto', maxWidth: 320 }}>
-              <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>ARCHETYPE</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.01em', lineHeight: 1.2, marginBottom: 4 }}>
-                {roleContext.persona.archetype}
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.05em' }}>
-                {roleContext.persona.seniority}
-              </div>
-            </div>
-          )}
-
           {/* Key metadata */}
           <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
             {([
