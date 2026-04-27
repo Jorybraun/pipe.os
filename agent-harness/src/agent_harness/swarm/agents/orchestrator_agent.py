@@ -39,14 +39,22 @@ def _make_model() -> ChatOpenAI:
     if not api_key:
         raise RuntimeError("KIMI_API_KEY or OPENAI_API_KEY not set")
     # Orchestrator can use a stronger model (e.g. kimi-k2-6) for strategic reasoning
-    model = os.getenv("KIMI_ORCHESTRATOR_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
+    model = os.getenv("KIMI_ORCHESTRATOR_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_DEV_MODEL") or os.getenv("KIMI_MODEL", "kimi-k2-6")
+    default_base = (
+        "https://api.kimi.com/coding/v1"
+        if model == "kimi-for-coding"
+        else "https://api.moonshot.cn/v1"
+    )
+    base_url = os.getenv("KIMI_DEV_BASE_URL") or os.getenv("KIMI_BASE_URL", default_base)
     return ChatOpenAI(
         model=model,
         temperature=0.3,
         max_tokens=4096,
         api_key=api_key,
-        base_url=os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1"),
-        model_kwargs={"extra_headers": {"User-Agent": "claude-code/0.1"}},
+        base_url=base_url,
+        timeout=30,
+        max_retries=2,
+        default_headers={"User-Agent": "claude-code/0.1"},
         extra_body={"reasoning": None},  # Disable reasoning to avoid 400 on tool calls
     )
 

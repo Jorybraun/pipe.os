@@ -36,6 +36,139 @@ from agent_harness.swarm.budget import MAX_HANDOFFS_PER_SUBTASK, PLAN_BUDGET_LIM
 from agent_harness.swarm.escalation import should_escalate
 from agent_harness.swarm.checkpoint import get_checkpointer
 
+import re as _re
+from pathlib import Path as _Path
+
+
+def _load_knowledge_context(source: str | None, phase: int | None = None) -> str:
+    """Read strategy context from knowledge/plan/ and return as markdown.
+
+    Injects not just the cited lines but the full phase section,
+    architecture overview, and honest caveats so the dev agent has
+    complete strategic context.
+
+    Source format:  knowledge/plan/foo.md (lines 123–456, 789)
+    or:             knowledge/plan/foo.md
+    """
+    if not source:
+        return ""
+
+    # Parse file path and optional line ranges
+    m = _re.match(r"(.+?\.md)\s*(?:\(lines?\s+(.+?)\))?", source.strip())
+    if not m:
+        return ""
+
+    file_path = m.group(1)
+    lines_spec = m.group(2)
+
+    repo_root = _Path(__file__).resolve().parent.parent.parent.parent.parent
+    full_path = repo_root / file_path
+    if not full_path.exists() and not file_path.startswith("knowledge/"):
+        alt_path = repo_root / "knowledge" / "plan" / file_path
+        if alt_path.exists():
+            full_path = alt_path
+    if not full_path.exists():
+        return ""
+
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            text = f.read()
+            all_lines = text.splitlines(keepends=True)
+    except Exception:
+        return ""
+
+    sections: list[str] = []
+
+    # ── Section 1: The cited lines (original behavior) ──
+    if lines_spec:
+        cited: list[str] = []
+        for part in lines_spec.split(","):
+            part = part.strip().replace("–", "-").replace("—", "-")
+            if "-" in part:
+                start_s, end_s = part.split("-", 1)
+                try:
+                    start = int(start_s.strip())
+                    end = int(end_s.strip())
+                    cited.append("".join(all_lines[start - 1:end]))
+                except ValueError:
+                    continue
+            else:
+                try:
+                    line_no = int(part.strip())
+                    cited.append(all_lines[line_no - 1])
+                except ValueError:
+                    continue
+        if cited:
+            sections.append("## Direct Source Reference\n" + "\n".join(cited))
+
+    # ── Section 2: The full phase section the task belongs to ──
+    if phase is not None:
+        phase_heading = f"**Phase {phase}"
+        phase_start = text.find(phase_heading)
+        if phase_start != -1:
+            # Find end: next Phase heading or next ## heading or end of file
+            rest = text[phase_start:]
+            next_phase = rest.find(f"**Phase {phase + 1}", 1)
+            next_h2 = rest.find("\n## ", 1)
+            if next_phase != -1 and (next_h2 == -1 or next_phase < next_h2):
+                phase_text = rest[:next_phase]
+            elif next_h2 != -1:
+                phase_text = rest[:next_h2]
+            else:
+                phase_text = rest
+            sections.append(f"## Full Phase {phase} Context\n{phase_text.strip()}")
+
+    # ── Section 3: Honest caveats (always relevant) ──
+    caveats_start = text.find("## Honest caveats")
+    if caveats_start != -1:
+        caveats_rest = text[caveats_start:]
+        next_section = caveats_rest.find("\n## ", 1)
+        if next_section != -1:
+            caveats_text = caveats_rest[:next_section]
+        else:
+            caveats_text = caveats_rest
+        sections.append(f"## Honest Caveats\n{caveats_text.strip()}")
+
+    # ── Section 4: Architecture / design sections ──
+    for heading in ["## The decomposition design", "## Current production path", "## Current three-pass crawler", "## The matching problem, restated"]:
+        h_start = text.find(heading)
+        if h_start != -1:
+            h_rest = text[h_start:]
+            next_h2 = h_rest.find("\n## ", 1)
+            if next_h2 != -1:
+                h_text = h_rest[:next_h2]
+            else:
+                h_text = h_rest
+            sections.append(h_text.strip())
+            break  # Only include the first matching architecture section
+
+    if not sections:
+        return ""
+
+    # Build graph-style context with explicit relationship labels
+    graph_parts: list[str] = []
+    graph_parts.append("# Context Graph for This Task")
+    graph_parts.append(f"""
+```
+[Knowledge Source: {file_path}]
+        │
+        ├─→ [Architecture / Current State]
+        ├─→ [Phase {phase if phase is not None else 'N/A'} Context]
+        ├─→ [Direct Source Reference]
+        ├─→ [Honest Caveats / Risks]
+        └─→ [Adjacent Phases / Dependencies]
+```
+""")
+
+    for sec in sections:
+        graph_parts.append(sec)
+
+    combined = "\n\n---\n\n".join(graph_parts)
+    if len(combined) > 12000:
+        combined = combined[:12000] + "\n\n... [truncated to 12K chars]"
+
+    return f"\n\n{combined}"
+
 
 # ---------------------------------------------------------------------------
 # Lane state
@@ -253,14 +386,14 @@ def advisor_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
     result = run_advisor(plan_id=plan_id, current_subtask_id=current_id, lane_id=lane_id)
 
     updates: dict[str, Any] = {
-        "advisor_guidance": result.guidance,
+        "advisor_guidance": result["guidance"],
         "messages": [
-            SystemMessage(content=f"Advisor: {result.reasoning}"),
-            SystemMessage(content=f"Advisor guidance:\n{result.guidance}"),
+            SystemMessage(content=f"Advisor: {result['reasoning']}"),
+            SystemMessage(content=f"Advisor guidance:\n{result['guidance']}"),
         ],
     }
 
-    if result.recommend_escalation:
+    if result.get("recommend_escalation"):
         updates["status"] = "escalated"
         updates["messages"].append(
             SystemMessage(content="Advisor recommended escalation due to plan health issues.")
@@ -302,6 +435,12 @@ def developer_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
         f"{subtask.get('spec', '(no spec)') if subtask else '(no spec)'}"
     )
 
+    # Inject source strategy context from knowledge/plan/ so the dev agent
+    # has full architectural context, not just the stripped broker subtask spec.
+    knowledge_ctx = _load_knowledge_context(plan.get("source"), plan.get("phase"))
+    if knowledge_ctx:
+        plan_content += knowledge_ctx
+
     # Inject advisor guidance if present
     guidance = state.get("advisor_guidance")
     if guidance:
@@ -331,6 +470,7 @@ def developer_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
         subtask_id=current_id,
         plan_content=plan_content,
         handoff_in=latest_handoff,
+        handoff_count=handoff_count,
         thread_id=dev_thread_id,
     )
 
@@ -377,9 +517,11 @@ def developer_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
         emit(event_type="subtask_complete", payload={"plan_id": plan_id, "subtask_id": current_id})
     elif new_handoff["status"] == "context_exhausted":
         # Keep same subtask for next dev iteration
-        # Preserve guidance so supervisor routes straight back to developer
+        # CLEAR guidance so supervisor routes to ADVISOR for convergence review
+        # The advisor will read the full handoff chain and synthesize a converged
+        # plan for the next developer, preventing repeated re-discovery.
         updates["current_subtask_id"] = current_id
-        updates["advisor_guidance"] = state.get("advisor_guidance") or "Continue from previous handoff."
+        updates["advisor_guidance"] = None
     elif new_handoff["status"] == "blocked":
         updates["status"] = "blocked"
         updates["current_subtask_id"] = current_id

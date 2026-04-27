@@ -62,20 +62,23 @@ def _make_model() -> ChatOpenAI:
     api_key = os.getenv("KIMI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("KIMI_API_KEY or OPENAI_API_KEY not set")
-    base_url = os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
-    # QA-Deploy does validation & judgment — defaults to strategic model (e.g. kimi-k2-6)
-    model = os.getenv("KIMI_QA_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
+    # QA-Deploy uses same model resolution as dev agent to avoid kimi-for-coding hangs
+    model = os.getenv("KIMI_QA_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_DEV_MODEL") or os.getenv("KIMI_MODEL", "kimi-k2-6")
+    default_base = (
+        "https://api.kimi.com/coding/v1"
+        if model == "kimi-for-coding"
+        else "https://api.moonshot.cn/v1"
+    )
+    base_url = os.getenv("KIMI_DEV_BASE_URL") or os.getenv("KIMI_BASE_URL", default_base)
     return ChatOpenAI(
         model=model,
         temperature=0.2,
         max_tokens=8192,
         api_key=api_key,
         base_url=base_url,
-        model_kwargs={
-            "extra_headers": {
-                "User-Agent": "claude-code/0.1",
-            }
-        },
+        timeout=30,
+        max_retries=2,
+        default_headers={"User-Agent": "claude-code/0.1"},
         extra_body={"reasoning": None},
     )
 
@@ -94,7 +97,11 @@ def qa_agent_node(state: QAState, config: RunnableConfig) -> dict[str, Any]:
 
 
 def _get_qa_tools() -> list[Any]:
-    """Tools for QA-Deploy: shell, browser, broker emit."""
+    """Tools for QA-Deploy: validation, compilation, tests, shell, browser, broker emit."""
+    from pathlib import Path
+    root_path = Path(__file__).parent.parent.parent.parent.parent.resolve()
+    MAX_SHELL_OUTPUT = 32_000
+
     tools: list[Any] = [SafeShellTool()]
     try:
         browser = create_sync_playwright_browser()
@@ -165,7 +172,92 @@ def _get_qa_tools() -> list[Any]:
                     "pr_url": None,
                 }, indent=2)
 
-    tools.extend([broker_emit_event_tool, validate_pr_template_tool, create_pr_tool])
+    @tool
+    def qa_check_types() -> str:
+        """Run TypeScript compiler to validate all code compiles.
+        REQUIRED before marking a plan complete.
+        """
+        try:
+            result = subprocess.run(
+                ["npx", "tsc", "--noEmit"],
+                cwd=str(root_path),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                return "PASS: TypeScript compilation check passed."
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+            combined = (stdout + "\n" + stderr).strip()
+            if len(combined) > MAX_SHELL_OUTPUT:
+                combined = combined[:MAX_SHELL_OUTPUT] + "\n\n[TRUNCATED]"
+            return f"FAIL: TypeScript compilation errors:\n{combined}"
+        except subprocess.TimeoutExpired:
+            return "FAIL: Type check timed out after 120s"
+        except Exception as e:
+            return f"FAIL: Could not run type check: {e}"
+
+    @tool
+    def qa_run_tests(test_pattern: str = "") -> str:
+        """Run the test suite. REQUIRED before marking a plan complete.
+
+        Args:
+            test_pattern: Optional pattern to filter tests.
+        """
+        cmd = ["npx", "vitest", "run", "--reporter=verbose"]
+        if test_pattern:
+            cmd.append(test_pattern)
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(root_path),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+            combined = (stdout + "\n" + stderr).strip()
+            if len(combined) > MAX_SHELL_OUTPUT:
+                combined = combined[:MAX_SHELL_OUTPUT] + "\n\n[TRUNCATED]"
+            if result.returncode == 0:
+                return f"PASS: Tests passed.\n{combined}"
+            return f"FAIL: Tests failed (exit code {result.returncode}):\n{combined}"
+        except subprocess.TimeoutExpired:
+            return "FAIL: Tests timed out after 300s"
+        except Exception as e:
+            return f"FAIL: Could not run tests: {e}"
+
+    @tool
+    def qa_verify_files(file_paths: str) -> str:
+        """Verify that files mentioned in handoffs actually exist on disk.
+
+        Args:
+            file_paths: JSON list of file paths to check.
+        """
+        import json as _json
+        paths = _json.loads(file_paths) if file_paths else []
+        missing = []
+        found = []
+        for p in paths:
+            target = root_path / p if not Path(p).is_absolute() else Path(p)
+            if target.exists():
+                found.append(p)
+            else:
+                missing.append(p)
+        if missing:
+            return f"FAIL: {len(missing)} files missing: {missing}. Found: {found}"
+        return f"PASS: All {len(found)} files exist."
+
+    tools.extend([
+        broker_emit_event_tool,
+        validate_pr_template_tool,
+        create_pr_tool,
+        qa_check_types,
+        qa_run_tests,
+        qa_verify_files,
+    ])
     return tools
 
 

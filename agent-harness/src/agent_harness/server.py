@@ -930,7 +930,7 @@ async def broker_conflicts_for_tool(
 async def broker_sync_plans(
     ctx: Context | None = None,
 ) -> str:
-    """Re-scan docs/plans/strategy-v2/**/*.md and sync to the broker database."""
+    """Re-scan knowledge/plan/strategy-v2/**/*.md and sync to the broker database."""
     result = sync_plans_to_db()
     return json.dumps({"synced": result}, indent=2)
 

@@ -12,8 +12,17 @@ from typing import Any
 from agent_harness.broker.db import get_conn, row_to_dict
 
 def _find_repo_root() -> Path:
-    """Find the repo root by searching upward for docs/plans/strategy-v2."""
+    """Find the repo root by searching upward for knowledge/plan/strategy-v2.
+
+    The canonical plan source is knowledge/plan/strategy-v2/ (derived from
+    the top-level strategy documents in knowledge/plan/*.md). The old
+    docs/plans/strategy-v2/ path is deprecated.
+    """
     start = Path(__file__).resolve().parent
+    for parent in [start, *start.parents]:
+        if (parent / "knowledge" / "plan" / "strategy-v2").exists():
+            return parent
+    # Fallback to old path for backwards compatibility during transition
     for parent in [start, *start.parents]:
         if (parent / "docs" / "plans" / "strategy-v2").exists():
             return parent
@@ -21,7 +30,7 @@ def _find_repo_root() -> Path:
 
 
 _REPO_ROOT = _find_repo_root()
-_PLANS_ROOT = _REPO_ROOT / "docs" / "plans" / "strategy-v2"
+_PLANS_ROOT = _REPO_ROOT / "knowledge" / "plan" / "strategy-v2"
 
 # Regexes for plan metadata
 _RE_SOURCE = re.compile(r"\*\*Source:\*\*\s*(.+)")
@@ -169,6 +178,11 @@ def parse_plan_file(path: Path) -> dict[str, Any] | None:
         plan_id = str(path.relative_to(_PLANS_ROOT))
     except ValueError:
         plan_id = path.name
+
+    # If plan_id starts with knowledge/plan/strategy-v2/ (from old path fallback),
+    # strip the prefix to keep IDs stable
+    if plan_id.startswith("knowledge/plan/strategy-v2/"):
+        plan_id = plan_id[len("knowledge/plan/strategy-v2/"):]
 
     return {
         "plan_id": plan_id,
@@ -512,7 +526,7 @@ def runnable_set(
         conditions.append("plan_id LIKE ?")
         params.append(f"{part_prefix}%")
     if max_phase is not None:
-        conditions.append("phase <= ?")
+        conditions.append("(phase IS NULL OR phase <= ?)")
         params.append(max_phase)
 
     where_clause = " AND ".join(conditions)

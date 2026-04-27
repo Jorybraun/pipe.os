@@ -19,9 +19,13 @@ def _make_model() -> ChatOpenAI | None:
     api_key = os.getenv("KIMI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None
-    # Support both Kimi Code (kimi.com) and Kimi Platform (moonshot.cn)
-    base_url = os.getenv("KIMI_BASE_URL", "https://api.kimi.com/coding/v1")
-    model = os.getenv("KIMI_CHAT_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_MODEL", "kimi-for-coding")
+    model = os.getenv("KIMI_CHAT_MODEL") or os.getenv("KIMI_STRATEGIC_MODEL") or os.getenv("KIMI_DEV_MODEL") or os.getenv("KIMI_MODEL", "kimi-k2-6")
+    default_base = (
+        "https://api.kimi.com/coding/v1"
+        if model == "kimi-for-coding"
+        else "https://api.moonshot.cn/v1"
+    )
+    base_url = os.getenv("KIMI_DEV_BASE_URL") or os.getenv("KIMI_BASE_URL", default_base)
     try:
         return ChatOpenAI(
             model=model,
@@ -29,11 +33,9 @@ def _make_model() -> ChatOpenAI | None:
             max_tokens=4096,
             api_key=api_key,
             base_url=base_url,
-            model_kwargs={
-                "extra_headers": {
-                    "User-Agent": "claude-code/0.1",
-                }
-            },
+            timeout=30,
+            max_retries=2,
+            default_headers={"User-Agent": "claude-code/0.1"},
             extra_body={"reasoning": None},
         )
     except Exception:

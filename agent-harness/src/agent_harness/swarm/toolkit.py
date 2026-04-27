@@ -34,6 +34,7 @@ from agent_harness.swarm.agents.architect import run_architect
 MAX_SHELL_OUTPUT = 32_000     # characters
 MAX_FILE_READ_BYTES = 64_000  # characters — high cap for long-horizon work
 MAX_LINE_LENGTH = 2_000       # truncate individual lines
+MAX_FILE_WRITE_BYTES = 256_000  # prevent accidental multi-MB writes
 
 
 class SafeShellTool(ShellTool):
@@ -68,10 +69,69 @@ def get_developer_tools(root_dir: str | None = None) -> list[Any]:
     # ── File management (custom read + grep + langchain defaults) ─────────
     ftk = FileManagementToolkit(root_dir=root_dir)
     file_tools: list[Any] = []
+    _write_file_tool = None
     for t in ftk.get_tools():
         if isinstance(t, ReadFileTool):
             continue  # Replaced by custom read_file below
+        if getattr(t, "name", "") == "write_file":
+            _write_file_tool = t  # Capture for wrapping below
+            continue
         file_tools.append(t)
+
+    # Wrapped write_file with sanity checks (but NOT aggressive rewrite blocking)
+    if _write_file_tool is not None:
+        _orig_write = _write_file_tool._run
+
+        def _guarded_write_file(file_path: str, text: str, **kwargs) -> str:
+            target = Path(file_path)
+            if not target.is_absolute():
+                target = root_path / target
+            target = target.resolve()
+
+            # Safety 1: cap write size
+            if len(text) > MAX_FILE_WRITE_BYTES:
+                return (
+                    f"ERROR: Write too large. "
+                    f"{len(text)} chars exceeds max {MAX_FILE_WRITE_BYTES}. "
+                    f"Write in smaller chunks or use shell."
+                )
+
+            # Safety 2: warn on large deletions but DO NOT block
+            # (agents legitimately refactor/delete code)
+            warning = ""
+            if target.exists() and target.is_file():
+                try:
+                    existing = target.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    existing = ""
+                if existing:
+                    existing_lines = existing.count("\n") + 1
+                    new_lines = text.count("\n") + 1
+                    if new_lines < existing_lines * 0.3:
+                        warning = (
+                            f"\n[WARNING: This replaces {existing_lines} lines with {new_lines} lines. "
+                            f"If this is intentional, proceed. If not, re-read the file first.]"
+                        )
+
+            result = _orig_write(file_path=file_path, text=text, **kwargs)
+            return str(result) + warning
+
+        from langchain_core.tools import StructuredTool
+        if isinstance(_write_file_tool, StructuredTool):
+            write_file = StructuredTool.from_function(
+                func=_guarded_write_file,
+                name="write_file",
+                description=_write_file_tool.description,
+                args_schema=_write_file_tool.args_schema,
+            )
+        else:
+            # Fallback: create a simple tool wrapper
+            @tool
+            def write_file(file_path: str, text: str) -> str:
+                """Write text to a file."""
+                return _guarded_write_file(file_path, text)
+
+        file_tools.append(write_file)
 
     @tool
     def read_file(file_path: str, line_offset: int = 1, n_lines: int = 1000) -> str:
@@ -95,6 +155,14 @@ def get_developer_tools(root_dir: str | None = None) -> list[Any]:
             return f"Error: no such file or directory: {file_path}"
         if not target.is_file():
             return f"Error: not a file: {file_path}"
+
+        # Binary guard: check for null bytes in first 8KB
+        try:
+            header = target.read_bytes()[:8192]
+            if b"\x00" in header:
+                return f"Error: {file_path} appears to be a binary file (contains null bytes). Cannot read as text."
+        except Exception:
+            pass
 
         # Safety: cap n_lines
         max_lines = min(n_lines, 1000)
@@ -171,10 +239,11 @@ def get_developer_tools(root_dir: str | None = None) -> list[Any]:
         if not search_path.exists():
             return f"Error: path does not exist: {path}"
 
-        # Try ripgrep first (fastest)
+        # Try ripgrep first (fastest, respects .gitignore)
         rg_cmd = [
             "rg", "-n", "--max-count", "50", "--glob", glob,
             "-C", "2",  # 2 lines of context
+            "--no-ignore-parent",  # respect .gitignore in cwd
             pattern, str(search_path),
         ]
         try:
@@ -198,9 +267,13 @@ def get_developer_tools(root_dir: str | None = None) -> list[Any]:
         except subprocess.TimeoutExpired:
             return f"Error: grep timed out after 15s searching for '{pattern}'"
 
-        # Fallback to grep -r
+        # Fallback to grep -r (also respect .gitignore-ish via --exclude-dir)
         grep_cmd = [
             "grep", "-rn", "-C", "2", "--include", glob,
+            "--exclude-dir=node_modules",
+            "--exclude-dir=.venv",
+            "--exclude-dir=__pycache__",
+            "--exclude-dir=.git",
             pattern, str(search_path),
         ]
         try:
@@ -224,17 +297,25 @@ def get_developer_tools(root_dir: str | None = None) -> list[Any]:
         except subprocess.TimeoutExpired:
             return f"Error: grep timed out after 15s searching for '{pattern}'"
 
-        # Final fallback: Python os.walk
+        # Final fallback: Python os.walk — EXCLUDE known heavy dirs
         try:
             import re
             matches: list[str] = []
+            SKIP_DIRS = {"node_modules", ".venv", "__pycache__", ".git", "dist", "build", ".vite"}
+            compiled = re.compile(pattern)
+
             if search_path.is_file():
                 files = [search_path]
             else:
-                files = list(search_path.rglob(glob.replace("*", "**")))
-                files = [f for f in files if f.is_file()]
+                files = []
+                for dirpath, dirnames, filenames in search_path.walk():
+                    # Prune skip dirs
+                    dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+                    for fn in filenames:
+                        # Simple glob match
+                        if glob == "*" or fn.endswith(glob.replace("*", "")):
+                            files.append(Path(dirpath) / fn)
 
-            compiled = re.compile(pattern)
             for f in files:
                 try:
                     text = f.read_text(encoding="utf-8", errors="replace")
@@ -256,7 +337,117 @@ def get_developer_tools(root_dir: str | None = None) -> list[Any]:
         except Exception as e:
             return f"Error: grep failed: {e}"
 
-    file_tools.extend([read_file, grep])
+    @tool
+    def edit_file(file_path: str, old: str, new: str) -> str:
+        """Replace a specific string in a file with another string.
+
+        Use this for precise edits (change one function, one line, one import)
+        rather than rewriting the entire file. The 'old' string must match
+        exactly, including whitespace.
+
+        Args:
+            file_path: Path to the file.
+            old: Exact string to replace. Can be multi-line.
+            new: Replacement string. Can be multi-line.
+        """
+        target = Path(file_path)
+        if not target.is_absolute():
+            target = root_path / target
+        target = target.resolve()
+
+        if not target.exists():
+            return f"Error: file does not exist: {file_path}"
+        if not target.is_file():
+            return f"Error: not a file: {file_path}"
+
+        try:
+            content = target.read_text(encoding="utf-8")
+        except Exception as e:
+            return f"Error: could not read {file_path}: {e}"
+
+        if old not in content:
+            return (
+                f"Error: 'old' string not found in {file_path}. "
+                f"The text must match exactly. Try grep first to find the exact text."
+            )
+
+        new_content = content.replace(old, new, 1)
+        if new_content == content:
+            return f"Error: replacement did not change {file_path}"
+
+        try:
+            target.write_text(new_content, encoding="utf-8")
+        except Exception as e:
+            return f"Error: could not write {file_path}: {e}"
+
+        return f"Successfully replaced text in {file_path} ({len(old)} chars → {len(new)} chars)"
+
+    @tool
+    def check_types() -> str:
+        """Run the TypeScript compiler to check for type errors.
+
+        Runs `npx tsc --noEmit` from the project root.
+        Use this after writing or editing TypeScript files to verify
+        the code compiles before submitting a handoff.
+        """
+        try:
+            result = subprocess.run(
+                ["npx", "tsc", "--noEmit"],
+                cwd=str(root_path),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                return "Type check passed: no errors found."
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+            combined = (stdout + "\n" + stderr).strip()
+            if len(combined) > MAX_SHELL_OUTPUT:
+                combined = combined[:MAX_SHELL_OUTPUT] + "\n\n[TRUNCATED]"
+            return f"Type check FAILED (exit code {result.returncode}):\n{combined}"
+        except subprocess.TimeoutExpired:
+            return "Error: Type check timed out after 120s"
+        except FileNotFoundError:
+            return "Error: npx not found. Is Node.js installed?"
+        except Exception as e:
+            return f"Error running type check: {e}"
+
+    @tool
+    def run_tests(test_pattern: str = "") -> str:
+        """Run the test suite or a subset of tests.
+
+        Args:
+            test_pattern: Optional pattern to filter tests (e.g., 'issueScorer',
+            'routes/cron', '*.test.ts'). If empty, runs the full suite.
+        """
+        cmd = ["npx", "vitest", "run", "--reporter=verbose"]
+        if test_pattern:
+            cmd.append(test_pattern)
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(root_path),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            stdout = result.stdout or ""
+            stderr = result.stderr or ""
+            combined = (stdout + "\n" + stderr).strip()
+            if len(combined) > MAX_SHELL_OUTPUT:
+                combined = combined[:MAX_SHELL_OUTPUT] + "\n\n[TRUNCATED]"
+            if result.returncode == 0:
+                return f"Tests passed:\n{combined}"
+            return f"Tests FAILED (exit code {result.returncode}):\n{combined}"
+        except subprocess.TimeoutExpired:
+            return "Error: Tests timed out after 300s"
+        except FileNotFoundError:
+            return "Error: vitest not found."
+        except Exception as e:
+            return f"Error running tests: {e}"
+
+    file_tools.extend([read_file, grep, edit_file, check_types, run_tests])
 
     # Shell (with output limits)
     shell_tool = SafeShellTool()
