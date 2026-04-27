@@ -430,10 +430,7 @@ def force_handoff_node(state: DevState) -> dict[str, Any]:
     # Extract files touched from message history
     files_touched: list[str] = []
     state_notes: list[str] = ["Forced handoff: developer turn budget exhausted."]
-    message_types = {}
     for msg in state.get("messages", []):
-        msg_type = type(msg).__name__
-        message_types[msg_type] = message_types.get(msg_type, 0) + 1
         if isinstance(msg, ToolMessage) and msg.name in ("read_file", "write_file", "shell"):
             content = str(msg.content)[:200]
             files_touched.append(f"{msg.name}: {content}")
@@ -441,7 +438,6 @@ def force_handoff_node(state: DevState) -> dict[str, Any]:
             # Capture the developer's reasoning as state notes
             content = str(msg.content)[:500]
             state_notes.append(f"Dev thought: {content}")
-    state_notes.append(f"Message types: {message_types}")
 
     record = submit_handoff(
         plan_id=plan_id,

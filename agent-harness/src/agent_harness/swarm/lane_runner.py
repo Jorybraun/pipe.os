@@ -12,7 +12,7 @@ from typing import Any
 
 from agent_harness.swarm.graph import build_lane_graph, _init_work_items
 from agent_harness.swarm.checkpoint import get_checkpointer
-from agent_harness.broker import emit as broker_emit
+from agent_harness.broker import emit as broker_emit, get_conn
 
 
 # Thread-pool for lanes started from sync contexts (e.g. orchestrator agent)
@@ -21,6 +21,9 @@ _lane_tasks: dict[str, asyncio.Task | concurrent.futures.Future] = {}
 _lane_results: dict[str, dict[str, Any]] = {}
 _lane_checkpointer = get_checkpointer()
 _LANE_HISTORY_TTL_SECONDS = 60
+
+# Track which plan_id has an active lane (guard against duplicate lanes)
+_plan_to_lane: dict[str, str] = {}
 
 
 def _get_lane_executor() -> concurrent.futures.ThreadPoolExecutor:
@@ -65,10 +68,41 @@ async def run_lane(plan_id: str, lane_id: str) -> dict[str, Any]:
     return final_state  # type: ignore[return-value]
 
 
+def _cleanup_zombie_lanes(plan_id: str) -> None:
+    """Mark stale DB lanes as stopped and evict dead tasks from memory."""
+    # Evict finished tasks from memory
+    for lid, t in list(_lane_tasks.items()):
+        if t.done():
+            _lane_tasks.pop(lid, None)
+
+    # Mark DB lanes older than 5 min without heartbeat as stopped
+    try:
+        conn = get_conn()
+        stale = conn.execute(
+            "SELECT lane_id FROM lanes WHERE plan_id = ? AND status = 'running' AND (last_heartbeat < ? OR started_at < ?)",
+            (plan_id, time.time() - 300, time.time() - 600),
+        ).fetchall()
+        for row in stale:
+            conn.execute("UPDATE lanes SET status = 'stopped' WHERE lane_id = ?", (row["lane_id"],))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def start_lane(plan_id: str, lane_id: str) -> asyncio.Task | concurrent.futures.Future:
     """Start a lane as a background task. Returns the Task or Future object."""
+    # Guard 1: only one lane per plan_id
+    existing_lane = _plan_to_lane.get(plan_id)
+    if existing_lane and existing_lane in _lane_tasks and not _lane_tasks[existing_lane].done():
+        raise RuntimeError(f"Plan {plan_id} already has running lane {existing_lane}")
+
+    # Guard 2: dedupe by lane_id
     if lane_id in _lane_tasks and not _lane_tasks[lane_id].done():
         raise RuntimeError(f"Lane {lane_id} is already running")
+
+    # Guard 3: clean up zombie lanes for this plan
+    _cleanup_zombie_lanes(plan_id)
 
     try:
         loop = asyncio.get_running_loop()
@@ -79,9 +113,11 @@ def start_lane(plan_id: str, lane_id: str) -> asyncio.Task | concurrent.futures.
         task = _get_lane_executor().submit(_run_lane_sync, plan_id, lane_id)
 
     _lane_tasks[lane_id] = task
+    _plan_to_lane[plan_id] = lane_id
 
     def _on_done(t: Any) -> None:
         _lane_tasks.pop(lane_id, None)
+        _plan_to_lane.pop(plan_id, None)
         try:
             final = t.result()
             # Always mark successful completion as "completed" regardless of

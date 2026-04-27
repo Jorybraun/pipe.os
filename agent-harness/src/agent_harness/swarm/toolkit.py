@@ -53,8 +53,16 @@ class SafeShellTool(ShellTool):
         return result
 
 
-def get_developer_tools(root_dir: str = ".") -> list[Any]:
+def _project_root() -> Path:
+    """Resolve the project root (parent of the agent-harness package)."""
+    # toolkit.py lives at agent-harness/src/agent_harness/swarm/toolkit.py
+    return Path(__file__).parent.parent.parent.parent.parent.resolve()
+
+
+def get_developer_tools(root_dir: str | None = None) -> list[Any]:
     """Return the full tool list for an ephemeral developer agent."""
+    if root_dir is None:
+        root_dir = str(_project_root())
     root_path = Path(root_dir).resolve()
 
     # ── File management (custom read + grep + langchain defaults) ─────────
