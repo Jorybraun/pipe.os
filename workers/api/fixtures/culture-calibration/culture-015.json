@@ -1,0 +1,124 @@
+{
+  "id": "culture-015",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the document with tested instructions, added a 'last verified' date block, and set up a monthly reminder. Onboarding time dropped from a day to four hours based on feedback forms."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "The backend lead and I disagreed about API versioning. He thought it was premature. I proposed we measure the cost of retrofitting in three similar systems. The data showed two of three had significant rework. We designed a lightweight scheme. He cited it as a model for breaking architecture deadlocks."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was an enthusiastic advocate for event-driven architecture before we had enough complexity. My team spent a sprint building a Kafka pipeline that a polling job would have solved in two days. I wrote a learning doc and added a decision checklist. Three subsequent proposals were simplified."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I under-communicate when I'm uncertain. I go quiet in planning meetings. My manager flagged this. I started being explicit about confidence levels. My skip-level asked where I'd learned that framing."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Legal wanted all AI-generated content flagged with a disclosure that would crater engagement. I got competitor data, presented it alongside legal risk, and we co-designed a sufficient but less intrusive disclosure. We measured no engagement impact post-launch."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "collaboration": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "we measure the cost of retrofitting in three similar systems."
+      ]
+    },
+    "learning-orientation": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        " I wrote a learning doc and added a decision checklist."
+      ]
+    },
+    "conflict-handling": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        " backend lead and I disagreed about API versioning."
+      ]
+    },
+    "self-awareness": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "autonomy": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "collaboration-style": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "collaboration",
+    "self-awareness",
+    "autonomy"
+  ],
+  "confidence": "heuristic"
+}

@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { candidateSituationFit } from '../candidateSituationFit';
 import type { LLMProvider } from '../../llm/types';
 import type { CandidateDiscoveryResult } from '../agent';
-import type { RepoEngineeringSignalsRow } from '../../../types';
+import type { RepoEngineeringSignalsRow, CandidateNode } from '../../../types';
 
 function makeStubProvider(response: unknown, name = 'stub-gemma'): LLMProvider {
   return {
@@ -227,5 +227,129 @@ describe('candidateSituationFit', () => {
         repos: [{ repo_id: 101, full_name: 'acme/widgets', signals: makeRepoSignals(101) }],
       }),
     ).rejects.toThrow(/empty/i);
+  });
+
+  it('appends cultural signal block when nodes are provided', async () => {
+    let capturedMessages: Array<{ role: string; content: string }> = [];
+    const provider: LLMProvider = {
+      name: 'capture',
+      supportsTools: false,
+      async complete(messages) {
+        capturedMessages = messages as Array<{ role: string; content: string }>;
+        return { content: JSON.stringify(validResponse(101)) };
+      },
+    };
+
+    const nodes: CandidateNode[] = [
+      {
+        id: 'node-1',
+        candidate_id: 'candidate-1',
+        node_type: 'CulturalSignal',
+        narrative_text: 'Ownership signal',
+        extracted_properties_json: JSON.stringify({
+          dimension: 'ownership',
+          bars_score: 4,
+          reasoning: 'Strong ownership evidence',
+          is_role_specific: false,
+        }),
+        embedding_json: null,
+        source_type: 'automated_screener',
+        source_reference: 'session-1',
+        captured_at: 1234567890,
+        confidence: 0.8,
+        supersedes: null,
+        superseded_at: null,
+        decomposition_version: 'culture_v1',
+        created_at: 1234567890,
+        updated_at: 1234567890,
+      },
+    ];
+
+    await candidateSituationFit({
+      provider,
+      candidateResult: makeCandidateResult(),
+      candidateKeyConcepts: makeCandidateResult().keyConcepts,
+      repos: [{ repo_id: 101, full_name: 'acme/widgets', signals: makeRepoSignals(101) }],
+      culturalSignalNodes: nodes,
+    });
+
+    const userMessage = capturedMessages.find((m) => m.role === 'user')?.content ?? '';
+    expect(userMessage).toContain('### cultural_signals');
+    expect(userMessage).toContain('ownership: 4/5');
+    expect(userMessage).toContain('Strong ownership evidence');
+  });
+
+  it('prefers role-specific cultural signals when roleContextId is provided', async () => {
+    let capturedMessages: Array<{ role: string; content: string }> = [];
+    const provider: LLMProvider = {
+      name: 'capture',
+      supportsTools: false,
+      async complete(messages) {
+        capturedMessages = messages as Array<{ role: string; content: string }>;
+        return { content: JSON.stringify(validResponse(101)) };
+      },
+    };
+
+    const nodes: CandidateNode[] = [
+      {
+        id: 'node-generic',
+        candidate_id: 'candidate-1',
+        node_type: 'CulturalSignal',
+        narrative_text: 'Generic ownership',
+        extracted_properties_json: JSON.stringify({
+          dimension: 'ownership',
+          bars_score: 3,
+          reasoning: 'Generic ownership evidence',
+          is_role_specific: false,
+        }),
+        embedding_json: null,
+        source_type: 'automated_screener',
+        source_reference: 'session-1',
+        captured_at: 1234567890,
+        confidence: 0.7,
+        supersedes: null,
+        superseded_at: null,
+        decomposition_version: 'culture_v1',
+        created_at: 1234567890,
+        updated_at: 1234567890,
+      },
+      {
+        id: 'node-role',
+        candidate_id: 'candidate-1',
+        node_type: 'CulturalSignal',
+        narrative_text: 'Role-specific ownership',
+        extracted_properties_json: JSON.stringify({
+          dimension: 'ownership',
+          bars_score: 5,
+          reasoning: 'Role-specific ownership evidence',
+          is_role_specific: true,
+          role_context_id: 'role-123',
+        }),
+        embedding_json: null,
+        source_type: 'culture_interview',
+        source_reference: 'session-2',
+        captured_at: 1234567890,
+        confidence: 0.9,
+        supersedes: null,
+        superseded_at: null,
+        decomposition_version: 'culture_v1',
+        created_at: 1234567890,
+        updated_at: 1234567890,
+      },
+    ];
+
+    await candidateSituationFit({
+      provider,
+      candidateResult: makeCandidateResult(),
+      candidateKeyConcepts: makeCandidateResult().keyConcepts,
+      repos: [{ repo_id: 101, full_name: 'acme/widgets', signals: makeRepoSignals(101) }],
+      culturalSignalNodes: nodes,
+      roleContextId: 'role-123',
+    });
+
+    const userMessage = capturedMessages.find((m) => m.role === 'user')?.content ?? '';
+    expect(userMessage).toContain('ownership: 5/5');
+    expect(userMessage).toContain('Role-specific ownership evidence');
+    expect(userMessage).not.toContain('Generic ownership evidence');
   });
 });

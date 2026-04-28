@@ -1,0 +1,136 @@
+{
+  "id": "seed-023-senior-idempotency-race",
+  "description": "Senior reviewer finds race condition but misses durability issue. Mixed performance for senior.",
+  "tags": [
+    "typescript",
+    "node",
+    "distributed-systems",
+    "mid-score-senior"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add idempotency key handler",
+    "description": "Ensures payment processing is idempotent using a key store.",
+    "instructions": "Review for consistency and reliability.",
+    "diff": "diff --git a/src/lib/idempotency.ts b/src/lib/idempotency.ts\n@@ -0,0 +1,50 @@\n+export class IdempotencyStore {\n+  private store = new Map<string, { status: string; result?: unknown }>();\n+\n+  async process(key: string, fn: () => Promise<unknown>) {\n+    if (this.store.has(key)) {\n+      return this.store.get(key)!;\n+    }\n+\n+    const result = await fn();\n+    this.store.set(key, { status: 'completed', result });\n+    return { status: 'completed', result };\n+  }\n+\n+  async getStatus(key: string) {\n+    return this.store.get(key) ?? { status: 'not_found' };\n+  }\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/idempotency.ts",
+      "line": 6,
+      "description": "In-memory Map is not shared across Worker instances — in a multi-process or edge deployment, idempotency keys are isolated per instance. Duplicate requests routed to different Workers will re-execute. Should use Redis/Durable Object.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/idempotency.ts",
+      "line": 6,
+      "description": "No locking around check-then-act — two concurrent requests with the same key can both pass the has() check, then both execute fn(), violating idempotency. Needs atomic compare-and-swap.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/idempotency.ts",
+      "line": 9,
+      "description": "No durability guarantee — if process crashes between fn() completion and store.set(), the operation is lost. Should persist BEFORE executing or use a two-phase commit.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/idempotency.ts",
+      "line": 5,
+      "description": "No TTL on keys — Map grows unbounded, causing memory leak. Should expire old entries.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2301,
+            "file": "src/lib/idempotency.ts",
+            "line": 6,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "In-memory Map does not work across Workers.",
+            "why": "In edge deployments each request may hit a different instance. The key will not be found.",
+            "positive": false
+          },
+          {
+            "id": 2302,
+            "file": "src/lib/idempotency.ts",
+            "line": 6,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Race condition: two requests with same key can both execute.",
+            "why": "Check-then-act is not atomic. Need locking or atomic compare-and-swap.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Two blocking distributed systems issues.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2301,
+            "move": "change",
+            "content": "Switched to Redis backend.",
+            "updated_code": "const store = await redis.get(key); ... await redis.set(key, JSON.stringify({ status, result }));"
+          },
+          {
+            "to_comment_id": 2302,
+            "move": "change",
+            "content": "Added Redis SET NX for atomic acquisition.",
+            "updated_code": "const acquired = await redis.set(key, 'processing', { NX: true, EX: 60 }); if (!acquired) return redis.get(key);"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Redis and atomic acquisition look correct.",
+      "submittedAt": "2026-04-28T03:47:05.964Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 4 bugs (cross-instance, race). Missed durability and TTL. Level 3-4 for senior."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Both issues flagged as blocking. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified Redis switch and atomic acquisition. Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete distributed systems rationale. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested Redis and SET NX — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

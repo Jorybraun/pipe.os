@@ -486,7 +486,7 @@ function VideoWidget({
                 cursor: "pointer",
                 padding: 0,
               }}
-            >
+             aria-label="Close">
               <X size={12} />
             </button>
           </div>

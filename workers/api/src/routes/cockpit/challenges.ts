@@ -304,7 +304,7 @@ challenges.post('/:challengeId/clone', async (c) => {
   const userId = c.var.userId;
   const challengeId = c.req.param('challengeId');
 
-  const body = await c.req.json<{ newId?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ newId?: string }>().catch((): { newId?: string } => ({}));
   const clientNewId = typeof body?.newId === 'string' && body.newId ? body.newId : null;
 
   const original = await c.env.DB.prepare(

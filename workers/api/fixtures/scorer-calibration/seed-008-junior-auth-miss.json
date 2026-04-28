@@ -1,0 +1,136 @@
+{
+  "id": "seed-008-junior-auth-miss",
+  "description": "Junior reviewer finds an auth gap but misses rate-limiting and logging of PII. Mixed performance.",
+  "tags": [
+    "typescript",
+    "node",
+    "security",
+    "mid-score"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add recruiter login endpoint",
+    "description": "POST /api/auth/recruiter validates email/password and returns a JWT.",
+    "instructions": "Review for security best practices.",
+    "diff": "diff --git a/src/routes/auth/recruiter.ts b/src/routes/auth/recruiter.ts\n@@ -0,0 +1,42 @@\n+import { Hono } from 'hono';\n+import { sign } from 'hono/jwt';\n+\n+export const authRoutes = new Hono();\n+\n+authRoutes.post('/recruiter', async (c) => {\n+  const { email, password } = await c.req.json();\n+  const user = await c.env.DB\n+    .prepare('SELECT id, password_hash FROM recruiters WHERE email = ?1')\n+    .bind(email)\n+    .first();\n+  if (!user) return c.json({ error: 'invalid_credentials' }, 401);\n+\n+  const valid = await bcryptCompare(password, user.password_hash);\n+  if (!valid) return c.json({ error: 'invalid_credentials' }, 401);\n+\n+  const token = await sign({ sub: user.id, role: 'recruiter' }, c.env.JWT_SECRET);\n+  return c.json({ token });\n+});\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 6,
+      "description": "No rate limiting — brute force password attacks possible. Should have IP-based or account-based rate limiting.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 6,
+      "description": "No input validation on email format or password length — could pass malformed data to bcrypt or DB.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 13,
+      "description": "Token has no expiry — infinite lifetime JWT is a security risk if leaked.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 14,
+      "description": "Error message reveals existence of account via timing — bcryptCompare on non-existent user would be faster than on existing user. Should use constant-time comparison.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 801,
+            "file": "src/routes/auth/recruiter.ts",
+            "line": 6,
+            "category": "security",
+            "severity": "suggestion",
+            "what": "Should validate email format before querying DB.",
+            "why": "Prevents unnecessary DB lookups with invalid emails.",
+            "positive": false
+          },
+          {
+            "id": 802,
+            "file": "src/routes/auth/recruiter.ts",
+            "line": 13,
+            "category": "security",
+            "severity": "suggestion",
+            "what": "JWT should have an expiration.",
+            "why": "Tokens without expiry never expire.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Two security improvements needed.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 801,
+            "move": "change",
+            "content": "Added email regex check.",
+            "updated_code": "if (!email.includes('@')) return c.json({ error: 'invalid_email' }, 400);"
+          },
+          {
+            "to_comment_id": 802,
+            "move": "change",
+            "content": "Added 24h expiry.",
+            "updated_code": "await sign({ sub: user.id, role: 'recruiter', exp: Math.floor(Date.now() / 1000) + 86400 }, c.env.JWT_SECRET);"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Both fixes look good. Security is better now.",
+      "submittedAt": "2026-04-28T03:47:05.959Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 2 of 4 bugs (email validation, JWT expiry). Missed rate limiting and timing attack. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Both security issues flagged as suggestions not blocking. Rate limiting not mentioned. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted both fixes without deep verification. Email regex is weak. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Basic explanations. No deep security analysis. Level 2-3."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No questions asked. Level 1-2."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested email regex and expiry — actionable but minimal. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

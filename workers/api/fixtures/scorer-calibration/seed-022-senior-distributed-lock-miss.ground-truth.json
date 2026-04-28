@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-022-senior-distributed-lock-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/lock.ts",
+      "line": 13,
+      "description": "release() deletes the key without verifying the caller owns the lock — if the lock expires and another process acquires it, release() will delete the OTHER process lock. Should use a unique token (UUID) and compare-before-delete (Redlock pattern).",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/lock.ts",
+      "line": 9,
+      "description": "No lock extension mechanism — if fn() takes longer than ttlMs, the lock expires mid-operation. Should support refresh/extend during long operations.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/lock.ts",
+      "line": 16,
+      "description": "withLock throws on failed acquisition instead of supporting retry or backoff — callers must implement their own retry logic, leading to inconsistent patterns.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/lock.ts",
+      "line": 5,
+      "description": "Redis client is created per lock instance — should be shared/reused across the application to avoid connection pool exhaustion.",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 2,
+    "major": 1,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

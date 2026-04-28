@@ -1,0 +1,151 @@
+{
+  "id": "seed-025-senior-rsc-hydration",
+  "description": "Senior reviewer finds hydration issue and asks design questions. Good senior performance.",
+  "tags": [
+    "typescript",
+    "react",
+    "rsc",
+    "mid-high-score"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add server/client boundary component",
+    "description": "A component that renders differently on server and client.",
+    "instructions": "Review for React Server Components and hydration correctness.",
+    "diff": "diff --git a/src/components/Boundary.tsx b/src/components/Boundary.tsx\n@@ -0,0 +1,42 @@\n+import { useEffect, useState } from 'react';\n+\n+export function Boundary({ serverComponent, clientComponent }) {\n+  const [isClient, setIsClient] = useState(false);\n+\n+  useEffect(() => {\n+    setIsClient(true);\n+  }, []);\n+\n+  if (!isClient) {\n+    return <div>{serverComponent}</div>;\n+  }\n+\n+  return <div>{clientComponent}</div>;\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/components/Boundary.tsx",
+      "line": 10,
+      "description": "Client and server render different content — React hydration will fail because the server HTML does not match the client DOM. Should use suppressHydrationWarning or ensure consistent initial render.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/Boundary.tsx",
+      "line": 4,
+      "description": "useState(false) + useEffect causes a layout shift on hydration — the server renders serverComponent, then client immediately re-renders to clientComponent, causing visual flash. Should use initial props or CSS-based solution.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/Boundary.tsx",
+      "line": 1,
+      "description": "Props are untyped — serverComponent and clientComponent should be ReactNode, not any. Also no validation that both are provided.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/Boundary.tsx",
+      "line": 7,
+      "description": "No fallback for environments where neither server nor client is defined (e.g., test environments).",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2501,
+            "file": "src/components/Boundary.tsx",
+            "line": 10,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Server and client render different content — hydration mismatch.",
+            "why": "React requires server and client initial HTML to match. This will cause hydration errors.",
+            "positive": false
+          },
+          {
+            "id": 2502,
+            "file": "src/components/Boundary.tsx",
+            "line": 4,
+            "category": "ux",
+            "severity": "blocking",
+            "what": "Visual flash on hydration — server renders A, client immediately switches to B.",
+            "why": "Users see a flicker. Need a no-JS-first approach or consistent initial state.",
+            "positive": false
+          },
+          {
+            "id": 2503,
+            "file": "src/components/Boundary.tsx",
+            "line": 1,
+            "category": "types",
+            "severity": "suggestion",
+            "what": "Props should be typed as ReactNode.",
+            "why": "Type safety.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Hydration and flash are blocking. Typing is recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2501,
+            "move": "change",
+            "content": "Added suppressHydrationWarning and consistent wrapper.",
+            "updated_code": "return <div suppressHydrationWarning>{isClient ? clientComponent : serverComponent}</div>;"
+          },
+          {
+            "to_comment_id": 2502,
+            "move": "pushback",
+            "content": "The serverComponent is a placeholder. The flash is acceptable for our use case."
+          },
+          {
+            "to_comment_id": 2503,
+            "move": "change",
+            "content": "Added interface.",
+            "updated_code": "interface BoundaryProps { serverComponent: React.ReactNode; clientComponent: React.ReactNode; }"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "request_changes",
+      "summary": "Hydration fix looks good. Still concerned about the flash — can we use CSS visibility instead of full swap?",
+      "submittedAt": "2026-04-28T03:47:05.965Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 4 bugs (hydration, flash). Missed prop typing and test env. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Hydration and flash as blocking. Typing as suggestion. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified hydration fix. Pushed back on flash with counter-proposal (CSS visibility). Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete React hydration and UX rationales. Level 3-4."
+    },
+    "question_formation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Implicit question about flash acceptability, leading to follow-up. Level 3-4."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested suppressHydrationWarning and CSS visibility — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

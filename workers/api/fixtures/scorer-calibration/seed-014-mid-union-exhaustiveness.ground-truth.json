@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-014-mid-union-exhaustiveness",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/lib/stageTransitions.ts",
+      "line": 14,
+      "description": "No exhaustiveness check — if a new StageAction type is added, handleAction silently returns null instead of failing at compile time. Should use switch with never or assertNever.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/stageTransitions.ts",
+      "line": 6,
+      "description": "Return type is inferred as Promise<unknown> | null — callers have no type safety on the result. Should explicitly type the return.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/lib/stageTransitions.ts",
+      "line": 8,
+      "description": "Each branch calls a different async function but results are not awaited — fire-and-forget pattern may hide errors.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 0,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 2
+  }
+}

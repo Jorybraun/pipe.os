@@ -1,0 +1,126 @@
+{
+  "fixture_id": "culture-004",
+  "provider": "devstral",
+  "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Synthesis unavailable due to scoring error.",
+      "narrative": "parse_failure",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:52:47.167Z"
+  },
+  "meta": {
+    "wall_clock_ms": 1532,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

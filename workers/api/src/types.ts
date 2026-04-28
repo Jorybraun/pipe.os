@@ -38,8 +38,14 @@ export interface Env {
    */
   GITHUB_TOKEN?: string;
   GOOGLE_AI_API_KEY?: string;
-  /** 'cloudflare-ai' | 'google-ai' | 'vertex-ai' — selects the role agent provider. Default: 'cloudflare-ai'. */
+  /** 'cloudflare-ai' | 'google-ai' | 'vertex-ai' | 'kimi' — selects the role agent provider. Default: 'cloudflare-ai'. */
   ROLE_AGENT_PROVIDER?: string;
+  /**
+   * Override provider for role agent synthesis turns (budget exhausted).
+   * When unset, falls back to ROLE_AGENT_PROVIDER.
+   * Allows using a stronger model for synthesis while keeping questions fast.
+   */
+  ROLE_AGENT_SYNTHESIS_PROVIDER?: string;
   /**
    * When set to "true", AI agents return deterministic canned responses.
    * Used in E2E/integration tests to avoid real LLM calls.
@@ -143,6 +149,12 @@ export interface Env {
   VERTEX_AI_MODEL?: string;
   /** Vertex AI Live (BidiGenerateContent) model override. Default: gemini-live-2.5-flash-native-audio. */
   VERTEX_AI_LIVE_MODEL?: string;
+  /** Kimi API key for scorer calibration and other Kimi-backed agents. */
+  KIMI_API_KEY?: string;
+  /** Kimi base URL override. Default: https://api.kimi.com/coding/v1 */
+  KIMI_BASE_URL?: string;
+  /** Kimi model override for scorer. Default: kimi-for-coding */
+  KIMI_SCORER_MODEL?: string;
 }
 
 /**
@@ -1269,4 +1281,189 @@ export interface EvalResult {
   redundancyCheck: 'novel' | 'duplicate' | 'near_duplicate';
   reason: string;
   suggestedRewrite?: string;
+}
+
+// ─── Candidate Ingestion Rows ────────────────────────────────────────────────
+
+export interface CandidateIngestionRow {
+  candidate_id: string;
+  status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
+  candidate_searchable_profile: string | null;
+  key_concepts_json: string | null;
+  profile_version: string | null;
+  model_used: string | null;
+  matched_repo_id: number | null;
+  profile_generated_at: string | null;
+  profile_embedded_at: string | null;
+  matched_at: string | null;
+  error_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CandidateChallengeAssignmentRow {
+  id: string;
+  candidate_id: string;
+  stage_id: string;
+  challenge_id: string;
+  repo_id: number | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  issue_number: number | null;
+  assigned_at: string;
+}
+
+export interface ChallengeSubmissionRow {
+  id: string;
+  candidate_id: string;
+  challenge_id: string;
+  response_json: string | null;
+  score_report_json: string | null;
+  hitl_status: 'PENDING_REVIEW' | 'CONFIRMED' | 'OVERRIDDEN' | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EnrichmentJobRow {
+  id: string;
+  candidate_id: string;
+  source_type: 'github' | 'url_content';
+  source_url: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'SKIPPED';
+  attempt_count: number;
+  last_attempted_at: number | null;
+  completed_at: number | null;
+  error_text: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SituationFitCacheRow {
+  cache_key: string;
+  candidate_id: string;
+  repo_id: number;
+  profile_version: string | null;
+  signals_version: string | null;
+  result_json: string;
+  created_at: string;
+}
+
+export interface MatchFeedbackRow {
+  id: string;
+  candidate_id: string;
+  repo_id: number | null;
+  pipeline_id: string;
+  stage_id: string;
+  thumb: 'up' | 'down';
+  reason: string | null;
+  triangulated_score: number | null;
+  role_repo_alignment: number | null;
+  candidate_repo_fit: number | null;
+  role_candidate_cosine: number | null;
+  created_at: string;
+}
+
+// ─── Candidate Living Graph (Phase 3) ────────────────────────────────────────
+
+export type CandidateNodeType =
+  | 'Experience'
+  | 'Project'
+  | 'Accomplishment'
+  | 'Skill'
+  | 'Education'
+  | 'Credential'
+  | 'CulturalSignal'
+  | 'TechnicalDemonstration'
+  | 'WorkingStyle'
+  | 'CommunicationStyle'
+  | 'CareerArc'
+  | 'Motivation'
+  | 'Context';
+
+export type CoverageAspect = 'experience' | 'cultural' | 'technical' | 'motivation' | 'context';
+
+export interface CandidateNode {
+  id: string;
+  candidate_id: string;
+  node_type: CandidateNodeType;
+  narrative_text: string;
+  extracted_properties_json: string | null;
+  embedding_json: string | null;
+  source_type: string;
+  source_reference: string | null;
+  captured_at: number;
+  confidence: number | null;
+  supersedes: string | null;
+  superseded_at: number | null;
+  decomposition_version: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CandidateCoverage {
+  candidate_id: string;
+  experience_coverage: number;
+  cultural_coverage: number;
+  technical_coverage: number;
+  motivation_coverage: number;
+  context_coverage: number;
+  last_probed_at: number | null;
+  next_probe_target: CoverageAspect | null;
+  updated_at: number;
+}
+
+export interface CoverageResult {
+  experience: number;
+  cultural: number;
+  technical: number;
+  motivation: number;
+  context: number;
+}
+
+/** Extracted properties for TechnicalDemonstration nodes sourced from code reviews */
+export interface CodeReviewDemonstrationProperties {
+  dimension:
+    | 'issue_identification'
+    | 'reasoning_quality'
+    | 'prioritization'
+    | 'question_formation'
+    | 'revision_evaluation'
+    | 'ai_direction';
+  bars_score: number;
+  effectiveness_metrics: {
+    bugs_found_pct?: number;
+    false_positive_count?: number;
+    cave_ratio?: number;
+    fix_verifications?: number;
+  };
+  implementer_persona: string;
+  challenge_repo_id: string;
+}
+
+/** Extracted properties for CulturalSignal nodes sourced from culture interviews */
+export interface CulturalSignalProperties {
+  dimension_type: 'competency' | 'profile';
+  dimension: string;
+  bars_score: number;
+  evidence_quotes: string[];
+  reasoning: string;
+  confidence: number;
+  rcd_version?: string;
+  role_context_id?: string;
+  is_role_specific: boolean;
+}
+
+export interface RecencyReport {
+  dimensions: Record<
+    CoverageAspect,
+    { lastCapturedAt: number | null; nodeCount: number; staleFlag: boolean }
+  >;
+  overallStaleness: 'fresh' | 'partial' | 'stale';
+}
+
+export interface ReEngagementPlan {
+  needsReEnrichment: boolean;
+  needsScreener: boolean;
+  thinDimensions: CoverageAspect[];
+  shouldRecomputeMatch: boolean;
 }

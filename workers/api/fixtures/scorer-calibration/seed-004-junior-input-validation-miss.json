@@ -1,0 +1,135 @@
+{
+  "id": "seed-004-junior-input-validation-miss",
+  "description": "Junior reviewer finds one input validation bug but misses SQL injection vector and race condition. Basic reasoning, accepts fixes without checking.",
+  "tags": [
+    "typescript",
+    "node",
+    "api",
+    "low-mid-score"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add candidate bulk import endpoint",
+    "description": "POST /api/candidates/bulk accepts a CSV string, parses it, and inserts candidates into D1.",
+    "instructions": "Review for security, correctness, and performance.",
+    "diff": "diff --git a/src/routes/candidates/bulkImport.ts b/src/routes/candidates/bulkImport.ts\n@@ -0,0 +1,45 @@\n+import { Hono } from 'hono';\n+import { parse } from 'csv-parse/sync';\n+\n+export const bulkRoutes = new Hono();\n+\n+bulkRoutes.post('/bulk', async (c) => {\n+  const { csv } = await c.req.json();\n+  const rows = parse(csv, { columns: true });\n+\n+  for (const row of rows) {\n+    await c.env.DB.prepare(\n+      'INSERT INTO candidates (name, email, pipeline_id) VALUES (?, ?, ?)'\n+    ).bind(row.name, row.email, row.pipeline_id).run();\n+  }\n+\n+  return c.json({ imported: rows.length });\n+});\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 9,
+      "description": "Raw user CSV is parsed without validation — row.name, row.email, row.pipeline_id are passed directly to SQL. Although parameterized, there is no length limit or schema validation, enabling a CSV with 1M rows to DOS the worker.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 8,
+      "description": "No input validation on csv field — missing check that csv is a string, non-empty, and within size limits.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 10,
+      "description": "Sequential await in a loop — N inserts for N rows. Should use batch insert or transaction.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 14,
+      "description": "Returns count but no per-row error details. Failed inserts are silently swallowed by D1 default behavior.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 401,
+            "file": "src/routes/candidates/bulkImport.ts",
+            "line": 8,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Should validate that csv is actually a string before parsing.",
+            "why": "Could throw if csv is null",
+            "positive": false
+          },
+          {
+            "id": 402,
+            "file": "src/routes/candidates/bulkImport.ts",
+            "line": 1,
+            "category": "style",
+            "severity": "nit",
+            "what": "Import Hono from hono is fine but maybe use hono/hono?",
+            "why": "convention",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "approve",
+        "reviewer_summary": "Small validation fix needed, otherwise good.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 401,
+            "move": "change",
+            "content": "Added typeof check.",
+            "updated_code": "if (typeof csv !== 'string' || csv.length === 0) return c.json({ error: 'invalid_csv' }, 400);"
+          },
+          {
+            "to_comment_id": 402,
+            "move": "comment",
+            "content": "The docs say hono is correct for Hono base."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Validation added, looks good now.",
+      "submittedAt": "2026-04-28T03:47:05.958Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 1 of 4 bugs (input validation). Missed DOS vector, N+1 insert loop, and error handling. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found one real bug but also a style nit. Did not flag N+1 or DOS as blocking. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted the typeof fix without checking if it handles empty string or max length. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Basic explanation for the validation bug. Style nit has no real rationale. Level 2-3."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No questions asked. Level 1-2."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested typeof check — actionable but minimal. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

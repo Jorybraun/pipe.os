@@ -129,7 +129,7 @@ export function PhoneCallDrawer({
             cursor: 'pointer',
             padding: 4,
           }}
-        >
+         aria-label="Close">
           <X size={14} />
         </button>
       </div>
@@ -356,7 +356,7 @@ function ActiveCallView({ candidateName, phoneNumber, duration, isMuted, onToggl
             alignItems: 'center',
             justifyContent: 'center',
           }}
-        >
+         aria-label="Hang up">
           <PhoneOff size={20} />
         </button>
       </div>

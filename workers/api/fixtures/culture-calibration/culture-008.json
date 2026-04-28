@@ -1,0 +1,115 @@
+{
+  "id": "culture-008",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I looked into the cron job logs myself and found a memory leak in the scheduled report generator. I patched it and it stopped failing. My manager found out and was happy about it."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about something you shipped that broke in a way that affected other people."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I shipped a search ranking change that degraded results for users on mobile. A support ticket flagged it two days later. I diagnosed the problem, reverted it, fixed it, and re-shipped within a day. I sent a note to the product lead explaining what happened."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My teammate wanted to use GraphQL for our internal admin API and I thought REST was simpler. I wrote up a short doc comparing the two and we had a call. We ended up going with REST with a plan to revisit if our query patterns got more complex. My teammate agreed it was reasonable."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was convinced that optimistic locking was the right solution for our cart service. After a production incident with stale inventory data, I dug into it and realized we needed pessimistic locking. I updated the implementation and the bugs stopped."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "collaboration": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "we had a call."
+      ]
+    },
+    "learning-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "conflict-handling": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "self-awareness": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing every Friday afternoon. It was owned by the infra team but they were stretched. I l"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "balanced",
+    "medium-band"
+  ],
+  "confidence": "heuristic"
+}

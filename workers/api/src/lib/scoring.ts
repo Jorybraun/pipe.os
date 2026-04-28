@@ -22,6 +22,8 @@ export interface PlantedBug {
   file?: string;
   line?: number;
   description: string;
+  /** Whether the fixture author expects this bug to be found by a competent reviewer at this seniority level. */
+  expectedFound?: boolean;
 }
 
 export interface EffectivenessScore {

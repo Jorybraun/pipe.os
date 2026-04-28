@@ -160,7 +160,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
                 cursor: 'pointer',
                 padding: 4,
               }}
-            >
+             aria-label="Back">
               <ArrowLeft size={14} />
             </button>
           )}
@@ -194,7 +194,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
             cursor: 'pointer',
             padding: 4,
           }}
-        >
+         aria-label="Close">
           <X size={14} />
         </button>
       </div>
@@ -1011,6 +1011,7 @@ function StageConfigToggles({ stageId, stage, updateStage, refetch }: {
 function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }): JSX.Element {
   return (
     <button
+      aria-label="Toggle"
       onClick={() => onChange(!value)}
       style={{
         width: 36,

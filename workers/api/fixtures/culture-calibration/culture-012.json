@@ -1,0 +1,122 @@
+{
+  "id": "culture-012",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the document, added a 'last verified' date block, and set up a monthly reminder. Onboarding time dropped from a day to four hours."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My principal engineer wanted to rewrite our search service in Rust before profiling. I suggested one week profiling first. Profiling revealed the bottleneck was algorithmic. I rewrote the similarity function and achieved 70% latency reduction."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I spent eight months advocating for a service mesh. When we piloted it, operational overhead was three times my estimate. I ran a retrospective, identified I'd anchored on blog posts, and we adopted mTLS-via-gateway instead."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've had consistent feedback that I move to solution mode too quickly. I started doing structured restatement before responding. My 360 feedback showed improvement noted by four colleagues."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "An exec wanted us to build a recommendation feature with no privacy review. I refused to start without a review and proposed a two-day sprint with a legal engineer. The review identified a reputational risk. The exec thanked me afterward."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "collaboration": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "we piloted it, operational overhead was three times my estimate."
+      ]
+    },
+    "learning-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "conflict-handling": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "self-awareness": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "collaboration-style": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our engineering onboarding checklist hadn't been touched in 18 months. I catalogued every broken link, rewrote the docum"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "learning-orientation"
+  ],
+  "confidence": "heuristic"
+}

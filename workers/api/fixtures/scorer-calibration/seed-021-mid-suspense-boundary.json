@@ -1,0 +1,136 @@
+{
+  "id": "seed-021-mid-suspense-boundary",
+  "description": "Mid reviewer finds error boundary issue and evaluates fixes well. Strong mid-level performance.",
+  "tags": [
+    "typescript",
+    "react",
+    "suspense",
+    "high-score-mid"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add async data boundary",
+    "description": "Suspense-compatible data fetching wrapper with error handling.",
+    "instructions": "Review for React patterns and error handling.",
+    "diff": "diff --git a/src/components/DataBoundary.tsx b/src/components/DataBoundary.tsx\n@@ -0,0 +1,42 @@\n+import { Suspense, use } from 'react';\n+\n+function DataFetcher({ promise }) {\n+  const data = use(promise);\n+  return <div>{data.name}</div>;\n+}\n+\n+export function DataBoundary({ promise, fallback }) {\n+  return (\n+    <Suspense fallback={fallback}>\n+      <ErrorBoundary>\n+        <DataFetcher promise={promise} />\n+      </ErrorBoundary>\n+    </Suspense>\n+  );\n+}\n+\n+class ErrorBoundary extends React.Component {\n+  state = { hasError: false };\n+  static getDerivedStateFromError() {\n+    return { hasError: true };\n+  }\n+  render() {\n+    if (this.state.hasError) return <div>Error</div>;\n+    return this.props.children;\n+  }\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 9,
+      "description": "ErrorBoundary is inside Suspense — if DataFetcher throws, Suspense catches it first and shows fallback forever, never reaching ErrorBoundary. ErrorBoundary must be outside Suspense.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 4,
+      "description": "DataFetcher accesses data.name without null check — if promise resolves to null or missing name, throws. Should handle edge cases.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 15,
+      "description": "ErrorBoundary has no error logging — production errors are silently swallowed. Should include componentDidCatch with logging.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 1,
+      "description": "use is an experimental API — should document React version requirement.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2101,
+            "file": "src/components/DataBoundary.tsx",
+            "line": 9,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "ErrorBoundary is inside Suspense — it will never catch errors.",
+            "why": "Suspense catches thrown promises first. ErrorBoundary must wrap Suspense, not be inside it.",
+            "positive": false
+          },
+          {
+            "id": 2102,
+            "file": "src/components/DataBoundary.tsx",
+            "line": 4,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "data.name is accessed without checking if data exists.",
+            "why": "Promise could resolve to null or undefined.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Two blocking correctness issues.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2101,
+            "move": "change",
+            "content": "Swapped order.",
+            "updated_code": "<ErrorBoundary><Suspense fallback={fallback}><DataFetcher promise={promise} /></Suspense></ErrorBoundary>"
+          },
+          {
+            "to_comment_id": 2102,
+            "move": "change",
+            "content": "Added optional chaining.",
+            "updated_code": "return <div>{data?.name ?? 'Unknown'}</div>;"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Both fixes correct. Boundary order and null handling look good.",
+      "submittedAt": "2026-04-28T03:47:05.964Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 4 bugs (boundary order, null access). Missed error logging and API docs. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Both correctness issues flagged as blocking. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified boundary swap and optional chaining. Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete React hydration and UX rationales. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested boundary reorder and optional chaining — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

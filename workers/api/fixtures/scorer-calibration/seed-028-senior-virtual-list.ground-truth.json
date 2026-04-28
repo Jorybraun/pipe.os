@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-028-senior-virtual-list",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/components/VirtualList.tsx",
+      "line": 16,
+      "description": "Position absolute without relative parent — items are positioned relative to the nearest positioned ancestor, which may not be the scroll container. Causes items to render in wrong locations. The inner div should be position: relative.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/VirtualList.tsx",
+      "line": 12,
+      "description": "No overscan — items at the edge of the viewport appear blank while scrolling fast. Should render 2-3 items above and below the visible range.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/VirtualList.tsx",
+      "line": 8,
+      "description": "onScroll updates state every scroll event — high-frequency scroll events cause excessive React re-renders. Should throttle or use requestAnimationFrame.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/VirtualList.tsx",
+      "line": 14,
+      "description": "No aria attributes — screen readers see only the visible items and lose context of total list size. Should add aria-setsize and aria-posinset.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 3,
+    "expectedMissed": 1
+  }
+}

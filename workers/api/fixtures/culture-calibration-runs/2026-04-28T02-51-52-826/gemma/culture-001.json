@@ -1,0 +1,132 @@
+{
+  "fixture_id": "culture-001",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 1,
+        "rawScore": 1,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "The team got together and figured it out. Everyone pitched in and eventually we sorted it out. It was a good team effort."
+        ],
+        "confidence": 1,
+        "reasoning": "The candidate fails to provide any specific personal actions or individual accountability. In the only question regarding a problem-solving scenario, the candidate uses 'we' exclusively and attributes the resolution to a collective team effort ('The team got together', 'Everyone pitched in'), providing no evidence of their own specific role or contribution. This matches the Level 1 criteria for describing a team effort in which the personal role is absent.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 1,
+        "rawScore": 1,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I'm a pretty collaborative person so I don't really get into big disagreements."
+        ],
+        "confidence": 1,
+        "reasoning": "The candidate fails to provide a single specific example of a conflict. Instead, they provide generic platitudes and explicitly state that they 'don't really get into big disagreements,' which directly aligns with the Level 1 description of describing conflict as something that 'doesn't really happen.'",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I try to stay open to feedback."
+        ],
+        "confidence": 0.5,
+        "reasoning": "The candidate expresses a general willingness to receive input and a desire for growth, placing them in the middle of the spectrum. Position 4 is not chosen because the candidate provides no specific evidence of proactively seeking out critique or integrating feedback loops into their technical workflow; the mention of feedback is a general attitudinal statement. Position 2 is not chosen because the candidate does not express a need for highly cushioned, private, or relationship-dependent feedback, instead favoring 'open conversations' in 'the right forum'.",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Synthesis unavailable due to scoring error.",
+      "narrative": "parse_failure",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:52:04.073Z"
+  },
+  "meta": {
+    "wall_clock_ms": 11251,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

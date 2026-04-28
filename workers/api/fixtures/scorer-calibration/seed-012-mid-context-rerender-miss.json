@@ -1,0 +1,152 @@
+{
+  "id": "seed-012-mid-context-rerender-miss",
+  "description": "Mid-level reviewer misses a React context re-render bug, focuses on naming and file structure. Low-mid score anchor for mid-level.",
+  "tags": [
+    "typescript",
+    "react",
+    "performance",
+    "low-score-anchor",
+    "mid-level"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add pipeline context provider",
+    "description": "Adds a PipelineContext for sharing pipeline state across components.",
+    "instructions": "Review for React performance and TypeScript correctness.",
+    "diff": "diff --git a/src/contexts/PipelineContext.tsx b/src/contexts/PipelineContext.tsx\n@@ -0,0 +1,52 @@\n+import { createContext, useContext, useState } from 'react';\n+\n+const PipelineContext = createContext(null);\n+\n+export function PipelineProvider({ children, pipelineId }) {\n+  const [pipeline, setPipeline] = useState(null);\n+  const [candidates, setCandidates] = useState([]);\n+\n+  useEffect(() => {\n+    fetchPipeline(pipelineId).then(setPipeline);\n+    fetchCandidates(pipelineId).then(setCandidates);\n+  }, [pipelineId]);\n+\n+  return (\n+    <PipelineContext.Provider value={{ pipeline, candidates, setPipeline, setCandidates }}>\n+      {children}\n+    </PipelineContext.Provider>\n+  );\n+}\n+\n+export const usePipeline = () => useContext(PipelineContext);\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 14,
+      "description": "Context value object is recreated every render — any consumer re-renders whenever PipelineProvider re-renders, even if pipeline/candidates did not change. Should use useMemo.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 8,
+      "description": "No error handling for fetch failures — rejected promises crash the component tree.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 9,
+      "description": "Race condition: if pipelineId changes rapidly, stale responses may overwrite newer data. Need abort controller or ignore stale flag.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 3,
+      "description": "createContext(null) loses type safety — should be createContext<PipelineContextType | null>(null).",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1201,
+            "file": "src/contexts/PipelineContext.tsx",
+            "line": 8,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Missing error handling for fetchPipeline.",
+            "why": "Could crash if network fails.",
+            "positive": false
+          },
+          {
+            "id": 1202,
+            "file": "src/contexts/PipelineContext.tsx",
+            "line": 3,
+            "category": "types",
+            "severity": "suggestion",
+            "what": "Context should be typed.",
+            "why": "Type safety.",
+            "positive": false
+          },
+          {
+            "id": 1203,
+            "file": "src/contexts/PipelineContext.tsx",
+            "line": 1,
+            "category": "style",
+            "severity": "nit",
+            "what": "File name should be PascalCase.",
+            "why": "Consistency",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Error handling and typing needed.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1201,
+            "move": "change",
+            "content": "Added try/catch with error state.",
+            "updated_code": "try { const p = await fetchPipeline(pipelineId); setPipeline(p); } catch (e) { setError(e); }"
+          },
+          {
+            "to_comment_id": 1202,
+            "move": "change",
+            "content": "Added interface and typed context.",
+            "updated_code": "const PipelineContext = createContext<PipelineContextType | null>(null);"
+          },
+          {
+            "to_comment_id": 1203,
+            "move": "comment",
+            "content": "It is already PipelineContext.tsx — that is PascalCase."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Error handling and typing look good. Filename is already PascalCase.",
+      "submittedAt": "2026-04-28T03:47:05.961Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 2 of 4 bugs (error handling, typing). Missed context re-render and race condition. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Error handling and typing as suggestions. Style nit is non-blocking. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted error handling and typing fixes without verifying completeness. Caved on filename. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Basic rationale. No deep analysis. Level 2-3."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No questions. Level 1-2."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested try/catch and typing — actionable. No guidance on re-render. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

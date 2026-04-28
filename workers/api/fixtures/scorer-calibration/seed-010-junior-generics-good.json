@@ -1,0 +1,126 @@
+{
+  "id": "seed-010-junior-generics-good",
+  "description": "Junior reviewer finds a generics misuse and asks clarifying questions. Solid performance for junior level.",
+  "tags": [
+    "typescript",
+    "generics",
+    "mid-high-score"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add generic fetch wrapper",
+    "description": "Adds a typed fetch wrapper for API calls.",
+    "instructions": "Review for TypeScript type safety.",
+    "diff": "diff --git a/src/lib/fetch.ts b/src/lib/fetch.ts\n@@ -0,0 +1,30 @@\n+export async function fetchJson<T>(url: string): Promise<T> {\n+  const res = await fetch(url);\n+  if (!res.ok) throw new Error('fetch failed');\n+  return res.json() as T;\n+}\n+\n+export async function fetchPost<T>(url: string, body: unknown): Promise<T> {\n+  const res = await fetch(url, {\n+    method: 'POST',\n+    headers: { 'Content-Type': 'application/json' },\n+    body: JSON.stringify(body),\n+  });\n+  if (!res.ok) throw new Error('post failed');\n+  return res.json() as T;\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/lib/fetch.ts",
+      "line": 1,
+      "description": "fetchJson casts response as T without validation — runtime type unsafe. Should use zod or similar schema validation.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/fetch.ts",
+      "line": 7,
+      "description": "No error status handling — different error codes (400, 401, 500) all throw generic Error. Should include status code and response body in error.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/lib/fetch.ts",
+      "line": 7,
+      "description": "body type is unknown but not validated before JSON.stringify. Could stringify undefined or circular references.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1001,
+            "file": "src/lib/fetch.ts",
+            "line": 1,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "The as T cast is unsafe. Do we have a schema validation library?",
+            "why": "Runtime response may not match the expected type.",
+            "positive": false
+          },
+          {
+            "id": 1002,
+            "file": "src/lib/fetch.ts",
+            "line": 7,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Should include status code in error message.",
+            "why": "Helps debugging.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Two improvements suggested. Schema validation would be ideal.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1001,
+            "move": "comment",
+            "content": "We use zod elsewhere. Should I add schema parsing here too?"
+          },
+          {
+            "to_comment_id": 1002,
+            "move": "change",
+            "content": "Added status to error.",
+            "updated_code": "throw new Error(`${res.status}: post failed`);"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Status code helps. Schema validation can be added later — create a ticket.",
+      "submittedAt": "2026-04-28T03:47:05.960Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 1 of 3 bugs (unsafe cast). Missed error handling and body validation. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Schema validation flagged as suggestion. Error status as suggestion. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted status code fix. Deferred schema validation. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Good question about schema library. Basic rationale otherwise. Level 2-3."
+    },
+    "question_formation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Asked clarifying question about schema validation library. Level 3-4 for junior."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested schema validation and status codes — actionable. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

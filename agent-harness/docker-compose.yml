@@ -1,0 +1,80 @@
+services:
+  # Fully isolated work environment — no volume mounts, no port exposure.
+  # Safe to run alongside your local app. Does not touch host files.
+  # Note: git history is NOT copied into this image, so git commands won't work here.
+  agent-harness-work:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-work
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    stdin_open: true
+    tty: true
+    # No ports exposed, no volumes mounted — completely isolated
+    command: ["bash"]
+
+  # Dev container — mounts your real repo so git, branch switching, and edits
+  # persist on the host. The harness is installed inside the image.
+  # Your host app files are visible and editable inside.
+  agent-harness-dev:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-dev
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    volumes:
+      # Mount the entire project so git history and edits are live
+      - ../:/app
+      # Keep the harness install from the image (don't overwrite with host venv)
+      - harness_venv:/app/agent-harness/.venv
+    command: ["bash"]
+
+  # For running tests inside the container (still isolated by default)
+  agent-harness-test:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-test
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    command: ["python", "-m", "pytest", "agent-harness/tests/", "-v"]
+
+  # MCP server + WebSocket — only this exposes ports
+  agent-harness-server:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-server
+    ports:
+      - "8765:8765"
+      - "8766:8766"
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    command:
+      - python
+      - -m
+      - agent_harness.server
+      - --transport
+      - sse
+      - --port
+      - "8765"
+      - --ws-port
+      - "8766"
+      - --data-dir
+      - /app/.swarm
+
+volumes:
+  harness_venv:

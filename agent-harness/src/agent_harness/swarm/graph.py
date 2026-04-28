@@ -555,7 +555,7 @@ def qa_deploy_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
         event_type = "plan_failed"
 
     # Heartbeat: QA-Deploy finished
-    heartbeat(lane_id, agent_id="qa_deploy")
+    heartbeat(lane_id, agent_id="qa")
 
     conn = get_conn()
     conn.execute(
@@ -573,7 +573,7 @@ def qa_deploy_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
     return {
         "status": final_status,
         "pr_url": pr_url,
-        "messages": [SystemMessage(content=f"QA-Deploy finished with status={final_status} pr={pr_url}")],
+        "messages": [SystemMessage(content=f"QA finished with status={final_status}")],
     }
 
 
@@ -620,7 +620,7 @@ def escalation_gate_node(state: LaneState, config: RunnableConfig) -> dict[str, 
 # ---------------------------------------------------------------------------
 
 def build_lane_graph(checkpointer: Any | None = None):
-    """Build and compile a lane graph: Supervisor → Advisor → Dev → QA-Deploy → Escalation gate."""
+    """Build and compile a lane graph: Supervisor → Advisor → Dev → QA → Escalation gate."""
     builder = StateGraph(LaneState)
     builder.add_node("supervisor", lane_supervisor_node)
     builder.add_node("advisor", advisor_node)

@@ -42,6 +42,7 @@ import {
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
 import { decomposeCandidateAnswer, persistDecomposition } from '../../lib/cultureAgentDecomposition';
+import { decomposeCultureScoreToGraph } from '../../lib/candidateDiscovery/decomposeCultureScore';
 import {
   scoreCultureInterview,
   type OrgCultureBenchmark,
@@ -264,6 +265,25 @@ export async function runScoringJob(env: Env, sessionId: string): Promise<void> 
     }
   } catch (err) {
     console.error('[cultureScoringJob] Failed to write score report:', sessionId, err);
+  }
+
+  // Decompose score report into candidate graph nodes (non-blocking)
+  try {
+    await decomposeCultureScoreToGraph({
+      db,
+      env,
+      session: {
+        id: session.id,
+        candidate_id: session.candidate_id,
+        screener_mode: session.screener_mode,
+        assessment_id: session.assessment_id,
+        updated_at: session.updated_at,
+      },
+      scoreReport: report,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[cultureScoringJob] graph decomposition failed:', sessionId, msg);
   }
 }
 

@@ -13,6 +13,7 @@ import { apiError } from '../../middleware/errors';
 import { parseResume, persistParsedCV, extractTextFromPDF } from '../../lib/cvParser';
 import { runCandidateIngestion } from '../../lib/candidateDiscovery/orchestrate';
 import { sendNotificationEmail } from '../../lib/email';
+import { runDealbreakerGates } from '../../lib/match/dealbreakerGate';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -454,6 +455,29 @@ candidateOps.get('/:candidateId', async (c) => {
         )
       : null;
 
+  // Run dealbreaker gate against the pipeline's role context (if any)
+  let dealbreakerResult: {
+    autoFail: boolean;
+    failures: Array<{ dealbreakerId: string; label: string; reason: string }>;
+    warnings: Array<{ dealbreakerId: string; label: string; reason: string }>;
+  } | null = null;
+  try {
+    const roleCtxRow = await db
+      .prepare(`SELECT id FROM role_contexts WHERE pipeline_id = ?1 LIMIT 1`)
+      .bind(candidate.pipeline_id)
+      .first<{ id: string }>();
+
+    if (roleCtxRow) {
+      dealbreakerResult = await runDealbreakerGates(
+        db,
+        roleCtxRow.id,
+        candidateId,
+      );
+    }
+  } catch (err) {
+    console.error('[candidates] Dealbreaker gate failed:', err);
+  }
+
   // Fetch phone calls for this candidate (table may not exist if migration 0008 not applied)
   let phoneCallsResults: Array<{
     id: string; candidate_id: string; pipeline_id: string;
@@ -517,6 +541,9 @@ candidateOps.get('/:candidateId', async (c) => {
       score: avgScore,
       createdAt: candidate.created_at,
       updatedAt: candidate.updated_at,
+      dealbreakerAutoFail: dealbreakerResult?.autoFail ?? false,
+      dealbreakerFails: dealbreakerResult?.failures ?? [],
+      dealbreakerWarnings: dealbreakerResult?.warnings ?? [],
     },
     stages: stagesWithChallenges,
     phoneCalls,
@@ -548,8 +575,8 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'Request must be multipart/form-data.');
   }
 
-  const fileEntry = formData.get('file');
-  if (!(fileEntry instanceof File)) {
+  const fileEntry = formData.get('file') as unknown as File | null;
+  if (!fileEntry) {
     return apiError(c, 'VALIDATION_ERROR', 'No file field found in the request.');
   }
 
@@ -559,6 +586,14 @@ candidateOps.post('/:candidateId/resume', async (c) => {
 
   if (fileEntry.size > MAX_RESUME_BYTES) {
     return apiError(c, 'VALIDATION_ERROR', 'File exceeds the 10 MB limit.');
+  }
+
+  // Validate optional GitHub handle
+  const githubHandle = formData.get('githubHandle') as string | null;
+  if (githubHandle !== null && githubHandle !== '') {
+    if (!/^[a-zA-Z0-9\-]{1,39}$/.test(githubHandle)) {
+      return apiError(c, 'VALIDATION_ERROR', 'Invalid GitHub handle. Must be 1-39 characters, alphanumeric or hyphens only.');
+    }
   }
 
   // Sanitise the filename — strip path traversal attempts, keep extension only
@@ -590,6 +625,37 @@ candidateOps.post('/:candidateId/resume', async (c) => {
 
   if (parsed) {
     await persistParsedCV(db, candidateId, parsed);
+  }
+
+  // Persist GitHub handle and queue enrichment job
+  if (githubHandle) {
+    const githubUrl = `https://github.com/${githubHandle}`;
+    try {
+      await db
+        .prepare(
+          `INSERT INTO candidate_ingestion (candidate_id, github_url, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?3)
+           ON CONFLICT(candidate_id) DO UPDATE SET
+             github_url = excluded.github_url,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(candidateId, githubUrl, now)
+        .run();
+
+      await db
+        .prepare(
+          `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
+           VALUES (?1, ?2, 'github', ?3, 'PENDING', unixepoch())`,
+        )
+        .bind(crypto.randomUUID(), candidateId, githubUrl)
+        .run();
+
+      console.log(`[intake] queued github enrichment for candidate ${candidateId}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[candidates/resume] failed to queue github enrichment for ${candidateId}:`, msg);
+      // Non-fatal: don't fail the upload if enrichment queuing fails
+    }
   }
 
   // Trigger background ingestion — never fail the upload if ingestion fails

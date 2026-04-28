@@ -1,0 +1,155 @@
+{
+  "fixture_id": "culture-005",
+  "provider": "devstral",
+  "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I saw it while debugging something else. I told the data team and they fixed it. I didn't get involved beyond flagging it."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate provides a real example but their personal contribution is peripheral and reactive. They noticed a problem but did not take any further action beyond flagging it to the data team. They did not step in voluntarily or above their job scope, nor did they describe any personal actions in first person beyond noticing the issue.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I told the data team and they fixed it. I didn't get involved beyond flagging it.",
+          "We discussed it but he decided to go with his approach. I implemented it as he asked."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate provides real examples of working with others but does not describe their specific contribution to the joint work. They mention telling the data team about the issue and implementing a decision made by their lead, but do not show awareness of differing perspectives or friction points. The candidate's role in the collaboration is unclear and passive.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I've been reading more about distributed systems but I haven't had a specific moment where I was dramatically wrong. I try to stay curious."
+        ],
+        "confidence": 0.95,
+        "reasoning": "The candidate acknowledges curiosity but does not describe a specific learning event or a concrete skill gap. The example provided is generic and does not demonstrate active learning or behavioral change.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "My lead wanted to handle rate limiting in each service individually. I thought a shared middleware layer was cleaner. We discussed it but he decided to go with his approach. I implemented it as he asked."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate describes a real conflict but their handling was passive. They expressed their opinion once and dropped it, deferring to the lead's decision without further engagement or escalation. The resolution is described from their perspective only, with no evidence of genuinely engaging the other view or considering the lead's rationale.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I think I'm pretty good at most things.",
+          "I sometimes go deep on problems longer than necessary, but I've gotten better at timeboxing."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate names a weakness but the description is abstract and lacks behavioral evidence. The weakness is acknowledged intellectually but not demonstrated through a real example of it causing a problem. The candidate does not provide a concrete example of the weakness manifesting in their work or any specific coping strategy or compensation tactic.",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I saw it while debugging something else. I told the data team and they fixed it. I didn't get involved beyond flagging it.",
+          "I implemented it as he asked."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate demonstrates a willingness to work within established processes and seek alignment when necessary, as seen in their approach to the data pipeline issue and technical disagreement. They also show adaptability and self-awareness, indicating they can function well in both structured and autonomous environments. Position 2 is not warranted because they show initiative beyond their defined scope (e.g., identifying the data pipeline issue). Position 4 is not warranted because they do not express a strong preference for end-to-end ownership or frustration with micromanagement.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I saw it while debugging something else. I told the data team and they fixed it. I didn't get involved beyond flagging it.",
+          "I moved on to my own tasks. They handled it from there. It was their system after all.",
+          "I implemented it as he asked."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate consistently describes a cautious approach to decision-making, preferring to flag issues rather than taking ownership of fixing them. They also mention implementing decisions as asked, even when they disagreed. This indicates a preference for minimizing downside risk and avoiding ambiguity. Position 1 is not warranted because they do take action on incomplete information (e.g., flagging the data pipeline issue). Position 3 is not warranted because there is no evidence of contextual calibration of risk tolerance — they seem uniformly cautious.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I moved on to my own tasks. They handled it from there. It was their system after all.",
+          "I sometimes go deep on problems longer than necessary, but I've gotten better at timeboxing."
+        ],
+        "confidence": 0.85,
+        "reasoning": "Candidate describes a preference for focused work and clear priorities. They mention moving on to their own tasks after flagging an issue, indicating a preference for sustained focus on one problem at a time. They also mention timeboxing to avoid going too deep, suggesting they can handle context switching but need transition time. Position 1 is not warranted because they do mention timeboxing and handling multiple tasks. Position 3 is not warranted because they do not describe comfort with rapid iteration cycles or high pace as energizing.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I saw it while debugging something else. I told the data team and they fixed it. I didn't get involved beyond flagging it.",
+          "I moved on to my own tasks. They handled it from there. It was their system after all.",
+          "We discussed it but he decided to go with his approach. I implemented it as he asked."
+        ],
+        "confidence": 0.85,
+        "reasoning": "Candidate consistently describes seeking alignment on direction, then executing independently. They flag issues but do not get involved beyond that. They discuss but defer to the lead's decision. Position 1 is not warranted because they do seek alignment and discuss. Position 3 is not warranted because they do not adapt to joint work based on problem complexity or team preference — they default to individual execution.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I told the data team and they fixed it. I didn't get involved beyond flagging it.",
+          "I implemented it as he asked."
+        ],
+        "confidence": 0.8,
+        "reasoning": "The candidate demonstrates a preference for structured feedback and relationship-building before engaging in direct feedback. They flagged issues but did not seek further involvement or feedback, indicating a comfort with formal, structured settings. They implemented decisions as directed without seeking further input, suggesting a preference for receiving feedback from trusted sources in private settings. Position 1 is not warranted because they did engage in discussions and implemented decisions as directed. Position 3 is not warranted because they did not seek out feedback or engage in regular feedback loops.",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Candidate demonstrates initiative but prefers structured, cautious approach.",
+      "narrative": "The candidate demonstrates a clear ability to identify problems and communicate them effectively. They noticed a significant issue with the data pipeline and took the initiative to flag it to the appropriate team, showing a proactive approach to problem-solving. Additionally, the candidate exhibits a strong sense of responsibility, as seen in their willingness to engage in technical discussions and provide input on decisions, even when they ultimately defer to their lead's judgment. This indicates a level of self-awareness and adaptability, as they recognize the importance of alignment and collaboration within a team setting.\n\nThe transcript shows limited evidence of the candidate taking ownership beyond initial problem identification. While they flagged issues and provided input, they did not actively engage in resolving them or seeking further involvement. This suggests a preference for structured, cautious decision-making and a reluctance to step into roles or responsibilities that are not explicitly theirs. Additionally, the candidate's examples of learning and conflict handling are somewhat abstract, indicating areas for development in active learning and more assertive conflict resolution. The candidate acknowledges a tendency to go deep on problems but does not provide concrete examples of how this has impacted their work or specific strategies they use to mitigate it.\n\nThe candidate's working-style profile aligns well with the organization's benchmark on autonomy, indicating they can function effectively in both structured and autonomous environments. However, there is meaningful divergence on risk tolerance, work pace, collaboration style, and feedback orientation. The candidate's cautious approach to decision-making and preference for minimizing downside risk may complement teams that value thoroughness and deliberation. Their preference for focused work and clear priorities suggests they may thrive in environments that allow for sustained attention to single problems, but may need support in handling rapid iteration cycles. The candidate's collaboration style, which involves seeking alignment and then executing independently, could add value to teams that benefit from structured, aligned efforts but may require adaptation in more collaborative or dynamic settings. Finally, the candidate's preference for structured feedback and relationship-building before engaging in direct feedback could enhance teams that value formal, structured communication but may need to develop more agile feedback practices in faster-paced environments.",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:55:51.642Z"
+  },
+  "meta": {
+    "wall_clock_ms": 16074,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

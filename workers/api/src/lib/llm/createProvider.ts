@@ -22,10 +22,11 @@
 import { GoogleAIProvider } from './googleAIProvider';
 import { CloudflareAIProvider } from './cloudflareAIProvider';
 import { VertexAIProvider } from './vertexAIProvider';
+import { KimiProvider } from './kimiProvider';
 import type { ServiceAccountKey } from './vertexAIProvider';
 import type { LLMProvider } from './types';
 
-export type ProviderName = 'google-ai' | 'cloudflare-ai' | 'vertex-ai';
+export type ProviderName = 'google-ai' | 'cloudflare-ai' | 'vertex-ai' | 'kimi';
 
 export interface ProviderEnv {
   GOOGLE_AI_API_KEY?: string;
@@ -36,9 +37,13 @@ export interface ProviderEnv {
   VERTEX_AI_REGION?: string;
   VERTEX_AI_MODEL?: string;
   ROLE_AGENT_PROVIDER?: string;
+  ROLE_AGENT_SYNTHESIS_PROVIDER?: string;
   CULTURE_AGENT_PROVIDER?: string;
   COPILOT_AGENT_PROVIDER?: string;
   CANDIDATE_AGENT_PROVIDER?: string;
+  KIMI_API_KEY?: string;
+  KIMI_BASE_URL?: string;
+  KIMI_MODEL?: string;
   AI?: Ai;
   /** When 'true', culture agent returns null provider and uses deterministic mock path. */
   MOCK_AI?: string;
@@ -67,7 +72,77 @@ function parseServiceAccount(env: ProviderEnv): ServiceAccountKey | null {
 
 export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
   const providerName = (env.ROLE_AGENT_PROVIDER ?? 'cloudflare-ai') as ProviderName;
+  return _createProviderByName(env, providerName);
+}
 
+/**
+ * Create a fallback provider that uses a DIFFERENT backend than the primary.
+ * Switching models gives us resilience when one provider is down or rate-limited.
+ *
+ * Preference order:
+ *   - Primary = vertex-ai  → fallback = cloudflare-ai (edge-native, no external network)
+ *   - Primary = cloudflare-ai or google-ai → fallback = vertex-ai (if SA key configured)
+ *   - Otherwise → null (no alternate provider available)
+ */
+export function createRoleAgentFallbackProvider(env: ProviderEnv): LLMProvider | null {
+  const primaryName = (env.ROLE_AGENT_PROVIDER ?? 'cloudflare-ai') as ProviderName;
+  return _createFallbackForPrimary(env, primaryName);
+}
+
+/**
+ * Create a synthesis-specific provider for the Role Agent.
+ * Falls back to ROLE_AGENT_PROVIDER when ROLE_AGENT_SYNTHESIS_PROVIDER is unset.
+ */
+export function createRoleAgentSynthesisProvider(env: ProviderEnv): LLMProvider | null {
+  const synthesisProviderName = env.ROLE_AGENT_SYNTHESIS_PROVIDER;
+  if (synthesisProviderName) {
+    return _createProviderByName(env, synthesisProviderName as ProviderName);
+  }
+  // No override — reuse the regular role agent provider
+  return createRoleAgentProvider(env);
+}
+
+/**
+ * Fallback for synthesis provider.
+ * When a synthesis-specific provider is configured, fall back to the regular
+ * role agent fallback. Otherwise reuse the regular fallback.
+ */
+export function createRoleAgentSynthesisFallbackProvider(env: ProviderEnv): LLMProvider | null {
+  const synthesisProviderName = env.ROLE_AGENT_SYNTHESIS_PROVIDER;
+  if (synthesisProviderName) {
+    return _createFallbackForPrimary(env, synthesisProviderName as ProviderName);
+  }
+  return createRoleAgentFallbackProvider(env);
+}
+
+/** Shared fallback logic — returns a DIFFERENT backend than the primary. */
+function _createFallbackForPrimary(env: ProviderEnv, primaryName: ProviderName): LLMProvider | null {
+  if (primaryName === 'kimi') {
+    // Fallback to Vertex if credentials exist, else Cloudflare Workers AI
+    const sa = parseServiceAccount(env);
+    if (sa && sa.project_id) {
+      return new VertexAIProvider(sa, sa.project_id, env.VERTEX_AI_REGION ?? 'us-central1', env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it');
+    }
+    if (env.AI) return new CloudflareAIProvider(env.AI);
+    return null;
+  }
+
+  if (primaryName === 'vertex-ai') {
+    // Fallback to Cloudflare Workers AI (edge binding, always available in prod)
+    if (env.AI) return new CloudflareAIProvider(env.AI);
+    return null;
+  }
+
+  // Primary is cloudflare-ai or google-ai — try Vertex if credentials exist
+  const sa = parseServiceAccount(env);
+  if (sa && sa.project_id) {
+    return new VertexAIProvider(sa, sa.project_id, env.VERTEX_AI_REGION ?? 'us-central1', env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it');
+  }
+
+  return null;
+}
+
+function _createProviderByName(env: ProviderEnv, providerName: ProviderName): LLMProvider | null {
   if (providerName === 'cloudflare-ai') {
     if (env.AI) return new CloudflareAIProvider(env.AI);
     return null;
@@ -83,6 +158,12 @@ export function createRoleAgentProvider(env: ProviderEnv): LLMProvider | null {
     const sa = parseServiceAccount(env);
     if (!sa || !sa.project_id) return null;
     return new VertexAIProvider(sa, sa.project_id, env.VERTEX_AI_REGION ?? 'us-central1', env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it');
+  }
+
+  if (providerName === 'kimi') {
+    const key = env.KIMI_API_KEY ?? '';
+    if (!key) return null;
+    return new KimiProvider(key, env.KIMI_MODEL ?? 'kimi-k2-6', env.KIMI_BASE_URL);
   }
 
   return null;

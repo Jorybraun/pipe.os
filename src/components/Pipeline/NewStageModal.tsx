@@ -225,7 +225,7 @@ export function NewStageModal({
                   padding: 4,
                   display: 'flex',
                 }}
-              >
+               aria-label="Back">
                 <ArrowLeft size={14} />
               </button>
             )}
@@ -251,7 +251,7 @@ export function NewStageModal({
               padding: 4,
               display: 'flex',
             }}
-          >
+           aria-label="Close">
             <X size={16} />
           </button>
         </div>

@@ -1,0 +1,169 @@
+{
+  "id": "seed-029-senior-schema-inference",
+  "description": "Senior reviewer finds inference bug and mentors implementer. Strong technical and communication performance.",
+  "tags": [
+    "typescript",
+    "types",
+    "high-score-senior"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add schema inference engine",
+    "description": "Infers Zod schemas from TypeScript interfaces at compile time.",
+    "instructions": "Review for type system correctness and performance.",
+    "diff": "diff --git a/src/lib/inferSchema.ts b/src/lib/inferSchema.ts\n@@ -0,0 +1,48 @@\n+import ts from 'typescript';\n+import { z } from 'zod';\n+\n+export function inferSchema(sourceFile: ts.SourceFile, typeName: string) {\n+  const checker = /* get checker */;\n+  const type = checker.getTypeAtLocation(\n+    sourceFile.statements.find(\n+      (s): s is ts.TypeAliasDeclaration =>\n+        ts.isTypeAliasDeclaration(s) && s.name.text === typeName\n+    )!\n+  );\n+\n+  return typeToZod(type, checker);\n+}\n+\n+function typeToZod(type: ts.Type, checker: ts.TypeChecker): z.ZodTypeAny {\n+  if (type.flags & ts.TypeFlags.String) return z.string();\n+  if (type.flags & ts.TypeFlags.Number) return z.number();\n+  if (type.flags & ts.TypeFlags.Boolean) return z.boolean();\n+\n+  const properties = checker.getPropertiesOfType(type);\n+  if (properties.length > 0) {\n+    const shape: Record<string, z.ZodTypeAny> = {};\n+    for (const prop of properties) {\n+      shape[prop.name] = typeToZod(\n+        checker.getTypeOfSymbolAtLocation(prop, prop.valueDeclaration!),\n+        checker\n+      );\n+    }\n+    return z.object(shape);\n+  }\n+\n+  return z.unknown();\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/inferSchema.ts",
+      "line": 4,
+      "description": "Type checker is a comment placeholder — actual implementation likely creates a new Program per call, which is extremely expensive. Must reuse the existing TypeScript program/checker.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/inferSchema.ts",
+      "line": 14,
+      "description": "No handling for arrays, unions, enums, tuples, or intersections — these all fall through to z.unknown(), producing incorrect schemas for common types.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/inferSchema.ts",
+      "line": 7,
+      "description": "Non-null assertion (!) on find result — if typeName does not exist in the file, this throws at runtime. Should validate and throw a descriptive error.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/inferSchema.ts",
+      "line": 18,
+      "description": "No memoization — recursive types will cause infinite recursion and stack overflow. Should cache visited types.",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2901,
+            "file": "src/lib/inferSchema.ts",
+            "line": 4,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "Creating a new TypeScript program per call is extremely expensive.",
+            "why": "TypeScript type checking is the dominant cost. Reuse the existing checker from the transformer context.",
+            "suggestion": "Pass the checker as a parameter or store it in module state.",
+            "positive": false
+          },
+          {
+            "id": 2902,
+            "file": "src/lib/inferSchema.ts",
+            "line": 14,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Arrays, unions, enums, and tuples all fall through to z.unknown().",
+            "why": "These are common types. The schema inference will silently produce wrong validators.",
+            "suggestion": "Add cases for ts.TypeFlags.Array, type.isUnion(), and type.isEnumLiteral().",
+            "positive": false
+          },
+          {
+            "id": 2903,
+            "file": "src/lib/inferSchema.ts",
+            "line": 7,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Non-null assertion on find() result will throw a confusing error if typeName is missing.",
+            "why": "Better to throw a descriptive error like `Type ${typeName} not found in file`.",
+            "positive": false
+          },
+          {
+            "id": 2904,
+            "file": "src/lib/inferSchema.ts",
+            "line": 18,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Recursive types will cause infinite recursion here.",
+            "why": "interface Node { next: Node } will recurse forever. Add a visited Set keyed by type ID.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Performance and coverage are blocking. Error handling and recursion are recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2901,
+            "move": "change",
+            "content": "Refactored to accept checker parameter.",
+            "updated_code": "export function inferSchema(checker: ts.TypeChecker, sourceFile: ts.SourceFile, typeName: string) {"
+          },
+          {
+            "to_comment_id": 2902,
+            "move": "change",
+            "content": "Added array, union, and enum handling.",
+            "updated_code": "if (type.symbol?.name === \"Array\") return z.array(typeToZod((type as ts.TypeReference).typeArguments![0], checker)); if (type.isUnion()) return z.union(type.types.map(t => typeToZod(t, checker))); ..."
+          },
+          {
+            "to_comment_id": 2903,
+            "move": "change",
+            "content": "Added descriptive error.",
+            "updated_code": "const decl = sourceFile.statements.find(...); if (!decl) throw new Error(`Type ${typeName} not found in ${sourceFile.fileName}`);"
+          },
+          {
+            "to_comment_id": 2904,
+            "move": "change",
+            "content": "Added visited set.",
+            "updated_code": "const visited = new Set<number>(); function typeToZod(type: ts.Type, checker: ts.TypeChecker): z.ZodTypeAny { if (visited.has(type.id)) return z.lazy(() => typeToZod(type, checker)); visited.add(type.id); ... }"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "All four fixes verified. Checker reuse, expanded types, error messages, and recursion guard are all correct.",
+      "submittedAt": "2026-04-28T03:47:05.966Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Found 4 of 4 bugs. Perfect coverage. Level 4-5."
+    },
+    "prioritization": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Performance and coverage as blocking. Error handling and recursion as suggestions. Excellent triage. Level 4-5."
+    },
+    "revision_evaluation": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Verified all four fixes. Recursion guard with lazy() is the correct pattern. Level 4-5."
+    },
+    "reasoning_quality": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Every comment explains the failure mechanism: type checking cost, silent wrong validators, confusing error, stack overflow. Level 4-5."
+    },
+    "question_formation": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Comments frame design choices as probing questions (e.g. \"Should we use unique symbol instead of string intersection?\") that elicit implementer intent and surface tradeoffs. Level 4-5."
+    },
+    "ai_direction": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Each suggestion includes a concrete implementation path. Level 4-5."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

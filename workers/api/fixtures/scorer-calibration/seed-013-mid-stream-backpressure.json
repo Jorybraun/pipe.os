@@ -1,0 +1,136 @@
+{
+  "id": "seed-013-mid-stream-backpressure",
+  "description": "Mid reviewer finds one stream bug but misses backpressure and memory leak. Mixed technical depth.",
+  "tags": [
+    "typescript",
+    "node",
+    "streams",
+    "low-mid-score"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add bulk CSV export endpoint",
+    "description": "GET /api/export/csv streams candidate data as CSV.",
+    "instructions": "Review for performance and memory safety.",
+    "diff": "diff --git a/src/routes/export/csv.ts b/src/routes/export/csv.ts\n@@ -0,0 +1,40 @@\n+import { Hono } from 'hono';\n+import { stringify } from 'csv-stringify/sync';\n+\n+export const csvRoutes = new Hono();\n+\n+csvRoutes.get('/csv', async (c) => {\n+  const candidates = await c.env.DB\n+    .prepare('SELECT * FROM candidates')\n+    .all();\n+\n+  const rows = candidates.results.map((c) => [c.id, c.name, c.email]);\n+  const csv = stringify(rows);\n+\n+  return c.body(csv, 200, {\n+    'Content-Type': 'text/csv',\n+    'Content-Disposition': 'attachment; filename=\"candidates.csv\"',\n+  });\n+});\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/export/csv.ts",
+      "line": 7,
+      "description": "SELECT * loads entire candidates table into memory. For 100k candidates this OOMs. Should stream rows or paginate.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/export/csv.ts",
+      "line": 8,
+      "description": "No backpressure handling — c.body may buffer the entire CSV in memory before sending. Should use ReadableStream.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/export/csv.ts",
+      "line": 6,
+      "description": "No auth check — any unauthenticated user can export all candidate data. GDPR breach risk.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/export/csv.ts",
+      "line": 11,
+      "description": "Missing CSV header row — exported file has no column names.",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1301,
+            "file": "src/routes/export/csv.ts",
+            "line": 7,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "Loading entire table into memory will OOM on large datasets.",
+            "why": "Need pagination or streaming for production data.",
+            "positive": false
+          },
+          {
+            "id": 1302,
+            "file": "src/routes/export/csv.ts",
+            "line": 11,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "CSV is missing a header row.",
+            "why": "Users need column names.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Memory issue is blocking. Header row should be added.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1301,
+            "move": "change",
+            "content": "Added pagination with 1000-row pages.",
+            "updated_code": "for (let offset = 0; ; offset += 1000) { const page = await c.env.DB.prepare(\"SELECT * FROM candidates LIMIT 1000 OFFSET ?1\").bind(offset).all(); ... }"
+          },
+          {
+            "to_comment_id": 1302,
+            "move": "change",
+            "content": "Added header row.",
+            "updated_code": "const rows = [[\"id\", \"name\", \"email\"], ...candidates.results.map(...)];"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Pagination and header look good.",
+      "submittedAt": "2026-04-28T03:47:05.961Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 2 of 4 bugs (memory, header). Missed backpressure and auth. Level 2-3."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Memory flagged as blocking. Header as suggestion. Good triage. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted pagination fix without verifying it handles large datasets. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete performance rationale (OOM). Good technical framing. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions but implied concern about scale. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested pagination and headers — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

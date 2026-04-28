@@ -25,8 +25,7 @@ import { decomposeRcdIntoNodes, persistRoleNodes } from '../../lib/roleAgent/dec
 import { deriveJobDescriptionFromRcd } from '../../lib/roleAgent/deriveJobDescription';
 import { calibrateRcd } from '../../lib/roleAgent/calibrateRcd';
 import { buildConversationContext, buildPhaseDirective } from '../../lib/roleAgentPrompts';
-import { createRoleAgentProvider } from '../../lib/llm/createProvider';
-import { VertexAIProvider } from '../../lib/llm/vertexAIProvider';
+import { createRoleAgentProvider, createRoleAgentFallbackProvider, createRoleAgentSynthesisProvider, createRoleAgentSynthesisFallbackProvider } from '../../lib/llm/createProvider';
 import { recordAiUsage } from '../../lib/aiUsage';
 import { parseJobDescription } from '../../lib/jdParser';
 import { sendNotificationEmail } from '../../lib/email';
@@ -216,17 +215,24 @@ function logRoleAgentUsage(
   refs: { roleContextId: string; participantId: string },
   opts: { success: boolean; errorMessage?: string } = { success: true },
 ): void {
-  if (!(provider instanceof VertexAIProvider)) return;
-  const usage = provider.getLastUsage();
-  if (!usage && opts.success) return; // nothing to log
+  if (!provider) return;
+  // Duck-type: log usage for any provider that exposes getLastUsage() and getModelKey()
+  const lastUsage = typeof (provider as unknown as Record<string, unknown>).getLastUsage === 'function'
+    ? (provider as unknown as { getLastUsage(): import('../../lib/llm/types').LLMUsage | null }).getLastUsage()
+    : null;
+  if (!lastUsage && opts.success) return; // nothing to log
+
+  const modelKey = typeof (provider as unknown as Record<string, unknown>).getModelKey === 'function'
+    ? (provider as unknown as { getModelKey(): string }).getModelKey()
+    : provider.name;
 
   recordAiUsage(c.env.DB, c.executionCtx, {
     feature: 'role_discovery',
     refId: refs.roleContextId,
     subRefId: refs.participantId,
-    provider: 'vertex-ai',
-    model: provider.getModelKey(),
-    usage: usage ?? {},
+    provider: provider.name,
+    model: modelKey,
+    usage: lastUsage ?? {},
     success: opts.success,
     ...(opts.errorMessage ? { errorMessage: opts.errorMessage } : {}),
   });
@@ -322,8 +328,8 @@ roleContexts.post('/parse-jd', async (c) => {
   // Multipart: file upload
   if (contentType.includes('multipart/form-data')) {
     const formData = await c.req.formData();
-    const file = formData.get('file');
-    if (!file || !(file instanceof File)) {
+    const file = formData.get('file') as unknown as File | null;
+    if (!file) {
       return apiError(c, 'VALIDATION_ERROR', 'No file provided.');
     }
 
@@ -373,8 +379,8 @@ roleContexts.post('/transcribe', async (c) => {
   }
 
   const formData = await c.req.formData();
-  const file = formData.get('audio');
-  if (!file || !(file instanceof File)) {
+  const file = formData.get('audio') as unknown as File | null;
+  if (!file) {
     return apiError(c, 'VALIDATION_ERROR', 'No audio file provided.');
   }
 
@@ -638,6 +644,9 @@ roleContexts.post('/:id/respond', async (c) => {
   const baseline = parseJsonColumn<Record<string, unknown>>(row.baseline, {});
   const sharedKnowledgeState = parseJsonColumn<Record<string, Record<string, unknown>>>(row.knowledge_state, {});
   const provider = createRoleAgentProvider(c.env);
+  const fallbackProvider = createRoleAgentFallbackProvider(c.env);
+  const synthesisProvider = createRoleAgentSynthesisProvider(c.env);
+  const synthesisFallbackProvider = createRoleAgentSynthesisFallbackProvider(c.env);
 
   // ── Streaming path: SSE for real-time token delivery ──
   // Must be checked BEFORE the calibration block so that calibration answers
@@ -649,14 +658,16 @@ roleContexts.post('/:id/respond', async (c) => {
   const acceptHeader = c.req.header('Accept');
   console.log('[roleContexts] Accept header:', acceptHeader);
   if (acceptHeader === 'text/event-stream') {
-    return streamSSE(c, async (stream) => {
-      // ── Calibration in streaming path ──
-      if (questionId === 'q-calibration') {
-        const participantRole = resolveParticipantRole(answer);
-        let calAgentResponse;
-        try {
-          calAgentResponse = await callRoleAgent({
+    const response = streamSSE(c, async (stream) => {
+      try {
+        // ── Calibration in streaming path ──
+        if (questionId === 'q-calibration') {
+          const participantRole = resolveParticipantRole(answer);
+          const calAgentResponse = await callRoleAgent({
             provider,
+            fallbackProvider,
+            synthesisProvider,
+            synthesisFallbackProvider,
             baseline,
             exchanges: [],
             knowledgeState: sharedKnowledgeState,
@@ -664,199 +675,194 @@ roleContexts.post('/:id/respond', async (c) => {
             questionBudget: participant.question_budget,
             participantRole,
           });
-        } catch (err) {
-          logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
-          throw err;
-        }
-        logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
-        if (calAgentResponse.type !== 'question') {
-          await stream.writeSSE({ event: 'error', data: 'Agent did not return a question for the opening turn.' });
+          logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
+          if (calAgentResponse.type !== 'question') {
+            await stream.writeSSE({ event: 'error', data: 'Agent did not return a question for the opening turn.' });
+            return;
+          }
+          const calExchange: RoleExchange = {
+            questionId: calAgentResponse.question.id,
+            acknowledgment: calAgentResponse.acknowledgment,
+            question: calAgentResponse.question.text,
+            input: calAgentResponse.question.input,
+          };
+          exchanges.push(calExchange);
+          await c.env.DB.prepare(
+            `UPDATE role_context_participants
+             SET participant_role = ?1, status = 'INTERVIEWING', exchanges = ?2, updated_at = ?3
+             WHERE id = ?4`,
+          ).bind(participantRole, JSON.stringify(exchanges), now(), participant.id).run();
+          await stream.writeSSE({
+            event: 'done',
+            data: JSON.stringify({
+              participantId: participant.id,
+              participantRole,
+              acknowledgment: calAgentResponse.acknowledgment,
+              question: calAgentResponse.question,
+              progress: { asked: 0, budget: participant.question_budget, domains: calAgentResponse.domainCoverage },
+              status: 'INTERVIEWING' as const,
+              toolsUsed: calAgentResponse.toolsUsed,
+            }),
+          });
           return;
         }
-        const calExchange: RoleExchange = {
-          questionId: calAgentResponse.question.id,
-          acknowledgment: calAgentResponse.acknowledgment,
-          question: calAgentResponse.question.text,
-          input: calAgentResponse.question.input,
+
+        // ── Normal question in streaming path ──
+        const questionsAsked = participant.questions_asked + 1;
+        const budgetExhausted = questionsAsked >= participant.question_budget;
+        const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
+        const previousCoverage = (sharedKnowledgeState as Record<string, unknown>)['_coverage'] as Record<string, string> | undefined;
+        const conversationContext = buildConversationContext(sharedKnowledgeState as Record<string, unknown>, agentExchanges);
+        const phaseDirective = buildPhaseDirective(conversationContext, questionsAsked, participant.question_budget);
+        (sharedKnowledgeState as Record<string, unknown>)['_phase'] = phaseDirective;
+        const agentInput = {
+          provider,
+          fallbackProvider,
+          synthesisProvider,
+          synthesisFallbackProvider,
+          baseline,
+          exchanges: agentExchanges,
+          knowledgeState: sharedKnowledgeState,
+          questionsAsked,
+          questionBudget: participant.question_budget,
+          phaseDirective,
+          conversationContext,
+          ...(previousCoverage ? { domainCoverage: previousCoverage } : {}),
+          ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
         };
-        exchanges.push(calExchange);
-        await c.env.DB.prepare(
-          `UPDATE role_context_participants
-           SET participant_role = ?1, status = 'INTERVIEWING', exchanges = ?2, updated_at = ?3
-           WHERE id = ?4`,
-        ).bind(participantRole, JSON.stringify(exchanges), now(), participant.id).run();
-        await stream.writeSSE({
-          event: 'done',
-          data: JSON.stringify({
-            participantId: participant.id,
-            participantRole,
-            acknowledgment: calAgentResponse.acknowledgment,
-            question: calAgentResponse.question,
-            progress: { asked: 0, budget: participant.question_budget, domains: calAgentResponse.domainCoverage },
-            status: 'INTERVIEWING' as const,
-            toolsUsed: calAgentResponse.toolsUsed,
-          }),
-        });
-        return;
-      }
 
-      // ── Normal question in streaming path ──
-      const questionsAsked = participant.questions_asked + 1;
-      const budgetExhausted = questionsAsked >= participant.question_budget;
-      const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
-      const previousCoverage = (sharedKnowledgeState as Record<string, unknown>)['_coverage'] as Record<string, string> | undefined;
-      const conversationContext = buildConversationContext(sharedKnowledgeState as Record<string, unknown>, agentExchanges);
-      const phaseDirective = buildPhaseDirective(conversationContext, questionsAsked, participant.question_budget);
-      (sharedKnowledgeState as Record<string, unknown>)['_phase'] = phaseDirective;
-      const agentInput = {
-        provider,
-        baseline,
-        exchanges: agentExchanges,
-        knowledgeState: sharedKnowledgeState,
-        questionsAsked,
-        questionBudget: participant.question_budget,
-        phaseDirective,
-        conversationContext,
-        ...(previousCoverage ? { domainCoverage: previousCoverage } : {}),
-        ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
-      };
+        const agentResponse = await callRoleAgent(agentInput);
+        const activeProvider = budgetExhausted ? (synthesisProvider ?? provider) : provider;
+        logRoleAgentUsage(c, activeProvider, { roleContextId: id, participantId: participant.id });
 
-      let agentResponse: RoleAgentResponse | null = null;
+        const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
+        (updatedKnowledgeState as Record<string, unknown>)['_coverage'] = agentResponse.domainCoverage;
 
-      try {
-        agentResponse = await callRoleAgent(agentInput);
-      } catch (err) {
-        logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
-        throw err;
-      }
-      logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
+        if (agentResponse.type === 'synthesis' || budgetExhausted) {
+          // Path B: RCD synthesis replaces inline agent synthesis
+          const rcdResult = await runRcdSynthesis(c.env, id, baseline);
 
-      if (!agentResponse) {
-        await stream.writeSSE({ event: 'error', data: 'No response from agent' });
-        return;
-      }
+          const synthesis = rcdResult?.synthesis ?? (agentResponse.type === 'synthesis' ? agentResponse.synthesis : '');
+          const persona = rcdResult?.persona ?? (agentResponse.type === 'synthesis' ? agentResponse.persona : null);
+          const jobDescription = rcdResult?.jobDescription ?? (agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '');
+          const rcd = rcdResult?.rcd ?? null;
 
-      const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
-      (updatedKnowledgeState as Record<string, unknown>)['_coverage'] = agentResponse.domainCoverage;
+          await c.env.DB.batch([
+            c.env.DB.prepare(
+              `UPDATE role_context_participants
+               SET status = 'COMPLETE', exchanges = ?1, questions_asked = ?2, updated_at = ?3
+               WHERE id = ?4`,
+            ).bind(JSON.stringify(exchanges), questionsAsked, now(), participant.id),
+            c.env.DB.prepare(
+              `UPDATE role_contexts
+               SET knowledge_state = ?1,
+                   questions_asked = questions_asked + ?2,
+                   persona_json = ?3,
+                   job_description_md = ?4,
+                   rcd_json = ?5,
+                   validation_metadata = ?6,
+                   updated_at = ?7
+               WHERE id = ?8`,
+            ).bind(
+              JSON.stringify(updatedKnowledgeState),
+              questionsAsked,
+              persona ? JSON.stringify(persona) : null,
+              jobDescription || null,
+              rcd ? JSON.stringify(rcd) : null,
+              rcd ? JSON.stringify(rcd.validation_metadata) : null,
+              now(),
+              id,
+            ),
+          ]);
 
-      if (agentResponse.type === 'synthesis' || budgetExhausted) {
-        // Path B: RCD synthesis replaces inline agent synthesis
-        const rcdResult = await runRcdSynthesis(c.env, id, baseline);
-
-        const synthesis = rcdResult?.synthesis ?? (agentResponse.type === 'synthesis' ? agentResponse.synthesis : '');
-        const persona = rcdResult?.persona ?? (agentResponse.type === 'synthesis' ? agentResponse.persona : null);
-        const jobDescription = rcdResult?.jobDescription ?? (agentResponse.type === 'synthesis' ? agentResponse.jobDescription : '');
-        const rcd = rcdResult?.rcd ?? null;
-
-        await c.env.DB.batch([
-          c.env.DB.prepare(
-            `UPDATE role_context_participants
-             SET status = 'COMPLETE', exchanges = ?1, questions_asked = ?2, updated_at = ?3
-             WHERE id = ?4`,
-          ).bind(JSON.stringify(exchanges), questionsAsked, now(), participant.id),
-          c.env.DB.prepare(
-            `UPDATE role_contexts
-             SET knowledge_state = ?1,
-                 questions_asked = questions_asked + ?2,
-                 persona_json = ?3,
-                 job_description_md = ?4,
-                 rcd_json = ?5,
-                 validation_metadata = ?6,
-                 updated_at = ?7
-             WHERE id = ?8`,
-          ).bind(
-            JSON.stringify(updatedKnowledgeState),
-            questionsAsked,
-            persona ? JSON.stringify(persona) : null,
-            jobDescription || null,
-            rcd ? JSON.stringify(rcd) : null,
-            rcd ? JSON.stringify(rcd.validation_metadata) : null,
-            now(),
-            id,
-          ),
-        ]);
-
-        if (rcd) {
-          try {
-            const nodes = decomposeRcdIntoNodes(rcd, id);
-            await persistRoleNodes(nodes, c.env, c.env.DB);
-          } catch (decompErr) {
-            const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);
-            console.error('[roleContexts] RCD decomposition failed:', msg);
+          if (rcd) {
+            try {
+              const nodes = decomposeRcdIntoNodes(rcd, id);
+              await persistRoleNodes(nodes, c.env, c.env.DB);
+            } catch (decompErr) {
+              const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);
+              console.error('[roleContexts] RCD decomposition failed:', msg);
+            }
           }
-        }
 
-        const incomplete = await c.env.DB.prepare(
-          `SELECT COUNT(*) as cnt FROM role_context_participants
-           WHERE role_context_id = ?1 AND status != 'COMPLETE'`,
-        )
-          .bind(id)
-          .first<{ cnt: number }>();
-
-        if (incomplete && incomplete.cnt === 0) {
-          await c.env.DB.prepare(
-            `UPDATE role_contexts SET status = 'COMPLETE', updated_at = ?1 WHERE id = ?2`,
+          const incomplete = await c.env.DB.prepare(
+            `SELECT COUNT(*) as cnt FROM role_context_participants
+             WHERE role_context_id = ?1 AND status != 'COMPLETE'`,
           )
-            .bind(now(), id)
-            .run();
-        }
+            .bind(id)
+            .first<{ cnt: number }>();
 
-        // Best-effort role embedding (fire-and-forget inside SSE)
-        buildAndStoreRoleEmbedding(c.env, id, jobDescription, persona).catch(() => {});
+          if (incomplete && incomplete.cnt === 0) {
+            await c.env.DB.prepare(
+              `UPDATE role_contexts SET status = 'COMPLETE', updated_at = ?1 WHERE id = ?2`,
+            )
+              .bind(now(), id)
+              .run();
+          }
 
-        await stream.writeSSE({
-          event: 'done',
-          data: JSON.stringify({
-            participantId: participant.id,
-            synthesis,
-            persona,
-            jobDescription,
-            rcd: rcd ? JSON.parse(JSON.stringify(rcd)) : null,
-            knowledgeState: updatedKnowledgeState,
-            progress: {
-              asked: questionsAsked,
-              budget: participant.question_budget,
-              domains: agentResponse.domainCoverage,
-            },
-          }),
-        });
-      } else if (agentResponse.type === 'question') {
-        // Question response — append new exchange before persisting
-        const newExchange: RoleExchange = {
-          questionId: agentResponse.question.id,
-          acknowledgment: agentResponse.acknowledgment,
-          question: agentResponse.question.text,
-          input: agentResponse.question.input,
-        };
-        exchanges.push(newExchange);
+          // Best-effort role embedding (fire-and-forget inside SSE)
+          buildAndStoreRoleEmbedding(c.env, id, jobDescription, persona).catch(() => {});
 
-        await c.env.DB.batch([
-          c.env.DB.prepare(
-            `UPDATE role_context_participants
-             SET exchanges = ?1, questions_asked = ?2, updated_at = ?3
-             WHERE id = ?4`,
-          ).bind(JSON.stringify(exchanges), questionsAsked, now(), participant.id),
-          c.env.DB.prepare(
-            `UPDATE role_contexts SET knowledge_state = ?1, updated_at = ?2 WHERE id = ?3`,
-          ).bind(JSON.stringify(updatedKnowledgeState), now(), id),
-        ]);
-
-        await stream.writeSSE({
-          event: 'done',
-          data: JSON.stringify({
-            participantId: participant.id,
+          await stream.writeSSE({
+            event: 'done',
+            data: JSON.stringify({
+              participantId: participant.id,
+              synthesis,
+              persona,
+              jobDescription,
+              rcd: rcd ? JSON.parse(JSON.stringify(rcd)) : null,
+              knowledgeState: updatedKnowledgeState,
+              progress: {
+                asked: questionsAsked,
+                budget: participant.question_budget,
+                domains: agentResponse.domainCoverage,
+              },
+            }),
+          });
+        } else if (agentResponse.type === 'question') {
+          // Question response — append new exchange before persisting
+          const newExchange: RoleExchange = {
+            questionId: agentResponse.question.id,
             acknowledgment: agentResponse.acknowledgment,
-            question: agentResponse.question,
-            knowledgeState: updatedKnowledgeState,
-            progress: {
-              asked: questionsAsked,
-              budget: participant.question_budget,
-              domains: agentResponse.domainCoverage,
-            },
-          }),
-        });
+            question: agentResponse.question.text,
+            input: agentResponse.question.input,
+          };
+          exchanges.push(newExchange);
+
+          await c.env.DB.batch([
+            c.env.DB.prepare(
+              `UPDATE role_context_participants
+               SET exchanges = ?1, questions_asked = ?2, updated_at = ?3
+               WHERE id = ?4`,
+            ).bind(JSON.stringify(exchanges), questionsAsked, now(), participant.id),
+            c.env.DB.prepare(
+              `UPDATE role_contexts SET knowledge_state = ?1, updated_at = ?2 WHERE id = ?3`,
+            ).bind(JSON.stringify(updatedKnowledgeState), now(), id),
+          ]);
+
+          await stream.writeSSE({
+            event: 'done',
+            data: JSON.stringify({
+              participantId: participant.id,
+              acknowledgment: agentResponse.acknowledgment,
+              question: agentResponse.question,
+              knowledgeState: updatedKnowledgeState,
+              progress: {
+                asked: questionsAsked,
+                budget: participant.question_budget,
+                domains: agentResponse.domainCoverage,
+              },
+            }),
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[roleContexts/respond] Streaming error:', msg);
+        await stream.writeSSE({ event: 'error', data: msg });
       }
     });
+    response.headers.set('Content-Type', 'text/event-stream; charset=utf-8');
+    return response;
   }
 
   // ── Non-streaming: calibration ──
@@ -867,6 +873,9 @@ roleContexts.post('/:id/respond', async (c) => {
     try {
       agentResponse = await callRoleAgent({
         provider,
+        fallbackProvider,
+        synthesisProvider,
+        synthesisFallbackProvider,
         baseline,
         exchanges: [],
         knowledgeState: sharedKnowledgeState,
@@ -932,6 +941,9 @@ roleContexts.post('/:id/respond', async (c) => {
 
   const agentInput = {
     provider,
+    fallbackProvider,
+    synthesisProvider,
+    synthesisFallbackProvider,
     baseline,
     exchanges: agentExchanges,
     knowledgeState: sharedKnowledgeState,
@@ -947,10 +959,12 @@ roleContexts.post('/:id/respond', async (c) => {
   try {
     agentResponse = await callRoleAgent(agentInput);
   } catch (err) {
-    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+    const activeProvider = budgetExhausted ? (synthesisProvider ?? provider) : provider;
+    logRoleAgentUsage(c, activeProvider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
     throw err;
   }
-  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
+  const activeProvider = budgetExhausted ? (synthesisProvider ?? provider) : provider;
+  logRoleAgentUsage(c, activeProvider, { roleContextId: id, participantId: participant.id });
 
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
   // Persist domain coverage so the agent receives it on the next turn
@@ -1136,10 +1150,16 @@ roleContexts.post('/:id/complete', async (c) => {
   const agentExchanges = exchanges.filter((ex) => ex.questionId !== 'q-calibration');
 
   const provider = createRoleAgentProvider(c.env);
+  const fallbackProvider = createRoleAgentFallbackProvider(c.env);
+  const synthesisProvider = createRoleAgentSynthesisProvider(c.env);
+  const synthesisFallbackProvider = createRoleAgentSynthesisFallbackProvider(c.env);
   let agentResponse;
   try {
     agentResponse = await callRoleAgent({
       provider,
+      fallbackProvider,
+      synthesisProvider,
+      synthesisFallbackProvider,
       baseline,
       exchanges: agentExchanges,
       knowledgeState: sharedKnowledgeState,
@@ -1148,10 +1168,10 @@ roleContexts.post('/:id/complete', async (c) => {
       ...(participant.participant_role ? { participantRole: participant.participant_role } : {}),
     });
   } catch (err) {
-    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+    logRoleAgentUsage(c, synthesisProvider ?? provider, { roleContextId: id, participantId: participant.id }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
     throw err;
   }
-  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: participant.id });
+  logRoleAgentUsage(c, synthesisProvider ?? provider, { roleContextId: id, participantId: participant.id });
 
   const updatedKnowledgeState = mergeKnowledgeState(sharedKnowledgeState, agentResponse.knowledgeStateUpdate);
 

@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-020-mid-event-emitter",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/notifications.ts",
+      "line": 9,
+      "description": "EventEmitter.on adds listener but there is no cleanup when component unmounts — leaked listeners accumulate, causing memory growth and duplicate event handling.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/notifications.ts",
+      "line": 14,
+      "description": "unsubscribe does not check if the set becomes empty — empty Sets remain in the Map, causing memory leak over time.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/notifications.ts",
+      "line": 9,
+      "description": "handler typed as Function and cast as any — loses type safety. Should use generic or specific event type.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/notifications.ts",
+      "line": 19,
+      "description": "Singleton export — hard to test and mock. Should use factory or DI.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

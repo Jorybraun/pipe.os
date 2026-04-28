@@ -26,7 +26,7 @@ import type { AIChatProps, SynthesisResult } from './types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const BASE_URL = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+const BASE_URL = import.meta.env?.VITE_API_URL || 'http://localhost:8787';
 
 // Clerk window shape — avoids `any`
 interface ClerkWindow extends Window {
@@ -621,6 +621,7 @@ export function AIChat({
                   onClick={goUp}
                   disabled={!canUp}
                   title="Previous question"
+                  aria-label="Previous question"
                   style={{ padding: 4, background: 'transparent', border: '1px solid var(--pipe-border-light)', color: canUp ? 'var(--pipe-text-dim)' : 'var(--pipe-border-light)', cursor: canUp ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }}
                 >
                   <ChevronUp size={12} />
@@ -632,6 +633,7 @@ export function AIChat({
                   onClick={goDown}
                   disabled={!canDown}
                   title="Next question"
+                  aria-label="Next question"
                   style={{ padding: 4, background: 'transparent', border: '1px solid var(--pipe-border-light)', color: canDown ? 'var(--pipe-text-dim)' : 'var(--pipe-border-light)', cursor: canDown ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }}
                 >
                   <ChevronDown size={12} />
@@ -667,22 +669,22 @@ export function AIChat({
         <div ref={scrollRef}>
           {/* Loading indicator */}
           {conv.isLoading && (
-            conv.streamingText ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 16,
+              padding: '32px 0',
+            }}>
               <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 16,
-                padding: '32px 0',
+                width: 48,
+                height: 48,
+                animation: 'pipeSpin 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+                opacity: 0.85,
               }}>
-                <div style={{
-                  width: 48,
-                  height: 48,
-                  animation: 'pipeSpin 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite',
-                  opacity: 0.85,
-                }}>
-                  <Logo />
-                </div>
+                <Logo />
+              </div>
+              {conv.streamingText ? (
                 <span style={{
                   fontSize: 9,
                   letterSpacing: '0.2em',
@@ -691,18 +693,21 @@ export function AIChat({
                 }}>
                   THINKING...
                 </span>
-              </div>
-            ) : (
-              <ThinkingIndicator
-                message={
-                  conv.phase === 'IDLE'
-                    ? 'Starting your interview...'
+              ) : (
+                <span style={{
+                  fontSize: 9,
+                  letterSpacing: '0.2em',
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                }}>
+                  {conv.phase === 'IDLE'
+                    ? 'STARTING YOUR INTERVIEW...'
                     : conv.pastExchanges.length === 0
-                      ? 'Preparing your first question...'
-                      : 'Thinking...'
-                }
-              />
-            )
+                      ? 'PREPARING YOUR FIRST QUESTION...'
+                      : 'THINKING...'}
+                </span>
+              )}
+            </div>
           )}
 
           {/* Edit-past card — takes over the form when the carousel focuses on a past exchange */}
@@ -783,6 +788,7 @@ export function AIChat({
                         <button
                           onClick={() => speak(conv.currentQuestion!.text)}
                           title={isTTSPlaying ? 'AI speaking…' : 'Replay question'}
+                          aria-label={isTTSPlaying ? 'AI speaking…' : 'Replay question'}
                           disabled={isTTSPlaying}
                           style={{ padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', cursor: isTTSPlaying ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, height: 28 }}
                         >
@@ -792,6 +798,7 @@ export function AIChat({
                       <button
                         onClick={handleToggleVoice}
                         title={voiceOn ? 'Mute voice' : 'Unmute voice'}
+                        aria-label={voiceOn ? 'Mute voice' : 'Unmute voice'}
                         style={{ padding: '6px 10px', background: voiceOn ? 'transparent' : 'rgba(248,113,113,0.08)', border: `1px solid ${voiceOn ? 'var(--pipe-border-light)' : 'rgba(248,113,113,0.3)'}`, color: voiceOn ? 'var(--pipe-text-dim)' : 'rgba(248,113,113,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 28 }}
                       >
                         {voiceOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
@@ -804,6 +811,7 @@ export function AIChat({
                     onClick={() => handleBadBot(conv.currentQuestion!.id)}
                     disabled={conv.isLoading}
                     title="Skip this question and report it"
+                    aria-label="Skip this question and report it"
                     style={{ flexShrink: 0, padding: '4px 8px', background: 'transparent', border: `1px solid ${badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.3)' : 'var(--pipe-border-light)'}`, color: badBotQuestionId === conv.currentQuestion.id ? 'rgba(248,113,113,0.8)' : 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', cursor: (conv.isLoading || badBotQuestionId === conv.currentQuestion.id) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, opacity: conv.isLoading ? 0.4 : 1 }}
                   >
                     <Bot size={10} />
@@ -826,6 +834,7 @@ export function AIChat({
                         <button
                           onClick={isRecording ? stopRecording : () => { startRecording().catch(() => {}); }}
                           disabled={false}
+                          aria-label={isRecording ? 'Stop recording' : isTTSPlaying ? 'AI speaking' : 'Start voice recording'}
                           style={{
                             width: 80,
                             height: 80,

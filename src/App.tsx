@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense, lazy } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FEATURE_FLAGS } from "./config/featureFlags";
 import {
@@ -16,32 +16,32 @@ import { useAuth } from "./providers";
 import { Layout, SidebarNav } from "./components";
 import { AgentDrawerProvider, useAgentDrawer } from "./contexts/AgentDrawerContext";
 import { AgentDrawer } from "./components/Agent/AgentDrawer";
-import ListingPage from "./pages/ListingPage";
-import PipelineShellPage from "./pages/PipelineShellPage";
-import PipelineInsightsPanel from "./pages/PipelineInsightsPanel";
-import StagePanel from "./pages/StagePanel";
-import StageIndexTab from "./pages/stage-tabs/StageIndexTab";
-import CandidatesTab from "./pages/stage-tabs/CandidatesTab";
-import ConfigureTab from "./pages/stage-tabs/ConfigureTab";
-import GateConfigTab from "./pages/stage-tabs/GateConfigTab";
-import CultureBenchmarkTab from "./pages/stage-tabs/CultureBenchmarkTab";
-import NewStageFormPage from "./pages/NewStageFormPage";
-import KanbanPage from "./pages/KanbanPage";
-import CandidateProfilePage from "./pages/CandidateProfilePage";
-import CandidateScreeningPage from "./pages/CandidateScreeningPage";
-import RoleDiscoveryPage from "./pages/RoleDiscoveryPage";
-import ChallengeEditorPage from "./pages/ChallengeEditorPage";
-import CandidateAssessmentPage from "./pages/CandidateAssessmentPage";
-import CultureInterviewPage from "./pages/CultureInterviewPage";
-import SchedulingPage from "./pages/SchedulingPage";
-import OutreachPage from "./pages/OutreachPage";
-import DevContainerSandboxPage from "./pages/DevContainerSandboxPage";
-import CandidateReportPrototype from "./pages/CandidateReportPrototype";
-import RepoAdminPage from "./pages/admin/RepoAdminPage";
-import RepoSearchPage from "./pages/admin/RepoSearchPage";
-import RepoDetailPage from "./pages/admin/RepoDetailPage";
-import AiUsagePage from "./pages/admin/AiUsagePage";
-import { ArrowLeft, Plus, LogOut } from "lucide-react";
+const ListingPage = lazy(() => import("./pages/ListingPage"));
+const PipelineShellPage = lazy(() => import("./pages/PipelineShellPage"));
+const PipelineInsightsPanel = lazy(() => import("./pages/PipelineInsightsPanel"));
+const StagePanel = lazy(() => import("./pages/StagePanel"));
+const StageIndexTab = lazy(() => import("./pages/stage-tabs/StageIndexTab"));
+const CandidatesTab = lazy(() => import("./pages/stage-tabs/CandidatesTab"));
+const ConfigureTab = lazy(() => import("./pages/stage-tabs/ConfigureTab"));
+const GateConfigTab = lazy(() => import("./pages/stage-tabs/GateConfigTab"));
+const CultureBenchmarkTab = lazy(() => import("./pages/stage-tabs/CultureBenchmarkTab"));
+const NewStageFormPage = lazy(() => import("./pages/NewStageFormPage"));
+const KanbanPage = lazy(() => import("./pages/KanbanPage"));
+const CandidateProfilePage = lazy(() => import("./pages/CandidateProfilePage"));
+const CandidateScreeningPage = lazy(() => import("./pages/CandidateScreeningPage"));
+const RoleDiscoveryPage = lazy(() => import("./pages/RoleDiscoveryPage"));
+const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
+const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
+const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
+const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
+const OutreachPage = lazy(() => import("./pages/OutreachPage"));
+const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
+const CandidateReportPrototype = lazy(() => import("./pages/CandidateReportPrototype"));
+const RepoAdminPage = lazy(() => import("./pages/admin/RepoAdminPage"));
+const RepoSearchPage = lazy(() => import("./pages/admin/RepoSearchPage"));
+const RepoDetailPage = lazy(() => import("./pages/admin/RepoDetailPage"));
+const AiUsagePage = lazy(() => import("./pages/admin/AiUsagePage"));
+import { ArrowLeft, Plus, LogOut, Loader2 } from "lucide-react";
 import Logo from "./components/ui/Logo";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import { useAuth as useClerkAuth } from "@clerk/react";
@@ -339,6 +339,25 @@ function RecruiterThemeSync(): null {
 }
 
 /**
+ * PageLoader — minimal fallback shown while lazy chunks load.
+ */
+function PageLoader(): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--pipe-bg, #0a0a0c)',
+      }}
+    >
+      <Loader2 size={20} style={{ animation: 'spin 1s linear infinite', color: 'var(--pipe-text-dim)' }} />
+    </div>
+  );
+}
+
+/**
  * App - Main application component with routing configuration
  */
 function App(): JSX.Element {
@@ -351,7 +370,9 @@ function App(): JSX.Element {
           element={
             <ThemeProvider>
               <ErrorBoundary>
-                <CandidateAssessmentPage />
+                <Suspense fallback={<PageLoader />}>
+                  <CandidateAssessmentPage />
+                </Suspense>
               </ErrorBoundary>
             </ThemeProvider>
           }
@@ -363,7 +384,9 @@ function App(): JSX.Element {
           element={
             <ThemeProvider>
               <ErrorBoundary>
-                <CultureInterviewPage />
+                <Suspense fallback={<PageLoader />}>
+                  <CultureInterviewPage />
+                </Suspense>
               </ErrorBoundary>
             </ThemeProvider>
           }
@@ -378,6 +401,7 @@ function App(): JSX.Element {
               <ClerkAuthWrapper>
                 <RecruiterThemeSync />
                 <AgentDrawerProvider>
+                <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<ListingPage />} />
@@ -438,6 +462,7 @@ function App(): JSX.Element {
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
+                </Suspense>
                 </AgentDrawerProvider>
               </ClerkAuthWrapper>
             </ClerkAuthGate>

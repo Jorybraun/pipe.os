@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-009-junior-a11y-midhigh",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/components/Modal.tsx",
+      "line": 12,
+      "description": "Focus is not moved into the modal when opened — screen reader users stay on the trigger element. Should focus the dialog or first focusable element.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/Modal.tsx",
+      "line": 18,
+      "description": "No focus trap — Tab key cycles to background elements. Should trap focus inside modal while open.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/Modal.tsx",
+      "line": 19,
+      "description": "Escape key does not close modal — expected behavior for dialogs. Missing keydown handler.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/Modal.tsx",
+      "line": 15,
+      "description": "Body overflow reset uses empty string instead of original value. If parent had overflow: scroll, it is lost.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 0,
+    "major": 3,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

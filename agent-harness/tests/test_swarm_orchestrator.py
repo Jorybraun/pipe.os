@@ -150,31 +150,17 @@ def test_sync_plans_with_existing_migration_ledger():
         conn.close()
 
 
-def test_qa_deploy_pr_creation():
-    """QA-Deploy create_pr_tool should return a PR URL on successful gh CLI call."""
-    import json
-    from unittest.mock import patch, MagicMock
+def test_qa_agent_has_validation_tools():
+    """QA agent must have type-check, test-run, and file-verify tools (no PR tools)."""
     from agent_harness.swarm.agents.qa_deploy import _get_qa_tools
 
     tools = _get_qa_tools()
-    create_pr = next((t for t in tools if getattr(t, "name", None) == "create_pr_tool"), None)
-    assert create_pr is not None, "create_pr_tool not found in QA toolkit"
-
-    mock_stdout = json.dumps({"url": "https://github.com/org/repo/pull/42"})
-    with patch("agent_harness.swarm.agents.qa_deploy.subprocess.run") as mock_run:
-        mock_run.side_effect = [
-            MagicMock(stdout="", stderr="", returncode=0),  # gh pr create
-            MagicMock(stdout=mock_stdout, stderr="", returncode=0),  # gh pr view
-        ]
-        result = create_pr.invoke({
-            "title": "Test PR",
-            "body": "## Plan\nTest plan\n## Acceptance criteria\n- ok\n## BDD tests\n- ok\n## Unit tests\n- ok\n## Manual QA on staging\n- ok\n## Regression touchpoints\n- ok\n## Rollback\n- ok",
-            "head": "feature/test",
-            "base": "main",
-        })
-        data = json.loads(result)
-        assert data["pr_url"] == "https://github.com/org/repo/pull/42"
-        assert data["method"] == "gh"
+    names = {getattr(t, "name", None) for t in tools}
+    assert "qa_check_types" in names, f"qa_check_types missing from {names}"
+    assert "qa_run_tests" in names, f"qa_run_tests missing from {names}"
+    assert "qa_verify_files" in names, f"qa_verify_files missing from {names}"
+    assert "create_pr_tool" not in names, "create_pr_tool should not exist in QA toolkit"
+    assert "validate_pr_template_tool" not in names, "validate_pr_template_tool should not exist in QA toolkit"
 
 
 def test_plan_budget_enforcement():

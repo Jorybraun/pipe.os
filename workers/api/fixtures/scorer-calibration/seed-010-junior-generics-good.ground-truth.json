@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-010-junior-generics-good",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/lib/fetch.ts",
+      "line": 1,
+      "description": "fetchJson casts response as T without validation — runtime type unsafe. Should use zod or similar schema validation.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/fetch.ts",
+      "line": 7,
+      "description": "No error status handling — different error codes (400, 401, 500) all throw generic Error. Should include status code and response body in error.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/lib/fetch.ts",
+      "line": 7,
+      "description": "body type is unknown but not validated before JSON.stringify. Could stringify undefined or circular references.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 0,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 2
+  }
+}

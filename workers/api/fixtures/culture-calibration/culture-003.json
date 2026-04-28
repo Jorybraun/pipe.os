@@ -1,0 +1,124 @@
+{
+  "id": "culture-003",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working on it and got the failure rate down. It was a collaborative effort across the engineering org."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "We were deciding between two database solutions and the team had split opinions. We held a meeting and each side presented their case. Eventually we voted and went with the majority view. I was on the side that didn't win but I was fine with it."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I thought we needed microservices early on but the team ended up not doing that. Looking back they were probably right, a monolith was simpler for where we were. I adapted my thinking."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I once pushed back on a timeline that seemed unrealistic. I mentioned it in the planning meeting. The team adjusted the scope slightly and we shipped on time."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've struggled with context switching between many projects. My manager gave me feedback about this. I try to timebox my work now which has helped a bit."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "collaboration": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky."
+      ]
+    },
+    "learning-orientation": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "conflict-handling": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "self-awareness": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "autonomy": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "work-pace": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "collaboration-style": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working o"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "ownership",
+    "learning-orientation",
+    "collaboration-style"
+  ],
+  "confidence": "heuristic"
+}

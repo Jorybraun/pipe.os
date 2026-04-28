@@ -12,7 +12,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 
 
-_ROLES = {"pm", "designer", "architect", "frontend", "backend", "qa_deploy"}
+_ROLES = {"pm", "designer", "architect", "frontend", "backend"}
 
 
 def _make_model() -> ChatOpenAI | None:

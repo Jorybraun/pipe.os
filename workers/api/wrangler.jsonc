@@ -26,7 +26,8 @@
 		}
 	],
 	"ai": {
-		"binding": "AI"
+		"binding": "AI",
+		"remote": true
 	},
 	"vectorize": [
 		{
@@ -83,10 +84,12 @@
 	],
 	// Cron triggers for issue ingestion pipeline (RD-P6)
 	// Issue crawler runs Sunday 03:00 UTC, scorer follows at 04:00 UTC
+	// Enrichment worker runs every 2 hours
 	"triggers": {
 		"crons": [
 			"0 3 * * 0",
-			"0 4 * * 0"
+			"0 4 * * 0",
+			"0 */2 * * *"
 		]
 	},
 	// Environment variables — secrets go in .dev.vars for local dev

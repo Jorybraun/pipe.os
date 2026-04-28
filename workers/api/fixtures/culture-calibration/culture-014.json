@@ -1,0 +1,125 @@
+{
+  "id": "culture-014",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike using Jaeger, found an N+1 query in the cart aggregation endpoint, wrote a PR with a fix and a benchmark showing 60% latency reduction, and got it merged in under three hours. I added a Datadog monitor for that query pattern."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about something you shipped that broke in a way that affected other people."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I shipped a change to our notification dispatch that skipped deduplication under high load. 8,000 users received duplicate push notifications. I wrote a post-mortem within four hours naming the sequence, rebuilt the deduplication layer with Redis SETNX, and ran a load test at 10x production traffic to validate."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My counterpart on the ML team wanted to deploy a new ranking model directly to 100% traffic. I prepared a two-page brief with three rollout scenarios, shared it 24 hours before the meeting, and proposed 5% with automated rollback. We co-developed the rollback criteria. The staged approach caught a latency regression at 15%."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I spent eight months advocating for a service mesh. When we piloted it, operational overhead was three times my estimate. I ran a retrospective where I named my prediction versus outcome, identified I'd anchored on blog posts, and we adopted mTLS-via-gateway instead. I now have a rule: never advocate for an approach without interviewing two practitioners."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've had consistent feedback across three teams that I move to solution mode too quickly. I started doing structured restatement before responding. My most recent 360 showed improvement noted by four colleagues. I still have to consciously activate the habit."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "collaboration": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "We co-developed the rollback criteria."
+      ]
+    },
+    "learning-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "conflict-handling": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "self-awareness": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "autonomy": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "work-pace": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "collaboration-style": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    },
+    "feedback-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for users on mobile connections — not in our team's SLA. I traced the latency spike "
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "high-band",
+    "ownership",
+    "learning-orientation",
+    "conflict-handling"
+  ],
+  "confidence": "heuristic"
+}

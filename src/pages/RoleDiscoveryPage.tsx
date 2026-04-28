@@ -387,6 +387,13 @@ function StepIndicator({
                     }
                   : undefined
               }
+              title={
+                isClickable
+                  ? `Back to ${step.label}`
+                  : isCurrent
+                    ? 'Current step'
+                    : 'Locked'
+              }
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '8px 14px', borderRadius: 6,
@@ -394,6 +401,7 @@ function StepIndicator({
                 border: isCurrent ? '1px solid var(--pipe-text-dim)' : isDone ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid transparent',
                 opacity: isCurrent ? 1 : isDone ? 1 : 0.35,
                 cursor: isClickable ? 'pointer' : 'default',
+                pointerEvents: isClickable ? 'auto' : 'none',
                 transition: 'background 0.15s ease, border-color 0.15s ease',
               }}
               onMouseOver={
@@ -737,7 +745,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
               START OVER
             </button>
           )}
-          <StepIndicator active={currentStep} onStepClick={handleStepClick} />
+          <StepIndicator active={currentStep} {...(currentStep === 'interview' ? {} : { onStepClick: handleStepClick })} />
         </div>
       </div>
 
@@ -746,7 +754,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           `showResumePrompt` flag can't re-appear over the active UI. */}
       {showResumePrompt && isInScriptedPhase && rd.phase !== 'COMPLETE' && (
         <div style={{ padding: 32, background: 'var(--pipe-surface)', border: '1px solid rgba(255, 255, 255, 0.10)', borderRadius: 16 }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255, 255, 255, 0.30)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
             PREVIOUS_SESSION_FOUND
           </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 8 }}>
@@ -759,7 +767,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           <div style={{ display: 'flex', gap: 12 }}>
             <button
               onClick={() => { handleResumeSession().catch(() => {}); }}
-              style={{ padding: '10px 24px', background: 'rgba(255, 255, 255, 0.06)', border: '1px solid rgba(255, 255, 255, 0.14)', color: 'rgba(255, 255, 255, 0.75)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+              style={{ padding: '10px 24px', background: 'var(--pipe-surface-hover)', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
             >
               RESUME_SESSION
             </button>
@@ -774,7 +782,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
       )}
 
       {/* ── Scripted phase — linear flow, shown until every question has been captured ── */}
-      {isInScriptedPhase && !showResumePrompt && !scripted.isComplete && (
+      {isInScriptedPhase && !showResumePrompt && !scripted.isComplete && !peeking && (
         <div>
           {/* Past scripted exchanges */}
           {scripted.exchanges.length > 0 && (
@@ -842,6 +850,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     <button
                       onClick={() => scriptedTTS.speak(currentScriptedQ.text)}
                       title={scriptedTTS.isPlaying ? 'AI speaking…' : 'Replay question'}
+                      aria-label={scriptedTTS.isPlaying ? 'AI speaking…' : 'Replay question'}
                       disabled={scriptedTTS.isPlaying}
                       style={{ padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', cursor: scriptedTTS.isPlaying ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, height: 28, borderRadius: 4 }}
                     >
@@ -851,6 +860,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   <button
                     onClick={handleScriptedVoiceToggle}
                     title={scriptedVoiceOn ? 'Mute voice' : 'Unmute voice'}
+                    aria-label={scriptedVoiceOn ? 'Mute voice' : 'Unmute voice'}
                     style={{ padding: '6px 10px', background: scriptedVoiceOn ? 'transparent' : 'rgba(248,113,113,0.08)', border: `1px solid ${scriptedVoiceOn ? 'var(--pipe-border-light)' : 'rgba(248,113,113,0.3)'}`, color: scriptedVoiceOn ? 'var(--pipe-text-dim)' : 'rgba(248,113,113,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 28, borderRadius: 4 }}
                   >
                     {scriptedVoiceOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
@@ -909,12 +919,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
                         value={scripted.answer ? scripted.answer.split('|||') : []}
                         onChange={(tags) => scripted.setAnswer(tags.join('|||'))}
                         placeholder={currentScriptedQ.placeholder}
+                        ariaLabel={currentScriptedQ.text}
                       />
                     ) : (
                       <TextInput
                         value={scripted.answer}
                         onChange={scripted.setAnswer}
                         placeholder={currentScriptedQ.placeholder}
+                        ariaLabel={currentScriptedQ.text}
                       />
                     )}
                     <div style={{ marginTop: 10, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
@@ -965,10 +977,18 @@ export default function RoleDiscoveryPage(): JSX.Element {
       )}
 
       {/* ── Scripted phase — review & edit, shown when every question is answered ── */}
-      {isInScriptedPhase && !showResumePrompt && scripted.isComplete && (
+      {isInScriptedPhase && !showResumePrompt && (scripted.isComplete || peeking) && (
         <div>
+          {peeking && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, padding: '10px 14px', background: 'rgba(96, 165, 250, 0.06)', border: '1px solid rgba(96, 165, 250, 0.2)', borderRadius: 6 }}>
+              <ArrowLeft size={12} style={{ color: '#60a5fa' }} />
+              <span style={{ fontSize: 10, color: '#60a5fa', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+                INTERVIEW PAUSED · REVIEWING BASELINE ANSWERS
+              </span>
+            </div>
+          )}
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 20 }}>
-            ROLE_SUMMARY · EDIT OR CONTINUE
+            {peeking ? 'ROLE_SUMMARY · READ-ONLY REVIEW' : 'ROLE_SUMMARY · EDIT OR CONTINUE'}
           </div>
 
           {SCRIPTED.map((q, i) => {
@@ -994,6 +1014,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     value={raw ? raw.split('|||').filter(Boolean) : []}
                     onChange={(tags) => scripted.editAnswer(q.id, tags.join('|||'))}
                     placeholder={q.placeholder}
+                    ariaLabel={q.text}
                   />
                 ) : q.inputType === 'choice' ? (
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -1023,6 +1044,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     value={raw}
                     onChange={(v) => scripted.editAnswer(q.id, v)}
                     placeholder={q.placeholder}
+                    ariaLabel={q.text}
                   />
                 )}
               </div>
@@ -1031,7 +1053,13 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
             <button
-              onClick={() => handleFire(scripted.answers, defaultLiveMode)}
+              onClick={() => {
+                if (peeking) {
+                  setPeeking(false);
+                } else {
+                  handleFire(scripted.answers, defaultLiveMode);
+                }
+              }}
               style={{
                 padding: '14px 28px',
                 background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(59, 130, 246, 0.16))',
@@ -1044,7 +1072,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 borderRadius: 6,
               }}
             >
-              CONTINUE TO INTERVIEW <ArrowRight size={14} />
+              {peeking ? (
+                <><ArrowRight size={14} /> RESUME INTERVIEW</>
+              ) : (
+                <>CONTINUE TO INTERVIEW <ArrowRight size={14} /></>
+              )}
             </button>
           </div>
         </div>

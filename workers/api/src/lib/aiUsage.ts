@@ -19,7 +19,8 @@ export type UsageFeature =
   | 'live_panel'
   | 'copilot'
   | 'repo_crawl'
-  | 'challenge_generation';
+  | 'challenge_generation'
+  | 'implementation_scoring';
 
 export interface LogUsageInput {
   /** Which subsystem made the call. */

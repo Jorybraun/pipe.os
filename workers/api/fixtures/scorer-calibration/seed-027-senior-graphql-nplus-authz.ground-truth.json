@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-027-senior-graphql-nplus-authz",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 4,
+      "description": "No authorization check — any authenticated user can query any candidate by ID. Missing org_id ownership verification.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 8,
+      "description": " assessments resolver is N+1 — GraphQL will call this once per candidate in a list query. For 100 candidates this is 100 DB round-trips. Should use DataLoader.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 4,
+      "description": "SELECT * returns all columns including PII (email, phone). Should explicitly select only fields defined in the GraphQL schema.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 12,
+      "description": "scores resolver uses IN subquery — functional but could be a single JOIN with GROUP BY for better performance.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 2,
+    "major": 1,
+    "minor": 1,
+    "expectedFound": 3,
+    "expectedMissed": 1
+  }
+}

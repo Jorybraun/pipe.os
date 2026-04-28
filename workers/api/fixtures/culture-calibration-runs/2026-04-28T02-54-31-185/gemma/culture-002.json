@@ -1,0 +1,126 @@
+{
+  "fixture_id": "culture-002",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Consistent behavioral alignment; demonstrates moderate flexibility with limited evidence of situational depth.",
+      "narrative": "The candidate demonstrates a fundamental openness to collaboration and a receptive attitude toward feedback. During discussions regarding technical disagreements, they emphasized a preference for finding middle ground and understanding the reasoning behind opposing viewpoints. They also acknowledged a past need for communication improvement, indicating a baseline level of self-reflection and a willingness to adapt to professional requirements.\n\nThe transcript shows limited evidence of proactive ownership or detailed problem-solving methodologies. Responses to behavioral prompts were notably brief and lacked the specificity required to evaluate how the candidate navigates complex or high-stakes situations. For instance, when describing a service issue resolution, the candidate provided minimal detail regarding their specific contributions, the complexity of the task, or the ultimate impact of their actions.\n\nRegarding culture add, the candidate’s profile shows strong working-style complementarity with the organization, as there were no significant divergences from the benchmark on any of the five axes. Their values alignment appears high across autonomy, risk-tolerance, work-pace, collaboration-style, and feedback-orientation; however, the depth of their practical application in these areas remains an area for further exploration during subsequent interviews.",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:56:14.786Z"
+  },
+  "meta": {
+    "wall_clock_ms": 24481,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

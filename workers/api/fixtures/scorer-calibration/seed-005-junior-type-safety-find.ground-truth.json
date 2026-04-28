@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-005-junior-type-safety-find",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/lib/scoring.ts",
+      "line": 8,
+      "description": "cached returned as any — defeats type safety. Should parse/validate cached value.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/scoring.ts",
+      "line": 7,
+      "description": "No cache key normalization — scores [1,2] and [2,1] produce different cache keys but same statistical result. Wasteful and incorrect for unordered data.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/lib/scoring.ts",
+      "line": 10,
+      "description": "Missing error handling if setCache throws. Promise rejection will bubble unhandled.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 0,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 2
+  }
+}

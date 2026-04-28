@@ -1,0 +1,150 @@
+{
+  "fixture_id": "culture-006",
+  "provider": "devstral",
+  "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the timeouts were too aggressive, bumped them, and it stopped failing. No one had asked me to do it."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate demonstrates Level 3 ownership: clear personal action (I-framing, specific steps), but reflection is absent — no mention of what changed afterwards or what they would do differently. The candidate stepped in voluntarily and took specific actions to resolve the issue, but there is no evidence of learning or changed behavior after the event.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We disagreed on whether to use a third-party auth library or build our own. I laid out the maintenance burden and my teammate agreed to use the library."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate provides a real example of working with others, but the candidate's specific contribution to the joint work is unclear. The candidate describes the team's outcome without distinguishing their personal role. There is no mention of differing perspectives or friction points.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I was wrong about how React's rendering batching worked. I had assumed state updates were always batched. I refactored the components once I understood."
+        ],
+        "confidence": 0.9,
+        "reasoning": "The candidate describes a learning moment that was externally triggered (discovering they were wrong about React's rendering batching). They acknowledge the learning but do not describe any behavioral change or reflection on what they did differently afterward. This fits Level 2.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We disagreed on whether to use a third-party auth library or build our own. I laid out the maintenance burden and my teammate agreed to use the library. It was a quick conversation."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate describes a real conflict but the handling was passive or procedural. They expressed their opinion once and dropped it. The disagreement is described from their perspective only; little evidence of genuinely engaging the other view. This fits Level 2 better than Level 1 because they did describe a real conflict and their handling of it. It fits Level 2 better than Level 3 because there is no evidence of a genuine attempt to understand the opposing view or any reflection on the resolution process.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I've gotten feedback that my written communication is too terse. I've been adding more context. I think it's improved."
+        ],
+        "confidence": 0.9,
+        "reasoning": "The candidate demonstrates Level 3 self-awareness: they name a specific weakness (terse written communication) with a concrete example of it manifesting in their work and a coping strategy (adding more context). They acknowledge the impact on others (feedback received) and report on the outcome of their change (improvement), but do not describe how they discovered the weakness or seek feedback specifically about this area.",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 4,
+        "evidenceQuotes": [
+          "It wasn't really my task but I looked at it, saw the timeouts were too aggressive, bumped them, and it stopped failing. No one had asked me to do it.",
+          "I rolled it back within twenty minutes once the Slack message came in, identified the wrong env variable, and fixed it."
+        ],
+        "confidence": 0.85,
+        "reasoning": "Candidate demonstrates a strong preference for taking initiative and solving problems independently, as seen in the integration test suite example. They also show a quick response to issues, indicating a preference for minimal check-ins. Position 3 is not warranted because the candidate shows a clear preference for autonomy and taking ownership of problems. Position 5 is not warranted because the candidate does seek input from teammates and does not express frustration with seeking approval for decisions.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I looked at it, saw the timeouts were too aggressive, bumped them, and it stopped failing. No one had asked me to do it.",
+          "I rolled it back within twenty minutes once the Slack message came in, identified the wrong env variable, and fixed it."
+        ],
+        "confidence": 0.85,
+        "reasoning": "Candidate shows a willingness to act on problems independently and fix issues quickly, indicating a moderate risk tolerance. They also demonstrate a comfort with rolling back changes and iterating, which aligns with a contextual risk approach. Position 2 is not warranted because they show a willingness to act independently and fix issues quickly. Position 4 is not warranted because they do not describe making consequential decisions with incomplete data or driving significant bets despite uncertainty.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the timeouts were too aggressive, bumped them, and it stopped failing.",
+          "I shipped a config change that broke the admin panel for internal staff. I rolled it back within twenty minutes once the Slack message came in, identified the wrong env variable, and fixed it."
+        ],
+        "confidence": 0.75,
+        "reasoning": "The candidate demonstrates the ability to handle both focused and rapid tasks. They fixed an integration test suite issue independently, indicating a capacity for sustained focus. They also quickly rolled back and fixed a config change that affected others, showing comfort with rapid iteration. This flexibility places them at position 3. Position 2 is not warranted because they handle rapid context switching and short feedback loops effectively. Position 4 is not warranted because they also show the ability to work deeply on problems independently.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "It wasn't really my task but I looked at it, saw the timeouts were too aggressive, bumped them, and it stopped failing. No one had asked me to do it.",
+          "I laid out the maintenance burden and my teammate agreed to use the library. It was a quick conversation."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate describes working independently on tasks that weren't theirs, even when it involved fixing issues affecting others. They also mention quick, decisive conversations to align on direction, then executing independently. This suggests a preference for individual execution with minimal collaboration unless necessary. Position 1 is not warranted because they do seek alignment and collaborate when needed. Position 3 is not warranted because they do not describe adapting collaboration style based on problem complexity or team preference.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I've gotten feedback that my written communication is too terse. I've been adding more context. I think it's improved."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate is comfortable receiving feedback and actively works on improving based on it. This places them at position 3. Position 2 is not warranted because they show a willingness to receive and act on feedback. Position 4 is not warranted because they do not actively seek out feedback but rather respond to it when received.",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Candidate demonstrates strong ownership but limited collaboration.",
+      "narrative": "The candidate demonstrates a clear strength in taking ownership of problems, even those not explicitly assigned to them. They independently identified and resolved issues with the integration test suite and a config change that affected others, showing a proactive approach to problem-solving. Their ability to quickly roll back changes and iterate indicates a comfort with taking initiative and driving solutions forward. Additionally, the candidate shows a good level of self-awareness, acknowledging a weakness in their written communication and actively working to improve it by adding more context. They also demonstrate a willingness to receive and act on feedback, which is a positive indicator of their learning orientation.\n\nThe transcript shows limited evidence of the candidate's ability to collaborate effectively with others. While they mention working with a teammate on a technical decision, the specifics of their contribution to the joint work are unclear. There is no mention of differing perspectives or how they handled any friction points, which suggests a need for further exploration of their collaborative skills. Additionally, the candidate's handling of conflict appears to be passive or procedural, as they expressed their opinion once and dropped it without engaging the opposing view. This indicates a developmental area in conflict resolution and the need for more active engagement in understanding and addressing differing opinions.\n\nThe candidate's working-style profile aligns well with the organization's benchmark on risk tolerance, work pace, and feedback orientation, suggesting good values alignment in these areas. However, there is meaningful divergence on the autonomy and collaboration-style axes. The candidate's strong preference for autonomy and independent problem-solving may complement teams that value initiative and quick decision-making. However, their lower score on collaboration style, indicating a preference for individual execution with minimal collaboration unless necessary, may require discussion to ensure working-style complementarity. The candidate's ability to take ownership and drive solutions forward could be a significant culture add, but their collaborative approach will need to be discussed to ensure it aligns with team dynamics.",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:56:06.840Z"
+  },
+  "meta": {
+    "wall_clock_ms": 15199,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

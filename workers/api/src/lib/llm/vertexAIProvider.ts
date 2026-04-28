@@ -190,60 +190,91 @@ function extractText(response: VertexAIResponse): string | null {
   return text || null;
 }
 
+// ─── OpenAI-compatible types ────────────────────────────────────────────────
+
+interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  name?: string;
+}
+
+interface OpenAICompletionResponse {
+  choices: Array<{
+    message?: { content?: string };
+    delta?: { content?: string };
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
+}
+
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export class VertexAIProvider implements LLMProvider {
   readonly name = 'vertex-ai';
   readonly supportsTools = false;
 
-  /**
-   * Last usage reported by the provider. Populated after every `complete()`
-   * and at the end of every `completeStream()`. Metering layers read this
-   * after the call to log actual token counts.
-   */
   private _lastUsage: LLMUsage | null = null;
 
   constructor(
     private readonly serviceAccount: ServiceAccountKey,
     private readonly projectId: string,
     private readonly region = 'us-central1',
-    private readonly model = 'gemma-4-26b-a4b-it',
+    private readonly model = 'google/gemma-4-26b-a4b-it-maas',
   ) {}
 
   getLastUsage(): LLMUsage | null {
     return this._lastUsage;
   }
 
-  /** Canonical pricing key for `MODEL_PRICING` lookups. */
   getModelKey(): string {
-    return `vertex/${this.model}`;
+    // Strip publisher prefix so 'google/gemma-4-26b-a4b-it-maas' → 'gemma-4-26b-a4b-it-maas'
+    const normalized = this.model.replace(/^google\//, '');
+    return `vertex/${normalized}`;
   }
 
-  private buildUrl(method: 'generateContent' | 'streamGenerateContent'): string {
-    // MaaS models (suffix -maas) are only available via the global endpoint host.
-    // Custom/regional deployments use the regional host for lower latency.
-    const host = this.model.endsWith('-maas')
-      ? 'aiplatform.googleapis.com'
-      : `${this.region}-aiplatform.googleapis.com`;
+  /**
+   * Build the OpenAI-compatible chat completions URL on Vertex AI.
+   * MaaS models use the global endpoint: aiplatform.googleapis.com
+   * with locations/global.
+   */
+  private buildUrl(stream = false): string {
+    const isMaas = this.model.endsWith('-maas') || this.model.startsWith('google/');
+    const host = 'aiplatform.googleapis.com';
+    const location = isMaas ? 'global' : this.region;
     const base = `https://${host}/v1`;
-    const resource = `projects/${this.projectId}/locations/${this.region}/publishers/google/models/${this.model}`;
-    const suffix = method === 'streamGenerateContent' ? `${method}?alt=sse` : method;
-    return `${base}/${resource}:${suffix}`;
+    const path = `projects/${this.projectId}/locations/${location}/endpoints/openapi/chat/completions`;
+    return stream ? `${base}/${path}?alt=sse` : `${base}/${path}`;
+  }
+
+  private toOpenAIMessages(messages: LLMMessage[]): OpenAIMessage[] {
+    const result: OpenAIMessage[] = [];
+    for (const m of messages) {
+      if (m.role === 'tool') {
+        result.push({ role: 'user', content: `Tool result (${m.toolName ?? 'unknown'}):\n${m.content ?? ''}` });
+      } else {
+        result.push({ role: m.role as OpenAIMessage['role'], content: m.content ?? '' });
+      }
+    }
+    return result;
   }
 
   async complete(messages: LLMMessage[], options: CompleteOptions = {}): Promise<LLMCompletion> {
     const token = await getAccessToken(this.serviceAccount);
-    const contents = toVertexAIContents(messages);
+    const openaiMessages = this.toOpenAIMessages(messages);
 
     const body: Record<string, unknown> = {
-      contents,
-      generationConfig: {
-        maxOutputTokens: options.maxTokens ?? 1024,
-        ...(options.forceJson ? { responseMimeType: 'application/json' } : {}),
-      },
+      model: this.model,
+      messages: openaiMessages,
+      max_tokens: options.maxTokens ?? 1024,
+      stream: false,
     };
+    if (options.forceJson) {
+      body.response_format = { type: 'json_object' };
+    }
 
-    const res = await fetch(this.buildUrl('generateContent'), {
+    const res = await fetch(this.buildUrl(false), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -257,30 +288,36 @@ export class VertexAIProvider implements LLMProvider {
       throw new Error(`Vertex AI ${res.status}: ${err}`);
     }
 
-    const data = (await res.json()) as VertexAIResponse;
-    const content = extractText(data);
+    const data = (await res.json()) as OpenAICompletionResponse;
+    const content = data.choices?.[0]?.message?.content?.trim() ?? '';
     if (!content) throw new Error('Vertex AI returned empty response');
-    const usage = toLLMUsage(data.usageMetadata);
+
+    const usage: LLMUsage | null = data.usage
+      ? {
+          inputTokens: data.usage.prompt_tokens ?? 0,
+          outputTokens: data.usage.completion_tokens ?? 0,
+        }
+      : null;
     this._lastUsage = usage;
     return usage ? { content, usage } : { content };
   }
 
   async *completeStream(messages: LLMMessage[], options: CompleteOptions = {}): AsyncGenerator<string> {
-    // Reset per-stream so stale usage from a previous call can't be logged.
     this._lastUsage = null;
-
     const token = await getAccessToken(this.serviceAccount);
-    const contents = toVertexAIContents(messages);
+    const openaiMessages = this.toOpenAIMessages(messages);
 
     const body: Record<string, unknown> = {
-      contents,
-      generationConfig: {
-        maxOutputTokens: options.maxTokens ?? 1024,
-        ...(options.forceJson ? { responseMimeType: 'application/json' } : {}),
-      },
+      model: this.model,
+      messages: openaiMessages,
+      max_tokens: options.maxTokens ?? 1024,
+      stream: true,
     };
+    if (options.forceJson) {
+      body.response_format = { type: 'json_object' };
+    }
 
-    const res = await fetch(this.buildUrl('streamGenerateContent'), {
+    const res = await fetch(this.buildUrl(true), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -316,18 +353,10 @@ export class VertexAIProvider implements LLMProvider {
         if (payload === '[DONE]') return;
 
         try {
-          const chunk = JSON.parse(payload) as VertexAIResponse;
-          if (chunk.error) throw new Error(`Vertex AI stream error ${chunk.error.code}: ${chunk.error.message}`);
-          // usageMetadata typically arrives in the final chunk. Capture it so
-          // the metering layer can read it via getLastUsage() after the stream.
-          const maybeUsage = toLLMUsage(chunk.usageMetadata);
-          if (maybeUsage) this._lastUsage = maybeUsage;
-          const parts = chunk.candidates?.[0]?.content?.parts ?? [];
-          for (const part of parts) {
-            if (part.text) yield part.text;
-          }
-        } catch (err) {
-          if (err instanceof Error && err.message.startsWith('Vertex AI stream error')) throw err;
+          const chunk = JSON.parse(payload) as OpenAICompletionResponse;
+          const text = chunk.choices?.[0]?.delta?.content ?? '';
+          if (text) yield text;
+        } catch {
           // Ignore malformed chunks
         }
       }

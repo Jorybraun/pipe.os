@@ -1,0 +1,151 @@
+{
+  "fixture_id": "culture-004",
+  "provider": "devstral",
+  "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some logs but didn't dig in because it wasn't my area."
+        ],
+        "confidence": 0.95,
+        "reasoning": "The candidate provides a real example but their personal contribution is peripheral and reactive. They noticed a problem but did not take any action to fix it, instead waiting for the infra team to handle it. This fits Level 2 ownership.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "My teammate wanted to use GraphQL and I preferred REST. We discussed it briefly but our manager made the final call. We went with GraphQL. It wasn't a big deal to me either way."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate provides a real example of working with others, but the candidate's specific contribution to the joint work is unclear. The candidate describes the team's outcome without distinguishing their personal role. Conflict or friction is absent or glossed over.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I was wrong about how React's rendering batching worked before version 18. I had written code that assumed state updates were always batched. I refactored the components once I understood the actual behavior."
+        ],
+        "confidence": 0.95,
+        "reasoning": "Candidate demonstrates Level 2 learning orientation: they describe a specific learning moment triggered by an external event (React version update) and acknowledge the learning, but do not describe any behavioral change or reflection on the process.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We discussed it briefly but our manager made the final call. We went with GraphQL. It wasn't a big deal to me either way.",
+          "I said I wasn't comfortable with that and sent a note to my lead. He agreed and we did a shortened QA pass instead. It was a small push-back."
+        ],
+        "confidence": 0.9,
+        "reasoning": "The candidate describes real conflicts but their handling was passive or procedural. They escalated immediately to a manager or expressed their opinion once and dropped it. There is little evidence of genuinely engaging the other view or seeking a resolution that addressed both underlying concerns.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I've gotten feedback that my written communication is too terse. I've been adding more context in Slack and PRs. I think it's improved but I'm not sure by how much."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate demonstrates Level 3 self-awareness: names a specific weakness with a concrete example of it manifesting in their work and a coping strategy. They acknowledge the impact on others and show awareness of the gap but do not describe seeking feedback specifically about this area or updating their approach over time.",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I saw some logs but didn't dig in because it wasn't my area.",
+          "We discussed it briefly but our manager made the final call.",
+          "I said I wasn't comfortable with that and sent a note to my lead."
+        ],
+        "confidence": 0.65,
+        "reasoning": "Candidate demonstrates a willingness to work within established processes and seek alignment when necessary, but also shows initiative in pushing back when they disagree. They do not express a strong preference for high autonomy or structured environments. Position 2 is not warranted because they do show some initiative and pushback. Position 4 is not warranted because they do not describe a strong preference for owning problems end-to-end with minimal check-ins.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "We discussed it briefly but our manager made the final call. We went with GraphQL. It wasn't a big deal to me either way.",
+          "I said I wasn't comfortable with that and sent a note to my lead. He agreed and we did a shortened QA pass instead. It was a small push-back."
+        ],
+        "confidence": 0.65,
+        "reasoning": "Candidate shows a willingness to act but prefers to defer to authority or consensus. They are cautious and avoid taking significant risks. They push back but only slightly and prefer to validate decisions through consensus or managerial approval. Position 3 is not warranted because they do not show contextual calibration of risk tolerance. Position 1 is not warranted because they do take action and are not paralyzed by risk.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "We discussed it briefly but our manager made the final call. It wasn't a big deal to me either way.",
+          "I said I wasn't comfortable with that and sent a note to my lead. He agreed and we did a shortened QA pass instead. It was a small push-back."
+        ],
+        "confidence": 0.65,
+        "reasoning": "The candidate's responses indicate a balanced approach to work pace. They are comfortable with both focused work and rapid iteration, as seen in their ability to discuss technical decisions briefly and push back on directions when necessary. They do not describe a strong preference for either deep, sustained focus or high-velocity environments. Position 2 is not warranted because they show comfort with rapid context switching and re-prioritization. Position 4 is not warranted because they do not describe high pace as energizing or slow environments as frustrating.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I saw some logs but didn't dig in because it wasn't my area."
+        ],
+        "confidence": 0.85,
+        "reasoning": "Candidate describes a preference for individual execution and minimal handoffs, as seen in the staging environment example. They also mention seeking alignment on direction but then executing independently. Position 1 is not warranted because they do engage in collaboration when necessary, as seen in the technical disagreement and push-back examples. Position 3 is not warranted because they do not show a strong adaptability to collaboration based on problem complexity or team preference.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I've gotten feedback that my written communication is too terse. I've been adding more context in Slack and PRs. I think it's improved but I'm not sure by how much."
+        ],
+        "confidence": 0.85,
+        "reasoning": "Candidate is receptive to feedback from specific sources and has acted on it. They do not actively seek feedback but are open to it when it is given. Position 3 is not warranted because they do not describe seeking feedback regularly or being comfortable with direct, unsolicited feedback. Position 1 is not warranted because they do describe acting on feedback and are open to it.",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Candidate demonstrates a willingness to act but prefers consensus and structure.",
+      "narrative": "The candidate shows a willingness to take initiative and act when they see a problem, as evidenced by their example of pushing back on skipping QA. They demonstrate a balanced approach to work pace, comfortably switching between focused work and rapid iteration. The candidate also shows a level of self-awareness, acknowledging a weakness in their written communication and taking steps to improve it. They provide concrete examples of learning from technical mistakes, such as understanding React's rendering batching, and are open to feedback when it is given.\n\nThe transcript shows limited evidence of the candidate taking full ownership of problems. For instance, they noticed issues with the staging environment but did not take action to fix it, instead waiting for the infrastructure team. Additionally, while the candidate describes collaborating with teammates, their specific contributions to joint work are unclear, and they tend to defer to managerial decisions in cases of disagreement. There is also limited evidence of the candidate actively seeking feedback or being comfortable with direct, unsolicited feedback. The candidate's conflict-handling style is largely passive or procedural, escalating issues to managers rather than engaging in resolution.\n\nThe candidate's working-style profile aligns well with the organization's benchmark on autonomy and work pace, showing a balanced approach to initiative and structure, as well as comfort with both focused work and rapid iteration. However, there is meaningful divergence on risk tolerance, collaboration style, and feedback orientation. The candidate prefers to defer to authority or consensus and is cautious about taking significant risks, which diverges from the organization's preference for a more balanced risk tolerance. The candidate's collaboration style leans towards individual execution with minimal handoffs, contrasting with the organization's preference for more adaptive collaboration. Additionally, the candidate is receptive to feedback but does not actively seek it, differing from the organization's preference for a more proactive feedback orientation. These divergences suggest potential areas for growth and development, but also opportunities for culture add, particularly in bringing a structured and consensus-driven approach to the team.",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:55:35.567Z"
+  },
+  "meta": {
+    "wall_clock_ms": 15822,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

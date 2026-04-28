@@ -97,7 +97,34 @@ export function listModels(): void {
   console.log('');
 }
 
+// ─── Culture registry re-exports ─────────────────────────────────────────────
+
+export {
+  loadCultureRegistry,
+  saveCultureRegistry,
+  getCultureModel,
+  getActiveCultureModel,
+  getApprovedCultureModels,
+  updateCultureCalibration,
+  setActiveCultureModel,
+  listCultureModels,
+  MIN_QWK_THRESHOLD,
+} from './culture.js';
+export type {
+  CultureCalibrationRecord,
+  CultureCalibrationRegistry,
+  CultureCalibrationResult,
+  CultureProvider,
+} from './culture.js';
+
+import { listCultureModels } from './culture.js';
+
 // CLI: node calibrations/index.ts list
 if (process.argv[2] === 'list') {
   listModels();
+}
+
+// CLI: node calibrations/index.ts list-culture
+if (process.argv[2] === 'list-culture') {
+  listCultureModels();
 }

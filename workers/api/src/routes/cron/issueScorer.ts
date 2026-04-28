@@ -29,6 +29,9 @@ const SIGNALS_VERSION = 1;
 /** Maximum body length to include in prompt. */
 const MAX_BODY_IN_PROMPT = 8000;
 
+/** Model identifier written to the signals table. */
+const MODEL = 'gemma-4-26b';
+
 // ─── Main Handler ───────────────────────────────────────────────────────────
 
 export async function handleIssueScorerCron(env: Env): Promise<{ processed: number; errors: string[] }> {
@@ -57,6 +60,7 @@ export async function handleIssueScorerCron(env: Env): Promise<{ processed: numb
         ri.id as issue_id,
         ri.title,
         ri.body,
+        ri.body_cache_json,
         ri.labels_json,
         ri.comment_count,
         ri.reactions_total,
@@ -80,6 +84,7 @@ export async function handleIssueScorerCron(env: Env): Promise<{ processed: numb
       issue_id: number;
       title: string;
       body: string | null;
+      body_cache_json: string | null;
       labels_json: string | null;
       comment_count: number;
       reactions_total: number;
@@ -132,6 +137,7 @@ interface IssueContext {
   issue_id: number;
   title: string;
   body: string | null;
+  body_cache_json: string | null;
   labels_json: string | null;
   comment_count: number;
   reactions_total: number;
@@ -167,10 +173,21 @@ function buildScoringPrompt(issue: IssueContext): string {
     ? (JSON.parse(issue.labels_json) as string[]).join(', ')
     : 'none';
 
-  const body = issue.body
-    ? issue.body.length > MAX_BODY_IN_PROMPT
-      ? issue.body.slice(0, MAX_BODY_IN_PROMPT) + '\n\n[truncated]'
-      : issue.body
+  // Prefer the full cached body over the truncated storage column
+  let rawBody = issue.body;
+  if (issue.body_cache_json) {
+    try {
+      const cache = JSON.parse(issue.body_cache_json) as { body?: string };
+      if (cache.body) rawBody = cache.body;
+    } catch {
+      // fall through to storage body
+    }
+  }
+
+  const body = rawBody
+    ? rawBody.length > MAX_BODY_IN_PROMPT
+      ? rawBody.slice(0, MAX_BODY_IN_PROMPT) + '\n\n[truncated]'
+      : rawBody
     : '(no body)';
 
   return [

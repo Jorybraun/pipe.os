@@ -1,0 +1,152 @@
+{
+  "id": "seed-017-mid-pagination-cursor",
+  "description": "Mid reviewer finds pagination cursor bug and provides good reasoning. Solid mid-level performance.",
+  "tags": [
+    "typescript",
+    "node",
+    "api",
+    "mid-high-score"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add candidate list endpoint with cursor pagination",
+    "description": "Returns candidates with cursor-based pagination.",
+    "instructions": "Review for API design and correctness.",
+    "diff": "diff --git a/src/routes/candidates/list.ts b/src/routes/candidates/list.ts\n@@ -0,0 +1,48 @@\n+import { Hono } from 'hono';\n+\n+export const listRoutes = new Hono();\n+\n+listRoutes.get('/', async (c) => {\n+  const cursor = c.req.query('cursor') ?? '0';\n+  const limit = parseInt(c.req.query('limit') ?? '20', 10);\n+\n+  const candidates = await c.env.DB\n+    .prepare('SELECT * FROM candidates WHERE id > ?1 ORDER BY id LIMIT ?2')\n+    .bind(cursor, limit)\n+    .all();\n+\n+  const nextCursor = candidates.results.length === limit\n+    ? candidates.results[candidates.results.length - 1].id\n+    : null;\n+\n+  return c.json({ candidates: candidates.results, nextCursor });\n+});\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/candidates/list.ts",
+      "line": 7,
+      "description": "No auth check — any user can list all candidates across all orgs. Missing org_id filter and Clerk JWT verification.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/candidates/list.ts",
+      "line": 7,
+      "description": "No max limit — client can request limit=999999, effectively loading entire table. Should cap at 100.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/candidates/list.ts",
+      "line": 8,
+      "description": "Cursor is parsed as integer but used as string in WHERE id > ?1 — SQLite string comparison on UUIDs produces lexicographic ordering, which is not guaranteed to match creation order. Should use created_at + id composite cursor.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/candidates/list.ts",
+      "line": 11,
+      "description": "SELECT * returns all columns including sensitive data. Should explicitly select only needed fields.",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1701,
+            "file": "src/routes/candidates/list.ts",
+            "line": 7,
+            "category": "security",
+            "severity": "blocking",
+            "what": "No auth check — any user can list all candidates.",
+            "why": "Must verify the user belongs to the org and filter by org_id.",
+            "positive": false
+          },
+          {
+            "id": 1702,
+            "file": "src/routes/candidates/list.ts",
+            "line": 7,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "No max limit on pagination.",
+            "why": "A malicious client can request limit=999999 and OOM the worker.",
+            "positive": false
+          },
+          {
+            "id": 1703,
+            "file": "src/routes/candidates/list.ts",
+            "line": 11,
+            "category": "security",
+            "severity": "suggestion",
+            "what": "SELECT * returns all columns.",
+            "why": "Could leak PII if columns are added later.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Auth and limit are blocking. Column selection is recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1701,
+            "move": "change",
+            "content": "Added auth middleware and org_id filter.",
+            "updated_code": "pipelineCandidatesRoutes.use('/*', authMiddleware); ... WHERE org_id = ?1 AND id > ?2"
+          },
+          {
+            "to_comment_id": 1702,
+            "move": "change",
+            "content": "Capped limit at 100.",
+            "updated_code": "const limit = Math.min(parseInt(c.req.query('limit') ?? '20', 10), 100);"
+          },
+          {
+            "to_comment_id": 1703,
+            "move": "change",
+            "content": "Switched to explicit columns.",
+            "updated_code": "SELECT id, name, email, stage_id FROM candidates"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "All three issues resolved. Auth, limit, and column selection look correct.",
+      "submittedAt": "2026-04-28T03:47:05.962Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 3 of 4 bugs (auth, limit, SELECT *). Missed cursor ordering issue. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Auth and limit flagged as blocking. Column selection as suggestion. Good triage. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified all three fixes. Auth middleware pattern is correct. Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete security and performance rationales. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested auth middleware, limit cap, explicit columns — all actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

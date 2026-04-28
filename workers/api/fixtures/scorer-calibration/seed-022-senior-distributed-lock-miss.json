@@ -1,0 +1,136 @@
+{
+  "id": "seed-022-senior-distributed-lock-miss",
+  "description": "Senior reviewer finds an obvious bug but misses edge cases in distributed lock. Low score for senior level.",
+  "tags": [
+    "typescript",
+    "node",
+    "distributed-systems",
+    "low-score-anchor",
+    "senior-level"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add distributed lock with Redis",
+    "description": "Implements a distributed lock for pipeline mutations.",
+    "instructions": "Review for distributed systems correctness and edge cases.",
+    "diff": "diff --git a/src/lib/lock.ts b/src/lib/lock.ts\n@@ -0,0 +1,48 @@\n+import { createClient } from 'redis';\n+\n+export class DistributedLock {\n+  private client = createClient({ url: ENV.REDIS_URL });\n+\n+  async acquire(key: string, ttlMs: number): Promise<boolean> {\n+    const result = await this.client.set(key, 'locked', {\n+      NX: true,\n+      PX: ttlMs,\n+    });\n+    return result === 'OK';\n+  }\n+\n+  async release(key: string): Promise<void> {\n+    await this.client.del(key);\n+  }\n+\n+  async withLock<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {\n+    const acquired = await this.acquire(key, ttlMs);\n+    if (!acquired) throw new Error('Lock not acquired');\n+    try {\n+      return await fn();\n+    } finally {\n+      await this.release(key);\n+    }\n+  }\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/lock.ts",
+      "line": 13,
+      "description": "release() deletes the key without verifying the caller owns the lock — if the lock expires and another process acquires it, release() will delete the OTHER process lock. Should use a unique token (UUID) and compare-before-delete (Redlock pattern).",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/lock.ts",
+      "line": 9,
+      "description": "No lock extension mechanism — if fn() takes longer than ttlMs, the lock expires mid-operation. Should support refresh/extend during long operations.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/lock.ts",
+      "line": 16,
+      "description": "withLock throws on failed acquisition instead of supporting retry or backoff — callers must implement their own retry logic, leading to inconsistent patterns.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/lock.ts",
+      "line": 5,
+      "description": "Redis client is created per lock instance — should be shared/reused across the application to avoid connection pool exhaustion.",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2201,
+            "file": "src/lib/lock.ts",
+            "line": 16,
+            "category": "design",
+            "severity": "suggestion",
+            "what": "Throwing on lock failure is harsh. Consider retry with exponential backoff.",
+            "why": "Transient contention is common in distributed systems.",
+            "positive": false
+          },
+          {
+            "id": 2202,
+            "file": "src/lib/lock.ts",
+            "line": 5,
+            "category": "performance",
+            "severity": "suggestion",
+            "what": "Creating a Redis client per instance may exhaust connections.",
+            "why": "Should reuse a shared client.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "approve",
+        "reviewer_summary": "Good suggestions but not blocking. Works for current scale.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2201,
+            "move": "comment",
+            "content": "Retry logic adds complexity. Callers can retry if needed."
+          },
+          {
+            "to_comment_id": 2202,
+            "move": "change",
+            "content": "Switched to singleton client.",
+            "updated_code": "private client = getSharedRedisClient();"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Shared client is good. Retry can be added later if needed.",
+      "submittedAt": "2026-04-28T03:47:05.964Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 2 of 4 bugs (retry, client reuse). Missed lock ownership and extension. For senior, this is poor. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Critical distributed systems bugs treated as suggestions. Approved with unfound criticals. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted client fix. Caved on retry pushback. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Basic rationale. No deep distributed systems analysis. Level 2-3."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No questions. Level 1-2."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested retry and shared client — actionable but missed core issues. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

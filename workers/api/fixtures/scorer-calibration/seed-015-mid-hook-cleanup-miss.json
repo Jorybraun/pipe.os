@@ -1,0 +1,136 @@
+{
+  "id": "seed-015-mid-hook-cleanup-miss",
+  "description": "Mid reviewer finds a hook API issue but misses cleanup and dependency problems. Mixed performance.",
+  "tags": [
+    "typescript",
+    "react",
+    "hooks",
+    "mid-score"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add usePolling hook",
+    "description": "Polls an API endpoint at an interval.",
+    "instructions": "Review for React best practices and correctness.",
+    "diff": "diff --git a/src/hooks/usePolling.ts b/src/hooks/usePolling.ts\n@@ -0,0 +1,38 @@\n+import { useEffect, useRef } from 'react';\n+\n+export function usePolling(url: string, interval: number) {\n+  const [data, setData] = useState(null);\n+  const intervalRef = useRef(null);\n+\n+  useEffect(() => {\n+    intervalRef.current = setInterval(async () => {\n+      const res = await fetch(url);\n+      const json = await res.json();\n+      setData(json);\n+    }, interval);\n+  }, [url]);\n+\n+  return data;\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/hooks/usePolling.ts",
+      "line": 7,
+      "description": "setInterval callback fires even if component unmounts — fetch/setData on unmounted component causes memory leak and React warning. Missing cleanup function.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/hooks/usePolling.ts",
+      "line": 7,
+      "description": "Dependency array only includes url — if interval changes, the old interval keeps running and a new one starts. Should include interval and clear old interval.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/hooks/usePolling.ts",
+      "line": 8,
+      "description": "No error handling for fetch failures — repeated 500s will spam the console and never surface to UI.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/hooks/usePolling.ts",
+      "line": 9,
+      "description": "No AbortController for fetch — if component unmounts during fetch, the response may still call setData after unmount.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1501,
+            "file": "src/hooks/usePolling.ts",
+            "line": 7,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Missing cleanup for setInterval — leaks after unmount.",
+            "why": "setInterval keeps firing even if component is gone.",
+            "positive": false
+          },
+          {
+            "id": 1502,
+            "file": "src/hooks/usePolling.ts",
+            "line": 8,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Should handle fetch errors.",
+            "why": "Repeated failures will spam logs.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Cleanup is blocking. Error handling recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1501,
+            "move": "change",
+            "content": "Added cleanup.",
+            "updated_code": "return () => clearInterval(intervalRef.current);"
+          },
+          {
+            "to_comment_id": 1502,
+            "move": "change",
+            "content": "Added try/catch around fetch.",
+            "updated_code": "try { const res = await fetch(url); ... } catch (e) { console.error(e); }"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Cleanup and error handling look good.",
+      "submittedAt": "2026-04-28T03:47:05.962Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 2 of 4 bugs (cleanup, error handling). Missed interval dependency and AbortController. Level 2-3."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Cleanup flagged as blocking. Error handling as suggestion. Good triage. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted cleanup and error handling without verifying interval fix. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete leak explanation. Error spam rationale is good. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested cleanup and try/catch — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

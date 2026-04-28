@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useAuth as useClerkAuth } from "@clerk/react";
 import {
   Calendar,
@@ -25,6 +25,7 @@ import {
   Edit3,
   Check,
   X as XIcon,
+  ArrowLeft,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { PhoneCallDrawer } from "../components/Phone/PhoneCallDrawer";
@@ -832,6 +833,125 @@ function ChallengeCard({
 }
 
 // ============================================================================
+// Empty / error state
+// ============================================================================
+
+function CandidateNotFoundState({ message }: { message: string }): JSX.Element {
+  const navigate = useNavigate();
+  return (
+    <div
+      data-testid="candidate-not-found"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "calc(100vh - 100px)",
+        padding: 40,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 480,
+          width: "100%",
+          padding: "48px 40px",
+          background: "var(--pipe-surface)",
+          border: "1px solid var(--pipe-border)",
+          borderRadius: 16,
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            background: "rgba(248, 113, 113, 0.08)",
+            border: "1px solid rgba(248, 113, 113, 0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 24px",
+          }}
+        >
+          <XIcon size={24} style={{ color: "#f87171" }} />
+        </div>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 800,
+            color: "var(--pipe-text, #fff)",
+            marginBottom: 8,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          Candidate Not Found
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--pipe-text-dim)",
+            fontFamily: '"Space Mono", monospace',
+            lineHeight: 1.6,
+            marginBottom: 32,
+          }}
+        >
+          {message}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 20px",
+              background: "rgba(255, 255, 255, 0.06)",
+              border: "1px solid rgba(255, 255, 255, 0.14)",
+              borderRadius: 6,
+              color: "var(--pipe-text)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.15em",
+              fontFamily: '"Space Mono", monospace',
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft size={12} /> GO BACK
+          </button>
+          <button
+            onClick={() => navigate("/")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 20px",
+              background: "transparent",
+              border: "1px solid var(--pipe-border)",
+              borderRadius: 6,
+              color: "var(--pipe-text-dim)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.15em",
+              fontFamily: '"Space Mono", monospace',
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft size={12} /> BACK TO ROLES
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Main page
 // ============================================================================
 
@@ -1024,12 +1144,9 @@ export default function CandidateProfilePage(): JSX.Element {
   // ── Error / not found ───────────────────────────────────────────────────────
   if (error || !candidate) {
     return (
-      <div
-        data-testid="candidate-not-found"
-        style={{ padding: 40, color: "#f87171" }}
-      >
-        {error?.message ?? "Candidate not found."}
-      </div>
+      <CandidateNotFoundState
+        message={error?.message ?? "Candidate not found."}
+      />
     );
   }
 
@@ -1855,7 +1972,7 @@ export default function CandidateProfilePage(): JSX.Element {
                             onClick={async () => {
                               try {
                                 const token = await getToken();
-                                const baseUrl = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+                                const baseUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8787';
                                 const res = await fetch(`${baseUrl}/api/v1/phone/calls/${call.id}/recording`, {
                                   headers: token ? { Authorization: `Bearer ${token}` } : {},
                                 });

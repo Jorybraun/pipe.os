@@ -153,33 +153,30 @@ describe('buildRoleAgentUserMessage', () => {
   });
 });
 
-// ─── callRoleAgent — mock fallback paths ─────────────────────────────────────
+// ─── callRoleAgent — error when no provider ──────────────────────────────────
 
 describe('callRoleAgent', () => {
-  it('returns mock question when no API key', async () => {
-    const result = await callRoleAgent({
+  it('throws when no provider is configured', async () => {
+    await expect(callRoleAgent({
       provider: null,
+      fallbackProvider: null,
       baseline: { title: 'Designer' },
       exchanges: [],
       knowledgeState: {},
       questionsAsked: 0,
       questionBudget: 8,
-    });
-    expect(result.type).toBe('question');
-    if (result.type === 'question') {
-      expect(result.question.id).toBe('q-1');
-    }
+    })).rejects.toThrow('No AI provider is configured');
   });
 
-  it('returns mock synthesis when budget exhausted and no API key', async () => {
-    const result = await callRoleAgent({
+  it('throws when budget exhausted and no provider', async () => {
+    await expect(callRoleAgent({
       provider: null,
+      fallbackProvider: null,
       baseline: { title: 'Designer' },
       exchanges: [],
       knowledgeState: {},
       questionsAsked: 8,
       questionBudget: 8,
-    });
-    expect(result.type).toBe('synthesis');
+    })).rejects.toThrow('No AI provider is configured');
   });
 });

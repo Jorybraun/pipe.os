@@ -152,7 +152,7 @@ async function upsertIssue(
   issue: ParsedIssue,
   hasMergedPR: boolean,
 ): Promise<void> {
-  // Truncate body to MAX_BODY_LENGTH
+  // Truncate body to MAX_BODY_LENGTH for the primary storage column
   const body = issue.body
     ? issue.body.length > MAX_BODY_LENGTH
       ? issue.body.slice(0, MAX_BODY_LENGTH) + '\n\n[truncated]'
@@ -161,13 +161,24 @@ async function upsertIssue(
 
   const labelsJson = JSON.stringify(issue.labels);
 
+  // Cache the full untruncated body for challenge UI surfacing
+  const bodyCacheJson = JSON.stringify({
+    title: issue.title,
+    body: issue.body,
+    labels: issue.labels,
+    state: issue.state,
+  });
+
+  const bodyCachedAt = Math.floor(Date.now() / 1000);
+
   await db
     .prepare(`
       INSERT INTO repo_issues (
         repo_id, github_issue_id, issue_number, title, body, author_login,
         labels_json, comment_count, reactions_total,
-        github_created_at, github_updated_at, crawled_at, state_at_crawl, has_merged_pr
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)
+        github_created_at, github_updated_at, crawled_at, state_at_crawl, has_merged_pr,
+        body_cache_json, body_cached_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?)
       ON CONFLICT(repo_id, issue_number) DO UPDATE SET
         title = excluded.title,
         body = excluded.body,
@@ -177,7 +188,9 @@ async function upsertIssue(
         github_updated_at = excluded.github_updated_at,
         crawled_at = datetime('now'),
         state_at_crawl = excluded.state_at_crawl,
-        has_merged_pr = excluded.has_merged_pr
+        has_merged_pr = excluded.has_merged_pr,
+        body_cache_json = excluded.body_cache_json,
+        body_cached_at = excluded.body_cached_at
     `)
     .bind(
       repoId,
@@ -193,6 +206,8 @@ async function upsertIssue(
       issue.github_updated_at,
       issue.state,
       hasMergedPR ? 1 : 0,
+      bodyCacheJson,
+      bodyCachedAt,
     )
     .run();
 }

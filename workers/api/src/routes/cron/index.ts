@@ -8,6 +8,7 @@
 import type { Env } from '../../types';
 import { handleIssueCrawlerCron } from './issueCrawler';
 import { handleIssueScorerCron } from './issueScorer';
+import { handleEnrichmentWorkerCron } from './enrichmentWorker';
 
 export type ScheduledEvent = {
   cron: string;
@@ -41,6 +42,16 @@ export async function handleScheduled(
       console.log(`[cron:issueScorer] Processed ${result.processed} issues, ${result.errors.length} errors`);
       if (result.errors.length > 0) {
         console.error('[cron:issueScorer] Errors:', result.errors);
+      }
+      break;
+    }
+
+    case '0 */2 * * *': {
+      // Every 2 hours — Enrichment Worker
+      const result = await handleEnrichmentWorkerCron(env);
+      console.log(`[cron:enrichmentWorker] Processed ${result.processed} jobs, ${result.failed} failed`);
+      if (result.errors.length > 0) {
+        console.error('[cron:enrichmentWorker] Errors:', result.errors);
       }
       break;
     }

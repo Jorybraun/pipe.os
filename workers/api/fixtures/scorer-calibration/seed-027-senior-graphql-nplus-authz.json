@@ -1,0 +1,152 @@
+{
+  "id": "seed-027-senior-graphql-nplus-authz",
+  "description": "Senior reviewer finds N+1 and authorization gap. Strong technical identification.",
+  "tags": [
+    "typescript",
+    "node",
+    "graphql",
+    "high-score-senior"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add GraphQL candidate resolver",
+    "description": "GraphQL resolver for candidate data with nested assessments.",
+    "instructions": "Review for performance and security.",
+    "diff": "diff --git a/src/graphql/candidateResolver.ts b/src/graphql/candidateResolver.ts\n@@ -0,0 +1,55 @@\n+export const candidateResolvers = {\n+  Query: {\n+    candidate: async (_: unknown, { id }: { id: string }, { db, user }) => {\n+      const candidate = await db.prepare('SELECT * FROM candidates WHERE id = ?1').bind(id).first();\n+      return candidate;\n+    },\n+  },\n+  Candidate: {\n+    assessments: async (parent: any, _: unknown, { db }) => {\n+      const rows = await db.prepare('SELECT * FROM assessments WHERE candidate_id = ?1').bind(parent.id).all();\n+      return rows.results;\n+    },\n+    scores: async (parent: any, _: unknown, { db }) => {\n+      const rows = await db.prepare('SELECT * FROM review_scores WHERE assessment_id IN (SELECT id FROM assessments WHERE candidate_id = ?1)').bind(parent.id).all();\n+      return rows.results;\n+    },\n+  },\n+};\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 4,
+      "description": "No authorization check — any authenticated user can query any candidate by ID. Missing org_id ownership verification.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 8,
+      "description": " assessments resolver is N+1 — GraphQL will call this once per candidate in a list query. For 100 candidates this is 100 DB round-trips. Should use DataLoader.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 4,
+      "description": "SELECT * returns all columns including PII (email, phone). Should explicitly select only fields defined in the GraphQL schema.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/graphql/candidateResolver.ts",
+      "line": 12,
+      "description": "scores resolver uses IN subquery — functional but could be a single JOIN with GROUP BY for better performance.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2701,
+            "file": "src/graphql/candidateResolver.ts",
+            "line": 4,
+            "category": "security",
+            "severity": "blocking",
+            "what": "No authorization — any user can query any candidate.",
+            "why": "Must verify the requesting user owns the org that owns this candidate. Add org_id filter and user check.",
+            "positive": false
+          },
+          {
+            "id": 2702,
+            "file": "src/graphql/candidateResolver.ts",
+            "line": 8,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "assessments resolver is N+1 for list queries.",
+            "why": "GraphQL calls this per parent. Need DataLoader to batch fetch assessments by candidate_id.",
+            "positive": false
+          },
+          {
+            "id": 2703,
+            "file": "src/graphql/candidateResolver.ts",
+            "line": 4,
+            "category": "security",
+            "severity": "suggestion",
+            "what": "SELECT * returns all columns including PII.",
+            "why": "Explicit column selection prevents data leaks when new columns are added.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Auth and N+1 are blocking. Column selection is recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2701,
+            "move": "change",
+            "content": "Added user org check.",
+            "updated_code": "const candidate = await db.prepare('SELECT * FROM candidates WHERE id = ?1 AND org_id = ?2').bind(id, user.orgId).first(); if (!candidate) throw new Error('Not found');"
+          },
+          {
+            "to_comment_id": 2702,
+            "move": "change",
+            "content": "Added DataLoader.",
+            "updated_code": "const assessmentLoader = new DataLoader(async (candidateIds: string[]) => { ... });"
+          },
+          {
+            "to_comment_id": 2703,
+            "move": "change",
+            "content": "Switched to explicit columns.",
+            "updated_code": "SELECT id, name, email, stage_id FROM candidates"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "All fixes verified. Auth filter, DataLoader, and explicit columns look correct.",
+      "submittedAt": "2026-04-28T03:47:05.965Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Found 3 of 4 bugs (auth, N+1, SELECT *). Missed JOIN optimization. Excellent coverage. Level 4-5."
+    },
+    "prioritization": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Auth and N+1 as blocking. Column selection as suggestion. Perfect triage. Level 4-5."
+    },
+    "revision_evaluation": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Verified all three fixes. Auth pattern and DataLoader usage are correct. Level 4-5."
+    },
+    "reasoning_quality": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Concrete security and performance rationales with specific mechanisms. Level 4-5."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Suggested auth filter, DataLoader, explicit columns — all actionable and specific. Level 4-5."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

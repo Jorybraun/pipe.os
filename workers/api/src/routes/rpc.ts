@@ -19,6 +19,7 @@ import { repo } from './assessment/repo';
 import { devContainer, devContainerProxyPublic } from './assessment/devContainer';
 import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
+import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
 import type { Env } from '../types';
 
 // ─── Public routes (no auth) ────────────────────────────────────────────────
@@ -548,6 +549,45 @@ rpcAuth.post('/get-challenge', async (c) => {
     };
   }
 
+  // Fetch cached issue body for CODE_IMPLEMENTATION challenges
+  const effectiveIssueNumber = ch.effective_issue_number as number | null;
+  if (
+    (ch.type as string) === 'CODE_IMPLEMENTATION' &&
+    effectiveRepoUrl &&
+    effectiveIssueNumber
+  ) {
+    try {
+      const issueRow = await c.env.DB
+        .prepare(
+          `SELECT ri.body_cache_json
+           FROM repo_issues ri
+           JOIN qualified_repos qr ON ri.repo_id = qr.id
+           WHERE qr.github_url = ?1 AND ri.issue_number = ?2`,
+        )
+        .bind(effectiveRepoUrl, effectiveIssueNumber)
+        .first<{ body_cache_json: string | null }>();
+
+      if (issueRow?.body_cache_json) {
+        try {
+          const cache = JSON.parse(issueRow.body_cache_json) as {
+            title?: string;
+            body?: string;
+            labels?: string[];
+          };
+          response.issueBody = {
+            title: cache.title ?? null,
+            body: cache.body ?? null,
+            labels: cache.labels ?? [],
+          };
+        } catch {
+          // malformed cache JSON — ignore
+        }
+      }
+    } catch (err) {
+      console.error('[rpc/get-challenge] Failed to load issue body cache:', err);
+    }
+  }
+
   return c.json(response);
 });
 
@@ -725,6 +765,13 @@ rpcAuth.post('/score-submission', async (c) => {
 
   if (!sub) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Submission not found.' } }, 404);
+  }
+
+  // CODE_IMPLEMENTATION: trigger async Sherlock scoring, return 202 immediately
+  if (sub.type === 'CODE_IMPLEMENTATION') {
+    console.log(`[submissions] implementation scoring triggered for submission ${challengeSubmissionId}`);
+    c.executionCtx.waitUntil(scoreImplementationSubmission(challengeSubmissionId, c.env));
+    return c.json({ success: true, status: 'scoring_in_progress' }, 202);
   }
 
   let score: number | null = null;

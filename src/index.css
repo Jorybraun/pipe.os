@@ -43,6 +43,12 @@ body {
   overflow: hidden;
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Glassmorphic variant for cards */
 .skeleton-card {
   background: linear-gradient(

@@ -1,0 +1,126 @@
+{
+  "fixture_id": "culture-002",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Cooperative and adaptable interpersonal style, though behavioral evidence lacks significant depth.",
+      "narrative": "The candidate demonstrates a cooperative stance toward interpersonal conflict and a willingness to accommodate team decisions. When discussing technical disagreements, they expressed a commitment to finding middle ground and maintaining flexibility through open-mindedness. They also acknowledged the value of developmental feedback, noting they have made proactive efforts to improve their communication skills.\n\nThe transcript shows limited evidence of proactive ownership or independent problem-solving. When asked about addressing issues outside their immediate remit, the candidate described a reactive approach triggered by a direct request from a manager rather than identifying the problem autonomously. Furthermore, the high level of abstraction in their responses regarding past mistakes and weaknesses makes it difficult to gauge the actual complexity of the challenges they have navigated or the depth of their self-correction processes.\n\nIn terms of working-style complementarity, the candidate shows total alignment with the organizational benchmark across all measured axes, including autonomy, risk tolerance, and work pace. While this indicates a high degree of potential values alignment with current team structures, the lack of significant divergence means their specific culture add remains unquantified. They appear highly compatible with existing norms but may require further assessment to determine their capacity for driving technical or process evolution.",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:52:38.103Z"
+  },
+  "meta": {
+    "wall_clock_ms": 34026,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

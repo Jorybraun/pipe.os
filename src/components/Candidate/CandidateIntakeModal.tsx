@@ -34,6 +34,7 @@ export function CandidateIntakeModal({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [githubHandle, setGithubHandle] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<{
@@ -60,6 +61,10 @@ export function CandidateIntakeModal({
         setError("Only .pdf and .docx files are supported.");
       }
     }
+  };
+
+  const handleGithubBlur = () => {
+    setGithubHandle((prev) => prev.replace(/^@/, ""));
   };
 
   const handleProcess = async () => {
@@ -112,6 +117,9 @@ export function CandidateIntakeModal({
       //    The Worker returns the R2 key and persists it on the candidate record.
       const formData = new FormData();
       formData.append("file", file);
+      if (githubHandle.trim()) {
+        formData.append("githubHandle", githubHandle.trim());
+      }
 
       const token = await getToken();
       const baseUrl =
@@ -219,7 +227,7 @@ export function CandidateIntakeModal({
               color: "var(--pipe-text-dim)", 
               cursor: "pointer" 
             }}
-          >
+           aria-label="Close">
             <X size={20} />
           </button>
         </div>
@@ -243,6 +251,35 @@ export function CandidateIntakeModal({
                     placeholder="john@example.com"
                   />
                 </FieldGroup>
+              </div>
+
+              {/* GitHub Handle */}
+              <div>
+                <label style={{
+                  display: "block",
+                  fontSize: 10,
+                  color: "var(--pipe-text-dim)",
+                  marginBottom: 12,
+                  fontFamily: "Space Mono"
+                }}>
+                  GITHUB_HANDLE (OPTIONAL)
+                </label>
+                <TextInput
+                  value={githubHandle}
+                  onChange={setGithubHandle}
+                  onBlur={handleGithubBlur}
+                  placeholder="username (not the full URL)"
+                  ariaLabel="GitHub handle"
+                />
+                <div style={{
+                  fontSize: 10,
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: "Space Mono",
+                  marginTop: 8,
+                  lineHeight: 1.5
+                }}>
+                  We&apos;ll use your public GitHub activity to enrich your profile. We only read public data you&apos;ve shared.
+                </div>
               </div>
 
               {/* CV Upload */}

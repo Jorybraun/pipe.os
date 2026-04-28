@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-007-junior-race-condition-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/candidates/status.ts",
+      "line": 6,
+      "description": "No validation on status field — accepts any string including SQL injection attempts (though parameterized, invalid status values corrupt data integrity).",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/routes/candidates/status.ts",
+      "line": 7,
+      "description": "Read-then-write race condition: two concurrent requests can read the same stage_id, then both overwrite, losing one update and any audit trail of the intermediate state.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/routes/candidates/status.ts",
+      "line": 15,
+      "description": "Success response returns no updated row data — client must refetch.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 2,
+    "major": 0,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 2
+  }
+}

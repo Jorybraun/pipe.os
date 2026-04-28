@@ -75,6 +75,13 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
     outputUsdPerM: 0.60,
   },
 
+  // Kimi — Moonshot AI coding endpoint (role discovery fallback / primary).
+  'kimi-for-coding': {
+    provider: 'kimi',
+    inputUsdPerM: 0.50,
+    outputUsdPerM: 2.00,
+  },
+
   // Vertex AI — Gemini 2.5 Flash Live API (voice interviews; TTS+STT combined).
   // Session context window billing: every turn re-charges accumulated tokens.
   'vertex/gemini-live-2.5-flash-native-audio': {

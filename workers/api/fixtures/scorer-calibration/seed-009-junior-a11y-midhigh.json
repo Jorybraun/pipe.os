@@ -1,0 +1,151 @@
+{
+  "id": "seed-009-junior-a11y-midhigh",
+  "description": "Junior reviewer finds most accessibility issues but misses a focus-trap bug. Good effort for junior level with decent reasoning.",
+  "tags": [
+    "typescript",
+    "react",
+    "accessibility",
+    "mid-high-score"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add modal dialog component",
+    "description": "Adds a Modal component for confirmation dialogs.",
+    "instructions": "Review for accessibility and React patterns.",
+    "diff": "diff --git a/src/components/Modal.tsx b/src/components/Modal.tsx\n@@ -0,0 +1,48 @@\n+import { useEffect, useRef } from 'react';\n+\n+interface ModalProps {\n+  isOpen: boolean;\n+  onClose: () => void;\n+  children: React.ReactNode;\n+}\n+\n+export function Modal({ isOpen, onClose, children }: ModalProps) {\n+  const dialogRef = useRef<HTMLDivElement>(null);\n+\n+  useEffect(() => {\n+    if (isOpen) {\n+      document.body.style.overflow = 'hidden';\n+    } else {\n+      document.body.style.overflow = '';\n+    }\n+  }, [isOpen]);\n+\n+  if (!isOpen) return null;\n+\n+  return (\n+    <div ref={dialogRef} role=\"dialog\" aria-modal=\"true\">\n+      <div>{children}</div>\n+      <button onClick={onClose}>Close</button>\n+    </div>\n+  );\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/components/Modal.tsx",
+      "line": 12,
+      "description": "Focus is not moved into the modal when opened — screen reader users stay on the trigger element. Should focus the dialog or first focusable element.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/Modal.tsx",
+      "line": 18,
+      "description": "No focus trap — Tab key cycles to background elements. Should trap focus inside modal while open.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/Modal.tsx",
+      "line": 19,
+      "description": "Escape key does not close modal — expected behavior for dialogs. Missing keydown handler.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/Modal.tsx",
+      "line": 15,
+      "description": "Body overflow reset uses empty string instead of original value. If parent had overflow: scroll, it is lost.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 901,
+            "file": "src/components/Modal.tsx",
+            "line": 12,
+            "category": "accessibility",
+            "severity": "suggestion",
+            "what": "Modal should move focus when opened.",
+            "why": "Screen reader users need to know the dialog appeared.",
+            "positive": false
+          },
+          {
+            "id": 902,
+            "file": "src/components/Modal.tsx",
+            "line": 19,
+            "category": "accessibility",
+            "severity": "suggestion",
+            "what": "Should close on Escape key.",
+            "why": "Standard keyboard behavior for dialogs.",
+            "positive": false
+          },
+          {
+            "id": 903,
+            "file": "src/components/Modal.tsx",
+            "line": 15,
+            "category": "accessibility",
+            "severity": "nit",
+            "what": "Consider saving the original overflow value.",
+            "why": "Could overwrite parent scroll styles.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Accessibility improvements needed.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 901,
+            "move": "change",
+            "content": "Added focus to dialog on open.",
+            "updated_code": "useEffect(() => { if (isOpen && dialogRef.current) dialogRef.current.focus(); }, [isOpen]);"
+          },
+          {
+            "to_comment_id": 902,
+            "move": "change",
+            "content": "Added Escape handler.",
+            "updated_code": "const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };"
+          },
+          {
+            "to_comment_id": 903,
+            "move": "comment",
+            "content": "Good point but our app never sets overflow on body. Keeping simple."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Focus and Escape fixes look good. Overflow is acceptable for our app.",
+      "submittedAt": "2026-04-28T03:47:05.960Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 4 bugs (focus, Escape). Missed focus trap and overflow restoration. Good coverage for junior. Level 3-4."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accessibility issues flagged as suggestions not blocking. Overflow nit correctly deprioritized. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted focus and Escape fixes. Caved on overflow pushback without verifying app behavior. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Concrete user-impact rationale for a11y issues. Level 2-3."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions but comments imply awareness of user needs. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested focus and Escape handling — actionable. No guidance on focus trap. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

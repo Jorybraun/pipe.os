@@ -1,0 +1,151 @@
+{
+  "id": "seed-016-mid-timeout-circuit",
+  "description": "Mid reviewer finds timeout bug but misses circuit breaker pattern. Decent reasoning and some questions.",
+  "tags": [
+    "typescript",
+    "node",
+    "reliability",
+    "mid-score"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add external API client",
+    "description": "Client for calling third-party assessment provider API.",
+    "instructions": "Review for reliability and error handling.",
+    "diff": "diff --git a/src/lib/assessmentClient.ts b/src/lib/assessmentClient.ts\n@@ -0,0 +1,42 @@\n+export async function callAssessmentApi(payload: unknown) {\n+  const res = await fetch('https://api.assessor.example/v1/score', {\n+    method: 'POST',\n+    headers: { 'Authorization': 'Bearer ' + ENV.ASSESSOR_KEY },\n+    body: JSON.stringify(payload),\n+  });\n+\n+  if (!res.ok) {\n+    throw new Error('Assessment API failed: ' + res.status);\n+  }\n+\n+  return res.json();\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 2,
+      "description": "No request timeout — if the third-party API hangs, this fetch hangs forever, blocking the Worker request and potentially exhausting concurrent request limits.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 6,
+      "description": "No retry logic — transient 503s from the assessment API will fail the candidate scoring flow. Should retry with exponential backoff.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 6,
+      "description": "No circuit breaker — if the API is down, every request will wait for timeout, cascading failure. Should fail fast after N consecutive failures.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 4,
+      "description": "API key is concatenated inline — should use Headers object for clarity and to avoid accidental key leakage in logs.",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1601,
+            "file": "src/lib/assessmentClient.ts",
+            "line": 2,
+            "category": "reliability",
+            "severity": "blocking",
+            "what": "No timeout on fetch — if assessor API hangs, we hang forever.",
+            "why": "Workers have request timeouts. A hanging upstream call will kill our response.",
+            "positive": false
+          },
+          {
+            "id": 1602,
+            "file": "src/lib/assessmentClient.ts",
+            "line": 4,
+            "category": "security",
+            "severity": "suggestion",
+            "what": "Use Headers object instead of string concat for auth.",
+            "why": "Cleaner and less error-prone.",
+            "positive": false
+          },
+          {
+            "id": 1603,
+            "file": "src/lib/assessmentClient.ts",
+            "line": 1,
+            "category": "positive",
+            "severity": "nit",
+            "what": "Good explicit return type on the function.",
+            "why": "",
+            "positive": true
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Timeout is blocking. Headers refactor is optional.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1601,
+            "move": "change",
+            "content": "Added AbortController with 10s timeout.",
+            "updated_code": "const controller = new AbortController(); setTimeout(() => controller.abort(), 10000); const res = await fetch(..., { signal: controller.signal });"
+          },
+          {
+            "to_comment_id": 1602,
+            "move": "change",
+            "content": "Switched to Headers.",
+            "updated_code": "headers: new Headers({ Authorization: `Bearer ${ENV.ASSESSOR_KEY}` })"
+          },
+          {
+            "to_comment_id": 1603,
+            "move": "comment",
+            "content": "Thanks!"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Timeout and headers look good.",
+      "submittedAt": "2026-04-28T03:47:05.962Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 2 of 4 bugs (timeout, headers). Missed retry and circuit breaker. Level 2-3."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Timeout flagged as blocking. Headers as suggestion. Positive comment is good. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted timeout and headers. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete timeout rationale (Worker limits). Good technical framing. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested AbortController and Headers — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

@@ -9,10 +9,11 @@
  *   4. embedAndUpsertCandidate (self-persists status + embedding to D1 when db passed)
  *   5. matchReposForCandidate (graph + optional cosine)
  *   6. Load role_repo_alignment for pipeline's role_context
- *   7. candidateSituationFit on top repos
- *   8. triangulateMatch
- *   9. Write candidate_challenge_assignment rows
- *   10. markIngestionMatched
+ *   7. Load cultural signal nodes for prompt enrichment
+ *   8. candidateSituationFit on top repos
+ *   9. triangulateMatch
+ *   10. Write candidate_challenge_assignment rows
+ *   11. markIngestionMatched
  *
  * Every step after (2) is wrapped in its own try/catch. Failures write
  * markIngestionFailed and return without throwing — the upload route must
@@ -46,6 +47,7 @@ import {
   type SituationFitRanking,
 } from './candidateSituationFit';
 import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
+import { getActiveCandidateNodes } from './candidateNodes';
 
 export interface IngestionInput {
   env: Env;
@@ -339,7 +341,18 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     if (name) c.full_name = name;
   }
 
-  // Step 8: Candidate situation fit (with per-repo cache)
+  // Step 8: Load cultural signal nodes for prompt enrichment
+  let culturalSignalNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
+  try {
+    culturalSignalNodes = await getActiveCandidateNodes(db, candidateId, 'CulturalSignal');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to load cultural signal nodes for ${candidateId}:`, msg);
+  }
+
+  const promptVersion = culturalSignalNodes.length > 0 ? 'v2-cultural' : 'v1';
+
+  // Step 9: Candidate situation fit (with per-repo cache)
   const cachedRankings: SituationFitRanking[] = [];
   const missRepos: SituationFitCandidate[] = [];
 
@@ -349,6 +362,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       repo.repo_id,
       discoveryResult.profileVersion,
       repo.signals.signals_version,
+      promptVersion,
     );
     const cached = await getCachedSituationFit(db, cacheKey);
     if (cached) {
@@ -377,6 +391,8 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       candidateResult: discoveryResult,
       candidateKeyConcepts: discoveryResult.keyConcepts,
       repos: missRepos,
+      ...(culturalSignalNodes.length > 0 ? { culturalSignalNodes } : {}),
+      ...(roleContextRow ? { roleContextId: roleContextRow.id } : {}),
     });
 
     // Store cache for each miss
@@ -388,6 +404,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
         ranking.repo_id,
         discoveryResult.profileVersion,
         repo.signals.signals_version,
+        promptVersion,
       );
       await storeSituationFitCache(
         db,
@@ -406,7 +423,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     };
   }
 
-  // Step 9: Triangulate
+  // Step 10: Triangulate
   const vectorCandidateRepo = matchResult.repoChoice.cosine;
   let triangulated = triangulateMatch({
     philosophy,

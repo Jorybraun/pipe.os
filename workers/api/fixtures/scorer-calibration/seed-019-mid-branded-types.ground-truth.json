@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-019-mid-branded-types",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/types/ids.ts",
+      "line": 4,
+      "description": "toCandidateId does no validation — any string can be cast, defeating the purpose of branded types. Should validate UUID format.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/types/ids.ts",
+      "line": 8,
+      "description": "moveCandidate takes branded types but internal implementation may still accept plain strings via implicit any. Function body should be shown and validated.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/types/ids.ts",
+      "line": 1,
+      "description": "Branded type uses intersection with string — nominal typing is better achieved with unique symbol or abstract class for stronger encapsulation.",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 0,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 1
+  }
+}

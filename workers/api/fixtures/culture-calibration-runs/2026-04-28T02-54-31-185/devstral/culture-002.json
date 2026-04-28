@@ -1,0 +1,151 @@
+{
+  "fixture_id": "culture-002",
+  "provider": "devstral",
+  "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did."
+        ],
+        "confidence": 0.95,
+        "reasoning": "Candidate provides a real example but the personal contribution is peripheral or reactive — candidate noticed a problem but waited to be assigned to it. The candidate's action was one small step inside a larger managed effort they did not initiate.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "There have been disagreements here and there. I usually try to see both sides. In the end we found a middle ground."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate provides a real example of working with others but does not describe their specific contribution to the joint work. The candidate's role is unclear and there is no mention of conflict or friction. The candidate's response is vague and does not provide concrete behavioral evidence of collaboration.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I received feedback once that I needed to improve my communication and I've been working on that."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate demonstrates Level 2 learning orientation: describes a learning moment that was externally triggered (receiving feedback) with no evidence of actively seeking it. The learning is acknowledged but no behavioral change is described.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "There have been disagreements here and there. I usually try to see both sides. In the end we found a middle ground. I think it's important to be flexible.",
+          "I once disagreed with a technical choice but after hearing the reasoning I understood where they were coming from. I try to stay open-minded."
+        ],
+        "confidence": 0.95,
+        "reasoning": "The candidate describes real conflicts but their handling was passive. They mention disagreements but do not describe their own position clearly or any genuine attempt to understand the opposing view. They mention finding a middle ground and staying open-minded, but do not provide specific details or evidence of structured pushback or resolution. This fits Level 2: passive or procedural handling of conflict.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I can be a perfectionist sometimes. I've been working on prioritizing better. I think I'm a lot better at it now than I used to be."
+        ],
+        "confidence": 0.95,
+        "reasoning": "Candidate names a weakness but the description is abstract and lacks any account of what they do to manage it. The weakness is acknowledged intellectually but not demonstrated through a real example of it causing a problem. There is no concrete example of the weakness manifesting in their work or any named coping strategy or compensation tactic.",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I was asked to look into it so I did.",
+          "I try to see both sides. In the end we found a middle ground.",
+          "I try to stay open-minded."
+        ],
+        "confidence": 0.65,
+        "reasoning": "Candidate describes working within the direction given by their manager and seeking middle ground in disagreements. They also mention being open-minded and flexible, which suggests a willingness to adapt to both structured and autonomous environments. Position 2 is not warranted because they do not explicitly seek clarity on priorities before proceeding independently. Position 4 is not warranted because they do not describe a strong preference for owning problems end-to-end with minimal check-ins.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I usually try to see both sides. In the end we found a middle ground. I think it's important to be flexible.",
+          "I can be a perfectionist sometimes. I've been working on prioritizing better."
+        ],
+        "confidence": 0.65,
+        "reasoning": "Candidate describes a preference for finding middle ground and flexibility, which suggests a cautious approach to decision-making. The mention of being a perfectionist and working on prioritization indicates a tendency to validate decisions thoroughly. Position 3 is not warranted because the candidate does not articulate a contextually calibrated risk tolerance. Position 1 is not warranted because the candidate does show some willingness to act and adapt.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I can be a perfectionist sometimes. I've been working on prioritizing better. I think I'm a lot better at it now than I used to be."
+        ],
+        "confidence": 0.65,
+        "reasoning": "Candidate describes a balanced approach to work pace, mentioning both perfectionism and the need for better prioritization. This suggests they can adapt to different paces but do not inherently favor speed or deliberation. Position 2 is not warranted because they do not describe needing transition time or clear priorities to work effectively. Position 4 is not warranted because they do not describe high pace as energizing or comfortable with rapid context switching.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I was asked to look into it so I did. Eventually the issue was resolved and everything was fine.",
+          "I usually try to see both sides. In the end we found a middle ground."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate describes working independently on tasks assigned to them and seeking middle ground in disagreements, indicating a preference for individual execution with collaborative alignment. Position 1 is not warranted because they mention finding middle ground and being flexible. Position 3 is not warranted because they do not describe adapting collaboration style based on problem complexity or team preference.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "I received feedback once that I needed to improve my communication and I've been working on that."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate mentions receiving feedback and working on it, but does not describe actively seeking it out. They value flexibility and open-mindedness, which suggests a willingness to receive feedback but not a proactive stance. Position 3 is not warranted because there is no evidence of comfort with regular feedback in both formal and informal settings. Position 1 is not warranted because the candidate does show receptiveness to feedback from trusted sources.",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Candidate demonstrates a collaborative and flexible approach to problem-solving.",
+      "narrative": "The candidate shows a strong ability to work within a team and adapt to different situations. They described a scenario where they were assigned to resolve a service issue, demonstrating their willingness to take on tasks even if they were not initially theirs to fix. This indicates a proactive approach to problem-solving and a commitment to ensuring the success of the team's projects. The candidate also mentioned their ability to find middle ground in disagreements, which suggests a collaborative and flexible mindset. They value open-mindedness and are willing to adapt their views based on the input of others, which is crucial for effective teamwork.\n\nThe transcript shows limited evidence of the candidate actively seeking out feedback or initiating learning opportunities. While they acknowledge receiving feedback and working on improving their communication, there is no mention of actively seeking it out or proactively looking for areas to improve. This suggests a potential area for development in terms of taking ownership of their professional growth. Additionally, the candidate's responses to conflict situations were somewhat passive. They mentioned finding a middle ground and staying open-minded, but there was no specific detail about how they handled disagreements or pushed back on directions they disagreed with. This indicates a need for further development in assertiveness and conflict resolution skills.\n\nThe candidate's working-style profile aligns well with the organization's benchmark on autonomy and work pace, suggesting a good values alignment in these areas. However, there is a meaningful divergence on risk tolerance, collaboration style, and feedback orientation. The candidate's cautious approach to decision-making and preference for individual execution with collaborative alignment may complement teams that value thorough validation and structured problem-solving. However, their lower risk tolerance and feedback orientation suggest they may benefit from environments that provide clear guidelines and structured feedback mechanisms. This divergence indicates a potential culture add, as the candidate could bring a balanced and thoughtful approach to risk-taking and collaboration, enriching the team's dynamic.",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:55:01.748Z"
+  },
+  "meta": {
+    "wall_clock_ms": 13384,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

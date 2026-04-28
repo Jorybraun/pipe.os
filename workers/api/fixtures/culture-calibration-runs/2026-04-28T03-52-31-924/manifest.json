@@ -1,0 +1,24 @@
+{
+  "run_dir": "workers/api/fixtures/culture-calibration-runs/2026-04-28T03-52-31-924",
+  "started_at": "2026-04-28T03:52:31.926Z",
+  "updated_at": "2026-04-28T03:52:31.926Z",
+  "endpoint": "http://127.0.0.1:8787/internal/calibrate/score",
+  "domain": "culture_interview",
+  "fixtures": [],
+  "providers": {
+    "gemma": {
+      "model": "@cf/google/gemma-4-26b-a4b-it",
+      "wire_provider": "workers-ai",
+      "ok_count": 0,
+      "failed_count": 0,
+      "metrics": null
+    },
+    "devstral": {
+      "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "wire_provider": "mistral",
+      "ok_count": 0,
+      "failed_count": 0,
+      "metrics": null
+    }
+  }
+}

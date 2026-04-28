@@ -1,0 +1,135 @@
+{
+  "fixture_id": "culture-001",
+  "provider": "gemma",
+  "model": "@cf/google/gemma-4-26b-a4b-it",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 1,
+        "rawScore": 1,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and eventually we sorted it out."
+        ],
+        "confidence": 1,
+        "reasoning": "The candidate fails to provide any specific personal actions or 'I' statements when prompted for examples of ownership. In response to the primary question about fixing a problem that wasn't theirs, they relied entirely on 'we' framing ('we had some issues', 'we sorted it out') and attributed the resolution to a collective team effort ('The team got together', 'Everyone pitched in'). This matches the Level 1 definition of describing a team effort in which the candidate's personal role is absent.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 1,
+        "rawScore": 1,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "The team got together and figured it out. Everyone pitched in and eventually we sorted it out. It was a good team effort.",
+          "I'm a pretty collaborative person so I don't really get into big disagreements."
+        ],
+        "confidence": 1,
+        "reasoning": "The candidate's responses consist entirely of platitudes and generic statements about teamwork without providing a single concrete, grounded example of collaboration. They use 'we' to describe actions and fail to identify any specific technical problem, specific teammate, or specific conflict, which aligns precisely with the Level 1 description of using platitudes with no specific joint-work example.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 1,
+        "rawScore": 1,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I'm always looking to grow and I read a lot of tech blogs to stay current."
+        ],
+        "confidence": 1,
+        "reasoning": "The candidate failed to provide a specific instance of being wrong or a concrete skill gap. Instead, they offered generic platitudes about 'looking to grow' and 'reading tech blogs,' which matches the Level 1 rubric description of providing generic statements without a specific learning event.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 3,
+        "rawScore": 3,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 1,
+        "rawScore": 1,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I'm always looking to grow and I read a lot of tech blogs to stay current. You have to keep learning in this industry. I try to stay open to feedback."
+        ],
+        "confidence": 1,
+        "reasoning": "The candidate fails to name a single specific weakness, error, or blind spot despite being directly prompted with multiple opportunities (disagreements, technical errors, pushing back). Instead, they respond with generic platitudes about 'looking to grow' and 'staying current,' which constitutes the Level 1 behavior of producing generic statements without grounded examples or specificity.",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [],
+        "confidence": 0,
+        "reasoning": "parse_failure",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Synthesis unavailable due to scoring error.",
+      "narrative": "parse_failure",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:55:50.302Z"
+  },
+  "meta": {
+    "wall_clock_ms": 79120,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

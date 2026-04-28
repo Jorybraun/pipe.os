@@ -38,7 +38,7 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.post('/api/v1/agents/:agentType/sessions', async (c) => {
   const agentType = c.req.param('agentType') as AgentSession['agentType'];
-  const body = await c.req.json<{ challengeId?: string; candidateId?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ challengeId?: string; candidateId?: string }>().catch((): { challengeId?: string; candidateId?: string } => ({}));
 
   const plugin = getPlugin(agentType);
   const session = await store.createSession(agentType, body.challengeId, body.candidateId);
@@ -85,7 +85,7 @@ app.post('/rpc/agents/:token/consent', async (c) => {
 
 app.post('/rpc/agents/:token/respond', async (c) => {
   const token = c.req.param('token');
-  const body = await c.req.json<{ answer?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ answer?: string }>().catch((): { answer?: string } => ({}));
 
   const session = await store.getSessionByToken(token);
   if (!session) return c.json({ error: 'Session not found' }, 404);
@@ -147,7 +147,7 @@ app.get('/api/v1/agents/:agentType/sessions/:id/report', async (c) => {
 
 app.post('/api/v1/agents/:agentType/sessions/:id/review', async (c) => {
   const sessionId = c.req.param('id');
-  const body = await c.req.json<{ overrides?: Array<{ dimensionId: string; score: number }> }>().catch(() => ({}));
+  const body = await c.req.json<{ overrides?: Array<{ dimensionId: string; score: number }> }>().catch((): { overrides?: Array<{ dimensionId: string; score: number }> } => ({}));
 
   const session = await store.getSession(sessionId);
   if (!session) return c.json({ error: 'Session not found' }, 404);

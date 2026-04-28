@@ -109,6 +109,7 @@ function ToggleSwitch({
   return (
     <button
       type="button"
+      aria-label="Toggle"
       onClick={() => onChange(!value)}
       style={{
         width: 36,

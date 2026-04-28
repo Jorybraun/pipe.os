@@ -78,7 +78,7 @@ export function DisplaySettingsPanel({ onClose }: DisplaySettingsPanelProps): JS
             cursor: 'pointer',
             padding: 4,
           }}
-        >
+         aria-label="Close">
           <X size={14} />
         </button>
       </div>
@@ -289,6 +289,7 @@ const labelStyle: React.CSSProperties = {
 function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: () => void }): JSX.Element {
   return (
     <button
+      aria-label="Toggle"
       onClick={onChange}
       style={{
         width: 36,

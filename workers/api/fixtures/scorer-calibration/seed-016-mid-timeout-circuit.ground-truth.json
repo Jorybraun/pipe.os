@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-016-mid-timeout-circuit",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 2,
+      "description": "No request timeout — if the third-party API hangs, this fetch hangs forever, blocking the Worker request and potentially exhausting concurrent request limits.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 6,
+      "description": "No retry logic — transient 503s from the assessment API will fail the candidate scoring flow. Should retry with exponential backoff.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 6,
+      "description": "No circuit breaker — if the API is down, every request will wait for timeout, cascading failure. Should fail fast after N consecutive failures.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/assessmentClient.ts",
+      "line": 4,
+      "description": "API key is concatenated inline — should use Headers object for clarity and to avoid accidental key leakage in logs.",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 2,
+    "major": 1,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

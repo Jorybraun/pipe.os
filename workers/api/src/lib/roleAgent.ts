@@ -87,6 +87,12 @@ export type RoleAgentResponse = RoleAgentQuestionResponse | RoleAgentSynthesisRe
 
 export interface CallRoleAgentInput {
   provider: LLMProvider | null;
+  /** Fallback provider — used when the primary fails (model switching for resilience). */
+  fallbackProvider?: LLMProvider | null;
+  /** Provider used for synthesis turns (budget exhausted). When unset, falls back to `provider`. */
+  synthesisProvider?: LLMProvider | null;
+  /** Fallback for synthesis provider. When unset, falls back to `fallbackProvider`. */
+  synthesisFallbackProvider?: LLMProvider | null;
   baseline: Record<string, unknown>;
   exchanges: RoleExchange[];
   knowledgeState: Record<string, unknown>;
@@ -241,7 +247,7 @@ const MAX_TOOL_ROUNDS = 3;
 async function callProviderWithTools(
   provider: LLMProvider,
   messages: LLMMessage[],
-  maxTokens = 1024,
+  maxTokens = 4096,
 ): Promise<{ content: string; toolsUsed: string[] }> {
   const toolsUsed: string[] = [];
   let currentMessages = [...messages];
@@ -287,103 +293,42 @@ async function callProviderWithTools(
   return { content: '', toolsUsed };
 }
 
-// ─── Mock response (for testing without API key) ────────────────────────────
+// ─── Provider call with retry ───────────────────────────────────────────────
 
-function getMockQuestionResponse(questionsAsked: number): RoleAgentQuestionResponse {
-  const questionNum = questionsAsked + 1;
-  return {
-    type: 'question',
-    reasoning: `[MOCK] Generating question ${questionNum}.`,
-    acknowledgment: questionNum === 1
-      ? "I'll help you build a detailed profile for this role so we can design assessments that test for what actually matters."
-      : 'Thanks for that context — it helps me understand the scope.',
-    question: {
-      id: `q-${questionNum}`,
-      text: questionNum === 1
-        ? "Are you the hiring manager, or recruiting on someone's behalf?"
-        : `Mock question #${questionNum} — what does the day-to-day look like?`,
-      input: {
-        type: questionNum === 1 ? 'radio' : 'textarea',
-        ...(questionNum === 1 ? { options: ['I\'m the hiring manager', 'I\'m recruiting for someone else'] } : {}),
-        ...(questionNum === 1 ? {} : { placeholder: 'Describe a typical week...' }),
-      },
-    },
-    knowledgeStateUpdate: {},
-    domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
-    toolsUsed: [],
-  };
-}
+/**
+ * Try the primary provider; if it fails, try the fallback. If both fail, throw.
+ * This gives us model-switching resilience without silently serving mock questions.
+ */
+async function callProviderWithFallback(
+  primary: LLMProvider | null,
+  fallback: LLMProvider | null,
+  callFn: (p: LLMProvider) => Promise<{ content: string; toolsUsed: string[] }>,
+): Promise<{ content: string; toolsUsed: string[] }> {
+  const providers = [
+    { p: primary, name: primary?.name ?? 'primary' },
+    { p: fallback, name: fallback?.name ?? 'fallback' },
+  ].filter((x) => x.p) as { p: LLMProvider; name: string }[];
 
-function getMockSynthesisResponse(baseline: Record<string, unknown>): RoleAgentSynthesisResponse {
-  const title = typeof baseline.title === 'string' ? baseline.title : 'the role';
-  const companyName = typeof baseline.companyName === 'string' ? baseline.companyName : 'the company';
-  const location = typeof baseline.location === 'string' ? baseline.location : 'Remote';
+  if (providers.length === 0) {
+    throw new Error('No AI provider is configured. Set ROLE_AGENT_PROVIDER or configure VERTEX_SA_KEY_JSON.');
+  }
 
-  const persona: CandidatePersona = {
-    seniority: 'Mid-to-senior, 4-7 years',
-    archetype: `Practitioner-shaped ${title} who has shipped and owned the outcome`,
-    mustHaveSkills: [
-      'Has written and maintained production code for 3+ years',
-      'Can reason about trade-offs out loud',
-      'Comfortable with ambiguity in requirements',
-    ],
-    niceToHaveSkills: [
-      'Prior experience at a similar-stage company',
-      'Has given technical talks or mentored juniors',
-    ],
-    disposition: [
-      'Pragmatic over dogmatic',
-      'Asks questions before assuming',
-      'Comfortable with iterative feedback',
-    ],
-    careerSignal: 'Has shipped at least one substantial feature end-to-end',
-    redFlags: [
-      'Only ever worked in isolation',
-      'Cannot articulate why they made past technical decisions',
-    ],
-    dealbreakers: [],
-  };
+  let lastError: Error | null = null;
 
-  const jobDescription = `# ${title}
+  for (const { p, name } of providers) {
+    try {
+      const result = await callFn(p);
+      if (result.content.trim().length > 0) {
+        return result;
+      }
+      lastError = new Error(`${name} returned empty content`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(`[roleAgent] ${name} failed:`, lastError.message);
+    }
+  }
 
-${companyName} is hiring a ${title} to join the team ${location ? `(${location})` : ''}.
-
-## The Role
-
-You'll own meaningful work from day one — shipping features that real users depend on, and shaping how the team builds over time.
-
-## What You'll Do
-
-- Ship features end-to-end, from design through production
-- Collaborate closely with product and design on trade-offs
-- Review code with care and push back when something doesn't add up
-
-## What You Bring
-
-- 3+ years writing production code
-- Opinions about engineering craft, held loosely
-- Comfort with ambiguity and iterative feedback
-
-## Bonus Points
-
-- Prior experience at a similar-stage company
-- Have given technical talks or mentored others
-
-## How to Apply
-
-Hit apply — we'll be in touch within a few days. No cover letter needed.
-`;
-
-  return {
-    type: 'synthesis',
-    reasoning: '[MOCK] Budget exhausted. Mock persona + JD returned because no AI provider is configured.',
-    persona,
-    jobDescription,
-    synthesis: persona.archetype,
-    knowledgeStateUpdate: {},
-    domainCoverage: { why: 'partial', work: 'partial', team: 'sparse', bar: 'sparse', codebase: 'none', process: 'none' },
-    toolsUsed: [],
-  };
+  throw lastError ?? new Error('All AI providers failed');
 }
 
 // ─── Parse and validate ─────────────────────────────────────────────────────
@@ -495,24 +440,22 @@ function parseSynthesisResponse(parsed: Record<string, unknown>, toolsUsed: stri
  * so the frontend can show what the agent researched.
  */
 export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgentResponse> {
-  const { provider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole, domainCoverage, phaseDirective } = input;
+  const { provider, fallbackProvider, synthesisProvider, synthesisFallbackProvider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole, domainCoverage, phaseDirective } = input;
 
   const budgetExhausted = questionsAsked >= questionBudget;
-
-  if (!provider) {
-    console.log('[roleAgent] No provider configured. Returning mock response.');
-    return budgetExhausted
-      ? getMockSynthesisResponse(baseline)
-      : getMockQuestionResponse(questionsAsked);
-  }
 
   // RD-P5: use phase-specific system prompt when a directive is available.
   // When budget is exhausted (synthesis turn), always use the monolithic prompt —
   // phase prompts only carry the question-turn schema; the synthesis schema (persona
   // fields, JD structure) lives exclusively in buildRoleAgentSystemPrompt.
+  //
+  // IMPORTANT: The core prompt contains the JSON response format schema. Phase prompts
+  // only add posture-specific instructions. We MUST keep the core prompt so the model
+  // knows the expected output shape (question.text, acknowledgment, domainCoverage, etc.).
+  const basePrompt = buildRoleAgentSystemPrompt(participantRole);
   const systemPrompt = !budgetExhausted && phaseDirective
-    ? selectPhasePrompt(phaseDirective.phase, participantRole)
-    : buildRoleAgentSystemPrompt(participantRole);
+    ? `${basePrompt}\n\n${selectPhasePrompt(phaseDirective.phase, participantRole)}`
+    : basePrompt;
 
   if (phaseDirective) {
     console.log(`[roleAgent] Phase: ${phaseDirective.phase} | Goal: ${phaseDirective.focusGoal}`);
@@ -526,40 +469,27 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
     { role: 'user', content: userMessage },
   ];
 
-  const maxTokens = budgetExhausted ? 1536 : 1024;
+  const maxTokens = budgetExhausted ? 4096 : 2048;
 
-  let content: string;
-  let toolsUsed: string[];
-  console.log(`[roleAgent] Calling provider: ${provider.name}`);
-  try {
-    const result = await callProviderWithTools(provider, messages, maxTokens);
-    content = result.content;
-    toolsUsed = result.toolsUsed;
-    console.log(`[roleAgent] Provider ${provider.name} responded, ${content.length} chars`);
-  } catch (err) {
-    console.error(`[roleAgent] ${provider.name} call failed:`, err);
-    return budgetExhausted
-      ? getMockSynthesisResponse(baseline)
-      : getMockQuestionResponse(questionsAsked);
-  }
+  // Use synthesis-specific provider for synthesis turns, otherwise the regular provider.
+  const activeProvider = budgetExhausted ? (synthesisProvider ?? provider) : provider;
+  const activeFallback = budgetExhausted ? (synthesisFallbackProvider ?? fallbackProvider ?? null) : (fallbackProvider ?? null);
 
-  if (!content) {
-    console.warn('[roleAgent] Provider returned empty content. Falling back to mock.');
-    return budgetExhausted
-      ? getMockSynthesisResponse(baseline)
-      : getMockQuestionResponse(questionsAsked);
-  }
+  const { content, toolsUsed } = await callProviderWithFallback(
+    activeProvider,
+    activeFallback,
+    (p) => callProviderWithTools(p, messages, maxTokens),
+  );
+
+  console.log(`[roleAgent] Provider responded, ${content.length} chars`);
 
   // Parse JSON
+  const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
   let parsed: Record<string, unknown>;
   try {
-    const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     parsed = JSON.parse(jsonText) as Record<string, unknown>;
   } catch {
-    console.error('[roleAgent] Failed to parse JSON:', content.slice(0, 300));
-    return budgetExhausted
-      ? getMockSynthesisResponse(baseline)
-      : getMockQuestionResponse(questionsAsked);
+    throw new Error(`AI provider returned invalid JSON: ${content.slice(0, 300)}`);
   }
 
   if (budgetExhausted || typeof parsed.synthesis === 'string') {
@@ -583,21 +513,16 @@ export async function* callRoleAgentStream(
 ): AsyncGenerator<
   | { event: 'chunk'; text: string }
   | { event: 'done'; result: RoleAgentResponse }
+  | { event: 'error'; message: string }
 > {
-  const { provider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole, domainCoverage, phaseDirective } = input;
+  const { provider, fallbackProvider, synthesisProvider, synthesisFallbackProvider, baseline, exchanges, knowledgeState, questionsAsked, questionBudget, participantRole, domainCoverage, phaseDirective } = input;
   const budgetExhausted = questionsAsked >= questionBudget;
 
-  // No provider or no streaming support — fall back to non-streaming
-  if (!provider?.completeStream) {
-    const result = await callRoleAgent(input);
-    yield { event: 'done', result };
-    return;
-  }
-
   // Build prompts (same logic as callRoleAgent)
+  const basePrompt = buildRoleAgentSystemPrompt(participantRole);
   const systemPrompt = !budgetExhausted && phaseDirective
-    ? selectPhasePrompt(phaseDirective.phase, participantRole)
-    : buildRoleAgentSystemPrompt(participantRole);
+    ? `${basePrompt}\n\n${selectPhasePrompt(phaseDirective.phase, participantRole)}`
+    : basePrompt;
 
   const userMessage = budgetExhausted
     ? buildSynthesisPrompt({ baseline, exchanges, knowledgeState })
@@ -607,18 +532,41 @@ export async function* callRoleAgentStream(
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
   ];
-  const maxTokens = budgetExhausted ? 1536 : 1024;
+  const maxTokens = budgetExhausted ? 4096 : 2048;
+
+  // Use synthesis-specific provider for synthesis turns, otherwise the regular provider.
+  const activeProvider = budgetExhausted ? (synthesisProvider ?? provider) : provider;
+  const activeFallback = budgetExhausted ? (synthesisFallbackProvider ?? fallbackProvider ?? null) : (fallbackProvider ?? null);
+
+  // Pick a provider that supports streaming; fall back to non-streaming if none do
+  const streamingProvider = activeProvider?.completeStream
+    ? activeProvider
+    : activeFallback?.completeStream
+      ? activeFallback
+      : null;
+
+  if (!streamingProvider) {
+    // Neither provider supports streaming — use non-streaming path
+    try {
+      const result = await callRoleAgent(input);
+      yield { event: 'done', result };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      yield { event: 'error', message: msg };
+    }
+    return;
+  }
 
   // Stream the response
   const accumulated: string[] = [];
   try {
-    for await (const token of provider.completeStream(messages, { forceJson: true, maxTokens })) {
+    for await (const token of streamingProvider.completeStream!(messages, { forceJson: true, maxTokens })) {
       accumulated.push(token);
       yield { event: 'chunk', text: token };
     }
   } catch (err) {
     console.error('[roleAgent] Streaming failed:', err);
-    yield { event: 'done', result: budgetExhausted ? getMockSynthesisResponse(baseline) : getMockQuestionResponse(questionsAsked) };
+    yield { event: 'error', message: err instanceof Error ? err.message : 'Streaming failed' };
     return;
   }
 
@@ -630,8 +578,9 @@ export async function* callRoleAgentStream(
   try {
     parsed = JSON.parse(jsonText) as Record<string, unknown>;
   } catch {
-    console.error('[roleAgent] Failed to parse streamed JSON:', jsonText.slice(0, 300));
-    yield { event: 'done', result: budgetExhausted ? getMockSynthesisResponse(baseline) : getMockQuestionResponse(questionsAsked) };
+    const msg = `AI provider returned invalid JSON: ${jsonText.slice(0, 300)}`;
+    console.error('[roleAgent]', msg);
+    yield { event: 'error', message: msg };
     return;
   }
 

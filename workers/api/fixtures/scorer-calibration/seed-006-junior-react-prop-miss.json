@@ -1,0 +1,126 @@
+{
+  "id": "seed-006-junior-react-prop-miss",
+  "description": "Junior reviewer finds a prop-type issue but misses a significant performance problem with inline objects. Accepts pushback without question.",
+  "tags": [
+    "typescript",
+    "react",
+    "mid-score"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add candidate card component",
+    "description": "Adds a CandidateCard component for the pipeline view.",
+    "instructions": "Review for React best practices and TypeScript correctness.",
+    "diff": "diff --git a/src/components/CandidateCard.tsx b/src/components/CandidateCard.tsx\n@@ -0,0 +1,35 @@\n+interface CandidateCardProps {\n+  candidate: { id: string; name: string; score: number };\n+  onSelect: (id: string) => void;\n+}\n+\n+export function CandidateCard({ candidate, onSelect }: CandidateCardProps) {\n+  return (\n+    <div\n+      className=\"card\"\n+      onClick={() => onSelect(candidate.id)}\n+      style={{ backgroundColor: candidate.score > 80 ? 'green' : 'red' }}\n+    >\n+      <h3>{candidate.name}</h3>\n+      <span>Score: {candidate.score}</span>\n+    </div>\n+  );\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/components/CandidateCard.tsx",
+      "line": 9,
+      "description": "Inline style object passed to style prop — creates a new object every render, causing unnecessary re-renders if parent is pure. Should use CSS class or memoized style.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/CandidateCard.tsx",
+      "line": 8,
+      "description": "No accessibility — div with onClick is not keyboard-focusable. Should be a button or have role=\"button\" + tabIndex + keydown handler.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/components/CandidateCard.tsx",
+      "line": 6,
+      "description": "Interface defined inline in same file — fine for small components but Candidate type should be imported from shared types.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 601,
+            "file": "src/components/CandidateCard.tsx",
+            "line": 8,
+            "category": "accessibility",
+            "severity": "suggestion",
+            "what": "This div with onClick is not accessible. Should use a button element.",
+            "why": "Screen readers and keyboard users cannot interact with it.",
+            "positive": false
+          },
+          {
+            "id": 602,
+            "file": "src/components/CandidateCard.tsx",
+            "line": 6,
+            "category": "style",
+            "severity": "nit",
+            "what": "Candidate interface could be imported from types/candidate.ts.",
+            "why": "avoid duplication",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Accessibility fix needed. Optional type refactor.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 601,
+            "move": "change",
+            "content": "Changed to button with proper styling.",
+            "updated_code": "<button className='card' onClick={() => onSelect(candidate.id)}>"
+          },
+          {
+            "to_comment_id": 602,
+            "move": "pushback",
+            "content": "I kept it local since it is only used here. Importing adds indirection for a 3-field type."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Accessibility fix looks good. Keeping local type is fine.",
+      "submittedAt": "2026-04-28T03:47:05.958Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 1 of 3 bugs (a11y). Missed inline style performance issue and type duplication. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accessibility flagged as suggestion not blocking. Style nit deprioritized correctly. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted button change without verifying styling. Caved on type pushback. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accessibility comment has concrete user impact. Type comment rationale is weak. Level 2-3."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No clarifying questions. Level 1-2."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested button element — actionable. No pushback on type issue. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

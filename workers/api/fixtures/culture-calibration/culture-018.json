@@ -1,0 +1,125 @@
+{
+  "id": "culture-018",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script, identified 4,000 dropped records, backfilled them, and added a daily row-count alert. The data team was surprised — they hadn't known."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My lead wanted rate limiting in each service. I thought shared middleware was cleaner. We spent an hour whiteboarding. I acknowledged his coupling concern. We went with middleware but per-service config override."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was convinced distributed transactions were right until a colleague showed me Pat Helland's talk. I rebuilt around event sourcing and the result was much simpler."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I have a tendency to take over problems when I see a faster path. I've had to learn to hold back and let teammates work through things at their own pace, even when it's slower."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My manager wanted to ship without instrumentation. I pushed back in a 1:1, walked through risks, and we agreed on basic event logging first and full analytics next sprint."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "I noticed it debugging something else."
+      ]
+    },
+    "collaboration": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "We spent an hour whiteboarding."
+      ]
+    },
+    "learning-orientation": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        " I've had to learn to hold back and let teammates work through things at their own pace, even when it's slower."
+      ]
+    },
+    "conflict-handling": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script,"
+      ]
+    },
+    "self-awareness": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script,"
+      ]
+    },
+    "autonomy": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script,"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script,"
+      ]
+    },
+    "work-pace": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script,"
+      ]
+    },
+    "collaboration-style": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script,"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it debugging something else. I wrote a reconciliation script,"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "self-awareness",
+    "risk-tolerance",
+    "collaboration-style",
+    "feedback-orientation"
+  ],
+  "confidence": "heuristic"
+}

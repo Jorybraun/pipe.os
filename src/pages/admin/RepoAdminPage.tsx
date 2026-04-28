@@ -290,6 +290,8 @@ function BulkIngestModal({ onConfirm, onCancel, triggerRef, api }: BulkIngestMod
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
                   type="checkbox"
+                  id="bulk-suitable"
+                  name="bulk-suitable"
                   checked={suitable}
                   disabled={counts.suitable === 0}
                   onChange={(e) => setSuitable(e.target.checked)}
@@ -309,6 +311,8 @@ function BulkIngestModal({ onConfirm, onCancel, triggerRef, api }: BulkIngestMod
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
                   type="checkbox"
+                  id="bulk-hold"
+                  name="bulk-hold"
                   checked={hold}
                   disabled={counts.hold === 0}
                   onChange={(e) => setHold(e.target.checked)}
@@ -333,6 +337,8 @@ function BulkIngestModal({ onConfirm, onCancel, triggerRef, api }: BulkIngestMod
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
                   type="checkbox"
+                  id="bulk-reject"
+                  name="bulk-reject"
                   checked={reject}
                   disabled={counts.reject === 0}
                   onChange={(e) => setReject(e.target.checked)}
@@ -738,6 +744,9 @@ function RepoCard({
       {!isFailed && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           <textarea
+            id="repo-decision-reason"
+            name="repo-decision-reason"
+            aria-label={`Decision reason for ${repo.full_name}`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Reason for decision (optional — used for training)"
@@ -1198,6 +1207,9 @@ export default function RepoAdminPage(): JSX.Element {
           <Search size={12} color="var(--pipe-text-dim)" />
           <input
             type="text"
+            id="repo-search"
+            name="repo-search"
+            aria-label="Search repos"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="SEARCH..."

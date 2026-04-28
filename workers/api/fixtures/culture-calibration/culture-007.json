@@ -1,0 +1,117 @@
+{
+  "id": "culture-007",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inconsistencies while reviewing a product experiment and mentioned it to them. They fixed it in their next sprint."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "We had a disagreement about state management. My colleague wanted Redux and I preferred Zustand. We discussed it but the conversation got heated and eventually my manager stepped in and made the call. We used Zustand."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I spent a quarter building a caching layer before realizing our bottleneck was database query design, not cache miss rate. I had made an assumption without profiling first. After that I now profile before I optimize."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "My skip-level told me I interrupt people in technical discussions. I hadn't noticed it. I started taking notes during meetings. My manager confirmed three months later that the team had noticed a difference."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed inconsistencies while reviewing a product experiment and mentioned it to them."
+      ]
+    },
+    "collaboration": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had a disagreement about state management."
+      ]
+    },
+    "learning-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inc"
+      ]
+    },
+    "conflict-handling": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        " We had a disagreement about state management."
+      ]
+    },
+    "self-awareness": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inc"
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inc"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inc"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inc"
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inc"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our A/B test platform had a bug that was producing false positives. It was the data science team's domain. I noticed inc"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "ownership",
+    "learning-orientation",
+    "collaboration-style",
+    "self-awareness"
+  ],
+  "confidence": "heuristic"
+}

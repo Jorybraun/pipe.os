@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-013-mid-stream-backpressure",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/export/csv.ts",
+      "line": 7,
+      "description": "SELECT * loads entire candidates table into memory. For 100k candidates this OOMs. Should stream rows or paginate.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/export/csv.ts",
+      "line": 8,
+      "description": "No backpressure handling — c.body may buffer the entire CSV in memory before sending. Should use ReadableStream.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/export/csv.ts",
+      "line": 6,
+      "description": "No auth check — any unauthenticated user can export all candidate data. GDPR breach risk.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/export/csv.ts",
+      "line": 11,
+      "description": "Missing CSV header row — exported file has no column names.",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

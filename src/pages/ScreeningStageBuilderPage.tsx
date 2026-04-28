@@ -102,7 +102,7 @@ function QuestionCard({
               cursor: 'grab',
               marginTop: 4,
             }}
-          >
+           aria-label="Drag to reorder">
             <GripVertical size={16} />
           </button>
 

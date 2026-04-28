@@ -40,7 +40,7 @@ export interface UseLiveSessionResult {
 // Config
 // ============================================================================
 
-const API_BASE = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+const API_BASE = import.meta.env?.VITE_API_URL || 'http://localhost:8787';
 const WS_BASE = API_BASE.replace(/^https/, 'wss').replace(/^http/, 'ws');
 
 /** Mic capture sample rate required by the VoiceSessionDO ingest pipeline. */

@@ -249,6 +249,7 @@ const labelStyle: React.CSSProperties = {
 function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: () => void }): JSX.Element {
   return (
     <button
+      aria-label="Toggle"
       onClick={onChange}
       style={{
         width: 36,

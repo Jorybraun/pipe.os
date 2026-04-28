@@ -319,7 +319,7 @@ async def harness_run_qa(
     """Run quality gates for a workflow.
 
     .. deprecated::
-        QA gates will be integrated into the lane graph qa_deploy_node.
+        QA gates are integrated into the lane graph qa_deploy_node (no deploy).
     """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
@@ -513,7 +513,7 @@ async def harness_run_agent(
     Spawns a background task so the MCP call returns immediately.
     Poll harness_get_agent_status(job_id) for the result.
 
-    Roles: pm, designer, architect, frontend, backend, qa_deploy
+    Roles: pm, designer, architect, frontend, backend
     """
     if not workflow_id:
         return json.dumps({"error": "workflow_id is required"}, indent=2)
@@ -1429,8 +1429,8 @@ async def broker_complete_plan_tool(
 ) -> str:
     """Mark a plan as COMPLETE in the broker registry.
 
-    Use this to manually complete a plan when QA-Deploy cannot,
-    or as a terminal action from the QA-Deploy agent.
+    Use this to manually complete a plan when QA cannot,
+    or as a terminal action from the QA agent.
     """
     if not plan_id:
         return json.dumps({"error": "plan_id is required"}, indent=2)

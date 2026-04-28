@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-017-mid-pagination-cursor",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/candidates/list.ts",
+      "line": 7,
+      "description": "No auth check — any user can list all candidates across all orgs. Missing org_id filter and Clerk JWT verification.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/candidates/list.ts",
+      "line": 7,
+      "description": "No max limit — client can request limit=999999, effectively loading entire table. Should cap at 100.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/candidates/list.ts",
+      "line": 8,
+      "description": "Cursor is parsed as integer but used as string in WHERE id > ?1 — SQLite string comparison on UUIDs produces lexicographic ordering, which is not guaranteed to match creation order. Should use created_at + id composite cursor.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/candidates/list.ts",
+      "line": 11,
+      "description": "SELECT * returns all columns including sensitive data. Should explicitly select only needed fields.",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 3,
+    "expectedMissed": 1
+  }
+}

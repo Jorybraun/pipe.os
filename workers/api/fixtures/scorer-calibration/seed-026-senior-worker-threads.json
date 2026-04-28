@@ -1,0 +1,152 @@
+{
+  "id": "seed-026-senior-worker-threads",
+  "description": "Senior reviewer finds thread safety issue and provides good direction. Solid senior performance.",
+  "tags": [
+    "typescript",
+    "node",
+    "concurrency",
+    "mid-high-score"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add worker thread pool",
+    "description": "Manages a pool of worker threads for CPU-intensive scoring.",
+    "instructions": "Review for concurrency and resource management.",
+    "diff": "diff --git a/src/lib/workerPool.ts b/src/lib/workerPool.ts\n@@ -0,0 +1,52 @@\n+import { Worker } from 'worker_threads';\n+\n+export class WorkerPool {\n+  private workers: Worker[] = [];\n+  private queue: Array<{ task: unknown; resolve: Function; reject: Function }> = [];\n+\n+  constructor(private size: number) {\n+    for (let i = 0; i < size; i++) {\n+      const worker = new Worker('./scorer.js');\n+      worker.on('message', (result) => {\n+        /* resolve task */\n+      });\n+      this.workers.push(worker);\n+    }\n+  }\n+\n+  run(task: unknown): Promise<unknown> {\n+    return new Promise((resolve, reject) => {\n+      this.queue.push({ task, resolve, reject });\n+      this.dispatch();\n+    });\n+  }\n+\n+  private dispatch() {\n+    const worker = this.workers.find((w) => !w.onmessage); // pseudo check\n+    if (worker && this.queue.length > 0) {\n+      const item = this.queue.shift()!;\n+      worker.postMessage(item.task);\n+    }\n+  }\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/workerPool.ts",
+      "line": 7,
+      "description": "Worker path is relative ./scorer.js — in bundled or distributed code, the worker script path may not resolve. Should use __dirname or workerData for path resolution.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/workerPool.ts",
+      "line": 9,
+      "description": "Message handler is shared across all tasks — if a worker completes a task after a timeout, the wrong promise may be resolved. Need task ID correlation.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/workerPool.ts",
+      "line": 22,
+      "description": "No worker error handling — if a worker crashes, the pool loses a worker permanently and queued tasks stall. Should respawn crashed workers.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "major",
+      "file": "src/lib/workerPool.ts",
+      "line": 18,
+      "description": "No backpressure or queue limit — unbounded queue can grow until OOM under load. Should limit queue size and reject or shed load.",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2601,
+            "file": "src/lib/workerPool.ts",
+            "line": 7,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Worker path may not resolve in production builds.",
+            "why": "Relative paths break with bundlers and monorepos. Use __dirname or resolve path at runtime.",
+            "positive": false
+          },
+          {
+            "id": 2602,
+            "file": "src/lib/workerPool.ts",
+            "line": 9,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Message handler does not correlate responses with tasks.",
+            "why": "Without task IDs, the wrong promise could be resolved on concurrent tasks.",
+            "positive": false
+          },
+          {
+            "id": 2603,
+            "file": "src/lib/workerPool.ts",
+            "line": 18,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "Unbounded queue can OOM under load.",
+            "why": "Need a max queue size with backpressure.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Three blocking issues: path, correlation, and backpressure.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2601,
+            "move": "change",
+            "content": "Using __dirname now.",
+            "updated_code": "new Worker(path.resolve(__dirname, 'scorer.js'))"
+          },
+          {
+            "to_comment_id": 2602,
+            "move": "change",
+            "content": "Added task IDs.",
+            "updated_code": "worker.postMessage({ taskId: ++this.taskId, task: item.task }); ... worker.on('message', ({ taskId, result }) => { const item = this.pending.get(taskId); ... });"
+          },
+          {
+            "to_comment_id": 2603,
+            "move": "change",
+            "content": "Added queue limit.",
+            "updated_code": "if (this.queue.length >= this.maxQueue) return Promise.reject(new Error('Queue full')); ... this.maxQueue = size * 10;"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "All three fixes verified. Path resolution, task correlation, and backpressure look correct.",
+      "submittedAt": "2026-04-28T03:47:05.965Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 3 of 4 bugs (path, correlation, queue). Missed worker respawn. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "All three flagged as blocking. Good triage. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified all three fixes. Path and task ID changes are correct. Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete concurrency and deployment rationales. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested __dirname, task IDs, queue limit — all actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

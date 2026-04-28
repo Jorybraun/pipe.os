@@ -1,0 +1,124 @@
+{
+  "id": "culture-004",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some logs but didn't dig in because it wasn't my area. They fixed it eventually."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My teammate wanted to use GraphQL and I preferred REST. We discussed it briefly but our manager made the final call. We went with GraphQL. It wasn't a big deal to me either way."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was wrong about how React's rendering batching worked before version 18. I had written code that assumed state updates were always batched. I refactored the components once I understood the actual behavior."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "We were asked to skip QA on a release. I said I wasn't comfortable with that and sent a note to my lead. He agreed and we did a shortened QA pass instead. It was a small push-back."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've gotten feedback that my written communication is too terse. I've been adding more context in Slack and PRs. I think it's improved but I'm not sure by how much."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "collaboration": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday."
+      ]
+    },
+    "learning-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "conflict-handling": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "self-awareness": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    },
+    "feedback-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had an issue with our staging environment failing every Friday. The infra team was supposed to handle it. I saw some "
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "self-awareness",
+    "autonomy",
+    "feedback-orientation"
+  ],
+  "confidence": "heuristic"
+}

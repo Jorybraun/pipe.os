@@ -12,7 +12,7 @@
  */
 
 import type { LLMProvider } from '../llm/types';
-import type { RepoEngineeringSignalsRow } from '../../types';
+import type { RepoEngineeringSignalsRow, CandidateNode } from '../../types';
 import type { CandidateDiscoveryResult, CandidateKeyConcepts } from './agent';
 
 // ─── Cache helpers ───────────────────────────────────────────────────────────
@@ -29,8 +29,9 @@ export async function buildSituationFitCacheKey(
   repoId: number,
   profileVersion: string,
   signalsVersion: string,
+  promptVersion = 'v1',
 ): Promise<string> {
-  const payload = `${candidateId}|${repoId}|${profileVersion}|${signalsVersion}`;
+  const payload = `${candidateId}|${repoId}|${profileVersion}|${signalsVersion}|${promptVersion}`;
   return sha256Hex(payload);
 }
 
@@ -90,6 +91,10 @@ export interface CandidateSituationFitInput {
   candidateResult: CandidateDiscoveryResult;
   candidateKeyConcepts: CandidateKeyConcepts;
   repos: SituationFitCandidate[];
+  /** Optional CulturalSignal nodes to enrich the prompt. */
+  culturalSignalNodes?: CandidateNode[];
+  /** When provided, prefer role-specific CulturalSignal nodes for this role. */
+  roleContextId?: string;
 }
 
 export type FitBand = 'strong' | 'moderate' | 'weak' | 'mismatch';
@@ -123,7 +128,13 @@ export async function candidateSituationFit(
   }
 
   const systemPrompt = buildSystemPrompt();
-  const userMessage = buildUserMessage(candidateResult, candidateKeyConcepts, repos);
+  const userMessage = buildUserMessage(
+    candidateResult,
+    candidateKeyConcepts,
+    repos,
+    input.culturalSignalNodes,
+    input.roleContextId,
+  );
 
   const completion = await provider.complete(
     [
@@ -203,10 +214,79 @@ function buildSystemPrompt(): string {
   ].join('\n');
 }
 
+function buildCulturalSignalBlock(
+  nodes: CandidateNode[] | undefined,
+  targetRoleId: string | undefined,
+): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const culturalNodes = nodes.filter((n) => n.node_type === 'CulturalSignal');
+  if (culturalNodes.length === 0) return '';
+
+  // Group by dimension, preferring role-specific when targetRoleId is provided
+  const selected = new Map<string, CandidateNode>();
+
+  for (const node of culturalNodes) {
+    const props = safeParseJson(node.extracted_properties_json);
+    const dimension = typeof props?.dimension === 'string' ? props.dimension : null;
+    if (!dimension) continue;
+
+    const isRoleSpecific = props?.is_role_specific === true;
+    const nodeRoleId = typeof props?.role_context_id === 'string' ? props.role_context_id : null;
+
+    const existing = selected.get(dimension);
+    if (!existing) {
+      selected.set(dimension, node);
+      continue;
+    }
+
+    const existingProps = safeParseJson(existing.extracted_properties_json);
+    const existingIsRoleSpecific = existingProps?.is_role_specific === true;
+    const existingRoleId = typeof existingProps?.role_context_id === 'string' ? existingProps.role_context_id : null;
+
+    if (targetRoleId) {
+      // Prefer role-specific nodes for the target role
+      const preferNew =
+        isRoleSpecific && nodeRoleId === targetRoleId && !(existingIsRoleSpecific && existingRoleId === targetRoleId);
+      if (preferNew) {
+        selected.set(dimension, node);
+      }
+    }
+  }
+
+  if (selected.size === 0) return '';
+
+  const lines = Array.from(selected.values()).map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const dimension = props?.dimension ?? 'unknown';
+    const score = typeof props?.bars_score === 'number' ? props.bars_score : '?';
+    const reasoning = typeof props?.reasoning === 'string' ? props.reasoning : '';
+    return `${dimension}: ${score}/5 — ${reasoning}`;
+  });
+
+  return [
+    '',
+    '### cultural_signals',
+    'Structured behavioral and cultural signals extracted from the candidate\'s interview:',
+    ...lines,
+  ].join('\n');
+}
+
+function safeParseJson(json: string | null): Record<string, unknown> | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function buildUserMessage(
   candidate: CandidateDiscoveryResult,
   keyConcepts: CandidateKeyConcepts,
   repos: SituationFitCandidate[],
+  culturalSignalNodes?: CandidateNode[],
+  roleContextId?: string,
 ): string {
   const candidateBlock = [
     '## Candidate Profile',
@@ -236,10 +316,13 @@ function buildUserMessage(
     `impact_signals: [${candidate.situationSignature.impact_signals.join(', ')}]`,
   ].join('\n');
 
+  const culturalBlock = buildCulturalSignalBlock(culturalSignalNodes, roleContextId);
+
   const repoBlock = repos.map((r, i) => formatRepo(r, i + 1)).join('\n\n');
 
   return [
     candidateBlock,
+    culturalBlock,
     '',
     '---',
     '',

@@ -5,6 +5,9 @@ interface TagsInputProps {
   value?: string[] | undefined;
   onChange?: ((value: string[]) => void) | undefined;
   placeholder?: string | undefined;
+  id?: string | undefined;
+  name?: string | undefined;
+  ariaLabel?: string | undefined;
 }
 
 const inputStyle = {
@@ -40,6 +43,9 @@ export function TagsInput({
   value = [],
   onChange,
   placeholder,
+  id,
+  name,
+  ariaLabel,
 }: TagsInputProps): JSX.Element {
   const [input, setInput] = useState('');
 
@@ -113,6 +119,9 @@ export function TagsInput({
       )}
       <input
         type="text"
+        id={id}
+        name={name}
+        aria-label={ariaLabel}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}

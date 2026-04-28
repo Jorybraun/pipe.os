@@ -1,0 +1,152 @@
+{
+  "id": "seed-028-senior-virtual-list",
+  "description": "Senior reviewer finds scroll bug and accessibility issue with deep reasoning. Strong senior performance.",
+  "tags": [
+    "typescript",
+    "react",
+    "performance",
+    "high-score-senior"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add virtual scroll list",
+    "description": "Virtualized list for large candidate tables.",
+    "instructions": "Review for performance and accessibility.",
+    "diff": "diff --git a/src/components/VirtualList.tsx b/src/components/VirtualList.tsx\n@@ -0,0 +1,58 @@\n+import { useRef, useState, useCallback } from 'react';\n+\n+export function VirtualList({ items, itemHeight, renderItem }) {\n+  const containerRef = useRef<HTMLDivElement>(null);\n+  const [scrollTop, setScrollTop] = useState(0);\n+\n+  const handleScroll = useCallback(() => {\n+    setScrollTop(containerRef.current?.scrollTop ?? 0);\n+  }, []);\n+\n+  const startIndex = Math.floor(scrollTop / itemHeight);\n+  const endIndex = startIndex + Math.ceil(500 / itemHeight);\n+  const visibleItems = items.slice(startIndex, endIndex);\n+\n+  return (\n+    <div ref={containerRef} onScroll={handleScroll} style={{ height: 500, overflow: 'auto' }}>\n+      <div style={{ height: items.length * itemHeight }}>\n+        {visibleItems.map((item, i) => (\n+          <div key={item.id} style={{ position: 'absolute', top: (startIndex + i) * itemHeight }}>\n+            {renderItem(item)}\n+          </div>\n+        ))}\n+      </div>\n+    </div>\n+  );\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/components/VirtualList.tsx",
+      "line": 16,
+      "description": "Position absolute without relative parent — items are positioned relative to the nearest positioned ancestor, which may not be the scroll container. Causes items to render in wrong locations. The inner div should be position: relative.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/VirtualList.tsx",
+      "line": 12,
+      "description": "No overscan — items at the edge of the viewport appear blank while scrolling fast. Should render 2-3 items above and below the visible range.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/VirtualList.tsx",
+      "line": 8,
+      "description": "onScroll updates state every scroll event — high-frequency scroll events cause excessive React re-renders. Should throttle or use requestAnimationFrame.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/VirtualList.tsx",
+      "line": 14,
+      "description": "No aria attributes — screen readers see only the visible items and lose context of total list size. Should add aria-setsize and aria-posinset.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2801,
+            "file": "src/components/VirtualList.tsx",
+            "line": 16,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Position absolute needs a positioned parent. Items will render in wrong locations.",
+            "why": "Without position: relative on the inner div, absolute positioning is relative to the viewport or nearest positioned ancestor.",
+            "positive": false
+          },
+          {
+            "id": 2802,
+            "file": "src/components/VirtualList.tsx",
+            "line": 12,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "No overscan — blank gaps while scrolling fast.",
+            "why": "Need 2-3 buffer rows above and below the viewport for smooth scrolling.",
+            "positive": false
+          },
+          {
+            "id": 2803,
+            "file": "src/components/VirtualList.tsx",
+            "line": 8,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "onScroll updates state on every event — too many re-renders.",
+            "why": "Should throttle or use rAF to batch scroll updates.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Three blocking issues: layout, overscan, and scroll performance.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2801,
+            "move": "change",
+            "content": "Added position: relative.",
+            "updated_code": "<div style={{ height: items.length * itemHeight, position: 'relative' }}>"
+          },
+          {
+            "to_comment_id": 2802,
+            "move": "change",
+            "content": "Added overscan.",
+            "updated_code": "const overscan = 3; const visibleItems = items.slice(Math.max(0, startIndex - overscan), endIndex + overscan);"
+          },
+          {
+            "to_comment_id": 2803,
+            "move": "change",
+            "content": "Throttled scroll handler.",
+            "updated_code": "const handleScroll = useCallback(throttle(() => setScrollTop(containerRef.current?.scrollTop ?? 0), 16), []);"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "All three fixes verified. Layout, overscan, and throttling look correct.",
+      "submittedAt": "2026-04-28T03:47:05.966Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Found 3 of 4 bugs (layout, overscan, throttle). Missed aria attributes. Level 4-5."
+    },
+    "prioritization": {
+      "min": 4,
+      "max": 5,
+      "rationale": "All three flagged as blocking. Level 4-5."
+    },
+    "revision_evaluation": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Verified all three fixes. Layout and overscan changes are correct. Level 4-5."
+    },
+    "reasoning_quality": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Concrete CSS, performance, and React rationales. Level 4-5."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Suggested position: relative, overscan, throttle — all actionable. Level 4-5."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

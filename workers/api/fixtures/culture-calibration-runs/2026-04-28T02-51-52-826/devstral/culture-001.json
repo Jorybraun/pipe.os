@@ -1,0 +1,154 @@
+{
+  "fixture_id": "culture-001",
+  "provider": "devstral",
+  "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "The team got together and figured it out. Everyone pitched in and eventually we sorted it out."
+        ],
+        "confidence": 0.95,
+        "reasoning": "Candidate provides a real example but the personal contribution is peripheral or reactive — candidate noticed a problem but waited to be assigned to it, or their action was one small step inside a larger managed effort they did not initiate.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and eventually we sorted it out. It was a good team effort.",
+          "If something comes up we talk it through as a team and find the best solution."
+        ],
+        "confidence": 0.9,
+        "reasoning": "The candidate provides real examples of working with others, but their specific contribution to the joint work is unclear. They describe team outcomes without distinguishing their personal role. There is no mention of differing perspectives or friction points, and no acknowledgment of what others brought to the collaboration.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I'm always looking to grow and I read a lot of tech blogs to stay current."
+        ],
+        "confidence": 0.95,
+        "reasoning": "Candidate demonstrates Level 2 learning orientation: acknowledges the need to learn but provides no specific example of a skill gap or incorrect belief they held. The candidate describes passive learning through reading tech blogs, but no concrete learning event or behavioral change is described.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "If something comes up we talk it through as a team and find the best solution.",
+          "If I disagree with something I bring it up in the right forum and the team usually works it out."
+        ],
+        "confidence": 0.95,
+        "reasoning": "Candidate describes conflict as something that resolves itself without their personal intervention. They mention disagreements but do not provide specific examples or personal actions taken to resolve them. They use 'we' and 'team' throughout, indicating a passive or procedural approach to conflict handling.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 1,
+        "rawScore": 1,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I'm a pretty collaborative person so I don't really get into big disagreements.",
+          "I'm always looking to grow and I read a lot of tech blogs to stay current."
+        ],
+        "confidence": 0.95,
+        "reasoning": "The candidate provides no specific examples of a weakness, blind spot, or past error. They deflect to external causes (e.g., 'team effort') and describe feedback they received but clearly did not integrate. They show no curiosity about their own patterns, instead presenting generic statements about collaboration and continuous learning.",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "The team got together and figured it out. Everyone pitched in and eventually we sorted it out.",
+          "If something comes up we talk it through as a team and find the best solution."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate consistently describes working within a team and collaborative problem-solving. They do not express a strong preference for autonomy or independence. Position 3 is not warranted because they do not mention self-directing or adapting to autonomous environments. Position 1 is not warranted because they do show initiative within well-defined lanes.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "We talk it through as a team and find the best solution.",
+          "If I disagree with something I bring it up in the right forum and the team usually works it out."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate consistently describes collaborative decision-making and team consensus. They do not mention acting on incomplete information or making decisions before the team had consensus. Position 3 is not warranted because they do not describe contextually calibrated risk tolerance or distinguishing between high-stakes and low-stakes situations. Position 1 is not warranted because they do not describe minimizing downside risk or discomfort with ambiguity.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "We got together and figured it out. Everyone pitched in and eventually we sorted it out.",
+          "I'm a pretty collaborative person so I don't really get into big disagreements. If something comes up we talk it through as a team and find the best solution."
+        ],
+        "confidence": 0.85,
+        "reasoning": "The candidate describes working collaboratively and solving problems as a team, which suggests a balanced approach to work pace. They mention 'eventually we sorted it out,' indicating a willingness to take time to solve problems thoroughly. This rules out position 4, as they do not describe high pace as energizing or comfortable with rapid context switching. They also do not describe slow environments as frustrating, ruling out position 5. Position 2 is not warranted because they do not describe needing clear priorities and reasonable timelines or needing transition time between tasks.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 4,
+        "evidenceQuotes": [
+          "I'm a pretty collaborative person so I don't really get into big disagreements. If something comes up we talk it through as a team and find the best solution.",
+          "I think the best approach is to have open conversations. If I disagree with something I bring it up in the right forum and the team usually works it out."
+        ],
+        "confidence": 0.85,
+        "reasoning": "The candidate consistently describes a preference for team collaboration and open communication. They mention working together to solve problems and resolving disagreements through team discussions. Position 3 is not warranted because the candidate does not describe adapting to individual work based on problem complexity. Position 5 is not warranted because the candidate does not describe a highly collaborative style where individual work is less effective.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "I try to stay open to feedback.",
+          "We have a good culture where disagreements get resolved constructively."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate describes being open to feedback and resolving disagreements constructively, indicating comfort with regular feedback in both formal and informal settings. Position 2 is not warranted because the candidate explicitly mentions being open to feedback and resolving disagreements constructively, suggesting more than just receptiveness from trusted sources. Position 4 is not warranted because there is no evidence of actively seeking feedback or describing feedback as a regular input to improving work.",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Synthesis unavailable due to scoring error.",
+      "narrative": "parse_failure",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:52:03.651Z"
+  },
+  "meta": {
+    "wall_clock_ms": 10824,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

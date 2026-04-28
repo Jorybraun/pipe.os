@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-27T00:00:00.000Z",
+  "activeModel": null,
+  "models": {
+    "gemma": {
+      "model": "gemma",
+      "provider": "workers-ai",
+      "modelId": "@cf/google/gemma-4-26b-a4b-it",
+      "qwk": null,
+      "icc": null,
+      "mae": null,
+      "fixtureCount": 0,
+      "lastCalibrated": null,
+      "approved": false,
+      "calibrationRunPath": null,
+      "notes": "Workers AI Gemma 4. Free tier, edge-native."
+    },
+    "devstral": {
+      "model": "devstral",
+      "provider": "mistral",
+      "modelId": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+      "qwk": null,
+      "icc": null,
+      "mae": null,
+      "fixtureCount": 0,
+      "lastCalibrated": null,
+      "approved": false,
+      "calibrationRunPath": null,
+      "notes": "Mistral Small via Workers AI. Pragmatic fallback until native Mistral API provider lands."
+    }
+  }
+}

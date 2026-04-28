@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-026-senior-worker-threads",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/workerPool.ts",
+      "line": 7,
+      "description": "Worker path is relative ./scorer.js — in bundled or distributed code, the worker script path may not resolve. Should use __dirname or workerData for path resolution.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/workerPool.ts",
+      "line": 9,
+      "description": "Message handler is shared across all tasks — if a worker completes a task after a timeout, the wrong promise may be resolved. Need task ID correlation.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/workerPool.ts",
+      "line": 22,
+      "description": "No worker error handling — if a worker crashes, the pool loses a worker permanently and queued tasks stall. Should respawn crashed workers.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "major",
+      "file": "src/lib/workerPool.ts",
+      "line": 18,
+      "description": "No backpressure or queue limit — unbounded queue can grow until OOM under load. Should limit queue size and reject or shed load.",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 2,
+    "major": 2,
+    "minor": 0,
+    "expectedFound": 3,
+    "expectedMissed": 1
+  }
+}

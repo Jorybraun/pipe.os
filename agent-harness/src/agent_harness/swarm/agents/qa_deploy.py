@@ -1,4 +1,4 @@
-"""QA-Deploy agent — terminal gate for a plan lane."""
+"""QA agent — terminal validation gate for a plan lane (no deploy)."""
 from __future__ import annotations
 
 import json
@@ -15,7 +15,6 @@ from langgraph.prebuilt import ToolNode
 from typing_extensions import Annotated, TypedDict
 
 from agent_harness.broker import get_handoff_chain, emit, get_plan
-from agent_harness.swarm.pr_template import validate_pr_description
 from agent_harness.swarm.checkpoint import get_checkpointer
 from agent_harness.swarm.toolkit import SafeShellTool
 import subprocess
@@ -43,7 +42,7 @@ def _load_prompt() -> str:
     path = Path(__file__).parent.parent / "prompts" / "qa_deploy.md"
     if path.exists():
         return path.read_text()
-    return "# QA-Deploy Agent\nValidate handoffs, run tests, open PR."
+    return "# QA Agent\nValidate handoffs, run tests, mark plan complete. No deploy."
 
 
 def _build_system_message(state: QAState) -> SystemMessage:
@@ -97,7 +96,7 @@ def qa_agent_node(state: QAState, config: RunnableConfig) -> dict[str, Any]:
 
 
 def _get_qa_tools() -> list[Any]:
-    """Tools for QA-Deploy: validation, compilation, tests, shell, browser, broker emit."""
+    """Tools for QA: validation, compilation, tests, shell, browser, broker emit. No PR/deploy tools."""
     from pathlib import Path
     root_path = Path(__file__).parent.parent.parent.parent.parent.resolve()
     MAX_SHELL_OUTPUT = 32_000
@@ -129,48 +128,6 @@ def _get_qa_tools() -> list[Any]:
             lane_id=lane_id or None,
         )
         return json.dumps({"event_id": event_id}, indent=2)
-
-    @tool
-    def validate_pr_template_tool(description: str) -> str:
-        """Validate a PR description against the required template."""
-        result = validate_pr_description(description)
-        return json.dumps(result, indent=2)
-
-    @tool
-    def create_pr_tool(title: str, body: str, head: str, base: str = "main") -> str:
-        """Create a GitHub pull request. Validates PR body first, then tries gh CLI, then hub CLI."""
-        validation = validate_pr_description(body)
-        if not validation["valid"]:
-            return json.dumps({"error": "Invalid PR description", "validation": validation}, indent=2)
-
-        # Try gh CLI
-        try:
-            subprocess.run(
-                ["gh", "pr", "create", "--title", title, "--body", body, "--head", head, "--base", base],
-                capture_output=True, text=True, check=True,
-            )
-            # Fetch the PR URL
-            result = subprocess.run(
-                ["gh", "pr", "view", head, "--json", "url"],
-                capture_output=True, text=True, check=True,
-            )
-            pr_data = json.loads(result.stdout)
-            pr_url = pr_data.get("url", "")
-            return json.dumps({"pr_url": pr_url, "method": "gh"}, indent=2)
-        except Exception as gh_err:
-            # Fallback to hub CLI
-            try:
-                result = subprocess.run(
-                    ["hub", "pull-request", "-m", title, "-m", body, "-b", base, "-h", head],
-                    capture_output=True, text=True, check=True,
-                )
-                pr_url = result.stdout.strip()
-                return json.dumps({"pr_url": pr_url, "method": "hub"}, indent=2)
-            except Exception as hub_err:
-                return json.dumps({
-                    "error": f"Failed to create PR: gh={gh_err}, hub={hub_err}",
-                    "pr_url": None,
-                }, indent=2)
 
     @tool
     def qa_check_types() -> str:
@@ -252,8 +209,6 @@ def _get_qa_tools() -> list[Any]:
 
     tools.extend([
         broker_emit_event_tool,
-        validate_pr_template_tool,
-        create_pr_tool,
         qa_check_types,
         qa_run_tests,
         qa_verify_files,
@@ -274,17 +229,6 @@ def _get_cached_qa_tools() -> list[Any]:
 def qa_tools_node(state: QAState) -> dict[str, Any]:
     tool_node = ToolNode(_get_cached_qa_tools())
     result = tool_node.invoke(state)
-    # Extract PR URL from create_pr_tool result and update state
-    messages = result.get("messages", state.get("messages", []))
-    for msg in reversed(messages):
-        if isinstance(msg, ToolMessage) and msg.name == "create_pr_tool":
-            try:
-                data = json.loads(msg.content)
-                if data.get("pr_url"):
-                    result["pr_url"] = data["pr_url"]
-            except Exception:
-                pass
-            break
     return result
 
 
@@ -300,7 +244,7 @@ def qa_should_continue(state: QAState) -> Literal["tools", "agent", "__end__"]:
 
 
 def build_qa_graph(checkpointer: Any | None = None):
-    """Build and compile the QA-Deploy ReAct graph."""
+    """Build and compile the QA ReAct graph (no deploy)."""
     builder = StateGraph(QAState)
     builder.add_node("agent", qa_agent_node)
     builder.add_node("tools", qa_tools_node)
@@ -319,7 +263,7 @@ def run_qa_deploy(
     lane_id: str,
     thread_id: str | None = None,
 ) -> QAState:
-    """Run QA-Deploy to completion for a plan lane."""
+    """Run QA validation to completion for a plan lane (no deploy)."""
     chain = get_handoff_chain(plan_id)
     checkpointer = get_checkpointer()
     graph = build_qa_graph(checkpointer=checkpointer)
