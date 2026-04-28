@@ -2,7 +2,25 @@
 
 **Source:** knowledge/plan/pipe-strategy-v2-part2-role-discovery.md  
 **Generated:** 2026-04-25  
+**Updated:** 2026-04-28 — UAR migration superseded by state machine refactor  
 **Dedup reference:** [docs/plans/phase0-subagent-execution-plan.md](../../phase0-subagent-execution-plan.md)
+
+---
+
+## ⚠️ Architectural Decision (2026-04-28)
+
+**The UAR migration path for role discovery is superseded.**
+
+The monolithic `callRoleAgent` (677 lines) has been replaced by a state machine + generator architecture:
+- `lib/agents/interview/reducer.ts` — pure state machine, no LLM
+- `lib/agents/question/generator.ts` — stateless question generation
+- `lib/agents/synthesis/generator.ts` — stateless synthesis
+
+**Rationale:** The UAR runtime was built but never adopted. The role agent predates it and has capabilities (deterministic 8-probe sequencing, direct knowledge-state mutation, phase-directed prompting) that don't map cleanly to UAR's turn-based FSM. Rather than force-fit, we split the agent into composable pure functions.
+
+**Consequence:** All `phase4-uar-*` plans below are **deprecated**. Do not implement. The canonical role discovery architecture is documented in:
+- `knowledge/plan/role-discovery-state-machine.md` (design spec)
+- `docs/handoffs/2026-04-28-role-discovery-state-machine-handoff.md` (implementation status)
 
 ---
 
@@ -20,14 +38,16 @@
 | [phase2-role-nodes-migration.md](./phase2-role-nodes-migration.md) | 2 | PENDING | 0.5 wk | 1 |
 | [phase2-rcd-decomposition.md](./phase2-rcd-decomposition.md) | 2 | PENDING | 2 wk | 3 |
 | [phase2-role-nodes-backfill.md](./phase2-role-nodes-backfill.md) | 2 | PENDING | 0.5 wk | 1 |
-| [phase4-uar-shared-infra.md](./phase4-uar-shared-infra.md) | 4 | NEEDS-REFINEMENT | 1 wk | 0 |
-| [phase4-uar-plugin-port.md](./phase4-uar-plugin-port.md) | 4 | PENDING | 2 wk | 2 |
-| [phase4-uar-synthesis-hook.md](./phase4-uar-synthesis-hook.md) | 4 | PENDING | 1 wk | 2 |
-| [phase4-uar-parity-and-cutover.md](./phase4-uar-parity-and-cutover.md) | 4 | PENDING | 2 wk | 3 |
+| [phase4-uar-shared-infra.md](./phase4-uar-shared-infra.md) | 4 | **🚫 DEPRECATED** | — | — |
+| [phase4-uar-plugin-port.md](./phase4-uar-plugin-port.md) | 4 | **🚫 DEPRECATED** | — | — |
+| [phase4-uar-synthesis-hook.md](./phase4-uar-synthesis-hook.md) | 4 | **🚫 DEPRECATED** | — | — |
+| [phase4-uar-parity-and-cutover.md](./phase4-uar-parity-and-cutover.md) | 4 | **🚫 DEPRECATED** | — | — |
+| **[role-discovery-state-machine.md](../../../../knowledge/plan/role-discovery-state-machine.md)** | 4 | **✅ IN PROGRESS** | 1 wk | Steps 1–5 done, 6–7 pending |
 
-**Total new subtasks across actionable plans:** 16  
-**Needs-refinement (blocked on decision):** 2  
-**Linked-only (deduplicated to phase0 plan):** 3
+**Total new subtasks across actionable plans:** 8  
+**Needs-refinement (blocked on decision):** 1  
+**Linked-only (deduplicated to phase0 plan):** 3  
+**Deprecated (superseded by state machine):** 4
 
 ---
 
