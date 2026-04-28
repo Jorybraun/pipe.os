@@ -18,8 +18,12 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
+import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, stateActionSchema, questionSchema, synthesizeSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
 import { callRoleAgent, mergeKnowledgeState, callGapFillingAgent, type RoleAgentResponse } from '../../lib/roleAgent';
+import { interviewReducer, createInitialState } from '../../lib/agents/interview/reducer';
+import { generateQuestion } from '../../lib/agents/question/generator';
+import { evaluateQuestion } from '../../lib/agents/question/eval';
+import { synthesize } from '../../lib/agents/synthesis/generator';
 import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
 import { decomposeRcdIntoNodes, persistRoleNodes } from '../../lib/roleAgent/decomposeRcd';
 import { deriveJobDescriptionFromRcd } from '../../lib/roleAgent/deriveJobDescription';
@@ -1093,6 +1097,169 @@ roleContexts.post('/:id/respond', async (c) => {
     status: 'INTERVIEWING' as const,
     toolsUsed: agentResponse.toolsUsed,
   });
+});
+
+// ─── POST /:id/state — Run the interview reducer ─────────────────────────────
+
+roleContexts.post('/:id/state', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = stateActionSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { state: clientState, action } = parsed.data;
+
+  // Verify ownership
+  const row = await c.env.DB.prepare('SELECT owner_id FROM role_contexts WHERE id = ?1')
+    .bind(id)
+    .first<{ owner_id: string }>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  // If client sent state, use it; otherwise we would need to reconstruct from DB.
+  // For now, require client state (frontend holds state in the new architecture).
+  if (!clientState) {
+    return apiError(c, 'VALIDATION_ERROR', 'state is required in the new architecture.');
+  }
+
+  // Unsafe cast: client sends a JSON-serialized InterviewState
+  const state = clientState as unknown as import('../../lib/agents/interview/types').InterviewState;
+
+  const newState = interviewReducer(state, action as import('../../lib/agents/interview/types').InterviewAction);
+
+  return c.json({ state: newState });
+});
+
+// ─── POST /:id/question — Generate next question from state ──────────────────
+
+roleContexts.post('/:id/question', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = questionSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { state: clientState, enableEval } = parsed.data;
+
+  // Verify ownership
+  const row = await c.env.DB.prepare('SELECT owner_id FROM role_contexts WHERE id = ?1')
+    .bind(id)
+    .first<{ owner_id: string }>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  const state = clientState as unknown as import('../../lib/agents/interview/types').InterviewState;
+  const provider = createRoleAgentProvider(c.env);
+
+  let result: Awaited<ReturnType<typeof generateQuestion>>;
+  try {
+    result = await generateQuestion(state, provider);
+  } catch (err) {
+    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+    throw err;
+  }
+  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' });
+
+  // Optional eval gate
+  if (enableEval) {
+    const evalResult = await evaluateQuestion(state, result, provider);
+    if (!evalResult.approved && evalResult.dimensions.length > 0) {
+      // Include eval dimensions in response for debugging; frontend decides whether to show
+      return c.json({ ...result, eval: evalResult });
+    }
+  }
+
+  return c.json(result);
+});
+
+// ─── POST /:id/synthesize — Synthesize persona + JD from state ───────────────
+
+roleContexts.post('/:id/synthesize', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = synthesizeSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { state: clientState } = parsed.data;
+
+  // Verify ownership
+  const row = await c.env.DB.prepare('SELECT owner_id FROM role_contexts WHERE id = ?1')
+    .bind(id)
+    .first<{ owner_id: string }>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  const state = clientState as unknown as import('../../lib/agents/interview/types').InterviewState;
+  const provider = createRoleAgentSynthesisProvider(c.env);
+  const fallbackProvider = createRoleAgentSynthesisFallbackProvider(c.env);
+
+  let result: Awaited<ReturnType<typeof synthesize>>;
+  try {
+    result = await synthesize(state, provider);
+  } catch (err) {
+    // Try fallback
+    if (fallbackProvider) {
+      try {
+        result = await synthesize(state, fallbackProvider);
+      } catch (fallbackErr) {
+        logRoleAgentUsage(c, fallbackProvider, { roleContextId: id, participantId: 'synthesize-api' }, { success: false, errorMessage: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) });
+        throw fallbackErr;
+      }
+    } else {
+      logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'synthesize-api' }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  }
+  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'synthesize-api' });
+
+  return c.json(result);
 });
 
 // ─── POST /:id/complete — Force-complete a participant's interview ──────────

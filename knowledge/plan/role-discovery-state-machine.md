@@ -406,38 +406,47 @@ app.post('/api/v1/role-contexts/:id/question', async (c) => {
 
 ## 9. Migration Path
 
-### Step 1: Extract reducer
+> **Status (2026-04-28):** Steps 1–5 complete. Handoff: `docs/handoffs/2026-04-28-role-discovery-state-machine-handoff.md`
+
+### Step 1: Extract reducer ✅
 
 1. Create `lib/agents/interview/reducer.ts`
 2. Move `buildPhaseDirective`, coverage logic, knowledge state merging into reducer
 3. Make it pure: `(state, action) => newState`
 4. Add tests: every action → expected state
 
-### Step 2: Extract question generator
+### Step 2: Extract question generator ✅
 
 1. Create `lib/agents/question/generator.ts`
 2. Move question generation from `callRoleAgent`
 3. Remove tool loop, synthesis path, gap-filling
 4. Stateless: takes `InterviewState`, returns `Question`
 
-### Step 3: Extract synthesis generator
+### Step 3: Extract synthesis generator ✅
 
 1. Create `lib/agents/synthesis/generator.ts`
 2. Move synthesis from `callRoleAgent`
 3. Stateless: takes `InterviewState`, returns `Persona + JD`
 
-### Step 4: Wire eval gate
+### Step 4: Wire eval gate ✅
 
 1. Create `lib/agents/question/eval.ts`
 2. Define eval dimensions
 3. Call `runEvalGate` in `/question` endpoint
 
-### Step 5: Update frontend
+### Step 5: Add backend endpoints ✅
+
+1. `POST /:id/state` — runs reducer, returns new state
+2. `POST /:id/question` — generates question from state (optional eval gate)
+3. `POST /:id/synthesize` — synthesizes persona + JD from state
+4. Old `/respond` untouched for backward compatibility
+
+### Step 6: Update frontend (Pending)
 
 1. `useRoleDiscovery.ts` calls `/state` then `/question` (or `/synthesize`)
 2. Display `state.phase`, `state.coverage`, `state.questionsAsked` in UI
 
-### Step 6: Delete legacy
+### Step 7: Delete legacy (Pending)
 
 1. Delete `lib/roleAgent.ts`
 2. Delete `lib/roleAgentPrompts.ts`

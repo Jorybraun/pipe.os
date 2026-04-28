@@ -118,10 +118,17 @@ def main():
         body = _handle(req)
         should_exec = body.pop("_exec_after_send", False)
 
+        # Notifications (no id) must not receive a response per JSON-RPC 2.0
+        if req.get("id") is None:
+            if should_exec:
+                os.chdir(PROJECT_ROOT)
+                os.execv(PYTHON, SERVER_ARGS)
+            continue
+
         if "error" in body:
-            resp = {"jsonrpc": "2.0", "id": req.get("id"), "error": body["error"]}
+            resp = {"jsonrpc": "2.0", "id": req["id"], "error": body["error"]}
         else:
-            resp = {"jsonrpc": "2.0", "id": req.get("id"), "result": body}
+            resp = {"jsonrpc": "2.0", "id": req["id"], "result": body}
         _send(resp)
 
         if should_exec:

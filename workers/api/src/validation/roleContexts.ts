@@ -76,6 +76,39 @@ export const calibrateSchema = z.object({
 export type CalibrateInput = z.infer<typeof calibrateSchema>;
 
 /**
+ * POST /api/v1/role-contexts/:id/state — run the interview reducer.
+ */
+export const stateActionSchema = z.object({
+  state: z.record(z.unknown()).optional(),
+  action: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('ANSWER'), answer: z.string().min(1).max(2000), knowledgeStateUpdate: z.record(z.record(z.unknown())).optional(), domainCoverage: z.record(z.string()).optional() }),
+    z.object({ type: z.literal('SKIP') }),
+    z.object({ type: z.literal('FORCE_SYNTHESIZE') }),
+  ]),
+});
+
+export type StateActionInput = z.infer<typeof stateActionSchema>;
+
+/**
+ * POST /api/v1/role-contexts/:id/question — generate next question from state.
+ */
+export const questionSchema = z.object({
+  state: z.record(z.unknown()),
+  enableEval: z.boolean().optional(),
+});
+
+export type QuestionInput = z.infer<typeof questionSchema>;
+
+/**
+ * POST /api/v1/role-contexts/:id/synthesize — synthesize persona + JD from state.
+ */
+export const synthesizeSchema = z.object({
+  state: z.record(z.unknown()),
+});
+
+export type SynthesizeInput = z.infer<typeof synthesizeSchema>;
+
+/**
  * POST /api/v1/role-contexts/:id/invite — invite team members.
  */
 export const inviteSchema = z.object({
