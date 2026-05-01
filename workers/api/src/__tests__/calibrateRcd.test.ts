@@ -1,16 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { calibrateRcd } from '../lib/roleAgent/calibrateRcd';
-import { callGapFillingAgent } from '../lib/roleAgent';
+import { callGapFillingAgent } from '../lib/agents/calibration/gapFilling';
 import type { LLMProvider, LLMMessage, LLMCompletion } from '../lib/llm/types';
 import type { RoleContextDocument, DomainCell } from '../types';
 
-vi.mock('../lib/roleAgent', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../lib/roleAgent')>();
-  return {
-    ...actual,
-    callGapFillingAgent: vi.fn(),
-  };
-});
+vi.mock('../lib/agents/calibration/gapFilling', () => ({
+  callGapFillingAgent: vi.fn(),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -28,6 +28,7 @@ interface OpenAIChatCompletionResponse {
   choices?: Array<{
     message?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         id: string;
         type: 'function';
@@ -79,24 +80,28 @@ export class KimiProvider implements LLMProvider {
   async complete(messages: LLMMessage[], options: CompleteOptions = {}): Promise<LLMCompletion> {
     const openaiMessages = toOpenAIMessages(messages);
     const forceJson = options.forceJson === true;
+    const startMs = Date.now();
 
     const body: Record<string, unknown> = {
       model: this.model,
       messages: openaiMessages,
-      max_tokens: options.maxTokens ?? 1024,
+      max_tokens: options.maxTokens ?? 4096,
       temperature: 0.2,
+      reasoning: null,
     };
 
     if (forceJson) {
       body.response_format = { type: 'json_object' };
     }
 
+    console.log(`[KimiProvider] POST ${this.baseUrl}/chat/completions model=${this.model} messages=${messages.length} maxTokens=${options.maxTokens ?? 4096}`);
+
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`,
-        'User-Agent': 'Kilo-Code/1.0.0',
+        'User-Agent': 'claude-code/0.1',
       },
       body: JSON.stringify(body),
     });
@@ -107,8 +112,31 @@ export class KimiProvider implements LLMProvider {
     }
 
     const data = (await res.json()) as OpenAIChatCompletionResponse;
+    const elapsed = Date.now() - startMs;
+    const msg = data.choices?.[0]?.message;
+    console.log(`[KimiProvider] ${elapsed}ms | contentLen=${msg?.content?.length ?? 0} reasoningLen=${msg?.reasoning_content?.length ?? 0} promptTokens=${data.usage?.prompt_tokens ?? '?'} completionTokens=${data.usage?.completion_tokens ?? '?'}`);
     const message = data.choices?.[0]?.message;
-    let rawText = message?.content ?? '';
+    const contentText = message?.content ?? '';
+    const reasoningText = message?.reasoning_content ?? '';
+
+    // Kimi k2.6 is non-deterministic about where it places output:
+    // - Usually JSON is in `content` and reasoning in `reasoning_content`
+    // - Sometimes reasoning ends up in `content` and JSON is nowhere
+    // - Occasionally JSON is in `reasoning_content`
+    // Pick the field that looks most like JSON (starts with '{' after trimming).
+    const contentLooksLikeJson = contentText.trim().startsWith('{');
+    const reasoningLooksLikeJson = reasoningText.trim().startsWith('{');
+
+    let rawText = '';
+    if (contentLooksLikeJson) {
+      rawText = contentText;
+    } else if (reasoningLooksLikeJson) {
+      rawText = reasoningText;
+    } else if (contentText) {
+      rawText = contentText;
+    } else if (reasoningText) {
+      rawText = reasoningText;
+    }
 
     if (!rawText && !message?.tool_calls?.length) {
       throw new Error('Kimi returned empty response');
@@ -131,68 +159,19 @@ export class KimiProvider implements LLMProvider {
   }
 
   /**
-   * Stream text tokens from Kimi. Uses SSE streaming via the standard
-   * OpenAI chat completions endpoint with stream: true.
+   * Stream text tokens from Kimi.
+   *
+   * WORKAROUND: Kimi's coding endpoint (kimi-for-coding) sends all streaming
+   * tokens in `delta.reasoning_content` instead of `delta.content` when
+   * `response_format: {type: "json_object"}` is used, leaving `content` empty.
+   * Rather than stream reasoning tokens (which include the model's internal
+   * monologue), we delegate to the non-streaming `complete()` and yield the
+   * full response as a single chunk. This preserves the streaming interface
+   * while ensuring valid JSON output.
    */
   async *completeStream(messages: LLMMessage[], options: CompleteOptions = {}): AsyncGenerator<string> {
-    const openaiMessages = toOpenAIMessages(messages);
-
-    const body: Record<string, unknown> = {
-      model: this.model,
-      messages: openaiMessages,
-      max_tokens: options.maxTokens ?? 1024,
-      temperature: 0.2,
-      stream: true,
-    };
-
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-        'User-Agent': 'Kilo-Code/1.0.0',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Kimi API streaming ${res.status}: ${err}`);
-    }
-
-    if (!res.body) {
-      throw new Error('Kimi returned no body for stream');
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
-        const line = buffer.slice(0, newlineIdx).trim();
-        buffer = buffer.slice(newlineIdx + 1);
-
-        if (!line.startsWith('data: ')) continue;
-        const payload = line.slice(6).trim();
-        if (payload === '[DONE]') return;
-
-        try {
-          const chunk = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: string } }>;
-          };
-          const text = chunk.choices?.[0]?.delta?.content;
-          if (text) yield text;
-        } catch {
-          // Ignore malformed SSE chunks
-        }
-      }
-    }
+    const completion = await this.complete(messages, options);
+    const text = completion.content ?? '';
+    if (text) yield text;
   }
 }

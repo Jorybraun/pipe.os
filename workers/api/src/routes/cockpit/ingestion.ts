@@ -292,6 +292,7 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
   // Extract text + parse
   let resumeText = '';
   let parsed: Record<string, unknown> = { skills: [] };
+  let decompositionResult: import('../../lib/candidateDiscovery/candidateDecompositionPrompt').DecompositionResult | null = null;
 
   if (contentType === 'application/pdf') {
     try {
@@ -314,13 +315,14 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
   }
 
   try {
-    const parsedCV = await parseResume({
+    const parseResult = await parseResume({
       env: c.env,
       contentType,
       fileBuffer: buffer,
     });
-    if (parsedCV) {
-      parsed = parsedCV as unknown as Record<string, unknown>;
+    if (parseResult) {
+      parsed = parseResult.parsedCV as unknown as Record<string, unknown>;
+      decompositionResult = parseResult.decompositionResult;
     }
   } catch (err) {
     console.error('[ingestion/reingest] parseResume failed:', err);
@@ -354,8 +356,9 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
     env: c.env,
     db,
     candidateId,
-    parsed: parsed as { skills: string[] },
+    parsed: parsed as { skills: string[]; experiences: []; educationBlocks: []; credentials: []; projects: [] },
     resumeText,
+    decompositionResult,
   }).catch((err) => {
     console.error('[ingestion/reingest] background ingestion error:', err);
   });

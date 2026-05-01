@@ -26,8 +26,6 @@ export interface EvalDimensionResult {
 export interface EvalResult {
   approved: boolean;
   dimensions: EvalDimensionResult[];
-  /** If the eval gate produced a rewrite, use this instead of the original question text. */
-  rewrite?: string;
 }
 
 export type ApprovalRule = 'all_pass' | 'no_fail' | 'weighted';
@@ -74,6 +72,7 @@ Rules:
 - The question must not be substantially similar to any previously asked question
 - Paraphrases of the same question count as redundant
 - Follow-ups on the same topic with different framing are acceptable
+- Use the previousAnswers to determine whether a follow-up adds new information
 
 Respond with JSON only:
 {
@@ -130,6 +129,7 @@ function buildEvalMessages(
 ): LLMMessage[] {
   const lastAnswer = state.exchanges[state.exchanges.length - 1]?.answer ?? '';
   const previousQuestions = state.exchanges.map((ex) => ex.question);
+  const previousAnswers = state.exchanges.map((ex) => ex.answer ?? '');
 
   return [
     { role: 'system', content: dimConfig.promptTemplate },
@@ -144,6 +144,7 @@ function buildEvalMessages(
           phase: state.phase,
           lastAnswer,
           previousQuestions,
+          previousAnswers,
         },
         null,
         2,

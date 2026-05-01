@@ -64,7 +64,7 @@ export async function handleEnrichmentWorkerCron(
           handle,
           job.candidate_id,
           db,
-          env,
+          env as unknown as Parameters<typeof enrichCandidateFromGitHub>[3],
           env.GITHUB_TOKEN,
         );
 

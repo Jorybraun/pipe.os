@@ -293,7 +293,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
     // Find first un-submitted challenge index
     let currentIndex = -1;
     for (let i = 0; i < stage.challenges.length; i++) {
-      if (!submittedIds.has(stage.challenges[i].id)) {
+      if (!submittedIds.has(stage.challenges[i]!.id)) {
         currentIndex = i;
         break;
       }

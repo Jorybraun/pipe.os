@@ -396,6 +396,7 @@ export interface RoleContextParticipantSummary {
   questionBudget: number;
   status: 'PENDING' | 'INVITED' | 'CALIBRATING' | 'INTERVIEWING' | 'COMPLETE';
   exchanges: RoleContextExchange[];
+  phase: InterviewPhase;
 }
 
 export interface RoleContextFullState {
@@ -712,4 +713,100 @@ export interface CandidateProfileResponse {
   stages: ProfileStage[];
   phoneCalls: PhoneCallRecord[];
   reviewSessions?: ReviewSessionListItem[];
+}
+
+// ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)
+
+export type InterviewPhase = 'CONTEXT' | 'DISCOVERY' | 'PRIORITIZE' | 'EVP_FRICTION' | 'WRAP_UP';
+
+export interface InterviewStateExchange {
+  questionId: string;
+  question: string;
+  acknowledgment: string;
+  answer?: string;
+  input?: RoleContextQuestionInput;
+}
+
+export interface InterviewQueuedQuestion {
+  questionId: string;
+  text: string;
+  acknowledgment: string;
+  goal?: string;
+  expectedCoverage?: { domain: string; from: DomainCoverage; to: DomainCoverage };
+  probeAlignment?: string;
+  questionType?: string;
+  input: RoleContextQuestionInput;
+  suggestedAnswers?: string[];
+  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+  domainCoverage: Record<string, DomainCoverage>;
+}
+
+export interface InterviewState {
+  baseline: Record<string, unknown>;
+  participantRole: ParticipantRole | null;
+  questionBudget: number;
+  exchanges: InterviewStateExchange[];
+  knowledgeState: Record<string, Record<string, unknown>>;
+  coverage: Record<string, DomainCoverage>;
+  phase: InterviewPhase;
+  questionsAsked: number;
+  synthesisReady: boolean;
+  /** Why the current phase was selected (human-readable). */
+  reasoning?: string;
+  /** List of gaps that prevented synthesis (if any). */
+  urgentGaps?: string[];
+  /** Pre-generated questions served instantly without LLM latency. */
+  questionStack: InterviewQueuedQuestion[];
+}
+
+export interface PostStateRequest {
+  state?: InterviewState;
+  action:
+    | { type: 'ANSWER'; answer: string; knowledgeStateUpdate?: Record<string, Record<string, unknown>>; domainCoverage?: Record<string, DomainCoverage> }
+    | { type: 'SKIP' }
+    | { type: 'FORCE_SYNTHESIZE' };
+}
+
+export interface PostStateResponse {
+  state: InterviewState;
+}
+
+export interface PostQuestionRequest {
+  state: InterviewState;
+  enableEval?: boolean;
+}
+
+export interface PostQuestionResponse {
+  reasoning: string;
+  acknowledgment: string;
+  question: RoleContextQuestion & {
+    goal?: string;
+    expectedCoverage?: { domain: string; from: DomainCoverage; to: DomainCoverage };
+    probeAlignment?: string;
+    questionType?: string;
+  };
+  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+  domainCoverage: Record<string, DomainCoverage>;
+  /** Remaining pre-generated questions to pop from the stack. */
+  questionStack?: InterviewQueuedQuestion[];
+  eval?: {
+    approved: boolean;
+    dimensions: Array<{ id: string; verdict: 'pass' | 'fail' | 'warn'; score: number; reason: string }>;
+    rewrite?: string;
+  };
+}
+
+export interface PostSynthesizeRequest {
+  state: InterviewState;
+}
+
+export interface PostSynthesizeResponse {
+  reasoning: string;
+  persona: CandidatePersona;
+  jobDescription: GeneratedJobDescription;
+  synthesis: string;
+  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+  domainCoverage: Record<string, DomainCoverage>;
+  /** Full Role Context Document — present when backend has cut over to RCD synthesis. */
+  rcd?: RoleContextDocument | null;
 }

@@ -50,8 +50,9 @@ class AgentWebSocketServer:
         self.queue = queue or get_message_queue()
         self.poll_interval = poll_interval
         self._connections: dict[Any, dict[str, Any]] = {}  # websocket -> metadata
-        self._server: asyncio.Server | None = None
+        self._server: Any | None = None
         self._poller_task: asyncio.Task | None = None
+        self._server_task: asyncio.Task | None = None
         self._shutdown_event = asyncio.Event()
 
     async def start(self) -> None:
@@ -63,10 +64,19 @@ class AgentWebSocketServer:
             self.port,
         )
         self._poller_task = asyncio.create_task(self._poll_loop())
+        # websockets 14+ requires serve_forever() to process connections
+        if hasattr(self._server, "serve_forever"):
+            self._server_task = asyncio.create_task(self._server.serve_forever())
         print(f"[harness ws] Agent WebSocket server started on ws://{self.host}:{self.port}", file=sys.stderr)
 
     async def stop(self) -> None:
         self._shutdown_event.set()
+        if self._server_task:
+            self._server_task.cancel()
+            try:
+                await self._server_task
+            except asyncio.CancelledError:
+                pass
         if self._poller_task:
             self._poller_task.cancel()
             try:

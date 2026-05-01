@@ -19,6 +19,7 @@ services:
   # Dev container — mounts your real repo so git, branch switching, and edits
   # persist on the host. The harness is installed inside the image.
   # Your host app files are visible and editable inside.
+  # .env files are bind-mounted read-only so stash/reset can't destroy them.
   agent-harness-dev:
     build:
       context: ..
@@ -34,8 +35,39 @@ services:
     volumes:
       # Mount the entire project so git history and edits are live
       - ../:/app
+      # Lock .env files read-only — agent harness can't stash or overwrite them
+      - ../.env:/app/.env:ro
+      - ../.env.local:/app/.env.local:ro
+      - ../agent-harness/.env:/app/agent-harness/.env:ro
       # Keep the harness install from the image (don't overwrite with host venv)
       - harness_venv:/app/agent-harness/.venv
+    command: ["bash"]
+
+  # Safe demo environment — isolated worktree, main repo untouched.
+  # The container can stash/branch/reset freely; your real working dir is safe.
+  agent-harness-demo:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-demo
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    volumes:
+      # Mount the disposable worktree instead of the live repo
+      - ../.worktrees/agent-harness-demo:/app
+      # Mount .git so the worktree's git metadata resolves inside the container.
+      # The main working tree is NOT mounted, so file edits are isolated.
+      # Shared surface: refs and objects (don't delete branches you care about).
+      - ../.git:/Users/hans/Code/PIPE/PIPE-OS/.git
+      # Keep the harness install from the image
+      - harness_venv:/app/agent-harness/.venv
+      # Persist agent state (broker DB, checkpoints, messages) across resets
+      - swarm_data:/app/.swarm
     command: ["bash"]
 
   # For running tests inside the container (still isolated by default)
@@ -78,3 +110,4 @@ services:
 
 volumes:
   harness_venv:
+  swarm_data:

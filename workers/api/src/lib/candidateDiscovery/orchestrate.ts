@@ -24,6 +24,7 @@
 
 import type { Env, RepoEngineeringSignalsRow } from '../../types';
 import type { ParsedCV } from '../cvParser';
+import type { DecompositionResult } from './candidateDecompositionPrompt';
 import { createCandidateAgentProvider } from '../llm/createProvider';
 import { matchReposForCandidate } from '../match/matchReposForCandidate';
 import { triangulateMatch, triangulateShortlist } from '../match/triangulateMatch';
@@ -48,6 +49,7 @@ import {
 } from './candidateSituationFit';
 import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
 import { getActiveCandidateNodes } from './candidateNodes';
+import { decomposeResumeToGraph } from './resumeDecomposition';
 
 export interface IngestionInput {
   env: Env;
@@ -55,6 +57,7 @@ export interface IngestionInput {
   candidateId: string;
   parsed: ParsedCV;
   resumeText: string;
+  decompositionResult?: DecompositionResult | null;
 }
 
 /**
@@ -99,6 +102,16 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     console.error('[ingestion] persistCandidateProfile failed:', msg);
     await markIngestionFailed(db, candidateId, `Persist failed: ${msg}`);
     return;
+  }
+
+  // Step 3.5: Decompose resume into candidate_nodes (ADR-041 Phase 1)
+  // This runs after profile persistence but before embedding.
+  // Failures are logged but do not block the pipeline.
+  try {
+    await decomposeResumeToGraph({ db, candidateId, resumeText, parsedCV: parsed, env, decompositionResult: input.decompositionResult });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);
   }
 
   // Step 4: Embed into CANDIDATE_INDEX

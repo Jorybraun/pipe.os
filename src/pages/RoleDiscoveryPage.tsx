@@ -568,6 +568,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
             questionsAsked: creator.questionsAsked,
             questionBudget: creator.questionBudget,
             knowledgeState: ctx.knowledgeState,
+            phase: creator.phase,
           });
           setDefaultLiveMode(saved.defaultLiveMode);
           setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: creator.questionBudget });
@@ -1096,6 +1097,10 @@ export default function RoleDiscoveryPage(): JSX.Element {
             greeting="Hi, I'm Pipe's interview assistant. I'll ask you a few questions to help define the role you're building for. Let's get started."
             showDomainBars
             onLiveEnd={handleLiveEnd}
+            interviewPhase={rd.interviewPhase}
+            reasoning={rd.reasoning}
+            urgentGaps={rd.urgentGaps}
+            synthesisAllowed={rd.synthesisAllowed}
           />
         </div>
       )}

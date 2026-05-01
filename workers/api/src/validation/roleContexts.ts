@@ -39,19 +39,6 @@ export const createRoleContextSchema = z.object({
 export type CreateRoleContextInput = z.infer<typeof createRoleContextSchema>;
 
 /**
- * POST /api/v1/role-contexts/:id/respond — submit answer, get next question.
- */
-export const respondSchema = z.object({
-  answer: z
-    .string()
-    .min(1, 'answer is required')
-    .max(2000, 'answer must be 2000 characters or fewer'),
-  questionId: z.string().min(1, 'questionId is required'),
-});
-
-export type RespondInput = z.infer<typeof respondSchema>;
-
-/**
  * Participant roles for the calibration question (ADR-028).
  */
 export const PARTICIPANT_ROLES = [
@@ -75,11 +62,57 @@ export const calibrateSchema = z.object({
 
 export type CalibrateInput = z.infer<typeof calibrateSchema>;
 
-/**
- * POST /api/v1/role-contexts/:id/state — run the interview reducer.
- */
+// ── Shared schemas for the new state-machine architecture ────────────────────
+
+const domainCoverageSchema = z.enum(['none', 'sparse', 'partial', 'covered', 'deep']);
+
+const queuedQuestionSchema = z.object({
+  questionId: z.string(),
+  text: z.string(),
+  acknowledgment: z.string(),
+  goal: z.string().optional(),
+  expectedCoverage: z.object({
+    domain: z.string(),
+    from: domainCoverageSchema,
+    to: domainCoverageSchema,
+  }).optional(),
+  probeAlignment: z.string().optional(),
+  questionType: z.string().optional(),
+  input: z.object({
+    type: z.enum(['text', 'textarea', 'tags', 'select', 'radio']),
+    options: z.array(z.string()).optional(),
+    placeholder: z.string().optional(),
+  }),
+  suggestedAnswers: z.array(z.string()).optional(),
+  knowledgeStateUpdate: z.record(z.record(z.unknown())),
+  domainCoverage: z.record(domainCoverageSchema),
+});
+
+export const interviewStateSchema = z.object({
+  baseline: z.record(z.unknown()),
+  participantRole: z.string().nullable().optional(),
+  questionBudget: z.number().int().min(1),
+  exchanges: z.array(
+    z.object({
+      questionId: z.string(),
+      acknowledgment: z.string().optional(),
+      question: z.string(),
+      input: z.record(z.unknown()),
+      answer: z.string().optional(),
+    }),
+  ),
+  knowledgeState: z.record(z.record(z.unknown())),
+  coverage: z.record(domainCoverageSchema),
+  phase: z.string(),
+  questionsAsked: z.number().int().min(0),
+  synthesisReady: z.boolean(),
+  reasoning: z.string().optional(),
+  urgentGaps: z.array(z.string()).optional(),
+  questionStack: z.array(queuedQuestionSchema).optional().default([]),
+});
+
 export const stateActionSchema = z.object({
-  state: z.record(z.unknown()).optional(),
+  state: interviewStateSchema.optional(),
   action: z.discriminatedUnion('type', [
     z.object({ type: z.literal('ANSWER'), answer: z.string().min(1).max(2000), knowledgeStateUpdate: z.record(z.record(z.unknown())).optional(), domainCoverage: z.record(z.string()).optional() }),
     z.object({ type: z.literal('SKIP') }),
@@ -90,10 +123,24 @@ export const stateActionSchema = z.object({
 export type StateActionInput = z.infer<typeof stateActionSchema>;
 
 /**
+ * POST /api/v1/role-contexts/:id/respond — submit answer, get next question.
+ */
+export const respondSchema = z.object({
+  answer: z
+    .string()
+    .min(1, 'answer is required')
+    .max(2000, 'answer must be 2000 characters or fewer'),
+  questionId: z.string().min(1, 'questionId is required'),
+  state: interviewStateSchema.optional(),
+});
+
+export type RespondInput = z.infer<typeof respondSchema>;
+
+/**
  * POST /api/v1/role-contexts/:id/question — generate next question from state.
  */
 export const questionSchema = z.object({
-  state: z.record(z.unknown()),
+  state: interviewStateSchema,
   enableEval: z.boolean().optional(),
 });
 
@@ -103,7 +150,7 @@ export type QuestionInput = z.infer<typeof questionSchema>;
  * POST /api/v1/role-contexts/:id/synthesize — synthesize persona + JD from state.
  */
 export const synthesizeSchema = z.object({
-  state: z.record(z.unknown()),
+  state: interviewStateSchema,
 });
 
 export type SynthesizeInput = z.infer<typeof synthesizeSchema>;

@@ -59,3 +59,7 @@ google-cloud-cli-*.tar.gz
 .swarm/
 *.db-shm
 *.db-wal
+
+# Temporary / sensitive files
+get_token.cjs
+.worktrees/

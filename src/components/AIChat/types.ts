@@ -134,4 +134,10 @@ export interface AIChatProps {
    * scripted intake answers.
    */
   onLiveEnd?: () => void;
+
+  // Interview phase metadata (optional — surfaced when provided by the adapter)
+  interviewPhase?: string;
+  reasoning?: string | undefined;
+  urgentGaps?: string[] | undefined;
+  synthesisAllowed?: boolean;
 }

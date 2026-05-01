@@ -16,7 +16,6 @@ import type { JSX } from 'react';
 import { Mic, Square, Loader2, ArrowRight, Radio, Bot, Volume2, VolumeX, RotateCw, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { useLiveSession } from '../../hooks/useLiveSession';
 import { useTTS } from '../../hooks/useTTS';
-import { ThinkingIndicator } from './ThinkingIndicator';
 import Logo from '../ui/Logo';
 import { PastExchangeCard } from './PastExchangeCard';
 import { QuestionInput } from './QuestionInput';
@@ -91,6 +90,9 @@ export function AIChat({
   enableTTS = false,
   greeting = '',
   onLiveEnd,
+  interviewPhase,
+  urgentGaps,
+  synthesisAllowed,
 }: AIChatProps): JSX.Element {
   const live = useLiveSession();
 
@@ -549,8 +551,8 @@ export function AIChat({
       {/* Delegated header (scripted questions, JD import, etc.) */}
       {renderHeader?.()}
 
-      {/* Progress bar + domain bars + early submit */}
-      {conv.phase === 'INTERVIEWING' && (
+      {/* Phase badge + progress bar + domain bars + early submit */}
+      {isAIPhase && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{
@@ -560,8 +562,22 @@ export function AIChat({
               fontFamily: '"Space Mono", monospace',
               marginBottom: 6,
             }}>
-              QUESTION_{asked + 1}_OF_{budget}
+              {interviewPhase ?? 'INTERVIEWING'}
+              {budget > 0 ? ` · Question ${asked + 1} of ${budget}` : ''}
             </div>
+            {synthesisAllowed === false && (
+              <div style={{
+                fontSize: 9,
+                letterSpacing: '0.1em',
+                color: 'rgba(251, 191, 36, 0.7)',
+                fontFamily: '"Space Mono", monospace',
+                marginBottom: 6,
+              }}>
+                {urgentGaps && urgentGaps.length > 0
+                  ? urgentGaps.slice(0, 2).join(' · ')
+                  : 'Interview in progress'}
+              </div>
+            )}
             <div style={{
               height: 2,
               width: 200,

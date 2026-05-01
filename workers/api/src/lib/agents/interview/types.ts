@@ -13,6 +13,31 @@ import type {
 } from '../../../types';
 
 /**
+ * A pre-generated question sitting on the stack, ready to be served instantly.
+ */
+export interface QueuedQuestion {
+  questionId: string;
+  text: string;
+  acknowledgment: string;
+  goal?: string;
+  expectedCoverage?: {
+    domain: string;
+    from: DomainCoverage;
+    to: DomainCoverage;
+  };
+  probeAlignment?: string;
+  questionType?: string;
+  input: {
+    type: 'text' | 'textarea' | 'tags' | 'select' | 'radio';
+    options?: string[];
+    placeholder?: string;
+  };
+  suggestedAnswers?: string[];
+  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+  domainCoverage: Record<string, DomainCoverage>;
+}
+
+/**
  * The full interview state. This is the single source of truth.
  * The UI holds this, the reducer transforms it, the generators read it.
  */
@@ -29,6 +54,12 @@ export interface InterviewState {
   phase: ConversationPhase;
   questionsAsked: number;
   synthesisReady: boolean;
+  /** Why the current phase was selected (human-readable). */
+  reasoning?: string;
+  /** List of gaps that prevented synthesis (if any). */
+  urgentGaps?: string[];
+  /** Pre-generated questions — popped instantly without LLM latency. */
+  questionStack: QueuedQuestion[];
 }
 
 /**

@@ -17,7 +17,7 @@ import type {
   RoleExchange,
   StakeholderType,
 } from '../../types';
-import { callGapFillingAgent } from '../roleAgent';
+import { callGapFillingAgent } from '../agents/calibration/gapFilling';
 
 export interface CalibrateRcdInput {
   provider: LLMProvider | null;

@@ -11,13 +11,9 @@ vi.mock('../middleware/auth', () => ({
   },
 }));
 
-vi.mock('../lib/roleAgent', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../lib/roleAgent')>();
-  return {
-    ...actual,
-    callGapFillingAgent: vi.fn(),
-  };
-});
+vi.mock('../lib/agents/calibration/gapFilling', () => ({
+  callGapFillingAgent: vi.fn(),
+}));
 
 vi.mock('../lib/roleAgent/calibrateRcd', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/roleAgent/calibrateRcd')>();
@@ -41,7 +37,7 @@ vi.mock('../lib/llm/createProvider', () => ({
   createRoleAgentProvider: vi.fn(() => null),
 }));
 
-import { callGapFillingAgent } from '../lib/roleAgent';
+import { callGapFillingAgent } from '../lib/agents/calibration/gapFilling';
 import { calibrateRcd } from '../lib/roleAgent/calibrateRcd';
 
 // ─── D1 stub ─────────────────────────────────────────────────────────────────

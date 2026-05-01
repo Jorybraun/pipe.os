@@ -1313,6 +1313,19 @@ export interface CandidateChallengeAssignmentRow {
   assigned_at: string;
 }
 
+export interface CandidateProfileStateRow {
+  candidate_id: string;
+  overall_status: 'seed' | 'enriching' | 'screening' | 'active' | 'dormant' | 'archived';
+  last_intake_at: number | null;
+  last_enriched_at: number | null;
+  last_screened_at: number | null;
+  last_matched_at: number | null;
+  re_engagement_eligible_at: number | null;
+  profile_version: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface ChallengeSubmissionRow {
   id: string;
   candidate_id: string;

@@ -1702,13 +1702,26 @@ def main():
     else:
         global ws_server
         ws_server = AgentWebSocketServer(host=args.host, port=args.ws_port)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(ws_server.start())
-        mcp.settings.host = args.host
-        mcp.settings.port = args.port
-        print(f"[harness] MCP {args.transport} server on http://{args.host}:{args.port}")
-        mcp.run(transport=args.transport)
+
+        async def _run_http(transport: str, host: str, port: int) -> None:
+            global ws_server
+            try:
+                await ws_server.start()
+            except OSError as e:
+                logger.warning(f"Could not start WebSocket server ({e})")
+                ws_server = None
+            mcp.settings.host = host
+            mcp.settings.port = port
+            print(f"[harness] MCP {transport} server on http://{host}:{args.port}")
+            if transport == "sse":
+                await mcp.run_sse_async()
+            elif transport == "streamable-http":
+                await mcp.run_streamable_http_async()
+
+        try:
+            asyncio.run(_run_http(args.transport, args.host, args.port))
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
 
 
 if __name__ == "__main__":

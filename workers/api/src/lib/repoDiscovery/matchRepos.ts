@@ -48,47 +48,7 @@ export interface SamplePR {
   changedFileCount: number;
 }
 
-// ─── Skill slug normalization (inline — no import from crawler scripts) ────────
-
-/**
- * Normalize a raw skill string to a canonical slug via the skill_aliases table.
- * Falls back to lowercased input if not found.
- */
-async function slugifySkills(
-  db: D1Database,
-  skills: string[],
-): Promise<string[]> {
-  if (skills.length === 0) return [];
-
-  // One query to fetch all aliases at once
-  const placeholders = skills.map(() => '?').join(', ');
-  const rows = await db
-    .prepare(`SELECT alias, canonical_slug FROM skill_aliases WHERE alias IN (${placeholders})`)
-    .bind(...skills)
-    .all<{ alias: string; canonical_slug: string }>();
-
-  const aliasMap = new Map<string, string>(
-    (rows.results ?? []).map((r) => [r.alias.toLowerCase(), r.canonical_slug]),
-  );
-
-  // Also try lowercased variants
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-
-  for (const skill of skills) {
-    const lower = skill.toLowerCase().trim();
-    const slug = aliasMap.get(lower) ?? lower;
-    if (slug === lower && !aliasMap.has(lower)) {
-      console.warn(`[matchRepos] skill alias not found for "${skill}", falling back to lowercase slug "${lower}"`);
-    }
-    if (!seen.has(slug)) {
-      seen.add(slug);
-      normalized.push(slug);
-    }
-  }
-
-  return normalized;
-}
+import { slugifySkills } from '../skills/slugifySkills';
 
 /** Returns adjacent seniority bands (±1). */
 function adjacentBands(band: string): string[] {

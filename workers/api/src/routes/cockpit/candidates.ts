@@ -616,12 +616,14 @@ candidateOps.post('/:candidateId/resume', async (c) => {
 
   // Parse the resume for structured data (skills, role, experience)
   const isMock = c.env.MOCK_AI === 'true';
-  const parsed = await parseResume({
+  const parseResult = await parseResume({
     fileBuffer: arrayBuffer,
     contentType: fileEntry.type,
     env: c.env,
     mock: isMock,
   });
+  const parsed = parseResult?.parsedCV ?? null;
+  const decompositionResult = parseResult?.decompositionResult ?? null;
 
   if (parsed) {
     await persistParsedCV(db, candidateId, parsed);
@@ -666,8 +668,9 @@ candidateOps.post('/:candidateId/resume', async (c) => {
         env: c.env,
         db,
         candidateId,
-        parsed: parsed ?? { skills: [] },
+        parsed: parsed ?? { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
         resumeText,
+        decompositionResult,
       }).catch((err) => {
         console.error('[candidates/resume] background ingestion error:', err);
       });

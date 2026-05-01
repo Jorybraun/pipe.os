@@ -49,7 +49,7 @@ const SIX_DOMAINS = ['why', 'work', 'team', 'bar', 'codebase', 'process'] as con
 
 // ─── Helpers to read typed values from the untyped knowledge state ───────────
 
-function readDomainCoverage(
+export function readDomainCoverage(
   ks: Record<string, Record<string, unknown>>,
 ): Record<string, DomainCoverage> {
   const raw = ks['_coverage'];
@@ -67,7 +67,7 @@ function readDomainCoverage(
   return result;
 }
 
-function readEvpCoverage(ks: Record<string, Record<string, unknown>>): Record<EvpCategory, DomainCoverage> {
+export function readEvpCoverage(ks: Record<string, Record<string, unknown>>): Record<EvpCategory, DomainCoverage> {
   const raw = ks['_evpCoverage'];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ...DEFAULT_EVP_COVERAGE };
@@ -82,18 +82,18 @@ function readEvpCoverage(ks: Record<string, Record<string, unknown>>): Record<Ev
   return result;
 }
 
-function readStories(ks: Record<string, Record<string, unknown>>): ExtractedStory[] {
+export function readStories(ks: Record<string, Record<string, unknown>>): ExtractedStory[] {
   const raw = ks['_stories'];
   if (Array.isArray(raw)) return raw as ExtractedStory[];
   return [];
 }
 
-function readProbesDelivered(ks: Record<string, Record<string, unknown>>): number {
+export function readProbesDelivered(ks: Record<string, Record<string, unknown>>): number {
   const raw = ks['_probesDelivered'];
   return typeof raw === 'number' ? raw : 0;
 }
 
-function readBooleanFlag(ks: Record<string, Record<string, unknown>>, key: string): boolean {
+export function readBooleanFlag(ks: Record<string, Record<string, unknown>>, key: string): boolean {
   const raw = ks[key];
   return Boolean(raw);
 }
@@ -212,7 +212,7 @@ function phaseRules(input: PhaseSelectionInput) {
  *   5. WRAP_UP        — default; synthesis gates checked here
  */
 export function selectPhase(input: PhaseSelectionInput): PhaseSelectionResult {
-  const { questionsAsked, questionBudget, storiesExtracted, mustHavesPrioritized, frictionProbed, probesDelivered } =
+  const { questionsAsked, questionBudget, storiesExtracted, mustHavesPrioritized, frictionProbed, dayInLifeProbed, probesDelivered } =
     input;
 
   const budgetExhausted = questionsAsked >= questionBudget;
@@ -223,6 +223,7 @@ export function selectPhase(input: PhaseSelectionInput): PhaseSelectionResult {
   const allGatesPass =
     mustHavesPrioritized &&
     frictionProbed &&
+    dayInLifeProbed &&
     storiesExtracted.length >= 1 &&
     allProbesDelivered &&
     personalityQuestionsDelivered;
@@ -300,6 +301,9 @@ export function createInitialState(input: CreateInterviewStateInput): InterviewS
     phase: phaseResult.phase,
     questionsAsked,
     synthesisReady: phaseResult.synthesisAllowed,
+    reasoning: phaseResult.reasoning,
+    urgentGaps: phaseResult.urgentGaps,
+    questionStack: [],
   };
 }
 
@@ -363,6 +367,8 @@ export function interviewReducer(
         phase: phaseResult.phase,
         questionsAsked,
         synthesisReady: budgetExhausted || phaseResult.synthesisAllowed,
+        reasoning: phaseResult.reasoning,
+        urgentGaps: phaseResult.urgentGaps,
       };
     }
 
@@ -392,6 +398,8 @@ export function interviewReducer(
         phase: phaseResult.phase,
         questionsAsked,
         synthesisReady: budgetExhausted || phaseResult.synthesisAllowed,
+        reasoning: phaseResult.reasoning,
+        urgentGaps: phaseResult.urgentGaps,
       };
     }
 
@@ -400,6 +408,8 @@ export function interviewReducer(
         ...state,
         synthesisReady: true,
         phase: 'WRAP_UP',
+        reasoning: 'Forced synthesis.',
+        urgentGaps: [],
       };
     }
 

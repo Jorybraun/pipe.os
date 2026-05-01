@@ -117,7 +117,7 @@ function computeCultural(
 }
 
 function computeTechnical(
-  nodes: { confidence: number | null }[],
+  nodes: { confidence: number | null; extracted_properties_json: string | null }[],
 ): number {
   const count = nodes.length;
   if (count === 0) return 0.0;
@@ -125,10 +125,22 @@ function computeTechnical(
   const avgConfidence =
     nodes.reduce((sum, n) => sum + safeConfidence(n.confidence), 0) / count;
 
-  if (count >= 5 && avgConfidence >= 0.65) return 1.0;
+  // Tenure bonus: skills with >=1 year attributed contribute more
+  let skillsWithTenure = 0;
+  for (const node of nodes) {
+    if (node.extracted_properties_json) {
+      const props = safeParseJson(node.extracted_properties_json);
+      const years = typeof props?.years_attributed === 'number' ? props.years_attributed : null;
+      if (years !== null && years >= 1) {
+        skillsWithTenure++;
+      }
+    }
+  }
 
-  const linear = Math.min(count / 5, 1.0);
-  return clamp(linear * (avgConfidence / 0.65), 0, 1);
+  const baseScore = Math.min(count / 5, 1.0) * (avgConfidence / 0.65);
+  const tenureBonus = Math.min(skillsWithTenure / 5, 0.3); // max 0.3 bonus
+
+  return clamp(baseScore + tenureBonus, 0, 1);
 }
 
 function computeMotivation(

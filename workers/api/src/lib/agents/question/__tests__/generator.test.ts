@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateQuestion, type GeneratedQuestion } from '../generator';
+import { generateQuestion, generateQuestionStream, type GeneratedQuestion } from '../generator';
 import type { InterviewState } from '../../interview/types';
 import type { LLMProvider } from '../../../llm/types';
 
@@ -151,5 +151,64 @@ describe('generateQuestion', () => {
     expect(userMessage).toContain('We need a backend engineer.');
     expect(userMessage).toContain('PHASE: CONTEXT');
     expect(userMessage).toContain('BUDGET: 1 of 8 used');
+  });
+});
+
+// ─── generateQuestionStream ───────────────────────────────────────────────────
+
+describe('generateQuestionStream', () => {
+  it('yields chunks when provider supports completeStream', async () => {
+    const content = JSON.stringify({
+      reasoning: 'x',
+      acknowledgment: 'y',
+      question: { id: 'q-1', text: 'What?', input: { type: 'text' } },
+      domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+    });
+
+    const provider: LLMProvider = {
+      name: 'mock-stream',
+      supportsTools: false,
+      complete: vi.fn(),
+      completeStream: async function* () {
+        yield content.slice(0, 10);
+        yield content.slice(10);
+      },
+    } as unknown as LLMProvider;
+
+    const chunks: string[] = [];
+    const generator = generateQuestionStream(makeState(), provider);
+    let result = await generator.next();
+    while (!result.done) {
+      chunks.push(result.value);
+      result = await generator.next();
+    }
+
+    expect(chunks).toEqual([content.slice(0, 10), content.slice(10)]);
+    expect(result.value.question.text).toBe('What?');
+  });
+
+  it('falls back to complete when completeStream is unavailable', async () => {
+    const provider = makeMockProvider({
+      reasoning: 'x',
+      acknowledgment: 'y',
+      question: { id: 'q-1', text: 'What?', input: { type: 'text' } },
+      domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+    });
+
+    const chunks: string[] = [];
+    const generator = generateQuestionStream(makeState(), provider);
+    let result = await generator.next();
+    while (!result.done) {
+      chunks.push(result.value);
+      result = await generator.next();
+    }
+
+    expect(chunks.length).toBe(1);
+    expect(result.value.question.text).toBe('What?');
+  });
+
+  it('throws when provider is null', async () => {
+    const generator = generateQuestionStream(makeState(), null);
+    await expect(generator.next()).rejects.toThrow('No AI provider is configured');
   });
 });
