@@ -14,6 +14,7 @@ import { useOutletContext } from 'react-router-dom';
 import ChallengesTab from './ChallengesTab';
 import CultureDetailTab from './CultureDetailTab';
 import CodeReviewDetailTab from './CodeReviewDetailTab';
+import OpenSourceDetailTab from './OpenSourceDetailTab';
 import ScreeningDetailTab from './ScreeningDetailTab';
 import type { StagePanelContext } from '../StagePanel';
 
@@ -31,6 +32,10 @@ export default function StageIndexTab(): JSX.Element {
 
   if (stage.stageType === 'SCREENING') {
     return <ScreeningDetailTab />;
+  }
+
+  if (stage.stageType === 'OPEN_SOURCE') {
+    return <OpenSourceDetailTab />;
   }
 
   return <ChallengesTab />;

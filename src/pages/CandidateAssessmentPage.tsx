@@ -48,6 +48,8 @@ function buildRawStage(
       githubRepoUrl: (content.githubRepoUrl as string) ?? null,
       githubPrNumber: (content.githubPrNumber as number) ?? null,
       githubPrDescription: (content.githubPrDescription as string) ?? null,
+      devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
+      issueBody: content.issueBody ?? null,
     }],
   };
 }

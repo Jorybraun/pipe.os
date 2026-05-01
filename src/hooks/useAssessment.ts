@@ -51,6 +51,8 @@ export interface ChallengeContentDTO {
   githubPrNumber?: number;
   githubRepoUrl?: string;
   githubPrDescription?: string;
+  devContainerRepoUrl?: string;
+  issueBody?: { title?: string | null; body?: string | null; labels?: string[] } | null;
   codeArtifact?: unknown;
   reviewSession?: {
     requiresInit?: boolean;

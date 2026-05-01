@@ -9,9 +9,16 @@ interface Example {
   explanation?: string;
 }
 
+interface IssueBody {
+  title?: string | null;
+  body?: string | null;
+  labels?: string[];
+}
+
 interface ProblemPanelProps {
   markdown: string;
   prDescription?: string;
+  issueBody?: IssueBody | null;
   examples?: Example[];
   constraints?: string[];
   linkedArtifact?: {
@@ -27,6 +34,7 @@ interface ProblemPanelProps {
 export function ProblemPanel({
   markdown,
   prDescription,
+  issueBody,
   examples,
   constraints,
   linkedArtifact
@@ -46,6 +54,36 @@ export function ProblemPanel({
               {prDescription}
             </ReactMarkdown>
           </div>
+        </div>
+      )}
+
+      {/* Issue Body Section */}
+      {issueBody && (issueBody.title || issueBody.body) && (
+        <div style={{ marginBottom: 40, padding: 24, background: 'rgba(74, 222, 128, 0.05)', border: '1px solid rgba(74, 222, 128, 0.12)', borderRadius: 8 }}>
+          <div style={{ fontSize: 9, letterSpacing: '0.1em', color: '#4ade80', marginBottom: 12, fontFamily: 'Space Mono', fontWeight: 700 }}>
+            OPEN_SOURCE_ISSUE
+          </div>
+          {issueBody.title && (
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, fontFamily: 'Space Mono' }}>
+              {issueBody.title}
+            </div>
+          )}
+          {issueBody.body && (
+            <div style={{ maxWidth: 'none', fontSize: 14 }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {issueBody.body}
+              </ReactMarkdown>
+            </div>
+          )}
+          {issueBody.labels && issueBody.labels.length > 0 && (
+            <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {issueBody.labels.map((label, i) => (
+                <span key={i} style={{ fontSize: 10, padding: '2px 8px', background: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.2)', borderRadius: 3, color: '#4ade80', fontFamily: 'Space Mono' }}>
+                  {label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -42,6 +42,9 @@ const ConnectedProblemPanel = connectInterview(ProblemPanel, (ctx) => ({
   ...(typeof ctx.currentChallenge.data.prDescription === 'string'
     ? { prDescription: ctx.currentChallenge.data.prDescription }
     : {}),
+  ...(ctx.currentChallenge.data.issueBody
+    ? { issueBody: ctx.currentChallenge.data.issueBody as { title?: string | null; body?: string | null; labels?: string[] } }
+    : {}),
   ...(Array.isArray(ctx.currentChallenge.data.examples)
     ? { examples: ctx.currentChallenge.data.examples as Array<{ input: string; output: string; explanation?: string }> }
     : {}),

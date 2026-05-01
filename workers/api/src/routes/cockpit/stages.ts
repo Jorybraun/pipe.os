@@ -82,6 +82,8 @@ const createChallengeSchema = z.object({
   githubPrNumber: z.number().int().optional(),
   githubPrTitle: z.string().optional(),
   githubPrDescription: z.string().optional(),
+  devContainerRepoUrl: z.string().url().optional(),
+  devContainerChallengeBranch: z.string().optional(),
   cachedDiffJson: z.unknown().optional(),
   cachedMetadata: z.unknown().optional(),
 });

@@ -19,6 +19,7 @@ export interface RawChallenge {
   githubPrNumber?: number | null;
   githubPrDescription?: string | null;
   devContainerRepoUrl?: string | null;
+  issueBody?: { title?: string | null; body?: string | null; labels?: string[] } | null;
 }
 
 export interface RawStage {
@@ -63,6 +64,20 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
     // devcontainer panel instead of Monaco. NULL = legacy in-browser editor.
     const repoUrl = config.devContainerRepoUrl;
     if (typeof repoUrl === 'string' && repoUrl.trim() !== '') {
+      // OPEN_SOURCE-style challenge: show issue description alongside dev container
+      const hasIssueBody =
+        config.issueBody &&
+        (typeof (config.issueBody as Record<string, unknown>).title === 'string' ||
+          typeof (config.issueBody as Record<string, unknown>).body === 'string');
+      if (hasIssueBody) {
+        return {
+          layout: 'workspace',
+          panels: { left: ['problem'], center: ['devcontainer'] },
+          shells: [],
+          initialSubmission: {},
+          isComplete: () => true,
+        };
+      }
       return {
         layout: 'fullbleed',
         panels: { center: ['devcontainer'] },
@@ -252,6 +267,8 @@ function resolveChallengeNode(raw: RawChallenge, stageTimeLimit?: number | null)
     ...(raw.githubRepoUrl != null ? { githubRepoUrl: raw.githubRepoUrl } : {}),
     ...(raw.githubPrNumber != null ? { githubPrNumber: raw.githubPrNumber } : {}),
     ...(raw.githubPrDescription != null ? { githubPrDescription: raw.githubPrDescription } : {}),
+    ...(raw.devContainerRepoUrl != null ? { devContainerRepoUrl: raw.devContainerRepoUrl } : {}),
+    ...(raw.issueBody != null ? { issueBody: raw.issueBody } : {}),
   };
 
   // Time limit: challenge config overrides stage-level
