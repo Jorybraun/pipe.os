@@ -763,7 +763,7 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     await persistParsedCV(db, candidateId, parsed);
   }
 
-  // Persist GitHub handle and queue enrichment job
+  // Persist GitHub handle
   if (githubHandle) {
     const githubUrl = `https://github.com/${githubHandle}`;
     try {
@@ -778,6 +778,7 @@ candidateOps.post('/:candidateId/resume', async (c) => {
         .bind(candidateId, githubUrl, now)
         .run();
 
+      // Queue github enrichment — this is genuinely async / fire-and-forget
       await db
         .prepare(
           `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
@@ -794,24 +795,24 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     }
   }
 
-  // Queue resume ingestion job — processed by enrichment worker cron
-  // This replaces the old fire-and-forget approach with proper retries & observability
+  // Run resume ingestion synchronously — fire-and-forget, no queue needed yet
+  let ingestionResult: { success: boolean; error?: string } = { success: false };
   try {
-    await db
-      .prepare(
-        `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
-         VALUES (?1, ?2, 'resume', ?3, 'PENDING', unixepoch())`,
-      )
-      .bind(crypto.randomUUID(), candidateId, r2Key)
-      .run();
-    console.log(`[intake] queued resume ingestion for candidate ${candidateId}`);
+    ingestionResult = await processResumeFromR2({
+      env: c.env,
+      db,
+      candidateId,
+      r2Key,
+      preParsed: parseResult,
+    });
+    console.log(`[intake] synchronous resume ingestion for candidate ${candidateId}:`, ingestionResult.success);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[candidates/resume] failed to queue resume ingestion for ${candidateId}:`, msg);
-    // Non-fatal: don't fail the upload if queuing fails
+    console.error(`[candidates/resume] synchronous ingestion failed for ${candidateId}:`, msg);
+    ingestionResult = { success: false, error: msg };
   }
 
-  return c.json({ success: true, r2Key, parsed }, 201);
+  return c.json({ success: true, r2Key, parsed, ingestion: ingestionResult }, 201);
 });
 
 // GET /:candidateId/resume — stream CV/resume from R2 to the recruiter

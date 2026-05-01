@@ -9,6 +9,8 @@ import {
   Briefcase,
   Users,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { RoleCard } from "../components";
 import { Skeleton } from "../components/ui/Skeleton";
@@ -50,18 +52,28 @@ const ListingSkeleton = () => (
 );
 
 /**
- * ListingPage - Roles overview with a mixture of Pipeline Builder layout
- * and Meetings Page list style.
+ * ListingPage - Roles overview with server-side pagination, filtering, and search.
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
-  const { pipelines: rawPipelines, isLoading, refetch } = usePipelines();
+  const {
+    pipelines: rawPipelines,
+    total,
+    page,
+    limit,
+    totalPages,
+    isLoading,
+    refetch,
+    setPage,
+    setStatusFilter,
+    setSearchQuery,
+  } = usePipelines();
   const { deletePipeline } = usePipelineDelete();
   const [filter, setFilter] = useState<"all" | "ACTIVE" | "DRAFT" | "ARCHIVED">(
     "all"
   );
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const pipelines = useMemo(
@@ -73,15 +85,23 @@ export default function ListingPage(): JSX.Element {
     setMounted(true);
   }, []);
 
-  const filteredPipelines = pipelines.filter((p) => {
-    const matchesFilter = filter === "all" || p.status === filter;
-    const matchesSearch =
-      searchQuery === "" ||
-      p.title.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  // Debounce search input → server search.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput, setSearchQuery]);
+
+  const handleFilterChange = (f: "all" | "ACTIVE" | "DRAFT" | "ARCHIVED") => {
+    setFilter(f);
+    setStatusFilter(f === 'all' ? null : f);
+    setSelectedIds(new Set());
+  };
 
   const stats = useMemo(() => {
+    // These stats are approximate when paginated; we could fetch summary stats separately.
+    // For now, compute from visible page data as a best-effort display.
     return {
       active: pipelines.filter(p => p.status === 'ACTIVE').length,
       draft: pipelines.filter(p => p.status === 'DRAFT').length,
@@ -137,12 +157,18 @@ export default function ListingPage(): JSX.Element {
   };
 
   const toggleAll = () => {
-    if (selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0) {
+    if (selectedIds.size === pipelines.length && pipelines.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredPipelines.map(p => p.id)));
+      setSelectedIds(new Set(pipelines.map(p => p.id)));
     }
   };
+
+  const canGoPrev = page > 1;
+  const canGoNext = page < totalPages;
+
+  const startItem = total === 0 ? 0 : (page - 1) * limit + 1;
+  const endItem = Math.min(page * limit, total);
 
   return (
     <div
@@ -165,7 +191,7 @@ export default function ListingPage(): JSX.Element {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            {pipelines.length} roles total
+            {total} roles total
           </span>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#34d399', fontFamily: '"Space Mono", monospace' }}>
@@ -215,15 +241,15 @@ export default function ListingPage(): JSX.Element {
                   height: 14,
                   borderRadius: 3,
                   border: `1.5px solid ${selectedIds.size > 0 ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-text-dim)"}`,
-                  background: selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 ? "rgba(255, 255, 255, 0.40)" : "transparent",
+                  background: selectedIds.size === pipelines.length && pipelines.length > 0 ? "rgba(255, 255, 255, 0.40)" : "transparent",
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
-                  {selectedIds.size > 0 && selectedIds.size < filteredPipelines.length && (
+                  {selectedIds.size > 0 && selectedIds.size < pipelines.length && (
                     <div style={{ width: 6, height: 1.5, background: 'rgba(255, 255, 255, 0.40)' }} />
                   )}
-                  {selectedIds.size === filteredPipelines.length && filteredPipelines.length > 0 && (
+                  {selectedIds.size === pipelines.length && pipelines.length > 0 && (
                     <Check size={10} color="#fff" strokeWidth={4} />
                   )}
                 </div>
@@ -236,8 +262,8 @@ export default function ListingPage(): JSX.Element {
               <input
                 type="text"
                 placeholder="SEARCH_BY_TITLE..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -301,7 +327,7 @@ export default function ListingPage(): JSX.Element {
           {/* Roles List */}
           {isLoading ? (
             <ListingSkeleton />
-          ) : filteredPipelines.length === 0 ? (
+          ) : pipelines.length === 0 ? (
             <div style={{ 
               padding: 64, 
               textAlign: 'center', 
@@ -316,7 +342,7 @@ export default function ListingPage(): JSX.Element {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {filteredPipelines.map((p) => (
+              {pipelines.map((p) => (
                 <RoleCard
                   key={p.id}
                   id={p.id}
@@ -339,6 +365,80 @@ export default function ListingPage(): JSX.Element {
                   onDelete={() => handleDeletePipeline(p.id, p.title)}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {!isLoading && total > 0 && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: 24,
+              padding: '12px 16px',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border-light)',
+              borderRadius: 8,
+            }}>
+              <span style={{
+                fontSize: 10,
+                color: 'var(--pipe-text-dim)',
+                fontFamily: '"Space Mono", monospace',
+              }}>
+                {startItem}–{endItem} of {total}
+              </span>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => setPage(page - 1)}
+                  disabled={!canGoPrev}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 28,
+                    height: 28,
+                    borderRadius: 4,
+                    background: canGoPrev ? 'rgba(255,255,255,0.06)' : 'transparent',
+                    border: `1px solid ${canGoPrev ? 'rgba(255,255,255,0.1)' : 'var(--pipe-border-light)'}`,
+                    color: canGoPrev ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                    cursor: canGoPrev ? 'pointer' : 'not-allowed',
+                    opacity: canGoPrev ? 1 : 0.4,
+                  }}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+
+                <span style={{
+                  fontSize: 10,
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                  minWidth: 60,
+                  textAlign: 'center',
+                }}>
+                  PAGE {page} / {totalPages}
+                </span>
+
+                <button
+                  onClick={() => setPage(page + 1)}
+                  disabled={!canGoNext}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 28,
+                    height: 28,
+                    borderRadius: 4,
+                    background: canGoNext ? 'rgba(255,255,255,0.06)' : 'transparent',
+                    border: `1px solid ${canGoNext ? 'rgba(255,255,255,0.1)' : 'var(--pipe-border-light)'}`,
+                    color: canGoNext ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                    cursor: canGoNext ? 'pointer' : 'not-allowed',
+                    opacity: canGoNext ? 1 : 0.4,
+                  }}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
           )}
         </section>
@@ -377,7 +477,7 @@ export default function ListingPage(): JSX.Element {
                 {(["all", "ACTIVE", "DRAFT", "ARCHIVED"] as const).map((f) => (
                   <div
                     key={f}
-                    onClick={() => setFilter(f)}
+                    onClick={() => handleFilterChange(f)}
                     style={{
                       padding: '12px 16px',
                       background: filter === f ? 'rgba(255, 255, 255, 0.06)' : 'var(--pipe-surface)',

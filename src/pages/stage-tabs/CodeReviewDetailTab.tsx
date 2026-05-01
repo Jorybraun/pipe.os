@@ -337,6 +337,37 @@ export default function CodeReviewDetailTab(): JSX.Element {
     }
   }, [existingConfig, multiTurn, aiAssistant, followUp, persona, maxRounds, challenge, stageId, createChallenge, refetchStage]);
 
+  /** Create a placeholder challenge with no repo/PR so the matching
+   *  system assigns the best-matched repository per candidate. */
+  const handleUseMatchedRepo = useCallback(async (): Promise<void> => {
+    setSaving(true);
+    try {
+      const newConfig = {
+        ...(existingConfig ?? {}),
+        isMultiTurn: multiTurn,
+        enableExplainer: aiAssistant,
+        enableFollowUp: followUp,
+        implementerPersona: persona,
+        maxRounds,
+        maxExplainerQuestions: 6,
+        useMatchedRepo: true,
+      };
+      await createChallenge(stageId, {
+        type: 'CODE_REVIEW',
+        title: 'Code Review Challenge',
+        instructions: 'Review the pull request and provide feedback.',
+        config: newConfig,
+      });
+      await refetchStage();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error('[CodeReviewDetailTab] Failed to create matched-repo challenge:', err);
+    } finally {
+      setSaving(false);
+    }
+  }, [existingConfig, multiTurn, aiAssistant, followUp, persona, maxRounds, stageId, createChallenge, refetchStage]);
+
   return (
     <div
       data-testid="stage-tab-content-code-review-detail"
@@ -492,7 +523,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
         label="PULL_REQUEST"
         icon={<GitPullRequest size={16} color="var(--pipe-text-dim)" />}
         meta={
-          hasChallenge ? (
+          hasChallenge && challenge?.githubRepoUrl ? (
             <button
               onClick={() => challenge && navigate(`/pipeline/${shell.pipelineId}/challenges/${challenge.id}`)}
               style={{
@@ -505,53 +536,122 @@ export default function CodeReviewDetailTab(): JSX.Element {
             >
               EDIT_PR <ChevronRight size={10} />
             </button>
+          ) : hasChallenge ? (
+            <button
+              onClick={() => navigate(`${stagePath}/configure`)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 10px', background: 'transparent',
+                border: '1px solid var(--pipe-border)', borderRadius: 4,
+                color: 'var(--pipe-text-dim)', fontSize: 9, fontWeight: 700,
+                letterSpacing: '0.1em', fontFamily: mono, cursor: 'pointer',
+              }}
+            >
+              SELECT_PR <ChevronRight size={10} />
+            </button>
           ) : undefined
         }
       >
         {hasChallenge && challenge ? (
-          <div
-            style={{
-              display: 'flex', alignItems: 'flex-start', gap: 14,
-              padding: '16px 20px', background: 'var(--pipe-surface)',
-              border: '1px solid var(--pipe-border)', borderRadius: 10,
-            }}
-          >
-            <GitPullRequest size={18} color="#60a5fa" style={{ flexShrink: 0, marginTop: 2 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: mono, marginBottom: 4 }}>
-                {challenge.githubPrTitle ?? challenge.title}
-              </div>
-              {challenge.githubRepoUrl && (
-                <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono }}>
-                  {challenge.githubRepoUrl.replace('https://github.com/', '')}
-                  {challenge.githubPrNumber ? ` #${challenge.githubPrNumber}` : ''}
+          challenge.githubRepoUrl ? (
+            /* Manually selected PR */
+            <div
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 14,
+                padding: '16px 20px', background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)', borderRadius: 10,
+              }}
+            >
+              <GitPullRequest size={18} color="#60a5fa" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: mono, marginBottom: 4 }}>
+                  {challenge.githubPrTitle ?? challenge.title}
                 </div>
-              )}
+                {challenge.githubRepoUrl && (
+                  <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono }}>
+                    {challenge.githubRepoUrl.replace('https://github.com/', '')}
+                    {challenge.githubPrNumber ? ` #${challenge.githubPrNumber}` : ''}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Placeholder — candidate-matched repository */
+            <div
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 14,
+                padding: '16px 20px', background: 'rgba(74,222,128,0.04)',
+                border: '1px solid rgba(74,222,128,0.15)', borderRadius: 10,
+              }}
+            >
+              <Target size={18} color="#4ade80" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: mono, marginBottom: 4 }}>
+                  Candidate-Matched Repository
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, lineHeight: 1.5 }}>
+                  Each candidate receives a pull request from the repository
+                  best matched to their profile by the AI ingestion pipeline.
+                  Requires candidate resume ingestion to complete.
+                </div>
+              </div>
+            </div>
+          )
         ) : (
+          /* No challenge yet — offer both options */
           <div
             style={{
-              padding: '40px 24px', textAlign: 'center',
+              padding: '32px 24px', textAlign: 'center',
               border: '1px dashed rgba(96,165,250,0.2)', borderRadius: 10,
               background: 'rgba(96,165,250,0.03)',
             }}
           >
             <GitPullRequest size={24} color="rgba(96,165,250,0.4)" style={{ marginBottom: 12 }} />
-            <div style={{ fontSize: 11, color: 'var(--pipe-text-muted)', fontFamily: mono, marginBottom: 16, lineHeight: 1.6 }}>
-              No PR configured yet. Select a GitHub repository and pull request
-              for candidates to review.
+            <div style={{ fontSize: 11, color: 'var(--pipe-text-muted)', fontFamily: mono, marginBottom: 20, lineHeight: 1.6 }}>
+              Choose how the pull request for this stage is selected.
             </div>
-            <button
-              onClick={() => navigate(`${stagePath}/configure`)}
-              style={{
-                padding: '10px 20px', background: '#60a5fa', color: '#0c0c0e',
-                border: 'none', borderRadius: 4, fontSize: 10, fontWeight: 800,
-                letterSpacing: '0.15em', fontFamily: mono, cursor: 'pointer',
-              }}
-            >
-              + SELECT_PR
-            </button>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button
+                onClick={() => void handleUseMatchedRepo()}
+                style={{
+                  padding: '10px 18px', background: 'rgba(74,222,128,0.1)', color: '#4ade80',
+                  border: '1px solid rgba(74,222,128,0.3)', borderRadius: 4, fontSize: 10, fontWeight: 800,
+                  letterSpacing: '0.12em', fontFamily: mono, cursor: 'pointer',
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Target size={12} /> USE MATCHED REPO
+                </span>
+              </button>
+              <button
+                onClick={() => navigate(`${stagePath}/configure`)}
+                style={{
+                  padding: '10px 18px', background: '#60a5fa', color: '#0c0c0e',
+                  border: 'none', borderRadius: 4, fontSize: 10, fontWeight: 800,
+                  letterSpacing: '0.12em', fontFamily: mono, cursor: 'pointer',
+                }}
+              >
+                + SELECT_PR
+              </button>
+            </div>
+            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ textAlign: 'left', padding: '10px 12px', background: 'var(--pipe-surface)', borderRadius: 6, border: '1px solid var(--pipe-border)' }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#4ade80', fontFamily: mono, letterSpacing: '0.1em', marginBottom: 4 }}>
+                  <Target size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> MATCHED REPO
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: mono, lineHeight: 1.5 }}>
+                  AI selects the best repository for each candidate based on their resume, skills, and experience.
+                </div>
+              </div>
+              <div style={{ textAlign: 'left', padding: '10px 12px', background: 'var(--pipe-surface)', borderRadius: 6, border: '1px solid var(--pipe-border)' }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#60a5fa', fontFamily: mono, letterSpacing: '0.1em', marginBottom: 4 }}>
+                  <GitPullRequest size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> MANUAL PR
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: mono, lineHeight: 1.5 }}>
+                  Every candidate reviews the same specific pull request that you choose.
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </SectionCard>

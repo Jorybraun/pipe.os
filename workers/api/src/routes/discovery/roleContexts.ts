@@ -1337,6 +1337,84 @@ roleContexts.post('/:id/question', async (c) => {
   return c.json({ ...result, questionStack });
 });
 
+// ─── POST /:id/question/prefetch — Pre-fill the question stack ───────────────
+
+roleContexts.post('/:id/question/prefetch', async (c) => {
+  const reqStart = Date.now();
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = questionSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { state: clientState } = parsed.data;
+
+  // Verify ownership
+  const row = await c.env.DB.prepare('SELECT owner_id FROM role_contexts WHERE id = ?1')
+    .bind(id)
+    .first<{ owner_id: string }>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  const state = clientState as import('../../lib/agents/interview/types').InterviewState;
+  const stack = state.questionStack ?? [];
+
+  // If stack is healthy, skip
+  if (stack.length >= 2) {
+    return c.json({ questionStack: stack, prefetched: false, reason: 'stack_healthy' });
+  }
+
+  const provider = createRoleAgentProvider(c.env);
+  if (!provider) {
+    return c.json({ questionStack: stack, prefetched: false, reason: 'no_provider' });
+  }
+
+  // Generate a fresh batch and append to existing stack
+  let batch: Awaited<ReturnType<typeof generateQuestionBatch>>;
+  try {
+    batch = await generateQuestionBatch(state, provider, { batchSize: 3, maxTokens: 4096 });
+  } catch (err) {
+    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-prefetch' }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
+    return c.json({ questionStack: stack, prefetched: false, reason: 'generation_failed', error: err instanceof Error ? err.message : String(err) });
+  }
+  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-prefetch' });
+
+  const newStackItems = batch.map((item) => ({
+    questionId: item.question.id,
+    text: item.question.text,
+    acknowledgment: item.acknowledgment,
+    goal: item.question.goal,
+    expectedCoverage: item.question.expectedCoverage,
+    probeAlignment: item.question.probeAlignment,
+    questionType: item.question.questionType,
+    input: item.question.input,
+    suggestedAnswers: item.question.suggestedAnswers,
+    knowledgeStateUpdate: item.knowledgeStateUpdate,
+    domainCoverage: item.domainCoverage,
+  }));
+
+  const questionStack = [...stack, ...newStackItems];
+
+  console.log(`[question/prefetch] TOTAL ${Date.now() - reqStart}ms | added=${batch.length} | total=${questionStack.length}`);
+
+  return c.json({ questionStack, prefetched: true, added: batch.length });
+});
+
 // ─── POST /:id/synthesize — Synthesize persona + JD from state ───────────────
 
 roleContexts.post('/:id/synthesize', async (c) => {

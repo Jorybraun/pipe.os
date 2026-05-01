@@ -4,13 +4,16 @@
  * Tests for the role discovery client hook (v2 — Cloudflare Workers API).
  * Mocks useApiClient to avoid real HTTP calls.
  *
- * The new architecture orchestrates three endpoints:
- *   POST /state     → runs the reducer
- *   POST /question  → generates the next question
- *   POST /synthesize → produces persona + JD
+ * Architecture:
+ *   POST /role-contexts        → create context
+ *   POST /:id/start            → returns calibration question
+ *   POST /:id/state            → runs reducer (ANSWER, SKIP, FORCE_SYNTHESIZE)
+ *   POST /:id/question         → generates next question (or pops from stack)
+ *   POST /:id/question/prefetch → background stack refill
+ *   POST /:id/synthesize       → produces persona + JD
  *
- * Streaming is not yet implemented for the new endpoints, so useConversation
- * falls back to the non-streaming respond() branch.
+ * The adapter uses non-streaming respond(). useConversation falls back to
+ * adapter.respond() because respondStream is not implemented.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -23,6 +26,7 @@ import type {
   PostStateResponse,
   PostQuestionResponse,
   PostSynthesizeResponse,
+  InterviewQueuedQuestion,
   CandidatePersona,
   RoleContextProgress,
   RoleContextBaseline,
@@ -111,6 +115,7 @@ function makeStateResponse(overrides?: Partial<PostStateResponse['state']>): Pos
       phase: 'CONTEXT',
       questionsAsked: 1,
       synthesisReady: false,
+      questionStack: [],
       ...overrides,
     },
   };
@@ -127,6 +132,18 @@ function makeQuestionResponse(): PostQuestionResponse {
     },
     knowledgeStateUpdate: {},
     domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+  };
+}
+
+function makeQueuedQuestion(overrides?: Partial<InterviewQueuedQuestion>): InterviewQueuedQuestion {
+  return {
+    questionId: 'q-prefetched',
+    text: 'Prefetched question from stack.',
+    acknowledgment: 'Ack.',
+    input: { type: 'textarea' },
+    knowledgeStateUpdate: {},
+    domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+    ...overrides,
   };
 }
 
@@ -156,9 +173,6 @@ function makeSynthesisResponse(): PostSynthesizeResponse {
 describe('useRoleDiscovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.mockPostStream.mockImplementation(async function* () {
-      yield { event: 'done', data: makeQuestionResponse() };
-    });
   });
 
   it('initializes with IDLE phase and no loading state', () => {
@@ -180,7 +194,8 @@ describe('useRoleDiscovery', () => {
     expect(typeof result.current.respond).toBe('function');
     expect(typeof result.current.completeEarly).toBe('function');
     expect(typeof result.current.submitFeedback).toBe('function');
-    expect(typeof result.current.adapter.respondStream).toBe('function');
+    // Adapter uses non-streaming respond(); respondStream is not implemented
+    expect(result.current.adapter.respondStream).toBeUndefined();
   });
 
   it('calls POST /role-contexts and /start, then transitions to CALIBRATING', async () => {
@@ -214,7 +229,8 @@ describe('useRoleDiscovery', () => {
     mocks.mockPost
       .mockResolvedValueOnce(makeCreateResponse())   // /role-contexts
       .mockResolvedValueOnce(makeStartResponse())    // /start
-      .mockResolvedValueOnce(makeStateResponse());   // /state
+      .mockResolvedValueOnce(makeStateResponse())    // /state
+      .mockResolvedValueOnce(makeQuestionResponse()); // /question
 
     const { result } = renderHook(() => useRoleDiscovery());
 
@@ -239,23 +255,18 @@ describe('useRoleDiscovery', () => {
         action: expect.objectContaining({ type: 'ANSWER', answer: 'Ship payment API v2.' }),
       }),
     );
-    expect(mocks.mockPostStream).toHaveBeenCalledWith(
+    expect(mocks.mockPost).toHaveBeenCalledWith(
       '/api/v1/role-contexts/ctx-1/question',
-      expect.objectContaining({ state: expect.objectContaining({ phase: 'CONTEXT' }), enableEval: true }),
+      expect.objectContaining({ state: expect.objectContaining({ phase: 'CONTEXT' }), enableEval: false }),
     );
   });
 
-  it('streams question chunks via respondStream', async () => {
+  it('advances to next question via respond', async () => {
     mocks.mockPost
       .mockResolvedValueOnce(makeCreateResponse())   // /role-contexts
       .mockResolvedValueOnce(makeStartResponse())    // /start
-      .mockResolvedValueOnce(makeStateResponse());   // /state
-
-    mocks.mockPostStream.mockImplementation(async function* () {
-      yield { event: 'chunk', text: 'Ack' };
-      yield { event: 'chunk', text: 'nowledgment' };
-      yield { event: 'done', data: makeQuestionResponse() };
-    });
+      .mockResolvedValueOnce(makeStateResponse())    // /state
+      .mockResolvedValueOnce(makeQuestionResponse()); // /question
 
     const { result } = renderHook(() => useRoleDiscovery());
 
@@ -273,10 +284,52 @@ describe('useRoleDiscovery', () => {
       expect(result.current.currentQuestion?.text).toBe('Tell me about the team.');
     });
 
-    expect(mocks.mockPostStream).toHaveBeenCalledWith(
+    expect(mocks.mockPost).toHaveBeenCalledWith(
       '/api/v1/role-contexts/ctx-1/question',
-      expect.objectContaining({ state: expect.anything(), enableEval: true }),
+      expect.objectContaining({ state: expect.anything(), enableEval: false }),
     );
+  });
+
+  it('pops from local questionStack without hitting POST /question', async () => {
+    const prefetched = makeQueuedQuestion({
+      questionId: 'q-local',
+      text: 'Local stack question.',
+      acknowledgment: 'Nice.',
+    });
+
+    mocks.mockPost
+      .mockResolvedValueOnce(makeCreateResponse())   // /role-contexts
+      .mockResolvedValueOnce(makeStartResponse())    // /start
+      .mockResolvedValueOnce(
+        makeStateResponse({ questionStack: [prefetched] }),
+      );                                             // /state
+    // NO /question mock — respond should skip the network call
+
+    const { result } = renderHook(() => useRoleDiscovery());
+
+    await act(async () => {
+      await result.current.createAndStart(mockBaseline);
+    });
+
+    await waitFor(() => expect(result.current.currentQuestion?.id).toBe('q-1'));
+
+    await act(async () => {
+      await result.current.respond('Ship payment API v2.', 'q-1');
+    });
+
+    await waitFor(() => {
+      expect(result.current.currentQuestion?.text).toBe('Local stack question.');
+    });
+
+    // Should call /state but NOT /question
+    expect(mocks.mockPost).toHaveBeenCalledWith(
+      '/api/v1/role-contexts/ctx-1/state',
+      expect.anything(),
+    );
+    const questionCalls = mocks.mockPost.mock.calls.filter(
+      (call) => (call[0] as string).includes('/question') && !(call[0] as string).includes('/prefetch'),
+    );
+    expect(questionCalls).toHaveLength(0);
   });
 
   it('transitions to COMPLETE and sets persona when synthesis is returned', async () => {

@@ -24,7 +24,7 @@ overview.get('/:pipelineId/overview', async (c) => {
   // 1. Pipeline with ownership check
   const pipeline = await db
     .prepare(
-      `SELECT id, title, level, status, creation_mode, created_at, updated_at
+      `SELECT id, title, level, stack, description, status, creation_mode, created_at, updated_at
        FROM pipelines WHERE id = ? AND owner_id = ?`
     )
     .bind(pipelineId, userId)
@@ -120,6 +120,8 @@ overview.get('/:pipelineId/overview', async (c) => {
       id: pipeline.id as string,
       title: pipeline.title as string,
       level: pipeline.level as string | null,
+      stack: pipeline.stack ? (JSON.parse(pipeline.stack as string) as string[]) : null,
+      description: pipeline.description as string | null,
       status: pipeline.status as string,
       creationMode: pipeline.creation_mode as string | null,
       stageCount: stagesResult.results.length,

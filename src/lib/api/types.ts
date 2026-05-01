@@ -14,6 +14,8 @@ export interface PipelineListItem {
   id: string;
   title: string;
   level: string | null;
+  stack?: string[] | null;
+  description?: string | null;
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
   creationMode: string | null;
   stageCount: number;
@@ -24,6 +26,9 @@ export interface PipelineListItem {
 
 export interface PipelinesResponse {
   pipelines: PipelineListItem[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 // ─── Pipeline create ──────────────────────────────────────────────────────────
@@ -850,6 +855,14 @@ export interface PostQuestionResponse {
     dimensions: Array<{ id: string; verdict: 'pass' | 'fail' | 'warn'; score: number; reason: string }>;
     rewrite?: string;
   };
+}
+
+export interface PostQuestionPrefetchResponse {
+  questionStack: InterviewQueuedQuestion[];
+  prefetched: boolean;
+  reason?: string;
+  added?: number;
+  error?: string;
 }
 
 export interface PostSynthesizeRequest {

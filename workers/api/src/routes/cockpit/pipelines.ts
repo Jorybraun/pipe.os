@@ -4,6 +4,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { createPipelineSchema } from '../../validation/pipelines';
 import { expandPreset } from '../../lib/presets';
+import { getScreenerStage } from '../../lib/screener';
 
 import type { Env, Variables, PipelineWithCountsRow } from '../../types';
 
@@ -20,11 +21,16 @@ pipelines.use('*', authMiddleware);
  * Query params:
  *   status — filter by 'DRAFT' | 'ACTIVE' | 'ARCHIVED'
  *   q      — case-insensitive title search
+ *   page   — page number (1-based, default 1)
+ *   limit  — items per page (default 20, max 100)
  */
 pipelines.get('/', async (c) => {
   const userId = c.var.userId;
   const statusFilter = c.req.query('status');
   const searchQuery = c.req.query('q');
+  const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10));
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') ?? '20', 10)));
+  const offset = (page - 1) * limit;
 
   // Build parameterised WHERE clause fragments.
   const conditions: string[] = ['p.owner_id = ?1'];
@@ -42,6 +48,13 @@ pipelines.get('/', async (c) => {
 
   const whereClause = conditions.join(' AND ');
 
+  // Count total for pagination metadata.
+  const countSql = `SELECT COUNT(*) as total FROM pipelines p WHERE ${whereClause}`;
+  const countStmt = c.env.DB.prepare(countSql).bind(...bindings);
+  const countRow = await countStmt.first<{ total: number }>();
+  const total = countRow?.total ?? 0;
+
+  // Main paginated query.
   const sql = `
     SELECT
       p.id,
@@ -59,9 +72,10 @@ pipelines.get('/', async (c) => {
     WHERE ${whereClause}
     GROUP BY p.id
     ORDER BY p.created_at DESC
+    LIMIT ?${bindings.length + 1} OFFSET ?${bindings.length + 2}
   `;
 
-  const stmt = c.env.DB.prepare(sql).bind(...bindings);
+  const stmt = c.env.DB.prepare(sql).bind(...bindings, limit, offset);
   const { results } = await stmt.all<PipelineWithCountsRow>();
 
   const pipelineList = (results ?? []).map((row) => ({
@@ -76,7 +90,12 @@ pipelines.get('/', async (c) => {
     updatedAt: row.updated_at,
   }));
 
-  return c.json({ pipelines: pipelineList });
+  return c.json({
+    pipelines: pipelineList,
+    total,
+    page,
+    limit,
+  });
 });
 
 // ─── POST /api/v1/pipelines ───────────────────────────────────────────────────
@@ -140,8 +159,15 @@ pipelines.post('/', async (c) => {
     ),
   );
 
-  // Expand preset stages if provided.
-  const allStages = preset?.stages ?? [];
+  // Build stage list: automatic screener first, then preset stages shifted down by 1.
+  const screener = getScreenerStage();
+  const presetStages = preset?.stages ?? [];
+  // Shift existing preset stages down by 1 to make room for the screener at sortOrder 0.
+  const shiftedPresetStages = presetStages.map((s) => ({
+    ...s,
+    sortOrder: s.sortOrder + 1,
+  }));
+  const allStages = [screener, ...shiftedPresetStages];
   let totalChallenges = 0;
 
   for (const stage of allStages) {
@@ -159,6 +185,15 @@ pipelines.post('/', async (c) => {
         stage.sortOrder,
       ),
     );
+
+    // If this is the automatic screener, set stage_type and screening_format.
+    if (stage.title === screener.title && stage.sortOrder === 0) {
+      statements.push(
+        c.env.DB.prepare(
+          `UPDATE stages SET stage_type = 'SCREENING', screening_format = 'ONLINE' WHERE id = ?1`,
+        ).bind(stageId),
+      );
+    }
 
     for (let ci = 0; ci < stage.challenges.length; ci++) {
       const challenge = stage.challenges[ci];
@@ -244,6 +279,9 @@ pipelines.patch('/:id', async (c) => {
   const schema = z.object({
     status: z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']).optional(),
     title: z.string().min(1).max(200).optional(),
+    level: z.enum(['Junior', 'Mid', 'Senior', 'Staff', 'Principal', 'Lead', 'Manager']).optional().nullable(),
+    stack: z.array(z.string()).optional(),
+    description: z.string().optional().nullable(),
   });
 
   const parsed = schema.safeParse(body);
@@ -253,8 +291,9 @@ pipelines.patch('/:id', async (c) => {
   }
 
   const input = parsed.data;
-  if (!input.status && !input.title) {
-    return apiError(c, 'VALIDATION_ERROR', 'At least one field (status, title) must be provided.');
+  const hasField = input.status !== undefined || input.title !== undefined || input.level !== undefined || input.stack !== undefined || input.description !== undefined;
+  if (!hasField) {
+    return apiError(c, 'VALIDATION_ERROR', 'At least one field (status, title, level, stack, description) must be provided.');
   }
 
   // Ownership check.
@@ -286,17 +325,32 @@ pipelines.patch('/:id', async (c) => {
 
   // Build SET clause dynamically.
   const setClauses: string[] = [];
-  const bindings: (string | number)[] = [];
+  const bindings: (string | number | null)[] = [];
   let bindIdx = 1;
 
-  if (input.status) {
+  if (input.status !== undefined) {
     setClauses.push(`status = ?${bindIdx}`);
     bindings.push(input.status);
     bindIdx++;
   }
-  if (input.title) {
+  if (input.title !== undefined) {
     setClauses.push(`title = ?${bindIdx}`);
     bindings.push(input.title);
+    bindIdx++;
+  }
+  if (input.level !== undefined) {
+    setClauses.push(`level = ?${bindIdx}`);
+    bindings.push(input.level);
+    bindIdx++;
+  }
+  if (input.stack !== undefined) {
+    setClauses.push(`stack = ?${bindIdx}`);
+    bindings.push(JSON.stringify(input.stack));
+    bindIdx++;
+  }
+  if (input.description !== undefined) {
+    setClauses.push(`description = ?${bindIdx}`);
+    bindings.push(input.description);
     bindIdx++;
   }
 
@@ -314,7 +368,7 @@ pipelines.patch('/:id', async (c) => {
 
   // Return updated pipeline.
   const updated = await c.env.DB.prepare(
-    `SELECT id, title, level, status, creation_mode, created_at, updated_at
+    `SELECT id, title, level, stack, description, status, creation_mode, created_at, updated_at
      FROM pipelines WHERE id = ?1`,
   )
     .bind(pipelineId)
@@ -324,6 +378,8 @@ pipelines.patch('/:id', async (c) => {
     id: updated!.id as string,
     title: updated!.title as string,
     level: updated!.level as string | null,
+    stack: updated!.stack ? (JSON.parse(updated!.stack as string) as string[]) : null,
+    description: updated!.description as string | null,
     status: updated!.status as string,
     creationMode: updated!.creation_mode as string | null,
     createdAt: updated!.created_at as string,

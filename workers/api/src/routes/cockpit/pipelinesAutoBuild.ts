@@ -15,6 +15,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { autoStageBuilder } from '../../lib/match/autoStageBuilder';
 import { checkGuardrails, type MatchConfigInput } from '../../lib/match/guardrails';
+import { getScreenerStage } from '../../lib/screener';
 import type { Env, Variables, RoleContextRow } from '../../types';
 
 const autoBuild = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -194,13 +195,16 @@ autoBuild.post('/auto-build', async (c) => {
     instructions: string;
   };
 
-  const stageRecords: StationRecord[] = plan
+  const screener = getScreenerStage();
+  const screenerStageId = generateId();
+
+  const builtStations: StationRecord[] = plan
     ? plan.stations.map((station) => ({
         stageId: generateId(),
         challengeId: generateId(),
         type: station.type,
         title: station.title,
-        sortOrder: station.sortOrder,
+        sortOrder: station.sortOrder + 1, // shift down for screener
         repoId: station.repoId,
         githubRepoUrl: station.githubRepoUrl,
         githubPrNumber: station.githubPrNumber ?? null,
@@ -216,7 +220,7 @@ autoBuild.post('/auto-build', async (c) => {
           challengeId: generateId(),
           type: 'CODE_REVIEW',
           title: 'Code Review',
-          sortOrder: 0,
+          sortOrder: 1,
           repoId: null,
           githubRepoUrl: null,
           githubPrNumber: null,
@@ -229,7 +233,7 @@ autoBuild.post('/auto-build', async (c) => {
           challengeId: generateId(),
           type: 'CODE_IMPLEMENTATION',
           title: 'Code Implementation',
-          sortOrder: 1,
+          sortOrder: 2,
           repoId: null,
           githubRepoUrl: null,
           githubPrNumber: null,
@@ -238,6 +242,48 @@ autoBuild.post('/auto-build', async (c) => {
             'An issue from a repository matched to your background will be assigned when your profile is ingested.',
         },
       ];
+
+  const stageRecords: StationRecord[] = builtStations;
+
+  // Insert automatic screener stage first.
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO stages (id, pipeline_id, title, description, sort_order, stage_type, screening_format, owner_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    ).bind(
+      screenerStageId,
+      pipelineId,
+      screener.title,
+      screener.description ?? null,
+      0,
+      'SCREENING',
+      'ONLINE',
+      userId,
+    ),
+  );
+
+  // Insert screener challenges.
+  for (let ci = 0; ci < screener.challenges.length; ci++) {
+    const challenge = screener.challenges[ci];
+    if (!challenge) continue;
+    const challengeId = generateId();
+    const configJson = JSON.stringify(challenge.config);
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO challenges (id, stage_id, type, sort_order, title, instructions, config, owner_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+      ).bind(
+        challengeId,
+        screenerStageId,
+        challenge.type,
+        ci,
+        challenge.title,
+        challenge.instructions,
+        configJson,
+        userId,
+      ),
+    );
+  }
 
   for (const rec of stageRecords) {
     statements.push(

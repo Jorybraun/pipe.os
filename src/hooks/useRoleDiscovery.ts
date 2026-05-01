@@ -32,6 +32,7 @@ import type {
   InterviewState,
   PostStateResponse,
   PostQuestionResponse,
+  PostQuestionPrefetchResponse,
   PostSynthesizeResponse,
   InterviewPhase,
 } from '../lib/api/types';
@@ -41,7 +42,6 @@ import type {
   QuestionTurnResult,
   SynthesisResult,
   TurnResult,
-  StreamEvent,
 } from '../components/AIChat/types';
 import type { UseConversationResult } from './useConversation';
 
@@ -151,6 +151,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const roleDiscoveryAdapter: ConversationAdapter & {
     hydrateInterviewState(state: InterviewState): void;
     resetInterviewState(): void;
+    prefetch(contextId: string): Promise<void>;
   } = useMemo(
     () => ({
       async initialize(config: AdapterConfig): Promise<QuestionTurnResult> {
@@ -252,6 +253,50 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
           };
         }
 
+        // ── Stack-first: pop locally for instant display ──
+        const stack = interviewStateRef.current.questionStack ?? [];
+        if (stack.length > 0) {
+          const next = stack[0]!;
+          const rest = stack.slice(1);
+
+          pendingKsuRef.current = next.knowledgeStateUpdate;
+          pendingDcRef.current = next.domainCoverage;
+
+          interviewStateRef.current = {
+            ...interviewStateRef.current,
+            exchanges: [
+              ...interviewStateRef.current.exchanges,
+              {
+                questionId: next.questionId,
+                question: next.text,
+                acknowledgment: next.acknowledgment,
+                input: next.input,
+              },
+            ],
+            questionStack: rest,
+          };
+
+          // Background refill — keep the stack healthy while the user reads
+          this.prefetch(contextId).catch(() => {});
+
+          return {
+            type: 'question',
+            acknowledgment: next.acknowledgment,
+            question: {
+              id: next.questionId,
+              text: next.text,
+              input: next.input,
+              ...(next.suggestedAnswers ? { suggestedAnswers: next.suggestedAnswers } : {}),
+            },
+            progress: {
+              asked: interviewStateRef.current.questionsAsked,
+              budget: interviewStateRef.current.questionBudget,
+              domains: interviewStateRef.current.coverage,
+            },
+          };
+        }
+
+        // ── Stack empty — hit the network ──
         const qRes = await api.post<PostQuestionResponse>(
           `/api/v1/role-contexts/${contextId}/question`,
           { state: interviewStateRef.current, enableEval: false },
@@ -274,6 +319,9 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
           questionStack: qRes.questionStack ?? [],
         };
 
+        // Background refill
+        this.prefetch(contextId).catch(() => {});
+
         return {
           type: 'question',
           acknowledgment: qRes.acknowledgment,
@@ -284,6 +332,36 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
             domains: interviewStateRef.current.coverage,
           },
         };
+      },
+
+      async prefetch(contextId: string): Promise<void> {
+        const state = interviewStateRef.current;
+        if (!state) return;
+
+        try {
+          const res = await api.post<PostQuestionPrefetchResponse>(
+            `/api/v1/role-contexts/${contextId}/question/prefetch`,
+            { state },
+          );
+          if (res?.prefetched && interviewStateRef.current) {
+            // Deduplicate against questions already consumed while prefetch was in flight
+            const existingIds = new Set(
+              interviewStateRef.current.questionStack.map((q) => q.questionId),
+            );
+            const newItems = res.questionStack.filter((q) => !existingIds.has(q.questionId));
+            if (newItems.length > 0) {
+              interviewStateRef.current = {
+                ...interviewStateRef.current,
+                questionStack: [...interviewStateRef.current.questionStack, ...newItems],
+              };
+              console.log(
+                `[useRoleDiscovery] prefetched ${newItems.length} questions | stack=${interviewStateRef.current.questionStack.length}`,
+              );
+            }
+          }
+        } catch (err) {
+          console.warn('[useRoleDiscovery] prefetch failed:', err);
+        }
       },
 
       async completeEarly(): Promise<SynthesisResult> {
