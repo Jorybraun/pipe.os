@@ -427,15 +427,6 @@ rpcAuth.post('/get-challenge', async (c) => {
   // Adjust order to account for synthetic entries
   const dbOrder = order - syntheticCount;
 
-  // Check if this stage is an OPEN_SOURCE stage — skip it in candidate flow
-  const stageTypeCheck = await c.env.DB.prepare(
-    `SELECT stage_type FROM stages WHERE id = ?1`
-  ).bind(candidate.current_stage_id).first<{ stage_type: string | null }>();
-
-  if (stageTypeCheck?.stage_type === 'OPEN_SOURCE') {
-    return c.json({ error: 'Ingestion stage is not part of the interview' }, 404);
-  }
-
   // Fetch challenges for the current stage, ordered.
   // LEFT JOIN candidate_challenge_assignment to apply per-candidate overrides.
   const challenges = await c.env.DB.prepare(`
@@ -540,7 +531,11 @@ rpcAuth.post('/get-challenge', async (c) => {
     githubPrNumber: ch.github_pr_number ?? null,
     githubRepoUrl: ch.github_repo_url ?? null,
     githubPrDescription: ch.github_pr_description ?? null,
-    devContainerRepoUrl: ch.dev_container_repo_url ?? null,
+    devContainerRepoUrl: (
+      (ch.type as string) === 'CODE_IMPLEMENTATION'
+        ? (ch.effective_repo_url as string | null)
+        : null
+    ) ?? (ch.dev_container_repo_url as string | null) ?? null,
   };
 
   if ((ch.type as string) === 'CODE_REVIEW') {

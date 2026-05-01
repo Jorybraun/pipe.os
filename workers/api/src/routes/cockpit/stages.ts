@@ -306,6 +306,7 @@ stageOps.get('/:stageId', async (c) => {
   const { results: challengeRows } = await c.env.DB.prepare(
     `SELECT id, stage_id, type, sort_order, title, instructions, config,
             github_repo_url, github_pr_number, github_pr_title,
+            dev_container_repo_url, dev_container_challenge_branch,
             created_at, updated_at
      FROM challenges
      WHERE stage_id = ?1
@@ -325,6 +326,8 @@ stageOps.get('/:stageId', async (c) => {
         | 'github_repo_url'
         | 'github_pr_number'
         | 'github_pr_title'
+        | 'dev_container_repo_url'
+        | 'dev_container_challenge_branch'
         | 'created_at'
         | 'updated_at'
       >
@@ -345,10 +348,14 @@ stageOps.get('/:stageId', async (c) => {
     githubRepoUrl: row.github_repo_url ?? null,
     githubPrNumber: row.github_pr_number ?? null,
     githubPrTitle: row.github_pr_title ?? null,
+    devContainerRepoUrl: row.dev_container_repo_url ?? null,
+    devContainerChallengeBranch: row.dev_container_challenge_branch ?? null,
     // snake_case aliases (spec uses c.github_repo_url / c.github_pr_number)
     github_repo_url: row.github_repo_url ?? null,
     github_pr_number: row.github_pr_number ?? null,
     github_pr_title: row.github_pr_title ?? null,
+    dev_container_repo_url: row.dev_container_repo_url ?? null,
+    dev_container_challenge_branch: row.dev_container_challenge_branch ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
@@ -619,13 +626,15 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
     )
     .run();
 
-  // Phase 2 columns (added via ALTER TABLE migration 0002).
+  // Phase 2+ columns (added via ALTER TABLE migrations 0002 and 0024).
   // Attempt to SET them in a follow-up UPDATE; ignore if columns don't exist yet.
   const hasPhase2Fields =
     input.githubRepoUrl ||
     input.githubPrNumber ||
     input.githubPrTitle ||
     input.githubPrDescription ||
+    input.devContainerRepoUrl ||
+    input.devContainerChallengeBranch ||
     input.cachedDiffJson != null ||
     input.cachedMetadata != null;
 
@@ -643,8 +652,10 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
              github_pr_title = ?3,
              github_pr_description = ?4,
              cached_diff_json = ?5,
-             cached_metadata = ?6
-         WHERE id = ?7`,
+             cached_metadata = ?6,
+             dev_container_repo_url = ?7,
+             dev_container_challenge_branch = ?8
+         WHERE id = ?9`,
       )
         .bind(
           input.githubRepoUrl ?? null,
@@ -653,6 +664,8 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
           input.githubPrDescription ?? null,
           cachedDiffJsonStr,
           cachedMetadataJsonStr,
+          input.devContainerRepoUrl ?? null,
+          input.devContainerChallengeBranch ?? null,
           challengeId,
         )
         .run();
@@ -672,6 +685,8 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
     githubRepoUrl: input.githubRepoUrl ?? null,
     githubPrNumber: input.githubPrNumber ?? null,
     githubPrTitle: input.githubPrTitle ?? null,
+    devContainerRepoUrl: input.devContainerRepoUrl ?? null,
+    devContainerChallengeBranch: input.devContainerChallengeBranch ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

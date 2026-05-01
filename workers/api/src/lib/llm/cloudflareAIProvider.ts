@@ -24,8 +24,24 @@ interface CFChatMessage {
   content: string;
 }
 
+interface CFChatMessage {
+  content?: string | null;
+  reasoning?: string | null;
+  function_call?: unknown | null;
+  audio?: unknown | null;
+  annotations?: unknown | null;
+}
+
+interface CFChatChoice {
+  message?: CFChatMessage;
+  finish_reason?: string;
+  index?: number;
+  logprobs?: unknown | null;
+}
+
 interface CFChatResponse {
   response?: string;
+  choices?: CFChatChoice[];
   // Workers AI also exposes usage when available
   usage?: {
     prompt_tokens?: number;
@@ -135,13 +151,18 @@ export class CloudflareAIProvider implements LLMProvider {
     let rawText = '';
     if (typeof result.response === 'string') {
       rawText = result.response.trim();
-    } else {
-      // Try alternate response shapes
-      const any = result as Record<string, unknown>;
-      // { choices: [{ message: { content: "..." } }] }
-      const choices = any['choices'] as Array<{ message?: { content?: string } }> | undefined;
-      if (choices?.[0]?.message?.content) {
-        rawText = choices[0].message.content.trim();
+    } else if (Array.isArray(result.choices) && result.choices.length > 0) {
+      const msg = result.choices[0].message;
+      if (typeof msg?.content === 'string' && msg.content.length > 0) {
+        rawText = msg.content.trim();
+      } else if (typeof msg?.reasoning === 'string' && msg.reasoning.length > 0) {
+        // Some reasoning models (e.g. Gemma 4) return thinking text in
+        // message.reasoning when content is null. Fall back to it so callers
+        // get *something* instead of an opaque "empty response" error.
+        console.warn(
+          `[cloudflareAIProvider] model ${this.model} returned empty content; falling back to message.reasoning (finish_reason=${result.choices[0].finish_reason ?? 'unknown'})`
+        );
+        rawText = msg.reasoning.trim();
       }
     }
     if (!rawText) {

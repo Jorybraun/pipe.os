@@ -92,6 +92,8 @@ export interface ChallengeItem {
   githubRepoUrl: string | null;
   githubPrNumber: number | null;
   githubPrTitle: string | null;
+  devContainerRepoUrl: string | null;
+  devContainerChallengeBranch: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -138,6 +140,8 @@ export interface CreateChallengeRequest {
   githubPrNumber?: number;
   githubPrTitle?: string;
   githubPrDescription?: string;
+  devContainerRepoUrl?: string;
+  devContainerChallengeBranch?: string;
 }
 
 export interface UpdateStageRequest {
