@@ -72,6 +72,7 @@ export interface CompleteOptions {
 
 export interface LLMProvider {
   readonly name: string;
+  readonly model: string;
   readonly supportsTools: boolean;
   complete(messages: LLMMessage[], options?: CompleteOptions): Promise<LLMCompletion>;
   /**

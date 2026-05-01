@@ -357,8 +357,9 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
     .bind(candidateId, new Date().toISOString())
     .run();
 
-  // Fire-and-forget re-ingestion
-  runCandidateIngestion({
+  // Fire-and-forget re-ingestion — keep alive via waitUntil so the worker
+  // isolate doesn't drop the promise when the HTTP response is sent.
+  const ingestionPromise = runCandidateIngestion({
     env: c.env,
     db,
     candidateId,
@@ -368,6 +369,7 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
   }).catch((err) => {
     console.error('[ingestion/reingest] background ingestion error:', err);
   });
+  c.executionCtx.waitUntil(ingestionPromise);
 
   return c.json({ success: true, message: 'Re-ingestion started.' });
 });

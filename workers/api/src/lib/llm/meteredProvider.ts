@@ -64,6 +64,7 @@ async function insertUsageEvent(db: D1Database, row: UsageEventRow): Promise<voi
 
 class MeteredCultureProvider implements LLMProvider {
   readonly name: string;
+  readonly model: string;
   readonly supportsTools: boolean;
 
   constructor(
@@ -74,17 +75,14 @@ class MeteredCultureProvider implements LLMProvider {
     private readonly ctx: ExecutionContext | null,
   ) {
     this.name = inner.name;
+    this.model = inner.model;
     this.supportsTools = inner.supportsTools;
   }
 
   async complete(messages: LLMMessage[], options?: CompleteOptions): Promise<LLMCompletion> {
     const completion = await this.inner.complete(messages, options);
 
-    // Derive the model name from the inner provider's `name` field.
-    // CloudflareAIProvider.name = 'cloudflare-ai'; we need the actual model
-    // identifier for pricing. For now we use the provider name as the model
-    // key and fall back to a best-effort default for cloudflare-ai.
-    const model = resolveModelKey(this.inner);
+    const model = this.inner.model;
 
     const logEvent = async (): Promise<void> => {
       try {
@@ -122,23 +120,6 @@ class MeteredCultureProvider implements LLMProvider {
 
     return completion;
   }
-}
-
-/**
- * Resolve the pricing-table model key from a provider instance.
- *
- * CloudflareAIProvider defaults to `@cf/google/gemma-4-26b-a4b-it`.
- * If we ever add a model accessor to the provider interface this can be
- * tightened; for now we map by provider name.
- */
-function resolveModelKey(provider: LLMProvider): string {
-  if (provider.name === 'cloudflare-ai') {
-    return '@cf/google/gemma-4-26b-a4b-it';
-  }
-  // For google-ai / vertex-ai providers the model key is the provider name.
-  // These are not in MODEL_PRICING yet — computeCallCost will throw, which
-  // surfaces the gap rather than silently billing $0.
-  return provider.name;
 }
 
 // ─── Public factory ───────────────────────────────────────────────────────────

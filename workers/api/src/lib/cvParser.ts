@@ -171,7 +171,9 @@ export async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
   try {
     // Preserve page boundaries so section headers and column layouts don't
     // bleed across pages. Each page is separated by a blank line.
-    const { text } = await extractText(new Uint8Array(buffer), { mergePages: false });
+    // Clone buffer because unpdf's extractText may detach the original ArrayBuffer.
+    const cloned = buffer.slice(0);
+    const { text } = await extractText(new Uint8Array(cloned), { mergePages: false });
     const pages = Array.isArray(text) ? text : [text as string];
     const raw = pages.map((p) => p.replace(/\x00/g, '').trim()).join('\n\n');
     const cleaned = raw.trim();

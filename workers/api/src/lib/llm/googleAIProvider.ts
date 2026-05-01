@@ -77,7 +77,7 @@ export class GoogleAIProvider implements LLMProvider {
 
   constructor(
     private readonly apiKey: string,
-    private readonly model = 'gemma-4-31b-it',
+    readonly model = 'gemma-4-31b-it',
     /** null = omit thinkingConfig (model default). 'none' = explicitly disable. */
     private readonly thinkingLevel: ThinkingLevel | null = null,
   ) {}

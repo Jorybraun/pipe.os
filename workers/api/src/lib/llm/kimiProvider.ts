@@ -73,7 +73,7 @@ export class KimiProvider implements LLMProvider {
 
   constructor(
     private readonly apiKey: string,
-    private readonly model = 'kimi-for-coding',
+    readonly model = 'kimi-for-coding',
     private readonly baseUrl = 'https://api.kimi.com/coding/v1',
   ) {}
 

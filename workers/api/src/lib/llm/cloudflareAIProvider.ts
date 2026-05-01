@@ -109,7 +109,7 @@ export class CloudflareAIProvider implements LLMProvider {
 
   constructor(
     private readonly ai: Ai,
-    private readonly model: string = '@cf/meta/llama-3.1-8b-instruct',
+    readonly model: string = '@cf/meta/llama-3.1-8b-instruct',
   ) {}
 
   async complete(messages: LLMMessage[], options: CompleteOptions = {}): Promise<LLMCompletion> {
@@ -121,11 +121,10 @@ export class CloudflareAIProvider implements LLMProvider {
       max_tokens: options.maxTokens ?? 1024,
     };
 
-    // Use structured JSON output when the model supports it. Llama 3.1/3.2 and
-    // Mistral models honor response_format reliably; Gemma models do not.
-    if (forceJson && !this.model.includes('gemma')) {
-      input.response_format = { type: 'json_object' };
-    }
+    // NOTE: We intentionally do NOT set `response_format` here.
+    // Cloudflare Workers AI models have inconsistent support for `json_object`
+    // vs `json_schema`; relying on the system prompt JSON instruction plus
+    // `stripJsonFences` post-processing is more portable.
 
     let result: CFChatResponse;
     try {

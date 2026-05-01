@@ -221,7 +221,7 @@ export class VertexAIProvider implements LLMProvider {
     private readonly serviceAccount: ServiceAccountKey,
     private readonly projectId: string,
     private readonly region = 'us-central1',
-    private readonly model = 'google/gemma-4-26b-a4b-it-maas',
+    readonly model = 'google/gemma-4-26b-a4b-it-maas',
   ) {}
 
   getLastUsage(): LLMUsage | null {
