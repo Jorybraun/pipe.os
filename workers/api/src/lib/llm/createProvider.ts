@@ -234,8 +234,9 @@ export function createCopilotProvider(env: ProviderEnv): LLMProvider | null {
 
 /**
  * Factory for the Candidate Discovery agent (ADR-039 + STRATEGY.md Decision
- * Log 2026-04-21). Mirror of createRoleAgentProvider — same Gemma 4 26B on
- * Vertex AI in prod with Workers AI binding as fallback.
+ * Log 2026-04-21). Defaults to Cloudflare Workers AI (Llama 3.1 8B) —
+ * edge-native, cheap, and sufficient for structured resume extraction.
+ * Vertex AI with larger models is available as a fallback when configured.
  */
 export function createCandidateAgentProvider(env: ProviderEnv): LLMProvider | null {
   if (env.MOCK_AI === 'true') return null;

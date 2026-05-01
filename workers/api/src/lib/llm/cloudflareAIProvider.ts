@@ -1,21 +1,19 @@
 /**
- * Cloudflare Workers AI provider — wraps env.AI.run() for Gemma 4.
+ * Cloudflare Workers AI provider — wraps env.AI.run() for text generation.
  *
- * Default model: @cf/google/gemma-4-26b-a4b-it
- * Pricing: $0.10 per M input tokens, $0.30 per M output tokens
- * (~1.5¢ per culture interview including scoring, per ADR-029).
+ * Default model: @cf/meta/llama-3.1-8b-instruct
+ * Override via CLOUDFLARE_AI_MODEL env var.
  *
  * The binding is already live in wrangler.toml — transcribe.ts uses the same
  * env.AI binding for Whisper. No API key needed.
  *
- * Tool calling is NOT exposed by this provider. Gemma's tool support on
- * Workers AI is limited and the culture agent (ADR-029) uses a deterministic
- * FSM rather than ReAct-with-tools, so supportsTools = false is correct.
+ * Tool calling is NOT exposed by this provider. The culture agent (ADR-029)
+ * uses a deterministic FSM rather than ReAct-with-tools, so supportsTools =
+ * false is correct.
  *
- * Forced-JSON mode prepends a JSON-only instruction to the system message
- * rather than using a response_format parameter, because Workers AI's
- * response_format support varies by model and Gemma 4 does not currently
- * honor it reliably.
+ * Forced-JSON mode uses response_format: { type: "json_object" } for models
+ * that support it (Llama 3.1/3.2, Mistral, etc.) and falls back to prompt-
+ * level JSON enforcement for models that don't (e.g. Gemma 4).
  */
 
 import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions } from './types';
@@ -95,17 +93,23 @@ export class CloudflareAIProvider implements LLMProvider {
 
   constructor(
     private readonly ai: Ai,
-    private readonly model: string = '@cf/google/gemma-4-26b-a4b-it',
+    private readonly model: string = '@cf/meta/llama-3.1-8b-instruct',
   ) {}
 
   async complete(messages: LLMMessage[], options: CompleteOptions = {}): Promise<LLMCompletion> {
     const forceJson = options.forceJson === true;
     const cfMessages = toCFMessages(messages, forceJson);
 
-    const input = {
+    const input: Record<string, unknown> = {
       messages: cfMessages,
       max_tokens: options.maxTokens ?? 1024,
     };
+
+    // Use structured JSON output when the model supports it. Llama 3.1/3.2 and
+    // Mistral models honor response_format reliably; Gemma models do not.
+    if (forceJson && !this.model.includes('gemma')) {
+      input.response_format = { type: 'json_object' };
+    }
 
     let result: CFChatResponse;
     try {

@@ -211,7 +211,7 @@ export function buildDecompositionUserMessage(input: DecompositionInput): string
     2,
   );
 
-  const truncatedText = resumeText.trim().slice(0, 6000);
+  const truncatedText = resumeText.trim().slice(0, 12000);
 
   return 'PARSER SKELETON:\n' + skeleton + '\n\nRAW RESUME TEXT:\n' + truncatedText;
 }

@@ -87,7 +87,6 @@ export class KimiProvider implements LLMProvider {
       messages: openaiMessages,
       max_tokens: options.maxTokens ?? 4096,
       temperature: 0.2,
-      reasoning: null,
     };
 
     if (forceJson) {

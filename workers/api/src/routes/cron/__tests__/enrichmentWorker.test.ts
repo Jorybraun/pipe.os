@@ -35,6 +35,14 @@ beforeEach(() => {
           ],
         } as Response;
       }
+      if (url.includes('/orgs')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => '100' },
+          json: async () => [],
+        } as Response;
+      }
       if (url.includes('/users/') && !url.includes('/repos') && !url.includes('/events')) {
         return {
           ok: true,
@@ -57,6 +65,22 @@ beforeEach(() => {
         } as Response;
       }
       if (url.includes('/events/public')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => '100' },
+          json: async () => [],
+        } as Response;
+      }
+      if (url.includes('/search/issues')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => '100' },
+          json: async () => ({ total_count: 0, items: [] }),
+        } as Response;
+      }
+      if (url.includes('/orgs')) {
         return {
           ok: true,
           status: 200,

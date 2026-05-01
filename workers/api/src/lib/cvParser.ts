@@ -4,7 +4,7 @@
  * Pipeline:
  * 1. Extract plain text via unpdf (edge-compatible pdf.js)
  * 2. Rule-based extraction of structured skeleton (experiences, education, credentials, projects)
- * 3. Call Gemma 4 26B (Workers AI or Vertex AI) for rich decomposition
+ * 3. Call LLM (Cloudflare Workers AI Llama 3.1 8B by default) for rich decomposition
  *    (experiences, skills, projects, education, credentials, career_arc)
  * 4. Derive simple ParsedCV fields from the rich decomposition result
  * 5. Persist skills, role, experience, education to D1
@@ -169,11 +169,14 @@ export function getMockDecompositionResult(): DecompositionResult {
 
 export async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
   try {
-    const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
-    const raw = typeof text === 'string' ? text : (text as unknown as string[]).join('\n');
-    const cleaned = raw.replace(/\x00/g, '').trim();
-    const pageCount = typeof text === 'string' ? 1 : (text as unknown as string[]).length;
-    console.log(`[cvParser] PDF extraction: ${cleaned.length} chars, ${pageCount} page(s)`);
+    // Preserve page boundaries so section headers and column layouts don't
+    // bleed across pages. Each page is separated by a blank line.
+    const { text } = await extractText(new Uint8Array(buffer), { mergePages: false });
+    const pages = Array.isArray(text) ? text : [text as string];
+    const raw = pages.map((p) => p.replace(/\x00/g, '').trim()).join('\n\n');
+    const cleaned = raw.trim();
+    console.log(`[cvParser] PDF extraction: ${cleaned.length} chars, ${pages.length} page(s)`);
+    console.log('[cvParser] First 400 chars of extracted text:', cleaned.slice(0, 400).replace(/\n/g, ' | '));
     if (cleaned.length === 0) {
       console.warn('[cvParser] PDF extraction returned empty text — possible scanned/image PDF or unsupported fonts');
     }
@@ -191,25 +194,25 @@ const MONTH_NAMES =
   'january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec';
 
 const DATE_RANGE_RE = new RegExp(
-  `\\b((?:${MONTH_NAMES})\\s+\\d{4}|\\d{1,2}/\\d{4}|\\d{4})` +
-    `\\s*[-–—]\\s*` +
-    `((?:${MONTH_NAMES})\\s+\\d{4}|\\d{1,2}/\\d{4}|\\d{4}|present|current|now)\\b`,
+  `\\b((?:${MONTH_NAMES})[.\\s]+\\d{4}|\\d{1,2}[/\\.]\\d{4}|\\d{4})` +
+    `\\s*[-–——]\\s*` +
+    `((?:${MONTH_NAMES})[.\\s]+\\d{4}|\\d{1,2}[/\\.]\\d{4}|\\d{4}|present|current|now|today)\\b`,
   'i',
 );
 
-const CURRENT_ENDINGS = /present|current|now/i;
+const CURRENT_ENDINGS = /present|current|now|today/i;
 
 const SECTION_HEADERS =
-  /(?:^|\n)(?:\s*(?:experience|work experience|employment|professional experience|career history|work history)\s*(?:\n|$))/i;
+  /(?:^|\n)(?:\s*(?:experience|work experience|employment|professional experience|career history|work history|history|professional background)\s*(?:[:\n]|$))/i;
 
 const EDU_SECTION_HEADERS =
-  /(?:^|\n)(?:\s*(?:education|academic background|qualifications|degrees)\s*(?:\n|$))/i;
+  /(?:^|\n)(?:\s*(?:education|academic background|qualifications|degrees|academic|educational background)\s*(?:[:\n]|$))/i;
 
 const CERT_SECTION_HEADERS =
-  /(?:^|\n)(?:\s*(?:certifications|certificates|credentials|licenses)\s*(?:\n|$))/i;
+  /(?:^|\n)(?:\s*(?:certifications|certificates|credentials|licenses|accreditations)\s*(?:[:\n]|$))/i;
 
 const PROJECT_SECTION_HEADERS =
-  /(?:^|\n)(?:\s*(?:projects|personal projects|side projects|open source|open-source)\s*(?:\n|$))/i;
+  /(?:^|\n)(?:\s*(?:projects|personal projects|side projects|open source|open-source|portfolio)\s*(?:[:\n]|$))/i;
 
 const GITHUB_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+/gi;
 
@@ -292,7 +295,12 @@ export function extractExperiences(text: string): ParsedExperience[] {
       let company = '';
       let role = '';
 
-      const withoutDate = line.replace(dateMatch[0], '').trim().replace(/\s*[–—\-|,:]\s*$/, '').trim();
+      const withoutDate = line
+        .replace(dateMatch[0], '')
+        .trim()
+        .replace(/\s*\([^)]*\)\s*$/, '')  // strip duration like "(1 year 3 months)"
+        .replace(/\s*[–—\-|,:]\s*$/, '')  // then strip trailing punctuation
+        .trim();
 
       if (isCompanyName(prevLine) && isRoleTitle(withoutDate)) {
         company = prevLine;
@@ -340,7 +348,41 @@ export function extractEducationBlocks(text: string): ParsedEducation[] {
   const blocks: ParsedEducation[] = [];
   const lines = section.split('\n').map((l) => l.trim()).filter(Boolean);
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const nextLine = lines[i + 1];
+
+    // Multi-line format: institution on one line, degree info on the next
+    // e.g. "Hyper Island" / "E-commerce Marketing · (2013 - 2014) Stockholm, Sweden"
+    if (nextLine && !hasYear(line) && hasYear(nextLine)) {
+      const institution = line;
+      const degreeInfo = nextLine;
+      const year = degreeInfo.match(/\((\d{4})\s*[-–—]\s*(?:\d{4}|present)\)/)?.[1]
+        ?? degreeInfo.match(/\b(\d{4})\b/)?.[1];
+      // Split on middle-dot or strip parenthetical year, then take the degree part
+      const degreeField = degreeInfo
+        .replace(/\([^)]*\)/, '')
+        .split('·')[0]!
+        .replace(/,\s*[A-Za-z\s]+$/, '')
+        .trim();
+      let degree = degreeField;
+      let field: string | undefined;
+      const dfMatch = degreeField.match(/^((?:B\.?S\.?|M\.?S\.?|Ph\.?D\.?|B\.?A\.?|M\.?A\.?|M\.?B\.?A\.?|B\.?E\.?|M\.?E\.?|B\.?Tech\.?|M\.?Tech\.?|B\.?Eng\.?|M\.?Eng\.?)[^,]*)[,\s]+in\s+(.+)$/i);
+      if (dfMatch) {
+        degree = dfMatch[1]!.trim();
+        field = dfMatch[2]!.trim();
+      } else {
+        const spaceMatch = degreeField.match(/^((?:B\.?S\.?|M\.?S\.?|Ph\.?D\.?|B\.?A\.?|M\.?A\.?|M\.?B\.?A\.?)[^,\s]*)\s+(.+)$/i);
+        if (spaceMatch) {
+          degree = spaceMatch[1]!.trim();
+          field = spaceMatch[2]!.trim();
+        }
+      }
+      blocks.push({ institution, degree: degree || 'Unknown', field, year });
+      i++; // skip next line
+      continue;
+    }
+
     // Pattern: "B.S. Computer Science, MIT, 2019"
     const m = line.match(
       /^(?:([^,]+),\s*)?([A-Za-z][\w\s.&'-]+?)\s*,?\s*(\d{4})?\s*$/,
@@ -350,7 +392,6 @@ export function extractEducationBlocks(text: string): ParsedEducation[] {
       const institution = m[2]!.trim();
       const year = m[3]?.trim();
 
-      // Split degree and field
       let degree = degreeField;
       let field: string | undefined;
       const dfMatch = degreeField.match(/^((?:B\.?S\.?|M\.?S\.?|Ph\.?D\.?|B\.?A\.?|M\.?A\.?|M\.?B\.?A\.?|B\.?E\.?|M\.?E\.?|B\.?Tech\.?|M\.?Tech\.?|B\.?Eng\.?|M\.?Eng\.?)[^,]*)[,\s]+in\s+(.+)$/i);
@@ -395,6 +436,10 @@ export function extractEducationBlocks(text: string): ParsedEducation[] {
   }
 
   return blocks;
+}
+
+function hasYear(line: string): boolean {
+  return /\b\d{4}\b/.test(line);
 }
 
 export function extractCredentials(text: string): ParsedCredential[] {
@@ -486,15 +531,14 @@ async function callDecompositionLLM(
 
   console.log('[cvParser] Decomposition prompt length:', DECOMPOSITION_SYSTEM_PROMPT.length, 'system +', userMessage.length, 'user');
 
-  // Gemma models on Vertex AI sometimes ignore system messages via the OpenAI-compatible endpoint.
-  // Merge system instructions into the user message to ensure they're seen.
-  const mergedUserMessage = `${DECOMPOSITION_SYSTEM_PROMPT}\n\n---\n\n${userMessage}`;
-
+  // Use proper system + user messages. The provider layer handles model-specific
+  // quirks (e.g. Gemma ignoring system messages on Vertex AI).
   const result = await provider.complete(
     [
-      { role: 'user', content: mergedUserMessage },
+      { role: 'system', content: DECOMPOSITION_SYSTEM_PROMPT },
+      { role: 'user', content: userMessage },
     ],
-    { forceJson: true, maxTokens: 2000 },
+    { forceJson: true, maxTokens: 4096 },
   );
 
   const outputText = result.content;
@@ -628,54 +672,34 @@ export async function parseResume(input: ParseResumeInput): Promise<ParseResumeR
       return null;
     }
 
-    // Run rule-based extraction deterministically
-    const experiences = extractExperiences(text);
-    const educationBlocks = extractEducationBlocks(text);
-    const credentials = extractCredentials(text);
-    const projects = extractProjects(text);
-
-    console.log('[cvParser] Rule-based extraction:', {
-      experiences: experiences.length,
-      education: educationBlocks.length,
-      credentials: credentials.length,
-      projects: projects.length,
-    });
-
-    // Build a preliminary ParsedCV for the decomposition prompt
-    const preliminaryParsed: ParsedCV = {
-      skills: [],
-      experiences,
-      educationBlocks,
-      credentials,
-      projects,
-    };
-
-    // Call decomposition LLM for rich enrichment
+    // Send raw text to the LLM with an empty skeleton. The model extracts
+    // structured data directly from the resume text — far more reliable than
+    // brittle regex heuristics that break on every new resume format.
     let decomposition: DecompositionResult | null = null;
     try {
-      decomposition = await callDecompositionLLM(input.env, preliminaryParsed, text);
+      decomposition = await callDecompositionLLM(input.env, { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] }, text);
       console.log('[cvParser] Decomposition LLM succeeded');
     } catch (llmErr) {
       console.warn('[cvParser] Decomposition LLM failed:', llmErr);
     }
 
-    // Derive final ParsedCV — from decomposition when available, otherwise bare rule-based
+    // Derive final ParsedCV from decomposition. Rule-based extraction is only
+    // used as a fallback when the LLM is unavailable.
     let parsedCV: ParsedCV;
     if (decomposition) {
       parsedCV = deriveParsedCVFromDecomposition(decomposition, {
-        experiences,
-        educationBlocks,
-        credentials,
-        projects,
+        experiences: [],
+        educationBlocks: [],
+        credentials: [],
+        projects: [],
       });
     } else {
-      parsedCV = {
-        skills: [],
-        experiences,
-        educationBlocks,
-        credentials,
-        projects,
-      };
+      // LLM fallback: run rule-based extraction only when the model is down
+      const experiences = extractExperiences(text);
+      const educationBlocks = extractEducationBlocks(text);
+      const credentials = extractCredentials(text);
+      const projects = extractProjects(text);
+      parsedCV = { skills: [], experiences, educationBlocks, credentials, projects };
     }
 
     console.log('[cvParser] Final ParsedCV:', {

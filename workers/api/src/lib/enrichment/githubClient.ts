@@ -2,8 +2,11 @@
  * GitHub Enrichment Client — fetches candidate GitHub metadata for graph enrichment.
  *
  * Methods:
- *   - getOwnedRepos(handle)
- *   - getContributedRepos(handle)
+ *   - getUserProfile(handle)
+ *   - getOwnedRepos(handle) — single page, 30 repos
+ *   - getOwnedReposAll(handle, maxRepos) — paginated, up to maxRepos
+ *   - getMergedPullRequests(handle, maxResults) — search API for merged PRs
+ *   - getUserOrgs(handle) — organization memberships
  *   - getRepoLanguages(owner, repo)
  *
  * Rate limit guard: throws GitHubRateLimitError when x-ratelimit-remaining < 10.
@@ -25,6 +28,37 @@ export interface GitHubRepo {
   created_at: string;
   updated_at: string;
   pushed_at: string;
+  fork: boolean;
+}
+
+export interface GitHubUserProfile {
+  login: string;
+  name: string | null;
+  followers: number;
+  following: number;
+  public_repos: number;
+  public_gists: number;
+  html_url: string;
+  blog: string | null;
+  location: string | null;
+  company: string | null;
+  created_at: string;
+  bio: string | null;
+  type: string;
+}
+
+export interface GitHubOrg {
+  login: string;
+  id: number;
+  avatar_url: string;
+}
+
+export interface MergedPR {
+  id: number;
+  title: string;
+  repository_url: string;
+  html_url: string;
+  created_at: string;
 }
 
 export interface GitHubContribution {
@@ -32,13 +66,6 @@ export interface GitHubContribution {
   repo_name: string;
   repo_full_name: string;
   event_count: number;
-}
-
-export interface GitHubUserProfile {
-  login: string;
-  followers: number;
-  public_repos: number;
-  html_url: string;
 }
 
 export class GitHubRateLimitError extends Error {
@@ -70,10 +97,52 @@ export class GitHubClient {
     return (await res.json()) as GitHubRepo[];
   }
 
+  /** Fetch repos the user owns with pagination (up to maxRepos). */
+  async getOwnedReposAll(handle: string, maxRepos = 300): Promise<GitHubRepo[]> {
+    const all: GitHubRepo[] = [];
+    let page = 1;
+
+    while (all.length < maxRepos) {
+      const perPage = Math.min(100, maxRepos - all.length);
+      const url =
+        `https://api.github.com/users/${encodeURIComponent(handle)}/repos?` +
+        `type=owner&sort=pushed&per_page=${perPage}&page=${page}`;
+
+      const res = await this.fetch(url);
+      const repos = (await res.json()) as GitHubRepo[];
+      if (!Array.isArray(repos) || repos.length === 0) break;
+
+      all.push(...repos);
+      page++;
+
+      if (repos.length < perPage) break;
+    }
+
+    return all;
+  }
+
   /**
-   * Fetch repos the user has contributed to via public events.
-   * Aggregates PushEvent / PullRequestEvent / IssuesEvent by repo.
-   * Returns repos with >= 5 events.
+   * Fetch merged pull requests by the user via the search API.
+   * This finds contributions to repos they do NOT own, with full history.
+   */
+  async getMergedPullRequests(handle: string, maxResults = 100): Promise<MergedPR[]> {
+    const url =
+      `https://api.github.com/search/issues?q=` +
+      encodeURIComponent(`type:pr is:merged author:${handle}`) +
+      `&per_page=${maxResults}&sort=updated&order=desc`;
+    const res = await this.fetch(url);
+    const data = (await res.json()) as { total_count: number; items: MergedPR[] };
+    return data.items ?? [];
+  }
+
+  /** Fetch organization memberships for the user. */
+  async getUserOrgs(handle: string): Promise<GitHubOrg[]> {
+    const res = await this.fetch(`https://api.github.com/users/${encodeURIComponent(handle)}/orgs`);
+    return (await res.json()) as GitHubOrg[];
+  }
+
+  /**
+   * @deprecated Use getMergedPullRequests instead — events API only covers last 90 days.
    */
   async getContributedRepos(handle: string): Promise<GitHubContribution[]> {
     const url = `https://api.github.com/users/${encodeURIComponent(handle)}/events/public?per_page=100`;
