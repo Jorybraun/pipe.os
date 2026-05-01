@@ -399,7 +399,7 @@ async function writeParserOnlyNodes(
 
         if (vectorize) {
           vectorizeUpserts.push({
-            id: `candidate_${candidateId}_node_${insertedNode.id}`,
+            id: insertedNode.id,
             values: embedding,
             metadata: {
               entity_type: 'candidate',
@@ -610,7 +610,7 @@ export async function decomposeResumeToGraph(
 
         if (vectorize) {
           vectorizeUpserts.push({
-            id: `candidate_${candidateId}_node_${insertedNode.id}`,
+            id: insertedNode.id,
             values: embedding,
             metadata: {
               entity_type: 'candidate',

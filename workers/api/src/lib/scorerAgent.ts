@@ -399,8 +399,61 @@ async function callLLM(
 // ─── JSON extraction ────────────────────────────────────────────────────────
 
 function extractJson<T>(raw: string): T {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-  return JSON.parse(cleaned) as T;
+  // Strip markdown fences
+  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+
+  // Some models emit trailing text after the JSON (explanations, repeated blocks).
+  // Find the outermost JSON object or array by matching braces/brackets.
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+  const start = firstBrace === -1 ? firstBracket : firstBracket === -1 ? firstBrace : Math.min(firstBrace, firstBracket);
+  if (start === -1) {
+    throw new Error(`[extractJson] No JSON object or array found in response. Raw: ${cleaned.slice(0, 200)}`);
+  }
+
+  const opener = cleaned[start] as '{' | '[';
+  const closer = opener === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+  let end = -1;
+
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    if (ch === '"' && !inString) {
+      inString = true;
+      continue;
+    }
+    if (ch === '"' && inString) {
+      inString = false;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === opener) {
+      depth++;
+    } else if (ch === closer) {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+
+  if (end === -1) {
+    throw new Error(`[extractJson] Unmatched ${opener} in response. Raw: ${cleaned.slice(0, 200)}`);
+  }
+
+  const jsonText = cleaned.slice(start, end + 1);
+  return JSON.parse(jsonText) as T;
 }
 
 // ─── User message builders ──────────────────────────────────────────────────

@@ -155,7 +155,7 @@ export async function candidateSituationFit(
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage },
     ],
-    { forceJson: true, maxTokens: 4096 },
+    { forceJson: true, maxTokens: 8192 },
   );
 
   const rawText = completion.content ?? '';
