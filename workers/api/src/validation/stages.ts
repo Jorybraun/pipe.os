@@ -20,6 +20,7 @@ export const CHALLENGE_TYPES = [
   'QUIZ_MCQ',
   'QUIZ_SHORT_ANSWER',
   'FOLLOW_UP',
+  'INTAKE',
 ] as const;
 
 /**

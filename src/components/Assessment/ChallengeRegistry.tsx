@@ -19,6 +19,7 @@ import { VoicePanel } from '../Panels/VoicePanel';
 import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
 import { VideoWaitingRoom } from '../Video/VideoWaitingRoom';
 import { WelcomeScreen, type ChallengeType } from './WelcomeScreen';
+import { IntakeChallenge } from './IntakeChallenge';
 import { normalizeShortAnswerConfig } from '../../lib/shortAnswerUtils';
 import type { FollowUpQuestion } from '../../hooks/useAssessment';
 
@@ -338,6 +339,43 @@ export function ChallengeRegistry({
         isRecruiterWaiting={false}
         isCandidatePresent={false}
         role="CANDIDATE"
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // INTAKE bypass — candidate self-serve profile building
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'INTAKE') {
+    if (!candidateId) {
+      return (
+        <div
+          style={{
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: 16,
+            color: 'var(--pipe-text-dim)',
+            fontFamily: 'Space Mono',
+            fontSize: 11,
+          }}
+        >
+          <div style={{ fontSize: 11, letterSpacing: '0.1em' }}>INTAKE_ERROR</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>
+            Candidate ID not available. Please refresh.
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <IntakeChallenge
+        challengeId={challenge.id}
+        onSubmit={(submission) => onSubmit(submission)}
+        isSubmitting={isSubmitting ?? false}
       />
     );
   }

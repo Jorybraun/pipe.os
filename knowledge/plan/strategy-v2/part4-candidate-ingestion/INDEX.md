@@ -2,9 +2,10 @@
 
 **Source strategy:** `knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md`
 **Phase0 dedup source:** `docs/plans/phase0-subagent-execution-plan.md`
-**Total plan files:** 19 (17 full plans + 2 phase0 linked-only entries)
+**Total plan files:** 20 (18 full plans + 2 phase0 linked-only entries)
 **Total subtasks:** 63
 **Ambiguous / needs refinement:** 3 (flagged below)
+**Completed:** 3 plans (see Phase 1.5 and Phase 2 below)
 
 ---
 
@@ -41,17 +42,39 @@ Items fully covered in `phase0-subagent-execution-plan.md`. Do not re-plan.
 
 ---
 
+## Phase 1.5 — Candidate Intake Challenge (DONE)
+
+**Shipped 2026-05-01. Bridges Phase 1 (decomposition) and Phase 2 (enrichment).**
+
+| File | Title | Status |
+|---|---|---|
+| [`candidate-intake-challenge.md`](candidate-intake-challenge.md) | Self-serve INTAKE challenge type: resume upload, GitHub, LinkedIn | **DONE** |
+
+**What it is:** A new `INTAKE` challenge type within the existing stage progression system. Candidates upload their resume, provide GitHub/LinkedIn, and the backend queues resume parsing + GitHub enrichment via the enrichment worker. No new routes — it renders inside `ChallengeRegistry` as a bypass.
+
+**Key pieces:**
+- `IntakeChallenge.tsx` — candidate-facing form
+- `processResumeFromR2()` — shared resume ingestion helper
+- Enrichment worker `'resume'` source_type — processes resume jobs
+- `/rpc/upload-media` extended for PDFs/DOCX
+- `/rpc/submit-challenge-response` INTAKE branch — queues enrichment
+- Migration 0062 — INTAKE challenge type, resume source_type, linkedin_url column
+
+---
+
 ## Phase 2 — Public Data Enrichment (4–6 weeks)
 
 | File | Title | Estimate | Status |
 |---|---|---|---|
-| [`github-enrichment-worker.md`](github-enrichment-worker.md) | Async enrichment queue + GitHub API worker | 4 weeks | PENDING |
-| [`github-enrichment-intake.md`](github-enrichment-intake.md) | Intake form GitHub handle field + enrichment job queuing | 0.5 weeks | PENDING |
+| [`github-enrichment-worker.md`](github-enrichment-worker.md) | Async enrichment queue + GitHub API worker (v2) | 4 weeks | **DONE** |
+| [`github-enrichment-intake.md`](github-enrichment-intake.md) | Intake form GitHub handle field + enrichment job queuing | 0.5 weeks | **DONE** |
 | [`candidate-profile-view.md`](candidate-profile-view.md) | Candidate-facing graph view with correction UI | 2 weeks | NEEDS-REFINEMENT |
 
 **Phase 2 total:** ~6.5 weeks, 10 subtasks
 
 **Phase 2 note:** LinkedIn enrichment explicitly out of scope per strategy (ToS and ethical concerns). URL-based content enrichment (blogs, talks) is Phase 2+ but not planned here — strategy says "candidate-surfaced URLs" but doesn't specify implementation detail. Flag for future planning.
+
+**v2 upgrade (shipped 2026-05-01):** The GitHub enrichment was completely rewritten with pagination (300 repos), merged PR search (100 results), org memberships, language aggregation, and rich human-like narratives. Creates 4 node types (CulturalSignal, Project, Experience, Skill) instead of just Project. See `github-enrichment-worker.md` for details.
 
 ---
 

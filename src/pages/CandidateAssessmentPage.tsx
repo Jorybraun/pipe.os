@@ -11,6 +11,7 @@ import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { InterviewProvider } from '../contexts/InterviewContext';
 import { StageRenderer } from '../components/Assessment/StageRenderer';
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
+import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
 import type { RawStage } from '../lib/challenge/resolveStageConfig';
@@ -281,6 +282,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
   const isFollowUp = currentType === 'FOLLOW_UP';
   const followUpReady = isFollowUp && followUpQuestions && followUpQuestions.length > 0;
   const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
+  const isIntake = currentType === 'INTAKE';
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
 
@@ -356,12 +358,13 @@ export default function CandidateAssessmentPage(): JSX.Element {
                 currentChallengeIndex={currentOrder}
                 onNext={() => handleSubmit()}
                 isLastChallenge={isLastChallenge}
-                fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION'}
+                fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION' || isIntake}
                 canAdvance={
                   !isPreview &&
                   currentType !== 'WELCOME' &&
                   currentType !== 'LIVE_VIDEO' &&
                   !isReviewSessionV2 &&
+                  !isIntake &&
                   (
                     currentType === 'AGENT_INTERVIEW'
                       ? currentSubmission !== null
@@ -369,7 +372,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
                   )
                 }
                 isSubmitting={isLoading}
-                hideFooter={isReviewSessionV2}
+                hideFooter={isReviewSessionV2 || isIntake}
               >
                 {isReviewSessionV2Loading ? (
                   <div data-testid="review-session-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
@@ -391,6 +394,12 @@ export default function CandidateAssessmentPage(): JSX.Element {
                       setReviewSessionMeta(null);
                       void handleSubmit({ reviewSessionId: reviewSessionMeta.sessionId });
                     }}
+                  />
+                ) : isIntake ? (
+                  <IntakeChallenge
+                    challengeId={challengeContent.id ?? ''}
+                    onSubmit={(submission) => handleSubmit(submission)}
+                    isSubmitting={isLoading}
                   />
                 ) : followUpWaiting ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>

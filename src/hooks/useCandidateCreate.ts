@@ -21,10 +21,11 @@ interface UseCandidateCreateState {
   isSubmitting: boolean;
   error: Error | null;
   createdId: string | null;
+  inviteToken: string | null;
 }
 
 interface UseCandidateCreateReturn extends UseCandidateCreateState {
-  create: (input: CandidateCreateInput) => Promise<string | null>;
+  create: (input: CandidateCreateInput) => Promise<{ id: string; inviteToken: string } | null>;
   reset: () => void;
 }
 
@@ -38,11 +39,12 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
     isSubmitting: false,
     error: null,
     createdId: null,
+    inviteToken: null,
   });
 
   const create = useCallback(
-    async (input: CandidateCreateInput): Promise<string | null> => {
-      setState({ isSubmitting: true, error: null, createdId: null });
+    async (input: CandidateCreateInput): Promise<{ id: string; inviteToken: string } | null> => {
+      setState({ isSubmitting: true, error: null, createdId: null, inviteToken: null });
 
       try {
         const api = createApiClient({ getToken });
@@ -56,14 +58,15 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
         );
 
         const candidateId = data.candidate.id;
+        const token = data.candidate.inviteToken;
         console.log('[useCandidateCreate] Candidate created:', candidateId);
-        setState({ isSubmitting: false, error: null, createdId: candidateId });
-        return candidateId;
+        setState({ isSubmitting: false, error: null, createdId: candidateId, inviteToken: token });
+        return { id: candidateId, inviteToken: token };
       } catch (err) {
         const error =
           err instanceof Error ? err : new Error('An unexpected error occurred');
         console.error('[useCandidateCreate] Unexpected error:', error);
-        setState({ isSubmitting: false, error, createdId: null });
+        setState({ isSubmitting: false, error, createdId: null, inviteToken: null });
         return null;
       }
     },
@@ -71,7 +74,7 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
   );
 
   const reset = useCallback(() => {
-    setState({ isSubmitting: false, error: null, createdId: null });
+    setState({ isSubmitting: false, error: null, createdId: null, inviteToken: null });
   }, []);
 
   return {

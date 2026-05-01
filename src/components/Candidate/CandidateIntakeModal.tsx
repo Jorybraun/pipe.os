@@ -10,7 +10,12 @@ import {
   Briefcase,
   GraduationCap,
   Sparkles,
-  Activity
+  Activity,
+  Copy,
+  Mail,
+  Link as LinkIcon,
+  Send,
+  AlertCircle,
 } from "lucide-react";
 import { LiquidMetalCard } from "..";
 import { FieldGroup, TextInput } from "../ui/form";
@@ -38,6 +43,9 @@ export function CandidateIntakeModal({
   const [githubHandle, setGithubHandle] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [parsedData, setParsedData] = useState<{
     name?: string;
     skills?: string[];
@@ -52,6 +60,9 @@ export function CandidateIntakeModal({
   const { getToken } = useClerkAuth();
   const { theme } = useTheme();
   const isLight = theme.mode === 'light' || theme.mode === 'anatomy';
+
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://pipe.build';
+  const inviteUrl = inviteToken ? `${baseUrl}/assess/${inviteToken}` : '';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -70,6 +81,48 @@ export function CandidateIntakeModal({
     setGithubHandle((prev) => prev.replace(/^@/, ""));
   };
 
+  const handleCopyLink = async () => {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Failed to copy link to clipboard.");
+    }
+  };
+
+  const handleResendEmail = async () => {
+    if (!createdCandidateId || resendStatus === 'sending') return;
+    setResendStatus('sending');
+    try {
+      const token = await getToken();
+      const apiUrl =
+        typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
+          ? import.meta.env.VITE_API_URL
+          : "http://localhost:8787";
+
+      const response = await fetch(
+        `${apiUrl}/api/v1/candidates/${createdCandidateId}/send-invite`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to resend invite (${response.status})`);
+      }
+
+      setResendStatus('sent');
+      setTimeout(() => setResendStatus('idle'), 3000);
+    } catch (err) {
+      console.error('[CandidateIntake] Resend failed:', err);
+      setResendStatus('error');
+      setTimeout(() => setResendStatus('idle'), 3000);
+    }
+  };
+
   const handleProcess = async () => {
     if (!name || !email) {
       setError("Name and Email are required.");
@@ -82,15 +135,17 @@ export function CandidateIntakeModal({
     // If no file, skip parsing step entirely
     if (!file) {
       try {
-        const candidateId = await create({
+        const result = await create({
           pipelineId,
           name,
           email,
           ...(stageId ? { currentStageId: stageId } : {}),
         });
 
-        if (!candidateId) throw new Error("Failed to create candidate");
-        onSuccess(candidateId);
+        if (!result) throw new Error("Failed to create candidate");
+        setCreatedCandidateId(result.id);
+        setInviteToken(result.inviteToken);
+        setStep("CONFIRM");
       } catch (err) {
         console.error("[CandidateIntake] Error:", err);
         setError(err instanceof Error ? err.message : "An error occurred during intake.");
@@ -106,15 +161,17 @@ export function CandidateIntakeModal({
 
     try {
       // 1. Create Candidate
-      candidateId = await create({
+      const createResult = await create({
         pipelineId,
         name,
         email,
         ...(stageId ? { currentStageId: stageId } : {}),
       });
 
-      if (!candidateId) throw new Error("Failed to create candidate");
+      if (!createResult) throw new Error("Failed to create candidate");
+      candidateId = createResult.id;
       setCreatedCandidateId(candidateId);
+      setInviteToken(createResult.inviteToken);
 
       // 2. Upload CV directly to the Worker, which stores it in R2.
       //    The Worker returns the R2 key and persists it on the candidate record.
@@ -463,6 +520,100 @@ export function CandidateIntakeModal({
                     {email}
                   </div>
                 </div>
+              </div>
+
+              {/* Invite link + actions */}
+              <div style={{ 
+                padding: 24,
+                background: "var(--pipe-surface)",
+                borderRadius: 8,
+                border: "1px solid var(--pipe-border-light)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 16
+              }}>
+                <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 4 }}>
+                  <Mail size={10} style={{ marginRight: 6 }} /> INVITE_STATUS
+                </div>
+                <div style={{ fontSize: 12, color: "#34d399", fontFamily: "Space Mono" }}>
+                  ✓ Invite email sent automatically
+                </div>
+
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 12,
+                  padding: 12,
+                  background: "rgba(0,0,0,0.2)",
+                  borderRadius: 4,
+                  border: "1px solid var(--pipe-border-light)"
+                }}>
+                  <LinkIcon size={14} color="var(--pipe-text-dim)" />
+                  <div style={{ 
+                    flex: 1,
+                    fontSize: 11, 
+                    color: "var(--pipe-text-muted)", 
+                    fontFamily: "Space Mono",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}>
+                    {inviteUrl}
+                  </div>
+                  <button
+                    onClick={handleCopyLink}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 12px",
+                      background: copied ? "rgba(52, 211, 153, 0.1)" : "var(--pipe-surface-hover)",
+                      border: `1px solid ${copied ? "#34d399" : "var(--pipe-border)"}`,
+                      borderRadius: 4,
+                      color: copied ? "#34d399" : "var(--pipe-text-dim)",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: "Space Mono",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    <Copy size={12} />
+                    {copied ? "COPIED" : "COPY"}
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleResendEmail}
+                  disabled={resendStatus === 'sending'}
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    background: "var(--pipe-surface-hover)",
+                    border: "1px solid var(--pipe-border)",
+                    borderRadius: 4,
+                    color: resendStatus === 'sent' ? '#34d399' : resendStatus === 'error' ? '#f87171' : 'var(--pipe-text-dim)',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    fontFamily: "Space Mono",
+                    cursor: resendStatus === 'sending' ? 'default' : 'pointer',
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    opacity: resendStatus === 'sending' ? 0.6 : 1
+                  }}
+                >
+                  {resendStatus === 'sending' ? (
+                    <><Loader2 size={14} className="animate-spin" /> SENDING...</>
+                  ) : resendStatus === 'sent' ? (
+                    <><CheckCircle size={14} /> EMAIL SENT</>
+                  ) : resendStatus === 'error' ? (
+                    <><AlertCircle size={14} /> FAILED — TRY AGAIN</>
+                  ) : (
+                    <><Send size={14} /> RESEND INVITE EMAIL</>
+                  )}
+                </button>
               </div>
 
               {parsedData && (

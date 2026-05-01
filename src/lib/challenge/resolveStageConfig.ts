@@ -204,6 +204,14 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
     isComplete: (s: Record<string, unknown>) =>
       typeof s.transcript === 'string' && s.transcript.length > 0,
   }),
+
+  INTAKE: () => ({
+    layout: 'fullbleed',
+    panels: { center: [] },
+    shells: [],
+    initialSubmission: {},
+    isComplete: () => true,
+  }),
 };
 
 const FALLBACK_BLUEPRINT: Blueprint = {

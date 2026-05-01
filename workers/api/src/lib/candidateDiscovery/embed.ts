@@ -100,3 +100,66 @@ export async function embedAndUpsertCandidate(
     modelVersion: EMBEDDING_MODEL_VERSION,
   };
 }
+
+export interface UpsertCandidateVectorInput {
+  vectorize: VectorizeIndex;
+  candidateId: string;
+  vector: number[];
+  /** Optional metadata to attach to the vector. */
+  metadata?: Record<string, string | number | boolean>;
+  /** Optional D1 database for persisting the embedding. */
+  db?: D1Database;
+}
+
+/**
+ * Upsert a pre-computed candidate vector into CANDIDATE_INDEX.
+ * Used when the aggregate embedding is computed from sub-element vectors
+ * rather than generated from prose.
+ */
+export async function upsertCandidateVector(
+  input: UpsertCandidateVectorInput,
+): Promise<EmbedCandidateResult> {
+  const { vectorize, candidateId, vector, metadata, db } = input;
+
+  if (vector.length !== EXPECTED_DIM) {
+    throw new Error(
+      `[candidateEmbed] wrong dim for candidate ${candidateId}: got ${vector.length}, expected ${EXPECTED_DIM}`,
+    );
+  }
+  if (vector.some((n) => !Number.isFinite(n))) {
+    throw new Error(`[candidateEmbed] non-finite values for candidate ${candidateId}`);
+  }
+
+  await vectorize.upsert([
+    {
+      id: `candidate_${candidateId}`,
+      values: vector,
+      metadata: metadata ?? {},
+    },
+  ]);
+
+  const embeddedAt = new Date().toISOString();
+
+  if (db) {
+    await db
+      .prepare(
+        `UPDATE candidate_ingestion
+           SET status = 'embedded',
+               profile_embedded_at = ?,
+               embedding_json = ?,
+               error_text = NULL,
+               updated_at = ?,
+               embedding_model_version = ?
+         WHERE candidate_id = ?`,
+      )
+      .bind(embeddedAt, JSON.stringify(vector), embeddedAt, EMBEDDING_MODEL_VERSION, candidateId)
+      .run();
+  }
+
+  return {
+    embeddedAt,
+    vectorDim: vector.length,
+    vector,
+    modelVersion: EMBEDDING_MODEL_VERSION,
+  };
+}

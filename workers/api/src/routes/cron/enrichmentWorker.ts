@@ -7,6 +7,7 @@
 
 import type { Env } from '../../types';
 import { enrichCandidateFromGitHub } from '../../lib/enrichment/githubEnrich';
+import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 
 const BATCH_SIZE = 5;
 const MAX_ATTEMPTS = 3;
@@ -74,6 +75,27 @@ export async function handleEnrichmentWorkerCron(
 
         console.log(
           `[enrichmentWorker] GitHub enrichment complete for ${job.candidate_id}: ${result.nodesCreated} nodes from ${result.reposFound} repos`,
+        );
+      } else if (job.source_type === 'resume') {
+        // source_url holds the R2 key for the resume PDF
+        const r2Key = job.source_url;
+        if (!r2Key) {
+          throw new PermanentEnrichmentError(`Missing R2 key for resume job ${job.id}`);
+        }
+
+        const result = await processResumeFromR2({
+          env,
+          db,
+          candidateId: job.candidate_id,
+          r2Key,
+        });
+
+        if (!result.success) {
+          throw new Error(result.error || 'Resume ingestion failed');
+        }
+
+        console.log(
+          `[enrichmentWorker] Resume ingestion complete for ${job.candidate_id}: ${result.parsed?.parsedCV.skills.length ?? 0} skills extracted`,
         );
       } else {
         throw new PermanentEnrichmentError(`Unsupported source_type: ${job.source_type}`);

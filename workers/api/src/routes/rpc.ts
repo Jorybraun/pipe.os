@@ -20,6 +20,7 @@ import { devContainer, devContainerProxyPublic } from './assessment/devContainer
 import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
+import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import type { Env } from '../types';
 
 // ─── Public routes (no auth) ────────────────────────────────────────────────
@@ -722,6 +723,89 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     .bind(submissionId, assessment.id, challengeId, candidateId, responseJson, now)
     .run();
 
+  // ── INTAKE challenge: trigger background enrichment ────────────────────────
+  if (challenge.type === 'INTAKE') {
+    let intakePayload: Record<string, unknown> = {};
+    try {
+      intakePayload = typeof submission === 'string' ? (JSON.parse(submission) as Record<string, unknown>) : (submission as Record<string, unknown>);
+    } catch {
+      intakePayload = {};
+    }
+
+    const resumeR2Key = typeof intakePayload.resumeR2Key === 'string' ? intakePayload.resumeR2Key : '';
+    const githubHandle = typeof intakePayload.githubHandle === 'string' ? intakePayload.githubHandle : '';
+    const linkedinUrl = typeof intakePayload.linkedinUrl === 'string' ? intakePayload.linkedinUrl : '';
+
+    // 1. Update candidate record with resume key
+    if (resumeR2Key) {
+      try {
+        await c.env.DB.prepare(`UPDATE candidates SET resume_s3_key = ?1, updated_at = ?2 WHERE id = ?3`)
+          .bind(resumeR2Key, now, candidateId)
+          .run();
+      } catch (err) {
+        console.error(`[rpc/intake] failed to update candidate resume key:`, err);
+      }
+
+      // Queue resume ingestion job (processed by enrichment worker cron)
+      try {
+        await c.env.DB.prepare(
+          `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
+           VALUES (?1, ?2, 'resume', ?3, 'PENDING', unixepoch())`,
+        )
+          .bind(crypto.randomUUID(), candidateId, resumeR2Key)
+          .run();
+        console.log(`[rpc/intake] queued resume ingestion for candidate ${candidateId}`);
+      } catch (err) {
+        console.error(`[rpc/intake] failed to queue resume ingestion:`, err);
+      }
+    }
+
+    // 2. Queue GitHub enrichment
+    if (githubHandle) {
+      const githubUrl = `https://github.com/${githubHandle}`;
+      try {
+        await c.env.DB.prepare(
+          `INSERT INTO candidate_ingestion (candidate_id, github_url, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?3)
+           ON CONFLICT(candidate_id) DO UPDATE SET
+             github_url = excluded.github_url,
+             updated_at = excluded.updated_at`,
+        )
+          .bind(candidateId, githubUrl, now)
+          .run();
+
+        await c.env.DB.prepare(
+          `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
+           VALUES (?1, ?2, 'github', ?3, 'PENDING', unixepoch())`,
+        )
+          .bind(crypto.randomUUID(), candidateId, githubUrl)
+          .run();
+
+        console.log(`[rpc/intake] queued github enrichment for candidate ${candidateId}`);
+      } catch (err) {
+        console.error(`[rpc/intake] failed to queue github enrichment:`, err);
+      }
+    }
+
+    // 3. Store LinkedIn URL
+    if (linkedinUrl) {
+      try {
+        await c.env.DB.prepare(
+          `INSERT INTO candidate_ingestion (candidate_id, linkedin_url, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?3)
+           ON CONFLICT(candidate_id) DO UPDATE SET
+             linkedin_url = excluded.linkedin_url,
+             updated_at = excluded.updated_at`,
+        )
+          .bind(candidateId, linkedinUrl, now)
+          .run();
+        console.log(`[rpc/intake] stored linkedin url for candidate ${candidateId}`);
+      } catch (err) {
+        console.error(`[rpc/intake] failed to store linkedin url:`, err);
+      }
+    }
+  }
+
   return c.json({
     success: true,
     challengeSubmissionId: submissionId,
@@ -894,9 +978,13 @@ rpcAuth.post('/submit-status', async (c) => {
 /** Maximum accepted media file size: 50 MB. */
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
 
-/** MIME type guard — only audio/* and video/* are accepted. */
-function isMediaMime(mimeType: string): boolean {
-  return /^(audio|video)\//.test(mimeType);
+/** MIME type guard — accepts audio/*, video/*, and document uploads. */
+function isAllowedMime(mimeType: string): boolean {
+  return (
+    /^(audio|video)\//.test(mimeType) ||
+    mimeType === 'application/pdf' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  );
 }
 
 rpcAuth.post('/upload-media', async (c) => {
@@ -930,13 +1018,13 @@ rpcAuth.post('/upload-media', async (c) => {
   }
   const challengeId = challengeIdEntry.trim();
 
-  // Validate MIME type — must be audio/* or video/*
-  if (!isMediaMime(fileEntry.type)) {
+  // Validate MIME type — must be audio/*, video/*, PDF, or DOCX
+  if (!isAllowedMime(fileEntry.type)) {
     return c.json(
       {
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Only audio/* and video/* MIME types are accepted.',
+          message: 'Only audio/*, video/*, application/pdf, and application/vnd.openxmlformats-officedocument.wordprocessingml.document MIME types are accepted.',
         },
       },
       415,
@@ -951,10 +1039,19 @@ rpcAuth.post('/upload-media', async (c) => {
     );
   }
 
-  // Derive extension from MIME — prefer .webm, fall back to subtype
-  const mimeSubtype = fileEntry.type.split('/')[1] ?? 'webm';
-  const ext = mimeSubtype.replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'webm';
-  const r2Key = `candidate-submissions/${candidateId}/${challengeId}.${ext}`;
+  // Derive R2 key and extension based on file type
+  const isDocument = fileEntry.type === 'application/pdf' || fileEntry.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  let ext: string;
+  let r2Key: string;
+  if (isDocument) {
+    ext = fileEntry.type === 'application/pdf' ? 'pdf' : 'docx';
+    const rawName = fileEntry.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    r2Key = `candidate-documents/${candidateId}/${rawName}`;
+  } else {
+    const mimeSubtype = fileEntry.type.split('/')[1] ?? 'webm';
+    ext = mimeSubtype.replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'webm';
+    r2Key = `candidate-submissions/${candidateId}/${challengeId}.${ext}`;
+  }
 
   // Write to R2
   if (!c.env.STORAGE) {

@@ -241,6 +241,13 @@
   },
   "active": "8af6e68fc634f7eb",
   "lastOpenFiles": [
+    "plan/testing/smoke-test-2026-05-01.md",
+    "plan/testing/github-client-and-dynamic-profile.md",
+    "plan/testing/TEMPLATE.md",
+    "plan/testing/README.md",
+    "plan/testing",
+    "plan/strategy-v2/part4-candidate-ingestion/candidate-intake-challenge.md",
+    "plan/github-client-rewrite-and-dynamic-candidate-profile.md",
     "plan/phase-2-enriched-matching-integration.md",
     "plan/strategy-v2/README.md",
     "plan/strategy-v2/part6-market-research/learning-to-rank-data-collection.md",
@@ -262,12 +269,6 @@
     "plan/strategy-v2/part5-matching-migration/per-element-matching-algorithm.md",
     "plan/strategy-v2/part5-matching-migration/observability-opentelemetry.md",
     "plan/strategy-v2/part5-matching-migration/INDEX.md",
-    "plan/strategy-v2/part5-matching-migration/neo4j-vps-provisioning.md",
-    "plan/strategy-v2/part5-matching-migration/match-reports-schema.md",
-    "plan/strategy-v2/part5-matching-migration/neo4j-validation-parity.md",
-    "plan/strategy-v2/part5-matching-migration/neo4j-driver-and-binding.md",
-    "plan/strategy-v2/part5-matching-migration/observability-recruiter-status.md",
-    "plan/strategy-v2/part5-matching-migration/neo4j-dual-write-ingestion.md",
     "plan/strategy-v2/part5-matching-migration",
     "plan/strategy-v2/part4-candidate-ingestion",
     "plan/strategy-v2/part3-repo-ingestion",
@@ -285,7 +286,6 @@
     "Screenshot 2026-04-09 at 3.35.47 AM.png",
     "Screenshot 2026-04-09 at 3.37.22 AM.png",
     "Screenshot 2026-04-09 at 3.39.33 AM.png",
-    "Screenshot 2026-04-09 at 3.32.31 AM.png",
-    "intake_outreach"
+    "Screenshot 2026-04-09 at 3.32.31 AM.png"
   ]
 }

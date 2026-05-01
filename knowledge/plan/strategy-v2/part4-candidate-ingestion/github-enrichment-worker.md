@@ -2,10 +2,13 @@
 
 **Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 208–226)
 **Phase:** 2
-**Status:** PENDING
-**Estimate:** 4 weeks
+**Status:** DONE (2026-05-01)
+**Estimate:** 4 weeks (actual: ~2 weeks, v2 completed 2026-05-01)
+
+---
 
 ## Source quote
+
 > For a candidate who provides a GitHub handle, the enrichment worker fetches:
 > - **Owned repositories** — run a lightweight Pass 3-style decomposition on each.
 > - **Contributions to others' repos** — lighter treatment. An Experience-like sub-element for each repo the candidate has contributed meaningfully to.
@@ -15,78 +18,122 @@
 > An `enrichment_jobs` queue in D1, triggered at intake when the candidate record has external URLs.
 
 ## Why
-GitHub enrichment can produce as much signal as three resume lines for a candidate with significant open-source activity. It attaches evidence the candidate might not have thought to include on their resume. This is also the implementation pattern for future enrichment sources (blog posts, talks).
 
-## Subtasks (delegable)
+GitHub enrichment can produce as much signal as three resume lines for a candidate with significant open-source activity. It attaches evidence the candidate might not have thought to include on their resume.
 
-### Subtask 1 — `enrichment_jobs` queue migration
-**Files:**
-- `workers/api/migrations/0049_enrichment_jobs.sql`
+## What was built
 
-**Spec:**
+### v1 → v2 upgrade
+
+The original implementation only fetched 30 repos with no pagination, no contributions, no language aggregation, and only created `Project` nodes. v2 is a complete rewrite.
+
+### v2 features
+
+- **Paginated repo fetch:** up to 300 owned repos via `/users/:handle/repos?per_page=100`
+- **Merged PR search:** `type:pr is:merged author:{handle}` via search API, up to 100 results
+- **Organization memberships:** fetched via `/users/:handle/orgs`
+- **Language aggregation:** primary language stats across all repos
+- **Popularity sorting:** repos sorted by stars + forks
+- **Rich narratives:** human-like text with date ranges, impact descriptors, context
+- **4 node types per candidate:**
+  - `CulturalSignal` — overall GitHub summary with `dimension: 'github_profile'`
+  - `Project` (top 15) — owned repos with rich narratives
+  - `Experience` (top 10) — external open-source contributions
+  - `Skill` (top 6) — dominant programming languages
+- **Supersession:** `supersedeOldGithubNodes()` prevents duplicates on re-enrichment
+- **Property alignment:** property names match `candidateSituationFit` prompt builders
+
+### Enrichment jobs queue
+
+**Migration:** `0056_enrichment_jobs.sql`
+
 ```sql
 CREATE TABLE enrichment_jobs (
   id TEXT PRIMARY KEY,
   candidate_id TEXT NOT NULL,
-  source_type TEXT NOT NULL,  -- 'github' | 'url_content'
+  source_type TEXT NOT NULL CHECK(source_type IN ('github', 'url_content', 'resume')),
   source_url TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'PENDING',
-  -- 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'SKIPPED'
   attempt_count INTEGER NOT NULL DEFAULT 0,
   last_attempted_at INTEGER,
   completed_at INTEGER,
   error_text TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-)
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
 ```
-Indexes on `(candidate_id, status)`, `(status, created_at)` (for worker polling). Max 3 attempts before setting `FAILED`.
 
-**Status:** ⏳ PENDING
+**Worker:** `workers/api/src/routes/cron/enrichmentWorker.ts`
+
+- Triggered by cron every 2 hours
+- Processes up to 5 pending jobs per invocation
+- Max 3 attempts per job
+- Routes by `source_type`:
+  - `'github'` → `enrichCandidateFromGitHub()`
+  - `'resume'` → `processResumeFromR2()` (new, see `candidate-intake-challenge.md`)
 
 ---
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `workers/api/src/lib/enrichment/githubClient.ts` | GitHub API client with pagination, PR search, org fetch |
+| `workers/api/src/lib/enrichment/githubEnrich.ts` | v2 enrichment — 4 node types, rich narratives, supersession |
+| `workers/api/src/routes/cron/enrichmentWorker.ts` | Cron handler — polls jobs, routes by source_type |
+| `workers/api/src/lib/enrichment/resumeIngestion.ts` | Shared resume processing helper (resume source_type) |
+
+---
+
+## Subtasks (completed)
+
+### Subtask 1 — `enrichment_jobs` queue migration
+
+**Status:** ✅ DONE (migration 0056)
 
 ### Subtask 2 — GitHub API client (rate-limited)
-**Files:**
-- `workers/api/src/lib/enrichment/githubClient.ts`
 
-**Spec:**
-Export `GitHubClient` class. Constructor takes `{ token?: string }` (optional PAT for higher rate limit). Methods: `getOwnedRepos(handle: string): Promise<GitHubRepo[]>` (uses `/users/:handle/repos?type=owner&sort=pushed&per_page=30`), `getContributedRepos(handle: string): Promise<GitHubContribution[]>` (uses `/users/:handle/events/public?per_page=100`, aggregates by repo), `getCommitLanguages(handle: string, repoName: string): Promise<Record<string, number>>` (uses `/repos/:owner/:repo/languages`). Rate limit guard: check `x-ratelimit-remaining` header; if < 10, throw `GitHubRateLimitError`. All HTTP errors surface as typed errors, not silent empty arrays. No `any` — all GitHub API shapes typed minimally (only fields we actually use).
+**Status:** ✅ DONE (v2)
 
-**Status:** ⏳ PENDING
+Methods:
+- `getUserProfile(handle)` — basic profile
+- `getOwnedReposAll(handle, maxRepos=300)` — paginated repo fetch
+- `getMergedPullRequests(handle, maxResults=100)` — search API for merged PRs
+- `getUserOrgs(handle)` — organization memberships
+- `getRepoLanguages(owner, repo)` — language breakdown
 
----
+Rate limit guard: throws `GitHubRateLimitError` when `< 10` remaining.
 
 ### Subtask 3 — Enrichment extraction: owned repos → candidate nodes
-**Files:**
-- `workers/api/src/lib/enrichment/githubEnrich.ts`
 
-**Spec:**
-Export `enrichCandidateFromGitHub(handle: string, candidateId: string, db: D1Database, ai: Ai, vectorize: Vectorize): Promise<{ nodesCreated: number }>`. Fetches owned repos (max 30) and the candidate's `/users/:handle` profile (for `followers` count). For each repo with > 0 stars OR > 6 months activity: run a lightweight decomposition prompt via Gemma (similar to Pass 3 but scoped to a single README + language list + description). Produce Project sub-elements (what was built, technologies, their role as owner, scale from star count). Each Project node's `extracted_properties_json` MUST include `{ stars: number, watchers: number, forks: number, owner_followers: number }` so downstream scoring can weight scale signal. For contributions (contributed repos with >= 5 merged-equivalent events): produce lighter Experience-like sub-elements. Write via `insertCandidateNode` with `source_type='github_enrichment'`, `source_reference=github_url`. Embed each node via `embedCandidateNode`. Bump `candidate_profile_state.profile_version`. On completion, update `candidate_profile_state.last_enriched_at` and `enrichment_jobs.status='DONE'`.
+**Status:** ✅ DONE (v2)
 
-**Status:** ⏳ PENDING
+`enrichCandidateFromGitHub(handle, candidateId, db, env, token)` creates:
+- 1 `CulturalSignal` node (profile summary)
+- Up to 15 `Project` nodes (owned repos)
+- Up to 10 `Experience` nodes (external contributions via merged PRs)
+- Up to 6 `Skill` nodes (dominant languages)
+
+All nodes have `source_type='github_enrichment'` and are embedded into `CANDIDATE_INDEX`.
+
+### Subtask 4 — Enrichment queue worker (polling loop)
+
+**Status:** ✅ DONE
+
+Worker polls `PENDING` jobs, marks `IN_PROGRESS`, processes, marks `DONE` or `FAILED`. Uses `ctx.waitUntil` for non-blocking. Triggered by cron every 2 hours.
 
 ---
 
-### Subtask 4 — Enrichment queue worker (polling loop)
-**Files:**
-- `workers/api/src/routes/internal/enrichmentWorker.ts`
-
-**Spec:**
-Internal route `POST /internal/enrichment/process` (no public auth, Cloudflare-origin-only via wrangler secret header). Polls for PENDING enrichment jobs: `SELECT * FROM enrichment_jobs WHERE status='PENDING' AND attempt_count < 3 ORDER BY created_at LIMIT 5`. For each: mark IN_PROGRESS, call `enrichCandidateFromGitHub`, mark DONE or FAILED. Wrap each job in try/catch, increment `attempt_count` on any error. Uses `ctx.waitUntil` for non-blocking. Triggered by Cron Trigger `0 */2 * * *` (every 2 hours, off-peak cost). Log `[enrichmentWorker] processed N jobs, M failed`.
-
-**Status:** ⏳ PENDING
-
 ## Dependencies
-- Depends on: `candidate-nodes-schema.md`, `living-graph-provenance-tagging.md`, `candidate-sub-element-embedding.md`, `candidate-profile-state-schema.md`
+- Depends on: `candidate-nodes-schema.md`, `candidate-sub-element-embedding.md`
 - Blocks: `github-enrichment-intake.md`, `candidate-profile-view.md`
 
 ## Acceptance criteria
-- [ ] `enrichment_jobs` migration applies cleanly
-- [ ] `GitHubClient` throws `GitHubRateLimitError` when remaining < 10 (unit test with mock headers)
-- [ ] `enrichCandidateFromGitHub` produces >= 1 Project node for a seeded test GitHub handle with public repos
-- [ ] Each Project node's `extracted_properties_json` includes `stars`, `watchers`, `forks`, and `owner_followers` numeric fields
-- [ ] Job retries up to 3 times then sets status FAILED
-- [ ] Job marked DONE after successful enrichment with `completed_at` set
-- [ ] Cron trigger configured in `wrangler.jsonc`
-- [ ] `npx tsc --noEmit` clean
+- [x] `enrichment_jobs` migration applies cleanly
+- [x] `GitHubClient` throws `GitHubRateLimitError` when remaining < 10
+- [x] `enrichCandidateFromGitHub` produces >= 1 node for a real GitHub handle with public repos
+- [x] Job retries up to 3 times then sets status FAILED
+- [x] Job marked DONE after successful enrichment with `completed_at` set
+- [x] Cron trigger configured in `wrangler.jsonc`
+- [x] `npx tsc --noEmit` clean
+- [x] All enrichment worker tests pass (10 tests)

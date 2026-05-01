@@ -14,7 +14,8 @@ export type ChallengeType =
   | 'CODE_IMPLEMENTATION'
   | 'QUIZ_MCQ'
   | 'QUIZ_SHORT_ANSWER'
-  | 'FOLLOW_UP';
+  | 'FOLLOW_UP'
+  | 'INTAKE';
 
 export interface PresetChallenge {
   type: ChallengeType;

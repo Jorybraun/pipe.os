@@ -67,7 +67,7 @@ const updateStageSchema = z.object({
 
 const createChallengeSchema = z.object({
   type: z.enum(
-    ['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
+    ['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP', 'INTAKE'],
     { required_error: 'type is required' },
   ),
   title: z
