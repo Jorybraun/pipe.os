@@ -62,8 +62,23 @@ const CONTEXT_SUBTYPES = new Set([
   'timezone',
 ]);
 
+const SOURCE_WEIGHTS: Record<string, number> = {
+  code_review_session: 1.0,
+  implementation_challenge: 1.0,
+  culture_interview: 1.0,
+  automated_screener: 0.9,
+  github_enrichment: 0.7,
+  resume: 0.6,
+  recruiter_note: 0.5,
+};
+
 function safeConfidence(value: number | null): number {
   return value ?? 0;
+}
+
+function sourceWeight(sourceType: string | null): number {
+  if (!sourceType) return 0.5;
+  return SOURCE_WEIGHTS[sourceType] ?? 0.5;
 }
 
 function safeParseJson(json: string | null): Record<string, unknown> | null {
@@ -80,18 +95,24 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function computeExperience(
-  nodes: { confidence: number | null }[],
+  nodes: { confidence: number | null; source_type: string | null }[],
 ): number {
-  const count = nodes.length;
-  if (count === 0) return 0.0;
+  if (nodes.length === 0) return 0.0;
 
-  const avgConfidence =
-    nodes.reduce((sum, n) => sum + safeConfidence(n.confidence), 0) / count;
+  let totalWeight = 0;
+  let weightedConfidence = 0;
+  for (const node of nodes) {
+    const w = sourceWeight(node.source_type);
+    totalWeight += w;
+    weightedConfidence += safeConfidence(node.confidence) * w;
+  }
 
-  if (count >= 3 && avgConfidence >= 0.7) return 1.0;
+  const avgConfidence = totalWeight > 0 ? weightedConfidence / totalWeight : 0;
 
-  // Linear interpolation between 1 node (0.3) and 3 nodes (1.0)
-  const linear = count >= 3 ? 1.0 : 0.3 + (count - 1) * 0.35;
+  if (totalWeight >= 3 && avgConfidence >= 0.7) return 1.0;
+
+  // Linear interpolation between 1 node-weight (0.3) and 3 node-weights (1.0)
+  const linear = totalWeight >= 3 ? 1.0 : 0.3 + (totalWeight - 1) * 0.35;
   return clamp(linear * (avgConfidence / 0.7), 0, 1);
 }
 
@@ -99,9 +120,11 @@ function computeCultural(
   nodes: {
     confidence: number | null;
     extracted_properties_json: string | null;
+    source_type: string | null;
   }[],
 ): number {
-  const covered = new Set<string>();
+  // Track max weight per dimension
+  const dimensionWeights = new Map<string, number>();
 
   for (const node of nodes) {
     if (safeConfidence(node.confidence) < 0.6) continue;
@@ -109,70 +132,93 @@ function computeCultural(
     const dimension =
       typeof props?.dimension === 'string' ? props.dimension : null;
     if (dimension && CULTURAL_DIMENSIONS.has(dimension)) {
-      covered.add(dimension);
+      const w = sourceWeight(node.source_type);
+      const existing = dimensionWeights.get(dimension) ?? 0;
+      if (w > existing) {
+        dimensionWeights.set(dimension, w);
+      }
     }
   }
 
-  return Math.min(covered.size * 0.2, 1.0);
+  let weightedCoverage = 0;
+  for (const w of dimensionWeights.values()) {
+    weightedCoverage += 0.2 * w;
+  }
+
+  return Math.min(weightedCoverage, 1.0);
 }
 
 function computeTechnical(
-  nodes: { confidence: number | null; extracted_properties_json: string | null }[],
+  nodes: { confidence: number | null; extracted_properties_json: string | null; source_type: string | null }[],
 ): number {
-  const count = nodes.length;
-  if (count === 0) return 0.0;
+  if (nodes.length === 0) return 0.0;
 
-  const avgConfidence =
-    nodes.reduce((sum, n) => sum + safeConfidence(n.confidence), 0) / count;
+  let totalWeight = 0;
+  let weightedConfidence = 0;
+  for (const node of nodes) {
+    const w = sourceWeight(node.source_type);
+    totalWeight += w;
+    weightedConfidence += safeConfidence(node.confidence) * w;
+  }
 
-  // Tenure bonus: skills with >=1 year attributed contribute more
-  let skillsWithTenure = 0;
+  const avgConfidence = totalWeight > 0 ? weightedConfidence / totalWeight : 0;
+
+  // Tenure bonus: skills with >=1 year attributed contribute more (weighted)
+  let weightedTenure = 0;
   for (const node of nodes) {
     if (node.extracted_properties_json) {
       const props = safeParseJson(node.extracted_properties_json);
       const years = typeof props?.years_attributed === 'number' ? props.years_attributed : null;
       if (years !== null && years >= 1) {
-        skillsWithTenure++;
+        weightedTenure += sourceWeight(node.source_type);
       }
     }
   }
 
-  const baseScore = Math.min(count / 5, 1.0) * (avgConfidence / 0.65);
-  const tenureBonus = Math.min(skillsWithTenure / 5, 0.3); // max 0.3 bonus
+  const baseScore = Math.min(totalWeight / 5, 1.0) * (avgConfidence / 0.65);
+  const tenureBonus = Math.min(weightedTenure / 5, 0.3); // max 0.3 bonus
 
   return clamp(baseScore + tenureBonus, 0, 1);
 }
 
 function computeMotivation(
-  nodes: { node_type: CandidateNodeType; confidence: number | null }[],
+  nodes: { node_type: CandidateNodeType; confidence: number | null; source_type: string | null }[],
 ): number {
-  let hasMotivation = false;
-  let hasWorkingStyle = false;
-  let hasCareerArc = false;
+  let motivationWeight = 0;
+  let workingStyleWeight = 0;
+  let careerArcWeight = 0;
 
   for (const node of nodes) {
     if (safeConfidence(node.confidence) < 0.6) continue;
-    if (node.node_type === 'Motivation') hasMotivation = true;
-    else if (node.node_type === 'WorkingStyle') hasWorkingStyle = true;
-    else if (node.node_type === 'CareerArc') hasCareerArc = true;
+    const w = sourceWeight(node.source_type);
+    if (node.node_type === 'Motivation') motivationWeight = Math.max(motivationWeight, w);
+    else if (node.node_type === 'WorkingStyle') workingStyleWeight = Math.max(workingStyleWeight, w);
+    else if (node.node_type === 'CareerArc') careerArcWeight = Math.max(careerArcWeight, w);
   }
 
-  if (hasMotivation && hasWorkingStyle && hasCareerArc) return 1.0;
-  if (hasMotivation && hasWorkingStyle) return 0.8;
+  const weightedSum = motivationWeight + workingStyleWeight + careerArcWeight;
+
+  if (motivationWeight > 0 && workingStyleWeight > 0 && careerArcWeight > 0) return Math.min(weightedSum, 1.0);
+  if (motivationWeight > 0 && workingStyleWeight > 0) return Math.min(0.8 * (weightedSum / 2), 1.0);
 
   const typeCount =
-    Number(hasMotivation) + Number(hasWorkingStyle) + Number(hasCareerArc);
-  if (typeCount === 1) return 0.4;
+    Number(motivationWeight > 0) + Number(workingStyleWeight > 0) + Number(careerArcWeight > 0);
+  if (typeCount === 1) return 0.4 * weightedSum;
 
   return 0.0;
 }
 
 function computeContext(
-  nodes: { extracted_properties_json: string | null }[],
+  nodes: { extracted_properties_json: string | null; source_type: string | null }[],
 ): number {
-  const count = nodes.length;
-  if (count === 0) return 0.0;
-  if (count === 1) return 0.5;
+  if (nodes.length === 0) return 0.0;
+
+  let totalWeight = 0;
+  for (const node of nodes) {
+    totalWeight += sourceWeight(node.source_type);
+  }
+
+  if (totalWeight <= 1) return 0.5 * totalWeight;
 
   const subtypes = new Set<string>();
   for (const node of nodes) {
@@ -195,12 +241,13 @@ export async function computeCandidateCoverage(
     node_type: CandidateNodeType;
     confidence: number | null;
     extracted_properties_json: string | null;
+    source_type: string | null;
   }[] = [];
 
   try {
     const result = await db
       .prepare(
-        `SELECT node_type, confidence, extracted_properties_json
+        `SELECT node_type, confidence, extracted_properties_json, source_type
          FROM candidate_nodes
          WHERE candidate_id = ?1
            AND superseded_at IS NULL`,
@@ -210,6 +257,7 @@ export async function computeCandidateCoverage(
         node_type: CandidateNodeType;
         confidence: number | null;
         extracted_properties_json: string | null;
+        source_type: string | null;
       }>();
 
     rows = result.results ?? [];

@@ -1,4 +1,33 @@
 /**
+ * Compute a recency multiplier for a candidate's node set.
+ *
+ * Nodes older than 2 years get a 0.8× multiplier; nodes older than 4 years
+ * get a 0.6× multiplier. Recent nodes keep 1.0×. The result is the average
+ * multiplier across all supplied nodes (returns 1.0 for empty input).
+ *
+ * Used by the matching pipeline to discount fit scores for stale profiles.
+ */
+export function computeRecencyMultiplier(
+  nodes: { captured_at: number }[],
+): number {
+  if (nodes.length === 0) return 1.0;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const TWO_YEARS_SEC = 2 * 365 * 24 * 60 * 60;
+  const FOUR_YEARS_SEC = 4 * 365 * 24 * 60 * 60;
+
+  let total = 0;
+  for (const node of nodes) {
+    const age = nowSec - node.captured_at;
+    if (age > FOUR_YEARS_SEC) total += 0.6;
+    else if (age > TWO_YEARS_SEC) total += 0.8;
+    else total += 1.0;
+  }
+
+  return total / nodes.length;
+}
+
+/**
  * Profile recency analysis and re-engagement triggering for the living candidate graph.
  *
  * Operates on `candidate_nodes` (migration 0052) and `candidate_ingestion`

@@ -68,9 +68,19 @@
               "icon": "lucide-file",
               "title": "New tab"
             }
+          },
+          {
+            "id": "8af6e68fc634f7eb",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "New tab"
+            }
           }
         ],
-        "currentTab": 4
+        "currentTab": 5
       }
     ],
     "direction": "vertical"
@@ -229,8 +239,9 @@
       "bases:Create new base": false
     }
   },
-  "active": "e7fe83971e051bad",
+  "active": "8af6e68fc634f7eb",
   "lastOpenFiles": [
+    "plan/phase-2-enriched-matching-integration.md",
     "plan/strategy-v2/README.md",
     "plan/strategy-v2/part6-market-research/learning-to-rank-data-collection.md",
     "plan/strategy-v2/part6-market-research/kappa-calibration-study.md",
@@ -257,7 +268,6 @@
     "plan/strategy-v2/part5-matching-migration/neo4j-driver-and-binding.md",
     "plan/strategy-v2/part5-matching-migration/observability-recruiter-status.md",
     "plan/strategy-v2/part5-matching-migration/neo4j-dual-write-ingestion.md",
-    "plan/strategy-v2/part5-matching-migration/triangulation-summary-layer.md",
     "plan/strategy-v2/part5-matching-migration",
     "plan/strategy-v2/part4-candidate-ingestion",
     "plan/strategy-v2/part3-repo-ingestion",

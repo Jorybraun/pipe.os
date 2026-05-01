@@ -142,6 +142,64 @@ describe('triangulateMatch', () => {
     expect(result.triangulated_score).toBeLessThanOrEqual(1);
     expect(result.triangulated_score).toBeGreaterThanOrEqual(0);
   });
+
+  it('applies evidence density multiplier to discount thin profiles', () => {
+    const graphResult = makeGraphResult();
+    const situationRankings = [makeSituationRanking(101, 0.6)];
+    const roleRepoAlignments = new Map([[101, 0.8]]);
+
+    const resultWithoutDensity = triangulateMatch({
+      philosophy: 'hybrid',
+      graphResult,
+      situationRankings,
+      roleRepoAlignments,
+      roleCandidateCosine: 0.7,
+    });
+
+    const resultWithDensity = triangulateMatch({
+      philosophy: 'hybrid',
+      graphResult,
+      situationRankings,
+      roleRepoAlignments,
+      roleCandidateCosine: 0.7,
+      evidenceDensity: 0.0,
+    });
+
+    // evidenceDensity=0 => multiplier=0.5
+    expect(resultWithDensity.triangulated_score).toBeCloseTo(
+      resultWithoutDensity.triangulated_score * 0.5,
+      2,
+    );
+  });
+
+  it('full evidence density leaves score unchanged', () => {
+    const graphResult = makeGraphResult();
+    const situationRankings = [makeSituationRanking(101, 0.6)];
+    const roleRepoAlignments = new Map([[101, 0.8]]);
+
+    const resultWithoutDensity = triangulateMatch({
+      philosophy: 'hybrid',
+      graphResult,
+      situationRankings,
+      roleRepoAlignments,
+      roleCandidateCosine: 0.7,
+    });
+
+    const resultWithDensity = triangulateMatch({
+      philosophy: 'hybrid',
+      graphResult,
+      situationRankings,
+      roleRepoAlignments,
+      roleCandidateCosine: 0.7,
+      evidenceDensity: 1.0,
+    });
+
+    // evidenceDensity=1 => multiplier=1.0
+    expect(resultWithDensity.triangulated_score).toBeCloseTo(
+      resultWithoutDensity.triangulated_score,
+      3,
+    );
+  });
 });
 
 describe('triangulateShortlist', () => {

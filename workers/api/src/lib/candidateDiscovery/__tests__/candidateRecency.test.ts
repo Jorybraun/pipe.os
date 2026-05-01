@@ -11,6 +11,7 @@ import {
   analyzeProfileRecency,
   checkAndTriggerReEngagement,
   getDimensionTrajectory,
+  computeRecencyMultiplier,
 } from '../candidateRecency';
 
 beforeEach(() => {
@@ -245,6 +246,38 @@ describe('checkAndTriggerReEngagement', () => {
     const plan = await checkAndTriggerReEngagement(db, 'candidate-1', 'role-1');
 
     expect(plan.shouldRecomputeMatch).toBe(true);
+  });
+});
+
+// ─── computeRecencyMultiplier ────────────────────────────────────────────────
+
+describe('computeRecencyMultiplier', () => {
+  it('returns 1.0 for empty input', () => {
+    expect(computeRecencyMultiplier([])).toBe(1.0);
+  });
+
+  it('returns 1.0 for recent nodes', () => {
+    const nodes = [{ captured_at: Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60 }];
+    expect(computeRecencyMultiplier(nodes)).toBe(1.0);
+  });
+
+  it('returns 0.8 for nodes older than 2 years', () => {
+    const nodes = [{ captured_at: Math.floor(Date.now() / 1000) - 3 * 365 * 24 * 60 * 60 }];
+    expect(computeRecencyMultiplier(nodes)).toBe(0.8);
+  });
+
+  it('returns 0.6 for nodes older than 4 years', () => {
+    const nodes = [{ captured_at: Math.floor(Date.now() / 1000) - 5 * 365 * 24 * 60 * 60 }];
+    expect(computeRecencyMultiplier(nodes)).toBe(0.6);
+  });
+
+  it('averages mixed-age nodes', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const nodes = [
+      { captured_at: now - 30 * 24 * 60 * 60 },
+      { captured_at: now - 3 * 365 * 24 * 60 * 60 },
+    ];
+    expect(computeRecencyMultiplier(nodes)).toBe(0.9); // (1.0 + 0.8) / 2
   });
 });
 

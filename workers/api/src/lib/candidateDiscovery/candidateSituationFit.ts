@@ -95,6 +95,16 @@ export interface CandidateSituationFitInput {
   culturalSignalNodes?: CandidateNode[];
   /** When provided, prefer role-specific CulturalSignal nodes for this role. */
   roleContextId?: string;
+  /** Optional Experience nodes to enrich the prompt. */
+  experienceNodes?: CandidateNode[];
+  /** Optional Project nodes to enrich the prompt. */
+  projectNodes?: CandidateNode[];
+  /** Optional Skill nodes to enrich the prompt. */
+  skillNodes?: CandidateNode[];
+  /** Optional CareerArc nodes to enrich the prompt with trajectory synthesis. */
+  careerArcNodes?: CandidateNode[];
+  /** Optional recency multiplier to discount fit scores for stale profiles. */
+  recencyMultiplier?: number;
 }
 
 export type FitBand = 'strong' | 'moderate' | 'weak' | 'mismatch';
@@ -134,6 +144,10 @@ export async function candidateSituationFit(
     repos,
     input.culturalSignalNodes,
     input.roleContextId,
+    input.experienceNodes,
+    input.projectNodes,
+    input.skillNodes,
+    input.careerArcNodes,
   );
 
   const completion = await provider.complete(
@@ -150,7 +164,7 @@ export async function candidateSituationFit(
   }
 
   const parsed = parseFitResponse(rawText);
-  const rankings = buildRankings(parsed, repos);
+  const rankings = buildRankings(parsed, repos, input.recencyMultiplier);
 
   return { rankings, rawText };
 }
@@ -185,6 +199,13 @@ function buildSystemPrompt(): string {
     '      • test_culture_fit — repo test_style + test_touch_rate vs candidate test_culture_exposure',
     '      • challenge_surface_fit — repo challenge_surfaces vs candidate primary_challenge_types',
     '    Use null for any dimension you genuinely cannot judge. Do NOT fabricate scores.',
+    '',
+    'When enriched fields are present (domain, company_stage, impact_summary, depth_pattern,',
+    'domain_specialization, ownership_progression, impact_themes), use them to refine your',
+    'fit judgments. For example:',
+    '  - A candidate with "domain: fintech" + repo with financial-compliance challenge_surfaces = higher challenge_surface_fit',
+    '  - A candidate with "ownership progression: IC → senior → platform architect" + high-complexity repo = higher complexity_fit',
+    '  - A candidate whose impact_themes include "latency reduction" + repo with performance challenge_surfaces = higher challenge_surface_fit',
     '',
     'Hard rules:',
     '  - Do not invent signals that are not in the candidate input.',
@@ -272,6 +293,148 @@ function buildCulturalSignalBlock(
   ].join('\n');
 }
 
+function buildExperienceBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'Experience' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 5);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const company = typeof props?.company === 'string' ? props.company : '';
+    const role = typeof props?.role === 'string' ? props.role : '';
+    const narrative = node.narrative_text;
+    const recencyTag = recencyTagForNode(node);
+
+    const domain = typeof props?.domain === 'string' ? props.domain : null;
+    const stage = typeof props?.company_stage === 'string' ? props.company_stage : null;
+    const impact = typeof props?.impact_summary === 'string' ? props.impact_summary : null;
+
+    let line = `- ${role}${company ? ` at ${company}` : ''}${recencyTag}: ${narrative}`;
+    if (domain || stage || impact) {
+      const extras: string[] = [];
+      if (domain) extras.push(`domain: ${domain}`);
+      if (stage) extras.push(`stage: ${stage}`);
+      if (impact) extras.push(`impact: ${impact}`);
+      line += ` [${extras.join('; ')}]`;
+    }
+    return line;
+  });
+
+  return [
+    '',
+    '### candidate_experiences',
+    'Career history extracted from the candidate\'s resume:',
+    ...lines,
+  ].join('\n');
+}
+
+function buildProjectBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'Project' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 3);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const name = typeof props?.name === 'string' ? props.name : '';
+    const description = typeof props?.description === 'string' ? props.description : node.narrative_text;
+    const recencyTag = recencyTagForNode(node);
+    return `- ${name}${recencyTag}: ${description}`;
+  });
+
+  return [
+    '',
+    '### candidate_projects',
+    'Notable projects extracted from the candidate\'s resume:',
+    ...lines,
+  ].join('\n');
+}
+
+function buildSkillBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'Skill' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 10);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const name = typeof props?.name === 'string' ? props.name : node.narrative_text;
+    const proficiency = typeof props?.proficiency === 'string' ? props.proficiency : '';
+    const years = typeof props?.years_exposure === 'number' ? props.years_exposure : null;
+    const depthPattern = typeof props?.depth_pattern === 'string' ? props.depth_pattern : null;
+    const recencyTag = recencyTagForNode(node);
+
+    const innerParts: string[] = [];
+    if (proficiency) innerParts.push(proficiency);
+    if (years !== null) innerParts.push(`${years} years`);
+    if (depthPattern) innerParts.push(depthPattern);
+
+    const inner = innerParts.length > 0 ? ` (${innerParts.join(', ')})` : '';
+    return `- ${name}${inner}${recencyTag}`;
+  });
+
+  return [
+    '',
+    '### candidate_skills',
+    'Skill profile extracted from the candidate\'s resume:',
+    ...lines,
+  ].join('\n');
+}
+
+function buildCareerArcBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'CareerArc' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 1);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const domainSpec = typeof props?.domain_specialization === 'string' ? props.domain_specialization : null;
+    const stagePattern = Array.isArray(props?.company_stage_pattern) ? props.company_stage_pattern : null;
+    const ownership = typeof props?.ownership_progression === 'string' ? props.ownership_progression : null;
+    const themes = Array.isArray(props?.impact_themes) ? props.impact_themes : null;
+    const narrative = node.narrative_text;
+
+    const parts: string[] = [narrative];
+    if (domainSpec) parts.push(`domain specialization: ${domainSpec}`);
+    if (stagePattern) parts.push(`company stages: ${stagePattern.join(', ')}`);
+    if (ownership) parts.push(`ownership progression: ${ownership}`);
+    if (themes) parts.push(`impact themes: ${themes.join(', ')}`);
+
+    return parts.join(' | ');
+  });
+
+  return [
+    '',
+    '### candidate_career_arc',
+    'Synthesized career trajectory and cross-cutting patterns:',
+    ...lines,
+  ].join('\n');
+}
+
+function recencyTagForNode(node: CandidateNode): string {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const age = nowSec - node.captured_at;
+  const TWO_YEARS_SEC = 2 * 365 * 24 * 60 * 60;
+  const FOUR_YEARS_SEC = 4 * 365 * 24 * 60 * 60;
+  if (age > FOUR_YEARS_SEC) return ' [4+ years old]';
+  if (age > TWO_YEARS_SEC) return ' [2+ years old]';
+  return '';
+}
+
 function safeParseJson(json: string | null): Record<string, unknown> | null {
   if (!json) return null;
   try {
@@ -287,6 +450,10 @@ function buildUserMessage(
   repos: SituationFitCandidate[],
   culturalSignalNodes?: CandidateNode[],
   roleContextId?: string,
+  experienceNodes?: CandidateNode[],
+  projectNodes?: CandidateNode[],
+  skillNodes?: CandidateNode[],
+  careerArcNodes?: CandidateNode[],
 ): string {
   const candidateBlock = [
     '## Candidate Profile',
@@ -317,12 +484,20 @@ function buildUserMessage(
   ].join('\n');
 
   const culturalBlock = buildCulturalSignalBlock(culturalSignalNodes, roleContextId);
+  const experienceBlock = buildExperienceBlock(experienceNodes);
+  const projectBlock = buildProjectBlock(projectNodes);
+  const skillBlock = buildSkillBlock(skillNodes);
+  const careerArcBlock = buildCareerArcBlock(careerArcNodes);
 
   const repoBlock = repos.map((r, i) => formatRepo(r, i + 1)).join('\n\n');
 
   return [
     candidateBlock,
     culturalBlock,
+    experienceBlock,
+    projectBlock,
+    skillBlock,
+    careerArcBlock,
     '',
     '---',
     '',
@@ -489,6 +664,7 @@ function stripCodeFences(s: string): string {
 function buildRankings(
   parsed: ParsedFitResponse,
   repos: SituationFitCandidate[],
+  recencyMultiplier = 1.0,
 ): SituationFitRanking[] {
   const repoById = new Map(repos.map((r) => [r.repo_id, r]));
   const out: SituationFitRanking[] = [];
@@ -498,7 +674,12 @@ function buildRankings(
       console.error('[candidateSituationFit] dropping unknown repo_id from response:', ranking.repo_id);
       continue;
     }
-    out.push(ranking);
+    const adjustedScore = clamp01(ranking.fit_score * recencyMultiplier);
+    out.push({
+      ...ranking,
+      fit_score: adjustedScore,
+      fit_band: deriveBand(adjustedScore),
+    });
   }
 
   // Stable sort: highest fit first.

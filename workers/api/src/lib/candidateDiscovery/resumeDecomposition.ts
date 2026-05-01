@@ -86,6 +86,9 @@ function experienceToNode(
       team_size: exp.team_size,
       scope: exp.scope,
       skills_demonstrated: exp.skills_demonstrated,
+      domain: exp.domain,
+      company_stage: exp.company_stage,
+      impact_summary: exp.impact_summary,
       index,
     }),
     embedding_json: null,
@@ -140,6 +143,7 @@ function skillToNode(
       proficiency: skill.proficiency,
       years_exposure: skill.years_exposure,
       evidence_source: skill.evidence_source,
+      depth_pattern: skill.depth_pattern,
       index,
     }),
     embedding_json: null,
@@ -209,6 +213,7 @@ function credentialToNode(
 function careerArcToNode(
   candidateId: string,
   arc: DecomposedCareerArc,
+  decomposition: DecompositionResult,
 ): Parameters<typeof insertCandidateNode>[1] {
   return {
     candidate_id: candidateId,
@@ -217,6 +222,10 @@ function careerArcToNode(
     extracted_properties_json: JSON.stringify({
       growth_velocity: arc.growth_velocity,
       transitions: arc.transitions,
+      domain_specialization: decomposition.domain_specialization,
+      company_stage_pattern: decomposition.company_stage_pattern,
+      ownership_progression: decomposition.ownership_progression,
+      impact_themes: decomposition.impact_themes,
     }),
     embedding_json: null,
     source_type: 'resume',
@@ -500,7 +509,7 @@ export async function decomposeResumeToGraph(
       const cred = decomposition.credentials[i]!;
       nodesToInsert.push(credentialToNode(candidateId, cred, i));
     }
-    nodesToInsert.push(careerArcToNode(candidateId, decomposition.career_arc));
+    nodesToInsert.push(careerArcToNode(candidateId, decomposition.career_arc, decomposition));
   } else {
     // No decomposition — fall back to parser-only nodes with lower confidence
     console.log('[resumeDecomposition] No decomposition result provided; falling back to parser-only nodes');

@@ -18,15 +18,21 @@ interface MockNodeRow {
   node_type: string;
   confidence: number | null;
   extracted_properties_json: string | null;
+  source_type?: string;
 }
 
 function buildMockDb(rows: MockNodeRow[]) {
+  // Default source_type to high-weight source so legacy tests behave the same
+  const normalized = rows.map((r) => ({
+    ...r,
+    source_type: r.source_type ?? 'code_review_session',
+  }));
   return {
     prepare: (sql: string) => {
       if (sql.includes('FROM candidate_nodes') && sql.includes('superseded_at')) {
         return {
           bind: () => ({
-            all: async () => ({ results: rows }),
+            all: async () => ({ results: normalized }),
           }),
         };
       }
@@ -177,6 +183,35 @@ describe('computeCandidateCoverage', () => {
     const coverage = await computeCandidateCoverage(db, 'candidate-1');
 
     expect(coverage.context).toBe(1.0);
+  });
+
+  it('source-aware weighting discounts resume-sourced nodes', async () => {
+    // 5 resume-sourced Skill nodes should score lower than 5 code_review-sourced
+    const db = buildMockDb([
+      { node_type: 'Skill', confidence: 0.8, extracted_properties_json: null, source_type: 'resume' },
+      { node_type: 'Skill', confidence: 0.8, extracted_properties_json: null, source_type: 'resume' },
+      { node_type: 'Skill', confidence: 0.8, extracted_properties_json: null, source_type: 'resume' },
+      { node_type: 'Skill', confidence: 0.8, extracted_properties_json: null, source_type: 'resume' },
+      { node_type: 'Skill', confidence: 0.8, extracted_properties_json: null, source_type: 'resume' },
+    ]);
+    const coverage = await computeCandidateCoverage(db, 'candidate-1');
+
+    // 5 resume skills * 0.6 weight = 3.0 weighted count
+    // baseScore = min(3/5, 1) * (0.8/0.65) = 0.6 * 1.23 = 0.738
+    expect(coverage.technical).toBeLessThan(1.0);
+    expect(coverage.technical).toBeCloseTo(0.738, 2);
+  });
+
+  it('source-aware cultural coverage weights dimensions by best source', async () => {
+    const db = buildMockDb([
+      { node_type: 'CulturalSignal', confidence: 0.8, extracted_properties_json: '{"dimension":"ownership"}', source_type: 'resume' },
+      { node_type: 'CulturalSignal', confidence: 0.8, extracted_properties_json: '{"dimension":"ownership"}', source_type: 'culture_interview' },
+    ]);
+    const coverage = await computeCandidateCoverage(db, 'candidate-1');
+
+    // ownership dimension uses max weight (culture_interview = 1.0)
+    // weightedCoverage = 0.2 * 1.0 = 0.2
+    expect(coverage.cultural).toBe(0.2);
   });
 });
 

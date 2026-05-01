@@ -53,6 +53,8 @@ export interface TriangulateMatchInput {
   vectorRoleCandidate?: number | null;
   /** Vector ANN score for candidate→repo query (optional). */
   vectorCandidateRepo?: number | null;
+  /** Evidence density from candidate coverage (0..1). When provided, the final score is discounted for thin profiles. */
+  evidenceDensity?: number | null;
 }
 
 // ─── Weight presets ─────────────────────────────────────────────────────────
@@ -147,6 +149,7 @@ export function triangulateMatch(input: TriangulateMatchInput): TriangulatedScor
     vectorRoleRepo,
     vectorRoleCandidate,
     vectorCandidateRepo,
+    evidenceDensity,
   } = input;
 
   const winner = graphResult.repoChoice;
@@ -183,6 +186,11 @@ export function triangulateMatch(input: TriangulateMatchInput): TriangulatedScor
       vw.vector_role_cand * (vectorRoleCandidate ?? 0) +
       vw.vector_cand_repo * (vectorCandidateRepo ?? 0);
   }
+
+  // Apply evidence density multiplier (Subtask 4.1.2)
+  // Thin profiles get discounted by up to 50%
+  const densityMultiplier = evidenceDensity != null ? 0.5 + evidenceDensity * 0.5 : 1.0;
+  triangulatedScore = triangulatedScore * densityMultiplier;
 
   return {
     repo_id: repoId,
@@ -236,11 +244,15 @@ export function triangulateShortlist(
     vectorRoleRepo,
     vectorRoleCandidate,
     vectorCandidateRepo,
+    evidenceDensity,
   } = input;
 
   const useVectors = hasVectorSignals(input);
   const w = useVectors ? VECTOR_WEIGHTS[philosophy] : LEGACY_WEIGHTS[philosophy];
   const results: BatchTriangulatedScore[] = [];
+
+  // Apply evidence density multiplier (Subtask 4.1.2)
+  const densityMultiplier = evidenceDensity != null ? 0.5 + evidenceDensity * 0.5 : 1.0;
 
   for (const item of graphResult.shortlist) {
     const repoId = item.repoId;
@@ -261,6 +273,8 @@ export function triangulateShortlist(
         vw.vector_role_cand * (vectorRoleCandidate ?? 0) +
         vw.vector_cand_repo * (vectorCandidateRepo ?? 0);
     }
+
+    score = score * densityMultiplier;
 
     const clamped = clamp01(score);
     results.push({

@@ -50,6 +50,8 @@ import {
 import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
 import { getActiveCandidateNodes } from './candidateNodes';
 import { decomposeResumeToGraph } from './resumeDecomposition';
+import { computeRecencyMultiplier } from './candidateRecency';
+import { getCandidateCoverage } from './candidateCoverage';
 
 export interface IngestionInput {
   env: Env;
@@ -354,16 +356,40 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     if (name) c.full_name = name;
   }
 
-  // Step 8: Load cultural signal nodes for prompt enrichment
+  // Step 8: Load candidate nodes for prompt enrichment (graph-enabled matching)
   let culturalSignalNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
+  let experienceNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
+  let projectNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
+  let skillNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
+  let careerArcNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
   try {
-    culturalSignalNodes = await getActiveCandidateNodes(db, candidateId, 'CulturalSignal');
+    [culturalSignalNodes, experienceNodes, projectNodes, skillNodes, careerArcNodes] = await Promise.all([
+      getActiveCandidateNodes(db, candidateId, 'CulturalSignal'),
+      getActiveCandidateNodes(db, candidateId, 'Experience'),
+      getActiveCandidateNodes(db, candidateId, 'Project'),
+      getActiveCandidateNodes(db, candidateId, 'Skill'),
+      getActiveCandidateNodes(db, candidateId, 'CareerArc'),
+    ]);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[ingestion] failed to load cultural signal nodes for ${candidateId}:`, msg);
+    console.warn(`[ingestion] failed to load candidate nodes for ${candidateId}:`, msg);
   }
 
-  const promptVersion = culturalSignalNodes.length > 0 ? 'v2-cultural' : 'v1';
+  // Compute recency multiplier from all active resume-derived nodes
+  const allResumeNodes = [...experienceNodes, ...projectNodes, ...skillNodes, ...careerArcNodes];
+  const recencyMultiplier = allResumeNodes.length > 0 ? computeRecencyMultiplier(allResumeNodes) : 1.0;
+
+  const hasGraphNodes =
+    culturalSignalNodes.length > 0 ||
+    experienceNodes.length > 0 ||
+    projectNodes.length > 0 ||
+    skillNodes.length > 0 ||
+    careerArcNodes.length > 0;
+
+  // v3-graph-enriched: includes CareerArc + enriched Experience/Skill fields
+  // v2-graph: basic graph nodes without enrichment
+  // v1: flat profile only
+  const promptVersion = careerArcNodes.length > 0 ? 'v3-graph-enriched' : hasGraphNodes ? 'v2-graph' : 'v1';
 
   // Step 9: Candidate situation fit (with per-repo cache)
   const cachedRankings: SituationFitRanking[] = [];
@@ -406,6 +432,11 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       repos: missRepos,
       ...(culturalSignalNodes.length > 0 ? { culturalSignalNodes } : {}),
       ...(roleContextRow ? { roleContextId: roleContextRow.id } : {}),
+      ...(experienceNodes.length > 0 ? { experienceNodes } : {}),
+      ...(projectNodes.length > 0 ? { projectNodes } : {}),
+      ...(skillNodes.length > 0 ? { skillNodes } : {}),
+      ...(careerArcNodes.length > 0 ? { careerArcNodes } : {}),
+      recencyMultiplier,
     });
 
     // Store cache for each miss
@@ -436,6 +467,23 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     };
   }
 
+  // Step 9.5: Load coverage for evidence density multiplier
+  let evidenceDensity: number | null = null;
+  try {
+    const coverage = await getCandidateCoverage(db, candidateId);
+    if (coverage) {
+      evidenceDensity =
+        coverage.experience_coverage * 0.3 +
+        coverage.technical_coverage * 0.3 +
+        coverage.cultural_coverage * 0.2 +
+        coverage.motivation_coverage * 0.1 +
+        coverage.context_coverage * 0.1;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to load coverage for ${candidateId}:`, msg);
+  }
+
   // Step 10: Triangulate
   const vectorCandidateRepo = matchResult.repoChoice.cosine;
   let triangulated = triangulateMatch({
@@ -447,6 +495,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     vectorCandidateRepo,
     vectorRoleRepo,
     vectorRoleCandidate,
+    evidenceDensity,
   });
 
   let winnerRepoId = triangulated.repo_id;
@@ -465,6 +514,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       vectorCandidateRepo,
       vectorRoleRepo,
       vectorRoleCandidate,
+      evidenceDensity,
     });
 
     if (shortlistScores.length > 0) {
@@ -508,6 +558,7 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
             vectorCandidateRepo: tailoredWinner.cosine,
             vectorRoleRepo,
             vectorRoleCandidate,
+            evidenceDensity,
           });
         }
       }
