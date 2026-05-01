@@ -16,6 +16,7 @@ import { LiquidMetalCard } from "..";
 import { FieldGroup, TextInput } from "../ui/form";
 import { useCandidateCreate } from "../../hooks/useCandidateCreate";
 import { useAuth as useClerkAuth } from "@clerk/react";
+import { useTheme } from "../../contexts/ThemeContext";
 
 interface CandidateIntakeModalProps {
   pipelineId: string;
@@ -49,6 +50,8 @@ export function CandidateIntakeModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { create, isSubmitting: isCreating } = useCandidateCreate();
   const { getToken } = useClerkAuth();
+  const { theme } = useTheme();
+  const isLight = theme.mode === 'light' || theme.mode === 'anatomy';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -180,7 +183,7 @@ export function CandidateIntakeModal({
       position: "fixed",
       inset: 0,
       zIndex: 1000,
-      background: "rgba(0,0,0,0.8)",
+      background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.8)",
       backdropFilter: "blur(8px)",
       display: "flex",
       alignItems: "center",
@@ -188,13 +191,14 @@ export function CandidateIntakeModal({
       padding: 20
     }}>
       <LiquidMetalCard 
-        variant="chrome" 
+        variant={isLight ? "default" : "chrome"} 
         style={{ 
           width: "100%", 
           maxWidth: 640, 
           padding: 0,
           overflow: "hidden",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.5)"
+          background: isLight ? "var(--pipe-surface-solid, #ffffff)" : undefined,
+          boxShadow: isLight ? "0 24px 60px rgba(0,0,0,0.15)" : "0 24px 60px rgba(0,0,0,0.5)"
         }}
       >
         {/* Header */}
@@ -260,7 +264,8 @@ export function CandidateIntakeModal({
                   fontSize: 10,
                   color: "var(--pipe-text-dim)",
                   marginBottom: 12,
-                  fontFamily: "Space Mono"
+                  fontFamily: "Space Mono",
+                  fontWeight: 600
                 }}>
                   GITHUB_HANDLE (OPTIONAL)
                 </label>
@@ -296,7 +301,7 @@ export function CandidateIntakeModal({
                 <div 
                   onClick={() => fileInputRef.current?.click()}
                   style={{
-                    border: "1px dashed rgba(255,255,255,0.1)",
+                    border: isLight ? "1px dashed var(--pipe-border)" : "1px dashed rgba(255,255,255,0.1)",
                     borderRadius: 8,
                     padding: 40,
                     textAlign: "center",
