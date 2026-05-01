@@ -44,6 +44,8 @@ export interface ProviderEnv {
   KIMI_API_KEY?: string;
   KIMI_BASE_URL?: string;
   KIMI_MODEL?: string;
+  /** Cloudflare Workers AI model override. Default: @cf/meta/llama-3.1-8b-instruct */
+  CLOUDFLARE_AI_MODEL?: string;
   AI?: Ai;
   /** When 'true', culture agent returns null provider and uses deterministic mock path. */
   MOCK_AI?: string;
@@ -144,7 +146,7 @@ function _createFallbackForPrimary(env: ProviderEnv, primaryName: ProviderName):
 
 function _createProviderByName(env: ProviderEnv, providerName: ProviderName): LLMProvider | null {
   if (providerName === 'cloudflare-ai') {
-    if (env.AI) return new CloudflareAIProvider(env.AI);
+    if (env.AI) return new CloudflareAIProvider(env.AI, env.CLOUDFLARE_AI_MODEL);
     return null;
   }
 
@@ -183,7 +185,7 @@ export function createCultureAgentProvider(env: ProviderEnv): LLMProvider | null
 
   if (providerName === 'cloudflare-ai') {
     if (!env.AI) return null;
-    return new CloudflareAIProvider(env.AI);
+    return new CloudflareAIProvider(env.AI, env.CLOUDFLARE_AI_MODEL);
   }
 
   if (providerName === 'vertex-ai') {
@@ -196,6 +198,12 @@ export function createCultureAgentProvider(env: ProviderEnv): LLMProvider | null
     const key = env.GOOGLE_AI_API_KEY ?? '';
     if (!key) return null;
     return new GoogleAIProvider(key);
+  }
+
+  if (providerName === 'kimi') {
+    const key = env.KIMI_API_KEY ?? '';
+    if (!key) return null;
+    return new KimiProvider(key, env.KIMI_MODEL ?? 'kimi-k2-6', env.KIMI_BASE_URL);
   }
 
   return null;
@@ -212,7 +220,7 @@ export function createCopilotProvider(env: ProviderEnv): LLMProvider | null {
 
   if (providerName === 'cloudflare-ai') {
     if (!env.AI) return null;
-    return new CloudflareAIProvider(env.AI);
+    return new CloudflareAIProvider(env.AI, env.CLOUDFLARE_AI_MODEL);
   }
 
   if (providerName === 'vertex-ai') {
@@ -235,7 +243,7 @@ export function createCandidateAgentProvider(env: ProviderEnv): LLMProvider | nu
   const providerName = (env.CANDIDATE_AGENT_PROVIDER ?? 'cloudflare-ai') as ProviderName;
 
   if (providerName === 'cloudflare-ai') {
-    if (env.AI) return new CloudflareAIProvider(env.AI);
+    if (env.AI) return new CloudflareAIProvider(env.AI, env.CLOUDFLARE_AI_MODEL);
     return null;
   }
 
@@ -254,6 +262,12 @@ export function createCandidateAgentProvider(env: ProviderEnv): LLMProvider | nu
     const key = env.GOOGLE_AI_API_KEY ?? '';
     if (!key) return null;
     return new GoogleAIProvider(key);
+  }
+
+  if (providerName === 'kimi') {
+    const key = env.KIMI_API_KEY ?? '';
+    if (!key) return null;
+    return new KimiProvider(key, env.KIMI_MODEL ?? 'kimi-k2-6', env.KIMI_BASE_URL);
   }
 
   return null;
