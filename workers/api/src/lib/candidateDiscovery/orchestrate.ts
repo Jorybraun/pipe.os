@@ -30,7 +30,7 @@ import { matchReposForCandidate } from '../match/matchReposForCandidate';
 import { triangulateMatch, triangulateShortlist } from '../match/triangulateMatch';
 import { pickReviewPr, pickImplementationIssue } from '../match/autoStageBuilder';
 import { discoverCandidateProfile, type CandidateDiscoveryResult } from './agent';
-import { embedAndUpsertCandidate } from './embed';
+import { embedAndUpsertCandidate, upsertCandidateVector } from './embed';
 import {
   upsertPendingIngestion,
   persistCandidateProfile,
@@ -47,11 +47,12 @@ import {
   type SituationFitCandidate,
   type SituationFitRanking,
 } from './candidateSituationFit';
-import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
+import { cosineSimilarity, parseEmbeddingJson, meanPoolVectors } from '../embedding/cosine';
 import { getActiveCandidateNodes } from './candidateNodes';
 import { decomposeResumeToGraph } from './resumeDecomposition';
 import { computeRecencyMultiplier } from './candidateRecency';
 import { getCandidateCoverage } from './candidateCoverage';
+import { buildProfileSections } from './buildProfileSections';
 
 export interface IngestionInput {
   env: Env;
@@ -109,31 +110,57 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   // Step 3.5: Decompose resume into candidate_nodes (ADR-041 Phase 1)
   // This runs after profile persistence but before embedding.
   // Failures are logged but do not block the pipeline.
+  let decompositionEmbeddings: number[][] = [];
   try {
-    await decomposeResumeToGraph({ db, candidateId, resumeText, parsedCV: parsed, env, decompositionResult: input.decompositionResult });
+    const decompResult = await decomposeResumeToGraph({
+      db, candidateId, resumeText, parsedCV: parsed, env,
+      decompositionResult: input.decompositionResult,
+      vectorize: env.CANDIDATE_INDEX,
+    });
+    decompositionEmbeddings = decompResult.embeddings;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);
   }
 
   // Step 4: Embed into CANDIDATE_INDEX
+  // Primary: aggregate sub-element embeddings (mean pool + L2 norm).
+  // Fallback: embed the prose profile directly if decomposition yielded no vectors.
   let embedResult: Awaited<ReturnType<typeof embedAndUpsertCandidate>>;
   try {
-    embedResult = await embedAndUpsertCandidate({
-      ai: env.AI,
-      vectorize: env.CANDIDATE_INDEX,
-      candidateId,
-      profile: discoveryResult.candidateSearchableProfile,
-      metadata: {
-        seniority: discoveryResult.keyConcepts.seniority,
-        primary_language: discoveryResult.keyConcepts.primary_language,
-        profile_version: discoveryResult.profileVersion,
-      },
-      db,
-    });
+    const aggregateVector = meanPoolVectors(decompositionEmbeddings);
+    if (aggregateVector) {
+      embedResult = await upsertCandidateVector({
+        vectorize: env.CANDIDATE_INDEX,
+        candidateId,
+        vector: aggregateVector,
+        metadata: {
+          seniority: discoveryResult.keyConcepts.seniority,
+          primary_language: discoveryResult.keyConcepts.primary_language,
+          profile_version: discoveryResult.profileVersion,
+          aggregate_source: 'node_mean_pool',
+        },
+        db,
+      });
+      console.log('[ingestion] Upserted aggregate vector from', decompositionEmbeddings.length, 'node embeddings');
+    } else {
+      // Fallback to prose-generated embedding when decomposition has no vectors
+      embedResult = await embedAndUpsertCandidate({
+        ai: env.AI,
+        vectorize: env.CANDIDATE_INDEX,
+        candidateId,
+        profile: discoveryResult.candidateSearchableProfile,
+        metadata: {
+          seniority: discoveryResult.keyConcepts.seniority,
+          primary_language: discoveryResult.keyConcepts.primary_language,
+          profile_version: discoveryResult.profileVersion,
+        },
+        db,
+      });
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ingestion] embedAndUpsertCandidate failed:', msg);
+    console.error('[ingestion] embed/upsert failed:', msg);
     await markIngestionFailed(db, candidateId, `Embed failed: ${msg}`);
     return;
   }
@@ -644,6 +671,46 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
     matchPhilosophy: philosophy,
   };
   await markIngestionMatched(db, matchedInput);
+
+  // Step 12: Persist profile sections for dynamic frontend rendering
+  try {
+    const dims = triangulated.dimensions as Record<string, number>;
+    const matchData = {
+      score: triangulated.triangulated_score,
+      dimensions: {
+        skillCoverage: dims.skill_coverage ?? 0,
+        semanticSimilarity: dims.semantic_similarity ?? 0,
+        situationFit: dims.situation_fit ?? 0,
+        roleAlignment: dims.role_alignment ?? 0,
+      },
+      reasoning: winnerSituation
+        ? {
+            matches: winnerSituation.reasoning.matches,
+            mismatches: winnerSituation.reasoning.mismatches,
+          }
+        : undefined,
+      philosophy,
+      repoName: winnerRepoUrl ? winnerRepoUrl.replace('https://github.com/', '') : undefined,
+      repoUrl: winnerRepoUrl,
+    };
+
+    // Load decomposition result from candidate_nodes (resume-derived graph)
+    // We don't have direct access to DecompositionResult here, so we build
+    // sections from discovery result + match data only.
+    const profileSections = buildProfileSections(null, discoveryResult, matchData, null);
+
+    await db
+      .prepare(
+        `UPDATE candidate_ingestion
+         SET profile_sections_json = ?1
+         WHERE candidate_id = ?2`,
+      )
+      .bind(JSON.stringify(profileSections), candidateId)
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to persist profile sections for ${candidateId}:`, msg);
+  }
 }
 
 // ─── Utility ────────────────────────────────────────────────────────────────

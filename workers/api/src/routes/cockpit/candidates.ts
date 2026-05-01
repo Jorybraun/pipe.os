@@ -10,10 +10,11 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { parseResume, persistParsedCV, extractTextFromPDF } from '../../lib/cvParser';
-import { runCandidateIngestion } from '../../lib/candidateDiscovery/orchestrate';
+import { parseResume, persistParsedCV } from '../../lib/cvParser';
+import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 import { sendNotificationEmail } from '../../lib/email';
 import { runDealbreakerGates } from '../../lib/match/dealbreakerGate';
+import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileSections';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -524,34 +525,10 @@ candidateOps.get('/:candidateId', async (c) => {
   }));
 
   // Fetch candidate ingestion / enrichment data
-  let ingestionRow: {
-    status: string;
-    candidate_searchable_profile: string | null;
-    key_concepts_json: string | null;
-    profile_version: string | null;
-    model_used: string | null;
-    decomposition_version: string | null;
-    triangulated_score: number | null;
-    role_candidate_cosine: number | null;
-    dimensions_json: string | null;
-    reasoning_json: string | null;
-    match_philosophy: string | null;
-    career_context_json: string | null;
-    situation_signature_json: string | null;
-    key_situations_json: string | null;
-    github_url: string | null;
-    last_enriched_at: string | null;
-    profile_generated_at: string | null;
-    profile_embedded_at: string | null;
-    matched_at: string | null;
-    error_text: string | null;
-    matched_repo_name: string | null;
-    matched_repo_url: string | null;
-    enrichment_job_status: string | null;
-  } | null = null;
+  let ingestionRow: any = null;
 
   try {
-    const ingestionResult = await db
+    ingestionRow = await db
       .prepare(
         `SELECT ci.status, ci.candidate_searchable_profile, ci.key_concepts_json,
                 ci.profile_version, ci.model_used, ci.decomposition_version,
@@ -560,7 +537,7 @@ candidateOps.get('/:candidateId', async (c) => {
                 ci.career_context_json, ci.situation_signature_json, ci.key_situations_json,
                 ci.github_url, ci.last_enriched_at,
                 ci.profile_generated_at, ci.profile_embedded_at, ci.matched_at,
-                ci.error_text,
+                ci.error_text, ci.github_calendar_json, ci.profile_sections_json,
                 qr.full_name AS matched_repo_name, qr.github_url AS matched_repo_url,
                 ej.status AS enrichment_job_status
          FROM candidates c
@@ -571,8 +548,7 @@ candidateOps.get('/:candidateId', async (c) => {
          ORDER BY ej.created_at DESC LIMIT 1`,
       )
       .bind(candidateId)
-      .first<typeof ingestionRow>();
-    ingestionRow = ingestionResult ?? null;
+      .first() as Record<string, unknown> | null;
   } catch {
     // candidate_ingestion or related tables may not exist yet
   }
@@ -630,8 +606,52 @@ candidateOps.get('/:candidateId', async (c) => {
         matchedAt: ingestionRow.matched_at,
         errorText: ingestionRow.error_text,
         enrichmentJobStatus: ingestionRow.enrichment_job_status,
+        githubCalendar: ingestionRow.github_calendar_json
+          ? (JSON.parse(ingestionRow.github_calendar_json) as {
+              totalContributions: number;
+              weeks: Array<{ contributionDays: Array<{ date: string; count: number }> }>;
+            })
+          : null,
       }
     : null;
+
+  // Build or load profile sections for dynamic rendering
+  let profileSections: Array<{ type: string; props: Record<string, unknown> }> = [];
+  if (ingestionRow?.profile_sections_json) {
+    try {
+      profileSections = JSON.parse(ingestionRow.profile_sections_json) as typeof profileSections;
+    } catch {
+      // ignore parse errors
+    }
+  }
+  if (profileSections.length === 0 && ingestion) {
+    // Compute on-the-fly from available ingestion data
+    const matchData = ingestion.status === 'matched' && ingestion.triangulatedScore !== null
+      ? {
+          score: ingestion.triangulatedScore,
+          dimensions: ingestion.dimensions ?? undefined,
+          reasoning: ingestion.reasoning ?? undefined,
+          philosophy: ingestion.matchPhilosophy ?? undefined,
+          repoName: ingestion.matchedRepoName ?? undefined,
+          repoUrl: ingestion.matchedRepoUrl ?? undefined,
+        }
+      : null;
+    const calendar = ingestion.githubCalendar
+      ? {
+          totalContributions: ingestion.githubCalendar.totalContributions,
+          weeks: ingestion.githubCalendar.weeks,
+        }
+      : null;
+    profileSections = buildProfileSections(null, {
+      candidateSearchableProfile: ingestion.candidateSearchableProfile ?? '',
+      keyConcepts: ingestion.keyConcepts,
+      careerContext: ingestion.careerContext,
+      situationSignature: ingestion.situationSignature,
+      profileVersion: ingestion.profileVersion ?? '',
+      modelUsed: ingestion.modelUsed ?? '',
+      rawText: '',
+    } as any, matchData, calendar);
+  }
 
   return c.json({
     candidate: {
@@ -658,6 +678,7 @@ candidateOps.get('/:candidateId', async (c) => {
     stages: stagesWithChallenges,
     phoneCalls,
     ingestion,
+    profileSections,
   });
 });
 
@@ -773,23 +794,21 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     }
   }
 
-  // Trigger background ingestion — never fail the upload if ingestion fails
-  if (fileEntry.type === 'application/pdf') {
-    try {
-      const resumeText = await extractTextFromPDF(arrayBuffer);
-      runCandidateIngestion({
-        env: c.env,
-        db,
-        candidateId,
-        parsed: parsed ?? { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
-        resumeText,
-        decompositionResult,
-      }).catch((err) => {
-        console.error('[candidates/resume] background ingestion error:', err);
-      });
-    } catch (err) {
-      console.error('[candidates/resume] text extraction failed, skipping ingestion:', err);
-    }
+  // Queue resume ingestion job — processed by enrichment worker cron
+  // This replaces the old fire-and-forget approach with proper retries & observability
+  try {
+    await db
+      .prepare(
+        `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
+         VALUES (?1, ?2, 'resume', ?3, 'PENDING', unixepoch())`,
+      )
+      .bind(crypto.randomUUID(), candidateId, r2Key)
+      .run();
+    console.log(`[intake] queued resume ingestion for candidate ${candidateId}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[candidates/resume] failed to queue resume ingestion for ${candidateId}:`, msg);
+    // Non-fatal: don't fail the upload if queuing fails
   }
 
   return c.json({ success: true, r2Key, parsed }, 201);

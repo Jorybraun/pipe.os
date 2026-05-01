@@ -24,7 +24,7 @@
 
 import { insertCandidateNode, embedCandidateNode } from '../candidateDiscovery/candidateNodes';
 import { GitHubClient } from './githubClient';
-import type { GitHubRepo, GitHubUserProfile, GitHubOrg } from './githubClient';
+import type { GitHubRepo, GitHubUserProfile, GitHubOrg, ContributionCalendar } from './githubClient';
 
 export interface EnrichResult {
   nodesCreated: number;
@@ -67,6 +67,7 @@ export async function enrichCandidateFromGitHub(
   // Fetch secondary data (best-effort)
   let prs: Awaited<ReturnType<GitHubClient['getMergedPullRequests']>> = [];
   let orgs: Awaited<ReturnType<GitHubClient['getUserOrgs']>> = [];
+  let calendar: ContributionCalendar | null = null;
 
   try {
     [prs, orgs] = await Promise.all([
@@ -76,6 +77,16 @@ export async function enrichCandidateFromGitHub(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[githubEnrich] PR/org fetch failed for ${handle}:`, msg);
+  }
+
+  // Fetch contribution calendar (best-effort, requires token for GraphQL)
+  if (token) {
+    try {
+      calendar = await client.getContributionCalendar(handle);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[githubEnrich] Contribution calendar fetch failed for ${handle}:`, msg);
+    }
   }
 
   // ─── Idempotency: supersede all prior github_enrichment nodes ────────────────
@@ -159,6 +170,14 @@ export async function enrichCandidateFromGitHub(
           .map(([lang]) => lang),
         owned_repos: nonForkRepos.length,
         external_contributions: contributions.length,
+        contribution_calendar: calendar
+          ? {
+              total_contributions: calendar.totalContributions,
+              daily_counts: calendar.weeks.flatMap((w) =>
+                w.contributionDays.flatMap((d) => [d.date, d.count]),
+              ),
+            }
+          : undefined,
       }),
       embedding_json: null,
       source_type: 'github_enrichment',
@@ -291,14 +310,19 @@ export async function enrichCandidateFromGitHub(
     }
   }
 
-  // Update candidate_ingestion enrichment timestamp
+  // Update candidate_ingestion enrichment timestamp + calendar
   await db
     .prepare(
       `UPDATE candidate_ingestion
-       SET last_enriched_at = ?1, updated_at = ?2
-       WHERE candidate_id = ?3`,
+       SET last_enriched_at = ?1, updated_at = ?2, github_calendar_json = ?3
+       WHERE candidate_id = ?4`,
     )
-    .bind(Math.floor(Date.now() / 1000), new Date().toISOString(), candidateId)
+    .bind(
+      Math.floor(Date.now() / 1000),
+      new Date().toISOString(),
+      calendar ? JSON.stringify(calendar) : null,
+      candidateId,
+    )
     .run();
 
   return { nodesCreated, reposFound: repos.length };

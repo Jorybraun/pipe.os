@@ -8,6 +8,7 @@
  *   - getMergedPullRequests(handle, maxResults) — search API for merged PRs
  *   - getUserOrgs(handle) — organization memberships
  *   - getRepoLanguages(owner, repo)
+ *   - getContributionCalendar(handle) — GraphQL contribution calendar
  *
  * Rate limit guard: throws GitHubRateLimitError when x-ratelimit-remaining < 10.
  */
@@ -61,11 +62,16 @@ export interface MergedPR {
   created_at: string;
 }
 
-export interface GitHubContribution {
-  repo_id: number;
-  repo_name: string;
-  repo_full_name: string;
-  event_count: number;
+export interface ContributionDay {
+  date: string; // "2025-04-15"
+  count: number; // 0–N
+}
+
+export interface ContributionCalendar {
+  totalContributions: number;
+  weeks: Array<{
+    contributionDays: ContributionDay[];
+  }>;
 }
 
 export class GitHubRateLimitError extends Error {
@@ -142,44 +148,82 @@ export class GitHubClient {
   }
 
   /**
-   * @deprecated Use getMergedPullRequests instead — events API only covers last 90 days.
+   * Fetch contribution calendar via GitHub GraphQL API.
+   * Returns 52+ weeks of daily commit counts.
    */
-  async getContributedRepos(handle: string): Promise<GitHubContribution[]> {
-    const url = `https://api.github.com/users/${encodeURIComponent(handle)}/events/public?per_page=100`;
-    const res = await this.fetch(url);
-    const events = (await res.json()) as Array<{
-      repo?: { id: number; name: string; url: string };
-      type: string;
-    }>;
-
-    const counts = new Map<
-      number,
-      { repo_name: string; repo_full_name: string; count: number }
-    >();
-
-    for (const ev of events) {
-      if (!ev.repo) continue;
-      const repoId = ev.repo.id;
-      const existing = counts.get(repoId);
-      if (existing) {
-        existing.count += 1;
-      } else {
-        counts.set(repoId, {
-          repo_name: ev.repo.name.split('/')[1] ?? ev.repo.name,
-          repo_full_name: ev.repo.name,
-          count: 1,
-        });
+  async getContributionCalendar(handle: string): Promise<ContributionCalendar> {
+    const query = `
+      query($login: String!) {
+        user(login: $login) {
+          contributionsCollection {
+            contributionCalendar {
+              totalContributions
+              weeks {
+                contributionDays {
+                  contributionCount
+                  date
+                }
+              }
+            }
+          }
+        }
       }
+    `;
+
+    const res = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.token ?? ''}`,
+        'User-Agent': 'pipe-api/1.0',
+      },
+      body: JSON.stringify({ query, variables: { login: handle } }),
+    });
+
+    if (!res.ok) {
+      if (res.status === 403) {
+        throw new GitHubRateLimitError(`[githubClient] GraphQL rate limited`);
+      }
+      throw new Error(`[githubClient] GraphQL error ${res.status}`);
     }
 
-    return Array.from(counts.entries())
-      .filter(([, v]) => v.count >= 5)
-      .map(([repo_id, v]) => ({
-        repo_id,
-        repo_name: v.repo_name,
-        repo_full_name: v.repo_full_name,
-        event_count: v.count,
-      }));
+    const data = (await res.json()) as {
+      data?: {
+        user?: {
+          contributionsCollection?: {
+            contributionCalendar?: {
+              totalContributions: number;
+              weeks: Array<{
+                contributionDays: Array<{
+                  contributionCount: number;
+                  date: string;
+                }>;
+              }>;
+            };
+          };
+        };
+      };
+      errors?: Array<{ message: string }>;
+    };
+
+    if (data.errors && data.errors.length > 0) {
+      throw new Error(`[githubClient] GraphQL error: ${data.errors[0]!.message}`);
+    }
+
+    const calendar = data.data?.user?.contributionsCollection?.contributionCalendar;
+    if (!calendar) {
+      throw new Error(`[githubClient] No contribution calendar found for ${handle}`);
+    }
+
+    return {
+      totalContributions: calendar.totalContributions,
+      weeks: calendar.weeks.map((w) => ({
+        contributionDays: w.contributionDays.map((d) => ({
+          date: d.date,
+          count: d.contributionCount,
+        })),
+      })),
+    };
   }
 
   /** Fetch language breakdown for a repo. */

@@ -720,6 +720,16 @@ export interface CandidateMatchReasoning {
   mismatches: string[];
 }
 
+export interface ContributionCalendar {
+  totalContributions: number;
+  weeks: Array<{
+    contributionDays: Array<{
+      date: string;
+      count: number;
+    }>;
+  }>;
+}
+
 export interface CandidateEnrichmentRecord {
   status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
   candidateSearchableProfile: string | null;
@@ -744,6 +754,12 @@ export interface CandidateEnrichmentRecord {
   matchedAt: string | null;
   errorText: string | null;
   enrichmentJobStatus: string | null;
+  githubCalendar: ContributionCalendar | null;
+}
+
+export interface ProfileSection {
+  type: string;
+  props: Record<string, unknown>;
 }
 
 export interface CandidateProfileResponse {
@@ -752,6 +768,7 @@ export interface CandidateProfileResponse {
   phoneCalls: PhoneCallRecord[];
   reviewSessions?: ReviewSessionListItem[];
   ingestion: CandidateEnrichmentRecord | null;
+  profileSections: ProfileSection[];
 }
 
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)

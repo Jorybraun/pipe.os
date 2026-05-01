@@ -14,6 +14,7 @@ import type {
   ProfileStage,
   PhoneCallRecord,
   CandidateEnrichmentRecord,
+  ProfileSection,
 } from '../lib/api/types';
 import { ApiError } from '../lib/api/types';
 
@@ -22,6 +23,7 @@ export interface UseCandidateProfileResult {
   stages: ProfileStage[];
   phoneCalls: PhoneCallRecord[];
   ingestion: CandidateEnrichmentRecord | null;
+  profileSections: ProfileSection[];
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
@@ -44,6 +46,7 @@ export function useCandidateProfile(
   const [stages, setStages] = useState<ProfileStage[]>([]);
   const [phoneCalls, setPhoneCalls] = useState<PhoneCallRecord[]>([]);
   const [ingestion, setIngestion] = useState<CandidateEnrichmentRecord | null>(null);
+  const [profileSections, setProfileSections] = useState<ProfileSection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -63,6 +66,7 @@ export function useCandidateProfile(
       setStages(data.stages);
       setPhoneCalls(data.phoneCalls ?? []);
       setIngestion(data.ingestion ?? null);
+      setProfileSections(data.profileSections ?? []);
     } catch (err) {
       if (err instanceof ApiError) {
         console.error('[useCandidateProfile] API error:', err.code, err.message);
@@ -141,6 +145,7 @@ export function useCandidateProfile(
     stages,
     phoneCalls,
     ingestion,
+    profileSections,
     isLoading,
     error,
     refetch: fetchProfile,

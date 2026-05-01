@@ -70,23 +70,96 @@ describe('GitHubClient', () => {
     expect(repos[0]!.stargazers_count).toBe(10);
   });
 
-  it('fetches contributed repos from events', async () => {
+  it('fetches all owned repos with pagination', async () => {
+    const client = new GitHubClient();
+    // Page 1: 2 repos
+    mockFetch({
+      json: [
+        { id: 1, name: 'repo-a', full_name: 'alice/repo-a', html_url: '', stargazers_count: 0, watchers_count: 0, forks_count: 0, language: null, languages_url: '', created_at: '', updated_at: '', pushed_at: '', fork: false },
+        { id: 2, name: 'repo-b', full_name: 'alice/repo-b', html_url: '', stargazers_count: 0, watchers_count: 0, forks_count: 0, language: null, languages_url: '', created_at: '', updated_at: '', pushed_at: '', fork: false },
+      ],
+    });
+    // Page 2: empty
+    mockFetch({ json: [] });
+
+    const repos = await client.getOwnedReposAll('alice', 10);
+    expect(repos).toHaveLength(2);
+    expect(repos[0]!.name).toBe('repo-a');
+    expect(repos[1]!.name).toBe('repo-b');
+  });
+
+  it('fetches merged pull requests', async () => {
+    const client = new GitHubClient();
+    mockFetch({
+      json: {
+        total_count: 2,
+        items: [
+          { id: 1, title: 'Fix bug', repository_url: 'https://api.github.com/repos/org/repo-x', html_url: 'https://github.com/org/repo-x/pull/1', created_at: '2024-01-01T00:00:00Z' },
+          { id: 2, title: 'Add feature', repository_url: 'https://api.github.com/repos/org/repo-y', html_url: 'https://github.com/org/repo-y/pull/2', created_at: '2024-02-01T00:00:00Z' },
+        ],
+      },
+    });
+
+    const prs = await client.getMergedPullRequests('alice');
+    expect(prs).toHaveLength(2);
+    expect(prs[0]!.title).toBe('Fix bug');
+  });
+
+  it('fetches user orgs', async () => {
     const client = new GitHubClient();
     mockFetch({
       json: [
-        { type: 'PushEvent', repo: { id: 101, name: 'org/repo-x', url: 'https://api.github.com/repos/org/repo-x' } },
-        { type: 'PushEvent', repo: { id: 101, name: 'org/repo-x', url: 'https://api.github.com/repos/org/repo-x' } },
-        { type: 'PushEvent', repo: { id: 101, name: 'org/repo-x', url: 'https://api.github.com/repos/org/repo-x' } },
-        { type: 'PushEvent', repo: { id: 101, name: 'org/repo-x', url: 'https://api.github.com/repos/org/repo-x' } },
-        { type: 'PushEvent', repo: { id: 101, name: 'org/repo-x', url: 'https://api.github.com/repos/org/repo-x' } },
-        { type: 'PushEvent', repo: { id: 102, name: 'org/repo-y', url: 'https://api.github.com/repos/org/repo-y' } },
+        { login: 'org-a', id: 1, avatar_url: 'https://avatars.githubusercontent.com/u/1' },
+        { login: 'org-b', id: 2, avatar_url: 'https://avatars.githubusercontent.com/u/2' },
       ],
     });
 
-    const contribs = await client.getContributedRepos('alice');
-    expect(contribs).toHaveLength(1);
-    expect(contribs[0]!.repo_name).toBe('repo-x');
-    expect(contribs[0]!.event_count).toBe(5);
+    const orgs = await client.getUserOrgs('alice');
+    expect(orgs).toHaveLength(2);
+    expect(orgs[0]!.login).toBe('org-a');
+  });
+
+  it('fetches contribution calendar via GraphQL', async () => {
+    const client = new GitHubClient({ token: 'test-token' });
+    mockFetch({
+      json: {
+        data: {
+          user: {
+            contributionsCollection: {
+              contributionCalendar: {
+                totalContributions: 1247,
+                weeks: [
+                  {
+                    contributionDays: [
+                      { contributionCount: 5, date: '2025-04-01' },
+                      { contributionCount: 0, date: '2025-04-02' },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const calendar = await client.getContributionCalendar('alice');
+    expect(calendar.totalContributions).toBe(1247);
+    expect(calendar.weeks).toHaveLength(1);
+    expect(calendar.weeks[0]!.contributionDays).toHaveLength(2);
+    expect(calendar.weeks[0]!.contributionDays[0]!.date).toBe('2025-04-01');
+    expect(calendar.weeks[0]!.contributionDays[0]!.count).toBe(5);
+  });
+
+  it('throws on GraphQL errors', async () => {
+    const client = new GitHubClient({ token: 'test-token' });
+    mockFetch({
+      json: {
+        errors: [{ message: 'Could not resolve to a User with the login of alice.' }],
+      },
+    });
+
+    await expect(client.getContributionCalendar('alice')).rejects.toThrow(/Could not resolve/);
   });
 
   it('fetches repo languages', async () => {

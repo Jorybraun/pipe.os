@@ -58,6 +58,8 @@ export async function upsertPendingIngestion(
          match_philosophy = NULL,
          embedding_json = NULL,
          role_candidate_cosine = NULL,
+         github_calendar_json = NULL,
+         profile_sections_json = NULL,
          error_text = NULL,
          updated_at = excluded.updated_at`,
     )

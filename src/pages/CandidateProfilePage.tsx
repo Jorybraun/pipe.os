@@ -961,7 +961,7 @@ export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { getToken } = useClerkAuth();
   const api = useApiClient();
-  const { candidate, stages, phoneCalls, ingestion, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
+  const { candidate, stages, phoneCalls, ingestion, profileSections, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
 
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
@@ -1510,8 +1510,8 @@ export default function CandidateProfilePage(): JSX.Element {
         )}
 
         {/* ENRICHMENT tab */}
-        {selectedTab === "ENRICHMENT" && ingestion && (
-          <CandidateEnrichmentTab ingestion={ingestion} />
+        {selectedTab === "ENRICHMENT" && profileSections.length > 0 && (
+          <CandidateEnrichmentTab sections={profileSections} />
         )}
 
         {/* Stage content */}
