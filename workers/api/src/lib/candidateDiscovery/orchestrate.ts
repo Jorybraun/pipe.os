@@ -452,45 +452,64 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   if (missRepos.length === 0) {
     situationRankings = { rankings: cachedRankings, rawText: '' };
   } else {
-    const llmResult = await candidateSituationFit({
-      provider: createCandidateAgentProvider(env)!,
-      candidateResult: discoveryResult,
-      candidateKeyConcepts: discoveryResult.keyConcepts,
-      repos: missRepos,
-      ...(culturalSignalNodes.length > 0 ? { culturalSignalNodes } : {}),
-      ...(roleContextRow ? { roleContextId: roleContextRow.id } : {}),
-      ...(experienceNodes.length > 0 ? { experienceNodes } : {}),
-      ...(projectNodes.length > 0 ? { projectNodes } : {}),
-      ...(skillNodes.length > 0 ? { skillNodes } : {}),
-      ...(careerArcNodes.length > 0 ? { careerArcNodes } : {}),
-      recencyMultiplier,
-    });
+    // Batch repos to avoid JSON truncation on long responses (Llama 3.1 8B
+    // struggles with structured JSON for >5 repos at once).
+    const BATCH_SIZE = 3;
+    const allRankings: SituationFitRanking[] = [...cachedRankings];
+    const rawTexts: string[] = [];
 
-    // Store cache for each miss
-    for (const ranking of llmResult.rankings) {
-      const repo = missRepos.find((r) => r.repo_id === ranking.repo_id);
-      if (!repo) continue;
-      const cacheKey = await buildSituationFitCacheKey(
-        candidateId,
-        ranking.repo_id,
-        discoveryResult.profileVersion,
-        repo.signals.signals_version,
-        promptVersion,
-      );
-      await storeSituationFitCache(
-        db,
-        cacheKey,
-        candidateId,
-        ranking.repo_id,
-        discoveryResult.profileVersion,
-        repo.signals.signals_version,
-        ranking,
-      );
+    for (let i = 0; i < missRepos.length; i += BATCH_SIZE) {
+      const batch = missRepos.slice(i, i + BATCH_SIZE);
+      console.log(`[ingestion] situationFit batch ${i / BATCH_SIZE + 1}/${Math.ceil(missRepos.length / BATCH_SIZE)} — ${batch.length} repos`);
+      let llmResult: Awaited<ReturnType<typeof candidateSituationFit>>;
+      try {
+        llmResult = await candidateSituationFit({
+          provider: createCandidateAgentProvider(env)!,
+          candidateResult: discoveryResult,
+          candidateKeyConcepts: discoveryResult.keyConcepts,
+          repos: batch,
+          ...(culturalSignalNodes.length > 0 ? { culturalSignalNodes } : {}),
+          ...(roleContextRow ? { roleContextId: roleContextRow.id } : {}),
+          ...(experienceNodes.length > 0 ? { experienceNodes } : {}),
+          ...(projectNodes.length > 0 ? { projectNodes } : {}),
+          ...(skillNodes.length > 0 ? { skillNodes } : {}),
+          ...(careerArcNodes.length > 0 ? { careerArcNodes } : {}),
+          recencyMultiplier,
+        });
+      } catch (batchErr) {
+        console.error(`[ingestion] situationFit batch ${i / BATCH_SIZE + 1} failed:`, batchErr);
+        continue;
+      }
+
+      // Store cache for each miss in this batch
+      for (const ranking of llmResult.rankings) {
+        const repo = batch.find((r) => r.repo_id === ranking.repo_id);
+        if (!repo) continue;
+        const cacheKey = await buildSituationFitCacheKey(
+          candidateId,
+          ranking.repo_id,
+          discoveryResult.profileVersion,
+          repo.signals.signals_version,
+          promptVersion,
+        );
+        await storeSituationFitCache(
+          db,
+          cacheKey,
+          candidateId,
+          ranking.repo_id,
+          discoveryResult.profileVersion,
+          repo.signals.signals_version,
+          ranking,
+        );
+      }
+
+      allRankings.push(...llmResult.rankings);
+      if (llmResult.rawText) rawTexts.push(llmResult.rawText);
     }
 
     situationRankings = {
-      rankings: [...cachedRankings, ...llmResult.rankings],
-      rawText: llmResult.rawText,
+      rankings: allRankings,
+      rawText: rawTexts.join('\n---\n'),
     };
   }
 

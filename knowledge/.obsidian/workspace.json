@@ -241,6 +241,7 @@
   },
   "active": "8af6e68fc634f7eb",
   "lastOpenFiles": [
+    "plan/testing/code-review-agentic-flow.md",
     "plan/bugs.md",
     "plan/testing/smoke-test-2026-05-01.md",
     "plan/testing/github-client-and-dynamic-profile.md",
@@ -268,7 +269,6 @@
     "plan/strategy-v2/part5-matching-migration/neo4j-matching-cutover.md",
     "plan/strategy-v2/part5-matching-migration/dealbreaker-gate-enforcement.md",
     "plan/strategy-v2/part5-matching-migration/per-element-matching-algorithm.md",
-    "plan/strategy-v2/part5-matching-migration/observability-opentelemetry.md",
     "plan/strategy-v2/part5-matching-migration",
     "plan/strategy-v2/part4-candidate-ingestion",
     "plan/strategy-v2/part3-repo-ingestion",
