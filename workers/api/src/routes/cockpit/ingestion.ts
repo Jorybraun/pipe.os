@@ -40,8 +40,10 @@ interface IngestionListRow {
   candidate_searchable_profile: string | null;
   matched_repo_name: string | null;
   triangulated_score: number | null;
+  role_candidate_cosine: number | null;
   dimensions_json: string | null;
   reasoning_json: string | null;
+  match_philosophy: string | null;
   error_text: string | null;
   created_at: string;
   updated_at: string;
@@ -81,8 +83,10 @@ ingestion.get('/:pipelineId/ingestion', async (c) => {
          ci.candidate_searchable_profile,
          qr.full_name AS matched_repo_name,
          ci.triangulated_score,
+         ci.role_candidate_cosine,
          ci.dimensions_json,
          ci.reasoning_json,
+         ci.match_philosophy,
          ci.error_text,
          ci.created_at,
          ci.updated_at
@@ -110,8 +114,10 @@ ingestion.get('/:pipelineId/ingestion', async (c) => {
       candidateSearchableProfile: r.candidate_searchable_profile ?? '',
       matchedRepoName: r.matched_repo_name,
       triangulatedScore: r.triangulated_score,
+      roleCandidateCosine: r.role_candidate_cosine,
       dimensions: snakeToCamelDimensions(dimensions),
       reasoning,
+      matchPhilosophy: r.match_philosophy,
       errorText: r.error_text,
     };
   });

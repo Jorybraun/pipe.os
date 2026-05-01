@@ -523,6 +523,116 @@ candidateOps.get('/:candidateId', async (c) => {
     createdAt: pc.created_at,
   }));
 
+  // Fetch candidate ingestion / enrichment data
+  let ingestionRow: {
+    status: string;
+    candidate_searchable_profile: string | null;
+    key_concepts_json: string | null;
+    profile_version: string | null;
+    model_used: string | null;
+    decomposition_version: string | null;
+    triangulated_score: number | null;
+    role_candidate_cosine: number | null;
+    dimensions_json: string | null;
+    reasoning_json: string | null;
+    match_philosophy: string | null;
+    career_context_json: string | null;
+    situation_signature_json: string | null;
+    key_situations_json: string | null;
+    github_url: string | null;
+    last_enriched_at: string | null;
+    profile_generated_at: string | null;
+    profile_embedded_at: string | null;
+    matched_at: string | null;
+    error_text: string | null;
+    matched_repo_name: string | null;
+    matched_repo_url: string | null;
+    enrichment_job_status: string | null;
+  } | null = null;
+
+  try {
+    const ingestionResult = await db
+      .prepare(
+        `SELECT ci.status, ci.candidate_searchable_profile, ci.key_concepts_json,
+                ci.profile_version, ci.model_used, ci.decomposition_version,
+                ci.triangulated_score, ci.role_candidate_cosine,
+                ci.dimensions_json, ci.reasoning_json, ci.match_philosophy,
+                ci.career_context_json, ci.situation_signature_json, ci.key_situations_json,
+                ci.github_url, ci.last_enriched_at,
+                ci.profile_generated_at, ci.profile_embedded_at, ci.matched_at,
+                ci.error_text,
+                qr.full_name AS matched_repo_name, qr.github_url AS matched_repo_url,
+                ej.status AS enrichment_job_status
+         FROM candidates c
+         LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
+         LEFT JOIN qualified_repos qr ON qr.id = ci.matched_repo_id
+         LEFT JOIN enrichment_jobs ej ON ej.candidate_id = ci.candidate_id
+         WHERE c.id = ?
+         ORDER BY ej.created_at DESC LIMIT 1`,
+      )
+      .bind(candidateId)
+      .first<typeof ingestionRow>();
+    ingestionRow = ingestionResult ?? null;
+  } catch {
+    // candidate_ingestion or related tables may not exist yet
+  }
+
+  const ingestion = ingestionRow?.status
+    ? {
+        status: ingestionRow.status as
+          | 'pending'
+          | 'profile_generated'
+          | 'embedded'
+          | 'matched'
+          | 'failed',
+        candidateSearchableProfile: ingestionRow.candidate_searchable_profile,
+        keyConcepts: ingestionRow.key_concepts_json
+          ? (JSON.parse(ingestionRow.key_concepts_json) as Record<string, unknown>)
+          : null,
+        profileVersion: ingestionRow.profile_version,
+        modelUsed: ingestionRow.model_used,
+        decompositionVersion: ingestionRow.decomposition_version,
+        triangulatedScore: ingestionRow.triangulated_score,
+        roleCandidateCosine: ingestionRow.role_candidate_cosine,
+        dimensions: ingestionRow.dimensions_json
+          ? (() => {
+              const d = JSON.parse(ingestionRow.dimensions_json) as Record<string, number>;
+              return {
+                skillCoverage: d.skill_coverage ?? 0,
+                semanticSimilarity: d.semantic_similarity ?? 0,
+                situationFit: d.situation_fit ?? 0,
+                roleAlignment: d.role_alignment ?? 0,
+              };
+            })()
+          : null,
+        reasoning: ingestionRow.reasoning_json
+          ? (JSON.parse(ingestionRow.reasoning_json) as {
+              matches: string[];
+              mismatches: string[];
+            })
+          : null,
+        matchPhilosophy: ingestionRow.match_philosophy,
+        careerContext: ingestionRow.career_context_json
+          ? (JSON.parse(ingestionRow.career_context_json) as Record<string, unknown>)
+          : null,
+        situationSignature: ingestionRow.situation_signature_json
+          ? (JSON.parse(ingestionRow.situation_signature_json) as Record<string, unknown>)
+          : null,
+        keySituations: ingestionRow.key_situations_json
+          ? (JSON.parse(ingestionRow.key_situations_json) as unknown[])
+          : null,
+        matchedRepoName: ingestionRow.matched_repo_name,
+        matchedRepoUrl: ingestionRow.matched_repo_url,
+        githubUrl: ingestionRow.github_url,
+        lastEnrichedAt: ingestionRow.last_enriched_at,
+        profileGeneratedAt: ingestionRow.profile_generated_at,
+        profileEmbeddedAt: ingestionRow.profile_embedded_at,
+        matchedAt: ingestionRow.matched_at,
+        errorText: ingestionRow.error_text,
+        enrichmentJobStatus: ingestionRow.enrichment_job_status,
+      }
+    : null;
+
   return c.json({
     candidate: {
       id: candidate.id,
@@ -547,6 +657,7 @@ candidateOps.get('/:candidateId', async (c) => {
     },
     stages: stagesWithChallenges,
     phoneCalls,
+    ingestion,
   });
 });
 
@@ -602,6 +713,8 @@ candidateOps.post('/:candidateId/resume', async (c) => {
 
   // Upload to R2
   const arrayBuffer = await fileEntry.arrayBuffer();
+  // Clone before R2 put — ArrayBuffer may be detached/transfered by the binding
+  const fileBuffer = arrayBuffer.slice(0);
   await c.env.STORAGE.put(r2Key, arrayBuffer, {
     httpMetadata: { contentType: fileEntry.type },
     customMetadata: { candidateId, originalName: fileEntry.name },
@@ -617,7 +730,7 @@ candidateOps.post('/:candidateId/resume', async (c) => {
   // Parse the resume for structured data (skills, role, experience)
   const isMock = c.env.MOCK_AI === 'true';
   const parseResult = await parseResume({
-    fileBuffer: arrayBuffer,
+    fileBuffer,
     contentType: fileEntry.type,
     env: c.env,
     mock: isMock,

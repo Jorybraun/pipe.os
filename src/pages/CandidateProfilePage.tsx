@@ -26,6 +26,7 @@ import {
   Check,
   X as XIcon,
   ArrowLeft,
+  GitBranch,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { PhoneCallDrawer } from "../components/Phone/PhoneCallDrawer";
@@ -39,6 +40,7 @@ import { useApiClient } from "../hooks/useApiClient";
 import type { ProfileChallenge, ReviewSessionListItem } from "../lib/api/types";
 import { ReviewSessionReport } from "../components/Analytics/ReviewSessionReport";
 import { getReviewSessionStatusColors } from "../lib/reviewSessionStatus";
+import { CandidateEnrichmentTab } from "../components/Candidate/CandidateEnrichmentTab";
 
 // ============================================================================
 // Local types
@@ -959,7 +961,7 @@ export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { getToken } = useClerkAuth();
   const api = useApiClient();
-  const { candidate, stages, phoneCalls, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
+  const { candidate, stages, phoneCalls, ingestion, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
 
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
@@ -1420,6 +1422,49 @@ export default function CandidateProfilePage(): JSX.Element {
               INTELLIGENCE
             </span>
           </button>
+
+          {ingestion && (
+            <button
+              onClick={() => setSelectedTab("ENRICHMENT")}
+              style={{
+                padding: "10px 20px",
+                cursor: "pointer",
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  selectedTab === "ENRICHMENT"
+                    ? "2px solid #10b981"
+                    : "2px solid transparent",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: -1,
+              }}
+            >
+              <GitBranch
+                size={12}
+                color={
+                  selectedTab === "ENRICHMENT"
+                    ? "#10b981"
+                    : "rgba(255,255,255,0.25)"
+                }
+              />
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color:
+                    selectedTab === "ENRICHMENT"
+                      ? "#10b981"
+                      : "rgba(255,255,255,0.35)",
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: "0.05em",
+                }}
+              >
+                ENRICHMENT
+              </span>
+            </button>
+          )}
         </div>
 
         {/* INTELLIGENCE tab */}
@@ -1462,6 +1507,11 @@ export default function CandidateProfilePage(): JSX.Element {
               <IntelligenceReportRenderer blocks={aiBlocks} />
             )}
           </div>
+        )}
+
+        {/* ENRICHMENT tab */}
+        {selectedTab === "ENRICHMENT" && ingestion && (
+          <CandidateEnrichmentTab ingestion={ingestion} />
         )}
 
         {/* Stage content */}
@@ -1861,6 +1911,118 @@ export default function CandidateProfilePage(): JSX.Element {
                     <GraduationCap size={11} color="var(--pipe-text-dim)" style={{ marginTop: 2, flexShrink: 0 }} />
                     <div style={{ fontSize: 10, color: "var(--pipe-text-dim)", lineHeight: 1.5 }}>
                       {candidate.education.join(" · ")}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Match — only when ingestion exists and status is matched */}
+          {ingestion?.status === 'matched' && (
+            <div
+              style={{
+                marginBottom: 28,
+                paddingTop: 24,
+                borderTop: "1px solid var(--pipe-border)",
+                cursor: 'pointer',
+              }}
+              onClick={() => setSelectedTab('ENRICHMENT')}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: 'space-between',
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <GitBranch size={12} color="#10b981" />
+                  <span
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: "0.2em",
+                      color: "#10b981",
+                      fontFamily: '"Space Mono", monospace',
+                    }}
+                  >
+                    MATCH
+                  </span>
+                </div>
+                {ingestion.matchPhilosophy && (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      background: 'rgba(96,165,250,0.08)',
+                      border: '1px solid rgba(96,165,250,0.2)',
+                      borderRadius: 3,
+                      fontSize: 8,
+                      fontWeight: 700,
+                      color: '#60a5fa',
+                      letterSpacing: '0.08em',
+                      fontFamily: '"Space Mono", monospace',
+                    }}
+                  >
+                    {ingestion.matchPhilosophy.toUpperCase()}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {ingestion.matchedRepoName && (
+                  <a
+                    href={ingestion.matchedRepoUrl ?? '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: 'var(--pipe-text)',
+                      fontFamily: '"Space Mono", monospace',
+                      textDecoration: 'none',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={ingestion.matchedRepoName}
+                  >
+                    {ingestion.matchedRepoName}
+                  </a>
+                )}
+
+                {ingestion.triangulatedScore !== null && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 900,
+                        color: ingestion.triangulatedScore >= 70 ? '#10b981' : ingestion.triangulatedScore >= 40 ? '#fbbf24' : '#f87171',
+                        fontFamily: '"Space Mono", monospace',
+                        lineHeight: 1,
+                      }}
+                    >
+                      {Math.round(ingestion.triangulatedScore)}
+                    </span>
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 3,
+                        background: 'rgba(255,255,255,0.05)',
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(100, Math.max(0, ingestion.triangulatedScore))}%`,
+                          height: '100%',
+                          background: ingestion.triangulatedScore >= 70 ? '#10b981' : ingestion.triangulatedScore >= 40 ? '#fbbf24' : '#f87171',
+                          borderRadius: 2,
+                        }}
+                      />
                     </div>
                   </div>
                 )}

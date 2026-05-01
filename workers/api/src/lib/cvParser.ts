@@ -168,8 +168,21 @@ export function getMockDecompositionResult(): DecompositionResult {
 // ─── Text Extraction ────────────────────────────────────────────────────────
 
 export async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
-  const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
-  return typeof text === 'string' ? text : (text as string[]).join('\n');
+  try {
+    const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
+    const raw = typeof text === 'string' ? text : (text as unknown as string[]).join('\n');
+    const cleaned = raw.replace(/\x00/g, '').trim();
+    const pageCount = typeof text === 'string' ? 1 : (text as unknown as string[]).length;
+    console.log(`[cvParser] PDF extraction: ${cleaned.length} chars, ${pageCount} page(s)`);
+    if (cleaned.length === 0) {
+      console.warn('[cvParser] PDF extraction returned empty text — possible scanned/image PDF or unsupported fonts');
+    }
+    return cleaned;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[cvParser] PDF extraction failed:', msg);
+    throw err;
+  }
 }
 
 // ─── Rule-Based Structured Extraction ───────────────────────────────────────
@@ -471,10 +484,15 @@ async function callDecompositionLLM(
 
   const userMessage = buildDecompositionUserMessage({ parsed: parsedCV, resumeText });
 
+  console.log('[cvParser] Decomposition prompt length:', DECOMPOSITION_SYSTEM_PROMPT.length, 'system +', userMessage.length, 'user');
+
+  // Gemma models on Vertex AI sometimes ignore system messages via the OpenAI-compatible endpoint.
+  // Merge system instructions into the user message to ensure they're seen.
+  const mergedUserMessage = `${DECOMPOSITION_SYSTEM_PROMPT}\n\n---\n\n${userMessage}`;
+
   const result = await provider.complete(
     [
-      { role: 'system', content: DECOMPOSITION_SYSTEM_PROMPT },
-      { role: 'user', content: userMessage },
+      { role: 'user', content: mergedUserMessage },
     ],
     { forceJson: true, maxTokens: 2000 },
   );
@@ -490,7 +508,24 @@ async function callDecompositionLLM(
     .replace(/\n?```$/m, '')
     .trim();
 
-  return safeParseJson<DecompositionResult>(cleaned);
+  const parsed = safeParseJson<DecompositionResult>(cleaned);
+  if (!parsed) {
+    console.warn('[cvParser] Decomposition JSON parse failed. Raw output length:', outputText.length);
+    console.warn('[cvParser] First 500 chars:', outputText.slice(0, 500));
+    return null;
+  }
+
+  console.log('[cvParser] Decomposition parsed OK:', {
+    experiences: parsed.experiences?.length ?? 0,
+    skills: parsed.skills?.length ?? 0,
+    education: parsed.education?.length ?? 0,
+    projects: parsed.projects?.length ?? 0,
+    credentials: parsed.credentials?.length ?? 0,
+    careerArc: parsed.career_arc ? 'yes' : 'no',
+    candidateName: parsed.candidate_name ? 'yes' : 'no',
+  });
+
+  return parsed;
 }
 
 // ─── Derive ParsedCV from DecompositionResult ───────────────────────────────
@@ -519,16 +554,38 @@ function deriveParsedCVFromDecomposition(
     return parts.join(' ');
   });
 
+  // Use decomposition experiences when rule-based failed (common for complex PDFs)
+  const experiences = ruleBased.experiences.length > 0
+    ? ruleBased.experiences
+    : decomposition.experiences.map((e) => ({
+        company: e.company,
+        role: e.role,
+        description: e.narrative,
+      }));
+
+  const educationBlocks = ruleBased.educationBlocks.length > 0
+    ? ruleBased.educationBlocks
+    : decomposition.education.map((e) => ({
+        institution: e.institution,
+        degree: e.degree,
+        field: e.field,
+        year: e.year,
+      }));
+
   return {
     name: decomposition.candidate_name,
     skills: decomposition.skills.map((s) => s.name),
     yearsOfExperience,
     currentRole,
     education: education.length > 0 ? education : undefined,
-    experiences: ruleBased.experiences,
-    educationBlocks: ruleBased.educationBlocks,
+    experiences,
+    educationBlocks,
     credentials: ruleBased.credentials,
-    projects: ruleBased.projects,
+    projects: ruleBased.projects.length > 0 ? ruleBased.projects : decomposition.projects.map((p) => ({
+      name: p.name,
+      description: p.description,
+      url: p.url,
+    })),
   };
 }
 
@@ -620,6 +677,15 @@ export async function parseResume(input: ParseResumeInput): Promise<ParseResumeR
         projects,
       };
     }
+
+    console.log('[cvParser] Final ParsedCV:', {
+      name: parsedCV.name,
+      skillsCount: parsedCV.skills.length,
+      yearsOfExperience: parsedCV.yearsOfExperience,
+      currentRole: parsedCV.currentRole,
+      educationCount: parsedCV.education?.length ?? 0,
+      experiencesCount: parsedCV.experiences.length,
+    });
 
     return { parsedCV, decompositionResult: decomposition };
   } catch (err) {

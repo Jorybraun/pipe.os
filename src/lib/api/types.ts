@@ -708,11 +708,50 @@ export interface ReviewSessionReportResponse {
   };
 }
 
+export interface CandidateMatchDimensions {
+  skillCoverage: number;
+  semanticSimilarity: number;
+  situationFit: number;
+  roleAlignment: number;
+}
+
+export interface CandidateMatchReasoning {
+  matches: string[];
+  mismatches: string[];
+}
+
+export interface CandidateEnrichmentRecord {
+  status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
+  candidateSearchableProfile: string | null;
+  keyConcepts: Record<string, unknown> | null;
+  profileVersion: string | null;
+  modelUsed: string | null;
+  decompositionVersion: string | null;
+  triangulatedScore: number | null;
+  roleCandidateCosine: number | null;
+  dimensions: CandidateMatchDimensions | null;
+  reasoning: CandidateMatchReasoning | null;
+  matchPhilosophy: string | null;
+  careerContext: Record<string, unknown> | null;
+  situationSignature: Record<string, unknown> | null;
+  keySituations: unknown[] | null;
+  matchedRepoName: string | null;
+  matchedRepoUrl: string | null;
+  githubUrl: string | null;
+  lastEnrichedAt: string | null;
+  profileGeneratedAt: string | null;
+  profileEmbeddedAt: string | null;
+  matchedAt: string | null;
+  errorText: string | null;
+  enrichmentJobStatus: string | null;
+}
+
 export interface CandidateProfileResponse {
   candidate: CandidateProfileRecord;
   stages: ProfileStage[];
   phoneCalls: PhoneCallRecord[];
   reviewSessions?: ReviewSessionListItem[];
+  ingestion: CandidateEnrichmentRecord | null;
 }
 
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)

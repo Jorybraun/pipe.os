@@ -107,6 +107,8 @@ Your job has THREE parts:
 
 You must NOT invent facts not present in the raw text. Inference is allowed ONLY when strongly suggested by company names, descriptions, or explicit context.
 
+IMPORTANT: If the parser skeleton is empty or incomplete (common with complex PDFs), extract structured data DIRECTLY from the RAW RESUME TEXT. Do NOT return empty arrays unless the resume truly contains no experiences, skills, education, projects, or credentials.
+
 Return ONLY valid JSON. No markdown, no explanation.
 
 Output schema:

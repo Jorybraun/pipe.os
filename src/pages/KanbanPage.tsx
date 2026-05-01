@@ -52,6 +52,7 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { useOverviewData } from '../hooks/useOverviewData';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useCandidateMutations } from '../hooks/useCandidateMutations';
+import { usePipelineIngestion, type PipelineIngestionItem } from '../hooks/usePipelineIngestion';
 import type { OverviewStage, OverviewCandidate } from '../lib/api/types';
 
 // ─── StageHeaderCard (copied verbatim from the old OverviewPage) ────────────
@@ -198,12 +199,14 @@ function SortableStage({
 
 function CandidateKanbanCard({
   candidate,
+  ingestion,
   onClick,
   onRefresh,
   isOverlay = false,
   disabled = false,
 }: {
   candidate: OverviewCandidate;
+  ingestion?: PipelineIngestionItem | undefined;
   onClick: () => void;
   onRefresh?: (candidateId: string) => Promise<void>;
   isOverlay?: boolean;
@@ -391,6 +394,55 @@ function CandidateKanbanCard({
                   {(candidate.status || 'INVITED').toUpperCase()}
                 </div>
               </div>
+
+              {/* Enrichment indicator */}
+              {ingestion && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background:
+                        ingestion.status === 'matched'
+                          ? '#10b981'
+                          : ingestion.status === 'failed'
+                            ? '#f87171'
+                            : '#9ca3af',
+                    }}
+                  />
+                  {ingestion.status === 'matched' && ingestion.triangulatedScore !== null && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: '#10b981',
+                        fontFamily: 'Space Mono',
+                      }}
+                    >
+                      {Math.round(ingestion.triangulatedScore)}
+                    </span>
+                  )}
+                  {ingestion.status === 'matched' && ingestion.matchPhilosophy && (
+                    <span
+                      style={{
+                        fontSize: 8,
+                        fontWeight: 700,
+                        color: '#60a5fa',
+                        fontFamily: 'Space Mono',
+                        letterSpacing: '0.06em',
+                        padding: '1px 5px',
+                        background: 'rgba(96,165,250,0.08)',
+                        border: '1px solid rgba(96,165,250,0.15)',
+                        borderRadius: 3,
+                      }}
+                    >
+                      {ingestion.matchPhilosophy.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div
                 style={{
                   marginLeft: 'auto',
@@ -479,6 +531,15 @@ export default function KanbanPage(): JSX.Element {
     useOverviewData(id);
   const { reorderStages, deleteStage } = useStageMutations();
   const { updateCandidate, refreshLink } = useCandidateMutations();
+  const { items: ingestionItems } = usePipelineIngestion(id);
+
+  const ingestionByCandidate = useMemo(() => {
+    const map = new Map<string, PipelineIngestionItem>();
+    for (const item of ingestionItems) {
+      map.set(item.candidateId, item);
+    }
+    return map;
+  }, [ingestionItems]);
 
   const [localStages, setLocalStages] = useState<OverviewStage[] | null>(null);
   const [activeCandidate, setActiveCandidate] =
@@ -759,6 +820,7 @@ export default function KanbanPage(): JSX.Element {
                       <CandidateKanbanCard
                         key={candidate.id}
                         candidate={candidate}
+                        ingestion={ingestionByCandidate.get(candidate.id)}
                         onClick={() => navigate(`/candidates/${candidate.id}`)}
                         onRefresh={handleRefreshLink}
                         disabled={!isActivePipeline}
@@ -804,6 +866,7 @@ export default function KanbanPage(): JSX.Element {
         {activeCandidate ? (
           <CandidateKanbanCard
             candidate={activeCandidate}
+            ingestion={ingestionByCandidate.get(activeCandidate.id)}
             onClick={() => {}}
             isOverlay
           />
