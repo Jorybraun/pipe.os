@@ -6,6 +6,36 @@
 
 ---
 
+## Test Credentials
+
+| Account | Email | Password | Notes |
+|---------|-------|----------|-------|
+| **Recruiter (Clerk)** | `e2e-test@pipe.dev` | `PipeE2E_Test2026!` | Used by Playwright E2E suite. Set `E2E_EMAIL` / `E2E_PASSWORD` env vars to override. |
+| **Candidate (assess link)** | Varies per seed | N/A | Candidate login is token-based via `/assess/:inviteToken`. Generate a candidate first, then use their `inviteToken`. |
+
+### Quick API Auth (for curl checks)
+
+If you need a bearer token for backend smoke tests:
+
+1. Log in as recruiter in the browser
+2. Open DevTools → Application → Cookies → `__session`
+3. Copy the JWT value
+4. Use it in curl: `-H "Authorization: Bearer <jwt>"`
+
+Or use the Playwright saved auth state:
+```bash
+cat playwright/.auth/user.json | jq '.cookies[] | select(.name=="__session") | .value'
+```
+
+### E2E Seeds
+
+The E2E suite seeds a fresh pipeline + candidate for most tests. Reference these fixtures if you need pre-made data:
+- `playwright/candidate-token.json` — candidate JWT tokens
+- `playwright/fresh-candidate-token.json` — newly created candidate tokens
+- `playwright/code-review-token.json` — candidate assigned to a code-review challenge
+
+---
+
 ## 1. Role Discovery RCD Synthesize + questionStack Fix
 **Commit:** `958a3a379`
 
