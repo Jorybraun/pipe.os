@@ -65,7 +65,7 @@ describe('GET /:candidateId/ingestion-status (non-streaming)', () => {
 describe('GET /:candidateId/ingestion-status (SSE)', () => {
   it('emits status + done events for a terminal state and closes', async () => {
     const app = createApp({
-      status: 'completed',
+      status: 'matched',
       candidate_searchable_profile: 'profile',
       key_concepts_json: '[]',
       career_context_json: '{}',

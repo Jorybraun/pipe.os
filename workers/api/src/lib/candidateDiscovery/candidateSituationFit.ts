@@ -14,6 +14,7 @@
 import type { LLMProvider } from '../llm/types';
 import type { RepoEngineeringSignalsRow, CandidateNode } from '../../types';
 import type { CandidateDiscoveryResult, CandidateKeyConcepts } from './agent';
+import { retryWithBackoff } from '../ai/retryHelper';
 
 // ─── Cache helpers ───────────────────────────────────────────────────────────
 
@@ -150,12 +151,21 @@ export async function candidateSituationFit(
     input.careerArcNodes,
   );
 
-  const completion = await provider.complete(
-    [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-    { forceJson: true, maxTokens: 8192 },
+  const completion = await retryWithBackoff(
+    async () =>
+      provider.complete(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        { forceJson: true, maxTokens: 8192 },
+      ),
+    {
+      maxRetries: 3,
+      baseDelayMs: 1000,
+      onRetry: (attempt, delay) =>
+        console.warn(`[candidateSituationFit] retry ${attempt} after ${delay}ms`),
+    },
   );
 
   const rawText = completion.content ?? '';

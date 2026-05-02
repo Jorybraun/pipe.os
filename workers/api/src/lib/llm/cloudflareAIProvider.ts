@@ -152,7 +152,7 @@ export class CloudflareAIProvider implements LLMProvider {
     if (typeof result.response === 'string') {
       rawText = result.response.trim();
     } else if (Array.isArray(result.choices) && result.choices.length > 0) {
-      const choice = result.choices[0];
+      const choice = result.choices[0]!;
       const msg = choice.message;
       if (typeof msg?.content === 'string' && msg.content.length > 0) {
         rawText = msg.content.trim();

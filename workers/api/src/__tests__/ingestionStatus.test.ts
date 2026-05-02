@@ -198,7 +198,7 @@ describe('GET /:candidateId/ingestion-status (SSE)', () => {
       {
         match: 'FROM candidate_ingestion',
         value: {
-          status: 'completed',
+          status: 'matched',
           candidate_searchable_profile: null,
           key_concepts_json: null,
           career_context_json: null,
@@ -225,9 +225,9 @@ describe('GET /:candidateId/ingestion-status (SSE)', () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain('event: status');
-    expect(text).toContain('"status":"completed"');
+    expect(text).toContain('"status":"matched"');
     expect(text).toContain('event: done');
-    expect(text).toContain('"status":"completed"');
+    expect(text).toContain('"status":"matched"');
   });
 
   it('returns an SSE error event when candidate not found', async () => {

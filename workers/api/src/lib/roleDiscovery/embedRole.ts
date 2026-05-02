@@ -10,6 +10,7 @@
  */
 
 import { preprocessForEmbedding, EMBEDDING_MODEL_VERSION } from '../embedding/preprocess';
+import { retryWithBackoff } from '../ai/retryHelper';
 
 export interface EmbedRoleInput {
   ai: Ai;
@@ -45,9 +46,18 @@ export async function embedAndUpsertRole(
 
   const normalized = preprocessForEmbedding(profile, 'document');
 
-  const embedResult = (await ai.run(BGE_MODEL, {
-    text: [normalized],
-  })) as { data?: number[][] };
+  const embedResult = await retryWithBackoff(
+    async () =>
+      ai.run(BGE_MODEL, {
+        text: [normalized],
+      }) as Promise<{ data?: number[][] }>,
+    {
+      maxRetries: 3,
+      baseDelayMs: 1000,
+      onRetry: (attempt, delay) =>
+        console.warn(`[roleEmbed] retry ${attempt} after ${delay}ms`),
+    },
+  );
 
   const vector = embedResult?.data?.[0];
   if (!vector || !Array.isArray(vector)) {

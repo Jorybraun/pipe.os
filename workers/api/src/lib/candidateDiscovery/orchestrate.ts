@@ -53,6 +53,7 @@ import { decomposeResumeToGraph } from './resumeDecomposition';
 import { computeRecencyMultiplier } from './candidateRecency';
 import { getCandidateCoverage } from './candidateCoverage';
 import { buildProfileSections } from './buildProfileSections';
+import { recordStepDuration, estimateCompletion } from '../telemetry/stepDurationTracker';
 
 export interface IngestionInput {
   env: Env;
@@ -72,7 +73,9 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
 
   // Step 1: Reset ingestion state
   try {
-    await upsertPendingIngestion(db, candidateId);
+    await trackStep(db, candidateId, 'upsert_pending', () =>
+      upsertPendingIngestion(db, candidateId),
+    );
   } catch (err) {
     console.error('[ingestion] upsertPending failed:', err);
     // This is pre-upload — if this fails, something is deeply wrong.
@@ -80,30 +83,52 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     return;
   }
 
+  // Compute estimated completion before starting work steps
+  const remainingSteps = [
+    'discover_profile',
+    'persist_profile',
+    'decompose_resume',
+    'embed_profile',
+    'match_and_assign',
+  ];
+  const estimatedMs = await estimateCompletion(db, remainingSteps);
+  if (estimatedMs !== null) {
+    await setEstimatedCompletion(db, candidateId, new Date(Date.now() + estimatedMs));
+  }
+
   // Step 2: Discover rich candidate profile
   let discoveryResult: CandidateDiscoveryResult;
   try {
     const provider = createCandidateAgentProvider(env);
     if (!provider) {
-      await markIngestionFailed(db, candidateId, 'Candidate agent provider unavailable (MOCK_AI or missing config)');
+      await markIngestionFailedWithStep(
+        db,
+        candidateId,
+        'Candidate agent provider unavailable (MOCK_AI or missing config)',
+        'discover_profile',
+      );
       return;
     }
 
-    discoveryResult = await discoverCandidateProfile({ provider, parsed, resumeText });
+    discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
+      discoverCandidateProfile({ provider, parsed, resumeText }),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] discoverCandidateProfile failed:', msg);
-    await markIngestionFailed(db, candidateId, `Discovery failed: ${msg}`);
+    await markIngestionFailedWithStep(db, candidateId, `Discovery failed: ${msg}`, 'discover_profile');
     return;
   }
 
   // Step 3: Persist rich profile
   try {
-    await persistCandidateProfile(db, candidateId, discoveryResult);
+    await trackStep(db, candidateId, 'persist_profile', () =>
+      persistCandidateProfile(db, candidateId, discoveryResult),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] persistCandidateProfile failed:', msg);
-    await markIngestionFailed(db, candidateId, `Persist failed: ${msg}`);
+    await markIngestionFailedWithStep(db, candidateId, `Persist failed: ${msg}`, 'persist_profile');
     return;
   }
 
@@ -112,11 +137,17 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   // Failures are logged but do not block the pipeline.
   let decompositionEmbeddings: number[][] = [];
   try {
-    const decompResult = await decomposeResumeToGraph({
-      db, candidateId, resumeText, parsedCV: parsed, env,
-      decompositionResult: input.decompositionResult,
-      vectorize: env.CANDIDATE_INDEX,
-    });
+    const decompResult = await trackStep(db, candidateId, 'decompose_resume', () =>
+      decomposeResumeToGraph({
+        db,
+        candidateId,
+        resumeText,
+        parsedCV: parsed,
+        env,
+        decompositionResult: input.decompositionResult,
+        vectorize: env.CANDIDATE_INDEX,
+      }),
+    );
     decompositionEmbeddings = decompResult.embeddings;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -128,40 +159,43 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   // Fallback: embed the prose profile directly if decomposition yielded no vectors.
   let embedResult: Awaited<ReturnType<typeof embedAndUpsertCandidate>>;
   try {
-    const aggregateVector = meanPoolVectors(decompositionEmbeddings);
-    if (aggregateVector) {
-      embedResult = await upsertCandidateVector({
-        vectorize: env.CANDIDATE_INDEX,
-        candidateId,
-        vector: aggregateVector,
-        metadata: {
-          seniority: discoveryResult.keyConcepts.seniority,
-          primary_language: discoveryResult.keyConcepts.primary_language,
-          profile_version: discoveryResult.profileVersion,
-          aggregate_source: 'node_mean_pool',
-        },
-        db,
-      });
-      console.log('[ingestion] Upserted aggregate vector from', decompositionEmbeddings.length, 'node embeddings');
-    } else {
-      // Fallback to prose-generated embedding when decomposition has no vectors
-      embedResult = await embedAndUpsertCandidate({
-        ai: env.AI,
-        vectorize: env.CANDIDATE_INDEX,
-        candidateId,
-        profile: discoveryResult.candidateSearchableProfile,
-        metadata: {
-          seniority: discoveryResult.keyConcepts.seniority,
-          primary_language: discoveryResult.keyConcepts.primary_language,
-          profile_version: discoveryResult.profileVersion,
-        },
-        db,
-      });
-    }
+    embedResult = await trackStep(db, candidateId, 'embed_profile', async () => {
+      const aggregateVector = meanPoolVectors(decompositionEmbeddings);
+      if (aggregateVector) {
+        const result = await upsertCandidateVector({
+          vectorize: env.CANDIDATE_INDEX,
+          candidateId,
+          vector: aggregateVector,
+          metadata: {
+            seniority: discoveryResult.keyConcepts.seniority,
+            primary_language: discoveryResult.keyConcepts.primary_language,
+            profile_version: discoveryResult.profileVersion,
+            aggregate_source: 'node_mean_pool',
+          },
+          db,
+        });
+        console.log('[ingestion] Upserted aggregate vector from', decompositionEmbeddings.length, 'node embeddings');
+        return result;
+      } else {
+        // Fallback to prose-generated embedding when decomposition has no vectors
+        return await embedAndUpsertCandidate({
+          ai: env.AI,
+          vectorize: env.CANDIDATE_INDEX,
+          candidateId,
+          profile: discoveryResult.candidateSearchableProfile,
+          metadata: {
+            seniority: discoveryResult.keyConcepts.seniority,
+            primary_language: discoveryResult.keyConcepts.primary_language,
+            profile_version: discoveryResult.profileVersion,
+          },
+          db,
+        });
+      }
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] embed/upsert failed:', msg);
-    await markIngestionFailed(db, candidateId, `Embed failed: ${msg}`);
+    await markIngestionFailedWithStep(db, candidateId, `Embed failed: ${msg}`, 'embed_profile');
     return;
   }
 
@@ -169,11 +203,13 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
 
   // Step 6-11: Match, triangulate, assign — wrapped in inner try/catch
   try {
-    await runMatchAndAssign({ env, db, candidateId, discoveryResult });
+    await trackStep(db, candidateId, 'match_and_assign', () =>
+      runMatchAndAssign({ env, db, candidateId, discoveryResult }),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] runMatchAndAssign failed:', msg);
-    await markIngestionFailed(db, candidateId, `Match/assign failed: ${msg}`);
+    await markIngestionFailedWithStep(db, candidateId, `Match/assign failed: ${msg}`, 'match_and_assign');
   }
 }
 
@@ -729,6 +765,62 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[ingestion] failed to persist profile sections for ${candidateId}:`, msg);
+  }
+}
+
+// ─── Utility ────────────────────────────────────────────────────────────────
+
+// ─── Telemetry helpers ──────────────────────────────────────────────────────
+
+async function setCurrentStep(
+  db: D1Database,
+  candidateId: string,
+  stepName: string,
+): Promise<void> {
+  await db
+    .prepare(`UPDATE candidate_ingestion SET current_step = ?1 WHERE candidate_id = ?2`)
+    .bind(stepName, candidateId)
+    .run();
+}
+
+async function setEstimatedCompletion(
+  db: D1Database,
+  candidateId: string,
+  estimatedAt: Date,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion SET estimated_completion_at = ?1 WHERE candidate_id = ?2`,
+    )
+    .bind(estimatedAt.toISOString(), candidateId)
+    .run();
+}
+
+async function markIngestionFailedWithStep(
+  db: D1Database,
+  candidateId: string,
+  reason: string,
+  stepName: string,
+): Promise<void> {
+  await markIngestionFailed(db, candidateId, reason);
+  await setCurrentStep(db, candidateId, stepName);
+}
+
+async function trackStep<T>(
+  db: D1Database,
+  candidateId: string,
+  stepName: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  await setCurrentStep(db, candidateId, stepName);
+  const start = Date.now();
+  try {
+    const result = await fn();
+    await recordStepDuration(db, stepName, Date.now() - start, candidateId);
+    return result;
+  } catch (err) {
+    await recordStepDuration(db, stepName, Date.now() - start, candidateId);
+    throw err;
   }
 }
 

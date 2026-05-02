@@ -12,7 +12,7 @@ import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import type { Env, Variables } from '../../types';
 
-const TERMINAL_STATES = new Set(['completed', 'failed', 'error']);
+const TERMINAL_STATES = new Set(['matched', 'failed']);
 
 const SELECT_CANDIDATE_SQL = `SELECT c.id FROM candidates c
    JOIN pipelines p ON p.id = c.pipeline_id
