@@ -376,6 +376,7 @@ export function ChallengeRegistry({
         challengeId={challenge.id}
         onSubmit={(submission) => onSubmit(submission)}
         isSubmitting={isSubmitting ?? false}
+        allowSkip={typeof challenge.config === 'object' && challenge.config !== null && (challenge.config as Record<string, unknown>).allowSkip === true}
       />
     );
   }

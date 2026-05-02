@@ -297,16 +297,17 @@ rpcAuth.post('/get-stage-config', async (c) => {
   const candidateId = c.get('candidateId');
   const pipelineId = c.get('pipelineId');
 
-  // Fetch candidate to get owner_id for Assessment creation
+  // Fetch candidate to get owner_id and current_stage_id for Assessment creation
   const candidate = await c.env.DB.prepare(
-    `SELECT id, pipeline_id, owner_id FROM candidates WHERE id = ?1`,
+    `SELECT id, pipeline_id, owner_id, current_stage_id FROM candidates WHERE id = ?1`,
   )
     .bind(candidateId)
-    .first<{ id: string; pipeline_id: string; owner_id: string | null }>();
+    .first<{ id: string; pipeline_id: string; owner_id: string | null; current_stage_id: string | null }>();
 
   if (!candidate) {
     return c.json({ isComplete: false, error: 'Candidate not found' });
   }
+  const candidateRow = candidate; // narrow for nested function capture
 
   // Fetch all stages with challenges in a single JOIN query
   // Include config so we can filter out empty/unconfigured challenges
@@ -393,11 +394,10 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
   const stages = [...stageMap.values()].sort((a, b) => a.order - b.order);
 
-  // Walk stages to find the first with un-submitted challenges
-  for (const stage of stages) {
-    if (stage.challenges.length === 0) continue;
+  // Helper: evaluate a single stage and return config if it has unsubmitted challenges
+  async function evaluateStage(stage: typeof stages[0]): Promise<Response | null> {
+    if (stage.challenges.length === 0) return null;
 
-    // Fetch existing submissions for this stage
     const subs = await c.env.DB.prepare(`
       SELECT cs.challenge_id
       FROM challenge_submissions cs
@@ -413,7 +413,6 @@ rpcAuth.post('/get-stage-config', async (c) => {
       ),
     );
 
-    // Find first un-submitted challenge index
     let currentIndex = -1;
     for (let i = 0; i < stage.challenges.length; i++) {
       if (!submittedIds.has(stage.challenges[i]!.id)) {
@@ -422,9 +421,8 @@ rpcAuth.post('/get-stage-config', async (c) => {
       }
     }
 
-    if (currentIndex === -1) continue; // All submitted, move to next stage
+    if (currentIndex === -1) return null;
 
-    // Ensure Assessment exists for this stage
     const existingAssessment = await c.env.DB.prepare(
       `SELECT id FROM assessments WHERE candidate_id = ?1 AND stage_id = ?2 LIMIT 1`,
     )
@@ -438,39 +436,28 @@ rpcAuth.post('/get-stage-config', async (c) => {
         INSERT INTO assessments (id, candidate_id, stage_id, status, owner_id, started_at, created_at, updated_at)
         VALUES (?1, ?2, ?3, 'PENDING', ?4, ?5, ?5, ?5)
       `)
-        .bind(assessmentId, candidateId, stage.id, candidate.owner_id, now)
+        .bind(assessmentId, candidateId, stage.id, candidateRow.owner_id, now)
         .run();
     }
 
-    // Update currentStageId on candidate
     await c.env.DB.prepare(
       `UPDATE candidates SET current_stage_id = ?1 WHERE id = ?2`,
     )
       .bind(stage.id, candidateId)
       .run();
 
-    // Prepend synthetic challenge steps: WELCOME always, LIVE_VIDEO for video stages
     const syntheticChallenges: Array<{ type: string; order: number }> = [];
     syntheticChallenges.push({ type: 'WELCOME', order: -2 });
     if (stage.mode === 'LIVE_VIDEO') {
       syntheticChallenges.push({ type: 'LIVE_VIDEO', order: -1 });
     }
 
-    const allChallenges = [
-      ...syntheticChallenges,
-      ...stage.challenges,
-    ];
-
-    // Re-index orders sequentially
+    const allChallenges = [...syntheticChallenges, ...stage.challenges];
     const indexedChallenges = allChallenges.map((ch, i) => ({ type: ch.type, order: i }));
-
-    // If no real challenges submitted yet, start at 0 (WELCOME).
-    // If resuming (some submitted), skip synthetics and jump to the right real challenge.
     const syntheticCount = syntheticChallenges.length;
     const hasSubmissions = currentIndex > 0;
     const adjustedIndex = hasSubmissions ? currentIndex + syntheticCount : 0;
 
-    // Build response — challenge IDs are NOT exposed, only type + order index
     return c.json({
       isComplete: false,
       stageId: stage.id,
@@ -481,6 +468,22 @@ rpcAuth.post('/get-stage-config', async (c) => {
       challenges: indexedChallenges,
       currentIndex: adjustedIndex,
     });
+  }
+
+  // If candidate has an explicit current_stage_id (e.g. from demo-register),
+  // try that stage first so candidates start where they were assigned.
+  if (candidate.current_stage_id) {
+    const targetStage = stages.find((s) => s.id === candidate.current_stage_id);
+    if (targetStage) {
+      const targetConfig = await evaluateStage(targetStage);
+      if (targetConfig) return targetConfig;
+    }
+  }
+
+  // Walk stages to find the first with un-submitted challenges
+  for (const stage of stages) {
+    const result = await evaluateStage(stage);
+    if (result) return result;
   }
 
   // All stages complete
@@ -1354,6 +1357,11 @@ rpcAuth.post('/get-scheduled-interview', async (c) => {
 rpcAuth.route('/review', review);
 rpcAuth.route('/repo', repo);
 rpcAuth.route('/dev-container', devContainer);
+
+// ─── Mount agent-interview bridge router ──────────────────────────────────────
+// Bridges frontend candidateConversationAdapter to the culture interview engine.
+import { agentInterviewRouter } from './assessment/agentInterview';
+rpcAuth.route('/agent-interview', agentInterviewRouter);
 
 // ─── Mount culture interview candidate sub-router ────────────────────────────
 // Culture routes use path-param token auth (the session JWT is the :token URL

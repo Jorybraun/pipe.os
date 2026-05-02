@@ -409,6 +409,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
                     isSubmitting={isLoading}
                     candidateName={candidate?.name}
                     candidateEmail={candidate?.email}
+                    allowSkip={typeof challengeContent.config === 'object' && challengeContent.config !== null && (challengeContent.config as Record<string, unknown>).allowSkip === true}
                   />
                 ) : followUpWaiting ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>

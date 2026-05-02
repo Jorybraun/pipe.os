@@ -23,9 +23,10 @@ interface IntakeChallengeProps {
   isSubmitting?: boolean;
   candidateName?: string | null | undefined;
   candidateEmail?: string | null | undefined;
+  allowSkip?: boolean;
 }
 
-export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidateName, candidateEmail }: IntakeChallengeProps): JSX.Element {
+export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidateName, candidateEmail, allowSkip }: IntakeChallengeProps): JSX.Element {
   const { theme } = useTheme();
   const sessionToken = useSessionToken();
   const isLight = theme.mode === 'light' || theme.mode === 'anatomy';
@@ -115,7 +116,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
   const handleSubmit = () => {
     setError(null);
 
-    if (!resumeR2Key) {
+    if (!resumeR2Key && !allowSkip) {
       setError('Please upload your resume.');
       return;
     }
@@ -304,7 +305,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
               fontWeight: 600,
             }}
           >
-            RESUME_UPLOAD (.PDF, .DOCX) *
+            {`RESUME_UPLOAD (.PDF, .DOCX)${allowSkip ? ' (OPTIONAL)' : ' *'}`}
           </label>
           <div
             onClick={() => fileInputRef.current?.click()}
@@ -476,7 +477,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
         {/* Submit */}
         <button
           onClick={handleSubmit}
-          disabled={isSubmitting || isUploading || !resumeR2Key}
+          disabled={isSubmitting || isUploading || (!resumeR2Key && !allowSkip)}
           style={{
             width: '100%',
             padding: '16px',
@@ -487,12 +488,12 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
             fontSize: 12,
             fontWeight: 800,
             fontFamily: 'Space Mono',
-            cursor: isSubmitting || isUploading || !resumeR2Key ? 'default' : 'pointer',
+            cursor: isSubmitting || isUploading || (!resumeR2Key && !allowSkip) ? 'default' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: 12,
-            opacity: isSubmitting || isUploading || !resumeR2Key ? 0.5 : 1,
+            opacity: isSubmitting || isUploading || (!resumeR2Key && !allowSkip) ? 0.5 : 1,
           }}
         >
           {isSubmitting ? (
