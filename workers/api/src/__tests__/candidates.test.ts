@@ -68,7 +68,7 @@ function buildEnv(db: FakeD1): Env {
 // ─── POST /api/v1/pipelines/:pipelineId/candidates ───────────────────────────
 
 describe('POST /api/v1/pipelines/:pipelineId/candidates', () => {
-  it('rejects names containing HTML tags (XSS)', async () => {
+  it('rejects names containing forbidden XSS patterns with 400', async () => {
     const db = fakeD1([
       { match: 'FROM pipelines', value: { id: 'pipe_1', title: 'Test' } },
       { match: 'FROM stages', value: { id: 'stage_1' } },
@@ -85,9 +85,32 @@ describe('POST /api/v1/pipelines/:pipelineId/candidates', () => {
       env,
     );
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     const body = (await res.json()) as { error?: { message?: string } };
-    expect(body.error?.message).toContain('invalid');
+    expect(body.error?.message).toContain('forbidden');
+  });
+
+  it('strips benign < and > characters from names', async () => {
+    const db = fakeD1([
+      { match: 'FROM pipelines', value: { id: 'pipe_1', title: 'Test' } },
+      { match: 'FROM stages', value: { id: 'stage_1' } },
+      { match: 'FROM candidates', value: null },
+    ]);
+    const env = buildEnv(db);
+
+    const res = await pipelineCandidates.request(
+      '/pipe_1/candidates',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Hello <World>', email: 'hello@world.com' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { candidate?: { name?: string } };
+    expect(body.candidate?.name).toBe('Hello World');
   });
 
   it('rejects duplicate email in the same pipeline', async () => {
@@ -188,7 +211,7 @@ describe('GET /api/v1/candidates/:candidateId', () => {
 // ─── PATCH /api/v1/candidates/:candidateId ───────────────────────────────────
 
 describe('PATCH /api/v1/candidates/:candidateId', () => {
-  it('rejects names containing HTML tags (XSS)', async () => {
+  it('rejects names containing forbidden XSS patterns with 400 on PATCH', async () => {
     const db = fakeD1([
       {
         match: 'c.id = ? AND p.owner_id',
@@ -202,14 +225,41 @@ describe('PATCH /api/v1/candidates/:candidateId', () => {
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: '<img src=x onerror=alert(1)>' }),
+        body: JSON.stringify({ name: '<script src=x>' }),
       },
       env,
     );
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(400);
     const body = (await res.json()) as { error?: { message?: string } };
-    expect(body.error?.message).toContain('invalid');
+    expect(body.error?.message).toContain('forbidden');
+  });
+
+  it('strips benign < and > characters from names on PATCH', async () => {
+    const db = fakeD1([
+      {
+        match: 'c.id = ? AND p.owner_id',
+        value: { id: 'cand_1', pipeline_id: 'pipe_1' },
+      },
+    ]);
+    const env = buildEnv(db);
+
+    const res = await candidateOps.request(
+      '/cand_1',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Alice <Bob>' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { success?: boolean };
+    expect(body.success).toBe(true);
+
+    const updateCall = db.__calls.find((c) => c.sql.includes('UPDATE candidates'));
+    expect(updateCall?.params).toContain('Alice Bob');
   });
 });
 
@@ -231,9 +281,8 @@ describe('DELETE /api/v1/candidates/:candidateId', () => {
       env,
     );
 
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { success: boolean };
-    expect(body.success).toBe(true);
+    expect(res.status).toBe(204);
+    expect(res.body).toBeNull();
 
     const deleteCalls = db.__calls.filter((c) => c.sql.trim().startsWith('DELETE FROM'));
     const tablesDeleted = deleteCalls.map((c) => {
@@ -241,5 +290,24 @@ describe('DELETE /api/v1/candidates/:candidateId', () => {
       return m ? m[1] : '';
     });
     expect(tablesDeleted).toContain('candidates');
+    expect(tablesDeleted).toContain('candidate_profile_state');
+  });
+
+  it('returns 404 when deleting a non-existent candidate', async () => {
+    const db = fakeD1([
+      {
+        match: 'c.id = ? AND p.owner_id',
+        value: null,
+      },
+    ]);
+    const env = buildEnv(db);
+
+    const res = await candidateOps.request(
+      '/nonexistent',
+      { method: 'DELETE', headers: {} },
+      env,
+    );
+
+    expect(res.status).toBe(404);
   });
 });

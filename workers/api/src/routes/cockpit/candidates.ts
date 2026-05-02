@@ -37,10 +37,11 @@ const updateCandidateSchema = z.object({
 
 /** Strip dangerous HTML characters from candidate names. */
 function sanitizeCandidateName(name: string): string {
-  if (/[<>]/.test(name)) {
-    throw new Error('Name contains invalid characters');
+  const lower = name.toLowerCase();
+  if (lower.includes('<script') || lower.includes('javascript:')) {
+    throw new Error('FORBIDDEN_PATTERN');
   }
-  return name.trim();
+  return name.replace(/[<>]/g, '').trim();
 }
 
 /** Maximum file size for CV uploads: 10 MB. */
@@ -79,7 +80,11 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   let { name, email, currentStageId: requestedStageId, skipEmail } = parsed.data;
   try {
     name = sanitizeCandidateName(name);
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'FORBIDDEN_PATTERN') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Name contains forbidden pattern' } }, 400);
+    }
     return apiError(c, 'VALIDATION_ERROR', 'Name contains invalid characters');
   }
 
@@ -948,7 +953,11 @@ candidateOps.patch('/:candidateId', async (c) => {
       const sanitizedName = sanitizeCandidateName(parsed.data.name);
       updates.push('name = ?');
       values.push(sanitizedName);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'FORBIDDEN_PATTERN') {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'Name contains forbidden pattern' } }, 400);
+      }
       return apiError(c, 'VALIDATION_ERROR', 'Name contains invalid characters');
     }
   }
@@ -1083,20 +1092,32 @@ candidateOps.delete('/:candidateId', async (c) => {
 
   // Hard delete with explicit cleanup to avoid FK constraint errors
   // (not all related tables have ON DELETE CASCADE)
-  await db.prepare(`DELETE FROM candidate_nodes WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM candidate_coverage WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM candidate_ingestion WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM culture_interview_sessions WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM scheduled_interviews WHERE candidate_id = ?`).bind(candidateId).run();
-  try { await db.prepare(`DELETE FROM phone_calls WHERE candidate_id = ?`).bind(candidateId).run(); } catch {}
-  await db.prepare(`DELETE FROM enrichment_jobs WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM review_sessions WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM challenge_submissions WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM assessments WHERE candidate_id = ?`).bind(candidateId).run();
-  await db.prepare(`DELETE FROM candidate_challenge_assignment WHERE candidate_id = ?`).bind(candidateId).run();
+  const tables = [
+    'candidate_nodes',
+    'candidate_coverage',
+    'candidate_ingestion',
+    'culture_interview_sessions',
+    'scheduled_interviews',
+    'phone_calls',
+    'enrichment_jobs',
+    'review_sessions',
+    'challenge_submissions',
+    'assessments',
+    'candidate_challenge_assignment',
+    'candidate_profile_state',
+    'dev_container_exchange_tokens',
+    'step_duration_samples',
+  ];
+  for (const table of tables) {
+    try {
+      await db.prepare(`DELETE FROM ${table} WHERE candidate_id = ?`).bind(candidateId).run();
+    } catch {
+      // table may not exist yet
+    }
+  }
   await db.prepare(`DELETE FROM candidates WHERE id = ?`).bind(candidateId).run();
 
-  return c.json({ success: true });
+  return new Response(null, { status: 204 });
 });
 
 export { pipelineCandidates, candidateOps };
