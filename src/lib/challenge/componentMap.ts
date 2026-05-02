@@ -455,15 +455,15 @@ const ConnectedCodePreviewPanel = connectInterview(PreviewPanel, (ctx) => {
 
 // Synthetic challenge panels — connected via InterviewContext
 const ConnectedWelcomePanel = connectInterview(WelcomeScreen, (ctx) => {
-  // Find the next real challenge after the WELCOME synthetic step
-  const nextRealChallenge = ctx.stageConfig.challenges.slice(ctx.currentIndex + 1)
-    .find((ch) => ch.data.type !== 'WELCOME' && ch.data.type !== 'LIVE_VIDEO');
-  const nextType = (nextRealChallenge?.data.type as 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER') ?? 'QUIZ_SHORT_ANSWER';
-
   return {
     pipelineName: ctx.stageConfig.title || 'Technical Assessment',
     stageName: 'Welcome',
-    challengeType: nextType,
+    challenges: ctx.stageConfig.challenges.map((ch) => ({
+      title: ch.title,
+      type: ch.type,
+      timeLimit: ch.timeLimit ?? null,
+      data: ch.data,
+    })),
     onStart: () => ctx.submit(),
   };
 });

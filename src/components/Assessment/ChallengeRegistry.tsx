@@ -18,7 +18,7 @@ import { FollowUpQuestionsPanel } from './FollowUpQuestionsPanel';
 import { VoicePanel } from '../Panels/VoicePanel';
 import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
 import { VideoWaitingRoom } from '../Video/VideoWaitingRoom';
-import { WelcomeScreen, type ChallengeType } from './WelcomeScreen';
+import { WelcomeScreen } from './WelcomeScreen';
 import { IntakeChallenge } from './IntakeChallenge';
 import { normalizeShortAnswerConfig } from '../../lib/shortAnswerUtils';
 import type { FollowUpQuestion } from '../../hooks/useAssessment';
@@ -316,13 +316,19 @@ export function ChallengeRegistry({
   // ---------------------------------------------------------------------------
 
   if (challenge.type === 'WELCOME') {
-    // Determine the next real challenge type for the welcome screen display
     const nextType = (config.nextChallengeType as string) ?? 'QUIZ_SHORT_ANSWER';
     return (
       <WelcomeScreen
         pipelineName={challenge.title || 'Technical Assessment'}
         stageName={challenge.title || 'Interview'}
-        challengeType={nextType as ChallengeType}
+        challenges={[
+          {
+            title: challenge.title || 'Interview',
+            type: nextType,
+            timeLimit: stageTimeLimit ?? null,
+            data: config as Record<string, unknown>,
+          },
+        ]}
         onStart={() => onSubmit({})}
       />
     );

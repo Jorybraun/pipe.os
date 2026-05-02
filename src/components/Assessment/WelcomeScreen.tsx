@@ -1,4 +1,17 @@
-import { ArrowRight, Code2, FileSearch, HelpCircle, MessageSquare } from 'lucide-react';
+import {
+  ArrowRight,
+  Clock,
+  Code2,
+  FileSearch,
+  HelpCircle,
+  MessageSquare,
+  Mic,
+  Video,
+  Type,
+  ListChecks,
+  Info,
+  AlertCircle,
+} from 'lucide-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
 import { AppBackground } from '../ui/AppBackground';
 
@@ -6,52 +19,116 @@ import { AppBackground } from '../ui/AppBackground';
 // Types
 // ============================================================================
 
-export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER';
+export interface WelcomeScreenChallenge {
+  title: string;
+  type: string;
+  timeLimit?: number | null;
+  data?: Record<string, unknown>;
+}
 
 export interface WelcomeScreenProps {
   pipelineName: string;
   stageName: string;
-  challengeType: ChallengeType;
+  challenges: WelcomeScreenChallenge[];
   onStart: () => void;
 }
 
 // ============================================================================
-// Challenge type config
+// Helpers
 // ============================================================================
 
-const CHALLENGE_CONFIG: Record<
-  ChallengeType,
-  { label: string; icon: JSX.Element; color: string; guidance: string }
-> = {
-  CODE_REVIEW: {
-    label: 'CODE_REVIEW',
-    icon: <FileSearch size={28} />,
-    color: '#60a5fa',
-    guidance:
-      'Review this pull request as you would in the wild. Comment on style, logic, and functionality — and things that look good. There are no trick questions.',
-  },
-  CODE_IMPLEMENTATION: {
-    label: 'CODE_IMPLEMENTATION',
-    icon: <Code2 size={28} />,
-    color: 'var(--pipe-accent)',
-    guidance:
-      'Implement a function to the spec provided. You can run and test your code in the editor.',
-  },
-  QUIZ_MCQ: {
-    label: 'QUIZ_MCQ',
-    icon: <HelpCircle size={28} />,
-    color: '#4ade80',
-    guidance:
-      "Answer the multiple-choice questions. There's no time limit unless stated.",
-  },
-  QUIZ_SHORT_ANSWER: {
-    label: 'QUIZ_SHORT_ANSWER',
-    icon: <MessageSquare size={28} />,
-    color: '#fbbf24',
-    guidance:
-      'Written questions. There are no right or wrong answers — we want to understand how you think.',
-  },
-};
+function formatDuration(minutes: number | null | undefined): string {
+  if (!minutes || minutes <= 0) return '';
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function getChallengeMeta(challenge: WelcomeScreenChallenge) {
+  const { type, data } = challenge;
+
+  switch (type) {
+    case 'CODE_REVIEW':
+      return {
+        icon: <FileSearch size={14} />,
+        label: 'Code Review',
+        desc: 'Review a pull request and leave feedback',
+      };
+    case 'CODE_IMPLEMENTATION':
+      return {
+        icon: <Code2 size={14} />,
+        label: 'Coding Exercise',
+        desc: 'Implement a solution in the code editor',
+      };
+    case 'QUIZ_MCQ':
+      return {
+        icon: <ListChecks size={14} />,
+        label: 'Multiple Choice',
+        desc: 'Select the best answer for each question',
+      };
+    case 'QUIZ_SHORT_ANSWER': {
+      const mode = (data?.inputMode as string) ?? 'text';
+      if (mode === 'voice') {
+        return {
+          icon: <Mic size={14} />,
+          label: 'Voice Response',
+          desc: 'Record your answer using your microphone',
+        };
+      }
+      if (mode === 'video') {
+        return {
+          icon: <Video size={14} />,
+          label: 'Video Response',
+          desc: 'Record a video response to the prompt',
+        };
+      }
+      return {
+        icon: <Type size={14} />,
+        label: 'Written Response',
+        desc: 'Type your answer in the text box provided',
+      };
+    }
+    case 'INTAKE':
+      return {
+        icon: <HelpCircle size={14} />,
+        label: 'Intake Questions',
+        desc: 'Answer a few questions about your background',
+      };
+    default:
+      return {
+        icon: <MessageSquare size={14} />,
+        label: type.replace(/_/g, ' '),
+        desc: 'Complete this part of the assessment',
+      };
+  }
+}
+
+function getRequirements(challenges: WelcomeScreenChallenge[]): string[] {
+  const reqs = new Set<string>();
+  for (const c of challenges) {
+    if (c.type === 'CODE_REVIEW' || c.type === 'CODE_IMPLEMENTATION') {
+      reqs.add('A modern web browser');
+    }
+    if (c.type === 'QUIZ_SHORT_ANSWER') {
+      const mode = (c.data?.inputMode as string) ?? 'text';
+      if (mode === 'voice') reqs.add('A working microphone');
+      if (mode === 'video') {
+        reqs.add('A working camera');
+        reqs.add('A working microphone');
+      }
+    }
+    if (c.type === 'LIVE_VIDEO') {
+      reqs.add('A working camera');
+      reqs.add('A working microphone');
+    }
+  }
+  return Array.from(reqs);
+}
+
+function totalDuration(challenges: WelcomeScreenChallenge[]): number {
+  return challenges.reduce((sum, c) => sum + (c.timeLimit ?? 0), 0);
+}
 
 // ============================================================================
 // Component
@@ -60,16 +137,16 @@ const CHALLENGE_CONFIG: Record<
 /**
  * WelcomeScreen — Shown before the candidate starts a challenge.
  *
- * Displays pipeline/stage context, challenge type guidance, and a
- * START_INTERVIEW button. The status update (INVITED → IN_PROGRESS)
- * is deferred until `onStart` is called.
+ * Displays pipeline/stage context, a preview of upcoming challenges,
+ * time estimates, and equipment requirements. Replaces the old
+ * challenge-type badge with human-readable process information.
  *
  * @example
  * ```tsx
  * <WelcomeScreen
  *   pipelineName="Senior Frontend Engineer"
  *   stageName="Technical Assessment"
- *   challengeType="CODE_REVIEW"
+ *   challenges={[{ title: 'React Patterns', type: 'QUIZ_MCQ', timeLimit: 15 }]}
  *   onStart={handleStart}
  * />
  * ```
@@ -77,10 +154,15 @@ const CHALLENGE_CONFIG: Record<
 export function WelcomeScreen({
   pipelineName,
   stageName,
-  challengeType,
+  challenges,
   onStart,
 }: WelcomeScreenProps): JSX.Element {
-  const cfg = CHALLENGE_CONFIG[challengeType];
+  const realChallenges = challenges.filter(
+    (c) => c.type !== 'WELCOME' && c.type !== 'LIVE_VIDEO',
+  );
+  const reqs = getRequirements(realChallenges);
+  const totalTime = totalDuration(realChallenges);
+  const challengeCount = realChallenges.length;
 
   return (
     <div
@@ -96,7 +178,7 @@ export function WelcomeScreen({
       <AppBackground />
       <LiquidMetalCard
         variant="chrome"
-        style={{ maxWidth: 560, width: '100%', padding: 56, zIndex: 1 }}
+        style={{ maxWidth: 620, width: '100%', padding: 48, zIndex: 1 }}
       >
         {/* Header meta */}
         <div
@@ -105,41 +187,19 @@ export function WelcomeScreen({
             letterSpacing: '0.2em',
             color: 'var(--pipe-text-dim)',
             fontFamily: '"Space Mono", monospace',
-            marginBottom: 32,
+            marginBottom: 28,
           }}
         >
           {pipelineName.toUpperCase()} · {stageName.toUpperCase()}
         </div>
 
-        {/* Challenge type badge */}
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: '8px 14px',
-            background: `${cfg.color}14`,
-            border: `1px solid ${cfg.color}40`,
-            borderRadius: 4,
-            color: cfg.color,
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            fontFamily: '"Space Mono", monospace',
-            marginBottom: 32,
-          }}
-        >
-          {cfg.icon}
-          {cfg.label}
-        </div>
-
         {/* Headline */}
         <h1
           style={{
-            fontSize: 28,
+            fontSize: 26,
             fontWeight: 800,
             color: 'var(--pipe-text, #fff)',
-            marginBottom: 16,
+            marginBottom: 12,
             letterSpacing: '-0.02em',
             lineHeight: 1.2,
           }}
@@ -147,24 +207,218 @@ export function WelcomeScreen({
           Ready to begin?
         </h1>
 
-        {/* Guidance copy */}
+        {/* Process explanation */}
         <p
           style={{
             fontSize: 13,
             color: 'var(--pipe-text-muted)',
             lineHeight: 1.7,
             fontFamily: '"Space Mono", monospace',
-            marginBottom: 40,
+            marginBottom: 32,
           }}
         >
-          {cfg.guidance}
+          This stage consists of {challengeCount}{' '}
+          {challengeCount === 1 ? 'part' : 'parts'}. Work through each one at
+          your own pace — your progress is saved as you go. There are no trick
+          questions; we want to see how you think.
         </p>
+
+        {/* Challenge list */}
+        {realChallenges.length > 0 && (
+          <div style={{ marginBottom: 28 }}>
+            <div
+              style={{
+                fontSize: 8,
+                letterSpacing: '0.2em',
+                color: 'var(--pipe-text-dim)',
+                fontFamily: '"Space Mono", monospace',
+                fontWeight: 700,
+                marginBottom: 14,
+              }}
+            >
+              WHAT TO EXPECT
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {realChallenges.map((c, i) => {
+                const meta = getChallengeMeta(c);
+                return (
+                  <div
+                    key={c.title + i}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 12,
+                      padding: '14px 16px',
+                      background: 'var(--pipe-surface)',
+                      border: '1px solid var(--pipe-border-light)',
+                      borderRadius: 6,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 4,
+                        background: 'var(--pipe-surface-hover)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--pipe-text-muted)',
+                        flexShrink: 0,
+                        marginTop: 2,
+                      }}
+                    >
+                      {meta.icon}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--pipe-text, #fff)',
+                          marginBottom: 2,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {c.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: 'var(--pipe-text-muted)',
+                          fontFamily: '"Space Mono", monospace',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {meta.label} · {meta.desc}
+                      </div>
+                    </div>
+                    {c.timeLimit ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: 9,
+                          color: 'var(--pipe-text-dim)',
+                          fontFamily: '"Space Mono", monospace',
+                          flexShrink: 0,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        <Clock size={10} />
+                        {formatDuration(c.timeLimit)}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {totalTime > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginTop: 12,
+                  fontSize: 10,
+                  color: 'var(--pipe-text-muted)',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                <Clock size={12} />
+                Estimated total time: {formatDuration(totalTime)}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Requirements */}
+        {reqs.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              padding: '12px 14px',
+              background: 'rgba(251, 191, 36, 0.06)',
+              border: '1px solid rgba(251, 191, 36, 0.15)',
+              borderRadius: 6,
+              marginBottom: 28,
+            }}
+          >
+            <AlertCircle
+              size={14}
+              style={{ color: '#fbbf24', flexShrink: 0, marginTop: 2 }}
+            />
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: '#fbbf24',
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: '0.08em',
+                  marginBottom: 4,
+                }}
+              >
+                BEFORE YOU START
+              </div>
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: 14,
+                  fontSize: 11,
+                  color: 'var(--pipe-text-muted)',
+                  lineHeight: 1.6,
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                {reqs.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Tips */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding: '12px 14px',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border-light)',
+            borderRadius: 6,
+            marginBottom: 32,
+          }}
+        >
+          <Info
+            size={14}
+            style={{ color: 'var(--pipe-text-dim)', flexShrink: 0, marginTop: 2 }}
+          />
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--pipe-text-muted)',
+              lineHeight: 1.6,
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
+            Find a quiet place, read each prompt carefully, and take your time.
+            You can pause between questions if you need a break.
+          </div>
+        </div>
 
         {/* Separator */}
         <div
           style={{
             borderTop: '1px solid var(--pipe-border)',
-            marginBottom: 32,
+            marginBottom: 28,
           }}
         />
 
@@ -190,8 +444,12 @@ export function WelcomeScreen({
             cursor: 'pointer',
             transition: 'opacity 0.15s',
           }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '0.88'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.opacity = '0.88';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.opacity = '1';
+          }}
         >
           START_INTERVIEW
           <ArrowRight size={16} />
