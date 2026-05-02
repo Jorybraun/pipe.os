@@ -204,7 +204,7 @@ autoBuild.post('/auto-build', async (c) => {
         challengeId: generateId(),
         type: station.type,
         title: station.title,
-        sortOrder: station.sortOrder + 1, // shift down for screener
+        sortOrder: station.sortOrder + 2, // shift down for screener + cultural fit
         repoId: station.repoId,
         githubRepoUrl: station.githubRepoUrl,
         githubPrNumber: station.githubPrNumber ?? null,
@@ -220,7 +220,7 @@ autoBuild.post('/auto-build', async (c) => {
           challengeId: generateId(),
           type: 'CODE_REVIEW',
           title: 'Code Review',
-          sortOrder: 1,
+          sortOrder: 2,
           repoId: null,
           githubRepoUrl: null,
           githubPrNumber: null,
@@ -233,7 +233,7 @@ autoBuild.post('/auto-build', async (c) => {
           challengeId: generateId(),
           type: 'CODE_IMPLEMENTATION',
           title: 'Code Implementation',
-          sortOrder: 2,
+          sortOrder: 3,
           repoId: null,
           githubRepoUrl: null,
           githubPrNumber: null,
@@ -285,12 +285,37 @@ autoBuild.post('/auto-build', async (c) => {
     );
   }
 
+  // Insert Cultural Fit stage between screener and code stations.
+  const culturalStageId = generateId();
+  const culturalChallengeId = generateId();
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    ).bind(culturalStageId, pipelineId, 'Cultural Fit', 1, 'CULTURAL', userId),
+  );
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO challenges (id, stage_id, type, sort_order, title, instructions, config, owner_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    ).bind(
+      culturalChallengeId,
+      culturalStageId,
+      'AGENT_INTERVIEW',
+      0,
+      'Cultural Fit Interview',
+      'A structured behavioral interview assessing cultural alignment, communication style, and team-fit.',
+      JSON.stringify({ autoBuilt: true }),
+      userId,
+    ),
+  );
+
   for (const rec of stageRecords) {
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, 'CODE_REVIEW', userId),
+      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, rec.type === 'CODE_REVIEW' ? 'CODE_REVIEW' : 'CODE_IMPLEMENTATION', userId),
     );
   }
 

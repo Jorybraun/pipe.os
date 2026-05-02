@@ -370,8 +370,10 @@ function ChallengeCard({
   onViewReviewSession?: (session: ReviewSessionListItem) => void;
 }): JSX.Element {
   const sub = challenge.submission;
+  // Allow auto-scored short answers to display their score without manual override
   const isManual =
-    challenge.type === "QUIZ_SHORT_ANSWER" || challenge.type === "CODE_IMPLEMENTATION";
+    (challenge.type === "QUIZ_SHORT_ANSWER" && sub?.score == null) ||
+    challenge.type === "CODE_IMPLEMENTATION";
   const response = sub?.response ?? null;
 
   return (
@@ -1723,6 +1725,13 @@ export default function CandidateProfilePage(): JSX.Element {
                         </button>
                       </div>
                     )}
+                  </LiquidMetalCard>
+                )}
+                {activeStage.challenges.length === 0 && (
+                  <LiquidMetalCard variant="default" style={{ padding: '48px 32px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+                      NO_CHALLENGES_CONFIGURED_FOR_THIS_STAGE
+                    </div>
                   </LiquidMetalCard>
                 )}
                 {activeStage.challenges.map((challenge) => (

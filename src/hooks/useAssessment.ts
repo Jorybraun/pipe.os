@@ -161,14 +161,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
   // ── Resolve token on mount ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
-    if (!inviteToken) {
+    const cachedToken = sessionStorage.getItem('pipe_session_token');
+    const cachedCandidateJson = sessionStorage.getItem('pipe_session_candidate');
+
+    // Allow empty inviteToken when a cached session exists (demo/self-reg flow)
+    if (!inviteToken && !(cachedToken && cachedCandidateJson)) {
       setState((prev) => ({ ...prev, isLoading: false, error: new Error('Missing invite token') }));
       return;
     }
 
     try {
-      const cachedToken = sessionStorage.getItem('pipe_session_token');
-      const cachedCandidateJson = sessionStorage.getItem('pipe_session_candidate');
       let candidate: ResolvedCandidate;
 
       if (cachedToken && cachedCandidateJson) {

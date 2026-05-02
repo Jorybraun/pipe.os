@@ -179,6 +179,7 @@ rpcPublic.post('/demo-register', async (c) => {
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   const githubHandle = typeof body.githubHandle === 'string' ? body.githubHandle.trim().replace(/^@/, '') : '';
   const linkedinUrl = typeof body.linkedinUrl === 'string' ? body.linkedinUrl.trim() : '';
+  const assessmentType = typeof body.assessmentType === 'string' ? body.assessmentType.trim().toUpperCase() : 'CODE_REVIEW';
 
   if (!name || name.length < 1) {
     return c.json({ error: { code: 'VALIDATION_ERROR', message: 'name is required.' } }, 400);
@@ -194,18 +195,29 @@ rpcPublic.post('/demo-register', async (c) => {
     return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Auth not configured.' } }, 500);
   }
 
-  // Find demo pipeline
+  // Find demo pipeline that has a challenge of the requested type.
+  // Priority: DEMO_PIPELINE_ID env var, then title match with challenge type,
+  // then any pipeline with "demo" in the title that has the right challenge type.
   let pipelineId = c.env.DEMO_PIPELINE_ID;
+
   if (!pipelineId) {
+    // Look for a pipeline with "demo" in the title that contains the requested challenge type
     const pipeline = await db.prepare(
-      `SELECT id FROM pipelines WHERE lower(title) LIKE '%demo%' ORDER BY created_at DESC LIMIT 1`,
-    ).first<{ id: string }>();
+      `SELECT DISTINCT p.id
+       FROM pipelines p
+       JOIN stages s ON s.pipeline_id = p.id
+       JOIN challenges c ON c.stage_id = s.id
+       WHERE lower(p.title) LIKE '%demo%'
+         AND c.type = ?1
+       ORDER BY p.created_at DESC
+       LIMIT 1`,
+    ).bind(assessmentType).first<{ id: string }>();
     if (pipeline) pipelineId = pipeline.id;
   }
 
   if (!pipelineId) {
     return c.json({
-      error: { code: 'NOT_CONFIGURED', message: 'No demo pipeline configured. Set DEMO_PIPELINE_ID or create a pipeline with "demo" in the title.' },
+      error: { code: 'NOT_CONFIGURED', message: `No demo pipeline configured for ${assessmentType}. Set DEMO_PIPELINE_ID or create a pipeline with "demo" in the title and a ${assessmentType} challenge.` },
     }, 503);
   }
 
@@ -218,13 +230,18 @@ rpcPublic.post('/demo-register', async (c) => {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Demo pipeline not found.' } }, 404);
   }
 
-  // Find first stage
+  // Find the first stage that has a challenge of the requested type
   const stage = await db.prepare(
-    `SELECT id FROM stages WHERE pipeline_id = ?1 ORDER BY sort_order ASC LIMIT 1`,
-  ).bind(pipelineId).first<{ id: string }>();
+    `SELECT s.id
+     FROM stages s
+     JOIN challenges c ON c.stage_id = s.id
+     WHERE s.pipeline_id = ?1 AND c.type = ?2
+     ORDER BY s.sort_order ASC, c.sort_order ASC
+     LIMIT 1`,
+  ).bind(pipelineId, assessmentType).first<{ id: string }>();
 
   if (!stage) {
-    return c.json({ error: { code: 'NOT_CONFIGURED', message: 'Demo pipeline has no stages.' } }, 503);
+    return c.json({ error: { code: 'NOT_CONFIGURED', message: `Demo pipeline has no ${assessmentType} challenge.` } }, 503);
   }
 
   // Create candidate
@@ -800,6 +817,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     .first<{ id: string; response_json: string | null }>();
 
   const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);
+  let submissionId: string;
 
   if (existing) {
     // Allow resubmission if the previous response was empty (fixes React input
@@ -823,16 +841,17 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     }
 
     // Update existing empty submission with new response
+    submissionId = existing.id;
     await c.env.DB.prepare(`
       UPDATE challenge_submissions
       SET response_json = ?1, updated_at = ?2, submitted_at = ?2
       WHERE id = ?3
     `)
-      .bind(responseJson, now, existing.id)
+      .bind(responseJson, now, submissionId)
       .run();
   } else {
     // Create ChallengeSubmission
-    const submissionId = crypto.randomUUID();
+    submissionId = crypto.randomUUID();
     await c.env.DB.prepare(`
       INSERT INTO challenge_submissions (id, assessment_id, challenge_id, candidate_id, response_json, submitted_at, created_at, updated_at)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?6)
@@ -1026,8 +1045,10 @@ rpcAuth.post('/score-submission', async (c) => {
       } catch { /* empty response */ }
     }
 
+    // QUIZ_SHORT_ANSWER submissions use either { text: '...' } or { answers: { current: '...' } }
+    const textAnswer = (response.text as string | undefined)?.trim() ?? '';
     const answers = response.answers as Record<string, string> | undefined;
-    const answerText = (answers?.current ?? '').trim();
+    const answerText = textAnswer || (answers?.current ?? '').trim();
 
     if (!answerText) {
       score = 0;

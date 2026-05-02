@@ -308,9 +308,13 @@ export function resolveStageConfig(raw: RawStage): StageConfig {
   const sorted = [...raw.challenges].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const challenges = sorted.map((c) => resolveChallengeNode(c, raw.timeLimit));
 
-  return {
+  const result: StageConfig = {
     id: raw.id,
     shells: stageShells,
     challenges,
   };
+  if (raw.title) {
+    result.title = raw.title;
+  }
+  return result;
 }

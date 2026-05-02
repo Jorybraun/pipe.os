@@ -71,6 +71,8 @@ export interface Env {
   GOOGLE_CLOUD_PROJECT?: string;
   /** Metered.ca API key for TURN credential fetching. */
   METERED_API_KEY?: string;
+  /** Pipeline ID used for the public demo / self-registration flow. */
+  DEMO_PIPELINE_ID?: string;
   /** Calendly OAuth client ID. */
   CALENDLY_CLIENT_ID?: string;
   /** Calendly OAuth client secret. */

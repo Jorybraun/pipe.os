@@ -15,6 +15,8 @@ interface StageShellProps {
   fullBleed?: boolean;
   /** When true, hides the footer navigation. Used by challenge types that control their own flow. */
   hideFooter?: boolean | undefined;
+  /** When true, hides the header banner. Used for demo/embedded mode. */
+  hideHeader?: boolean | undefined;
 }
 
 /**
@@ -32,6 +34,7 @@ export function StageShell({
   isSubmitting,
   fullBleed = false,
   hideFooter = false,
+  hideHeader = false,
 }: StageShellProps): JSX.Element {
   const { secondsRemaining, formatTime } = useTimer();
 
@@ -54,6 +57,7 @@ export function StageShell({
       </div>
 
       {/* Header */}
+      {!hideHeader && (
       <header style={{ 
         padding: '24px 40px', 
         display: 'flex', 
@@ -123,6 +127,7 @@ export function StageShell({
           </div>
         )}
       </header>
+      )}
 
       {/* Main Content */}
       <main

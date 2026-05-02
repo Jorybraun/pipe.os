@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
-import { Loader2, Upload, ArrowRight, Github, Linkedin } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Loader2, Upload, ArrowRight, Code, MessageSquareText, Settings } from 'lucide-react';
+import CandidateAssessmentPage from './CandidateAssessmentPage';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
 
@@ -9,17 +9,32 @@ interface DemoRegisterResponse {
   candidateId: string;
   pipelineId: string;
   sessionToken: string;
-  inviteToken: string;
   status: string;
 }
 
+type AssessmentType = 'CODE_REVIEW' | 'CULTURE';
+
+const ASSESSMENT_OPTIONS: Array<{ id: AssessmentType; label: string; description: string; icon: typeof Code }> = [
+  {
+    id: 'CODE_REVIEW',
+    label: 'Code Review',
+    description: 'Review a pull request and spot bugs, style issues, and design problems.',
+    icon: Code,
+  },
+  {
+    id: 'CULTURE',
+    label: 'Culture Interview',
+    description: 'Answer behavioral questions about ownership, collaboration, and learning.',
+    icon: MessageSquareText,
+  },
+];
+
 export default function DemoIntakePage(): JSX.Element {
-  const navigate = useNavigate();
+  const [registered, setRegistered] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [githubHandle, setGithubHandle] = useState('');
-  const [linkedinUrl, setLinkedinUrl] = useState('');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>('CODE_REVIEW');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,33 +58,17 @@ export default function DemoIntakePage(): JSX.Element {
       return;
     }
 
-    if (linkedinUrl.trim()) {
-      try {
-        const parsed = new URL(linkedinUrl.trim());
-        if (parsed.hostname !== 'www.linkedin.com' && parsed.hostname !== 'linkedin.com') {
-          setError('Invalid LinkedIn URL.');
-          return;
-        }
-      } catch {
-        setError('Invalid LinkedIn URL.');
-        return;
-      }
-    }
-
     setIsSubmitting(true);
 
     try {
-      const payload: Record<string, string> = {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-      };
-      if (githubHandle.trim()) payload.githubHandle = githubHandle.trim().replace(/^@/, '');
-      if (linkedinUrl.trim()) payload.linkedinUrl = linkedinUrl.trim();
-
       const res = await fetch(`${API_BASE}/rpc/demo-register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          assessmentType,
+        }),
       });
 
       const data = await res.json() as Record<string, unknown>;
@@ -79,9 +78,8 @@ export default function DemoIntakePage(): JSX.Element {
         throw new Error(msg);
       }
 
-      const { candidateId, pipelineId, sessionToken, inviteToken } = data as unknown as DemoRegisterResponse;
+      const { candidateId, pipelineId, sessionToken } = data as DemoRegisterResponse;
 
-      // Cache session token so CandidateAssessmentPage can use it
       sessionStorage.setItem('pipe_session_token', sessionToken);
       sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
         id: candidateId,
@@ -90,14 +88,17 @@ export default function DemoIntakePage(): JSX.Element {
         name: name.trim(),
       }));
 
-      // Redirect to token-based assessment URL
-      navigate(`/assess/${inviteToken}`);
+      setRegistered(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setIsSubmitting(false);
     }
-  }, [name, email, githubHandle, linkedinUrl, navigate]);
+  }, [name, email, assessmentType]);
+
+  if (registered) {
+    return <CandidateAssessmentPage hideHeader />;
+  }
 
   return (
     <div
@@ -111,7 +112,7 @@ export default function DemoIntakePage(): JSX.Element {
         fontFamily: '"Space Mono", monospace',
       }}
     >
-      <div style={{ maxWidth: 520, width: '100%' }}>
+      <div style={{ maxWidth: 560, width: '100%' }}>
         {/* Header */}
         <div style={{ marginBottom: 32 }}>
           <div
@@ -146,12 +147,94 @@ export default function DemoIntakePage(): JSX.Element {
               fontFamily: '"Space Grotesk", system-ui, sans-serif',
             }}
           >
-            Experience a real code review assessment. No recruiter needed — just you and the code.
+            Experience a real assessment. No recruiter needed — pick a track and jump in.
           </p>
         </div>
 
         <LiquidMetalCard variant="dark" style={{ padding: 32 }}>
           <form onSubmit={handleSubmit}>
+            {/* Assessment Type Selector */}
+            <div style={{ marginBottom: 28 }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.15em',
+                  color: 'rgba(255,255,255,0.5)',
+                  marginBottom: 12,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Assessment Type
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {ASSESSMENT_OPTIONS.map((opt) => {
+                  const Icon = opt.icon;
+                  const isSelected = assessmentType === opt.id;
+                  return (
+                    <label
+                      key={opt.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 14,
+                        padding: '16px 18px',
+                        borderRadius: 10,
+                        border: isSelected
+                          ? '1px solid rgba(255,255,255,0.25)'
+                          : '1px solid rgba(255,255,255,0.08)',
+                        background: isSelected ? 'rgba(255,255,255,0.06)' : 'transparent',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="assessmentType"
+                        value={opt.id}
+                        checked={isSelected}
+                        onChange={() => setAssessmentType(opt.id)}
+                        style={{ marginTop: 2, accentColor: '#fff' }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            marginBottom: 4,
+                          }}
+                        >
+                          <Icon size={14} color={isSelected ? '#fff' : 'rgba(255,255,255,0.5)'} />
+                          <span
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: isSelected ? '#fff' : 'rgba(255,255,255,0.7)',
+                              letterSpacing: '0.02em',
+                            }}
+                          >
+                            {opt.label}
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: 'rgba(255,255,255,0.4)',
+                            lineHeight: 1.5,
+                            fontFamily: '"Space Grotesk", system-ui, sans-serif',
+                          }}
+                        >
+                          {opt.description}
+                        </span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <div style={{ marginBottom: 24 }}>
               <label
                 style={{
@@ -208,79 +291,6 @@ export default function DemoIntakePage(): JSX.Element {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={isSubmitting}
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  background: 'rgba(255,255,255,0.03)',
-                  color: '#fff',
-                  fontSize: 13,
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                  letterSpacing: '0.02em',
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  color: 'rgba(255,255,255,0.5)',
-                  marginBottom: 10,
-                  textTransform: 'uppercase',
-                }}
-              >
-                <Github size={10} style={{ display: 'inline', marginRight: 6 }} />
-                GitHub Handle (optional)
-              </label>
-              <input
-                type="text"
-                placeholder="username"
-                value={githubHandle}
-                onChange={(e) => setGithubHandle(e.target.value)}
-                disabled={isSubmitting}
-                onBlur={() => setGithubHandle((prev) => prev.replace(/^@/, ''))}
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  background: 'rgba(255,255,255,0.03)',
-                  color: '#fff',
-                  fontSize: 13,
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                  letterSpacing: '0.02em',
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  color: 'rgba(255,255,255,0.5)',
-                  marginBottom: 10,
-                  textTransform: 'uppercase',
-                }}
-              >
-                <Linkedin size={10} style={{ display: 'inline', marginRight: 6 }} />
-                LinkedIn Profile (optional)
-              </label>
-              <input
-                type="text"
-                placeholder="https://linkedin.com/in/your-profile"
-                value={linkedinUrl}
-                onChange={(e) => setLinkedinUrl(e.target.value)}
                 disabled={isSubmitting}
                 style={{
                   width: '100%',
@@ -397,12 +407,42 @@ export default function DemoIntakePage(): JSX.Element {
                 </>
               ) : (
                 <>
-                  Start Code Review
+                  Start {ASSESSMENT_OPTIONS.find(o => o.id === assessmentType)?.label}
                   <ArrowRight size={14} />
                 </>
               )}
             </button>
           </form>
+
+          {/* Admin configuration link */}
+          <div
+            style={{
+              marginTop: 24,
+              paddingTop: 20,
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            <Settings size={12} color="rgba(255,255,255,0.3)" />
+            <a
+              href="/"
+              onClick={(e) => {
+                e.preventDefault();
+                window.location.href = '/';
+              }}
+              style={{
+                fontSize: 11,
+                color: 'rgba(255,255,255,0.3)',
+                textDecoration: 'none',
+                letterSpacing: '0.05em',
+              }}
+            >
+              Admin: configure demo questions in the pipeline editor
+            </a>
+          </div>
         </LiquidMetalCard>
       </div>
     </div>

@@ -454,12 +454,19 @@ const ConnectedCodePreviewPanel = connectInterview(PreviewPanel, (ctx) => {
 });
 
 // Synthetic challenge panels — connected via InterviewContext
-const ConnectedWelcomePanel = connectInterview(WelcomeScreen, (ctx) => ({
-  pipelineName: ctx.currentChallenge.title || 'Technical Assessment',
-  stageName: ctx.currentChallenge.title || 'Interview',
-  challengeType: 'CODE_REVIEW' as const,
-  onStart: () => ctx.submit(),
-}));
+const ConnectedWelcomePanel = connectInterview(WelcomeScreen, (ctx) => {
+  // Find the next real challenge after the WELCOME synthetic step
+  const nextRealChallenge = ctx.stageConfig.challenges.slice(ctx.currentIndex + 1)
+    .find((ch) => ch.data.type !== 'WELCOME' && ch.data.type !== 'LIVE_VIDEO');
+  const nextType = (nextRealChallenge?.data.type as 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER') ?? 'QUIZ_SHORT_ANSWER';
+
+  return {
+    pipelineName: ctx.stageConfig.title || 'Technical Assessment',
+    stageName: 'Welcome',
+    challengeType: nextType,
+    onStart: () => ctx.submit(),
+  };
+});
 
 // LIVE_VIDEO challenge panel
 import { VideoInterviewStep } from '../../components/Video/VideoInterviewStep';

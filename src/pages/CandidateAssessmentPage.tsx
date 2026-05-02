@@ -58,7 +58,11 @@ function buildRawStage(
 // Component
 // ============================================================================
 
-export default function CandidateAssessmentPage(): JSX.Element {
+interface CandidateAssessmentPageProps {
+  hideHeader?: boolean;
+}
+
+export default function CandidateAssessmentPage({ hideHeader = false }: CandidateAssessmentPageProps): JSX.Element {
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const isPreview = searchParams.get('mode') === 'preview';
@@ -358,6 +362,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
                 title={challengeContent.title ?? 'Challenge'}
                 totalChallenges={totalChallenges}
                 currentChallengeIndex={currentOrder}
+                hideHeader={hideHeader}
                 onNext={() => handleSubmit()}
                 isLastChallenge={isLastChallenge}
                 fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION' || isIntake}

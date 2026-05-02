@@ -9,6 +9,16 @@ import type { PresetStage, PresetChallenge } from './presets';
 
 const SCREENING_QUESTIONS: PresetChallenge[] = [
   {
+    type: 'INTAKE',
+    title: 'Profile & Resume',
+    instructions: 'Upload your CV/resume and share your GitHub or LinkedIn profiles. This helps us understand your background before the screening questions.',
+    config: {
+      title: 'Profile & Resume',
+      description: 'Upload your CV/resume and share any profiles that help us understand your background.',
+      allowSkip: true,
+    },
+  },
+  {
     type: 'QUIZ_SHORT_ANSWER',
     title: 'Years of Experience',
     instructions: 'How many years of professional software engineering experience do you have?',
