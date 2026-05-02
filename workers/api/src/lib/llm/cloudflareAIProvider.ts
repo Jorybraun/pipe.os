@@ -20,11 +20,7 @@ import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions } from './
 
 // Workers AI chat messages use OpenAI-compatible roles.
 interface CFChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-interface CFChatMessage {
+  role?: 'system' | 'user' | 'assistant';
   content?: string | null;
   reasoning?: string | null;
   function_call?: unknown | null;
@@ -151,7 +147,8 @@ export class CloudflareAIProvider implements LLMProvider {
     if (typeof result.response === 'string') {
       rawText = result.response.trim();
     } else if (Array.isArray(result.choices) && result.choices.length > 0) {
-      const msg = result.choices[0].message;
+      const choice = result.choices[0];
+      const msg = choice.message;
       if (typeof msg?.content === 'string' && msg.content.length > 0) {
         rawText = msg.content.trim();
       } else if (typeof msg?.reasoning === 'string' && msg.reasoning.length > 0) {
@@ -159,7 +156,7 @@ export class CloudflareAIProvider implements LLMProvider {
         // message.reasoning when content is null. Fall back to it so callers
         // get *something* instead of an opaque "empty response" error.
         console.warn(
-          `[cloudflareAIProvider] model ${this.model} returned empty content; falling back to message.reasoning (finish_reason=${result.choices[0].finish_reason ?? 'unknown'})`
+          `[cloudflareAIProvider] model ${this.model} returned empty content; falling back to message.reasoning (finish_reason=${choice.finish_reason ?? 'unknown'})`
         );
         rawText = msg.reasoning.trim();
       }

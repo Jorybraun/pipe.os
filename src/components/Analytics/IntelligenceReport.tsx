@@ -246,7 +246,7 @@ function SkillRadarChart({
 
   // Label positioning: slightly outside maxR
   const labelOffset = maxR + 22;
-  const labelAnchor = (angleDeg: number): string => {
+  const labelAnchor = (angleDeg: number): 'start' | 'end' | 'middle' => {
     if (Math.abs(angleDeg) === 0)   return 'start';
     if (Math.abs(angleDeg) === 180) return 'end';
     return 'middle';
