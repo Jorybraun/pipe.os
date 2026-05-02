@@ -41,6 +41,8 @@ export function CandidateIntakeModal({
   const [email, setEmail] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [githubHandle, setGithubHandle] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [skipEmail, setSkipEmail] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
@@ -79,6 +81,16 @@ export function CandidateIntakeModal({
 
   const handleGithubBlur = () => {
     setGithubHandle((prev) => prev.replace(/^@/, ""));
+  };
+
+  const validateLinkedIn = (url: string): boolean => {
+    if (!url) return true;
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === 'www.linkedin.com' || parsed.hostname === 'linkedin.com';
+    } catch {
+      return false;
+    }
   };
 
   const handleCopyLink = async () => {
@@ -128,6 +140,10 @@ export function CandidateIntakeModal({
       setError("Name and Email are required.");
       return;
     }
+    if (linkedinUrl.trim() && !validateLinkedIn(linkedinUrl.trim())) {
+      setError("Invalid LinkedIn URL.");
+      return;
+    }
 
     setIsProcessing(true);
     setError(null);
@@ -140,6 +156,7 @@ export function CandidateIntakeModal({
           name,
           email,
           ...(stageId ? { currentStageId: stageId } : {}),
+          skipEmail,
         });
 
         if (!result) throw new Error("Failed to create candidate");
@@ -179,6 +196,9 @@ export function CandidateIntakeModal({
       formData.append("file", file);
       if (githubHandle.trim()) {
         formData.append("githubHandle", githubHandle.trim());
+      }
+      if (linkedinUrl.trim()) {
+        formData.append("linkedinUrl", linkedinUrl.trim());
       }
 
       const token = await getToken();
@@ -341,6 +361,72 @@ export function CandidateIntakeModal({
                   lineHeight: 1.5
                 }}>
                   We&apos;ll use your public GitHub activity to enrich your profile. We only read public data you&apos;ve shared.
+                </div>
+              </div>
+
+              {/* LinkedIn URL */}
+              <div>
+                <label style={{
+                  display: "block",
+                  fontSize: 10,
+                  color: "var(--pipe-text-dim)",
+                  marginBottom: 12,
+                  fontFamily: "Space Mono",
+                  fontWeight: 600
+                }}>
+                  LINKEDIN_PROFILE (OPTIONAL)
+                </label>
+                <TextInput
+                  value={linkedinUrl}
+                  onChange={setLinkedinUrl}
+                  placeholder="https://linkedin.com/in/your-profile"
+                  ariaLabel="LinkedIn profile URL"
+                />
+              </div>
+
+              {/* Skip email toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: 12,
+                background: 'var(--pipe-surface)',
+                borderRadius: 4,
+                border: '1px solid var(--pipe-border-light)',
+              }}>
+                <button
+                  onClick={() => setSkipEmail((v) => !v)}
+                  style={{
+                    width: 36,
+                    height: 20,
+                    borderRadius: 10,
+                    border: 'none',
+                    background: skipEmail ? '#34d399' : 'var(--pipe-border)',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                  }}
+                  aria-label="Skip invitation email"
+                >
+                  <div style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: 2,
+                    left: skipEmail ? 18 : 2,
+                    transition: 'left 0.2s',
+                  }} />
+                </button>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: 'Space Mono' }}>
+                    SKIP_INVITE_EMAIL
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginTop: 2 }}>
+                    Generate link only — no email will be sent
+                  </div>
                 </div>
               </div>
 
@@ -535,8 +621,8 @@ export function CandidateIntakeModal({
                 <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 4 }}>
                   <Mail size={10} style={{ marginRight: 6 }} /> INVITE_STATUS
                 </div>
-                <div style={{ fontSize: 12, color: "#34d399", fontFamily: "Space Mono" }}>
-                  ✓ Invite email sent automatically
+                <div style={{ fontSize: 12, color: skipEmail ? '#fbbf24' : '#34d399', fontFamily: "Space Mono" }}>
+                  {skipEmail ? '⚠ Invite link generated — email not sent' : '✓ Invite email sent automatically'}
                 </div>
 
                 <div style={{ 
@@ -583,37 +669,39 @@ export function CandidateIntakeModal({
                   </button>
                 </div>
 
-                <button
-                  onClick={handleResendEmail}
-                  disabled={resendStatus === 'sending'}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    background: "var(--pipe-surface-hover)",
-                    border: "1px solid var(--pipe-border)",
-                    borderRadius: 4,
-                    color: resendStatus === 'sent' ? '#34d399' : resendStatus === 'error' ? '#f87171' : 'var(--pipe-text-dim)',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    fontFamily: "Space Mono",
-                    cursor: resendStatus === 'sending' ? 'default' : 'pointer',
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    opacity: resendStatus === 'sending' ? 0.6 : 1
-                  }}
-                >
-                  {resendStatus === 'sending' ? (
-                    <><Loader2 size={14} className="animate-spin" /> SENDING...</>
-                  ) : resendStatus === 'sent' ? (
-                    <><CheckCircle size={14} /> EMAIL SENT</>
-                  ) : resendStatus === 'error' ? (
-                    <><AlertCircle size={14} /> FAILED — TRY AGAIN</>
-                  ) : (
-                    <><Send size={14} /> RESEND INVITE EMAIL</>
-                  )}
-                </button>
+                {!skipEmail && (
+                  <button
+                    onClick={handleResendEmail}
+                    disabled={resendStatus === 'sending'}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      background: "var(--pipe-surface-hover)",
+                      border: "1px solid var(--pipe-border)",
+                      borderRadius: 4,
+                      color: resendStatus === 'sent' ? '#34d399' : resendStatus === 'error' ? '#f87171' : 'var(--pipe-text-dim)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      fontFamily: "Space Mono",
+                      cursor: resendStatus === 'sending' ? 'default' : 'pointer',
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      opacity: resendStatus === 'sending' ? 0.6 : 1
+                    }}
+                  >
+                    {resendStatus === 'sending' ? (
+                      <><Loader2 size={14} className="animate-spin" /> SENDING...</>
+                    ) : resendStatus === 'sent' ? (
+                      <><CheckCircle size={14} /> EMAIL SENT</>
+                    ) : resendStatus === 'error' ? (
+                      <><AlertCircle size={14} /> FAILED — TRY AGAIN</>
+                    ) : (
+                      <><Send size={14} /> RESEND INVITE EMAIL</>
+                    )}
+                  </button>
+                )}
               </div>
 
               {parsedData && (

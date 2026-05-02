@@ -163,6 +163,102 @@ rpcPublic.post('/refresh-session', async (c) => {
   return c.json({ sessionToken });
 });
 
+// ── POST /rpc/demo-register ─────────────────────────────────────────────────
+// Public self-registration for demo/trial candidates. Creates a fresh candidate
+// in the configured demo pipeline and returns a session token immediately.
+
+rpcPublic.post('/demo-register', async (c) => {
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
+  }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const githubHandle = typeof body.githubHandle === 'string' ? body.githubHandle.trim().replace(/^@/, '') : '';
+  const linkedinUrl = typeof body.linkedinUrl === 'string' ? body.linkedinUrl.trim() : '';
+
+  if (!name || name.length < 1) {
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'name is required.' } }, 400);
+  }
+  if (!email || !email.includes('@')) {
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'valid email is required.' } }, 400);
+  }
+
+  const db = c.env.DB;
+  const secret = c.env.SESSION_TOKEN_SECRET;
+  if (!secret) {
+    console.error('[demo-register] SESSION_TOKEN_SECRET not configured');
+    return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Auth not configured.' } }, 500);
+  }
+
+  // Find demo pipeline
+  let pipelineId = c.env.DEMO_PIPELINE_ID;
+  if (!pipelineId) {
+    const pipeline = await db.prepare(
+      `SELECT id FROM pipelines WHERE lower(title) LIKE '%demo%' ORDER BY created_at DESC LIMIT 1`,
+    ).first<{ id: string }>();
+    if (pipeline) pipelineId = pipeline.id;
+  }
+
+  if (!pipelineId) {
+    return c.json({
+      error: { code: 'NOT_CONFIGURED', message: 'No demo pipeline configured. Set DEMO_PIPELINE_ID or create a pipeline with "demo" in the title.' },
+    }, 503);
+  }
+
+  // Verify pipeline exists
+  const pipeline = await db.prepare(
+    `SELECT id, owner_id FROM pipelines WHERE id = ?1`,
+  ).bind(pipelineId).first<{ id: string; owner_id: string }>();
+
+  if (!pipeline) {
+    return c.json({ error: { code: 'NOT_FOUND', message: 'Demo pipeline not found.' } }, 404);
+  }
+
+  // Find first stage
+  const stage = await db.prepare(
+    `SELECT id FROM stages WHERE pipeline_id = ?1 ORDER BY sort_order ASC LIMIT 1`,
+  ).bind(pipelineId).first<{ id: string }>();
+
+  if (!stage) {
+    return c.json({ error: { code: 'NOT_CONFIGURED', message: 'Demo pipeline has no stages.' } }, 503);
+  }
+
+  // Create candidate
+  const candidateId = crypto.randomUUID();
+  const inviteToken = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  await db.prepare(
+    `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, github_handle, linkedin_url, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'INVITED', ?7, ?8, ?9, ?10, ?10)`,
+  ).bind(candidateId, pipelineId, pipeline.owner_id, name, email, inviteToken, stage.id, githubHandle || null, linkedinUrl || null, now).run();
+
+  // Create assessment for the stage
+  const assessmentId = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO assessments (id, candidate_id, stage_id, status, owner_id, started_at, created_at, updated_at)
+     VALUES (?1, ?2, ?3, 'PENDING', ?4, ?5, ?5, ?5)`,
+  ).bind(assessmentId, candidateId, stage.id, pipeline.owner_id, now).run();
+
+  // Issue session token directly (bypass invite token claim)
+  const sessionToken = await signJwt(
+    { sub: candidateId, pid: pipelineId },
+    secret,
+  );
+
+  return c.json({
+    candidateId,
+    pipelineId,
+    sessionToken,
+    inviteToken,
+    status: 'INVITED',
+  });
+});
+
 // ─── Authenticated routes (candidate JWT) ───────────────────────────────────
 
 const rpcAuth = new Hono<{ Bindings: Env; Variables: CandidateVariables }>();
@@ -539,10 +635,13 @@ rpcAuth.post('/get-challenge', async (c) => {
   };
 
   if ((ch.type as string) === 'CODE_REVIEW') {
-    response.reviewSession = {
-      requiresInit: true,
-      challengeId: ch.id as string,
-    };
+    const chConfig = typeof ch.config === 'string' ? JSON.parse(ch.config) : (ch.config as Record<string, unknown> | null);
+    if (chConfig?.isMultiTurn === true) {
+      response.reviewSession = {
+        requiresInit: true,
+        challengeId: ch.id as string,
+      };
+    }
   }
 
   // Fetch cached issue body for CODE_IMPLEMENTATION challenges
@@ -694,29 +793,53 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
   // Check for duplicate submission
   const existing = await c.env.DB.prepare(
-    `SELECT id FROM challenge_submissions
+    `SELECT id, response_json FROM challenge_submissions
      WHERE assessment_id = ?1 AND challenge_id = ?2 LIMIT 1`,
   )
     .bind(assessment.id, challengeId)
-    .first<{ id: string }>();
+    .first<{ id: string; response_json: string | null }>();
 
-  if (existing) {
-    return c.json(
-      { success: false, error: 'Challenge already submitted' },
-      409,
-    );
-  }
-
-  // Create ChallengeSubmission
-  const submissionId = crypto.randomUUID();
   const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);
 
-  await c.env.DB.prepare(`
-    INSERT INTO challenge_submissions (id, assessment_id, challenge_id, candidate_id, response_json, submitted_at, created_at, updated_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?6)
-  `)
-    .bind(submissionId, assessment.id, challengeId, candidateId, responseJson, now)
-    .run();
+  if (existing) {
+    // Allow resubmission if the previous response was empty (fixes React input
+    // race-condition that creates blank submissions — Bug #1).
+    let wasEmpty = false;
+    try {
+      const prev = JSON.parse(existing.response_json || '{}') as Record<string, unknown>;
+      wasEmpty =
+        !prev ||
+        Object.keys(prev).length === 0 ||
+        (prev.inputMode === 'text' && (prev.text as string)?.trim() === '');
+    } catch {
+      wasEmpty = true;
+    }
+
+    if (!wasEmpty) {
+      return c.json(
+        { success: false, error: 'Challenge already submitted' },
+        409,
+      );
+    }
+
+    // Update existing empty submission with new response
+    await c.env.DB.prepare(`
+      UPDATE challenge_submissions
+      SET response_json = ?1, updated_at = ?2, submitted_at = ?2
+      WHERE id = ?3
+    `)
+      .bind(responseJson, now, existing.id)
+      .run();
+  } else {
+    // Create ChallengeSubmission
+    const submissionId = crypto.randomUUID();
+    await c.env.DB.prepare(`
+      INSERT INTO challenge_submissions (id, assessment_id, challenge_id, candidate_id, response_json, submitted_at, created_at, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?6)
+    `)
+      .bind(submissionId, assessment.id, challengeId, candidateId, responseJson, now)
+      .run();
+  }
 
   // ── INTAKE challenge: trigger background enrichment ────────────────────────
   if (challenge.type === 'INTAKE') {
@@ -884,6 +1007,58 @@ rpcAuth.post('/score-submission', async (c) => {
       // No correct answer configured — score as 0
       score = 0;
       feedback = 'No scoring criteria configured for this challenge';
+    }
+  }
+
+  // Auto-scoring for QUIZ_SHORT_ANSWER (heuristic + keyword-based)
+  if (sub.type === 'QUIZ_SHORT_ANSWER') {
+    let serverConfig: Record<string, unknown> = {};
+    if (sub.server_config) {
+      try {
+        serverConfig = JSON.parse(sub.server_config) as Record<string, unknown>;
+      } catch { /* empty config */ }
+    }
+
+    let response: Record<string, unknown> = {};
+    if (sub.response_json) {
+      try {
+        response = JSON.parse(sub.response_json) as Record<string, unknown>;
+      } catch { /* empty response */ }
+    }
+
+    const answers = response.answers as Record<string, string> | undefined;
+    const answerText = (answers?.current ?? '').trim();
+
+    if (!answerText) {
+      score = 0;
+      feedback = 'No answer provided.';
+    } else {
+      // Keyword-based scoring if configured
+      const keywords = serverConfig.keywords as Array<{ word: string; weight: number }> | undefined;
+      if (keywords && keywords.length > 0) {
+        const normalized = answerText.toLowerCase();
+        const totalWeight = keywords.reduce((s, k) => s + k.weight, 0);
+        const earned = keywords.reduce((s, k) =>
+          normalized.includes(k.word.toLowerCase()) ? s + k.weight : s, 0);
+        score = totalWeight > 0 ? Math.round((earned / totalWeight) * 100) : 70;
+        feedback = `Auto-scored: ${earned}/${totalWeight} keyword criteria matched.`;
+      } else {
+        // Heuristic length-based scoring for engagement
+        const len = answerText.length;
+        if (len < 5) {
+          score = 20;
+          feedback = 'Very brief answer — auto-scored at 20.';
+        } else if (len < 20) {
+          score = 50;
+          feedback = 'Short answer — auto-scored at 50.';
+        } else if (len < 50) {
+          score = 70;
+          feedback = 'Reasonable answer — auto-scored at 70.';
+        } else {
+          score = 90;
+          feedback = 'Detailed answer — auto-scored at 90.';
+        }
+      }
     }
   }
 

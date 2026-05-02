@@ -23,6 +23,7 @@ const createCandidateSchema = z.object({
   name: z.string().min(1, 'name is required').max(200),
   email: z.string().email('valid email required'),
   currentStageId: z.string().optional(),
+  skipEmail: z.boolean().optional(),
 });
 
 const updateCandidateSchema = z.object({
@@ -67,7 +68,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  const { name, email, currentStageId: requestedStageId } = parsed.data;
+  const { name, email, currentStageId: requestedStageId, skipEmail } = parsed.data;
   const id = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -112,7 +113,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   }
 
   // Fire-and-forget invitation email via Resend
-  if (c.env.RESEND_API_KEY) {
+  if (c.env.RESEND_API_KEY && !skipEmail) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
     const assessUrl = `${baseUrl}/assess/${inviteToken}`;
 

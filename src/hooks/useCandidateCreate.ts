@@ -15,6 +15,7 @@ export interface CandidateCreateInput {
   name: string;
   email: string;
   currentStageId?: string | null;
+  skipEmail?: boolean;
 }
 
 interface UseCandidateCreateState {
@@ -54,6 +55,7 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
             name: input.name.trim(),
             email: input.email.trim(),
             ...(input.currentStageId ? { currentStageId: input.currentStageId } : {}),
+            ...(input.skipEmail ? { skipEmail: true } : {}),
           },
         );
 
