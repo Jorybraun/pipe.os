@@ -4,11 +4,10 @@
 -- the table. The audit trail is small (13 event types × N sessions) so this
 -- is safe and fast.
 --
+-- Note: D1 runs each migration in a transaction and does not support
+-- BEGIN TRANSACTION / COMMIT or PRAGMA foreign_keys in SQL.
+--
 -- See docs/plans/strategy-v2/part1-north-star/culture-reprompt-ungrounded-scores.md
-
-PRAGMA foreign_keys = OFF;
-
-BEGIN TRANSACTION;
 
 CREATE TABLE culture_compliance_audit_new (
   id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -53,7 +52,3 @@ ALTER TABLE culture_compliance_audit_new RENAME TO culture_compliance_audit;
 CREATE INDEX idx_culture_audit_session    ON culture_compliance_audit(session_id);
 CREATE INDEX idx_culture_audit_event_type ON culture_compliance_audit(event_type);
 CREATE INDEX idx_culture_audit_created    ON culture_compliance_audit(created_at);
-
-COMMIT;
-
-PRAGMA foreign_keys = ON;

@@ -5,9 +5,9 @@
 -- (role_fit, culture-specific depth). Also extends the compliance audit event
 -- type enum with generative-mode events: question_generated, question_source_mode,
 -- answer_decomposed.
-
-PRAGMA foreign_keys = OFF;
-BEGIN TRANSACTION;
+--
+-- Note: D1 runs each migration in a transaction and does not support
+-- BEGIN TRANSACTION / COMMIT or PRAGMA foreign_keys in SQL.
 
 -- 1. Add screener_mode column to culture_interview_sessions
 ALTER TABLE culture_interview_sessions ADD COLUMN screener_mode TEXT
@@ -41,6 +41,3 @@ ALTER TABLE culture_compliance_audit_new RENAME TO culture_compliance_audit;
 CREATE INDEX idx_culture_audit_session    ON culture_compliance_audit(session_id);
 CREATE INDEX idx_culture_audit_event_type ON culture_compliance_audit(event_type);
 CREATE INDEX idx_culture_audit_created    ON culture_compliance_audit(created_at);
-
-COMMIT;
-PRAGMA foreign_keys = ON;
