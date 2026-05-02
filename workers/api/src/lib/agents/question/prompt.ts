@@ -10,39 +10,7 @@ import type { InterviewState } from '../interview/types';
 import { selectPhasePrompt } from '../../agents/roleDiscovery/prompts';
 import { injectPromptPatches } from './promptPatch';
 
-const RESPONSE_FORMAT = `{
-  "reasoning": "<max 20 words. One sentence.",
-  "acknowledgment": "<1 sentence acknowledging their answer. No filler praise.>",
-  "question": {
-    "id": "<sequential: q-1, q-2, ...>",
-    "text": "<the actual question, under 15 words ideal>",
-    "goal": "<specific, measurable goal this question achieves — under 10 words>",
-    "expectedCoverage": {
-      "domain": "<why | work | team | bar | codebase | process>",
-      "from": "<none | sparse | partial | covered | deep>",
-      "to": "<none | sparse | partial | covered | deep>"
-    },
-    "probeAlignment": "<which calibrated probe this serves, or 'none'>",
-    "questionType": "<introductory | grand_tour | example | drilling | direct | hypothesis | contrast>",
-    "input": {
-      "type": "<text | textarea | tags | select | radio>",
-      "placeholder": "<optional hint text>",
-      "options": ["<only for select/radio>"]
-    },
-    "suggestedAnswers": ["<2-3 short realistic example answers. Omit if open-ended.>"]
-  },
-  "knowledgeStateUpdate": {
-    "<domain>": { "<key>": "<value extracted from their answer>" }
-  },
-  "domainCoverage": {
-    "why": "<none | sparse | partial | covered | deep>",
-    "work": "<none | sparse | partial | covered | deep>",
-    "team": "<none | sparse | partial | covered | deep>",
-    "bar": "<none | sparse | partial | covered | deep>",
-    "codebase": "<none | sparse | partial | covered | deep>",
-    "process": "<none | sparse | partial | covered | deep>"
-  }
-}`;
+const RESPONSE_FORMAT = `{"reasoning":"<20 words max>","acknowledgment":"<1 sentence>","question":{"id":"q-N","text":"<under 15 words>","goal":"<under 10 words>","expectedCoverage":{"domain":"why|work|team|bar|codebase|process","from":"none|sparse|partial|covered|deep","to":"none|sparse|partial|covered|deep"},"probeAlignment":"<probe or none>","questionType":"introductory|grand_tour|example|drilling|direct|hypothesis|contrast","input":{"type":"text|textarea|tags|select|radio","placeholder":"<hint>","options":["<for select/radio>"]},"suggestedAnswers":["<omit if open-ended>"]},"knowledgeStateUpdate":{"<domain>":{"<key>":"<value>"}},"domainCoverage":{"why":"...","work":"...","team":"...","bar":"...","codebase":"...","process":"..."}}`;
 
 const BREVITY_RULES = `- reasoning: max 20 words. One sentence.
 - acknowledgment: max 1 sentence. No filler.
@@ -53,43 +21,7 @@ const BREVITY_RULES = `- reasoning: max 20 words. One sentence.
 
 // ─── Batch generation (stack architecture) ───────────────────────────────────
 
-const BATCH_RESPONSE_FORMAT = `{
-  "reasoning": "<max 20 words. One sentence.",
-  "batch": [
-    {
-      "acknowledgment": "<1 sentence acknowledging their answer. No filler praise.>",
-      "question": {
-        "id": "<sequential: q-N, q-N+1, ...>",
-        "text": "<the actual question, under 15 words ideal>",
-        "goal": "<specific, measurable goal — under 10 words>",
-        "expectedCoverage": {
-          "domain": "<why | work | team | bar | codebase | process>",
-          "from": "<none | sparse | partial | covered | deep>",
-          "to": "<none | sparse | partial | covered | deep>"
-        },
-        "probeAlignment": "<which calibrated probe this serves, or 'none'>",
-        "questionType": "<introductory | grand_tour | example | drilling | direct | hypothesis | contrast>",
-        "input": {
-          "type": "<text | textarea | tags | select | radio>",
-          "placeholder": "<optional hint text>",
-          "options": ["<only for select/radio>"]
-        },
-        "suggestedAnswers": ["<2-3 short realistic example answers. Omit if open-ended.>"]
-      },
-      "knowledgeStateUpdate": {
-        "<domain>": { "<key>": "<value extracted from their answer>" }
-      },
-      "domainCoverage": {
-        "why": "<none | sparse | partial | covered | deep>",
-        "work": "<none | sparse | partial | covered | deep>",
-        "team": "<none | sparse | partial | covered | deep>",
-        "bar": "<none | sparse | partial | covered | deep>",
-        "codebase": "<none | sparse | partial | covered | deep>",
-        "process": "<none | sparse | partial | covered | deep>"
-      }
-    }
-  ]
-}`;
+const BATCH_RESPONSE_FORMAT = `{"reasoning":"<20 words max>","batch":[{"acknowledgment":"<1 sentence>","question":{"id":"q-N","text":"<under 15 words>","goal":"<under 10 words>","expectedCoverage":{"domain":"why|work|team|bar|codebase|process","from":"none|sparse|partial|covered|deep","to":"none|sparse|partial|covered|deep"},"probeAlignment":"<probe or none>","questionType":"introductory|grand_tour|example|drilling|direct|hypothesis|contrast","input":{"type":"text|textarea|tags|select|radio","placeholder":"<hint>","options":["<for select/radio>"]},"suggestedAnswers":["<omit if open-ended>"]},"knowledgeStateUpdate":{"<domain>":{"<key>":"<value>"}},"domainCoverage":{"why":"...","work":"...","team":"...","bar":"...","codebase":"...","process":"..."}}]}`;
 
 function buildSystemPrompt(participantRole: string | null, phase: ConversationPhase): string {
   const phasePrompt = selectPhasePrompt(phase, participantRole ?? undefined);
@@ -120,14 +52,9 @@ ${phasePrompt}
 - No asking the user to do the agent's job: form an opinion and present it for validation
 - No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
 
-## Negative Examples — Questions that were flagged as bad
+## Phrasing Principles
 
-These are real questions that users flagged. Do NOT generate questions like these:
-- "What are your primary responsibilities as a team member for this Senior Frontend Engineer role?" (Role confusion — the team member is not the hire.)
-- "You're a team member, which helps me understand the role's scope and responsibilities. What are your primary responsibilities?" (Robotic acknowledgment + role confusion.)
-- "Can you give me an overview of this role's scope and responsibilities?" (Too generic for a contextual interview.)
-- "Your team probably values clean code, right?" (Leading question.)
-- "That's really helpful!" (Filler praise — never do this.)
+(Injected dynamically from feedback loop — see promptPatch.ts)
 
 ## Response Format
 
@@ -242,14 +169,9 @@ ${phasePrompt}
 - No asking the user to do the agent's job: form an opinion and present it for validation
 - No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
 
-## Negative Examples — Questions that were flagged as bad
+## Phrasing Principles
 
-These are real questions that users flagged. Do NOT generate questions like these:
-- "What are your primary responsibilities as a team member for this Senior Frontend Engineer role?" (Role confusion — the team member is not the hire.)
-- "You're a team member, which helps me understand the role's scope and responsibilities. What are your primary responsibilities?" (Robotic acknowledgment + role confusion.)
-- "Can you give me an overview of this role's scope and responsibilities?" (Too generic for a contextual interview.)
-- "Your team probably values clean code, right?" (Leading question.)
-- "That's really helpful!" (Filler praise — never do this.)
+(Injected dynamically from feedback loop — see promptPatch.ts)
 
 ## Response Format
 
@@ -257,77 +179,9 @@ You MUST respond with valid JSON matching this exact schema:
 
 ${BATCH_RESPONSE_FORMAT}
 
-## Example Response
+## Example
 
-Here is a concrete example of a valid response for batchSize=2. Follow this structure exactly:
-
-{
-  "reasoning": "User mentioned they lead a 12-person platform team. I need to understand their engineering practices and how they handle on-call before drilling into specific tech.",
-  "batch": [
-    {
-      "acknowledgment": "A 12-person platform team is substantial — that gives me a good sense of scale.",
-      "question": {
-        "id": "q-3",
-        "text": "How do you structure on-call rotations across the platform team?",
-        "goal": "Understand operational burden distribution",
-        "expectedCoverage": {
-          "domain": "process",
-          "from": "sparse",
-          "to": "covered"
-        },
-        "probeAlignment": "on-call-rotation-structure",
-        "questionType": "direct",
-        "input": {
-          "type": "textarea",
-          "placeholder": "Describe the rotation schedule, escalation path, and how you handle pager fatigue."
-        },
-        "suggestedAnswers": []
-      },
-      "knowledgeStateUpdate": {
-        "process": { "onCallRotation": "pending" }
-      },
-      "domainCoverage": {
-        "why": "partial",
-        "work": "covered",
-        "team": "covered",
-        "bar": "sparse",
-        "codebase": "partial",
-        "process": "covered"
-      }
-    },
-    {
-      "acknowledgment": "",
-      "question": {
-        "id": "q-4",
-        "text": "What does your code review process look like for platform changes?",
-        "goal": "Understand quality gate practices",
-        "expectedCoverage": {
-          "domain": "bar",
-          "from": "sparse",
-          "to": "covered"
-        },
-        "probeAlignment": "code-review-process",
-        "questionType": "direct",
-        "input": {
-          "type": "textarea",
-          "placeholder": "Who reviews, what tools you use, and what typically gets flagged."
-        },
-        "suggestedAnswers": []
-      },
-      "knowledgeStateUpdate": {
-        "bar": { "codeReviewProcess": "pending" }
-      },
-      "domainCoverage": {
-        "why": "partial",
-        "work": "covered",
-        "team": "covered",
-        "bar": "covered",
-        "codebase": "partial",
-        "process": "covered"
-      }
-    }
-  ]
-}
+{"reasoning":"User leads a 12-person platform team.","batch":[{"acknowledgment":"A 12-person team is substantial.","question":{"id":"q-3","text":"How do you structure on-call?","goal":"Understand operational burden","expectedCoverage":{"domain":"process","from":"sparse","to":"covered"},"probeAlignment":"on-call","questionType":"direct","input":{"type":"textarea"},"suggestedAnswers":[]},"knowledgeStateUpdate":{"process":{"onCall":"pending"}},"domainCoverage":{"why":"partial","work":"covered","team":"covered","bar":"sparse","codebase":"partial","process":"covered"}}]}
 
 Generate exactly ${batchSize} questions in the batch array.
 

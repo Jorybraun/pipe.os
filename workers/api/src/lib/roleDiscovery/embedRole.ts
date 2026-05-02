@@ -55,7 +55,7 @@ export async function embedAndUpsertRole(
       maxRetries: 3,
       baseDelayMs: 1000,
       onRetry: (attempt, delay) =>
-        console.warn(`[roleEmbed] retry ${attempt} after ${delay}ms`),
+        console.warn(`[retry] attempt ${attempt} after ${delay}ms delay for embedAndUpsertRole`),
     },
   );
 

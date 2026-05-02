@@ -164,7 +164,7 @@ export async function candidateSituationFit(
       maxRetries: 3,
       baseDelayMs: 1000,
       onRetry: (attempt, delay) =>
-        console.warn(`[candidateSituationFit] retry ${attempt} after ${delay}ms`),
+        console.warn(`[retry] attempt ${attempt} after ${delay}ms delay for candidateSituationFit`),
     },
   );
 

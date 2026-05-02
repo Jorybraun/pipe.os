@@ -28,7 +28,7 @@ const SEED_PATCHES: PromptPatch[] = [
     negativeExample:
       'What are your primary responsibilities as a team member for this Senior Frontend Engineer role?',
     correctedExample: 'What does a typical week look like for you on the team?',
-    reason: 'The participant is not the person being hired. NEVER conflate participant role with the role title.',
+    reason: 'Never conflate the participant with the role being hired. A team member works alongside the hire — they are not the hire.',
     flagCount: 5,
     createdAt: '2026-05-02T09:00:00Z',
   },
@@ -39,7 +39,7 @@ const SEED_PATCHES: PromptPatch[] = [
     negativeExample:
       "You're a team member, which helps me understand the role's scope and responsibilities. What are your primary responsibilities?",
     correctedExample: "Thanks for joining. I'd love to hear what a typical week looks like on your team.",
-    reason: 'Robotic acknowledgment that restates the participant role adds nothing. Start with warmth, not metadata.',
+    reason: 'Never start an acknowledgment by restating the participant role. It sounds robotic and adds zero value. Start with warmth or a specific observation.',
     flagCount: 5,
     createdAt: '2026-05-02T09:00:00Z',
   },
@@ -49,7 +49,7 @@ const SEED_PATCHES: PromptPatch[] = [
     participantRoles: undefined,
     negativeExample: "Can you give me an overview of this role's scope and responsibilities?",
     correctedExample: 'What made you decide to hire for this role right now?',
-    reason: 'Generic meta-questions in early turns waste budget. Ground in specifics from turn one.',
+    reason: 'Never ask generic meta-questions about "scope and responsibilities" in a contextual interview. Ground every question in a specific story, decision, or recent event.',
     flagCount: 3,
     createdAt: '2026-05-02T09:00:00Z',
   },
@@ -59,7 +59,7 @@ const SEED_PATCHES: PromptPatch[] = [
     participantRoles: undefined,
     negativeExample: 'Your team probably values clean code, right?',
     correctedExample: 'How does your team think about code quality in practice?',
-    reason: 'Leading questions bias answers. Ask open-ended, neutral questions.',
+    reason: 'Never embed assumptions in questions. Leading questions bias answers and signal you are not actually listening.',
     flagCount: 3,
     createdAt: '2026-05-02T09:00:00Z',
   },
@@ -69,7 +69,7 @@ const SEED_PATCHES: PromptPatch[] = [
     participantRoles: undefined,
     negativeExample: "That's really helpful!",
     correctedExample: "So the team runs blameless post-mortems — that tells me a lot about your culture.",
-    reason: 'Filler praise wastes tokens and signals insincerity. Acknowledge specifics, not generic positivity.',
+    reason: 'Never use generic filler praise like "That\'s really helpful." It signals insincerity. Always acknowledge something specific the person actually said.',
     flagCount: 3,
     createdAt: '2026-05-02T09:00:00Z',
   },
@@ -107,18 +107,32 @@ export interface InjectOptions {
 }
 
 /**
- * Build the "Negative Examples" markdown block that gets appended to a system prompt.
+ * Build the "Phrasing Principles" markdown block that gets injected into system prompts.
+ *
+ * Reason-first format: each principle states the WHY, then gives BAD → GOOD examples
+ * as evidence. This teaches the model the underlying rule, not just memorized replacements.
  */
 export function buildNegativeExamplesBlock(patches: PromptPatch[]): string {
   if (patches.length === 0) return '';
 
-  const lines: string[] = ['', '## Negative Examples — Do NOT generate questions like these', ''];
-
+  // Group patches by their underlying reason so we don't repeat principles
+  const principleMap = new Map<string, PromptPatch[]>();
   for (const p of patches) {
-    lines.push(`- "${p.negativeExample}"`);
-    lines.push(`  → Instead: "${p.correctedExample}"`);
-    lines.push(`  (${p.reason}) [flagged ${p.flagCount}×]`);
+    const existing = principleMap.get(p.reason) ?? [];
+    existing.push(p);
+    principleMap.set(p.reason, existing);
+  }
+
+  const lines: string[] = ['', '## Phrasing Principles — Learn from past recruiter feedback', ''];
+
+  for (const [reason, examples] of principleMap.entries()) {
+    lines.push(`### Principle: ${reason}`);
     lines.push('');
+    for (const p of examples) {
+      lines.push(`- BAD: "${p.negativeExample}"`);
+      lines.push(`  GOOD: "${p.correctedExample}"`);
+      lines.push('');
+    }
   }
 
   return lines.join('\n');
@@ -143,10 +157,11 @@ export function selectPatches(opts: InjectOptions = {}): PromptPatch[] {
 }
 
 /**
- * Inject negative-example patches into a system prompt string.
+ * Inject phrasing-principle patches into a system prompt string.
  *
- * Looks for the "## Negative Examples" or "## Negative Space" section and
- * appends the block there. If neither exists, appends at the end.
+ * Looks for the "## Phrasing Principles", "## Negative Examples" or
+ * "## Negative Space" section and appends the block there. If none exist,
+ * inserts before "## Response Format" or appends at the end.
  */
 export function injectPromptPatches(prompt: string, opts: InjectOptions = {}): string {
   const patches = selectPatches(opts);
@@ -154,8 +169,9 @@ export function injectPromptPatches(prompt: string, opts: InjectOptions = {}): s
 
   const block = buildNegativeExamplesBlock(patches);
 
-  // Try to find an existing Negative Examples / Negative Space section
+  // Try to find an existing section to insert before
   const markers = [
+    '## Phrasing Principles',
     '## Negative Examples',
     '## Negative Space',
     '## Response Format',
@@ -165,7 +181,12 @@ export function injectPromptPatches(prompt: string, opts: InjectOptions = {}): s
   for (const marker of markers) {
     const idx = prompt.indexOf(marker);
     if (idx !== -1) {
-      // Insert the block right before this section
+      // If the marker already exists, append after it; otherwise insert before
+      if (marker === '## Phrasing Principles') {
+        const endIdx = prompt.indexOf('\n## ', idx + 1);
+        const insertAfter = endIdx !== -1 ? endIdx : prompt.length;
+        return prompt.slice(0, insertAfter) + block + prompt.slice(insertAfter);
+      }
       return prompt.slice(0, idx) + block + '\n' + prompt.slice(idx);
     }
   }

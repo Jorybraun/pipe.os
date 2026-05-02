@@ -1,51 +1,143 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+import { ArrowLeft, Eye, Mic, Video, Type, AlertCircle } from 'lucide-react';
 import { ChromeMeshGrid, LiquidMetalCard } from '../components';
 import { SmartInterviewInput } from '../components/AIChat';
+import { useStageDetail } from '../hooks/useStageDetail';
+import { SCREENING_QUESTIONS } from '../content/screeningQuestions';
+import type { ChallengeItem } from '../lib/api/types';
+import { normalizeShortAnswerConfig } from '../lib/shortAnswerUtils';
 
-const SCREENING_QUESTIONS = [
-  'Tell us about a recent project where you used AI tools to enhance your development workflow.',
-  'Describe a time when you had to make a critical technical decision under tight constraints.',
-  'How do you approach learning a new technology or programming language?',
-];
+interface ScreeningQuestion {
+  id: string;
+  text: string;
+  inputMode: 'text' | 'voice' | 'video';
+  placeholder: string;
+}
+
+function extractQuestions(stage: NonNullable<ReturnType<typeof useStageDetail>['stage']>): ScreeningQuestion[] {
+  const challenges = stage.challenges?.filter((c): c is ChallengeItem & { type: 'QUIZ_SHORT_ANSWER' } => c.type === 'QUIZ_SHORT_ANSWER') ?? [];
+
+  if (challenges.length > 0) {
+    return challenges.map((c) => {
+      const cfg = normalizeShortAnswerConfig(c.config ?? {});
+      const placeholder = cfg.inputMode === 'text'
+        ? (cfg as { placeholder?: string }).placeholder
+        : undefined;
+      return {
+        id: c.id,
+        text: cfg.question || c.title || 'Untitled question',
+        inputMode: cfg.inputMode || stage.screeningInputMode || 'text',
+        placeholder: placeholder || 'Share your thoughts...',
+      };
+    });
+  }
+
+  // Fallback to generic defaults — first 3 questions from the bank
+  const defaults = SCREENING_QUESTIONS.slice(0, 3);
+  const fallbackMode = stage.screeningInputMode || 'text';
+  return defaults.map((q) => ({
+    id: q.id,
+    text: q.text,
+    inputMode: q.defaultInputMode || fallbackMode,
+    placeholder: fallbackMode === 'text'
+      ? 'Type your answer...'
+      : fallbackMode === 'voice'
+        ? 'Record a voice response...'
+        : 'Record a video response...',
+  }));
+}
 
 /**
- * CandidateScreeningPage — candidate-facing screening interface.
+ * CandidateScreeningPage — Recruiter preview of the candidate screening experience.
  *
- * Replaces the previous placeholder with a real text/voice input
- * powered by SmartInterviewInput. Video recording coming next.
+ * Route: /screenings/:id/preview
+ *
+ * Fetches the stage's configured QUIZ_SHORT_ANSWER challenges and renders them
+ * with SmartInterviewInput. Falls back to generic defaults if no questions are
+ * configured. Respects stage.screeningInputMode (text / voice / video).
  */
 export default function CandidateScreeningPage(): JSX.Element {
-  const navigate = useNavigate();
+  const { id: stageId } = useParams<{ id: string }>();
+  const { stage, isLoading, error } = useStageDetail(stageId);
+
+  const questions = useMemo(() => (stage ? extractQuestions(stage) : []), [stage]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
 
-  const currentQuestion = SCREENING_QUESTIONS[currentIndex]!;
+  const currentQuestion = questions[currentIndex];
   const answer = answers[currentIndex] ?? '';
   const isFirst = currentIndex === 0;
-  const isLast = currentIndex === SCREENING_QUESTIONS.length - 1;
+  const isLast = currentIndex === questions.length - 1;
 
   const handleSubmit = (): void => {
     if (!answer.trim()) return;
     setAnswers((prev) => ({ ...prev, [currentIndex]: answer.trim() }));
     if (!isLast) {
       setCurrentIndex((i) => i + 1);
-    } else {
-      // All done — navigate to next stage or show completion
-      navigate('/assess/complete');
     }
   };
+
+  const inputModeIcon = {
+    text: Type,
+    voice: Mic,
+    video: Video,
+  };
+  const InputModeIcon = currentQuestion ? inputModeIcon[currentQuestion.inputMode] : Type;
+
+  if (isLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0c0c0e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontFamily: '"Space Mono", monospace', fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em' }}>
+          LOADING SCREENING PREVIEW...
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !stage) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0c0c0e', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+        <div style={{ textAlign: 'center', maxWidth: 480 }}>
+          <AlertCircle size={32} style={{ color: '#ef4444', marginBottom: 16 }} />
+          <h2 style={{ fontFamily: '"Space Mono", monospace', fontSize: 16, color: '#fff', marginBottom: 8 }}>Failed to load preview</h2>
+          <p style={{ fontFamily: '"Space Mono", monospace', fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>{error || 'Stage not found'}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#0c0c0e', fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text, #fff)' }}>
       <ChromeMeshGrid />
 
+      {/* Preview banner */}
+      <div style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        background: 'rgba(251,191,36,0.08)',
+        borderBottom: '1px solid rgba(251,191,36,0.2)',
+        padding: '10px 32px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}>
+        <Eye size={14} style={{ color: '#fbbf24' }} />
+        <span style={{ fontSize: 10, letterSpacing: '0.15em', color: '#fbbf24', fontWeight: 700 }}>
+          PREVIEW MODE — ANSWERS ARE NOT SAVED
+        </span>
+        <span style={{ fontSize: 10, color: 'rgba(251,191,36,0.6)', marginLeft: 'auto' }}>
+          {stage.title}
+        </span>
+      </div>
+
       {/* Progress bar */}
       <div style={{ height: 4, background: 'var(--pipe-surface)' }}>
         <div
           style={{
-            width: `${((currentIndex + 1) / SCREENING_QUESTIONS.length) * 100}%`,
+            width: `${questions.length > 0 ? ((currentIndex + 1) / questions.length) * 100 : 0}%`,
             height: '100%',
             background: 'linear-gradient(90deg, rgba(150,255,150,0.6), rgba(150,255,150,0.8))',
             transition: 'width 0.4s ease',
@@ -56,7 +148,7 @@ export default function CandidateScreeningPage(): JSX.Element {
       <div style={{ padding: '60px 32px', maxWidth: 800, margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div style={{ fontSize: 9, letterSpacing: '0.3em', color: 'var(--pipe-text-dim)', marginBottom: 16 }}>
-            SCREENING // QUESTION {currentIndex + 1} OF {SCREENING_QUESTIONS.length}
+            SCREENING // QUESTION {currentIndex + 1} OF {questions.length}
           </div>
           <h1
             style={{
@@ -75,23 +167,44 @@ export default function CandidateScreeningPage(): JSX.Element {
 
         <LiquidMetalCard variant="mercury" style={{ padding: 48 }}>
           <div style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <InputModeIcon size={14} style={{ color: 'var(--pipe-text-dim)' }} />
+              <span style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', textTransform: 'uppercase' }}>
+                {currentQuestion?.inputMode} RESPONSE
+              </span>
+            </div>
             <p style={{ fontSize: 16, color: 'var(--pipe-text, #fff)', lineHeight: 1.7, marginBottom: 24 }}>
-              {currentQuestion}
+              {currentQuestion?.text}
             </p>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
-              Question {currentIndex + 1} of {SCREENING_QUESTIONS.length}
+              Question {currentIndex + 1} of {questions.length}
             </div>
           </div>
 
-          {/* Answer input — text/voice via SmartInterviewInput */}
-          <SmartInterviewInput
-            value={answer}
-            onChange={(v) => setAnswers((prev) => ({ ...prev, [currentIndex]: v }))}
-            onSubmit={handleSubmit}
-            questionText={currentQuestion}
-            enableVoice
-            placeholder="Share your thoughts..."
-          />
+          {/* Answer input — respects configured input mode */}
+          {currentQuestion?.inputMode === 'video' ? (
+            <div style={{
+              padding: 40,
+              textAlign: 'center',
+              border: '1px dashed var(--pipe-border)',
+              borderRadius: 8,
+              color: 'var(--pipe-text-dim)',
+            }}>
+              <Video size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+              <div style={{ fontSize: 12, letterSpacing: '0.1em' }}>VIDEO RECORDING ENABLED</div>
+              <div style={{ fontSize: 10, marginTop: 8, opacity: 0.6 }}>Candidate will record a video response here</div>
+            </div>
+          ) : (
+            <SmartInterviewInput
+              value={answer}
+              onChange={(v) => setAnswers((prev) => ({ ...prev, [currentIndex]: v }))}
+              onSubmit={handleSubmit}
+              questionText={currentQuestion?.text ?? ''}
+              enableVoice={currentQuestion?.inputMode === 'voice'}
+              enableTTS
+              placeholder={currentQuestion?.placeholder ?? 'Share your thoughts...'}
+            />
+          )}
 
           {/* Navigation */}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 32 }}>
@@ -114,7 +227,7 @@ export default function CandidateScreeningPage(): JSX.Element {
             )}
             <button
               onClick={handleSubmit}
-              disabled={!answer.trim()}
+              disabled={!answer.trim() && currentQuestion?.inputMode !== 'video'}
               style={{
                 padding: '12px 32px',
                 background: answer.trim()

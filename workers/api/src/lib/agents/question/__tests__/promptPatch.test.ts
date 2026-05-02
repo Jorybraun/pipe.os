@@ -114,16 +114,17 @@ describe('promptPatch', () => {
           ruleId: 'r1',
           negativeExample: 'Bad Q',
           correctedExample: 'Good Q',
-          reason: 'Role confusion',
+          reason: 'Never conflate the participant with the role',
           flagCount: 5,
           createdAt: '2026-01-01T00:00:00Z',
         },
       ]);
-      expect(block).toContain('## Negative Examples');
+      expect(block).toContain('## Phrasing Principles');
+      expect(block).toContain('BAD:');
       expect(block).toContain('Bad Q');
+      expect(block).toContain('GOOD:');
       expect(block).toContain('Good Q');
-      expect(block).toContain('Role confusion');
-      expect(block).toContain('flagged 5×');
+      expect(block).toContain('Never conflate the participant with the role');
     });
   });
 
@@ -140,15 +141,15 @@ describe('promptPatch', () => {
           ruleId: 'r1',
           negativeExample: 'Bad Q',
           correctedExample: 'Good Q',
-          reason: 'Role confusion',
+          reason: 'Never conflate the participant with the role',
           flagCount: 5,
           createdAt: '2026-01-01T00:00:00Z',
         },
       ]);
       const prompt = '## Some Prompt\n## Negative Examples\nExisting examples.\n## Response Format';
       const result = injectPromptPatches(prompt);
-      expect(result).toContain('## Negative Examples — Do NOT generate questions like these');
-      expect(result.indexOf('Do NOT generate')).toBeLessThan(result.indexOf('Existing examples'));
+      expect(result).toContain('## Phrasing Principles');
+      expect(result.indexOf('Phrasing Principles')).toBeLessThan(result.indexOf('Existing examples'));
     });
 
     it('appends to end when no marker found', () => {
@@ -158,14 +159,14 @@ describe('promptPatch', () => {
           ruleId: 'r1',
           negativeExample: 'Bad Q',
           correctedExample: 'Good Q',
-          reason: 'Role confusion',
+          reason: 'Never conflate the participant with the role',
           flagCount: 5,
           createdAt: '2026-01-01T00:00:00Z',
         },
       ]);
       const prompt = 'Simple prompt without sections.';
       const result = injectPromptPatches(prompt);
-      expect(result).toContain('## Negative Examples');
+      expect(result).toContain('## Phrasing Principles');
       expect(result).toContain('Bad Q');
     });
   });

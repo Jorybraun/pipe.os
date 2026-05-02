@@ -42,7 +42,14 @@ function fakeD1(firstResponders: Array<{ match: string; value: unknown }> = []):
         call.ran = true;
         return { success: true, meta: { changes: 1 } };
       },
-      all: async () => ({ results: [], success: true, meta: { changes: 0 } }),
+      all: async () => {
+        const match = firstResponders.find((r) => sql.includes(r.match));
+        const result = match ? match.value : null;
+        if (Array.isArray(result)) {
+          return { results: result, success: true, meta: { changes: 0 } };
+        }
+        return { results: [], success: true, meta: { changes: 0 } };
+      },
       raw: async () => [],
     } as unknown as D1PreparedStatement;
 
@@ -306,6 +313,129 @@ describe('DELETE /api/v1/candidates/:candidateId', () => {
     const res = await candidateOps.request(
       '/nonexistent',
       { method: 'DELETE', headers: {} },
+      env,
+    );
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── GET /api/v1/candidates/:candidateId/assignments ─────────────────────────
+
+describe('GET /api/v1/candidates/:candidateId/assignments', () => {
+  it('returns a list of candidate challenge assignments', async () => {
+    const db = fakeD1([
+      {
+        match: 'c.id = ? AND p.owner_id',
+        value: { id: 'cand_1' },
+      },
+      {
+        match: 'FROM candidate_challenge_assignment',
+        value: [
+          {
+            stage_id: 'stage_1',
+            challenge_id: 'chal_1',
+            repo_id: 42,
+            github_repo_url: 'https://github.com/org/repo',
+            github_pr_number: 7,
+            issue_number: 99,
+            assigned_at: '2026-02-01T10:00:00.000Z',
+          },
+        ],
+      },
+    ]);
+    const env = buildEnv(db);
+
+    const res = await candidateOps.request(
+      '/cand_1/assignments',
+      { method: 'GET', headers: {} },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      assignments: Array<{
+        stageId: string;
+        challengeId: string;
+        repoId: number;
+        githubRepoUrl: string;
+        githubPrNumber: number;
+        issueNumber: number;
+        assignedAt: string;
+      }>;
+    };
+    expect(body.assignments).toHaveLength(1);
+    expect(body.assignments[0].stageId).toBe('stage_1');
+    expect(body.assignments[0].challengeId).toBe('chal_1');
+    expect(body.assignments[0].repoId).toBe(42);
+    expect(body.assignments[0].githubRepoUrl).toBe('https://github.com/org/repo');
+    expect(body.assignments[0].githubPrNumber).toBe(7);
+    expect(body.assignments[0].issueNumber).toBe(99);
+    expect(body.assignments[0].assignedAt).toBe('2026-02-01T10:00:00.000Z');
+  });
+
+  it('returns 404 when candidate does not exist', async () => {
+    const db = fakeD1([
+      {
+        match: 'c.id = ? AND p.owner_id',
+        value: null,
+      },
+    ]);
+    const env = buildEnv(db);
+
+    const res = await candidateOps.request(
+      '/nonexistent/assignments',
+      { method: 'GET', headers: {} },
+      env,
+    );
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── POST /api/v1/candidates/:candidateId/refresh-link ───────────────────────
+
+describe('POST /api/v1/candidates/:candidateId/refresh-link', () => {
+  it('regenerates invite token and wipes previous attempts', async () => {
+    const db = fakeD1([
+      {
+        match: 'c.id = ? AND p.owner_id',
+        value: { id: 'cand_1', status: 'COMPLETED' },
+      },
+    ]);
+    const env = buildEnv(db);
+
+    const res = await candidateOps.request(
+      '/cand_1/refresh-link',
+      { method: 'POST', headers: {} },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { inviteToken: string };
+    expect(body.inviteToken).toBeDefined();
+    expect(typeof body.inviteToken).toBe('string');
+
+    const updateCall = db.__calls.find((c) =>
+      c.sql.includes("UPDATE candidates SET invite_token = ?"),
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall?.sql).toContain("status = 'INVITED'");
+    expect(updateCall?.params[2]).toBe('cand_1');
+  });
+
+  it('returns 404 when candidate does not exist', async () => {
+    const db = fakeD1([
+      {
+        match: 'c.id = ? AND p.owner_id',
+        value: null,
+      },
+    ]);
+    const env = buildEnv(db);
+
+    const res = await candidateOps.request(
+      '/nonexistent/refresh-link',
+      { method: 'POST', headers: {} },
       env,
     );
 
