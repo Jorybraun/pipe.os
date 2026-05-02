@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { ArrowLeft, Eye, Mic, Video, Type, AlertCircle } from 'lucide-react';
 import { ChromeMeshGrid, LiquidMetalCard } from '../components';
 import { SmartInterviewInput } from '../components/AIChat';
+import { InlineVideoRecorder } from '../components/InlineVideoRecorder';
 import { useStageDetail } from '../hooks/useStageDetail';
 import { SCREENING_QUESTIONS } from '../content/screeningQuestions';
 import type { ChallengeItem } from '../lib/api/types';
@@ -48,6 +49,8 @@ function extractQuestions(stage: NonNullable<ReturnType<typeof useStageDetail>['
   }));
 }
 
+const VIDEO_MARKER = '[VIDEO_RECORDED]';
+
 /**
  * CandidateScreeningPage — Recruiter preview of the candidate screening experience.
  *
@@ -65,18 +68,43 @@ export default function CandidateScreeningPage(): JSX.Element {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [videoBlobs, setVideoBlobs] = useState<Record<number, Blob>>({});
 
   const currentQuestion = questions[currentIndex];
   const answer = answers[currentIndex] ?? '';
   const isFirst = currentIndex === 0;
   const isLast = currentIndex === questions.length - 1;
 
+  const hasAnswer = answer.trim().length > 0;
+  const hasVideo = !!videoBlobs[currentIndex];
+  const canAdvance = currentQuestion?.inputMode === 'video' ? hasVideo : hasAnswer;
+
   const handleSubmit = (): void => {
-    if (!answer.trim()) return;
-    setAnswers((prev) => ({ ...prev, [currentIndex]: answer.trim() }));
+    if (!canAdvance) return;
+    if (currentQuestion?.inputMode !== 'video') {
+      setAnswers((prev) => ({ ...prev, [currentIndex]: answer.trim() }));
+    }
     if (!isLast) {
       setCurrentIndex((i) => i + 1);
     }
+  };
+
+  const handleVideoRecorded = (blob: Blob) => {
+    setVideoBlobs((prev) => ({ ...prev, [currentIndex]: blob }));
+    setAnswers((prev) => ({ ...prev, [currentIndex]: VIDEO_MARKER }));
+  };
+
+  const handleVideoClear = () => {
+    setVideoBlobs((prev) => {
+      const next = { ...prev };
+      delete next[currentIndex];
+      return next;
+    });
+    setAnswers((prev) => {
+      const next = { ...prev };
+      delete next[currentIndex];
+      return next;
+    });
   };
 
   const inputModeIcon = {
@@ -88,8 +116,8 @@ export default function CandidateScreeningPage(): JSX.Element {
 
   if (isLoading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0c0c0e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontFamily: '"Space Mono", monospace', fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.2em' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--pipe-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontFamily: '"Space Mono", monospace', fontSize: 11, color: 'var(--pipe-text-dim)', letterSpacing: '0.2em' }}>
           LOADING SCREENING PREVIEW...
         </div>
       </div>
@@ -98,18 +126,18 @@ export default function CandidateScreeningPage(): JSX.Element {
 
   if (error || !stage) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0c0c0e', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+      <div style={{ minHeight: '100vh', background: 'var(--pipe-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
         <div style={{ textAlign: 'center', maxWidth: 480 }}>
           <AlertCircle size={32} style={{ color: '#ef4444', marginBottom: 16 }} />
-          <h2 style={{ fontFamily: '"Space Mono", monospace', fontSize: 16, color: '#fff', marginBottom: 8 }}>Failed to load preview</h2>
-          <p style={{ fontFamily: '"Space Mono", monospace', fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>{error || 'Stage not found'}</p>
+          <h2 style={{ fontFamily: '"Space Mono", monospace', fontSize: 16, color: 'var(--pipe-text)', marginBottom: 8 }}>Failed to load preview</h2>
+          <p style={{ fontFamily: '"Space Mono", monospace', fontSize: 12, color: 'var(--pipe-text-muted)' }}>{error || 'Stage not found'}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0c0c0e', fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text, #fff)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--pipe-bg)', fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text, #fff)' }}>
       <ChromeMeshGrid />
 
       {/* Preview banner */}
@@ -156,7 +184,7 @@ export default function CandidateScreeningPage(): JSX.Element {
               fontWeight: 800,
               letterSpacing: '-0.02em',
               margin: 0,
-              background: 'linear-gradient(135deg, #fff 0%, rgba(200,210,230,0.8) 100%)',
+              background: 'linear-gradient(135deg, var(--pipe-text) 0%, var(--pipe-text-muted) 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}
@@ -176,24 +204,19 @@ export default function CandidateScreeningPage(): JSX.Element {
             <p style={{ fontSize: 16, color: 'var(--pipe-text, #fff)', lineHeight: 1.7, marginBottom: 24 }}>
               {currentQuestion?.text}
             </p>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+            <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)' }}>
               Question {currentIndex + 1} of {questions.length}
             </div>
           </div>
 
           {/* Answer input — respects configured input mode */}
           {currentQuestion?.inputMode === 'video' ? (
-            <div style={{
-              padding: 40,
-              textAlign: 'center',
-              border: '1px dashed var(--pipe-border)',
-              borderRadius: 8,
-              color: 'var(--pipe-text-dim)',
-            }}>
-              <Video size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
-              <div style={{ fontSize: 12, letterSpacing: '0.1em' }}>VIDEO RECORDING ENABLED</div>
-              <div style={{ fontSize: 10, marginTop: 8, opacity: 0.6 }}>Candidate will record a video response here</div>
-            </div>
+            <InlineVideoRecorder
+              key={currentIndex}
+              recordedBlob={videoBlobs[currentIndex] ?? null}
+              onRecorded={handleVideoRecorded}
+              onClear={handleVideoClear}
+            />
           ) : (
             <SmartInterviewInput
               value={answer}
@@ -227,18 +250,18 @@ export default function CandidateScreeningPage(): JSX.Element {
             )}
             <button
               onClick={handleSubmit}
-              disabled={!answer.trim() && currentQuestion?.inputMode !== 'video'}
+              disabled={!canAdvance}
               style={{
                 padding: '12px 32px',
-                background: answer.trim()
+                background: canAdvance
                   ? 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))'
                   : 'transparent',
                 border: '1px solid var(--pipe-border)',
-                color: answer.trim() ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-muted)',
+                color: canAdvance ? 'var(--pipe-text, #fff)' : 'var(--pipe-text-muted)',
                 fontSize: 10,
                 letterSpacing: '0.15em',
                 fontWeight: 700,
-                cursor: answer.trim() ? 'pointer' : 'not-allowed',
+                cursor: canAdvance ? 'pointer' : 'not-allowed',
               }}
             >
               {isLast ? 'FINISH' : 'NEXT QUESTION →'}
