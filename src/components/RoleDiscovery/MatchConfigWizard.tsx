@@ -540,7 +540,7 @@ function ReviewSummary({
       <span style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
         {label.toUpperCase()}
       </span>
-      <span style={{ fontSize: 11, color: '#fff', fontFamily: '"Space Mono", monospace' }}>
+      <span style={{ fontSize: 11, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace' }}>
         {value}
       </span>
     </div>

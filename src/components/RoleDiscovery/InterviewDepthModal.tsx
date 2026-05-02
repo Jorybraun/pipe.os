@@ -64,7 +64,7 @@ export function InterviewDepthModal({
         style={{
           width: '100%',
           maxWidth: 520,
-          background: '#13131a',
+          background: 'var(--pipe-surface-solid)',
           border: '1px solid var(--pipe-border)',
           borderRadius: 12,
           padding: 32,
@@ -94,7 +94,7 @@ export function InterviewDepthModal({
             <div
               style={{
                 fontSize: 13,
-                color: 'var(--pipe-text-muted, rgba(255,255,255,0.55))',
+                color: 'var(--pipe-text-muted)',
                 fontFamily: '"Space Mono", monospace',
               }}
             >
@@ -134,7 +134,7 @@ export function InterviewDepthModal({
                     : 'transparent',
                   border: selected
                     ? '1px solid rgba(74, 222, 128, 0.3)'
-                    : '1px solid rgba(255,255,255,0.06)',
+                    : '1px solid var(--pipe-border-light)',
                   borderRadius: 6,
                   cursor: 'pointer',
                   textAlign: 'left',
@@ -148,7 +148,7 @@ export function InterviewDepthModal({
                     borderRadius: '50%',
                     border: selected
                       ? '1px solid rgba(74, 222, 128, 0.7)'
-                      : '1px solid rgba(255,255,255,0.15)',
+                      : '1px solid var(--pipe-border)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -165,7 +165,7 @@ export function InterviewDepthModal({
                       fontSize: 11,
                       fontWeight: 700,
                       letterSpacing: '0.05em',
-                      color: selected ? 'var(--pipe-text, #fff)' : 'rgba(255,255,255,0.6)',
+                      color: selected ? 'var(--pipe-text)' : 'var(--pipe-text-muted)',
                       fontFamily: '"Space Mono", monospace',
                       marginBottom: 4,
                     }}

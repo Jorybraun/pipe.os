@@ -1177,7 +1177,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
             style={{
               width: '100%',
               maxWidth: 720,
-              background: '#13131a',
+              background: 'var(--pipe-surface-solid)',
               border: '1px solid var(--pipe-border)',
               borderRadius: 12,
               padding: 32,
