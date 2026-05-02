@@ -19,7 +19,7 @@ import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, stateActionSchema, questionSchema, synthesizeSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
-import { mergeKnowledgeState } from '../../lib/roleAgent';
+import { mergeKnowledgeState } from '../../lib/agents/interview/reducer';
 import { callGapFillingAgent } from '../../lib/agents/calibration/gapFilling';
 import { interviewReducer, createInitialState, selectPhase, readDomainCoverage, readEvpCoverage, readStories, readBooleanFlag, readProbesDelivered, readSoulProbesDelivered, readEnableSoulTrack } from '../../lib/agents/interview/reducer';
 import { generateQuestion, generateQuestionStream, generateQuestionBatch } from '../../lib/agents/question/generator';

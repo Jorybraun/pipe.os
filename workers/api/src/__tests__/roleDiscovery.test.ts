@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { callRoleAgent, mergeKnowledgeState } from '../lib/roleAgent';
+import { mergeKnowledgeState } from '../lib/agents/interview/reducer';
 import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage } from '../lib/roleAgentPrompts';
 
 // ─── Mock fetch ─────────────────────────────────────────────────────────────
@@ -153,30 +153,4 @@ describe('buildRoleAgentUserMessage', () => {
   });
 });
 
-// ─── callRoleAgent — error when no provider ──────────────────────────────────
 
-describe('callRoleAgent', () => {
-  it('throws when no provider is configured', async () => {
-    await expect(callRoleAgent({
-      provider: null,
-      fallbackProvider: null,
-      baseline: { title: 'Designer' },
-      exchanges: [],
-      knowledgeState: {},
-      questionsAsked: 0,
-      questionBudget: 8,
-    })).rejects.toThrow('No AI provider is configured');
-  });
-
-  it('throws when budget exhausted and no provider', async () => {
-    await expect(callRoleAgent({
-      provider: null,
-      fallbackProvider: null,
-      baseline: { title: 'Designer' },
-      exchanges: [],
-      knowledgeState: {},
-      questionsAsked: 8,
-      questionBudget: 8,
-    })).rejects.toThrow('No AI provider is configured');
-  });
-});

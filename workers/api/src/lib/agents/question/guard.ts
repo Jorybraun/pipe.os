@@ -267,17 +267,3 @@ export function buildGuardNudge(result: GuardResult): string {
   return lines.join('\n');
 }
 
-/**
- * Convenience: check a full GeneratedQuestion shape (from generator.ts).
- */
-export function checkGeneratedQuestion(
-  q: { text: string; acknowledgment?: string },
-  opts: { participantRole?: string; previousQuestions?: string[] } = {},
-): GuardResult {
-  return checkQuestion({
-    text: q.text,
-    acknowledgment: q.acknowledgment,
-    participantRole: opts.participantRole,
-    previousQuestions: opts.previousQuestions,
-  });
-}

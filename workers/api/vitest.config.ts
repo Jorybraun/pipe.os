@@ -8,6 +8,10 @@ export default defineConfig({
       'src/**/__tests__/**/*.test.ts',
       'scripts/**/*.test.ts',
     ],
+    exclude: [
+      '**/.worktrees/**',
+      'node_modules',
+    ],
     environment: 'node',
   },
   resolve: {

@@ -131,7 +131,7 @@ describe('probeLibrarian', () => {
     });
 
     it('returns "All probes delivered" when complete', () => {
-      expect(buildRemainingProbeSummary(8)).toBe('All probes delivered.');
+      expect(buildRemainingProbeSummary(8)).toBe('All signal probes delivered.');
     });
   });
 });
