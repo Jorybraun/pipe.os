@@ -318,6 +318,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
       s.sort_order AS stage_order,
       s.mode AS stage_mode,
       s.time_limit,
+      s.screening_input_mode,
       s.video_config,
       ch.id AS challenge_id,
       ch.type AS challenge_type,
@@ -360,6 +361,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
         order: r.stage_order as number,
         mode: (r.stage_mode as string | null) ?? null,
         timeLimit: (r.time_limit as number | null) ?? null,
+        screeningInputMode: (r.screening_input_mode as string | null) ?? null,
         videoConfig: (r.video_config as string | null) ?? null,
         challenges: [],
       });
@@ -465,6 +467,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
       stageTitle: stage.title,
       mode: stage.mode ?? 'ASYNC',
       timeLimit: stage.timeLimit,
+      screeningInputMode: stage.screeningInputMode,
       challenges: indexedChallenges,
       currentIndex: adjustedIndex,
     });
@@ -524,10 +527,10 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // Determine synthetic challenge count for this stage
   const stageInfo = await c.env.DB.prepare(
-    `SELECT mode FROM stages WHERE id = ?1`
+    `SELECT mode, screening_input_mode FROM stages WHERE id = ?1`
   )
     .bind(candidate.current_stage_id)
-    .first<{ mode: string | null }>();
+    .first<{ mode: string | null; screening_input_mode: string | null }>();
 
   const syntheticCount = 1 + (stageInfo?.mode === 'LIVE_VIDEO' ? 1 : 0); // WELCOME + optional LIVE_VIDEO
 
@@ -597,6 +600,14 @@ rpcAuth.post('/get-challenge', async (c) => {
     } catch {
       config = null;
     }
+  }
+
+  // Inject stage-level screening_input_mode into QUIZ_SHORT_ANSWER challenges
+  // so candidates see the format (text / voice / video) configured by the recruiter.
+  if ((ch.type as string) === 'QUIZ_SHORT_ANSWER' && stageInfo?.screening_input_mode) {
+    const cfg = (config ?? {}) as Record<string, unknown>;
+    cfg.inputMode = stageInfo.screening_input_mode;
+    config = cfg;
   }
 
   // Parse cached diff JSON if stored as string

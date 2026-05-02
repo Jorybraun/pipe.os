@@ -113,6 +113,7 @@ export interface StageDetail {
   stageType: string | null;
   isScheduled: boolean;
   screeningFormat: ScreeningFormat | null;
+  screeningInputMode: 'text' | 'voice' | 'video' | null;
   createdAt: string;
   updatedAt: string;
   challenges: ChallengeItem[];
@@ -153,6 +154,7 @@ export interface UpdateStageRequest {
   stageType?: string | null;
   isScheduled?: boolean;
   screeningFormat?: ScreeningFormat | null;
+  screeningInputMode?: 'text' | 'voice' | 'video' | null;
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────

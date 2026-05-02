@@ -19,6 +19,8 @@ import {
   Check,
   ToggleLeft,
   ToggleRight,
+  Type,
+  Mic,
 } from 'lucide-react';
 import { SectionCard } from '../../components';
 import { useStageMutations } from '../../hooks/useStageMutations';
@@ -96,6 +98,20 @@ export default function ScreeningDetailTab(): JSX.Element {
       console.error('[ScreeningDetailTab] Failed to toggle scheduling:', err);
     }
   }, [stageId, isScheduled, updateStage, refetchStage]);
+
+  const handleSelectInputMode = useCallback(async (inputMode: 'text' | 'voice' | 'video'): Promise<void> => {
+    setSaving(true);
+    try {
+      await updateStage(stageId, { screeningInputMode: inputMode });
+      await refetchStage();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (err) {
+      console.error('[ScreeningDetailTab] Failed to update input mode:', err);
+    } finally {
+      setSaving(false);
+    }
+  }, [stageId, updateStage, refetchStage]);
 
   const activeOption = FORMAT_OPTIONS.find((o) => o.key === currentFormat);
 
@@ -335,6 +351,78 @@ export default function ScreeningDetailTab(): JSX.Element {
                 </>
               )}
             </div>
+
+            {/* Input mode picker — only for ONLINE screening */}
+            {currentFormat === 'ONLINE' && (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: mono, fontWeight: 700, marginBottom: 10 }}>
+                  RESPONSE FORMAT
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                  {([
+                    { key: 'text' as const, label: 'Text', icon: Type, desc: 'Candidates type their answers' },
+                    { key: 'voice' as const, label: 'Voice', icon: Mic, desc: 'Candidates record audio responses' },
+                    { key: 'video' as const, label: 'Video', icon: Video, desc: 'Candidates record video responses' },
+                  ]).map((opt) => {
+                    const isActive = (stage.screeningInputMode ?? 'text') === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => void handleSelectInputMode(opt.key)}
+                        disabled={saving}
+                        style={{
+                          padding: '14px 16px',
+                          background: isActive ? 'rgba(251, 191, 36, 0.08)' : 'var(--pipe-surface)',
+                          border: `1px solid ${isActive ? 'rgba(251, 191, 36, 0.35)' : 'var(--pipe-border)'}`,
+                          borderRadius: 8,
+                          cursor: saving ? 'wait' : 'pointer',
+                          textAlign: 'left',
+                          transition: 'all 0.15s ease',
+                          position: 'relative',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isActive) {
+                            e.currentTarget.style.borderColor = 'rgba(251, 191, 36, 0.20)';
+                            e.currentTarget.style.background = 'rgba(251, 191, 36, 0.04)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isActive) {
+                            e.currentTarget.style.borderColor = 'var(--pipe-border)';
+                            e.currentTarget.style.background = 'var(--pipe-surface)';
+                          }
+                        }}
+                      >
+                        {isActive && (
+                          <div style={{ position: 'absolute', top: 10, right: 10, width: 8, height: 8, borderRadius: '50%', background: '#fbbf24' }} />
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                          <div style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 7,
+                            background: isActive ? 'rgba(251, 191, 36, 0.20)' : 'rgba(251, 191, 36, 0.12)',
+                            border: `1px solid ${isActive ? 'rgba(251, 191, 36, 0.40)' : 'rgba(251, 191, 36, 0.25)'}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            <opt.icon size={14} color="#fbbf24" />
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: isActive ? '#fbbf24' : 'var(--pipe-text)', fontFamily: mono, letterSpacing: '0.05em' }}>
+                            {opt.label}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: mono, lineHeight: 1.6 }}>
+                          {opt.desc}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </SectionCard>
       )}

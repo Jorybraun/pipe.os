@@ -207,6 +207,7 @@ export interface StageRow {
   video_config: string | null;
   scheduling_event_type_id: string | null;
   screening_format: string | null;
+  screening_input_mode: string | null;
   template_pack_id: string | null;
   template_pack_version: number | null;
   created_at: string;

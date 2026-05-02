@@ -63,6 +63,7 @@ const updateStageSchema = z.object({
   stageType: z.enum(STAGE_TYPES).nullable().optional(),
   isScheduled: z.boolean().optional(),
   screeningFormat: z.enum(SCREENING_FORMATS).nullable().optional(),
+  screeningInputMode: z.enum(['text', 'voice', 'video']).nullable().optional(),
 });
 
 const createChallengeSchema = z.object({
@@ -271,6 +272,7 @@ stageOps.get('/:stageId', async (c) => {
             s.time_limit, s.mode, s.notification_templates,
             s.scheduling_event_type_id, s.stage_type, s.is_scheduled,
             s.screening_format,
+            s.screening_input_mode,
             s.created_at, s.updated_at,
             p.owner_id AS pipeline_owner_id
      FROM stages s
@@ -291,6 +293,7 @@ stageOps.get('/:stageId', async (c) => {
       stage_type: string | null;
       is_scheduled: number;
       screening_format: string | null;
+      screening_input_mode: string | null;
       created_at: string;
       updated_at: string;
       pipeline_owner_id: string;
@@ -382,6 +385,7 @@ stageOps.get('/:stageId', async (c) => {
     stageType: stageRow.stage_type ?? null,
     isScheduled: !!stageRow.is_scheduled,
     screeningFormat: stageRow.screening_format ?? null,
+    screeningInputMode: stageRow.screening_input_mode ?? null,
     createdAt: stageRow.created_at,
     updatedAt: stageRow.updated_at,
     challenges,
@@ -444,6 +448,7 @@ stageOps.patch('/:stageId', async (c) => {
   if ('stageType' in input) addField('stage_type', input.stageType ?? null);
   if ('isScheduled' in input) addField('is_scheduled', input.isScheduled ? 1 : 0);
   if ('screeningFormat' in input) addField('screening_format', input.screeningFormat ?? null);
+  if ('screeningInputMode' in input) addField('screening_input_mode', input.screeningInputMode ?? null);
 
   if (setClauses.length === 0)
     return apiError(c, 'VALIDATION_ERROR', 'No updatable fields provided.');
@@ -462,7 +467,7 @@ stageOps.patch('/:stageId', async (c) => {
   const updated = await c.env.DB.prepare(
     `SELECT id, pipeline_id, title, description, sort_order, time_limit, mode,
             notification_templates, scheduling_event_type_id,
-            stage_type, is_scheduled, screening_format,
+            stage_type, is_scheduled, screening_format, screening_input_mode,
             created_at, updated_at
      FROM stages WHERE id = ?1`,
   )
@@ -480,6 +485,7 @@ stageOps.patch('/:stageId', async (c) => {
       stage_type: string | null;
       is_scheduled: number;
       screening_format: string | null;
+      screening_input_mode: string | null;
       created_at: string;
       updated_at: string;
     }>();
@@ -499,6 +505,7 @@ stageOps.patch('/:stageId', async (c) => {
     stageType: updated.stage_type ?? null,
     isScheduled: !!updated.is_scheduled,
     screeningFormat: updated.screening_format ?? null,
+    screeningInputMode: updated.screening_input_mode ?? null,
     createdAt: updated.created_at,
     updatedAt: updated.updated_at,
   });

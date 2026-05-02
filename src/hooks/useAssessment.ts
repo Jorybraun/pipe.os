@@ -35,6 +35,7 @@ export interface StageConfigDTO {
   mode?: string;
   timeLimit?: number | null;
   videoConfig?: unknown;
+  screeningInputMode?: 'text' | 'voice' | 'video' | null;
   challenges?: Array<{ type: string; order: number }>;
   currentIndex?: number;
 }
