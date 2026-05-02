@@ -114,8 +114,13 @@ export class CloudflareAIProvider implements LLMProvider {
 
     const input: Record<string, unknown> = {
       messages: cfMessages,
-      max_tokens: options.maxTokens ?? 1024,
     };
+    // Only cap output tokens when explicitly requested. Omitting max_tokens lets
+    // the model use its own default ceiling, which is often higher than 1024
+    // and prevents premature truncation during batch generation.
+    if (options.maxTokens !== undefined && options.maxTokens > 0) {
+      input.max_tokens = options.maxTokens;
+    }
 
     // NOTE: We intentionally do NOT set `response_format` here.
     // Cloudflare Workers AI models have inconsistent support for `json_object`

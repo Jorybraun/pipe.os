@@ -1293,10 +1293,28 @@ roleContexts.post('/:id/question', async (c) => {
   // Stack empty — generate a fresh batch.
   let batch: Awaited<ReturnType<typeof generateQuestionBatch>>;
   try {
-    batch = await generateQuestionBatch(state, provider, { batchSize: 3, maxTokens: 4096 });
+    batch = await generateQuestionBatch(state, provider, { batchSize: 3 });
   } catch (err) {
-    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
-    throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[roleContexts/question] Primary provider failed:', msg);
+    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' }, { success: false, errorMessage: msg });
+
+    // Try fallback provider
+    const fallback = createRoleAgentFallbackProvider(c.env);
+    if (fallback) {
+      console.log('[roleContexts/question] Trying fallback provider:', fallback.name);
+      try {
+        batch = await generateQuestionBatch(state, fallback, { batchSize: 3 });
+        logRoleAgentUsage(c, fallback, { roleContextId: id, participantId: 'question-api' });
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        console.error('[roleContexts/question] Fallback provider also failed:', fallbackMsg);
+        logRoleAgentUsage(c, fallback, { roleContextId: id, participantId: 'question-api' }, { success: false, errorMessage: fallbackMsg });
+        return apiError(c, 'SERVICE_UNAVAILABLE', `AI generation failed. Primary: ${msg}. Fallback: ${fallbackMsg}`);
+      }
+    } else {
+      return apiError(c, 'SERVICE_UNAVAILABLE', `AI generation failed: ${msg}`);
+    }
   }
   logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' });
 

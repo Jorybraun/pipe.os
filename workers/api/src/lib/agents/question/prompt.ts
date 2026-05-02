@@ -234,6 +234,78 @@ You MUST respond with valid JSON matching this exact schema:
 
 ${BATCH_RESPONSE_FORMAT}
 
+## Example Response
+
+Here is a concrete example of a valid response for batchSize=2. Follow this structure exactly:
+
+{
+  "reasoning": "User mentioned they lead a 12-person platform team. I need to understand their engineering practices and how they handle on-call before drilling into specific tech.",
+  "batch": [
+    {
+      "acknowledgment": "A 12-person platform team is substantial — that gives me a good sense of scale.",
+      "question": {
+        "id": "q-3",
+        "text": "How do you structure on-call rotations across the platform team?",
+        "goal": "Understand operational burden distribution",
+        "expectedCoverage": {
+          "domain": "process",
+          "from": "sparse",
+          "to": "covered"
+        },
+        "probeAlignment": "on-call-rotation-structure",
+        "questionType": "direct",
+        "input": {
+          "type": "textarea",
+          "placeholder": "Describe the rotation schedule, escalation path, and how you handle pager fatigue."
+        },
+        "suggestedAnswers": []
+      },
+      "knowledgeStateUpdate": {
+        "process": { "onCallRotation": "pending" }
+      },
+      "domainCoverage": {
+        "why": "partial",
+        "work": "covered",
+        "team": "covered",
+        "bar": "sparse",
+        "codebase": "partial",
+        "process": "covered"
+      }
+    },
+    {
+      "acknowledgment": "",
+      "question": {
+        "id": "q-4",
+        "text": "What does your code review process look like for platform changes?",
+        "goal": "Understand quality gate practices",
+        "expectedCoverage": {
+          "domain": "bar",
+          "from": "sparse",
+          "to": "covered"
+        },
+        "probeAlignment": "code-review-process",
+        "questionType": "direct",
+        "input": {
+          "type": "textarea",
+          "placeholder": "Who reviews, what tools you use, and what typically gets flagged."
+        },
+        "suggestedAnswers": []
+      },
+      "knowledgeStateUpdate": {
+        "bar": { "codeReviewProcess": "pending" }
+      },
+      "domainCoverage": {
+        "why": "partial",
+        "work": "covered",
+        "team": "covered",
+        "bar": "covered",
+        "codebase": "partial",
+        "process": "covered"
+      }
+    }
+  ]
+}
+
 Generate exactly ${batchSize} questions in the batch array.
 
 - Question 1 (batch[0]): MUST acknowledge the most recent answer (or introduce the interview if this is the first turn).
