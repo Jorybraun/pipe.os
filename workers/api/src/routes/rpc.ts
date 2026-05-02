@@ -1202,7 +1202,7 @@ rpcAuth.post('/upload-media', async (c) => {
   }
 
   const fileEntry = formData.get('file');
-  if (!(fileEntry instanceof File)) {
+  if (!fileEntry || !(fileEntry instanceof File)) {
     return c.json(
       { error: { code: 'VALIDATION_ERROR', message: 'No "file" field found in the request.' } },
       400,

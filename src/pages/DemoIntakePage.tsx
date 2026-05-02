@@ -78,7 +78,7 @@ export default function DemoIntakePage(): JSX.Element {
         throw new Error(msg);
       }
 
-      const { candidateId, pipelineId, sessionToken } = data as DemoRegisterResponse;
+      const { candidateId, pipelineId, sessionToken } = (data as unknown) as DemoRegisterResponse;
 
       sessionStorage.setItem('pipe_session_token', sessionToken);
       sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
