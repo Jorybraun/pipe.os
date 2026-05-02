@@ -8,6 +8,9 @@ import {
   Clock,
   CheckSquare,
   Square,
+  Type,
+  Mic,
+  Video as VideoIcon,
 } from "lucide-react";
 import { LiquidMetalCard } from "../ui/LiquidMetalCard";
 import { useSortable } from "@dnd-kit/sortable";
@@ -98,6 +101,7 @@ export function ChallengeCard({
       ? JSON.parse(challenge.config)
       : challenge.config || {};
   const timeLimit = config.timeLimit;
+  const inputMode = config.inputMode as string | undefined;
 
   return (
     <div
@@ -181,8 +185,16 @@ export function ChallengeCard({
                   textTransform: "uppercase",
                 }}
               >
-                {challenge.difficulty?.toUpperCase() ||
-                  challenge.type?.replace("QUIZ_", "")}
+                {challenge.type === 'QUIZ_SHORT_ANSWER' && inputMode ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {inputMode === 'text' && <Type size={10} />}
+                    {inputMode === 'voice' && <Mic size={10} />}
+                    {inputMode === 'video' && <VideoIcon size={10} />}
+                    {inputMode.toUpperCase()}
+                  </span>
+                ) : (
+                  challenge.difficulty?.toUpperCase() || challenge.type?.replace("QUIZ_", "")
+                )}
               </div>
               <h4
                 style={{
@@ -191,10 +203,53 @@ export function ChallengeCard({
                   color: "var(--pipe-text, #fff)",
                   margin: 0,
                   lineHeight: 1.3,
+                  flex: 1,
                 }}
               >
                 {challenge.title}
               </h4>
+
+              {/* Quick input mode switcher for short-answer questions */}
+              {challenge.type === 'QUIZ_SHORT_ANSWER' && onEdit && (
+                <div style={{ display: 'flex', gap: 2, marginLeft: 'auto' }}>
+                  {(['text', 'voice', 'video'] as const).map((mode) => {
+                    const isActive = inputMode === mode;
+                    const Icon = mode === 'text' ? Type : mode === 'voice' ? Mic : VideoIcon;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEdit({ ...challenge, config: { ...config, inputMode: mode } });
+                        }}
+                        title={mode.toUpperCase()}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 26,
+                          height: 26,
+                          background: isActive ? typeStyle.bg : 'transparent',
+                          border: `1px solid ${isActive ? typeStyle.border : 'transparent'}`,
+                          borderRadius: 4,
+                          color: isActive ? typeStyle.text : 'var(--pipe-text-dim)',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isActive) e.currentTarget.style.color = 'var(--pipe-text)';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isActive) e.currentTarget.style.color = 'var(--pipe-text-dim)';
+                        }}
+                      >
+                        <Icon size={12} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {timeLimit && (
                 <div
                   style={{
