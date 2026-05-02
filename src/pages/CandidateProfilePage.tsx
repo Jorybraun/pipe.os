@@ -6,7 +6,7 @@
  * record with all stages, challenges, and submissions in one round-trip.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth as useClerkAuth } from "@clerk/react";
 import {
@@ -1041,6 +1041,7 @@ export default function CandidateProfilePage(): JSX.Element {
 
   const [aiBlocks] = useState<IntelligenceBlockConfig[]>([]);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const hasIntelligenceGenerated = useRef(false);
 
   // Auto-select first stage on load
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
@@ -1089,7 +1090,8 @@ export default function CandidateProfilePage(): JSX.Element {
   const signalColors = getSignalColors(signal);
 
   useEffect(() => {
-    if (selectedTab === "INTELLIGENCE" && aiBlocks.length === 0 && !isAiGenerating) {
+    if (selectedTab === "INTELLIGENCE" && aiBlocks.length === 0 && !isAiGenerating && !hasIntelligenceGenerated.current) {
+      hasIntelligenceGenerated.current = true;
       setIsAiGenerating(true);
       setTimeout(() => setIsAiGenerating(false), 1000);
     }
