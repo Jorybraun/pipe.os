@@ -19,6 +19,7 @@ interface RespondResponse {
   nextQuestion?: { id: string; text: string };
   turnsAsked: number;
   totalBudget: number;
+  message?: string;
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -326,6 +327,7 @@ function InterviewUI({
   const handleSubmit = useCallback((): void => {
     const trimmed = answer.trim();
     if (!trimmed || submitting) return;
+    setAnswer('');
     onSubmit(trimmed);
   }, [answer, submitting, onSubmit]);
 

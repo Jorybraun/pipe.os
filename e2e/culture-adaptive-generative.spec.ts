@@ -79,9 +79,11 @@ test.describe("Culture adaptive generative flow", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+            state: 'in_progress',
           currentQuestion: q,
           turnsAsked: 0,
           totalBudget: 20,
+            consentRequired: false,
         }),
       });
     });
@@ -94,7 +96,7 @@ test.describe("Culture adaptive generative flow", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            done: true,
+            state: 'complete',
             message: "Thank you for completing the interview. Your responses have been submitted for review.",
           }),
         });
@@ -105,9 +107,9 @@ test.describe("Culture adaptive generative flow", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          done: false,
+          state: 'in_progress',
           acknowledgment: "Thanks for that.",
-          currentQuestion: q,
+          nextQuestion: q,
           turnsAsked: questionIdx,
           totalBudget: 20,
         }),
@@ -168,9 +170,11 @@ test.describe("Culture adaptive generative flow", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+            state: 'in_progress',
           currentQuestion: GENERATIVE_QUESTIONS[0],
           turnsAsked: 0,
           totalBudget: 20,
+            consentRequired: false,
         }),
       });
     });

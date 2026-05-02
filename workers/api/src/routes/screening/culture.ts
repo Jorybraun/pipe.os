@@ -902,9 +902,11 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
     .run();
 
   return c.json({
+    state: 'in_progress',
     currentQuestion: nextQuestion,
     turnsAsked: 0,
     totalBudget: CULTURE_BANK_SIZE,
+    consentRequired: false,
   });
 });
 
@@ -1069,7 +1071,7 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     c.executionCtx.waitUntil(runScoringJob(c.env, session.id));
 
     return c.json({
-      done: true,
+      state: 'complete',
       message: "Thank you for completing the interview. Your responses have been submitted for review.",
     });
   }
@@ -1095,9 +1097,9 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     .run();
 
   return c.json({
-    done: false,
+    state: 'in_progress',
     acknowledgment: result.acknowledgment,
-    currentQuestion: nextQuestion,
+    nextQuestion,
     turnsAsked,
     totalBudget: CULTURE_BANK_SIZE,
   });
