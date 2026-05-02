@@ -9,6 +9,7 @@ services:
     container_name: agent-harness-work
     environment:
       - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_BASE_URL=${KIMI_BASE_URL:-https://api.kimi.com/coding/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - PYTHONPATH=/app/agent-harness/src
     stdin_open: true
@@ -82,7 +83,8 @@ services:
       - PYTHONPATH=/app/agent-harness/src
     command: ["python", "-m", "pytest", "agent-harness/tests/", "-v"]
 
-  # MCP server + WebSocket — only this exposes ports
+  # MCP server — stays alive so `docker exec -i` can attach stdio.
+  # Also exposes SSE/WebSocket ports for HTTP clients.
   agent-harness-server:
     build:
       context: ..
@@ -95,18 +97,18 @@ services:
       - KIMI_API_KEY=${KIMI_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - PYTHONPATH=/app/agent-harness/src
-    command:
-      - python
-      - -m
-      - agent_harness.server
-      - --transport
-      - sse
-      - --port
-      - "8765"
-      - --ws-port
-      - "8766"
-      - --data-dir
-      - /app/.swarm
+    working_dir: /app
+    volumes:
+      # Mount live repo so plans, code, and broker DB are shared with host
+      - ../:/app
+      # Lock .env files read-only
+      - ../.env:/app/.env:ro
+      - ../.env.local:/app/.env.local:ro
+      - ../agent-harness/.env:/app/agent-harness/.env:ro
+      # Keep container's installed packages
+      - harness_venv:/app/agent-harness/.venv
+    # Keep container running so lazy-wrapper can docker-exec into it
+    command: ["sleep", "infinity"]
 
 volumes:
   harness_venv:

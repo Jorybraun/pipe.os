@@ -1,7 +1,7 @@
 import type { LiveProvider } from './types';
 import { VertexLiveProvider } from './vertexLiveProvider';
 import { MockLiveProvider } from './mockLiveProvider';
-import type { ServiceAccountKey } from '../vertexAIProvider';
+import type { ServiceAccountKey } from '../vertexAuth';
 
 interface LiveProviderEnv {
   LIVE_PROVIDER?: string;

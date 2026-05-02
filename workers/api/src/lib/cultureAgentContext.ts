@@ -23,7 +23,7 @@ import type {
   PriorScreeningSummary,
 } from './cultureGenerativePlanner';
 import type { CompetencyDimension } from './cultureQuestionBank';
-import { COMPETENCY_DIMENSIONS } from './cultureQuestionBank';
+import { COMPETENCY_DIMENSIONS, CULTURE_BANK_SIZE } from './cultureQuestionBank';
 import type { CultureTranscript } from './cultureAgent';
 import { defaultCultureTranscript } from './cultureAgent';
 import type { CultureTeamContext } from './cultureRoleResolution';
@@ -61,7 +61,7 @@ export async function buildCultureInterviewContext(
       .filter((t) => t.probeOf === null)
       .map((t) => t.questionText),
     runningThemes: [...input.transcript.scratchpad.runningThemes],
-    maxQuestions: 20,
+    maxQuestions: CULTURE_BANK_SIZE,
     minQuestions: 5,
   };
 }

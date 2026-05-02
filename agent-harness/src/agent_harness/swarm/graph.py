@@ -385,6 +385,9 @@ def advisor_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
     _emit_node_event(lane_id, plan_id, "advisor", f"subtask={current_id}")
     result = run_advisor(plan_id=plan_id, current_subtask_id=current_id, lane_id=lane_id)
 
+    # Heartbeat: advisor finished a turn
+    heartbeat(lane_id, agent_id="advisor")
+
     updates: dict[str, Any] = {
         "advisor_guidance": result["guidance"],
         "messages": [
@@ -472,11 +475,13 @@ def developer_node(state: LaneState, config: RunnableConfig) -> dict[str, Any]:
         handoff_in=latest_handoff,
         handoff_count=handoff_count,
         thread_id=dev_thread_id,
+        lane_id=lane_id,
     )
 
     # Read back the handoff the developer submitted
     new_handoff = get_handoff(plan_id, current_id)
     if not new_handoff:
+        print(f"[DEV FAIL] {lane_id} subtask={current_id}: get_handoff returned None", flush=True)
         return {
             "status": "failed",
             "messages": [SystemMessage(content="Developer did not submit a handoff.")],

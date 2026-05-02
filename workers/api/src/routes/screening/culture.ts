@@ -52,6 +52,7 @@ import { createCultureAgentProvider } from '../../lib/llm/createProvider';
 import { withCultureMetering } from '../../lib/llm/meteredProvider';
 import type { Env, Variables } from '../../types';
 import type { CompetencyDimension } from '../../lib/cultureQuestionBank';
+import { CULTURE_BANK_SIZE } from '../../lib/cultureQuestionBank';
 
 // ─── DB row shape ─────────────────────────────────────────────────────────────
 
@@ -787,7 +788,7 @@ cultureCandidate.get('/session/:token/state', async (c) => {
       consentRequired: true,
       currentQuestion: null,
       turnsAsked: 0,
-      totalBudget: 20,
+      totalBudget: CULTURE_BANK_SIZE,
       consent: consentPayload(),
     });
   }
@@ -797,7 +798,7 @@ cultureCandidate.get('/session/:token/state', async (c) => {
     consentRequired: false,
     currentQuestion,
     turnsAsked,
-    totalBudget: 20,
+    totalBudget: CULTURE_BANK_SIZE,
   });
 });
 
@@ -903,7 +904,7 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
   return c.json({
     currentQuestion: nextQuestion,
     turnsAsked: 0,
-    totalBudget: 20,
+    totalBudget: CULTURE_BANK_SIZE,
   });
 });
 
@@ -969,7 +970,7 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     teamContext: roleContext.teamContext,
     transcript,
     candidateAnswer: answer.trim(),
-    maxQuestions: 20,
+    maxQuestions: CULTURE_BANK_SIZE,
     minQuestions: 5,
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
@@ -1098,7 +1099,7 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     acknowledgment: result.acknowledgment,
     currentQuestion: nextQuestion,
     turnsAsked,
-    totalBudget: 20,
+    totalBudget: CULTURE_BANK_SIZE,
   });
 });
 

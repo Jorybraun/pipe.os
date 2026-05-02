@@ -73,10 +73,14 @@
             "id": "8af6e68fc634f7eb",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "STRATEGY.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "New tab"
+              "title": "STRATEGY"
             }
           }
         ],
@@ -137,7 +141,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 379.5
+    "width": 200
   },
   "right": {
     "id": "2458148d14d25504",
@@ -241,6 +245,18 @@
   },
   "active": "8af6e68fc634f7eb",
   "lastOpenFiles": [
+    "plan/strategy-v2/qa-swarm-bugfix/test-e2e.md",
+    "INDEX.md",
+    "plan/BUILD_AUDIT.md",
+    "architecture.md",
+    "role-discovery/role-discovery-guardrails.md",
+    "plan/voice-agent-architecture.md",
+    "STRATEGY.md",
+    "plan/strategy-v2/qa-swarm-bugfix/stub-to-real.md",
+    "plan/strategy-v2/qa-swarm-bugfix/observability-finish.md",
+    "plan/strategy-v2/qa-swarm-bugfix/api-correctness.md",
+    "plan/strategy-v2/qa-swarm-bugfix",
+    "plan/SWARM_QA_SPEC.md",
     "plan/testing/code-review-agentic-flow.md",
     "plan/bugs.md",
     "plan/testing/smoke-test-2026-05-01.md",
@@ -257,18 +273,7 @@
     "plan/strategy-v2/part6-market-research/gdpr-subject-rights.md",
     "plan/strategy-v2/part6-market-research/gdpr-article-22-ui.md",
     "plan/strategy-v2/part6-market-research/esco-skill-id-field.md",
-    "plan/strategy-v2/part6-market-research/disparate-impact-monitoring.md",
-    "plan/strategy-v2/part6-market-research/codesignal-phased-calibration.md",
-    "plan/strategy-v2/part6-market-research/code-implementation-scorer-bars.md",
-    "plan/strategy-v2/part6-market-research/candidate-ai-disclosure-ux.md",
-    "plan/strategy-v2/part6-market-research/INDEX.md",
     "plan/strategy-v2/part6-market-research",
-    "plan/strategy-v2/part5-matching-migration/neo4j-retirement-plan.md",
-    "plan/strategy-v2/part5-matching-migration/neo4j-schema-and-constraints.md",
-    "plan/strategy-v2/part5-matching-migration/reliability-idempotency-and-partial-materialization.md",
-    "plan/strategy-v2/part5-matching-migration/neo4j-matching-cutover.md",
-    "plan/strategy-v2/part5-matching-migration/dealbreaker-gate-enforcement.md",
-    "plan/strategy-v2/part5-matching-migration/per-element-matching-algorithm.md",
     "plan/strategy-v2/part5-matching-migration",
     "plan/strategy-v2/part4-candidate-ingestion",
     "plan/strategy-v2/part3-repo-ingestion",
@@ -277,7 +282,6 @@
     "plan/strategy-v2",
     "Screenshot 2026-04-09 at 3.29.57 AM.png",
     "role-discovery",
-    "calibration",
     "Screenshot 2026-04-09 at 3.30.21 AM.png",
     "Screenshot 2026-04-09 at 3.30.57 AM.png",
     "Screenshot 2026-04-09 at 3.31.46 AM.png",

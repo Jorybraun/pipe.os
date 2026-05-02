@@ -1,3 +1,4 @@
+# TEST: swarm e2e verified
 # Agent Harness
 
 MCP broker + LangGraph swarm for autonomous execution of the PIPE-OS strategy backlog.

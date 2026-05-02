@@ -346,6 +346,9 @@ const CURATED_BANK: CultureQuestion[] = [
  */
 export const CULTURE_QUESTION_BANK: CultureQuestion[] = [...CURATED_BANK];
 
+/** Size of the curated bank. Used to cap UI counters and termination logic. */
+export const CULTURE_BANK_SIZE = CULTURE_QUESTION_BANK.length;
+
 // ─── Bank helpers ────────────────────────────────────────────────────────────
 
 /**

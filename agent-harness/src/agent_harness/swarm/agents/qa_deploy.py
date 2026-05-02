@@ -75,10 +75,16 @@ def _make_model() -> ChatOpenAI:
         max_tokens=8192,
         api_key=api_key,
         base_url=base_url,
-        timeout=30,
-        max_retries=2,
-        default_headers={"User-Agent": "claude-code/0.1"},
+        timeout=120,
         extra_body={"reasoning": None},
+        max_retries=2,
+        default_headers={
+            "User-Agent": "claude-code/0.1",
+            "x-stainless-os": "MacOS",
+            "x-stainless-arch": "arm64",
+            "x-stainless-runtime": "python",
+            "x-stainless-runtime-version": "3.12",
+        },
     )
 
 

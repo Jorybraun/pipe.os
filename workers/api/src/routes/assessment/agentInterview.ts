@@ -32,6 +32,7 @@ import type {
 import {
   defaultCultureTranscript,
 } from '../../lib/cultureAgent';
+import { CULTURE_BANK_SIZE } from '../../lib/cultureQuestionBank';
 import type {
   OrgCultureBenchmark,
   CultureScoreReport,
@@ -217,7 +218,7 @@ function toQuestionTurnResult(
     },
     progress: {
       asked: turnsAsked,
-      budget: 20,
+      budget: CULTURE_BANK_SIZE,
       domains: {
         why: 'none',
         work: 'none',
@@ -248,7 +249,7 @@ function toSynthesisResult(
     jobDescription: null,
     progress: {
       asked: countTurnsAsked(session),
-      budget: 20,
+      budget: CULTURE_BANK_SIZE,
       domains: {
         why: 'none',
         work: 'none',
@@ -508,7 +509,7 @@ async function doRespond(
     teamContext: roleContext.teamContext,
     transcript,
     candidateAnswer: answer,
-    maxQuestions: 20,
+    maxQuestions: CULTURE_BANK_SIZE,
     minQuestions: 5,
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,

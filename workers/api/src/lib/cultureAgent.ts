@@ -45,6 +45,7 @@ import {
   pickNextQuestion,
   getQuestionById,
   emptyCoverage,
+  CULTURE_BANK_SIZE,
   type CultureQuestion,
   type CompetencyDimension,
   type SeniorityTag,
@@ -245,7 +246,7 @@ export type AdvanceCultureInterviewResult =
       reasoning: string;
     };
 
-const DEFAULT_MAX_QUESTIONS = 20;
+const DEFAULT_MAX_QUESTIONS = CULTURE_BANK_SIZE;
 const DEFAULT_MIN_QUESTIONS = 5;
 
 /**

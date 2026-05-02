@@ -14,8 +14,9 @@
  *   CANDIDATE_AGENT_MODEL            = model override (optional)
  *
  * Shared Vertex / Google / Kimi credentials:
- *   VERTEX_SA_KEY_JSON     = GCP service account JSON string
- *   VERTEX_AI_PROJECT_ID   = GCP project ID (optional — read from SA JSON)
+ *   CF_AI_GATEWAY_URL      = Cloudflare AI Gateway URL for Vertex AI (required for vertex-ai provider)
+ *   CF_API_TOKEN           = Cloudflare API token with AI Gateway:Read (required for vertex-ai provider)
+ *   VERTEX_AI_PROJECT_ID   = GCP project ID (required for the Vertex AI URL path)
  *   VERTEX_AI_REGION       = GCP region (default: us-central1)
  *   VERTEX_AI_MODEL        = default Vertex model (default: google/gemma-4-26b-a4b-it-maas)
  *   GOOGLE_AI_API_KEY      = Gemini API key (NOT RECOMMENDED — geo-blocked on Cloudflare edge)
@@ -34,7 +35,6 @@ import { GoogleAIProvider } from './googleAIProvider';
 import { CloudflareAIProvider } from './cloudflareAIProvider';
 import { VertexAIProvider } from './vertexAIProvider';
 import { KimiProvider } from './kimiProvider';
-import type { ServiceAccountKey } from './vertexAIProvider';
 import type { LLMProvider } from './types';
 
 export type ProviderName = 'google-ai' | 'cloudflare-ai' | 'vertex-ai' | 'kimi';
@@ -46,12 +46,16 @@ const DEFAULT_KIMI_BASE_URL = 'https://api.moonshot.cn/v1';
 
 export interface ProviderEnv {
   GOOGLE_AI_API_KEY?: string;
-  /** GCP service account JSON string — used by VertexAIProvider for self-refreshing JWT auth. */
-  VERTEX_SA_KEY_JSON?: string;
-  /** Optional — if omitted, project_id is read from VERTEX_SA_KEY_JSON. */
+  /** Cloudflare AI Gateway base URL for Vertex AI (e.g. https://gateway.ai.cloudflare.com/v1/ACCOUNT_ID/GATEWAY_NAME/google-vertex-ai). */
+  CF_AI_GATEWAY_URL?: string;
+  /** Cloudflare API token with AI Gateway:Read permission. */
+  CF_API_TOKEN?: string;
+  /** GCP project ID — required for the Vertex AI URL path. */
   VERTEX_AI_PROJECT_ID?: string;
   VERTEX_AI_REGION?: string;
   VERTEX_AI_MODEL?: string;
+  /** GCP service account JSON — still required for VertexLiveProvider and TTS. */
+  VERTEX_SA_KEY_JSON?: string;
 
   ROLE_AGENT_PROVIDER?: string;
   ROLE_AGENT_MODEL?: string;
@@ -74,26 +78,6 @@ export interface ProviderEnv {
   MOCK_AI?: string;
 }
 
-/** Parse and validate VERTEX_SA_KEY_JSON. Returns null if missing or malformed. */
-function parseServiceAccount(env: ProviderEnv): ServiceAccountKey | null {
-  const raw = env.VERTEX_SA_KEY_JSON;
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.private_key !== 'string' || typeof parsed.client_email !== 'string') {
-      console.error('[createProvider] VERTEX_SA_KEY_JSON missing private_key or client_email');
-      return null;
-    }
-    return {
-      private_key: parsed.private_key,
-      client_email: parsed.client_email,
-      project_id: typeof parsed.project_id === 'string' ? parsed.project_id : (env.VERTEX_AI_PROJECT_ID ?? ''),
-    };
-  } catch {
-    console.error('[createProvider] Failed to parse VERTEX_SA_KEY_JSON');
-    return null;
-  }
-}
 
 /** Registry — maps provider name to its factory. No if-chains, just lookups. */
 const PROVIDER_REGISTRY: Record<
@@ -110,11 +94,18 @@ const PROVIDER_REGISTRY: Record<
     return new GoogleAIProvider(key);
   },
   'vertex-ai': (env, modelOverride) => {
-    const sa = parseServiceAccount(env);
-    if (!sa || !sa.project_id) return null;
+    if (!env.CF_AI_GATEWAY_URL || !env.CF_API_TOKEN) {
+      console.error('[createProvider] CF_AI_GATEWAY_URL and CF_API_TOKEN required for vertex-ai provider');
+      return null;
+    }
+    if (!env.VERTEX_AI_PROJECT_ID) {
+      console.error('[createProvider] VERTEX_AI_PROJECT_ID required for vertex-ai provider');
+      return null;
+    }
     return new VertexAIProvider(
-      sa,
-      sa.project_id,
+      env.CF_AI_GATEWAY_URL,
+      env.CF_API_TOKEN,
+      env.VERTEX_AI_PROJECT_ID,
       env.VERTEX_AI_REGION ?? 'us-central1',
       modelOverride ?? env.VERTEX_AI_MODEL ?? DEFAULT_VERTEX_MODEL,
     );

@@ -8,6 +8,7 @@
 import type { ConversationPhase, DomainCoverage } from '../../../types';
 import type { InterviewState } from '../interview/types';
 import { selectPhasePrompt } from '../../agents/roleDiscovery/prompts';
+import { injectPromptPatches } from './promptPatch';
 
 const RESPONSE_FORMAT = `{
   "reasoning": "<max 20 words. One sentence.",
@@ -93,7 +94,7 @@ const BATCH_RESPONSE_FORMAT = `{
 function buildSystemPrompt(participantRole: string | null, phase: ConversationPhase): string {
   const phasePrompt = selectPhasePrompt(phase, participantRole ?? undefined);
 
-  return `You are a senior technical recruiting partner conducting a role discovery interview. Your goal is to understand this role deeply enough that downstream agents can generate tailored technical assessments. Talk like a human, not a methodology checklist.
+  const basePrompt = `You are a senior technical recruiting partner conducting a role discovery interview. Your goal is to understand this role deeply enough that downstream agents can generate tailored technical assessments. Talk like a human, not a methodology checklist.
 
 ${phasePrompt}
 
@@ -117,6 +118,16 @@ ${phasePrompt}
 - No asking what you can infer: if they said "HIPAA-compliant healthcare platform," don't ask "Is security important?"
 - No repeating answered questions: reference what they said
 - No asking the user to do the agent's job: form an opinion and present it for validation
+- No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
+
+## Negative Examples — Questions that were flagged as bad
+
+These are real questions that users flagged. Do NOT generate questions like these:
+- "What are your primary responsibilities as a team member for this Senior Frontend Engineer role?" (Role confusion — the team member is not the hire.)
+- "You're a team member, which helps me understand the role's scope and responsibilities. What are your primary responsibilities?" (Robotic acknowledgment + role confusion.)
+- "Can you give me an overview of this role's scope and responsibilities?" (Too generic for a contextual interview.)
+- "Your team probably values clean code, right?" (Leading question.)
+- "That's really helpful!" (Filler praise — never do this.)
 
 ## Response Format
 
@@ -128,6 +139,8 @@ Generate exactly ONE question per turn. Pick the single best question that advan
 
 ## Brevity — Speed Matters
 ${BREVITY_RULES}`;
+
+  return injectPromptPatches(basePrompt, { participantRole: participantRole ?? undefined });
 }
 
 function formatExchanges(state: InterviewState): string {
@@ -203,7 +216,7 @@ export function buildQuestionPrompt(state: InterviewState): {
 function buildBatchSystemPrompt(participantRole: string | null, phase: ConversationPhase, batchSize: number): string {
   const phasePrompt = selectPhasePrompt(phase, participantRole ?? undefined);
 
-  return `You are a senior technical recruiting partner conducting a role discovery interview. Your goal is to understand this role deeply enough that downstream agents can generate tailored technical assessments. Talk like a human, not a methodology checklist.
+  const basePrompt = `You are a senior technical recruiting partner conducting a role discovery interview. Your goal is to understand this role deeply enough that downstream agents can generate tailored technical assessments. Talk like a human, not a methodology checklist.
 
 ${phasePrompt}
 
@@ -227,6 +240,16 @@ ${phasePrompt}
 - No asking what you can infer: if they said "HIPAA-compliant healthcare platform," don't ask "Is security important?"
 - No repeating answered questions: reference what they said
 - No asking the user to do the agent's job: form an opinion and present it for validation
+- No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
+
+## Negative Examples — Questions that were flagged as bad
+
+These are real questions that users flagged. Do NOT generate questions like these:
+- "What are your primary responsibilities as a team member for this Senior Frontend Engineer role?" (Role confusion — the team member is not the hire.)
+- "You're a team member, which helps me understand the role's scope and responsibilities. What are your primary responsibilities?" (Robotic acknowledgment + role confusion.)
+- "Can you give me an overview of this role's scope and responsibilities?" (Too generic for a contextual interview.)
+- "Your team probably values clean code, right?" (Leading question.)
+- "That's really helpful!" (Filler praise — never do this.)
 
 ## Response Format
 
@@ -315,6 +338,8 @@ Generate exactly ${batchSize} questions in the batch array.
 
 ## Brevity — Speed Matters
 ${BREVITY_RULES}`;
+
+  return injectPromptPatches(basePrompt, { participantRole: participantRole ?? undefined });
 }
 
 function buildBatchUserPrompt(state: InterviewState, batchSize: number): string {

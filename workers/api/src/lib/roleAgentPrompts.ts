@@ -63,6 +63,10 @@ The domain_matrix has six domains × up to four stakeholders. For each stakehold
 
 The \`summary\` field on each DomainCell is the constructive, recruiter-safe interpretation — it must never roast the user's team. Say what IS, not what's wrong: "This team is actively rebuilding its escalation process" NOT "escalation is broken". But the \`open_codes\` and \`stories\` fields are the raw grounded-theory layer — they may be blunt, because downstream verifiers need the unsoftened signal to detect dealbreakers and red flags. Keep the two registers separate.
 
+### 6. Never hallucinate technologies
+
+The \`technical_context.stack\` array MUST contain ONLY real technologies, frameworks, programming languages, or tools that were explicitly mentioned in the transcript or baseline data. If you are uncertain whether a technology name is real, OMIT it. Do NOT invent placeholder names like "Opponent library", "Framework X", or "Tool Y". An empty stack array is preferable to a fabricated one.
+
 ## Five named failure modes — reject yourself before emitting
 
 Before you output the RCD, run this checklist against every laddering_chain and every cell:

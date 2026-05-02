@@ -12,6 +12,8 @@ import type { LLMProvider, LLMMessage } from '../../llm/types';
 import type { DomainCoverage } from '../../../types';
 import type { InterviewState } from '../interview/types';
 import { buildQuestionPrompt, buildBatchPrompt } from './prompt';
+import { checkQuestion, buildGuardNudge } from './guard';
+import type { GuardResult } from './guard';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -210,7 +212,129 @@ export async function* generateQuestionStream(
   }
 
   const expectedId = `q-${state.questionsAsked + 1}`;
-  return parseGeneratedQuestion(parsed, expectedId);
+  const question = parseGeneratedQuestion(parsed, expectedId);
+
+  // Stream guard check: we can't retry without confusing the user, but we CAN log.
+  const previousQuestions = state.exchanges.map((ex) => ex.question);
+  const guardResult = checkQuestion({
+    text: question.question.text,
+    acknowledgment: question.acknowledgment,
+    participantRole: state.participantRole ?? undefined,
+    previousQuestions,
+  });
+  if (!guardResult.passed) {
+    const blocks = guardResult.violations.filter((v) => v.severity === 'block');
+    console.warn(
+      `[generator] Streamed question failed guard (no retry possible): "${question.question.text.slice(0, 80)}..." | blocks=${blocks.map((b) => b.ruleId).join(',')}`,
+    );
+  }
+
+  return question;
+}
+
+// ─── Guard retry helper ──────────────────────────────────────────────────────
+
+const MAX_GUARD_RETRIES = 2;
+
+async function generateQuestionWithGuardRetry(
+  state: InterviewState,
+  provider: LLMProvider | null,
+  opts: GenerateQuestionOptions = {},
+): Promise<{ question: GeneratedQuestion; guardViolations: GuardResult[] }> {
+  const guardViolations: GuardResult[] = [];
+  const messages: LLMMessage[] = [];
+
+  for (let attempt = 0; attempt <= MAX_GUARD_RETRIES; attempt++) {
+    const promptStart = Date.now();
+    const { system, user } = buildQuestionPrompt(state);
+
+    const callMessages: LLMMessage[] =
+      messages.length > 0
+        ? messages
+        : [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ];
+
+    if (messages.length === 0) {
+      messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: user });
+    }
+
+    console.log(`[generator] prompt built in ${Date.now() - promptStart}ms | attempt=${attempt + 1}`);
+
+    const maxTokens = opts.maxTokens ?? 2048;
+    const genStart = Date.now();
+
+    if (!provider) {
+      throw new Error('No AI provider is configured. Set ROLE_AGENT_PROVIDER or configure VERTEX_SA_KEY_JSON.');
+    }
+
+    const completion = await provider.complete(callMessages, { forceJson: true, maxTokens });
+    const content = completion.content?.trim() ?? '';
+
+    console.log(`[generator] LLM call: ${Date.now() - genStart}ms | contentLen=${content.length}`);
+
+    if (content.length === 0) {
+      throw new Error('AI provider returned empty content');
+    }
+
+    const jsonText = cleanJson(content);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(jsonText) as Record<string, unknown>;
+    } catch {
+      throw new Error(`AI provider returned invalid JSON: ${content.slice(0, 300)}`);
+    }
+
+    if (parsed.persona || parsed.synthesis || parsed.jobDescription) {
+      throw new Error('Question generator received a synthesis response. Use synthesize() for budget-exhausted turns.');
+    }
+
+    const expectedId = `q-${state.questionsAsked + 1}`;
+    const question = parseGeneratedQuestion(parsed, expectedId);
+
+    const previousQuestions = state.exchanges.map((ex) => ex.question);
+    const guardResult = checkQuestion({
+      text: question.question.text,
+      acknowledgment: question.acknowledgment,
+      participantRole: state.participantRole ?? undefined,
+      previousQuestions,
+    });
+
+    if (guardResult.passed) {
+      if (guardViolations.length > 0) {
+        console.log(`[generator] Guard passed after ${attempt} retry(s)`);
+      }
+      return { question, guardViolations };
+    }
+
+    guardViolations.push(guardResult);
+    const blocks = guardResult.violations.filter((v) => v.severity === 'block');
+    console.warn(
+      `[generator] Guard blocked question (attempt ${attempt + 1}): "${question.question.text.slice(0, 80)}..." | blocks=${blocks.map((b) => b.ruleId).join(',')}`,
+    );
+
+    if (attempt < MAX_GUARD_RETRIES) {
+      const nudge = buildGuardNudge(guardResult);
+      messages.push({ role: 'assistant', content: jsonText });
+      messages.push({ role: 'user', content: nudge });
+    }
+  }
+
+  console.error(`[generator] Guard failed after ${MAX_GUARD_RETRIES} retries. Returning last question anyway.`);
+  const expectedId = `q-${state.questionsAsked + 1}`;
+  // Re-parse from the last assistant message
+  const lastAssistantMsg = messages.filter((m) => m.role === 'assistant').pop();
+  const lastContent = lastAssistantMsg?.content ?? '{}';
+  const lastJson = cleanJson(lastContent);
+  let lastParsed: Record<string, unknown>;
+  try {
+    lastParsed = JSON.parse(lastJson) as Record<string, unknown>;
+  } catch {
+    lastParsed = {};
+  }
+  return { question: parseGeneratedQuestion(lastParsed, expectedId), guardViolations };
 }
 
 /**
@@ -218,18 +342,17 @@ export async function* generateQuestionStream(
  *
  * Stateless: same state + same provider → same prompt → deterministic output
  * (modulo model temperature).
+ *
+ * Includes deterministic guard retry: if the generated question violates a
+ * guard rule, the prompt is nudged and regeneration is attempted up to 2 times.
  */
 export async function generateQuestion(
   state: InterviewState,
   provider: LLMProvider | null,
   opts: GenerateQuestionOptions = {},
 ): Promise<GeneratedQuestion> {
-  const generator = generateQuestionStream(state, provider, opts);
-  let result = await generator.next();
-  while (!result.done) {
-    result = await generator.next();
-  }
-  return result.value;
+  const { question } = await generateQuestionWithGuardRetry(state, provider, opts);
+  return question;
 }
 
 // ─── Batch generation (stack architecture) ───────────────────────────────────
@@ -360,5 +483,24 @@ export async function generateQuestionBatch(
     throw new Error('Question generator received a synthesis response. Use synthesize() for budget-exhausted turns.');
   }
 
-  return parseBatchResponse(parsed, state.questionsAsked + 1);
+  const questions = parseBatchResponse(parsed, state.questionsAsked + 1);
+
+  // Guard check each question in the batch (telemetry only — no retry for batches)
+  const previousQuestions = state.exchanges.map((ex) => ex.question);
+  for (const q of questions) {
+    const guardResult = checkQuestion({
+      text: q.question.text,
+      acknowledgment: q.acknowledgment,
+      participantRole: state.participantRole ?? undefined,
+      previousQuestions,
+    });
+    if (!guardResult.passed) {
+      const blocks = guardResult.violations.filter((v) => v.severity === 'block');
+      console.warn(
+        `[generator] Batch question failed guard: "${q.question.text.slice(0, 80)}..." | blocks=${blocks.map((b) => b.ruleId).join(',')}`,
+      );
+    }
+  }
+
+  return questions;
 }

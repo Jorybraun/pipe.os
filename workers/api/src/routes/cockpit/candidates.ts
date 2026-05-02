@@ -567,7 +567,7 @@ candidateOps.get('/:candidateId', async (c) => {
   try {
     ingestionRow = await db
       .prepare(
-        `SELECT status, candidate_searchable_profile, key_concepts_json,
+        `SELECT id, status, candidate_searchable_profile, key_concepts_json,
                 profile_version, model_used, decomposition_version,
                 triangulated_score, role_candidate_cosine,
                 dimensions_json, reasoning_json, match_philosophy,
@@ -609,7 +609,7 @@ candidateOps.get('/:candidateId', async (c) => {
     enrichmentJobStatus = jobRow?.status ?? null;
   } catch {}
 
-  const ingestion = ingestionRow
+  const ingestion = ingestionRow?.id != null
     ? {
         status: ingestionRow.status as
           | 'pending'

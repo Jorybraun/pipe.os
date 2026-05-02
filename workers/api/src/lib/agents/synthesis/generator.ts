@@ -9,6 +9,7 @@ import type { LLMProvider, LLMMessage } from '../../llm/types';
 import type { DomainCoverage, CandidatePersona } from '../../../types';
 import type { InterviewState } from '../interview/types';
 import { buildSynthesisPrompt } from './prompt';
+import { cleanSkillArray, cleanCareerSignal } from '../../roleAgent/sanitize';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,12 +65,12 @@ function parsePersona(raw: unknown): CandidatePersona {
   return {
     seniority: typeof r.seniority === 'string' ? r.seniority : 'Not specified',
     archetype: typeof r.archetype === 'string' ? r.archetype : 'Not specified',
-    mustHaveSkills: toStringArray(r.mustHaveSkills),
-    niceToHaveSkills: toStringArray(r.niceToHaveSkills),
-    disposition: toStringArray(r.disposition),
-    careerSignal: typeof r.careerSignal === 'string' ? r.careerSignal : 'Not specified',
-    redFlags: toStringArray(r.redFlags),
-    dealbreakers: toStringArray(r.dealbreakers),
+    mustHaveSkills: cleanSkillArray(toStringArray(r.mustHaveSkills)),
+    niceToHaveSkills: cleanSkillArray(toStringArray(r.niceToHaveSkills)),
+    disposition: cleanSkillArray(toStringArray(r.disposition)),
+    careerSignal: cleanCareerSignal(typeof r.careerSignal === 'string' ? r.careerSignal : 'Not specified'),
+    redFlags: cleanSkillArray(toStringArray(r.redFlags)),
+    dealbreakers: cleanSkillArray(toStringArray(r.dealbreakers)),
   };
 }
 

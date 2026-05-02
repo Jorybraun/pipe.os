@@ -19,6 +19,8 @@ import {
   buildSynthesisPrompt,
   selectPhasePrompt,
 } from './roleAgentPrompts';
+import { checkQuestion, buildGuardNudge } from './agents/question/guard';
+import type { GuardResult } from './agents/question/guard';
 import type { LLMProvider, LLMMessage, LLMToolCall } from './llm/types';
 import type {
   RoleExchange,
@@ -430,6 +432,95 @@ function parseSynthesisResponse(parsed: Record<string, unknown>, toolsUsed: stri
   };
 }
 
+// ─── Guard retry helper ─────────────────────────────────────────────────────
+
+const MAX_GUARD_RETRIES = 2;
+
+interface GuardRetryState {
+  messages: LLMMessage[];
+  guardViolations: GuardResult[];
+}
+
+async function generateWithGuardRetry(
+  provider: LLMProvider | null,
+  fallback: LLMProvider | null,
+  messages: LLMMessage[],
+  maxTokens: number,
+  opts: {
+    participantRole?: string;
+    questionsAsked: number;
+    questionBudget: number;
+    isSynthesis: boolean;
+  },
+): Promise<{ response: RoleAgentResponse; guardViolations: GuardResult[] }> {
+  const state: GuardRetryState = { messages: [...messages], guardViolations: [] };
+
+  for (let attempt = 0; attempt <= MAX_GUARD_RETRIES; attempt++) {
+    const { content, toolsUsed } = await callProviderWithFallback(
+      provider,
+      fallback,
+      (p) => callProviderWithTools(p, state.messages, maxTokens),
+    );
+
+    console.log(`[roleAgent] Provider responded (attempt ${attempt + 1}), ${content.length} chars`);
+
+    const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(jsonText) as Record<string, unknown>;
+    } catch {
+      throw new Error(`AI provider returned invalid JSON: ${content.slice(0, 300)}`);
+    }
+
+    // Synthesis turns skip guard checks
+    if (opts.isSynthesis || typeof parsed.synthesis === 'string') {
+      return { response: parseSynthesisResponse(parsed, toolsUsed), guardViolations: state.guardViolations };
+    }
+
+    const questionResponse = parseQuestionResponse(parsed, opts.questionsAsked, toolsUsed);
+
+    // Run deterministic guard
+    const previousQuestions: string[] = [];
+    const guardResult = checkQuestion({
+      text: questionResponse.question.text,
+      acknowledgment: questionResponse.acknowledgment,
+      participantRole: opts.participantRole,
+      previousQuestions,
+    });
+
+    if (guardResult.passed) {
+      if (state.guardViolations.length > 0) {
+        console.log(`[roleAgent] Guard passed after ${attempt} retry(s)`);
+      }
+      return { response: questionResponse, guardViolations: state.guardViolations };
+    }
+
+    state.guardViolations.push(guardResult);
+
+    const blocks = guardResult.violations.filter((v) => v.severity === 'block');
+    const warns = guardResult.violations.filter((v) => v.severity === 'warn');
+    console.warn(
+      `[roleAgent] Guard blocked question (attempt ${attempt + 1}): "${questionResponse.question.text.slice(0, 80)}..." | blocks=${blocks.map((b) => b.ruleId).join(',')} warns=${warns.map((w) => w.ruleId).join(',')}`,
+    );
+
+    if (attempt < MAX_GUARD_RETRIES) {
+      const nudge = buildGuardNudge(guardResult);
+      state.messages.push({ role: 'assistant', content: jsonText });
+      state.messages.push({ role: 'user', content: nudge });
+      console.log(`[roleAgent] Injecting guard nudge, retrying...`);
+    }
+  }
+
+  // All retries exhausted — return the last response but log the failure
+  console.error(`[roleAgent] Guard failed after ${MAX_GUARD_RETRIES} retries. Returning last response anyway.`);
+  const lastResponse = parseQuestionResponse(
+    JSON.parse(state.messages[state.messages.length - 1]?.content ?? '{}') as Record<string, unknown>,
+    opts.questionsAsked,
+    [],
+  );
+  return { response: lastResponse, guardViolations: state.guardViolations };
+}
+
 // ─── Main export ────────────────────────────────────────────────────────────
 
 /**
@@ -444,14 +535,6 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
 
   const budgetExhausted = questionsAsked >= questionBudget;
 
-  // RD-P5: use phase-specific system prompt when a directive is available.
-  // When budget is exhausted (synthesis turn), always use the monolithic prompt —
-  // phase prompts only carry the question-turn schema; the synthesis schema (persona
-  // fields, JD structure) lives exclusively in buildRoleAgentSystemPrompt.
-  //
-  // IMPORTANT: The core prompt contains the JSON response format schema. Phase prompts
-  // only add posture-specific instructions. We MUST keep the core prompt so the model
-  // knows the expected output shape (question.text, acknowledgment, domainCoverage, etc.).
   const basePrompt = buildRoleAgentSystemPrompt(participantRole);
   const systemPrompt = !budgetExhausted && phaseDirective
     ? `${basePrompt}\n\n${selectPhasePrompt(phaseDirective.phase, participantRole)}`
@@ -471,32 +554,17 @@ export async function callRoleAgent(input: CallRoleAgentInput): Promise<RoleAgen
 
   const maxTokens = budgetExhausted ? 4096 : 2048;
 
-  // Use synthesis-specific provider for synthesis turns, otherwise the regular provider.
   const activeProvider = budgetExhausted ? (synthesisProvider ?? provider) : provider;
   const activeFallback = budgetExhausted ? (synthesisFallbackProvider ?? fallbackProvider ?? null) : (fallbackProvider ?? null);
 
-  const { content, toolsUsed } = await callProviderWithFallback(
-    activeProvider,
-    activeFallback,
-    (p) => callProviderWithTools(p, messages, maxTokens),
-  );
+  const { response } = await generateWithGuardRetry(activeProvider, activeFallback, messages, maxTokens, {
+    participantRole,
+    questionsAsked,
+    questionBudget,
+    isSynthesis: budgetExhausted,
+  });
 
-  console.log(`[roleAgent] Provider responded, ${content.length} chars`);
-
-  // Parse JSON
-  const jsonText = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonText) as Record<string, unknown>;
-  } catch {
-    throw new Error(`AI provider returned invalid JSON: ${content.slice(0, 300)}`);
-  }
-
-  if (budgetExhausted || typeof parsed.synthesis === 'string') {
-    return parseSynthesisResponse(parsed, toolsUsed);
-  }
-
-  return parseQuestionResponse(parsed, questionsAsked, toolsUsed);
+  return response;
 }
 
 // ─── Streaming variant ──────────────────────────────────────────────────────
@@ -584,9 +652,25 @@ export async function* callRoleAgentStream(
     return;
   }
 
-  const result = budgetExhausted || typeof parsed.synthesis === 'string'
+  let result: RoleAgentResponse = budgetExhausted || typeof parsed.synthesis === 'string'
     ? parseSynthesisResponse(parsed, [])
     : parseQuestionResponse(parsed, questionsAsked, []);
+
+  // Streaming guard check: we can't retry without confusing the user who saw
+  // the streamed text, but we CAN log violations for telemetry.
+  if (result.type === 'question') {
+    const guardResult = checkQuestion({
+      text: result.question.text,
+      acknowledgment: result.acknowledgment,
+      participantRole,
+    });
+    if (!guardResult.passed) {
+      const blocks = guardResult.violations.filter((v) => v.severity === 'block');
+      console.warn(
+        `[roleAgent] Streamed question failed guard (no retry possible): "${result.question.text.slice(0, 80)}..." | blocks=${blocks.map((b) => b.ruleId).join(',')}`,
+      );
+    }
+  }
 
   yield { event: 'done', result };
 }

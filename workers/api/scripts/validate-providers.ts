@@ -1,23 +1,28 @@
 /**
- * Validate AI providers — quick health check for Vertex AI and Kimi.
+ * Validate AI providers — quick health check for Vertex AI (via AI Gateway) and Kimi.
  * Run: npx tsx scripts/validate-providers.ts
  */
+
+import dotenv from 'dotenv';
+import { resolve } from 'node:path';
+dotenv.config({ path: resolve(__dirname, '../.dev.vars') });
 
 import { VertexAIProvider } from '../src/lib/llm/vertexAIProvider';
 import { KimiProvider } from '../src/lib/llm/kimiProvider';
 
-async function testVertex(model = 'meta/llama-3.1-8b-instruct-maas') {
-  const saJson = process.env.VERTEX_SA_KEY_JSON;
+async function testVertex(model = process.env.VERTEX_AI_MODEL ?? 'google/gemma-4-26b-a4b-it-maas') {
+  const gatewayUrl = process.env.CF_AI_GATEWAY_URL;
+  const apiToken = process.env.CF_API_TOKEN;
   const projectId = process.env.VERTEX_AI_PROJECT_ID ?? 'pipe-493116';
-  if (!saJson) return { ok: false, error: 'VERTEX_SA_KEY_JSON missing' };
+  if (!gatewayUrl) return { ok: false, error: 'CF_AI_GATEWAY_URL missing' };
+  if (!apiToken) return { ok: false, error: 'CF_API_TOKEN missing' };
 
-  const sa = JSON.parse(saJson) as { private_key: string; client_email: string; project_id: string };
-  const provider = new VertexAIProvider(sa, projectId, 'us-central1', model);
+  const provider = new VertexAIProvider(gatewayUrl, apiToken, projectId, 'us-central1', model);
 
   try {
     const start = Date.now();
     const result = await provider.complete(
-      [{ role: 'user', content: 'Say "pong" and nothing else.' }],
+      [{ role: 'user', content: 'Say pong' }],
       { maxTokens: 10 },
     );
     return { ok: true, model, elapsed: Date.now() - start, content: result.content.slice(0, 50) };
@@ -37,7 +42,7 @@ async function testKimi() {
   try {
     const start = Date.now();
     const result = await provider.complete(
-      [{ role: 'user', content: 'Say "pong" and nothing else.' }],
+      [{ role: 'user', content: 'Say pong' }],
       { maxTokens: 10 },
     );
     return { ok: true, model, baseUrl, elapsed: Date.now() - start, content: result.content.slice(0, 50) };

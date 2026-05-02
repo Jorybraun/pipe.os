@@ -52,9 +52,15 @@ def _make_model() -> ChatOpenAI:
         max_tokens=4096,
         api_key=api_key,
         base_url=base_url,
-        timeout=30,
+        timeout=120,
         max_retries=2,
-        default_headers={"User-Agent": "claude-code/0.1"},
+        default_headers={
+            "User-Agent": "claude-code/0.1",
+            "x-stainless-os": "MacOS",
+            "x-stainless-arch": "arm64",
+            "x-stainless-runtime": "python",
+            "x-stainless-runtime-version": "3.12",
+        },
         extra_body={"reasoning": None},  # Disable reasoning to avoid 400 on tool calls
     )
 

@@ -87,8 +87,8 @@ export function GapFillModal({ question, onSubmit, onClose }: GapFillModalProps)
           data-testid="gap-fill-question"
           style={{
             padding: 16,
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'var(--pipe-surface)',
+            border: '1px solid var(--pipe-border)',
             borderRadius: 6,
             marginBottom: 20,
             fontSize: 13,

@@ -17,6 +17,7 @@ from typing_extensions import Annotated, TypedDict
 from agent_harness.swarm.budget import FORCE_THRESHOLD
 from agent_harness.swarm.checkpoint import get_checkpointer, get_ephemeral_checkpointer
 from agent_harness.swarm.toolkit import get_developer_tools
+from agent_harness.broker import heartbeat
 
 
 type HandoffStatus = Literal["complete", "context_exhausted", "blocked"]
@@ -133,9 +134,15 @@ def _make_model() -> ChatOpenAI:
         max_tokens=8192,
         api_key=api_key,
         base_url=base_url,
-        timeout=30,          # cap each turn at 30 s (was 120)
+        timeout=120,         # cap each turn at 120 s
         max_retries=2,
-        default_headers={"User-Agent": "claude-code/0.1"},
+        default_headers={
+            "User-Agent": "claude-code/0.1",
+            "x-stainless-os": "MacOS",
+            "x-stainless-arch": "arm64",
+            "x-stainless-runtime": "python",
+            "x-stainless-runtime-version": "3.12",
+        },
         extra_body={"reasoning": None},
     )
 
@@ -165,9 +172,15 @@ def _make_summarizer_model() -> ChatOpenAI:
         max_tokens=max_tokens,
         api_key=api_key,
         base_url=base_url,
-        timeout=30,          # cap summarizer at 30 s too
+        timeout=120,         # cap summarizer at 120 s
         max_retries=2,
-        default_headers={"User-Agent": "claude-code/0.1"},
+        default_headers={
+            "User-Agent": "claude-code/0.1",
+            "x-stainless-os": "MacOS",
+            "x-stainless-arch": "arm64",
+            "x-stainless-runtime": "python",
+            "x-stainless-runtime-version": "3.12",
+        },
         extra_body={"reasoning": None},
     )
 
@@ -781,6 +794,7 @@ def _run_developer_plain(
     handoff_in: dict[str, Any] | None = None,
     handoff_count: int = 0,
     thread_id: str | None = None,
+    lane_id: str = "",
 ) -> DevState:
     """Run developer ReAct loop without nested LangGraph (avoids executor deadlock)."""
     from langchain_core.runnables import RunnableConfig
@@ -820,6 +834,8 @@ def _run_developer_plain(
             break
 
         # Agent turn
+        if lane_id:
+            heartbeat(lane_id, agent_id="developer")
         agent_updates = agent_node(state, config)
         state.update(agent_updates)
 
@@ -834,6 +850,11 @@ def _run_developer_plain(
         if route == "tools":
             tools_updates = tools_node(state)
             state.update(tools_updates)
+
+            # Heartbeat after each tool execution so the lane watchdog
+            # knows the developer is still alive during long shell commands.
+            if lane_id:
+                heartbeat(lane_id, agent_id="developer")
 
             # If the developer submitted a handoff in this tools turn, exit
             # immediately. Do NOT run compaction or budget guard — they would

@@ -10,18 +10,22 @@ import {
 } from '../src/lib/candidateDiscovery/candidateDecompositionPrompt';
 
 async function main() {
-  const saJson = process.env.VERTEX_SA_KEY_JSON;
+  const gatewayUrl = process.env.CF_AI_GATEWAY_URL;
+  const apiToken = process.env.CF_API_TOKEN;
   const projectId = process.env.VERTEX_AI_PROJECT_ID ?? 'pipe-493116';
   const region = process.env.VERTEX_AI_REGION ?? 'us-central1';
   const model = process.env.VERTEX_AI_MODEL ?? 'meta/llama-3.1-8b-instruct-maas';
 
-  if (!saJson) {
-    console.error('Set VERTEX_SA_KEY_JSON env var');
+  if (!gatewayUrl) {
+    console.error('Set CF_AI_GATEWAY_URL env var');
+    process.exit(1);
+  }
+  if (!apiToken) {
+    console.error('Set CF_API_TOKEN env var');
     process.exit(1);
   }
 
-  const sa = JSON.parse(saJson) as { private_key: string; client_email: string; project_id: string };
-  const provider = new VertexAIProvider(sa, projectId, region, model);
+  const provider = new VertexAIProvider(gatewayUrl, apiToken, projectId, region, model);
 
   // Sample resume text from the logs
   const resumeText = `Jory Braun

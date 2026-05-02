@@ -16,6 +16,7 @@ import {
   type GenerativePlannerContext,
 } from '../cultureGenerativePlanner';
 import type { LLMProvider } from '../llm/types';
+import { CULTURE_BANK_SIZE } from '../cultureQuestionBank';
 
 describe('buildGenerativePlannerSystemPrompt', () => {
   it('contains the JSON output contract', () => {
@@ -54,7 +55,7 @@ describe('buildGenerativePlannerUserMessage', () => {
     turnsUsed: 0,
     priorQuestions: [],
     runningThemes: [],
-    maxQuestions: 20,
+    maxQuestions: CULTURE_BANK_SIZE,
     minQuestions: 5,
   };
 
@@ -113,7 +114,7 @@ describe('runGenerativeTurnPlanner', () => {
       turnsUsed: 0,
       priorQuestions: [],
       runningThemes: [],
-      maxQuestions: 20,
+      maxQuestions: CULTURE_BANK_SIZE,
       minQuestions: 5,
     };
 
@@ -154,7 +155,7 @@ describe('runGenerativeTurnPlanner', () => {
       turnsUsed: 0,
       priorQuestions: [],
       runningThemes: [],
-      maxQuestions: 20,
+      maxQuestions: CULTURE_BANK_SIZE,
       minQuestions: 5,
     };
 
@@ -183,7 +184,7 @@ describe('runGenerativeTurnPlanner', () => {
       turnsUsed: 0,
       priorQuestions: [],
       runningThemes: [],
-      maxQuestions: 20,
+      maxQuestions: CULTURE_BANK_SIZE,
       minQuestions: 5,
     };
 
@@ -217,7 +218,7 @@ describe('runGenerativeTurnPlanner', () => {
       turnsUsed: 0,
       priorQuestions: [],
       runningThemes: [],
-      maxQuestions: 20,
+      maxQuestions: CULTURE_BANK_SIZE,
       minQuestions: 5,
     };
 

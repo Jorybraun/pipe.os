@@ -10,8 +10,10 @@ import threading
 import time
 from typing import Any
 
+from langchain_core.messages import SystemMessage
+
 from agent_harness.swarm.graph import build_lane_graph, _init_work_items
-from agent_harness.swarm.checkpoint import get_checkpointer
+from agent_harness.swarm.checkpoint import get_checkpointer, get_ephemeral_checkpointer
 from agent_harness.broker import emit as broker_emit, get_conn
 
 
@@ -35,8 +37,49 @@ def _get_lane_executor() -> concurrent.futures.ThreadPoolExecutor:
     return _lane_executor
 
 
+def _clear_lane_checkpoints(lane_id: str) -> None:
+    """Delete stale checkpoints for this lane so LangGraph starts fresh."""
+    try:
+        conn = _lane_checkpointer.conn
+        conn.execute(
+            "DELETE FROM checkpoints WHERE thread_id = ?",
+            (lane_id,),
+        )
+        conn.execute(
+            "DELETE FROM writes WHERE thread_id = ?",
+            (lane_id,),
+        )
+        conn.commit()
+    except Exception:
+        pass
+
+
+_LANE_STALL_TIMEOUT_SECONDS = 20 * 60  # 20 min without progress = stall
+
+
 async def run_lane(plan_id: str, lane_id: str) -> dict[str, Any]:
-    """Run a single lane graph and return final state."""
+    """Run a single lane graph and return final state.
+
+    Uses heartbeat-based stall detection instead of a fixed wall-clock timeout.
+    The lane runs until completion as long as nodes keep emitting heartbeats.
+    """
+    import time as _time
+
+    # Start fresh — old checkpoints corrupt resumed state
+    _clear_lane_checkpoints(lane_id)
+
+    # Ensure a lanes row exists so heartbeats register
+    conn = get_conn()
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO lanes (lane_id, plan_id, status, started_at, last_heartbeat)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (lane_id, plan_id, "running", _time.time(), _time.time()),
+    )
+    conn.commit()
+    conn.close()
+
     graph = build_lane_graph(checkpointer=_lane_checkpointer)
     work_items = _init_work_items(plan_id)
     initial = {
@@ -64,8 +107,54 @@ async def run_lane(plan_id: str, lane_id: str) -> dict[str, Any]:
         return fs
 
     loop = asyncio.get_running_loop()
-    final_state = await loop.run_in_executor(None, _stream)
-    return final_state  # type: ignore[return-value]
+    future = loop.run_in_executor(None, _stream)
+
+    # Poll heartbeat instead of using a fixed timeout.
+    # The lane is alive as long as nodes keep writing heartbeats.
+    last_heartbeat = _time.time()
+    while not future.done():
+        await asyncio.sleep(30)
+
+        try:
+            conn = get_conn()
+            row = conn.execute(
+                "SELECT last_heartbeat FROM lanes WHERE lane_id = ?",
+                (lane_id,),
+            ).fetchone()
+            conn.close()
+            if row and row["last_heartbeat"]:
+                last_heartbeat = max(last_heartbeat, row["last_heartbeat"])
+        except Exception:
+            pass
+
+        stall = _time.time() - last_heartbeat
+        if stall >= _LANE_STALL_TIMEOUT_SECONDS:
+            print(f"[STALL] {lane_id} stalled: no heartbeat for {stall:.0f}s", flush=True)
+            # Mark stalled in DB and return
+            conn = get_conn()
+            conn.execute(
+                "UPDATE lanes SET status = ? WHERE lane_id = ?",
+                ("failed", lane_id),
+            )
+            conn.commit()
+            conn.close()
+            return {
+                "status": "failed",
+                "messages": [SystemMessage(content=f"Lane stalled: no heartbeat for {stall:.0f}s")],
+            }
+
+    # Lane finished normally
+    result = future.result()
+    final_status = result.get("status", "unknown")
+    print(f"[LANE DONE] {lane_id} status={final_status}", flush=True)
+    conn = get_conn()
+    conn.execute(
+        "UPDATE lanes SET status = ? WHERE lane_id = ?",
+        ("stopped", lane_id),
+    )
+    conn.commit()
+    conn.close()
+    return result
 
 
 def _cleanup_zombie_lanes(plan_id: str) -> None:

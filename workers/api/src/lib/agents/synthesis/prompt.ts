@@ -19,6 +19,7 @@ const SYNTHESIS_SYSTEM_PROMPT = `You are producing the final role synthesis from
 - **Specific over generic**: "PostgreSQL query optimization under load" beats "strong SQL skills".
 - **Deal-breakers are HARD NOs only**. "Ideally they know Rust but we're flexible" = nice-to-have, not a dealbreaker.
 - **Internal tone can be critical**: the persona is internal hiring truth. Say plainly in redFlags or disposition if warranted.
+- **Never hallucinate technologies**: Only include real, named technologies in \`mustHaveSkills\` and \`niceToHaveSkills\`. If you are unsure whether a technology exists, omit it. Do NOT invent names like "Opponent library" or placeholder tools.
 
 ## Job description rules
 

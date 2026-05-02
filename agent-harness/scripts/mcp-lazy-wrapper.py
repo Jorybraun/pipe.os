@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Lazy MCP wrapper — responds to Kimi immediately, execs real server on demand.
+"""Lazy MCP wrapper — starts Docker container on demand, then execs into it.
 
 Kimi spawns this on session start. It acts as a minimal MCP server with one tool:
-`harness_start_server`. When called, it sends the response, then execs the real
-agent-harness server preserving stdin/stdout.
+`harness_start_server`. When called, it ensures the Docker container is running,
+then execs `docker exec -i` so stdio is preserved into the container.
 
 Supports both Content-Length (Claude Desktop) and line-delimited JSON (Kimi CLI).
 """
 
 import json
 import os
+import subprocess
 import sys
+import time
 
 PROJECT_ROOT = "/Users/hans/Code/PIPE/PIPE-OS/agent-harness"
-PYTHON = f"{PROJECT_ROOT}/.venv/bin/python"
-SERVER_ARGS = [PYTHON, "-m", "agent_harness.server", "--data-dir", ".swarm"]
+CONTAINER_NAME = "agent-harness-server"
 
 # Detected protocol format from client: True = Content-Length (Claude), False = line-delimited (Kimi)
 _use_content_length: bool | None = None
@@ -74,6 +75,40 @@ def _recv() -> dict | None:
     return json.loads(stripped.decode("utf-8"))
 
 
+def _container_is_running() -> bool:
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Running}}", CONTAINER_NAME],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "true"
+    except Exception:
+        return False
+
+
+def _ensure_container() -> None:
+    """Start the Docker container if it's not already running."""
+    if _container_is_running():
+        return
+
+    # Try to start it
+    subprocess.run(
+        ["docker", "compose", "up", "-d", "agent-harness-server"],
+        cwd=PROJECT_ROOT,
+        check=False,
+    )
+
+    # Wait up to 15s for the container to be ready
+    for _ in range(15):
+        if _container_is_running():
+            return
+        time.sleep(1)
+
+    raise RuntimeError(f"Container {CONTAINER_NAME} did not start in time")
+
+
 def _handle(req: dict) -> dict:
     method = req.get("method")
     if method == "initialize":
@@ -101,11 +136,18 @@ def _handle(req: dict) -> dict:
     if method == "tools/call":
         tool = req.get("params", {}).get("name")
         if tool == "harness_start_server":
-            return {
-                "_exec_after_send": True,
-                "content": [{"type": "text", "text": "Agent Harness server starting..."}],
-                "isError": False,
-            }
+            try:
+                _ensure_container()
+                return {
+                    "_exec_after_send": True,
+                    "content": [{"type": "text", "text": "Agent Harness server starting in Docker..."}],
+                    "isError": False,
+                }
+            except Exception as e:
+                return {
+                    "content": [{"type": "text", "text": f"Failed to start container: {e}"}],
+                    "isError": True,
+                }
         return {"content": [{"type": "text", "text": f"Unknown tool: {tool}"}], "isError": True}
     return {"error": {"code": -32601, "message": f"Method not found: {method}"}}
 
@@ -121,8 +163,21 @@ def main():
         # Notifications (no id) must not receive a response per JSON-RPC 2.0
         if req.get("id") is None:
             if should_exec:
-                os.chdir(PROJECT_ROOT)
-                os.execv(PYTHON, SERVER_ARGS)
+                _ensure_container()
+                os.execv(
+                    "/usr/bin/docker",
+                    [
+                        "docker",
+                        "exec",
+                        "-i",
+                        CONTAINER_NAME,
+                        "python",
+                        "-m",
+                        "agent_harness.server",
+                        "--data-dir",
+                        "/app/agent-harness/.swarm",
+                    ],
+                )
             continue
 
         if "error" in body:
@@ -132,8 +187,21 @@ def main():
         _send(resp)
 
         if should_exec:
-            os.chdir(PROJECT_ROOT)
-            os.execv(PYTHON, SERVER_ARGS)
+            _ensure_container()
+            os.execv(
+                "/usr/bin/docker",
+                [
+                    "docker",
+                    "exec",
+                    "-i",
+                    CONTAINER_NAME,
+                    "python",
+                    "-m",
+                    "agent_harness.server",
+                    "--data-dir",
+                    "/app/agent-harness/.swarm",
+                ],
+            )
 
 
 if __name__ == "__main__":

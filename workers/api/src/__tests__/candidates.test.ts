@@ -166,6 +166,7 @@ describe('GET /api/v1/candidates/:candidateId', () => {
       {
         match: 'FROM candidate_ingestion',
         value: {
+          id: 'ing_1',
           status: 'failed',
           candidate_searchable_profile: null,
           key_concepts_json: null,

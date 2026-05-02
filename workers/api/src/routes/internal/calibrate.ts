@@ -11,7 +11,6 @@ import { CloudflareAIProvider } from '../../lib/llm/cloudflareAIProvider';
 import { GoogleAIProvider } from '../../lib/llm/googleAIProvider';
 import { VertexAIProvider } from '../../lib/llm/vertexAIProvider';
 import { KimiProvider } from '../../lib/llm/kimiProvider';
-import type { ServiceAccountKey } from '../../lib/llm/vertexAIProvider';
 import type { LLMProvider } from '../../lib/llm/types';
 import type { Env, Variables } from '../../types';
 
@@ -240,15 +239,18 @@ function createCultureProvider(provider: string, env: Env): LLMProvider {
   }
 
   if (provider === 'vertex-ai') {
-    const sa = parseVertexServiceAccount(env);
-    if (!sa || !sa.project_id) {
-      throw new Error('[calibrate] VERTEX_SA_KEY_JSON not configured for vertex-ai calibration run.');
+    if (!env.CF_AI_GATEWAY_URL || !env.CF_API_TOKEN) {
+      throw new Error('[calibrate] CF_AI_GATEWAY_URL and CF_API_TOKEN not configured for vertex-ai calibration run.');
+    }
+    if (!env.VERTEX_AI_PROJECT_ID) {
+      throw new Error('[calibrate] VERTEX_AI_PROJECT_ID not configured for vertex-ai calibration run.');
     }
     return new VertexAIProvider(
-      sa,
-      sa.project_id,
+      env.CF_AI_GATEWAY_URL,
+      env.CF_API_TOKEN,
+      env.VERTEX_AI_PROJECT_ID,
       env.VERTEX_AI_REGION ?? 'us-central1',
-      env.VERTEX_AI_MODEL ?? 'gemma-4-26b-a4b-it',
+      env.VERTEX_AI_MODEL ?? 'google/gemma-4-26b-a4b-it-maas',
     );
   }
 
@@ -262,24 +264,6 @@ function createCultureProvider(provider: string, env: Env): LLMProvider {
   }
 
   throw new Error(`[calibrate] Unknown provider: ${provider}`);
-}
-
-function parseVertexServiceAccount(env: Env): ServiceAccountKey | null {
-  const raw = env.VERTEX_SA_KEY_JSON;
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (typeof parsed.private_key !== 'string' || typeof parsed.client_email !== 'string') {
-      return null;
-    }
-    return {
-      private_key: parsed.private_key,
-      client_email: parsed.client_email,
-      project_id: typeof parsed.project_id === 'string' ? parsed.project_id : (env.VERTEX_AI_PROJECT_ID ?? ''),
-    };
-  } catch {
-    return null;
-  }
 }
 
 function resolveCodeReviewApiKey(provider: CodeReviewProvider, env: Env): string {

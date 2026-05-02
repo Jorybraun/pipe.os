@@ -141,13 +141,17 @@ export interface Env {
    * Uses the simpler `aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent?key=` endpoint.
    */
   VERTEX_API_KEY?: string;
-  /** GCP service account JSON string — used by VertexAIProvider and VertexLiveProvider for self-refreshing JWT auth. */
+  /** Cloudflare AI Gateway base URL for Vertex AI (e.g. https://gateway.ai.cloudflare.com/v1/ACCOUNT_ID/GATEWAY_NAME/google-vertex-ai). */
+  CF_AI_GATEWAY_URL?: string;
+  /** Cloudflare API token with AI Gateway:Read permission. */
+  CF_API_TOKEN?: string;
+  /** GCP service account JSON string — still required for VertexLiveProvider and TTS direct Google API calls. */
   VERTEX_SA_KEY_JSON?: string;
-  /** GCP project ID — read from VERTEX_SA_KEY_JSON if omitted. */
+  /** GCP project ID — required for Vertex AI URL path when using AI Gateway. */
   VERTEX_AI_PROJECT_ID?: string;
   /** GCP region for Vertex AI endpoints. Default: us-central1. */
   VERTEX_AI_REGION?: string;
-  /** Vertex AI model override. Default: gemma-4-26b-a4b-it. */
+  /** Vertex AI model override. Default: google/gemma-4-26b-a4b-it-maas. */
   VERTEX_AI_MODEL?: string;
   /** Vertex AI Live (BidiGenerateContent) model override. Default: gemini-live-2.5-flash-native-audio. */
   VERTEX_AI_LIVE_MODEL?: string;

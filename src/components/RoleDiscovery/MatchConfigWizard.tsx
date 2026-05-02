@@ -252,7 +252,7 @@ const SECTION_HEADING = {
 
 const SECTION_SUB = {
   fontSize: 13,
-  color: 'var(--pipe-text-muted, rgba(255,255,255,0.55))',
+  color: 'var(--pipe-text-muted)',
   fontFamily: '"Space Mono", monospace',
   marginBottom: 18,
 } as const;
@@ -291,10 +291,10 @@ function RadioBlock<T extends string>({
                 alignItems: 'center',
                 gap: 14,
                 padding: '14px 16px',
-                background: selected ? 'rgba(74, 222, 128, 0.06)' : 'transparent',
+                background: selected ? 'var(--pipe-accent-surface)' : 'transparent',
                 border: selected
-                  ? '1px solid rgba(74, 222, 128, 0.3)'
-                  : '1px solid rgba(255,255,255,0.06)',
+                  ? '1px solid var(--pipe-accent-border)'
+                  : '1px solid var(--pipe-border-light)',
                 borderRadius: 6,
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -308,7 +308,7 @@ function RadioBlock<T extends string>({
                     fontSize: 11,
                     fontWeight: 700,
                     letterSpacing: '0.05em',
-                    color: selected ? '#fff' : 'rgba(255,255,255,0.6)',
+                    color: selected ? 'var(--pipe-text)' : 'var(--pipe-text-muted)',
                     fontFamily: '"Space Mono", monospace',
                     marginBottom: 4,
                   }}
@@ -344,7 +344,7 @@ function Bullet({ selected }: { selected: boolean }): JSX.Element {
         borderRadius: '50%',
         border: selected
           ? '1px solid rgba(74, 222, 128, 0.7)'
-          : '1px solid rgba(255,255,255,0.15)',
+          : '1px solid var(--pipe-border)',
         background: selected ? 'rgba(74, 222, 128, 0.6)' : 'transparent',
         flexShrink: 0,
       }}
@@ -365,9 +365,9 @@ function HybridSlider({
     <div
       style={{
         padding: 14,
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: '1px solid var(--pipe-border-light)',
         borderRadius: 6,
-        background: 'rgba(255,255,255,0.02)',
+        background: 'var(--pipe-surface)',
       }}
       data-testid="hybrid-mix-ratio"
     >
@@ -376,7 +376,7 @@ function HybridSlider({
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: '0.12em',
-          color: 'rgba(255,255,255,0.7)',
+          color: 'var(--pipe-text-muted)',
           fontFamily: '"Space Mono", monospace',
           marginBottom: 8,
         }}
@@ -472,8 +472,8 @@ function NonNegotiableStep({
                 background: selected ? 'rgba(74, 222, 128, 0.1)' : 'transparent',
                 border: selected
                   ? '1px solid rgba(74, 222, 128, 0.4)'
-                  : '1px solid rgba(255,255,255,0.1)',
-                color: selected ? 'rgba(74, 222, 128, 0.95)' : 'rgba(255,255,255,0.7)',
+                  : '1px solid var(--pipe-border-light)',
+                color: selected ? 'var(--pipe-accent)' : 'var(--pipe-text-muted)',
                 fontSize: 11,
                 fontFamily: '"Space Mono", monospace',
                 cursor: 'pointer',
@@ -536,7 +536,7 @@ function ReviewSummary({
   linkage: StageLinkage | null;
 }): JSX.Element {
   const Row = ({ label, value }: { label: string; value: string }): JSX.Element => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--pipe-border-light)' }}>
       <span style={{ fontSize: 10, letterSpacing: '0.1em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
         {label.toUpperCase()}
       </span>

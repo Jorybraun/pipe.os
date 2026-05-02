@@ -15,6 +15,7 @@ import type {
   QualificationStatus,
   ExtractedStory,
 } from '../../../types';
+import { injectPromptPatches } from '../question/promptPatch';
 
 // ─── Core System Prompt ────────────────────────────────────────────────────
 
@@ -91,6 +92,16 @@ The conversation naturally arcs from broad/easy to specific/challenging.
 - No asking what you can infer: if they said "HIPAA-compliant healthcare platform," don't ask "Is security important?"
 - No repeating answered questions: reference what they said — "You mentioned 4 engineers — what's the seniority breakdown?"
 - No asking the user to do the agent's job: form an opinion and present it for validation
+- No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
+
+## Negative Examples — Questions that were flagged as bad
+
+These are real questions that users flagged. Do NOT generate questions like these:
+- "What are your primary responsibilities as a team member for this Senior Frontend Engineer role?" (Role confusion — the team member is not the hire.)
+- "You're a team member, which helps me understand the role's scope and responsibilities. What are your primary responsibilities?" (Robotic acknowledgment + role confusion.)
+- "Can you give me an overview of this role's scope and responsibilities?" (Too generic for a contextual interview.)
+- "Your team probably values clean code, right?" (Leading question.)
+- "That's really helpful!" (Filler praise — never do this.)
 
 ## Research Tools
 
@@ -293,7 +304,15 @@ This person works alongside the role daily. Their perspective is ground truth fo
 - Don't ask about hiring process, comp, or organizational strategy — they don't own that.
 - Don't ask what the "team needs" in abstract terms — ask about their lived experience.
 - Keep questions grounded in stories and examples, not opinions about ideal candidates.
-- Their perspective is **ground truth for culture** — weight it heavily for team dynamics.`,
+- Their perspective is **ground truth for culture** — weight it heavily for team dynamics.
+
+### NEVER ask (role confusion):
+The team member is NOT the person being hired. They work alongside the hire. These questions are categorically wrong:
+- "What are your primary responsibilities as a team member for this [Role Title] role?"
+- "You're a team member, which helps me understand the role's scope. What are your responsibilities?"
+- Any question that treats the team member as if they ARE the role being hired for.
+
+Instead, ask about THEIR experience: "What does a typical week look like for you on the team?"`,
 };
 
 // ─── Shared Knowledge State Context ────────────────────────────────────────
@@ -334,7 +353,10 @@ export function buildRoleAgentSystemPrompt(participantRole?: string): string {
     parts.push(rolePrompt);
   }
 
-  return parts.join('\n\n');
+  const basePrompt = parts.join('\n\n');
+
+  // Phase 3: inject dynamic negative-example patches from the feedback loop.
+  return injectPromptPatches(basePrompt, { participantRole });
 }
 
 export function buildRoleAgentUserMessage(opts: {

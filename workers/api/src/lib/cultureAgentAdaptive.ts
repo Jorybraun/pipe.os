@@ -30,7 +30,7 @@ import {
   startCultureInterview as staticStartCultureInterview,
 } from './cultureAgent';
 import type { CompetencyDimension, SeniorityTag, StarSlot } from './cultureQuestionBank';
-import { COMPETENCY_DIMENSIONS } from './cultureQuestionBank';
+import { COMPETENCY_DIMENSIONS, CULTURE_BANK_SIZE, CULTURE_QUESTION_BANK } from './cultureQuestionBank';
 import type { RoleOverlayId } from './cultureRoleOverlay';
 import type { RoleProbeBank } from './cultureProbeBank';
 import type { CultureTeamContext } from './cultureRoleResolution';
@@ -85,7 +85,7 @@ export interface AdvanceAdaptiveCultureInterviewInput {
   useStaticFallback?: boolean;
 }
 
-const DEFAULT_MAX_QUESTIONS = 20;
+const DEFAULT_MAX_QUESTIONS = CULTURE_BANK_SIZE;
 const DEFAULT_MIN_QUESTIONS = 5;
 
 // ─── Start ───────────────────────────────────────────────────────────────────
@@ -326,6 +326,21 @@ export async function advanceAdaptiveCultureInterview(
   //    static question directly and append it.
   console.warn('[advanceAdaptiveCultureInterview] Generative planner failed; falling back to static bank.');
   const askedIds = new Set(transcript.turns.map((t) => t.questionId));
+
+  // Prevent semantic duplicates: if a generative question already covered a
+  // dimension, block static questions whose primary dimension matches.
+  // Generative IDs (gen-*) and static IDs are in different namespaces, so
+  // pickNextQuestion would otherwise surface a near-duplicate.
+  const generativeDimensions = new Set<string>();
+  for (const meta of transcript.scratchpad.questionMetadata ?? []) {
+    generativeDimensions.add(meta.targetDimension);
+  }
+  for (const q of CULTURE_QUESTION_BANK) {
+    if (generativeDimensions.has(q.dimensions[0]!)) {
+      askedIds.add(q.id);
+    }
+  }
+
   const { pickNextQuestion } = await import('./cultureQuestionBank');
   const nextStatic = pickNextQuestion({
     coverage: transcript.scratchpad.dimensionCoverage,

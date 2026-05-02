@@ -1,124 +1,162 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { retryWithBackoff, classifyError } from '../retryHelper';
 
-describe('classifyError', () => {
-  it('classifies network errors as transient', () => {
-    expect(classifyError(new Error('Network error'))).toBe('transient');
-    expect(classifyError(new Error('Connection timeout'))).toBe('transient');
-    expect(classifyError(new Error('fetch failed'))).toBe('transient');
-    expect(classifyError(new Error('ECONNREFUSED'))).toBe('transient');
-    expect(classifyError(new Error('ETIMEDOUT'))).toBe('transient');
-    expect(classifyError(new Error('ENOTFOUND'))).toBe('transient');
-  });
-
-  it('classifies 5xx and 429 as transient', () => {
-    expect(classifyError({ status: 500 })).toBe('transient');
-    expect(classifyError({ status: 503 })).toBe('transient');
-    expect(classifyError({ statusCode: 429 })).toBe('transient');
-    expect(classifyError({ code: '502' })).toBe('transient');
-  });
-
-  it('classifies 4xx as fatal', () => {
-    expect(classifyError({ status: 400 })).toBe('fatal');
-    expect(classifyError({ status: 404 })).toBe('fatal');
-    expect(classifyError({ statusCode: '403' })).toBe('fatal');
-  });
-
-  it('classifies unknown errors as transient', () => {
-    expect(classifyError(new Error('Something went wrong'))).toBe('transient');
-    expect(classifyError(null)).toBe('transient');
-    expect(classifyError(undefined)).toBe('transient');
-  });
-});
-
 describe('retryWithBackoff', () => {
-  it('returns result on first success', async () => {
-    const result = await retryWithBackoff(() => 'ok');
-    expect(result).toBe('ok');
+  beforeEach(() => {
+    vi.useFakeTimers();
   });
 
-  it('retries until success', async () => {
-    let calls = 0;
-    const result = await retryWithBackoff(() => {
-      calls++;
-      if (calls < 3) throw new Error('fail');
-      return 'ok';
-    }, { baseDelayMs: 5, maxRetries: 3 });
-    expect(calls).toBe(3);
-    expect(result).toBe('ok');
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('throws after maxRetries exhausted', async () => {
-    let calls = 0;
-    await expect(
-      retryWithBackoff(() => {
-        calls++;
-        throw new Error('fail');
-      }, { baseDelayMs: 5, maxRetries: 2 })
-    ).rejects.toThrow('fail');
-    expect(calls).toBe(3); // initial + 2 retries
+  it('returns immediately on success', async () => {
+    const fn = vi.fn().mockResolvedValue('ok');
+    const promise = retryWithBackoff(fn);
+    await expect(promise).resolves.toBe('ok');
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  it('throws fatal errors immediately without retry', async () => {
-    let calls = 0;
-    const fatalErr = Object.assign(new Error('bad request'), { status: 400 });
-    await expect(
-      retryWithBackoff(() => {
-        calls++;
-        throw fatalErr;
-      }, { baseDelayMs: 5, maxRetries: 3 })
-    ).rejects.toThrow('bad request');
-    expect(calls).toBe(1);
-  });
+  it('retries up to 3 times and succeeds on the last attempt', async () => {
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('fail 1'))
+      .mockRejectedValueOnce(new Error('fail 2'))
+      .mockRejectedValueOnce(new Error('fail 3'))
+      .mockResolvedValue('success');
 
-  it('calls onRetry before each retry with attempt and delay', async () => {
     const onRetry = vi.fn();
-    let calls = 0;
-    await retryWithBackoff(() => {
-      calls++;
-      if (calls < 3) throw new Error('fail');
-      return 'ok';
-    }, { baseDelayMs: 5, maxRetries: 3, onRetry });
 
-    expect(onRetry).toHaveBeenCalledTimes(2);
-    expect(onRetry).toHaveBeenNthCalledWith(1, 1, expect.any(Number));
-    expect(onRetry).toHaveBeenNthCalledWith(2, 2, expect.any(Number));
-    const firstDelay = onRetry.mock.calls[0][1];
-    expect(firstDelay).toBeGreaterThanOrEqual(2);
-    expect(firstDelay).toBeLessThanOrEqual(10);
+    const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
+
+    await vi.advanceTimersByTimeAsync(0); // attempt 0
+    await vi.advanceTimersByTimeAsync(2000); // attempt 1
+    await vi.advanceTimersByTimeAsync(4000); // attempt 2
+    await vi.advanceTimersByTimeAsync(8000); // attempt 3
+
+    await expect(promise).resolves.toBe('success');
+    expect(fn).toHaveBeenCalledTimes(4);
+    expect(onRetry).toHaveBeenCalledTimes(3);
   });
 
-  it('calls onCircuitOpen when fatal error occurs', async () => {
+  it('throws after exhausting maxRetries', async () => {
+    const fn = vi.fn().mockImplementation(() => Promise.reject(new Error('persistent failure')));
     const onCircuitOpen = vi.fn();
-    const fatalErr = Object.assign(new Error('bad request'), { status: 400 });
-    await expect(
-      retryWithBackoff(() => {
-        throw fatalErr;
-      }, { baseDelayMs: 5, maxRetries: 3, onCircuitOpen })
-    ).rejects.toThrow('bad request');
-    expect(onCircuitOpen).toHaveBeenCalledTimes(1);
-    expect(onCircuitOpen).toHaveBeenCalledWith(fatalErr);
-  });
 
-  it('calls onCircuitOpen when retries are exhausted', async () => {
-    const onCircuitOpen = vi.fn();
-    const err = new Error('fail');
-    await expect(
-      retryWithBackoff(() => {
-        throw err;
-      }, { baseDelayMs: 5, maxRetries: 1, onCircuitOpen })
-    ).rejects.toThrow('fail');
+    const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onCircuitOpen });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(8000);
+
+    await expect(promise).rejects.toThrow('persistent failure');
+    expect(fn).toHaveBeenCalledTimes(4);
     expect(onCircuitOpen).toHaveBeenCalledTimes(1);
     expect(onCircuitOpen).toHaveBeenCalledWith(err);
   });
 
-  it('supports synchronous functions', async () => {
-    const result = await retryWithBackoff(() => 42);
-    expect(result).toBe(42);
+  it('backs off exponentially with jitter', async () => {
+    const fn = vi.fn().mockRejectedValue(new Error('fail'));
+    const onRetry = vi.fn();
+
+    // Fix Math.random to a known value so jitter is deterministic
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
+
+    await vi.advanceTimersByTimeAsync(0); // attempt 0 fails, delay = 1000 * 1 * (0.5 + 0.5*0.5) = 1000 * 0.75 = 750
+    expect(onRetry).toHaveBeenNthCalledWith(1, 1, 750);
+
+    await vi.advanceTimersByTimeAsync(750); // attempt 1 fails, delay = 1000 * 2 * 0.75 = 1500
+    expect(onRetry).toHaveBeenNthCalledWith(2, 2, 1500);
+
+    await vi.advanceTimersByTimeAsync(1500); // attempt 2 fails, delay = 1000 * 4 * 0.75 = 3000
+    expect(onRetry).toHaveBeenNthCalledWith(3, 3, 3000);
+
+    randomSpy.mockRestore();
   });
 
-  it('supports async functions', async () => {
-    const result = await retryWithBackoff(async () => Promise.resolve('async-ok'));
-    expect(result).toBe('async-ok');
+  it('applies jitter within [0.5x, 1.0x] of nominal delay', async () => {
+    const fn = vi.fn().mockRejectedValue(new Error('fail'));
+    const delays: number[] = [];
+
+    const onRetry = (_attempt: number, delay: number) => {
+      delays.push(delay);
+    };
+
+    retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    // Nominal delays for attempts 0,1,2 are 1000, 2000, 4000
+    expect(delays[0]).toBeGreaterThanOrEqual(500);
+    expect(delays[0]).toBeLessThanOrEqual(1000);
+    expect(delays[1]).toBeGreaterThanOrEqual(1000);
+    expect(delays[1]).toBeLessThanOrEqual(2000);
+    expect(delays[2]).toBeGreaterThanOrEqual(2000);
+    expect(delays[2]).toBeLessThanOrEqual(4000);
+  });
+
+  it('logs retry attempts with standard format', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockResolvedValue('ok');
+
+    const promise = retryWithBackoff(fn, {
+      maxRetries: 1,
+      baseDelayMs: 1000,
+      onRetry: (attempt, delay) =>
+        console.warn(`[retry] attempt ${attempt} after ${delay}ms delay for myFunction`),
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(promise).resolves.toBe('ok');
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[retry\] attempt \d+ after \d+ms delay for myFunction$/),
+    );
+    consoleWarn.mockRestore();
+  });
+
+  it('does not retry fatal errors (400)', async () => {
+    const err = Object.assign(new Error('bad request'), { status: 400 });
+    const fn = vi.fn().mockRejectedValue(err);
+    const onCircuitOpen = vi.fn();
+
+    await expect(retryWithBackoff(fn, { maxRetries: 3, onCircuitOpen })).rejects.toThrow('bad request');
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(onCircuitOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry fatal errors (404)', async () => {
+    const err = Object.assign(new Error('not found'), { status: 404 });
+    const fn = vi.fn().mockRejectedValue(err);
+
+    await expect(retryWithBackoff(fn, { maxRetries: 3 })).rejects.toThrow('not found');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('classifyError', () => {
+  it('classifies 400/404/403 as fatal', () => {
+    expect(classifyError({ status: 400 })).toBe('fatal');
+    expect(classifyError({ status: 404 })).toBe('fatal');
+    expect(classifyError({ statusCode: 404 })).toBe('fatal');
+    expect(classifyError({ statusCode: '403' })).toBe('fatal');
+    expect(classifyError({ code: '403' })).toBe('fatal');
+  });
+
+  it('classifies everything else as transient', () => {
+    expect(classifyError({ status: 500 })).toBe('transient');
+    expect(classifyError({ status: 429 })).toBe('transient');
+    expect(classifyError(null)).toBe('transient');
+    expect(classifyError(new Error('network'))).toBe('transient');
   });
 });

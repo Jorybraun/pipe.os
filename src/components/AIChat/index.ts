@@ -1,4 +1,5 @@
 export { AIChat } from './AIChat';
+export { SmartInterviewInput } from './SmartInterviewInput';
 export { ThinkingIndicator } from './ThinkingIndicator';
 export { PastExchangeCard } from './PastExchangeCard';
 export { QuestionInput } from './QuestionInput';
