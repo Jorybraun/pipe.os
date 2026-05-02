@@ -179,7 +179,16 @@ rpcPublic.post('/demo-register', async (c) => {
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   const githubHandle = typeof body.githubHandle === 'string' ? body.githubHandle.trim().replace(/^@/, '') : '';
   const linkedinUrl = typeof body.linkedinUrl === 'string' ? body.linkedinUrl.trim() : '';
-  const assessmentType = typeof body.assessmentType === 'string' ? body.assessmentType.trim().toUpperCase() : 'CODE_REVIEW';
+  const rawAssessmentType = typeof body.assessmentType === 'string' ? body.assessmentType.trim().toUpperCase() : 'CODE_REVIEW';
+
+  // Map user-facing assessment types to internal challenge types
+  const TYPE_MAP: Record<string, string> = {
+    'CODE_REVIEW': 'CODE_REVIEW',
+    'CULTURE': 'AGENT_INTERVIEW',
+    'OPEN_SOURCE': 'CODE_IMPLEMENTATION',
+    'CULTURAL_FIT': 'AGENT_INTERVIEW',
+  };
+  const assessmentType = TYPE_MAP[rawAssessmentType] || rawAssessmentType;
 
   if (!name || name.length < 1) {
     return c.json({ error: { code: 'VALIDATION_ERROR', message: 'name is required.' } }, 400);
