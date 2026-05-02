@@ -1999,12 +1999,12 @@ export default function CandidateProfilePage(): JSX.Element {
                       style={{
                         fontSize: 20,
                         fontWeight: 900,
-                        color: ingestion.triangulatedScore >= 70 ? '#10b981' : ingestion.triangulatedScore >= 40 ? '#fbbf24' : '#f87171',
+                        color: ingestion.triangulatedScore >= 0.70 ? '#10b981' : ingestion.triangulatedScore >= 0.40 ? '#fbbf24' : '#f87171',
                         fontFamily: '"Space Mono", monospace',
                         lineHeight: 1,
                       }}
                     >
-                      {Math.round(ingestion.triangulatedScore)}
+                      {Math.round((ingestion.triangulatedScore ?? 0) * 100)}
                     </span>
                     <div
                       style={{
@@ -2017,9 +2017,9 @@ export default function CandidateProfilePage(): JSX.Element {
                     >
                       <div
                         style={{
-                          width: `${Math.min(100, Math.max(0, ingestion.triangulatedScore))}%`,
+                          width: `${Math.min(100, Math.max(0, ingestion.triangulatedScore * 100))}%`,
                           height: '100%',
-                          background: ingestion.triangulatedScore >= 70 ? '#10b981' : ingestion.triangulatedScore >= 40 ? '#fbbf24' : '#f87171',
+                          background: ingestion.triangulatedScore >= 0.70 ? '#10b981' : ingestion.triangulatedScore >= 0.40 ? '#fbbf24' : '#f87171',
                           borderRadius: 2,
                         }}
                       />

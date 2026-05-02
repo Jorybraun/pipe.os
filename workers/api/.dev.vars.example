@@ -7,6 +7,15 @@ ANTHROPIC_API_KEY=sk-ant-your_key_here
 # generativelanguage.googleapis.com (confirmed Google bug, no fix).
 GOOGLE_AI_API_KEY=your_google_ai_studio_api_key_here
 
+# ── Fast local config (sub-4s LLM latency) ──
+# Role agent on Cloudflare Workers AI with Gemma 4 is fastest for local dev.
+# Vertex AI MaaS is accurate but has cold-start latency (~30-40s).
+ROLE_AGENT_PROVIDER=cloudflare-ai
+ROLE_AGENT_MODEL=@cf/google/gemma-4-26b-a4b-it
+CANDIDATE_AGENT_PROVIDER=cloudflare-ai
+CULTURE_AGENT_PROVIDER=cloudflare-ai
+COPILOT_AGENT_PROVIDER=cloudflare-ai
+
 # ── Vertex AI (optional — use for role/culture agents if you want Vertex over Workers AI) ──
 # Set ROLE_AGENT_PROVIDER=vertex-ai (and optionally CULTURE_AGENT_PROVIDER=vertex-ai)
 # then provide the service account JSON. The provider self-refreshes OAuth2 tokens via JWT.
@@ -23,7 +32,14 @@ GOOGLE_AI_API_KEY=your_google_ai_studio_api_key_here
 # Then paste the contents of sa-key.json as a single-line JSON string:
 # VERTEX_SA_KEY_JSON={"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}
 # VERTEX_AI_REGION=us-central1
-# VERTEX_AI_MODEL=google/gemini-2.5-pro-preview-03-25
+# VERTEX_AI_MODEL=google/gemma-4-26b-a4b-it-maas
 # ROLE_AGENT_PROVIDER=vertex-ai
 # CULTURE_AGENT_PROVIDER=vertex-ai
 # COPILOT_AGENT_PROVIDER=vertex-ai
+
+# ── Shared defaults ──
+# CLOUDFLARE_AI_MODEL=@cf/meta/llama-3.1-8b-instruct
+# VERTEX_AI_MODEL=google/gemma-4-26b-a4b-it-maas
+# KIMI_API_KEY=sk-your_kimi_key
+# KIMI_MODEL=moonshot-v1-32k
+# KIMI_BASE_URL=https://api.moonshot.cn/v1

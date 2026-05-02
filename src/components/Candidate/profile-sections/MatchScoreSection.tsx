@@ -26,8 +26,8 @@ interface MatchScoreSectionProps {
 
 function getScoreColor(score: number | null): string {
   if (score === null) return 'var(--pipe-text-dim)';
-  if (score >= 70) return '#10b981';
-  if (score >= 40) return '#fbbf24';
+  if (score >= 0.70) return '#10b981';
+  if (score >= 0.40) return '#fbbf24';
   return '#f87171';
 }
 
@@ -48,13 +48,13 @@ function DimensionBar({ label, value }: { label: string; value: number }): JSX.E
           {label}
         </span>
         <span style={{ fontSize: 11, fontWeight: 800, color, fontFamily: '"Space Mono", monospace' }}>
-          {Math.round(value)}
+          {Math.round(value * 100)}
         </span>
       </div>
       <div style={{ height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
         <div
           style={{
-            width: `${Math.min(100, Math.max(0, value))}%`,
+            width: `${Math.min(100, Math.max(0, value * 100))}%`,
             height: '100%',
             background: color,
             borderRadius: 2,
@@ -126,7 +126,7 @@ export function MatchScoreSection({ props }: MatchScoreSectionProps): JSX.Elemen
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 24, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
               <div style={{ fontSize: 56, fontWeight: 900, color: scoreColor, lineHeight: 1, letterSpacing: '-0.04em' }}>
-                {Math.round(score)}
+                {Math.round((score ?? 0) * 100)}
               </div>
               <div
                 style={{

@@ -105,7 +105,7 @@ function CandidateRow({
                   fontFamily: '"Space Mono", monospace',
                 }}
               >
-                {Math.round(ingestion.triangulatedScore)}
+                {Math.round((ingestion.triangulatedScore ?? 0) * 100)}
               </span>
             )}
             {ingestion.status === 'matched' && ingestion.matchPhilosophy && (

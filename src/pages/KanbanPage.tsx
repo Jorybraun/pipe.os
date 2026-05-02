@@ -420,7 +420,7 @@ function CandidateKanbanCard({
                         fontFamily: 'Space Mono',
                       }}
                     >
-                      {Math.round(ingestion.triangulatedScore)}
+                      {Math.round((ingestion.triangulatedScore ?? 0) * 100)}
                     </span>
                   )}
                   {ingestion.status === 'matched' && ingestion.matchPhilosophy && (
