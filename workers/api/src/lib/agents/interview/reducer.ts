@@ -93,6 +93,21 @@ export function readProbesDelivered(ks: Record<string, Record<string, unknown>>)
   return typeof raw === 'number' ? raw : 0;
 }
 
+export function readSoulProbesDelivered(ks: Record<string, Record<string, unknown>>): number {
+  const raw = ks['_soulProbesDelivered'];
+  return typeof raw === 'number' ? raw : 0;
+}
+
+export function readEnableSoulTrack(
+  ks: Record<string, Record<string, unknown>>,
+  baseline: Record<string, unknown>,
+): boolean {
+  const ksFlag = ks['_enableSoulTrack'];
+  if (typeof ksFlag === 'boolean') return ksFlag;
+  const baselineFlag = baseline['enableSoulTrack'];
+  return typeof baselineFlag === 'boolean' ? baselineFlag : false;
+}
+
 export function readBooleanFlag(ks: Record<string, Record<string, unknown>>, key: string): boolean {
   const raw = ks[key];
   return Boolean(raw);
@@ -110,6 +125,8 @@ interface PhaseSelectionInput {
   frictionProbed: boolean;
   dayInLifeProbed: boolean;
   probesDelivered: number;
+  soulProbesDelivered: number;
+  enableSoulTrack: boolean;
 }
 
 export interface PhaseSelectionResult {
@@ -135,10 +152,13 @@ function phaseRules(input: PhaseSelectionInput) {
     frictionProbed,
     dayInLifeProbed,
     probesDelivered,
+    soulProbesDelivered,
+    enableSoulTrack,
   } = input;
 
-  const allProbesDelivered = probesDelivered >= 6;
-  const personalityQuestionsDelivered = probesDelivered >= 8;
+  // Signal probes: 6 total. Personality probes (7-8) are only in default mode.
+  const signalProbesDone = enableSoulTrack ? probesDelivered >= 6 : probesDelivered >= 8;
+  const soulProbesDone = soulProbesDelivered >= 6;
 
   const blindDomains = () =>
     Object.entries(domainCoverage)
@@ -163,14 +183,25 @@ function phaseRules(input: PhaseSelectionInput) {
       gaps: ['Warm-up not yet complete'],
     },
     {
-      match: !allProbesDelivered || !personalityQuestionsDelivered,
+      match: !signalProbesDone,
       phase: 'DISCOVERY' as ConversationPhase,
-      focusGoal: `Deliver probe ${probesDelivered + 1} of 8. Ask exactly one probe, follow energy with at most one drilling question, then move on.`,
+      focusGoal: enableSoulTrack
+        ? `Deliver signal probe ${probesDelivered + 1} of 6. Ask exactly one probe, follow energy with at most one drilling question, then move on.`
+        : `Deliver probe ${probesDelivered + 1} of 8. Ask exactly one probe, follow energy with at most one drilling question, then move on.`,
       gaps: [
         `Probe ${probesDelivered + 1} not yet delivered`,
         ...(storiesExtracted.length === 0 ? ['No concrete stories extracted yet'] : []),
         ...(blindDomains().length > 0 ? [`Blind domains: ${blindDomains().join(', ')}`] : []),
         ...(!dayInLifeProbed ? ['Day-in-the-life not yet probed'] : []),
+      ],
+    },
+    {
+      match: enableSoulTrack && !soulProbesDone,
+      phase: 'SOUL' as ConversationPhase,
+      focusGoal: `Deliver soul probe ${soulProbesDelivered + 1} of 6. Ask for behavior, not abstract values. Follow energy with at most ONE drilling follow-up.`,
+      gaps: [
+        `Soul probe ${soulProbesDelivered + 1} not yet delivered`,
+        ...(storiesExtracted.length === 0 ? ['No concrete stories extracted yet'] : []),
       ],
     },
     {
@@ -212,12 +243,12 @@ function phaseRules(input: PhaseSelectionInput) {
  *   5. WRAP_UP        — default; synthesis gates checked here
  */
 export function selectPhase(input: PhaseSelectionInput): PhaseSelectionResult {
-  const { questionsAsked, questionBudget, storiesExtracted, mustHavesPrioritized, frictionProbed, dayInLifeProbed, probesDelivered } =
+  const { questionsAsked, questionBudget, storiesExtracted, mustHavesPrioritized, frictionProbed, dayInLifeProbed, probesDelivered, soulProbesDelivered, enableSoulTrack } =
     input;
 
   const budgetExhausted = questionsAsked >= questionBudget;
-  const allProbesDelivered = probesDelivered >= 6;
-  const personalityQuestionsDelivered = probesDelivered >= 8;
+  const signalProbesDone = enableSoulTrack ? probesDelivered >= 6 : probesDelivered >= 8;
+  const soulProbesDone = soulProbesDelivered >= 6;
 
   // Gates for synthesisAllowed (RD-42)
   const allGatesPass =
@@ -225,8 +256,8 @@ export function selectPhase(input: PhaseSelectionInput): PhaseSelectionResult {
     frictionProbed &&
     dayInLifeProbed &&
     storiesExtracted.length >= 1 &&
-    allProbesDelivered &&
-    personalityQuestionsDelivered;
+    signalProbesDone &&
+    (!enableSoulTrack || soulProbesDone);
 
   const rules = phaseRules(input);
   const selected = rules.find((r) => r.match)!;
@@ -241,8 +272,8 @@ export function selectPhase(input: PhaseSelectionInput): PhaseSelectionResult {
   const reasoning = synthesisAllowed
     ? `Phase ${selected.phase}. All gates passed — synthesis allowed.`
     : `Phase ${selected.phase}. Gates pending: ${[
-        !allProbesDelivered && `${6 - probesDelivered} probes remaining`,
-        !personalityQuestionsDelivered && `${8 - probesDelivered} personality questions remaining`,
+        !signalProbesDone && (enableSoulTrack ? `${6 - probesDelivered} signal probes remaining` : `${8 - probesDelivered} probes remaining`),
+        enableSoulTrack && !soulProbesDone && `${6 - soulProbesDelivered} soul probes remaining`,
         !mustHavesPrioritized && 'must-haves not ranked',
         !frictionProbed && 'friction not probed',
         storiesExtracted.length === 0 && 'no stories',
@@ -278,6 +309,7 @@ export function createInitialState(input: CreateInterviewStateInput): InterviewS
   const ks = input.seedKnowledgeState ?? {};
   const questionsAsked = 0;
   const domainCoverage = readDomainCoverage(ks);
+  const enableSoulTrack = readEnableSoulTrack(ks, input.baseline);
 
   const phaseResult = selectPhase({
     questionsAsked,
@@ -289,6 +321,8 @@ export function createInitialState(input: CreateInterviewStateInput): InterviewS
     frictionProbed: readBooleanFlag(ks, '_frictionProbed'),
     dayInLifeProbed: readBooleanFlag(ks, '_dayInLifeProbed'),
     probesDelivered: readProbesDelivered(ks),
+    soulProbesDelivered: readSoulProbesDelivered(ks),
+    enableSoulTrack,
   });
 
   return {
@@ -357,6 +391,8 @@ export function interviewReducer(
         frictionProbed: readBooleanFlag(knowledgeState, '_frictionProbed'),
         dayInLifeProbed: readBooleanFlag(knowledgeState, '_dayInLifeProbed'),
         probesDelivered: readProbesDelivered(knowledgeState),
+        soulProbesDelivered: readSoulProbesDelivered(knowledgeState),
+        enableSoulTrack: readEnableSoulTrack(knowledgeState, state.baseline),
       });
 
       return {
@@ -390,6 +426,8 @@ export function interviewReducer(
         frictionProbed: readBooleanFlag(state.knowledgeState, '_frictionProbed'),
         dayInLifeProbed: readBooleanFlag(state.knowledgeState, '_dayInLifeProbed'),
         probesDelivered: readProbesDelivered(state.knowledgeState),
+        soulProbesDelivered: readSoulProbesDelivered(state.knowledgeState),
+        enableSoulTrack: readEnableSoulTrack(state.knowledgeState, state.baseline),
       });
 
       return {

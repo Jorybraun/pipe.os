@@ -21,9 +21,10 @@ import { apiError } from '../../middleware/errors';
 import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, stateActionSchema, questionSchema, synthesizeSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
 import { mergeKnowledgeState } from '../../lib/roleAgent';
 import { callGapFillingAgent } from '../../lib/agents/calibration/gapFilling';
-import { interviewReducer, createInitialState, selectPhase, readDomainCoverage, readEvpCoverage, readStories, readBooleanFlag, readProbesDelivered } from '../../lib/agents/interview/reducer';
+import { interviewReducer, createInitialState, selectPhase, readDomainCoverage, readEvpCoverage, readStories, readBooleanFlag, readProbesDelivered, readSoulProbesDelivered, readEnableSoulTrack } from '../../lib/agents/interview/reducer';
 import { generateQuestion, generateQuestionStream, generateQuestionBatch } from '../../lib/agents/question/generator';
 import { evaluateQuestion } from '../../lib/agents/question/eval';
+import { analyzeFeedback } from '../../lib/agents/question/feedbackAnalyzer';
 // synthesizeRcd replaces the legacy synthesize() — removed in migration
 import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
 import { decomposeRcdIntoNodes, persistRoleNodes } from '../../lib/roleAgent/decomposeRcd';
@@ -89,6 +90,8 @@ function reconstructInterviewStateFromDb(
     frictionProbed: readBooleanFlag(knowledgeState, '_frictionProbed'),
     dayInLifeProbed: readBooleanFlag(knowledgeState, '_dayInLifeProbed'),
     probesDelivered: readProbesDelivered(knowledgeState),
+    soulProbesDelivered: readSoulProbesDelivered(knowledgeState),
+    enableSoulTrack: readEnableSoulTrack(knowledgeState, baseline),
   });
 
   return {
@@ -684,6 +687,8 @@ roleContexts.get('/:id', async (c) => {
       frictionProbed: readBooleanFlag(sharedKnowledgeState, '_frictionProbed'),
       dayInLifeProbed: readBooleanFlag(sharedKnowledgeState, '_dayInLifeProbed'),
       probesDelivered: readProbesDelivered(sharedKnowledgeState),
+    soulProbesDelivered: readSoulProbesDelivered(sharedKnowledgeState),
+    enableSoulTrack: readEnableSoulTrack(sharedKnowledgeState, {}),
     });
 
     return {
@@ -1721,10 +1726,10 @@ roleContexts.post('/:id/feedback', async (c) => {
   }
 
   const participant = await c.env.DB.prepare(
-    'SELECT id, exchanges FROM role_context_participants WHERE id = ?1 AND role_context_id = ?2',
+    'SELECT id, exchanges, participant_role FROM role_context_participants WHERE id = ?1 AND role_context_id = ?2',
   )
     .bind(participantId, id)
-    .first<{ id: string; exchanges: string | null }>();
+    .first<{ id: string; exchanges: string | null; participant_role: string | null }>();
 
   if (!participant) {
     return apiError(c, 'NOT_FOUND', 'Participant not found.');
@@ -1744,7 +1749,27 @@ roleContexts.post('/:id/feedback', async (c) => {
     .bind(JSON.stringify(exchanges), now(), participant.id)
     .run();
 
-  return c.json({ success: true });
+  // ─── Adaptive feedback loop: auto-generate prompt patch ─────────────────────
+  let analysis: { action: string; patchId?: string; ruleId?: string } | undefined;
+  try {
+    const provider = createRoleAgentProvider(c.env);
+    analysis = await analyzeFeedback({
+      db: c.env.DB,
+      ai: c.env.AI,
+      provider,
+      questionText: exchange.question,
+      acknowledgment: exchange.acknowledgment ?? '',
+      feedback: feedback.trim(),
+      participantRole: participant.participant_role,
+      questionId,
+      roleContextId: id,
+    });
+  } catch (err) {
+    console.error('[feedback] analyzeFeedback failed:', err);
+    // Don't fail the feedback request if patch generation fails
+  }
+
+  return c.json({ success: true, analysis });
 });
 
 // ─── POST /:id/calibrate — Recruiter flags a gap, get a clarifying question ──

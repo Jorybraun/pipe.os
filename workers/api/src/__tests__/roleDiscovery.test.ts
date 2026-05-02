@@ -65,13 +65,13 @@ describe('buildRoleAgentSystemPrompt', () => {
   it('includes hiring manager section', () => {
     const prompt = buildRoleAgentSystemPrompt('HIRING_MANAGER');
     expect(prompt).toContain('Your Interviewee: Hiring Manager');
-    expect(prompt).toContain('Value-level laddering');
+    expect(prompt).toContain('Can ladder to value level');
   });
 
   it('includes internal recruiter section', () => {
     const prompt = buildRoleAgentSystemPrompt('INTERNAL_RECRUITER');
     expect(prompt).toContain('Your Interviewee: Internal Recruiter');
-    expect(prompt).toContain('What the HM emphasized');
+    expect(prompt).toContain('what the HM emphasized');
   });
 
   it('includes external recruiter section', () => {
@@ -83,7 +83,7 @@ describe('buildRoleAgentSystemPrompt', () => {
   it('includes team member section', () => {
     const prompt = buildRoleAgentSystemPrompt('TEAM_MEMBER');
     expect(prompt).toContain('Your Interviewee: Team Member');
-    expect(prompt).toContain('ground truth for culture');
+    expect(prompt).toContain('Ground truth for culture');
   });
 
   it('ignores unknown participant roles', () => {

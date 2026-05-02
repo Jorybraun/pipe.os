@@ -1,16 +1,27 @@
 /**
- * Question Generator — Prompt Builder
+ * Question Generator — Prompt Builder (Multi-Agent Architecture)
  *
- * Builds a concise, deterministic prompt from InterviewState.
- * No full conversation history duplication — state IS the context.
+ * System prompt: ~300 chars. Warm interviewer persona + JSON schema + brevity.
+ * User prompt: Assembled per-turn from deterministic agents + state.
+ *
+ * Agents contributing to the user prompt:
+ *   - Turn Planner (planner.ts): phase, strategy, target domain, question type
+ *   - Probe Librarian (probeLibrarian.ts): calibrated probe text + drilling hints
+ *   - Role Context Adapter (roleAdapter.ts): interviewee brief from baseline
+ *
+ * The LLM (Question Writer) sees exactly what it needs for THIS turn.
  */
 
 import type { ConversationPhase, DomainCoverage } from '../../../types';
 import type { InterviewState } from '../interview/types';
-import { selectPhasePrompt } from '../../agents/roleDiscovery/prompts';
 import { injectPromptPatches } from './promptPatch';
+import { buildTurnPlan, buildPlanInstruction } from './planner';
+import { buildProbeInstruction } from './probeLibrarian';
+import { buildRoleInstruction } from './roleAdapter';
 
-const RESPONSE_FORMAT = `{"reasoning":"<20 words max>","acknowledgment":"<1 sentence>","question":{"id":"q-N","text":"<under 15 words>","goal":"<under 10 words>","expectedCoverage":{"domain":"why|work|team|bar|codebase|process","from":"none|sparse|partial|covered|deep","to":"none|sparse|partial|covered|deep"},"probeAlignment":"<probe or none>","questionType":"introductory|grand_tour|example|drilling|direct|hypothesis|contrast","input":{"type":"text|textarea|tags|select|radio","placeholder":"<hint>","options":["<for select/radio>"]},"suggestedAnswers":["<omit if open-ended>"]},"knowledgeStateUpdate":{"<domain>":{"<key>":"<value>"}},"domainCoverage":{"why":"...","work":"...","team":"...","bar":"...","codebase":"...","process":"..."}}`;
+// ─── Compact JSON schemas ────────────────────────────────────────────────────
+
+const RESPONSE_FORMAT = `{"reasoning":"<20 words max>","acknowledgment":"<1 sentence>","question":{"id":"q-N","text":"<under 15 words>","goal":"<under 10 words>","expectedCoverage":{"domain":"why|work|team|bar|codebase|process","from":"none|sparse|partial|covered|deep","to":"none|sparse|partial|covered|deep"},"probeAlignment":"<probe id or none>","questionType":"introductory|grand_tour|example|drilling|direct|hypothesis|contrast","input":{"type":"text|textarea|tags|select|radio","placeholder":"<hint>","options":["<for select/radio>"]},"suggestedAnswers":["<omit if open-ended>"]},"knowledgeStateUpdate":{"<domain>":{"<key>":"<value>"}},"domainCoverage":{"why":"...","work":"...","team":"...","bar":"...","codebase":"...","process":"..."}}`;
 
 const BREVITY_RULES = `- reasoning: max 20 words. One sentence.
 - acknowledgment: max 1 sentence. No filler.
@@ -19,47 +30,14 @@ const BREVITY_RULES = `- reasoning: max 20 words. One sentence.
 - suggestedAnswers: omit unless the question truly benefits from examples.
 - knowledgeStateUpdate: only include keys that are NEW or CHANGED this turn.`;
 
-// ─── Batch generation (stack architecture) ───────────────────────────────────
+const BATCH_RESPONSE_FORMAT = `{"reasoning":"<20 words max>","batch":[{"acknowledgment":"<1 sentence>","question":{"id":"q-N","text":"<under 15 words>","goal":"<under 10 words>","expectedCoverage":{"domain":"why|work|team|bar|codebase|process","from":"none|sparse|partial|covered|deep","to":"none|sparse|partial|covered|deep"},"probeAlignment":"<probe id or none>","questionType":"introductory|grand_tour|example|drilling|direct|hypothesis|contrast","input":{"type":"text|textarea|tags|select|radio","placeholder":"<hint>","options":["<for select/radio>"]},"suggestedAnswers":["<omit if open-ended>"]},"knowledgeStateUpdate":{"<domain>":{"<key>":"<value>"}},"domainCoverage":{"why":"...","work":"...","team":"...","bar":"...","codebase":"...","process":"..."}}]}`;
 
-const BATCH_RESPONSE_FORMAT = `{"reasoning":"<20 words max>","batch":[{"acknowledgment":"<1 sentence>","question":{"id":"q-N","text":"<under 15 words>","goal":"<under 10 words>","expectedCoverage":{"domain":"why|work|team|bar|codebase|process","from":"none|sparse|partial|covered|deep","to":"none|sparse|partial|covered|deep"},"probeAlignment":"<probe or none>","questionType":"introductory|grand_tour|example|drilling|direct|hypothesis|contrast","input":{"type":"text|textarea|tags|select|radio","placeholder":"<hint>","options":["<for select/radio>"]},"suggestedAnswers":["<omit if open-ended>"]},"knowledgeStateUpdate":{"<domain>":{"<key>":"<value>"}},"domainCoverage":{"why":"...","work":"...","team":"...","bar":"...","codebase":"...","process":"..."}}]}`;
+// ─── System Prompt ───────────────────────────────────────────────────────────
 
-function buildSystemPrompt(participantRole: string | null, phase: ConversationPhase): string {
-  const phasePrompt = selectPhasePrompt(phase, participantRole ?? undefined);
-
-  const basePrompt = `You are a senior technical recruiting partner conducting a role discovery interview. Your goal is to understand this role deeply enough that downstream agents can generate tailored technical assessments. Talk like a human, not a methodology checklist.
-
-${phasePrompt}
-
-## Question Types
-
-| Type | When to Use |
-|---|---|
-| Introductory | Opening (turns 1-2) — establish context, calibrate |
-| Grand Tour | Early (turns 2-4) — get the big picture |
-| Example | Mid-conversation — move from abstract to concrete |
-| Drilling | When user shows energy on a topic |
-| Direct | After rapport is built — get specific facts efficiently |
-| Hypothesis | Later turns — validate understanding, show listening |
-| Contrast | Closing turns — surface hidden preferences via opposites |
-
-## Negative Space — What You Must NEVER Do
-
-- No leading questions: "Your team probably values clean code, right?"
-- No stacking multiple questions: one question per turn, always
-- No filler praise: "That's really helpful!" — acknowledge what you learned, then move forward
-- No asking what you can infer: if they said "HIPAA-compliant healthcare platform," don't ask "Is security important?"
-- No repeating answered questions: reference what they said
-- No asking the user to do the agent's job: form an opinion and present it for validation
-- No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
-
-## Phrasing Principles
-
-(Injected dynamically from feedback loop — see promptPatch.ts)
+const BASE_SYSTEM_PROMPT = `You are a warm, curious interviewer. Your job: write ONE engaging question that advances the conversation. Talk like a human, not a checklist.
 
 ## Response Format
-
-You MUST respond with valid JSON matching this exact schema:
-
+Respond with valid JSON matching this exact schema:
 ${RESPONSE_FORMAT}
 
 Generate exactly ONE question per turn. Pick the single best question that advances coverage most efficiently.
@@ -67,8 +45,12 @@ Generate exactly ONE question per turn. Pick the single best question that advan
 ## Brevity — Speed Matters
 ${BREVITY_RULES}`;
 
-  return injectPromptPatches(basePrompt, { participantRole: participantRole ?? undefined });
+function buildSystemPrompt(participantRole: string | null): string {
+  const base = BASE_SYSTEM_PROMPT;
+  return injectPromptPatches(base, { participantRole: participantRole ?? undefined });
 }
+
+// ─── User Prompt Assembler ───────────────────────────────────────────────────
 
 function formatExchanges(state: InterviewState): string {
   if (state.exchanges.length === 0) {
@@ -88,34 +70,63 @@ function formatExchanges(state: InterviewState): string {
 
 function buildUserPrompt(state: InterviewState): string {
   const parts: string[] = [];
+  const plan = buildTurnPlan(state);
 
+  // 1. Turn Plan (from deterministic planner)
+  parts.push(buildPlanInstruction(plan));
+  parts.push('');
+
+  // 2. Probe Instruction (from probe librarian) — only in DISCOVERY phase
+  const probeInstruction = buildProbeInstruction(
+    typeof state.knowledgeState['_probesDelivered'] === 'number'
+      ? (state.knowledgeState['_probesDelivered'] as number)
+      : 0,
+    state.participantRole,
+  );
+  if (probeInstruction) {
+    parts.push(probeInstruction);
+    parts.push('');
+  }
+
+  // 3. Role Context (from role adapter — derived from baseline, not hardcoded)
+  parts.push(buildRoleInstruction(state.baseline, state.participantRole));
+  parts.push('');
+
+  // 4. Interviewing Principles (compact, per-phase)
+  parts.push(buildPhasePrinciples(state.phase));
+  parts.push('');
+
+  // 5. Baseline data
   parts.push('BASELINE FORM DATA:');
   parts.push(JSON.stringify(state.baseline, null, 2));
   parts.push('');
 
-  if (state.participantRole) {
-    parts.push(`PARTICIPANT ROLE: ${state.participantRole}`);
-    parts.push('');
-  }
-
+  // 6. Budget & progress
   parts.push(`PHASE: ${state.phase}`);
   parts.push(`BUDGET: ${state.questionsAsked} of ${state.questionBudget} used. ${state.questionBudget - state.questionsAsked} remaining.`);
+  if (state.questionBudget - state.questionsAsked <= 2) {
+    parts.push('⚠ Budget nearly exhausted. Make remaining questions count.');
+  }
   parts.push('');
 
+  // 7. Domain coverage
   parts.push('DOMAIN COVERAGE:');
   parts.push(JSON.stringify(state.coverage, null, 2));
   parts.push('');
 
+  // 8. Knowledge state
   if (Object.keys(state.knowledgeState).length > 0) {
     parts.push('KNOWLEDGE STATE (previously established facts):');
     parts.push(JSON.stringify(state.knowledgeState, null, 2));
     parts.push('');
   }
 
+  // 9. Exchanges
   parts.push('EXCHANGES:');
   parts.push(formatExchanges(state));
   parts.push('');
 
+  // 10. Closing instruction
   if (state.exchanges.length === 0) {
     parts.push('Generate your FIRST question. Since there is no previous answer to acknowledge, set the acknowledgment to a brief, warm introduction (1-2 sentences) that explains what you will do and why detail matters. Tailor the intro to who you are talking to.');
   } else {
@@ -126,6 +137,53 @@ function buildUserPrompt(state: InterviewState): string {
 }
 
 /**
+ * Compact phase-specific principles injected into the user prompt.
+ * These replace the bloated phase prompts from prompts.ts.
+ */
+function buildPhasePrinciples(phase: ConversationPhase): string {
+  const principles: Record<ConversationPhase, string> = {
+    CONTEXT: `## Phase Principles — CONTEXT
+- Warm, low-pressure opening. 1-2 turns max.
+- Introductory or Grand Tour question types only.
+- Do NOT drill deep yet. Do NOT ask about requirements or skills.`,
+
+    DISCOVERY: `## Phase Principles — DISCOVERY
+- Laddering: when they name a tech or trait, ask WHY it matters. Reach root motivation.
+- Stories beat abstractions: "Tell me about the last time..." > "How do you think about..."
+- ONE probe per turn. Follow energy with at most ONE drilling follow-up, then move on.
+- Never ask what you can infer. Reference what they said.
+- If they give a short answer, ask ONE follow-up, then pivot.`,
+
+    PRIORITIZE: `## Phase Principles — PRIORITIZE
+- Force ranking, not listing: "If you could only keep 3 non-negotiables..."
+- Contrast questions: "What's the cost of NOT having X?"
+- Convergent thinking. Direct or Contrast question types.`,
+
+    EVP_FRICTION: `## Phase Principles — EVP_FRICTION
+- Demand-side flip: "Why would a great engineer leave their job for this one?"
+- Mandatory friction probe: ask what would surprise a candidate or what's hardest.
+- Frame friction as trade-off, not complaint.
+- Direct or Hypothesis question types.`,
+
+    SOUL: `## Phase Principles — SOUL
+- Behavior over values. Never ask "what do you care about?" Always ask "what did you do?"
+- Probe trauma and tradeoffs. The "who didn't work out" stories matter more than "who thrives."
+- Stay curious, not diagnostic. You're hunting signal, not judging.
+- ONE soul probe per turn. Follow energy with at most ONE drilling follow-up.
+- If the participant gets vulnerable, acknowledge the trust — don't rush to the next probe.`,
+
+    WRAP_UP: `## Phase Principles — WRAP_UP
+- Brief summary + confirmation: "Here's what I'm taking away... Does that capture it?"
+- ONE question. If they add something, acknowledge and stop.
+- After this turn, synthesis runs.`,
+  };
+
+  return principles[phase];
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+/**
  * Build the complete prompt pair (system + user) from state.
  */
 export function buildQuestionPrompt(state: InterviewState): {
@@ -133,80 +191,57 @@ export function buildQuestionPrompt(state: InterviewState): {
   user: string;
 } {
   return {
-    system: buildSystemPrompt(state.participantRole, state.phase),
+    system: buildSystemPrompt(state.participantRole),
     user: buildUserPrompt(state),
   };
 }
 
 // ─── Batch prompt builder ────────────────────────────────────────────────────
 
-function buildBatchSystemPrompt(participantRole: string | null, phase: ConversationPhase, batchSize: number): string {
-  const phasePrompt = selectPhasePrompt(phase, participantRole ?? undefined);
-
-  const basePrompt = `You are a senior technical recruiting partner conducting a role discovery interview. Your goal is to understand this role deeply enough that downstream agents can generate tailored technical assessments. Talk like a human, not a methodology checklist.
-
-${phasePrompt}
-
-## Question Types
-
-| Type | When to Use |
-|---|---|
-| Introductory | Opening (turns 1-2) — establish context, calibrate |
-| Grand Tour | Early (turns 2-4) — get the big picture |
-| Example | Mid-conversation — move from abstract to concrete |
-| Drilling | When user shows energy on a topic |
-| Direct | After rapport is built — get specific facts efficiently |
-| Hypothesis | Later turns — validate understanding, show listening |
-| Contrast | Closing turns — surface hidden preferences via opposites |
-
-## Negative Space — What You Must NEVER Do
-
-- No leading questions: "Your team probably values clean code, right?"
-- No stacking multiple questions inside one question text: each question.text must be a single question
-- No filler praise: "That's really helpful!" — acknowledge what you learned, then move forward
-- No asking what you can infer: if they said "HIPAA-compliant healthcare platform," don't ask "Is security important?"
-- No repeating answered questions: reference what they said
-- No asking the user to do the agent's job: form an opinion and present it for validation
-- No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
-
-## Phrasing Principles
-
-(Injected dynamically from feedback loop — see promptPatch.ts)
+function buildBatchSystemPrompt(participantRole: string | null): string {
+  const base = `You are a warm, curious interviewer. Your job: write a BATCH of engaging questions that advance the conversation. Talk like a human, not a checklist.
 
 ## Response Format
-
-You MUST respond with valid JSON matching this exact schema:
+Respond with valid JSON matching this exact schema:
 
 ${BATCH_RESPONSE_FORMAT}
 
-## Example
-
-{"reasoning":"User leads a 12-person platform team.","batch":[{"acknowledgment":"A 12-person team is substantial.","question":{"id":"q-3","text":"How do you structure on-call?","goal":"Understand operational burden","expectedCoverage":{"domain":"process","from":"sparse","to":"covered"},"probeAlignment":"on-call","questionType":"direct","input":{"type":"textarea"},"suggestedAnswers":[]},"knowledgeStateUpdate":{"process":{"onCall":"pending"}},"domainCoverage":{"why":"partial","work":"covered","team":"covered","bar":"sparse","codebase":"partial","process":"covered"}}]}
-
-Generate exactly ${batchSize} questions in the batch array.
-
-- Question 1 (batch[0]): MUST acknowledge the most recent answer (or introduce the interview if this is the first turn).
-- Questions 2-${batchSize} (batch[1..]): Continue the interview flow. Use an empty string for acknowledgment unless there is a specific transition worth making.
-- Each question should cover a different domain or probe angle so the batch is diverse.
-- For each item, predict the knowledgeStateUpdate and domainCoverage that would result if the user gives a good, detailed answer.
+Generate the requested number of questions in the batch array.
 
 ## Brevity — Speed Matters
 ${BREVITY_RULES}`;
 
-  return injectPromptPatches(basePrompt, { participantRole: participantRole ?? undefined });
+  return injectPromptPatches(base, { participantRole: participantRole ?? undefined });
 }
 
 function buildBatchUserPrompt(state: InterviewState, batchSize: number): string {
   const parts: string[] = [];
+  const plan = buildTurnPlan(state);
+
+  // Include turn plan + probe + role context (same as single-turn)
+  parts.push(buildPlanInstruction(plan));
+  parts.push('');
+
+  const probeInstruction = buildProbeInstruction(
+    typeof state.knowledgeState['_probesDelivered'] === 'number'
+      ? (state.knowledgeState['_probesDelivered'] as number)
+      : 0,
+    state.participantRole,
+  );
+  if (probeInstruction) {
+    parts.push(probeInstruction);
+    parts.push('');
+  }
+
+  parts.push(buildRoleInstruction(state.baseline, state.participantRole));
+  parts.push('');
+
+  parts.push(buildPhasePrinciples(state.phase));
+  parts.push('');
 
   parts.push('BASELINE FORM DATA:');
   parts.push(JSON.stringify(state.baseline, null, 2));
   parts.push('');
-
-  if (state.participantRole) {
-    parts.push(`PARTICIPANT ROLE: ${state.participantRole}`);
-    parts.push('');
-  }
 
   parts.push(`PHASE: ${state.phase}`);
   parts.push(`BUDGET: ${state.questionsAsked} of ${state.questionBudget} used. ${state.questionBudget - state.questionsAsked} remaining.`);
@@ -228,10 +263,17 @@ function buildBatchUserPrompt(state: InterviewState, batchSize: number): string 
   parts.push('');
 
   if (state.exchanges.length === 0) {
-    parts.push('Generate your FIRST batch. Since there is no previous answer to acknowledge, set batch[0].acknowledgment to a brief, warm introduction (1-2 sentences) that explains what you will do and why detail matters. Tailor the intro to who you are talking to.');
+    parts.push('Generate your FIRST batch. Since there is no previous answer to acknowledge, set batch[0].acknowledgment to a brief, warm introduction (1-2 sentences). Tailor the intro to who you are talking to.');
   } else {
     parts.push(`Generate the next ${batchSize} questions as a batch. batch[0] must acknowledge the most recent answer. The rest continue the interview. No markdown fencing on the response.`);
   }
+
+  parts.push(`
+Batch rules:
+- Question 1 (batch[0]): MUST acknowledge the most recent answer (or introduce the interview if first turn).
+- Questions 2-${batchSize} (batch[1..]): Continue the interview flow. Use empty string for acknowledgment unless there is a specific transition worth making.
+- Each question should cover a different domain or probe angle so the batch is diverse.
+- For each item, predict the knowledgeStateUpdate and domainCoverage that would result if the user gives a good, detailed answer.`);
 
   return parts.join('\n');
 }
@@ -244,7 +286,7 @@ export function buildBatchPrompt(state: InterviewState, batchSize = 3): {
   user: string;
 } {
   return {
-    system: buildBatchSystemPrompt(state.participantRole, state.phase, batchSize),
+    system: buildBatchSystemPrompt(state.participantRole),
     user: buildBatchUserPrompt(state, batchSize),
   };
 }

@@ -803,6 +803,7 @@ export type DomainCoverage = 'none' | 'sparse' | 'partial' | 'covered' | 'deep';
 export type ConversationPhase =
   | 'CONTEXT'
   | 'DISCOVERY'
+  | 'SOUL'
   | 'PRIORITIZE'
   | 'EVP_FRICTION'
   | 'WRAP_UP';

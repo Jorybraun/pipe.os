@@ -40,7 +40,8 @@ describe('retryWithBackoff', () => {
   });
 
   it('throws after exhausting maxRetries', async () => {
-    const fn = vi.fn().mockImplementation(async () => { throw new Error('persistent failure'); });
+    const err = new Error('persistent failure');
+    const fn = vi.fn().mockImplementation(async () => { throw err; });
     const onCircuitOpen = vi.fn();
 
     const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onCircuitOpen });
@@ -53,7 +54,7 @@ describe('retryWithBackoff', () => {
     await expect(promise).rejects.toThrow('persistent failure');
     expect(fn).toHaveBeenCalledTimes(4);
     expect(onCircuitOpen).toHaveBeenCalledTimes(1);
-    expect(onCircuitOpen).toHaveBeenCalledWith(new Error('persistent failure'));
+    expect(onCircuitOpen).toHaveBeenCalledWith(err);
   });
 
   it('backs off exponentially with jitter', async () => {
