@@ -402,6 +402,8 @@ export default function CandidateAssessmentPage(): JSX.Element {
                     challengeId={challengeContent.id ?? ''}
                     onSubmit={(submission) => handleSubmit(submission)}
                     isSubmitting={isLoading}
+                    candidateName={candidate?.name}
+                    candidateEmail={candidate?.email}
                   />
                 ) : followUpWaiting ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>

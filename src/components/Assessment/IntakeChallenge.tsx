@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Upload, FileText, Loader2, ChevronRight, Github, Linkedin } from 'lucide-react';
+import { Upload, FileText, Loader2, ChevronRight, Github, Linkedin, CheckCircle, Mail } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSessionToken } from '../../contexts/SessionTokenContext';
 
@@ -21,9 +21,11 @@ interface IntakeChallengeProps {
   challengeId: string;
   onSubmit: (submission: { resumeR2Key?: string; githubHandle?: string; linkedinUrl?: string }) => void;
   isSubmitting?: boolean;
+  candidateName?: string | null | undefined;
+  candidateEmail?: string | null | undefined;
 }
 
-export function IntakeChallenge({ challengeId, onSubmit, isSubmitting }: IntakeChallengeProps): JSX.Element {
+export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidateName, candidateEmail }: IntakeChallengeProps): JSX.Element {
   const { theme } = useTheme();
   const sessionToken = useSessionToken();
   const isLight = theme.mode === 'light' || theme.mode === 'anatomy';
@@ -34,6 +36,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting }: IntakeC
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -127,12 +130,117 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting }: IntakeC
       return;
     }
 
+    setSubmitted(true);
     onSubmit({
       resumeR2Key,
       ...(githubHandle.trim() ? { githubHandle: githubHandle.trim() } : {}),
       ...(linkedinUrl.trim() ? { linkedinUrl: linkedinUrl.trim() } : {}),
     });
   };
+
+  if (submitted) {
+    return (
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '40px 24px',
+          overflowY: 'auto',
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: 560 }}>
+          {/* Header */}
+          <div style={{ textAlign: 'center', marginBottom: 40 }}>
+            <div
+              style={{
+                fontSize: 9,
+                letterSpacing: '0.2em',
+                color: 'var(--pipe-text-dim)',
+                fontFamily: 'Space Mono',
+                marginBottom: 12,
+              }}
+            >
+              CANDIDATE_INTAKE_PROTOCOL
+            </div>
+            <h2
+              style={{
+                fontSize: 20,
+                fontWeight: 800,
+                color: 'var(--pipe-text, #fff)',
+                margin: '0 0 8px 0',
+              }}
+            >
+              INTAKE_COMPLETE
+            </h2>
+          </div>
+
+          {/* Candidate info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                background: 'rgba(52, 211, 153, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <CheckCircle size={24} color="#34d399" />
+            </div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--pipe-text, #fff)' }}>
+                {candidateName || 'Candidate'}
+              </div>
+              {candidateEmail && (
+                <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', fontFamily: 'Space Mono' }}>
+                  {candidateEmail}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Status card */}
+          <div
+            style={{
+              padding: 24,
+              background: 'var(--pipe-surface)',
+              borderRadius: 8,
+              border: '1px solid var(--pipe-border-light)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+              marginBottom: 32,
+            }}
+          >
+            <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 4 }}>
+              <Mail size={10} style={{ marginRight: 6, display: 'inline' }} /> INTAKE_STATUS
+            </div>
+            <div style={{ fontSize: 12, color: '#34d399', fontFamily: 'Space Mono' }}>
+              ✓ Your profile has been received
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--pipe-text-muted)', lineHeight: 1.6 }}>
+              Your resume is being analyzed to find the best challenges for you.
+              You will advance to the next step automatically.
+            </div>
+
+            {isSubmitting && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 4 }}>
+                <Loader2 size={16} className="animate-spin" color="#60a5fa" />
+                <span style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
+                  PREPARING YOUR ASSESSMENT...
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
