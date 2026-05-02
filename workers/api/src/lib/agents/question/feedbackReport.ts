@@ -143,7 +143,7 @@ const CATEGORIZERS: Categorizer[] = [
   },
 ];
 
-function categorizeExchange(text: string, feedback: string): string[] {
+export function categorizeExchange(text: string, feedback: string): string[] {
   const patterns: string[] = [];
   for (const cat of CATEGORIZERS) {
     if (cat.test(text, feedback)) {
@@ -218,12 +218,12 @@ export async function generateQuestionQualityReport(
       totalExchanges++;
       byParticipantRole[role]!.total++;
 
-      const hasFeedback = !!(ex.feedback && ex.feedback.trim().length > 0);
-      if (hasFeedback) {
+      const feedbackText = ex.feedback?.trim();
+      if (feedbackText) {
         totalFlagged++;
         byParticipantRole[role]!.flagged++;
 
-        const patterns = categorizeExchange(ex.question, ex.feedback);
+        const patterns = categorizeExchange(ex.question, feedbackText);
         for (const p of patterns) {
           const entry = patternMap.get(p) ?? { count: 0, examples: new Set<string>() };
           entry.count++;
@@ -235,11 +235,11 @@ export async function generateQuestionQualityReport(
           sampleFlagged.push({
             roleContextId: row.role_context_id,
             participantId: row.id,
-            participantRole: row.participant_role,
+            participantRole: row.participant_role ?? 'UNKNOWN',
             questionId: ex.questionId,
             questionText: ex.question,
             acknowledgment: ex.acknowledgment,
-            feedback: ex.feedback,
+            feedback: feedbackText,
             answeredAt: null, // we don't store per-exchange timestamps
           });
         }

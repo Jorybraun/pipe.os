@@ -1,7 +1,7 @@
 export interface RetryOptions {
   baseDelayMs?: number;
   maxRetries?: number;
-  onRetry?: (attempt: number, delay: number) => void;
+  onRetry?: (attempt: number, error: unknown) => void;
   onCircuitOpen?: (error: unknown) => void;
 }
 
@@ -33,7 +33,7 @@ export async function retryWithBackoff<T>(
         throw error;
       }
       const delay = Math.floor(baseDelayMs * 2 ** attempt * (0.5 + Math.random() * 0.5));
-      onRetry?.(attempt + 1, delay);
+      onRetry?.(attempt + 1, error);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
