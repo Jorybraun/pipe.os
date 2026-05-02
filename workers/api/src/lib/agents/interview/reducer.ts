@@ -19,7 +19,8 @@ import type {
   ExtractedStory,
   QualificationStatus,
 } from '../../../types';
-import type { InterviewState, InterviewAction, CreateInterviewStateInput } from './types';
+import type { InterviewState, InterviewAction, CreateInterviewStateInput, DomainCompletionStatus } from './types';
+import { DOMAIN_COLUMN_ORDER } from './types';
 
 // ─── Domain coverage ordering ────────────────────────────────────────────────
 
@@ -325,6 +326,14 @@ export function createInitialState(input: CreateInterviewStateInput): InterviewS
     enableSoulTrack,
   });
 
+  // Initialize per-domain tracking for column-by-column flow
+  const domainCompletion: Record<string, DomainCompletionStatus> = {};
+  const domainQuestionsDelivered: Record<string, number> = {};
+  for (const d of DOMAIN_COLUMN_ORDER) {
+    domainCompletion[d] = 'pending';
+    domainQuestionsDelivered[d] = 0;
+  }
+
   return {
     baseline: input.baseline,
     participantRole: input.participantRole,
@@ -338,6 +347,11 @@ export function createInitialState(input: CreateInterviewStateInput): InterviewS
     reasoning: phaseResult.reasoning,
     urgentGaps: phaseResult.urgentGaps,
     questionStack: [],
+    currentDomain: null,
+    domainCompletion,
+    domainQuestions: {},
+    domainQuestionsDelivered,
+    domainFollowUpsDelivered: 0,
   };
 }
 
@@ -380,7 +394,17 @@ export function interviewReducer(
       const questionsAsked = state.questionsAsked + 1;
       const budgetExhausted = questionsAsked >= state.questionBudget;
 
-      // 5. Re-compute phase from updated knowledge state
+      // 5. Track per-domain progress (column-by-column flow)
+      let domainQuestionsDelivered = state.domainQuestionsDelivered ? { ...state.domainQuestionsDelivered } : {};
+      let domainFollowUpsDelivered = state.domainFollowUpsDelivered ?? 0;
+      if (state.currentDomain) {
+        domainQuestionsDelivered[state.currentDomain] = (domainQuestionsDelivered[state.currentDomain] ?? 0) + 1;
+        if (state.domainCompletion?.[state.currentDomain] === 'follow_up') {
+          domainFollowUpsDelivered += 1;
+        }
+      }
+
+      // 6. Re-compute phase from updated knowledge state
       const phaseResult = selectPhase({
         questionsAsked,
         questionBudget: state.questionBudget,
@@ -405,6 +429,8 @@ export function interviewReducer(
         synthesisReady: budgetExhausted || phaseResult.synthesisAllowed,
         reasoning: phaseResult.reasoning,
         urgentGaps: phaseResult.urgentGaps,
+        domainQuestionsDelivered,
+        domainFollowUpsDelivered,
       };
     }
 
@@ -438,6 +464,21 @@ export function interviewReducer(
         synthesisReady: budgetExhausted || phaseResult.synthesisAllowed,
         reasoning: phaseResult.reasoning,
         urgentGaps: phaseResult.urgentGaps,
+      };
+    }
+
+    case 'CACHE_DOMAIN_QUESTIONS': {
+      return {
+        ...state,
+        currentDomain: action.domain,
+        domainQuestions: {
+          ...state.domainQuestions,
+          [action.domain]: action.questions,
+        },
+        domainCompletion: {
+          ...(state.domainCompletion ?? {}),
+          [action.domain]: 'asking',
+        },
       };
     }
 
