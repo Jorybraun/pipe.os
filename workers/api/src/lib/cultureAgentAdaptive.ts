@@ -93,8 +93,12 @@ const DEFAULT_MIN_QUESTIONS = 5;
 export async function startAdaptiveCultureInterview(
   input: StartAdaptiveCultureInterviewInput,
 ): Promise<StartCultureInterviewResult> {
-  if (input.useStaticFallback) {
-    const staticInput: import('./cultureAgent').StartCultureInterviewInput = {};
+  // Mode-1 (profile_builder) never uses the generative planner — too risky
+  // for a blocking gate. Always use the static profile probe bank.
+  if (input.useStaticFallback || input.mode === 'profile_builder') {
+    const staticInput: import('./cultureAgent').StartCultureInterviewInput = {
+      mode: input.mode,
+    };
     if (input.seniority !== undefined) staticInput.seniority = input.seniority;
     if (input.roleOverlayId !== undefined) staticInput.roleOverlayId = input.roleOverlayId;
     if (input.probeBank !== undefined) staticInput.probeBank = input.probeBank;
@@ -146,7 +150,9 @@ export async function startAdaptiveCultureInterview(
   }
 
   // Fallback to static bank
-  const staticInput: import('./cultureAgent').StartCultureInterviewInput = {};
+  const staticInput: import('./cultureAgent').StartCultureInterviewInput = {
+    mode: input.mode,
+  };
   if (input.seniority !== undefined) staticInput.seniority = input.seniority;
   if (input.roleOverlayId !== undefined) staticInput.roleOverlayId = input.roleOverlayId;
   if (input.probeBank !== undefined) staticInput.probeBank = input.probeBank;
@@ -164,7 +170,9 @@ export async function startAdaptiveCultureInterview(
 export async function advanceAdaptiveCultureInterview(
   input: AdvanceAdaptiveCultureInterviewInput,
 ): Promise<AdvanceCultureInterviewResult> {
-  if (input.useStaticFallback) {
+  // Mode-1 (profile_builder) never uses the generative planner — always
+  // delegate to the static path which routes to the profile probe bank.
+  if (input.useStaticFallback || input.mode === 'profile_builder') {
     const staticInput: import('./cultureAgent').AdvanceCultureInterviewInput = {
       provider: input.provider,
       transcript: input.transcript,

@@ -52,6 +52,14 @@ import {
   type StarSlot,
 } from './cultureQuestionBank';
 import {
+  PROFILE_PROBE_BANK,
+  PROFILE_PROBE_DIMENSIONS,
+  pickNextProfileProbe,
+  getProfileProbeById,
+  emptyProfileCoverage,
+  type ProfileProbe,
+} from './profileProbeBank';
+import {
   buildCultureAgentSystemPrompt,
   buildCultureAgentTurnMessage,
   type AgentTurnContext,
@@ -99,8 +107,10 @@ export interface QuestionMetadata {
 }
 
 export interface CultureScratchpad {
-  /** Count of how many complete STAR answers we have per dimension. */
-  dimensionCoverage: Record<CompetencyDimension, number>;
+  /** Count of how many complete STAR answers we have per dimension.
+   *  Keys are CompetencyDimension for role_fit mode, ProfileProbeDimension for profile_builder mode.
+   */
+  dimensionCoverage: Record<string, number>;
   /** How many probes have been asked for the current (active) question. */
   probesUsedForCurrentQ: number;
   /** Short running observations the agent emits as it goes. */
@@ -124,7 +134,7 @@ export function defaultCultureTranscript(): CultureTranscript {
   return {
     turns: [],
     scratchpad: {
-      dimensionCoverage: emptyCoverage(),
+      dimensionCoverage: emptyProfileCoverage(),
       probesUsedForCurrentQ: 0,
       runningThemes: [],
       mode: 'profile_builder',
@@ -153,6 +163,11 @@ export interface StartCultureInterviewInput {
    * probes and merges them into the picked question's probe library.
    */
   probeBank?: RoleProbeBank | undefined;
+  /**
+   * Interview mode — 'profile_builder' (Mode-1) or 'role_fit' (Mode-2).
+   * Defaults to 'profile_builder'.
+   */
+  mode?: 'profile_builder' | 'role_fit';
 }
 
 export interface StartCultureInterviewResult {
@@ -170,7 +185,37 @@ export interface StartCultureInterviewResult {
  * Does NOT call the LLM — the first question is deterministic from the bank.
  */
 export function startCultureInterview(input: StartCultureInterviewInput = {}): StartCultureInterviewResult {
+  const mode = input.mode ?? 'profile_builder';
   const transcript = defaultCultureTranscript();
+  transcript.scratchpad.mode = mode;
+
+  // Use the appropriate bank based on mode.
+  if (mode === 'profile_builder') {
+    transcript.scratchpad.dimensionCoverage = emptyProfileCoverage();
+    const first = pickNextProfileProbe({
+      coverage: transcript.scratchpad.dimensionCoverage,
+      askedIds: new Set(),
+    });
+    if (!first) {
+      throw new Error('Profile probe bank is empty — cannot start interview.');
+    }
+    transcript.turns.push({
+      idx: 0,
+      questionId: first.id,
+      questionText: first.text,
+      probeOf: null,
+      candidateResponse: null,
+      starSlots: null,
+      timestamp: new Date().toISOString(),
+    });
+    return {
+      transcript,
+      nextQuestion: { questionId: first.id, text: first.text },
+    };
+  }
+
+  // role_fit mode — use the competency question bank.
+  transcript.scratchpad.dimensionCoverage = emptyCoverage();
   const first = pickNextQuestion({
     coverage: transcript.scratchpad.dimensionCoverage,
     askedIds: new Set(),
@@ -248,11 +293,192 @@ export type AdvanceCultureInterviewResult =
 
 const DEFAULT_MAX_QUESTIONS = CULTURE_BANK_SIZE;
 const DEFAULT_MIN_QUESTIONS = 5;
+const PROFILE_BUILDER_MAX_QUESTIONS = PROFILE_PROBE_BANK.length;
+const PROFILE_BUILDER_MIN_QUESTIONS = 5;
 
 /**
  * Core driver. Called every time the candidate submits an answer.
+ * Branches to profile_builder or role_fit logic based on transcript mode.
  */
 export async function advanceCultureInterview(
+  input: AdvanceCultureInterviewInput,
+): Promise<AdvanceCultureInterviewResult> {
+  const mode = input.transcript.scratchpad.mode ?? 'profile_builder';
+
+  if (mode === 'profile_builder') {
+    return advanceProfileBuilderInterview(input);
+  }
+
+  return advanceRoleFitInterview(input);
+}
+
+// ─── Profile Builder (Mode-1) ────────────────────────────────────────────────
+
+async function advanceProfileBuilderInterview(
+  input: AdvanceCultureInterviewInput,
+): Promise<AdvanceCultureInterviewResult> {
+  const maxQuestions = input.maxQuestions ?? PROFILE_BUILDER_MAX_QUESTIONS;
+  const minQuestions = input.minQuestions ?? PROFILE_BUILDER_MIN_QUESTIONS;
+  const transcript = cloneTranscript(input.transcript);
+
+  // 1. Find pending turn.
+  let pendingTurnIdx = -1;
+  for (let i = transcript.turns.length - 1; i >= 0; i--) {
+    if (transcript.turns[i]!.candidateResponse === null) {
+      pendingTurnIdx = i;
+      break;
+    }
+  }
+  if (pendingTurnIdx < 0) {
+    throw new Error('advanceProfileBuilderInterview called but no pending turn exists in transcript.');
+  }
+  const pendingTurn = transcript.turns[pendingTurnIdx]!;
+  const currentProbe = getProfileProbeById(pendingTurn.questionId);
+  if (!currentProbe) {
+    throw new Error(`Unknown probe id in transcript: ${pendingTurn.questionId}`);
+  }
+
+  // 2. Attach candidate answer.
+  pendingTurn.candidateResponse = input.candidateAnswer;
+
+  // 3. Run LLM turn analysis (reuse role-fit prompt — STAR analysis is universal).
+  //    Synthesize a CultureQuestion-like shape from the ProfileProbe so the
+  //    prompt builder can reference dimensions, probes, etc.
+  const syntheticQuestion: CultureQuestion = {
+    id: currentProbe.id,
+    dimensions: [currentProbe.dimension as CompetencyDimension],
+    seniority: ['junior', 'mid', 'senior', 'lead', 'staff', 'manager'],
+    text: currentProbe.text,
+    expectedSlots: currentProbe.expectedSlots as StarSlot[],
+    maxProbes: currentProbe.maxProbes,
+    probes: currentProbe.probes as Record<string, string>,
+    tags: currentProbe.tags,
+  };
+  const turnContext: AgentTurnContext = {
+    currentQuestion: syntheticQuestion,
+    candidateAnswer: input.candidateAnswer,
+    probesUsedForCurrentQ: transcript.scratchpad.probesUsedForCurrentQ,
+    totalQuestionsAsked: distinctQuestionsAsked(transcript),
+    maxQuestions,
+    minQuestions,
+    runningThemes: transcript.scratchpad.runningThemes,
+  };
+
+  const llmResult = await runTurnAnalysis(input.provider, turnContext);
+  pendingTurn.starSlots = llmResult.star_slots;
+
+  // 4. Update coverage on seed turns (not probes).
+  if (pendingTurn.probeOf === null) {
+    const coverageDelta = scoreTurnCoverage(llmResult.star_slots);
+    if (coverageDelta > 0) {
+      const dim = currentProbe.dimension;
+      transcript.scratchpad.dimensionCoverage[dim] =
+        (transcript.scratchpad.dimensionCoverage[dim] ?? 0) + 1;
+    }
+  }
+
+  // 5. Decide: probe, next, or terminate?
+  const probesRemaining = currentProbe.maxProbes - transcript.scratchpad.probesUsedForCurrentQ;
+  const wantsProbe = llmResult.probe_needed && probesRemaining > 0;
+
+  if (wantsProbe && llmResult.probe_text) {
+    const newIdx = transcript.turns.length;
+    transcript.turns.push({
+      idx: newIdx,
+      questionId: currentProbe.id,
+      questionText: llmResult.probe_text,
+      probeOf: currentProbe.id,
+      candidateResponse: null,
+      starSlots: null,
+      timestamp: new Date().toISOString(),
+    });
+    transcript.scratchpad.probesUsedForCurrentQ += 1;
+
+    return {
+      action: 'probe',
+      transcript,
+      probeQuestion: { questionId: currentProbe.id, text: llmResult.probe_text },
+      acknowledgment: llmResult.acknowledgment,
+      reasoning: llmResult.reasoning,
+    };
+  }
+
+  // Reset probe counter.
+  transcript.scratchpad.probesUsedForCurrentQ = 0;
+
+  // 6. Termination check.
+  const questionsAsked = distinctQuestionsAsked(transcript);
+  const termination = evaluateProfileBuilderTermination({
+    transcript,
+    questionsAsked,
+    minQuestions,
+    maxQuestions,
+  });
+  if (termination) {
+    return {
+      action: 'terminate',
+      transcript,
+      terminationReason: termination,
+      reasoning: llmResult.reasoning,
+    };
+  }
+
+  // 7. Pick next probe.
+  const askedIds = new Set(transcript.turns.map((t) => t.questionId));
+  const next = pickNextProfileProbe({
+    coverage: transcript.scratchpad.dimensionCoverage,
+    askedIds,
+  });
+  if (!next) {
+    return {
+      action: 'terminate',
+      transcript,
+      terminationReason: 'bank_exhausted',
+      reasoning: llmResult.reasoning,
+    };
+  }
+
+  const newIdx = transcript.turns.length;
+  transcript.turns.push({
+    idx: newIdx,
+    questionId: next.id,
+    questionText: next.text,
+    probeOf: null,
+    candidateResponse: null,
+    starSlots: null,
+    timestamp: new Date().toISOString(),
+  });
+
+  return {
+    action: 'next',
+    transcript,
+    nextQuestion: { questionId: next.id, text: next.text },
+    acknowledgment: llmResult.acknowledgment,
+    reasoning: llmResult.reasoning,
+  };
+}
+
+function evaluateProfileBuilderTermination(input: {
+  transcript: CultureTranscript;
+  questionsAsked: number;
+  minQuestions: number;
+  maxQuestions: number;
+}): 'hard_cap' | 'coverage_complete' | null {
+  const { transcript, questionsAsked, minQuestions, maxQuestions } = input;
+
+  if (questionsAsked >= maxQuestions) return 'hard_cap';
+  if (questionsAsked < minQuestions) return null;
+
+  const coverage = transcript.scratchpad.dimensionCoverage;
+  const allCovered = PROFILE_PROBE_DIMENSIONS.every((dim) => (coverage[dim] ?? 0) >= 1);
+  if (allCovered) return 'coverage_complete';
+
+  return null;
+}
+
+// ─── Role Fit (Mode-2) ───────────────────────────────────────────────────────
+
+async function advanceRoleFitInterview(
   input: AdvanceCultureInterviewInput,
 ): Promise<AdvanceCultureInterviewResult> {
   const maxQuestions = input.maxQuestions ?? DEFAULT_MAX_QUESTIONS;

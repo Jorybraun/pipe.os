@@ -66,7 +66,7 @@ export interface GenerativePlannerContext {
     barsOverrides: Array<{ dimension: string; anchorLevel: number; overrideAnchorText: string }>;
   };
   /** Current coverage per dimension (from transcript scratchpad). */
-  coverage: Record<CompetencyDimension, number>;
+  coverage: Record<string, number>;
   /** How many questions have been asked so far. */
   turnsUsed: number;
   /** Question texts already asked this session (dedup guard). */

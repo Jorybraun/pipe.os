@@ -99,7 +99,7 @@
 
 2. **What happens if a candidate abandons Mode-1 after 3 questions?** — Partial graph exists but coverage is thin. Do we still run matching? Do we mark `status = 'failed'` or `status = 'embedded'` with a partial flag? — **Recommended resolution:** Add `status = 'partial'` and a `coverage_json` field. Matching runs with a discounted confidence. Recruiter can see partial coverage and decide.
 
-3. **Who curates the `profile_probe_bank`?** — Engineering can build the table and schema, but the probes must be recruiter-approved for compliance. NYC Local Law 144 requires every probe to trace to a finite approved bank. — **Recommended resolution:** Recruiter team owns curation. Engineering owns the schema and ingestion pipeline. Block Phase 2 on recruiter availability.
+3. **Who curates the `profile_probe_bank`?** — Engineering can build the table and schema, but the probes must be recruiter-approved for compliance. NYC Local Law 144 requires every probe to trace to a finite approved bank. — **Recommended resolution:** Recruiter team owns curation. Engineering owns the schema and ingestion pipeline. ~~Block Phase 2 on recruiter availability.~~ **Decision 2026-05-02:** Not blocking — pre-launch workaround acceptable; will address compliance before first customer.
 
 4. **Do we retire `cultureAgent.ts` (static bank) entirely or keep it as Mode-2 fallback?** — The generative planner is flaky (falls back to static on any failure). The static bank is reliable. — **Recommended resolution:** Keep static bank as fallback for Mode-2. Mode-1 uses `profile_probe_bank` exclusively. No generative planner for Mode-1 (too risky for a blocking gate).
 
