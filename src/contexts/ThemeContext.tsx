@@ -74,7 +74,7 @@ function saveTheme(theme: ThemeSettings, userId?: string): void {
 
 const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
   anatomy: {
-    '--pipe-bg': '#f3ead5',
+    '--pipe-bg': '#f5f5f7',
     '--pipe-text': '#2a1f0e',
     '--pipe-text-muted': 'rgba(42,31,14,0.65)',
     '--pipe-text-dim': 'rgba(42,31,14,0.50)',
@@ -82,10 +82,10 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-border-light': 'rgba(42,31,14,0.07)',
     '--pipe-surface': 'rgba(42,31,14,0.04)',
     '--pipe-surface-hover': 'rgba(42,31,14,0.09)',
-    '--pipe-surface-solid': '#faf6ed',
-    '--pipe-surface-solid-hover': '#f5edd8',
+    '--pipe-surface-solid': '#ffffff',
+    '--pipe-surface-solid-hover': '#fafafa',
     '--pipe-surface-elevated': '#ffffff',
-    '--pipe-overlay': 'rgba(243,234,213,0.93)',
+    '--pipe-overlay': 'rgba(245,245,247,0.93)',
     '--pipe-shadow': 'rgba(42,31,14,0.10)',
     '--pipe-accent': '#c17d3c',
     '--pipe-accent-surface': 'rgba(193,125,60,0.12)',
