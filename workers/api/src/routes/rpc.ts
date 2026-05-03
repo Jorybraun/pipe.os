@@ -23,6 +23,72 @@ import { scoreImplementationSubmission } from '../lib/implementationScorer/imple
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import type { Env } from '../types';
 
+// ─── Blocking gate for post-screener enrichment ─────────────────────────────
+
+interface WaitingChallenge {
+  id: string;
+  type: 'WAITING_FOR_MATCH';
+  title: string;
+  instructions: string;
+  config: {
+    autoRefresh: boolean;
+    refreshIntervalSeconds: number;
+    estimatedSecondsRemaining: number;
+  };
+}
+
+interface GateResult {
+  blocked: boolean;
+  reason?: string;
+  syntheticChallenge?: WaitingChallenge;
+}
+
+async function checkMatchingGate(
+  db: D1Database,
+  candidateId: string,
+  pipelineId: string,
+  nextChallengeType: string,
+): Promise<GateResult> {
+  const isCodeStage = ['CODE_REVIEW', 'CODE_IMPLEMENTATION'].includes(nextChallengeType);
+  if (!isCodeStage) {
+    return { blocked: false };
+  }
+
+  const pipelineConfig = await db.prepare(
+    `SELECT match_philosophy FROM pipeline_match_config WHERE pipeline_id = ?1`
+  ).bind(pipelineId).first<{ match_philosophy: string | null }>();
+
+  const isValidate = pipelineConfig?.match_philosophy === 'validate';
+  if (isValidate) {
+    return { blocked: false };
+  }
+
+  const ingestion = await db.prepare(
+    `SELECT status FROM candidate_ingestion WHERE candidate_id = ?1`
+  ).bind(candidateId).first<{ status: string | null }>();
+
+  const readyStatuses = ['enriched', 'matched'];
+  if (readyStatuses.includes(ingestion?.status ?? '')) {
+    return { blocked: false };
+  }
+
+  return {
+    blocked: true,
+    reason: `candidate_ingestion.status = ${ingestion?.status ?? 'missing'}`,
+    syntheticChallenge: {
+      id: 'waiting-for-match',
+      type: 'WAITING_FOR_MATCH',
+      title: 'Building your personalized challenge',
+      instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
+      config: {
+        autoRefresh: true,
+        refreshIntervalSeconds: 30,
+        estimatedSecondsRemaining: 180,
+      },
+    },
+  };
+}
+
 // ─── Public routes (no auth) ────────────────────────────────────────────────
 
 const rpcPublic = new Hono<{ Bindings: Env }>();
@@ -322,6 +388,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
       s.video_config,
       ch.id AS challenge_id,
       ch.type AS challenge_type,
+      ch.title AS challenge_title,
       ch.sort_order AS challenge_order,
       ch.config AS challenge_config,
       ch.instructions AS challenge_instructions
@@ -346,8 +413,9 @@ rpcAuth.post('/get-stage-config', async (c) => {
       order: number;
       mode: string | null;
       timeLimit: number | null;
+      screeningInputMode: string | null;
       videoConfig: string | null;
-      challenges: Array<{ id: string; type: string; order: number }>;
+      challenges: Array<{ id: string; type: string; title: string; order: number }>;
     }
   >();
 
@@ -388,6 +456,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
         stageMap.get(sid)!.challenges.push({
           id: r.challenge_id as string,
           type: r.challenge_type as string,
+          title: (r.challenge_title as string) ?? 'Challenge',
           order: r.challenge_order as number,
         });
       }
@@ -432,6 +501,26 @@ rpcAuth.post('/get-stage-config', async (c) => {
       .first<{ id: string }>();
 
     if (!existingAssessment) {
+      const nextChallenge = stage.challenges[currentIndex];
+      if (!nextChallenge) {
+        return null;
+      }
+      const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, nextChallenge.type);
+      if (gateResult.blocked && gateResult.syntheticChallenge) {
+        return c.json({
+          isComplete: false,
+          stageId: stage.id,
+          candidateId,
+          stageTitle: stage.title,
+          mode: stage.mode ?? 'ASYNC',
+          timeLimit: stage.timeLimit,
+          screeningInputMode: stage.screeningInputMode,
+          challenges: [{ type: 'WAITING_FOR_MATCH', title: gateResult.syntheticChallenge.title, order: 0 }],
+          currentIndex: 0,
+          waitingChallenge: gateResult.syntheticChallenge,
+        });
+      }
+
       const assessmentId = crypto.randomUUID();
       const now = new Date().toISOString();
       await c.env.DB.prepare(`
@@ -455,7 +544,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
     }
 
     const allChallenges = [...syntheticChallenges, ...stage.challenges];
-    const indexedChallenges = allChallenges.map((ch, i) => ({ type: ch.type, order: i }));
+    const indexedChallenges = allChallenges.map((ch, i) => ({ type: ch.type, title: (ch as Record<string, unknown>).title as string | undefined, order: i }));
     const syntheticCount = syntheticChallenges.length;
     const hasSubmissions = currentIndex > 0;
     const adjustedIndex = hasSubmissions ? currentIndex + syntheticCount : 0;
@@ -582,6 +671,11 @@ rpcAuth.post('/get-challenge', async (c) => {
   }
 
   const ch = rows[dbOrder] as Record<string, unknown>;
+
+  const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, ch.type as string);
+  if (gateResult.blocked && gateResult.syntheticChallenge) {
+    return c.json(gateResult.syntheticChallenge);
+  }
 
   // Apply per-candidate overrides from the LEFT JOIN
   if (ch.effective_repo_url) {
@@ -802,6 +896,11 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   }
 
   const challenge = rows[dbOrder] as Record<string, unknown>;
+
+  if (challenge.type === 'WAITING_FOR_MATCH') {
+    return c.json({ error: 'Challenge not ready. Please wait for matching to complete.' }, 409);
+  }
+
   const challengeId = challenge.id as string;
 
   // Get or create assessment for this stage

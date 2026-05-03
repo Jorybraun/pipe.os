@@ -21,6 +21,8 @@ export type CandidateIngestionStatus =
   | 'pending'
   | 'profile_generated'
   | 'embedded'
+  | 'enriching'
+  | 'enriched'
   | 'matched'
   | 'failed';
 
@@ -247,5 +249,56 @@ export async function markIngestionFailed(
          updated_at = excluded.updated_at`,
     )
     .bind(candidateId, errorText.slice(0, MAX_ERROR_TEXT_LENGTH), now)
+    .run();
+}
+
+export async function markCandidateEnriching(
+  db: D1Database,
+  candidateId: string,
+): Promise<void> {
+  const now = nowIso();
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion
+         SET status = 'enriching',
+             current_step = 'post_screener_enrichment',
+             updated_at = ?2
+       WHERE candidate_id = ?1`,
+    )
+    .bind(candidateId, now)
+    .run();
+}
+
+export interface MarkCandidateEnrichedInput {
+  candidateId: string;
+  enrichedEmbeddingJson?: string | undefined;
+  candidateProfileJson?: string | undefined;
+}
+
+export async function markCandidateEnriched(
+  db: D1Database,
+  input: MarkCandidateEnrichedInput,
+): Promise<void> {
+  const now = nowIso();
+  const { candidateId, enrichedEmbeddingJson, candidateProfileJson } = input;
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion
+         SET status = 'enriched',
+             screener_completed_at = ?2,
+             enriched_embedding_json = ?3,
+             candidate_profile_json = ?4,
+             current_step = NULL,
+             error_text = NULL,
+             updated_at = ?5
+       WHERE candidate_id = ?1`,
+    )
+    .bind(
+      candidateId,
+      now,
+      enrichedEmbeddingJson ?? null,
+      candidateProfileJson ?? null,
+      now,
+    )
     .run();
 }
