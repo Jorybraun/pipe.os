@@ -57,6 +57,11 @@ class SafeShellTool(ShellTool):
 def _project_root() -> Path:
     """Resolve the project root (parent of the agent-harness package)."""
     # toolkit.py lives at agent-harness/src/agent_harness/swarm/toolkit.py
+    # Allow SWARM_SUBTREE env var to redirect all file operations into an
+    # isolated subtree (e.g. for tech-debt lanes that must not touch live code).
+    subtree = os.getenv("SWARM_SUBTREE")
+    if subtree:
+        return Path(subtree).resolve()
     return Path(__file__).parent.parent.parent.parent.parent.resolve()
 
 

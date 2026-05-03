@@ -20,7 +20,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type {
   GenerativePlannerContext,
-  PriorScreeningSummary,
 } from './cultureGenerativePlanner';
 import type { CompetencyDimension } from './cultureQuestionBank';
 import { COMPETENCY_DIMENSIONS, CULTURE_BANK_SIZE } from './cultureQuestionBank';
@@ -42,12 +41,7 @@ export interface BuildContextInput {
 export async function buildCultureInterviewContext(
   input: BuildContextInput,
 ): Promise<GenerativePlannerContext> {
-  const [candidateBackground, priorScreening] = await Promise.all([
-    loadCandidateBackground(input.db, input.candidateId),
-    input.mode === 'role_fit'
-      ? loadPriorScreening(input.db, input.candidateId, input.assessmentId)
-      : Promise.resolve(null),
-  ]);
+  const candidateBackground = await loadCandidateBackground(input.db, input.candidateId);
 
   const roleContext = buildRoleContext(input.teamContext);
 
@@ -72,7 +66,7 @@ interface CandidateBackground {
   experiences: Array<{ company: string; role: string; durationMonths: number; highlights: string[] }>;
   projects: Array<{ name: string; description: string; technologies: string[] }>;
   skills: string[];
-  priorScreening: PriorScreeningSummary | null;
+  priorScreening: null;
 }
 
 interface CandidateIngestionRow {
@@ -216,62 +210,6 @@ async function loadCandidateBackground(
     skills: uniqueSkills.slice(0, 20),
     priorScreening: null,
   };
-}
-
-// ─── Prior screening loader ──────────────────────────────────────────────────
-
-async function loadPriorScreening(
-  db: D1Database,
-  candidateId: string,
-  currentAssessmentId: string,
-): Promise<PriorScreeningSummary | null> {
-  try {
-    // Find the most recent completed Mode-1 screening for this candidate
-    // that is NOT the current assessment.
-    const row = await db
-      .prepare(
-        `SELECT transcript
-         FROM culture_interview_sessions
-         WHERE candidate_id = ?1
-           AND assessment_id != ?2
-           AND state = 'complete'
-         ORDER BY completed_at DESC
-         LIMIT 1`,
-      )
-      .bind(candidateId, currentAssessmentId)
-      .first<{ transcript: string }>();
-
-    if (!row?.transcript) return null;
-
-    const transcript: CultureTranscript = JSON.parse(row.transcript) as CultureTranscript;
-    const coverage = transcript.scratchpad.dimensionCoverage;
-
-    const coveredDimensions: CompetencyDimension[] = [];
-    const thinDimensions: CompetencyDimension[] = [];
-    for (const dim of COMPETENCY_DIMENSIONS) {
-      const count = coverage[dim] ?? 0;
-      if (count >= 1) coveredDimensions.push(dim);
-      else thinDimensions.push(dim);
-    }
-
-    // Extract a few key quotes from the most substantive answers
-    const keyQuotes: string[] = [];
-    for (const turn of transcript.turns) {
-      if (turn.candidateResponse && turn.candidateResponse.length > 100) {
-        const quote = turn.candidateResponse.slice(0, 200).replace(/\n/g, ' ');
-        keyQuotes.push(quote);
-        if (keyQuotes.length >= 3) break;
-      }
-    }
-
-    return { coveredDimensions, thinDimensions, keyQuotes };
-  } catch (err) {
-    console.error('[buildCultureInterviewContext] prior screening load failed:', {
-      candidateId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
 }
 
 // ─── Role context builder ────────────────────────────────────────────────────

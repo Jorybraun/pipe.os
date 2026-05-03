@@ -146,6 +146,10 @@ export function CodeReviewChallenge({
   const deletions = meta.deletions ?? diff?.stats.deletions ?? 0;
   const filesChanged = meta.filesChanged ?? diff?.stats.filesChanged ?? 0;
 
+  const hasPrAssigned = prNumber != null && prNumber > 0;
+  const isPlaceholderInstructions =
+    challenge.instructions?.includes('when your profile is ingested') ?? false;
+
   return (
     <div
       style={{
@@ -159,7 +163,7 @@ export function CodeReviewChallenge({
       {/* ── Left Panel: Instructions + PR Context ─────────────── */}
       <div
         style={{
-          width: 340,
+          width: 'clamp(280px, 28vw, 380px)',
           flexShrink: 0,
           borderRight: '1px solid rgba(255,255,255,0.06)',
           display: 'flex',
@@ -189,6 +193,7 @@ export function CodeReviewChallenge({
               marginBottom: 12,
               lineHeight: 1.5,
               letterSpacing: '0.01em',
+              wordBreak: 'break-word',
             }}
           >
             {challenge.title}
@@ -201,9 +206,12 @@ export function CodeReviewChallenge({
                 lineHeight: 1.7,
                 margin: 0,
                 whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
               }}
             >
-              {challenge.instructions}
+              {isPlaceholderInstructions && !hasPrAssigned
+                ? 'Your pull request is being prepared. Once a repository matched to your background is assigned, the diff will appear here. You can still review the instructions and wait, or proceed if instructed by your recruiter.'
+                : challenge.instructions}
             </p>
           )}
           {challenge.githubPrDescription && (
@@ -215,6 +223,7 @@ export function CodeReviewChallenge({
                 margin: 0,
                 marginTop: 12,
                 whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
               }}
             >
               {challenge.githubPrDescription}
@@ -351,12 +360,23 @@ export function CodeReviewChallenge({
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 8,
+              gap: 16,
               color: 'var(--pipe-text-dim)',
+              padding: 24,
+              textAlign: 'center',
             }}
           >
-            <div style={{ fontSize: 10, letterSpacing: '0.1em' }}>DIFF_UNAVAILABLE</div>
-            <div style={{ fontSize: 10 }}>No diff data found for this PR.</div>
+            <GitPullRequest size={32} color="rgba(255,255,255,0.1)" />
+            <div style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--pipe-text-muted)' }}>
+              {isPlaceholderInstructions
+                ? 'PULL_REQUEST_NOT_YET_ASSIGNED'
+                : 'DIFF_UNAVAILABLE'}
+            </div>
+            <div style={{ fontSize: 10, maxWidth: 360, lineHeight: 1.6 }}>
+              {isPlaceholderInstructions
+                ? 'A repository matched to your background is being prepared. The diff will appear here once it is ready. If this persists, contact your recruiter.'
+                : 'No diff data found for this PR.'}
+            </div>
           </div>
         )}
       </div>
@@ -364,7 +384,7 @@ export function CodeReviewChallenge({
       {/* ── Right Panel: Verdict + Submit ─────────────────────── */}
       <div
         style={{
-          width: 300,
+          width: 'clamp(260px, 22vw, 340px)',
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',

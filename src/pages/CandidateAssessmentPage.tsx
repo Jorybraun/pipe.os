@@ -14,43 +14,60 @@ import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestio
 import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
-import type { RawStage } from '../lib/challenge/resolveStageConfig';
+import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig';
 import { useReviewSessionV2 } from '../hooks/useReviewSessionV2';
 import { ReviewSessionPage } from './ReviewSessionPage';
 
 /**
  * Build a RawStage from the stage config DTO + current challenge content.
  * The composable system needs a StageConfig with challenges array.
- * We build it with a single challenge (the current one, hydrated with content).
+ * We include ALL challenges so the WelcomeScreen can show the full queue,
+ * and hydrate only the current challenge with content from get-challenge.
  */
 function buildRawStage(
   stageConfig: StageConfigDTO,
   content: ChallengeContentDTO,
   currentOrder: number,
 ): RawStage {
+  const allChallenges = (stageConfig.challenges ?? []).map((ch, index): RawChallenge => {
+    const isCurrent = index === currentOrder;
+    if (isCurrent) {
+      return {
+        id: content.id ?? `challenge-${currentOrder}`,
+        type: content.type ?? ch.type ?? 'QUIZ_MCQ',
+        title: content.title ?? ch.title ?? 'Challenge',
+        instructions: content.instructions ?? null,
+        config: typeof content.config === 'string'
+          ? content.config
+          : JSON.stringify(content.config ?? {}),
+        order: index,
+        codeArtifact: content.codeArtifact as any ?? null,
+        cachedDiffJson: content.cachedDiffJson ?? null,
+        githubPrTitle: (content.githubPrTitle as string) ?? null,
+        githubRepoUrl: (content.githubRepoUrl as string) ?? null,
+        githubPrNumber: (content.githubPrNumber as number) ?? null,
+        githubPrDescription: (content.githubPrDescription as string) ?? null,
+        devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
+        issueBody: content.issueBody ?? null,
+      };
+    }
+    // Non-current challenges: minimal info for WelcomeScreen preview
+    return {
+      id: `challenge-${index}`,
+      type: ch.type ?? 'QUIZ_MCQ',
+      title: ch.title ?? 'Challenge',
+      instructions: null,
+      config: '{}',
+      order: index,
+    };
+  });
+
   return {
     id: 'current-stage',
     title: stageConfig.stageTitle ?? 'Stage',
     order: 0,
     timeLimit: stageConfig.timeLimit ?? null,
-    challenges: [{
-      id: content.id ?? `challenge-${currentOrder}`,
-      type: content.type ?? stageConfig.challenges?.[currentOrder]?.type ?? 'QUIZ_MCQ',
-      title: content.title ?? 'Challenge',
-      instructions: content.instructions ?? null,
-      config: typeof content.config === 'string'
-        ? content.config
-        : JSON.stringify(content.config ?? {}),
-      order: 0,
-      codeArtifact: content.codeArtifact as any ?? null,
-      cachedDiffJson: content.cachedDiffJson ?? null,
-      githubPrTitle: (content.githubPrTitle as string) ?? null,
-      githubRepoUrl: (content.githubRepoUrl as string) ?? null,
-      githubPrNumber: (content.githubPrNumber as number) ?? null,
-      githubPrDescription: (content.githubPrDescription as string) ?? null,
-      devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
-      issueBody: content.issueBody ?? null,
-    }],
+    challenges: allChallenges,
   };
 }
 
@@ -350,7 +367,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
       <InterviewProvider
         key={`${currentOrder}-${challengeContent.title}`}
         stageConfig={resolvedConfig}
-        currentIndex={0}
+        currentIndex={currentOrder}
         onSubmit={handleSubmit}
         onSubmissionChange={setCurrentSubmission}
       >

@@ -312,6 +312,10 @@ export interface RoleContextProgress {
   asked: number;
   budget: number;
   domains: Record<string, DomainCoverage>;
+  /** Current domain being interviewed (column-by-column flow). */
+  currentDomain?: string | null | undefined;
+  /** Per-domain completion status for the new architecture. */
+  domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
 }
 
 export interface CreateRoleContextRequest {
@@ -808,6 +812,14 @@ export interface InterviewQueuedQuestion {
   domainCoverage: Record<string, DomainCoverage>;
 }
 
+export type DomainCompletionStatus =
+  | 'pending'
+  | 'generating'
+  | 'asking'
+  | 'depth_check'
+  | 'follow_up'
+  | 'complete';
+
 export interface InterviewState {
   baseline: Record<string, unknown>;
   participantRole: ParticipantRole | null;
@@ -824,6 +836,18 @@ export interface InterviewState {
   urgentGaps?: string[];
   /** Pre-generated questions served instantly without LLM latency. */
   questionStack: InterviewQueuedQuestion[];
+
+  // ── Domain-driven column tracking ──
+  /** Which domain we're currently interviewing. Null before DISCOVERY starts. */
+  currentDomain?: Domain | null;
+  /** Per-domain completion status. */
+  domainCompletion?: Record<string, DomainCompletionStatus>;
+  /** Cached generated questions per domain (populated when entering 'asking'). */
+  domainQuestions?: Record<string, { id: string; text: string; intent: string; drillingHints?: string[]; ladderingTarget?: string }[]>;
+  /** How many questions have been asked per domain so far. */
+  domainQuestionsDelivered?: Record<string, number>;
+  /** How many follow-up questions asked in the current domain (during follow_up phase). */
+  domainFollowUpsDelivered?: number;
 }
 
 export interface PostStateRequest {
@@ -869,6 +893,32 @@ export interface PostQuestionPrefetchResponse {
   reason?: string;
   added?: number;
   error?: string;
+}
+
+/** Response from POST /:id/respond — single-turn question or synthesis. */
+export interface PostRespondResponse {
+  participantId: string;
+  type: 'question' | 'synthesis';
+  acknowledgment: string;
+  question?: RoleContextQuestion & {
+    goal?: string;
+    expectedCoverage?: { domain: string; from: DomainCoverage; to: DomainCoverage };
+    probeAlignment?: string;
+    questionType?: string;
+  };
+  state: InterviewState;
+  progress: {
+    asked: number;
+    budget: number;
+    domains: Record<string, DomainCoverage>;
+  };
+  status: 'INTERVIEWING' | 'COMPLETE';
+  participantRole?: string;
+  // Synthesis fields (when type === 'synthesis')
+  synthesis?: string;
+  persona?: CandidatePersona;
+  jobDescription?: GeneratedJobDescription;
+  rcd?: RoleContextDocument | null;
 }
 
 export interface PostSynthesizeRequest {

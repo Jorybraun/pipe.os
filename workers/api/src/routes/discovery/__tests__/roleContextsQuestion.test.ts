@@ -163,35 +163,7 @@ beforeEach(() => {
 // ─── POST /:id/question ──────────────────────────────────────────────────────
 
 describe('POST /api/v1/role-contexts/:id/question', () => {
-  it('streams SSE when Accept: text/event-stream is sent', async () => {
-    const question = makeGeneratedQuestion();
-
-    // Mock generateQuestionStream as an async iterator
-    vi.mocked(generateQuestionStream).mockReturnValue({
-      async next() {
-        // First call yields a chunk, second call returns done with the result
-        const mockFn = vi.mocked(generateQuestionStream).mock;
-        const callCount = mockFn.calls.length;
-        // We need stateful tracking — simpler to use a closure counter
-        return { done: true, value: question } as IteratorResult<GeneratedQuestion, string>;
-      },
-    } as unknown as AsyncGenerator<string, GeneratedQuestion, unknown>);
-
-    // Use a real async generator for the mock
-    let yielded = false;
-    vi.mocked(generateQuestionStream).mockImplementation(() => {
-      return (async function* () {
-        if (!yielded) {
-          yielded = true;
-          yield '{"partial": true';
-          yield ',"more": true}';
-        }
-        return question;
-      })() as unknown as AsyncGenerator<string, GeneratedQuestion, unknown>;
-    });
-
-    vi.mocked(evaluateQuestion).mockResolvedValue({ approved: true, dimensions: [] });
-
+  it('returns 410 Gone for SSE requests too', async () => {
     const db = buildStubDb({
       roleContextRow: buildRoleContextRow(),
       participantRows: [buildParticipantRow()],
@@ -226,25 +198,12 @@ describe('POST /api/v1/role-contexts/:id/question', () => {
       { DB: db, CLERK_SECRET_KEY: 'test-key' } as unknown as Env,
     );
 
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toContain('text/event-stream');
-
-    const events = await parseSSE(res);
-    const chunkEvents = events.filter((e) => e.event === 'chunk');
-    const doneEvents = events.filter((e) => e.event === 'done');
-
-    expect(chunkEvents.length).toBeGreaterThanOrEqual(1);
-    expect(doneEvents.length).toBe(1);
-
-    const doneData = JSON.parse(doneEvents[0].data);
-    expect(doneData.question.text).toBe('What is the team size?');
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toContain('DEPRECATED');
   });
 
-  it('returns JSON when Accept header is missing', async () => {
-    const question = makeGeneratedQuestion();
-    vi.mocked(generateQuestionBatch).mockResolvedValue([question]);
-    vi.mocked(evaluateQuestion).mockResolvedValue({ approved: true, dimensions: [] });
-
+  it('returns 410 Gone when called directly', async () => {
     const db = buildStubDb({
       roleContextRow: buildRoleContextRow(),
       participantRows: [buildParticipantRow()],
@@ -278,9 +237,8 @@ describe('POST /api/v1/role-contexts/:id/question', () => {
       { DB: db, CLERK_SECRET_KEY: 'test-key' } as unknown as Env,
     );
 
-    expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Type')).toContain('application/json');
-    const body = (await res.json()) as GeneratedQuestion;
-    expect(body.question.text).toBe('What is the team size?');
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toContain('DEPRECATED');
   });
 });

@@ -27,6 +27,8 @@ import {
   X as XIcon,
   ArrowLeft,
   GitBranch,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { PhoneCallDrawer } from "../components/Phone/PhoneCallDrawer";
@@ -974,6 +976,9 @@ export default function CandidateProfilePage(): JSX.Element {
   const [resendingInvite, setResendingInvite] = useState(false);
   const [resendResult, setResendResult] = useState<'sent' | 'error' | null>(null);
   const [assessLink, setAssessLink] = useState<string | null>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [uploadResumeResult, setUploadResumeResult] = useState<'success' | 'error' | null>(null);
 
   const handleResendInvite = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -1004,6 +1009,43 @@ export default function CandidateProfilePage(): JSX.Element {
       console.error('[CandidateProfilePage] Save phone failed:', err);
     }
   }, [id, phoneInput, api, refetch]);
+
+  const handleUploadResume = useCallback(async (file: File): Promise<void> => {
+    if (!id) return;
+    setUploadingResume(true);
+    setUploadResumeResult(null);
+    try {
+      const token = await getToken();
+      const baseUrl =
+        typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
+          ? import.meta.env.VITE_API_URL
+          : "http://localhost:8787";
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`${baseUrl}/api/v1/candidates/${id}/resume`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+        throw new Error(body.error?.message ?? `Upload failed (${response.status})`);
+      }
+
+      setUploadResumeResult('success');
+      void refetch();
+      setTimeout(() => setUploadResumeResult(null), 3000);
+    } catch (err) {
+      console.error('[CandidateProfilePage] Resume upload failed:', err);
+      setUploadResumeResult('error');
+      setTimeout(() => setUploadResumeResult(null), 3000);
+    } finally {
+      setUploadingResume(false);
+    }
+  }, [id, getToken, refetch]);
 
   const handleViewResume = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -2229,6 +2271,17 @@ export default function CandidateProfilePage(): JSX.Element {
             >
               <Phone size={13} /> CALL
             </button>
+            <input
+              type="file"
+              ref={resumeInputRef}
+              style={{ display: 'none' }}
+              accept=".pdf,.docx"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleUploadResume(file);
+                e.target.value = '';
+              }}
+            />
             <button
               disabled={!candidate.resumeS3Key}
               onClick={() => void handleViewResume()}
@@ -2251,6 +2304,55 @@ export default function CandidateProfilePage(): JSX.Element {
               }}
             >
               <FileDown size={13} /> VIEW_RESUME
+            </button>
+            <button
+              disabled={uploadingResume}
+              onClick={() => resumeInputRef.current?.click()}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px",
+                background: uploadingResume
+                  ? 'rgba(96,165,250,0.08)'
+                  : uploadResumeResult === 'success'
+                    ? 'rgba(52,211,153,0.08)'
+                    : uploadResumeResult === 'error'
+                      ? 'rgba(248,113,113,0.08)'
+                      : 'rgba(96,165,250,0.08)',
+                border: uploadingResume
+                  ? '1px solid rgba(96,165,250,0.2)'
+                  : uploadResumeResult === 'success'
+                    ? '1px solid rgba(52,211,153,0.2)'
+                    : uploadResumeResult === 'error'
+                      ? '1px solid rgba(248,113,113,0.2)'
+                      : '1px solid rgba(96,165,250,0.2)',
+                borderRadius: 8,
+                color: uploadingResume
+                  ? '#60a5fa'
+                  : uploadResumeResult === 'success'
+                    ? '#34d399'
+                    : uploadResumeResult === 'error'
+                      ? '#f87171'
+                      : '#60a5fa',
+                fontSize: 10,
+                fontWeight: 800,
+                fontFamily: '"Space Mono", monospace',
+                cursor: uploadingResume ? 'default' : 'pointer',
+                opacity: uploadingResume ? 0.7 : 1,
+              }}
+            >
+              {uploadingResume ? (
+                <><Loader2 size={13} className="animate-spin" /> UPLOADING...</>
+              ) : uploadResumeResult === 'success' ? (
+                <><CheckCircle size={13} /> UPLOADED</>
+              ) : uploadResumeResult === 'error' ? (
+                <><XIcon size={13} /> FAILED</>
+              ) : (
+                <><Upload size={13} /> CHANGE_RESUME</>
+              )}
             </button>
           </div>
         </LiquidMetalCard>

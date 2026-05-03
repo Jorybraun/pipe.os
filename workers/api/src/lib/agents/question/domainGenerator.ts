@@ -26,6 +26,41 @@ function cleanJson(content: string): string {
   return trimmed;
 }
 
+/** Extract valid question objects from potentially truncated JSON. */
+function extractQuestionsFromPartialJson(text: string): GeneratedQuestion[] {
+  const results: GeneratedQuestion[] = [];
+  // Match individual question objects: {"id":"...","text":"...",...}
+  // This regex is forgiving about trailing commas and partial objects.
+  const objRegex = /\{\s*"id"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"intent"\s*:\s*"((?:[^"\\]|\\.)*)"(?:[\s\S]*?)\}(?=\s*,|\s*\])/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = objRegex.exec(text)) !== null) {
+    const [, id, textVal, intent] = m;
+    // Try to extract drillingHints and ladderingTarget from the matched chunk
+    const chunk = m[0];
+    const hintsMatch = chunk.match(/"drillingHints"\s*:\s*\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*)\]/);
+    const ladderingMatch = chunk.match(/"ladderingTarget"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+
+    const drillingHints = hintsMatch && hintsMatch[1]
+      ? (hintsMatch[1].match(/"((?:[^"\\]|\\.)*)"/g) ?? [])
+          .map((s) => s.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, '\n'))
+          .filter(Boolean)
+      : undefined;
+
+    results.push({
+      id: id ?? `dq-${results.length + 1}`,
+      text: (textVal ?? '').replace(/\\"/g, '"').replace(/\\n/g, '\n'),
+      intent: (intent ?? '').replace(/\\"/g, '"').replace(/\\n/g, '\n'),
+      drillingHints: drillingHints && drillingHints.length > 0 ? drillingHints : undefined,
+      ladderingTarget: ladderingMatch && ladderingMatch[1]
+        ? ladderingMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n')
+        : undefined,
+    });
+  }
+
+  return results;
+}
+
 function parseGeneratedQuestions(raw: unknown, count: number): GeneratedQuestion[] {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Domain generation response is not an object');
@@ -116,6 +151,12 @@ export async function generateDomainQuestions(
   try {
     parsed = JSON.parse(jsonText) as Record<string, unknown>;
   } catch {
+    // Try to extract questions from partial / truncated JSON
+    const extracted = extractQuestionsFromPartialJson(content);
+    if (extracted.length > 0) {
+      console.warn(`[domainGenerator] JSON parse failed — extracted ${extracted.length} questions via fallback`);
+      return extracted;
+    }
     throw new Error(`AI provider returned invalid JSON: ${content.slice(0, 300)}`);
   }
 
@@ -148,12 +189,12 @@ export async function* generateDomainQuestionsStream(
   let content = '';
 
   if (provider.completeStream) {
-    for await (const chunk of provider.completeStream(messages, { forceJson: true, maxTokens: opts.maxTokens ?? 4096 })) {
+    for await (const chunk of provider.completeStream(messages, { forceJson: true, maxTokens: opts.maxTokens ?? 8192 })) {
       yield chunk;
       content += chunk;
     }
   } else {
-    const completion = await provider.complete(messages, { forceJson: true, maxTokens: opts.maxTokens ?? 4096 });
+    const completion = await provider.complete(messages, { forceJson: true, maxTokens: opts.maxTokens ?? 8192 });
     content = completion.content?.trim() ?? '';
     yield content;
   }
@@ -167,6 +208,11 @@ export async function* generateDomainQuestionsStream(
   try {
     parsed = JSON.parse(jsonText) as Record<string, unknown>;
   } catch {
+    const extracted = extractQuestionsFromPartialJson(content);
+    if (extracted.length > 0) {
+      console.warn(`[domainGenerator] JSON parse failed — extracted ${extracted.length} questions via fallback`);
+      return extracted;
+    }
     throw new Error(`AI provider returned invalid JSON: ${content.slice(0, 300)}`);
   }
 

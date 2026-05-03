@@ -90,9 +90,8 @@ export function AIChat({
   enableTTS = false,
   greeting = '',
   onLiveEnd,
-  interviewPhase,
-  urgentGaps,
-  synthesisAllowed,
+  currentDomain,
+  domainCompletion,
 }: AIChatProps): JSX.Element {
   const live = useLiveSession();
 
@@ -420,8 +419,6 @@ export function AIChat({
   // ── Computed ────────────────────────────────────────────────────────────────
 
   const isAIPhase = conv.phase === 'CALIBRATING' || conv.phase === 'INTERVIEWING';
-  const asked = conv.progress?.asked ?? 0;
-  const budget = conv.progress?.budget ?? 0;
 
   // ── Live voice phase — full-screen orb, bypasses question card entirely ──────
 
@@ -562,22 +559,19 @@ export function AIChat({
               fontFamily: '"Space Mono", monospace',
               marginBottom: 6,
             }}>
-              {interviewPhase ?? 'INTERVIEWING'}
-              {budget > 0 ? ` · Question ${asked + 1} of ${budget}` : ''}
+              {currentDomain ? currentDomain.toUpperCase() : 'INTERVIEWING'}
             </div>
-            {synthesisAllowed === false && (
-              <div style={{
-                fontSize: 9,
-                letterSpacing: '0.1em',
-                color: 'rgba(251, 191, 36, 0.7)',
-                fontFamily: '"Space Mono", monospace',
-                marginBottom: 6,
-              }}>
-                {urgentGaps && urgentGaps.length > 0
-                  ? urgentGaps.slice(0, 2).join(' · ')
-                  : 'Interview in progress'}
-              </div>
-            )}
+            <div style={{
+              fontSize: 9,
+              letterSpacing: '0.1em',
+              color: 'var(--pipe-text-muted)',
+              fontFamily: '"Space Mono", monospace',
+              marginBottom: 6,
+            }}>
+              {domainCompletion
+                ? `${Object.values(domainCompletion).filter((s) => s === 'complete').length} / 6 domains explored`
+                : 'Interview in progress'}
+            </div>
             <div style={{
               height: 2,
               width: 200,
@@ -588,7 +582,9 @@ export function AIChat({
               <div style={{
                 position: 'absolute',
                 left: 0, top: 0, bottom: 0,
-                width: budget > 0 ? `${(asked / budget) * 100}%` : '0%',
+                width: domainCompletion
+                  ? `${(Object.values(domainCompletion).filter((s) => s === 'complete').length / 6) * 100}%`
+                  : '0%',
                 background: 'rgba(74, 222, 128, 0.5)',
                 transition: 'width 0.6s cubic-bezier(0.16, 1, 0.3, 1)',
               }} />
@@ -597,9 +593,13 @@ export function AIChat({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             {showDomainBars && conv.progress?.domains && (
-              <DomainBars domains={conv.progress.domains} />
+              <DomainBars
+                domains={conv.progress.domains}
+                domainCompletion={domainCompletion ?? undefined}
+                currentDomain={currentDomain ?? undefined}
+              />
             )}
-            {asked >= 3 && (
+            {domainCompletion && Object.values(domainCompletion).some((s) => s === 'complete') && (
               <button
                 onClick={() => { conv.completeEarly().catch(() => {}); }}
                 disabled={conv.isLoading}

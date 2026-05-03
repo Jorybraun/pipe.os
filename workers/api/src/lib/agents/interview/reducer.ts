@@ -8,8 +8,10 @@
  * The reducer is pure: same (state, action) always produces the same newState.
  * It runs in <10ms — no I/O, no LLM calls.
  *
- * Phase selection logic is extracted from buildPhaseDirective (prompts.ts)
- * and made self-contained so the reducer needs no external LLM-phase input.
+ * Architecture: column-by-column domain flow.
+ * - No probe counting. No soul probe counting. No budget enforcement.
+ * - Domain advancement and depth decisions happen in the domain orchestrator.
+ * - The reducer only applies user actions to state.
  */
 
 import type {
@@ -17,9 +19,8 @@ import type {
   ConversationPhase,
   EvpCategory,
   ExtractedStory,
-  QualificationStatus,
 } from '../../../types';
-import type { InterviewState, InterviewAction, CreateInterviewStateInput, DomainCompletionStatus } from './types';
+import type { InterviewState, InterviewAction, CreateInterviewStateInput } from './types';
 import { DOMAIN_COLUMN_ORDER } from './types';
 
 // ─── Domain coverage ordering ────────────────────────────────────────────────
@@ -30,29 +31,12 @@ function coverageGte(a: DomainCoverage, threshold: DomainCoverage): boolean {
   return DOMAIN_ORDER.indexOf(a) >= DOMAIN_ORDER.indexOf(threshold);
 }
 
-const DEFAULT_EVP_COVERAGE: Record<EvpCategory, DomainCoverage> = {
-  Rewards: 'none',
-  Opportunity: 'none',
-  Work: 'none',
-  People: 'none',
-  Organisation: 'none',
-};
-
-const DEFAULT_QUALIFICATION: QualificationStatus = {
-  economicBuyerIdentified: false,
-  championIdentified: false,
-  decisionProcessMapped: false,
-  budgetApproved: false,
-  timelineUrgency: 'UNKNOWN',
-};
-
-const SIX_DOMAINS = ['why', 'work', 'team', 'bar', 'codebase', 'process'] as const;
-
 // ─── Helpers to read typed values from the untyped knowledge state ───────────
 
 export function readDomainCoverage(
   ks: Record<string, Record<string, unknown>>,
 ): Record<string, DomainCoverage> {
+  const SIX_DOMAINS = ['why', 'work', 'team', 'bar', 'codebase', 'process'] as const;
   const raw = ks['_coverage'];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return Object.fromEntries(SIX_DOMAINS.map((d) => [d, 'none' as DomainCoverage]));
@@ -69,6 +53,13 @@ export function readDomainCoverage(
 }
 
 export function readEvpCoverage(ks: Record<string, Record<string, unknown>>): Record<EvpCategory, DomainCoverage> {
+  const DEFAULT_EVP_COVERAGE: Record<EvpCategory, DomainCoverage> = {
+    Rewards: 'none',
+    Opportunity: 'none',
+    Work: 'none',
+    People: 'none',
+    Organisation: 'none',
+  };
   const raw = ks['_evpCoverage'];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ...DEFAULT_EVP_COVERAGE };
@@ -114,7 +105,7 @@ export function readBooleanFlag(ks: Record<string, Record<string, unknown>>, key
   return Boolean(raw);
 }
 
-// ─── Phase selection (extracted + adapted from buildPhaseDirective) ──────────
+// ─── Phase selection (legacy support for roleContexts routes) ─────────────────
 
 interface PhaseSelectionInput {
   questionsAsked: number;
@@ -138,11 +129,6 @@ export interface PhaseSelectionResult {
   reasoning: string;
 }
 
-/**
- * Pure phase-selection predicates.
- * Each returns { match, phase, focusGoal, gaps } where gaps are strings to
- * append to urgentGaps when this phase is selected.
- */
 function phaseRules(input: PhaseSelectionInput) {
   const {
     questionsAsked,
@@ -157,7 +143,6 @@ function phaseRules(input: PhaseSelectionInput) {
     enableSoulTrack,
   } = input;
 
-  // Signal probes: 6 total. Personality probes (7-8) are only in default mode.
   const signalProbesDone = enableSoulTrack ? probesDelivered >= 6 : probesDelivered >= 8;
   const soulProbesDone = soulProbesDelivered >= 6;
 
@@ -233,16 +218,6 @@ function phaseRules(input: PhaseSelectionInput) {
   ] as const;
 }
 
-/**
- * Deterministic phase selection — no LLM call, no latency overhead.
- *
- * Phase selection order (RD-26):
- *   1. CONTEXT        — fewer than 2 Qs
- *   2. DISCOVERY      — probes incomplete
- *   3. PRIORITIZE     — must-haves not yet ranked
- *   4. EVP_FRICTION   — any EVP category uncovered OR friction not probed
- *   5. WRAP_UP        — default; synthesis gates checked here
- */
 export function selectPhase(input: PhaseSelectionInput): PhaseSelectionResult {
   const { questionsAsked, questionBudget, storiesExtracted, mustHavesPrioritized, frictionProbed, dayInLifeProbed, probesDelivered, soulProbesDelivered, enableSoulTrack } =
     input;
@@ -251,7 +226,6 @@ export function selectPhase(input: PhaseSelectionInput): PhaseSelectionResult {
   const signalProbesDone = enableSoulTrack ? probesDelivered >= 6 : probesDelivered >= 8;
   const soulProbesDone = soulProbesDelivered >= 6;
 
-  // Gates for synthesisAllowed (RD-42)
   const allGatesPass =
     mustHavesPrioritized &&
     frictionProbed &&
@@ -307,27 +281,7 @@ export function mergeKnowledgeState(
 // ─── Initial state factory ───────────────────────────────────────────────────
 
 export function createInitialState(input: CreateInterviewStateInput): InterviewState {
-  const ks = input.seedKnowledgeState ?? {};
-  const questionsAsked = 0;
-  const domainCoverage = readDomainCoverage(ks);
-  const enableSoulTrack = readEnableSoulTrack(ks, input.baseline);
-
-  const phaseResult = selectPhase({
-    questionsAsked,
-    questionBudget: input.questionBudget,
-    domainCoverage,
-    evpCoverage: readEvpCoverage(ks),
-    storiesExtracted: readStories(ks),
-    mustHavesPrioritized: readBooleanFlag(ks, '_mustHavesPrioritized'),
-    frictionProbed: readBooleanFlag(ks, '_frictionProbed'),
-    dayInLifeProbed: readBooleanFlag(ks, '_dayInLifeProbed'),
-    probesDelivered: readProbesDelivered(ks),
-    soulProbesDelivered: readSoulProbesDelivered(ks),
-    enableSoulTrack,
-  });
-
-  // Initialize per-domain tracking for column-by-column flow
-  const domainCompletion: Record<string, DomainCompletionStatus> = {};
+  const domainCompletion: Record<string, import('./types').DomainCompletionStatus> = {};
   const domainQuestionsDelivered: Record<string, number> = {};
   for (const d of DOMAIN_COLUMN_ORDER) {
     domainCompletion[d] = 'pending';
@@ -339,23 +293,23 @@ export function createInitialState(input: CreateInterviewStateInput): InterviewS
     participantRole: input.participantRole,
     questionBudget: input.questionBudget,
     exchanges: [],
-    knowledgeState: ks,
-    coverage: domainCoverage,
-    phase: phaseResult.phase,
-    questionsAsked,
-    synthesisReady: phaseResult.synthesisAllowed,
-    reasoning: phaseResult.reasoning,
-    urgentGaps: phaseResult.urgentGaps,
-    questionStack: [],
+    knowledgeState: input.seedKnowledgeState ?? {},
+    coverage: readDomainCoverage(input.seedKnowledgeState ?? {}),
+    phase: 'CONTEXT',
+    questionsAsked: 0,
+    synthesisReady: false,
+    reasoning: 'Phase CONTEXT. Warm-up not yet complete.',
+    urgentGaps: ['Warm-up not yet complete'],
     currentDomain: null,
     domainCompletion,
     domainQuestions: {},
     domainQuestionsDelivered,
     domainFollowUpsDelivered: 0,
+    questionStack: [],
   };
 }
 
-// ─── Reducer ─────────────────────────────────────────────────────────────────
+// ─── Deterministic reducer ───────────────────────────────────────────────────
 
 export function interviewReducer(
   state: InterviewState,
@@ -363,72 +317,40 @@ export function interviewReducer(
 ): InterviewState {
   switch (action.type) {
     case 'ANSWER': {
-      // 1. Merge optional knowledge-state update from the previous question generator
-      let knowledgeState = state.knowledgeState;
-      if (action.knowledgeStateUpdate && Object.keys(action.knowledgeStateUpdate).length > 0) {
-        knowledgeState = mergeKnowledgeState(knowledgeState, action.knowledgeStateUpdate);
-      }
+      // 1. Append the answered exchange (mutate a copy)
+      const lastIdx = state.exchanges.length - 1;
+      const exchanges =
+        lastIdx >= 0
+          ? state.exchanges.map((ex, idx) =>
+              idx === lastIdx ? { ...ex, answer: action.answer } : ex,
+            )
+          : state.exchanges;
 
-      // 2. Apply optional domain-coverage override from the previous question generator
-      let coverage = state.coverage;
-      if (action.domainCoverage) {
-        coverage = { ...coverage, ...action.domainCoverage };
-        // Also persist into knowledgeState so phase selection reads it
-        knowledgeState = {
-          ...knowledgeState,
-          _coverage: { ...coverage },
-        };
-      }
-
-      // 3. Append the answered exchange (mutate a copy)
-      const lastExchange = state.exchanges[state.exchanges.length - 1];
-      if (!lastExchange) {
-        // No exchange to answer — this is a logic error in the caller
-        return state;
-      }
-      const exchanges = state.exchanges.map((ex, idx) =>
-        idx === state.exchanges.length - 1 ? { ...ex, answer: action.answer } : ex,
-      );
-
-      // 4. Increment counter
+      // 2. Increment counter
       const questionsAsked = state.questionsAsked + 1;
-      const budgetExhausted = questionsAsked >= state.questionBudget;
 
-      // 5. Track per-domain progress (column-by-column flow)
-      let domainQuestionsDelivered = state.domainQuestionsDelivered ? { ...state.domainQuestionsDelivered } : {};
-      let domainFollowUpsDelivered = state.domainFollowUpsDelivered ?? 0;
+      // 3. Apply optional domain-coverage override
+      let coverage = state.coverage;
+      if (action.domainCoverage && Object.keys(action.domainCoverage).length > 0) {
+        coverage = { ...coverage, ...action.domainCoverage };
+      }
+
+      // 4. Track per-domain progress
+      let domainQuestionsDelivered = { ...state.domainQuestionsDelivered };
+      let domainFollowUpsDelivered = state.domainFollowUpsDelivered;
       if (state.currentDomain) {
-        domainQuestionsDelivered[state.currentDomain] = (domainQuestionsDelivered[state.currentDomain] ?? 0) + 1;
-        if (state.domainCompletion?.[state.currentDomain] === 'follow_up') {
+        domainQuestionsDelivered[state.currentDomain] =
+          (domainQuestionsDelivered[state.currentDomain] ?? 0) + 1;
+        if (state.domainCompletion[state.currentDomain] === 'follow_up') {
           domainFollowUpsDelivered += 1;
         }
       }
 
-      // 6. Re-compute phase from updated knowledge state
-      const phaseResult = selectPhase({
-        questionsAsked,
-        questionBudget: state.questionBudget,
-        domainCoverage: coverage,
-        evpCoverage: readEvpCoverage(knowledgeState),
-        storiesExtracted: readStories(knowledgeState),
-        mustHavesPrioritized: readBooleanFlag(knowledgeState, '_mustHavesPrioritized'),
-        frictionProbed: readBooleanFlag(knowledgeState, '_frictionProbed'),
-        dayInLifeProbed: readBooleanFlag(knowledgeState, '_dayInLifeProbed'),
-        probesDelivered: readProbesDelivered(knowledgeState),
-        soulProbesDelivered: readSoulProbesDelivered(knowledgeState),
-        enableSoulTrack: readEnableSoulTrack(knowledgeState, state.baseline),
-      });
-
       return {
         ...state,
         exchanges,
-        knowledgeState,
         coverage,
-        phase: phaseResult.phase,
         questionsAsked,
-        synthesisReady: budgetExhausted || phaseResult.synthesisAllowed,
-        reasoning: phaseResult.reasoning,
-        urgentGaps: phaseResult.urgentGaps,
         domainQuestionsDelivered,
         domainFollowUpsDelivered,
       };
@@ -436,34 +358,18 @@ export function interviewReducer(
 
     case 'SKIP': {
       // Skip the current question — treat it as answered with empty text
-      const exchanges = state.exchanges.map((ex, idx) =>
-        idx === state.exchanges.length - 1 ? { ...ex, answer: '' } : ex,
-      );
-      const questionsAsked = state.questionsAsked + 1;
-      const budgetExhausted = questionsAsked >= state.questionBudget;
-
-      const phaseResult = selectPhase({
-        questionsAsked,
-        questionBudget: state.questionBudget,
-        domainCoverage: state.coverage,
-        evpCoverage: readEvpCoverage(state.knowledgeState),
-        storiesExtracted: readStories(state.knowledgeState),
-        mustHavesPrioritized: readBooleanFlag(state.knowledgeState, '_mustHavesPrioritized'),
-        frictionProbed: readBooleanFlag(state.knowledgeState, '_frictionProbed'),
-        dayInLifeProbed: readBooleanFlag(state.knowledgeState, '_dayInLifeProbed'),
-        probesDelivered: readProbesDelivered(state.knowledgeState),
-        soulProbesDelivered: readSoulProbesDelivered(state.knowledgeState),
-        enableSoulTrack: readEnableSoulTrack(state.knowledgeState, state.baseline),
-      });
+      const lastIdx = state.exchanges.length - 1;
+      const exchanges =
+        lastIdx >= 0
+          ? state.exchanges.map((ex, idx) =>
+              idx === lastIdx ? { ...ex, answer: '' } : ex,
+            )
+          : state.exchanges;
 
       return {
         ...state,
         exchanges,
-        phase: phaseResult.phase,
-        questionsAsked,
-        synthesisReady: budgetExhausted || phaseResult.synthesisAllowed,
-        reasoning: phaseResult.reasoning,
-        urgentGaps: phaseResult.urgentGaps,
+        questionsAsked: state.questionsAsked + 1,
       };
     }
 
@@ -476,7 +382,7 @@ export function interviewReducer(
           [action.domain]: action.questions,
         },
         domainCompletion: {
-          ...(state.domainCompletion ?? {}),
+          ...state.domainCompletion,
           [action.domain]: 'asking',
         },
       };
@@ -487,8 +393,6 @@ export function interviewReducer(
         ...state,
         synthesisReady: true,
         phase: 'WRAP_UP',
-        reasoning: 'Forced synthesis.',
-        urgentGaps: [],
       };
     }
 

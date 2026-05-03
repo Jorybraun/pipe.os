@@ -97,6 +97,9 @@ services:
       - KIMI_API_KEY=${KIMI_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - PYTHONPATH=/app/agent-harness/src
+      # When set, all file-editing tools operate inside this subtree instead
+      # of the repo root. This lets swarm lanes edit in isolation.
+      - SWARM_SUBTREE=/app/subtree
     working_dir: /app
     volumes:
       # Mount live repo so plans, code, and broker DB are shared with host

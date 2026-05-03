@@ -1060,8 +1060,11 @@ candidateOps.post('/:candidateId/refresh-link', async (c) => {
   const newToken = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // Wipe previous attempt data so the candidate starts fresh
+  // Wipe previous attempt data so the candidate starts fresh.
+  // Order matters: delete child tables with FK constraints before parents.
   await db.batch([
+    db.prepare(`DELETE FROM culture_compliance_audit WHERE session_id IN (SELECT id FROM culture_interview_sessions WHERE candidate_id = ?)`).bind(candidateId),
+    db.prepare(`DELETE FROM culture_interview_sessions WHERE candidate_id = ?`).bind(candidateId),
     db.prepare(`DELETE FROM review_sessions WHERE candidate_id = ?`).bind(candidateId),
     db.prepare(`DELETE FROM challenge_submissions WHERE candidate_id = ?`).bind(candidateId),
     db.prepare(`DELETE FROM assessments WHERE candidate_id = ?`).bind(candidateId),

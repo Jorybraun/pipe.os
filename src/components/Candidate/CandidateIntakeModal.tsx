@@ -537,6 +537,30 @@ export function CandidateIntakeModal({
                   </>
                 )}
               </button>
+
+              <button 
+                onClick={onClose}
+                disabled={isCreating || isProcessing}
+                style={{
+                  width: "100%",
+                  padding: "16px",
+                  background: "transparent",
+                  color: "var(--pipe-text-dim)",
+                  border: "1px solid var(--pipe-border)",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  fontFamily: "Space Mono",
+                  cursor: (isCreating || isProcessing) ? "default" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 12,
+                  opacity: (isCreating || isProcessing) ? 0.5 : 1
+                }}
+              >
+                CANCEL
+              </button>
             </div>
           )}
 

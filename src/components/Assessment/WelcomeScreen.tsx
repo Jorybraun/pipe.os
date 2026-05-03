@@ -169,16 +169,24 @@ export function WelcomeScreen({
       style={{
         minHeight: '100vh',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'center',
         background: '#0c0c0e',
-        padding: 24,
+        padding: 'clamp(16px, 4vw, 40px)',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
       }}
     >
       <AppBackground />
       <LiquidMetalCard
         variant="chrome"
-        style={{ maxWidth: 620, width: '100%', padding: 48, zIndex: 1 }}
+        style={{
+          maxWidth: 'min(840px, 100%)',
+          width: '100%',
+          padding: 'clamp(24px, 4vw, 48px)',
+          zIndex: 1,
+          boxSizing: 'border-box',
+        }}
       >
         {/* Header meta */}
         <div
@@ -196,12 +204,13 @@ export function WelcomeScreen({
         {/* Headline */}
         <h1
           style={{
-            fontSize: 26,
+            fontSize: 'clamp(22px, 3vw, 30px)',
             fontWeight: 800,
             color: 'var(--pipe-text, #fff)',
             marginBottom: 12,
             letterSpacing: '-0.02em',
             lineHeight: 1.2,
+            wordBreak: 'break-word',
           }}
         >
           Ready to begin?
@@ -210,11 +219,12 @@ export function WelcomeScreen({
         {/* Process explanation */}
         <p
           style={{
-            fontSize: 13,
+            fontSize: 'clamp(12px, 1.4vw, 14px)',
             color: 'var(--pipe-text-muted)',
             lineHeight: 1.7,
             fontFamily: '"Space Mono", monospace',
             marginBottom: 32,
+            wordBreak: 'break-word',
           }}
         >
           This stage consists of {challengeCount}{' '}
@@ -249,10 +259,11 @@ export function WelcomeScreen({
                       display: 'flex',
                       alignItems: 'flex-start',
                       gap: 12,
-                      padding: '14px 16px',
+                      padding: 'clamp(10px, 1.5vw, 14px) clamp(12px, 2vw, 16px)',
                       background: 'var(--pipe-surface)',
                       border: '1px solid var(--pipe-border-light)',
                       borderRadius: 6,
+                      flexWrap: 'wrap',
                     }}
                   >
                     <div
@@ -274,21 +285,23 @@ export function WelcomeScreen({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
-                          fontSize: 12,
+                          fontSize: 'clamp(11px, 1.2vw, 13px)',
                           fontWeight: 700,
                           color: 'var(--pipe-text, #fff)',
                           marginBottom: 2,
                           lineHeight: 1.4,
+                          wordBreak: 'break-word',
                         }}
                       >
                         {c.title}
                       </div>
                       <div
                         style={{
-                          fontSize: 10,
+                          fontSize: 'clamp(9px, 1vw, 10px)',
                           color: 'var(--pipe-text-muted)',
                           fontFamily: '"Space Mono", monospace',
                           lineHeight: 1.5,
+                          wordBreak: 'break-word',
                         }}
                       >
                         {meta.label} · {meta.desc}

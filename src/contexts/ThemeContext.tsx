@@ -166,7 +166,7 @@ interface ThemeContextValue {
 
 const Ctx = createContext<ThemeContextValue | null>(null);
 
-export function ThemeProvider({ children }: { children: ReactNode }): JSX.Element {
+export function ThemeProvider({ children, forceMode }: { children: ReactNode; forceMode?: ThemeMode }): JSX.Element {
   const userIdRef = useRef<string | undefined>(undefined);
   const [theme, setTheme] = useState<ThemeSettings>(() => loadTheme());
 
@@ -178,8 +178,8 @@ export function ThemeProvider({ children }: { children: ReactNode }): JSX.Elemen
 
   // Apply CSS tokens whenever mode changes
   useEffect(() => {
-    applyModeTokens(theme.mode);
-  }, [theme.mode]);
+    applyModeTokens(forceMode ?? theme.mode);
+  }, [theme.mode, forceMode]);
 
   const setMode = useCallback((mode: ThemeMode) => {
     setTheme((prev) => {

@@ -369,7 +369,7 @@ function App(): JSX.Element {
         <Route
           path="/assess/:token"
           element={
-            <ThemeProvider>
+            <ThemeProvider forceMode="dark">
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                   <CandidateAssessmentPage />
@@ -383,7 +383,7 @@ function App(): JSX.Element {
         <Route
           path="/culture/:token"
           element={
-            <ThemeProvider>
+            <ThemeProvider forceMode="dark">
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                   <CultureInterviewPage />
@@ -397,7 +397,7 @@ function App(): JSX.Element {
         <Route
           path="/demo"
           element={
-            <ThemeProvider>
+            <ThemeProvider forceMode="dark">
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                   <DemoIntakePage />

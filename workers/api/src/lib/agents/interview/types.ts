@@ -3,6 +3,10 @@
  *
  * Pure deterministic types for the role-discovery interview reducer.
  * No LLM references, no provider types. JSON-serializable everywhere.
+ *
+ * Architecture: column-by-column domain flow. No probes, no budgets.
+ * The interview advances one domain at a time (team → work → bar → codebase → process → why).
+ * It ends when every domain is marked complete OR the user forces synthesis.
  */
 
 import type {
@@ -43,42 +47,18 @@ export interface GeneratedQuestion {
 }
 
 /**
- * A pre-generated question sitting on the stack, ready to be served instantly.
- */
-export interface QueuedQuestion {
-  questionId: string;
-  text: string;
-  acknowledgment: string;
-  goal?: string;
-  expectedCoverage?: {
-    domain: string;
-    from: DomainCoverage;
-    to: DomainCoverage;
-  };
-  probeAlignment?: string;
-  questionType?: string;
-  input: {
-    type: 'text' | 'textarea' | 'tags' | 'select' | 'radio';
-    options?: string[];
-    placeholder?: string;
-  };
-  suggestedAnswers?: string[];
-  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
-  domainCoverage: Record<string, DomainCoverage>;
-}
-
-/**
- * The full interview state. This is the single source of truth.
- * The UI holds this, the reducer transforms it, the generators read it.
+ * The full interview state. Single source of truth.
  */
 export interface InterviewState {
   // ── Static (set once at creation) ──
   baseline: Record<string, unknown>;
   participantRole: ParticipantRole | null;
+  /** Soft advisory cap. Not a hard stop. */
   questionBudget: number;
 
   // ── Dynamic (mutated by reducer) ──
   exchanges: RoleExchange[];
+  /** Legacy knowledge state — still used for synthesis. */
   knowledgeState: Record<string, Record<string, unknown>>;
   coverage: Record<string, DomainCoverage>;
   phase: ConversationPhase;
@@ -88,20 +68,22 @@ export interface InterviewState {
   reasoning?: string;
   /** List of gaps that prevented synthesis (if any). */
   urgentGaps?: string[];
-  /** Pre-generated questions — popped instantly without LLM latency. */
-  questionStack: QueuedQuestion[];
 
-  // ── NEW: Column-by-column domain tracking (Phase 1+) ──
+  // ── Domain-driven column tracking ──
   /** Which domain we're currently interviewing. Null before DISCOVERY starts. */
-  currentDomain?: Domain | null;
+  currentDomain: Domain | null;
   /** Per-domain completion status. */
-  domainCompletion?: Record<string, DomainCompletionStatus>;
+  domainCompletion: Record<string, DomainCompletionStatus>;
   /** Cached generated questions per domain (populated when entering 'asking'). */
-  domainQuestions?: Record<string, GeneratedQuestion[]>;
+  domainQuestions: Record<string, GeneratedQuestion[]>;
   /** How many questions have been asked per domain so far. */
-  domainQuestionsDelivered?: Record<string, number>;
+  domainQuestionsDelivered: Record<string, number>;
   /** How many follow-up questions asked in the current domain (during follow_up phase). */
-  domainFollowUpsDelivered?: number;
+  domainFollowUpsDelivered: number;
+
+  // ── Backward compat ──
+  /** Deprecated: pre-generated question stack. Kept for schema compat. */
+  questionStack?: unknown[];
 }
 
 /**
@@ -113,14 +95,8 @@ export type InterviewAction =
       /** The user's answer text. */
       answer: string;
       /**
-       * Optional knowledge-state update produced by the question generator
-       * on the previous turn. When present, merged into state.knowledgeState
-       * before phase re-computation.
-       */
-      knowledgeStateUpdate?: Record<string, Record<string, unknown>>;
-      /**
        * Optional domain-coverage map produced by the question generator.
-       * When present, written to state.coverage before phase re-computation.
+       * When present, written to state.coverage.
        */
       domainCoverage?: Record<string, DomainCoverage>;
     }

@@ -63,3 +63,4 @@ google-cloud-cli-*.tar.gz
 # Temporary / sensitive files
 get_token.cjs
 .worktrees/
+subtree/

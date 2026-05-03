@@ -38,18 +38,15 @@ beforeEach(() => {
 });
 
 describe('getNextDomainDrivenQuestion', () => {
-  it('falls back to legacy generation when not in DISCOVERY', async () => {
-    const state = makeState({ phase: 'PRIORITIZE' });
-    const mockResponse = JSON.stringify({
-      reasoning: 'r', acknowledgment: 'a',
-      question: { id: 'q-3', text: 'What matters most?', input: { type: 'textarea' } },
-      knowledgeStateUpdate: {}, domainCoverage: {},
+  it('returns complete when all domains are done regardless of phase', async () => {
+    const state = makeState({
+      phase: 'WRAP_UP',
+      domainCompletion: { team: 'complete', work: 'complete', bar: 'complete', codebase: 'complete', process: 'complete', why: 'complete' },
     });
-    const provider = makeMockProvider(mockResponse);
+    const provider = makeMockProvider('');
 
     const result = await getNextDomainDrivenQuestion(state, provider);
-    expect(result.question.text).toBe('What matters most?');
-    expect(result.fromCache).toBe(false);
+    expect(result.type).toBe('complete');
   });
 
   it('picks team as the first domain and generates questions', async () => {
@@ -64,7 +61,7 @@ describe('getNextDomainDrivenQuestion', () => {
 
     const result = await getNextDomainDrivenQuestion(state, provider, { questionsPerDomain: 2 });
 
-    expect(result.question.text).toBe('Q1');
+    expect(result.result.question.text).toBe('Q1');
     expect(result.fromCache).toBe(true);
     expect(result.statePatches.currentDomain).toBe('team');
     expect(result.statePatches.domainCompletion?.team).toBe('asking');
@@ -82,42 +79,32 @@ describe('getNextDomainDrivenQuestion', () => {
 
     const result = await getNextDomainDrivenQuestion(state, provider);
 
-    expect(result.question.text).toBe('Q2');
+    expect(result.result.question.text).toBe('Q2');
     expect(result.fromCache).toBe(true);
     expect(provider.complete).not.toHaveBeenCalled();
   });
 
-  it('runs depth evaluator when cache is exhausted', async () => {
+  it('generates warm follow-up when the last answer is thin', async () => {
     const state = makeState({
       currentDomain: 'team',
       domainCompletion: { team: 'asking', work: 'pending', bar: 'pending', codebase: 'pending', process: 'pending', why: 'pending' },
-      domainQuestions: { team: [{ id: 'dq-1', text: 'Q1', intent: 'I1' }] },
+      domainQuestions: { team: [{ id: 'dq-1', text: 'Q1', intent: 'I1', drillingHints: ['What makes them tick?'] }] },
       domainQuestionsDelivered: { team: 1, work: 0, bar: 0, codebase: 0, process: 0, why: 0 },
-      coverage: { team: 'sparse', work: 'none', bar: 'none', codebase: 'none', process: 'none', why: 'none' },
+      // Add a thin answer exchange so the evaluator triggers
+      exchanges: [
+        { questionId: 'dq-1', question: 'Q1', acknowledgment: 'Ack', input: { type: 'textarea' }, answer: 'idk' },
+      ],
     });
 
-    // Follow-up generation response + next domain generation response
-    const followUpResponse = JSON.stringify({ questions: [{ id: 'dq-f1', text: 'Follow-up', intent: 'IF1' }] });
     const nextDomainResponse = JSON.stringify({ questions: [{ id: 'dq-w1', text: 'Work Q1', intent: 'IW1' }] });
-
-    let callCount = 0;
-    const provider = {
-      name: 'mock-multi',
-      complete: vi.fn().mockImplementation(() => {
-        callCount++;
-        return Promise.resolve({ content: callCount === 1 ? followUpResponse : nextDomainResponse });
-      }),
-    } as unknown as LLMProvider;
+    const provider = makeMockProvider(nextDomainResponse);
 
     const result = await getNextDomainDrivenQuestion(state, provider);
 
-    // Should get follow-up for team, then since follow-ups exhausted (maxFollowUps=3 by default, but only 1 generated)
-    // Wait — with sparse coverage, depth evaluator says isDeep=false and recommends 2 follow-ups.
-    // But we only generated 1 follow-up because we serve one at a time.
-    // Actually, generateDomainQuestions with count=1 returns 1 question.
-    // The function should serve that follow-up.
-    expect(result.question.text).toBe('Follow-up');
+    // Thin answer triggers a warm follow-up using the drillingHint (no LLM call needed)
+    expect(result.result.question.text).toContain('What makes them tick');
     expect(result.statePatches.domainCompletion?.team).toBe('follow_up');
+    expect(result.statePatches.domainFollowUpsDelivered).toBe(1);
   });
 
   it('advances to next domain when current domain is deep', async () => {
@@ -134,7 +121,7 @@ describe('getNextDomainDrivenQuestion', () => {
 
     const result = await getNextDomainDrivenQuestion(state, provider);
 
-    expect(result.question.text).toBe('Work Q1');
+    expect(result.result.question.text).toBe('Work Q1');
     expect(result.statePatches.currentDomain).toBe('work');
     expect(result.statePatches.domainCompletion?.team).toBe('complete');
   });
@@ -151,7 +138,7 @@ describe('getNextDomainDrivenQuestion', () => {
       questionsPerDomain: 1,
     });
 
-    expect(result.question.text).toBe('Soul Q1');
+    expect(result.result.question.text).toBe('Soul Q1');
     // Verify the prompt included soul style — this is indirectly tested via domainPrompts
   });
 });

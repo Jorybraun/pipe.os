@@ -18,12 +18,12 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, stateActionSchema, questionSchema, synthesizeSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
+import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, synthesizeSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
 import { mergeKnowledgeState } from '../../lib/agents/interview/reducer';
 import { callGapFillingAgent } from '../../lib/agents/calibration/gapFilling';
 import { interviewReducer, createInitialState, selectPhase, readDomainCoverage, readEvpCoverage, readStories, readBooleanFlag, readProbesDelivered, readSoulProbesDelivered, readEnableSoulTrack } from '../../lib/agents/interview/reducer';
-import { generateQuestion, generateQuestionStream, generateQuestionBatch } from '../../lib/agents/question/generator';
-import { evaluateQuestion } from '../../lib/agents/question/eval';
+import { DOMAIN_COLUMN_ORDER } from '../../lib/agents/interview/types';
+import { generateQuestion } from '../../lib/agents/question/generator';
 import { analyzeFeedback } from '../../lib/agents/question/feedbackAnalyzer';
 // synthesizeRcd replaces the legacy synthesize() — removed in migration
 import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
@@ -94,6 +94,14 @@ function reconstructInterviewStateFromDb(
     enableSoulTrack: readEnableSoulTrack(knowledgeState, baseline),
   });
 
+  // Initialize per-domain tracking for column-by-column flow
+  const domainCompletion: Record<string, import('../../lib/agents/interview/types').DomainCompletionStatus> = {};
+  const domainQuestionsDelivered: Record<string, number> = {};
+  for (const d of DOMAIN_COLUMN_ORDER) {
+    domainCompletion[d] = 'pending';
+    domainQuestionsDelivered[d] = 0;
+  }
+
   return {
     baseline,
     participantRole,
@@ -107,6 +115,11 @@ function reconstructInterviewStateFromDb(
     reasoning: phaseResult.reasoning,
     urgentGaps: phaseResult.urgentGaps,
     questionStack: [],
+    currentDomain: null,
+    domainCompletion,
+    domainQuestions: {},
+    domainQuestionsDelivered,
+    domainFollowUpsDelivered: 0,
   };
 }
 
@@ -331,9 +344,10 @@ async function runNewArchitectureTurn(
     participant: RoleContextParticipantRow;
     clientState: import('../../lib/agents/interview/types').InterviewState | undefined;
     provider: ReturnType<typeof createRoleAgentProvider>;
+    env: Env;
   },
 ): Promise<NewTurnResult> {
-  const { isCalibration, answer, participantRole, row, participant, clientState, provider } = opts;
+  const { isCalibration, answer, participantRole, row, participant, clientState, provider, env } = opts;
 
   // Use client state if provided; otherwise reconstruct from DB
   let state: import('../../lib/agents/interview/types').InterviewState;
@@ -358,7 +372,7 @@ async function runNewArchitectureTurn(
   // If synthesis is ready, run RCD synthesis
   if (state.synthesisReady) {
     const rcdResult = await runRcdSynthesis(
-      { DB: row as unknown as D1Database } as Env,
+      env,
       row.id,
       state.baseline,
     );
@@ -382,8 +396,35 @@ async function runNewArchitectureTurn(
     throw new Error('No AI provider is configured.');
   }
 
-  const { generateQuestion } = await import('../../lib/agents/question/generator');
-  const questionResult = await generateQuestion(state, provider);
+  const { getNextDomainDrivenQuestion } = await import('../../lib/agents/question/domainOrchestrator');
+  const ddResult = await getNextDomainDrivenQuestion(state, provider);
+
+  // All domains complete — run synthesis
+  if (ddResult.type === 'complete') {
+    const rcdResult = await runRcdSynthesis(
+      env,
+      row.id,
+      state.baseline,
+    );
+
+    return {
+      type: 'synthesis',
+      acknowledgment: 'Thank you for your insights. I have synthesized the role context.',
+      knowledgeStateUpdate: {},
+      domainCoverage: state.coverage,
+      state: { ...state, ...ddResult.statePatches, synthesisReady: true },
+      toolsUsed: [],
+      persona: rcdResult?.persona,
+      jobDescription: rcdResult?.jobDescription,
+      rcd: rcdResult?.rcd,
+      synthesis: rcdResult?.synthesis,
+    };
+  }
+
+  // Apply domain-driven state patches (tracks current domain, cache, depth, etc.)
+  state = { ...state, ...ddResult.statePatches };
+
+  const questionResult = ddResult.result;
 
   // Add the generated question to exchanges so the next /respond call finds it
   const nextExchange: RoleExchange = {
@@ -399,22 +440,6 @@ async function runNewArchitectureTurn(
     exchanges: [...state.exchanges, nextExchange],
     knowledgeState: mergeKnowledgeState(state.knowledgeState, questionResult.knowledgeStateUpdate),
     coverage: { ...state.coverage, ...questionResult.domainCoverage },
-    questionStack: [
-      ...state.questionStack,
-      {
-        questionId: questionResult.question.id,
-        text: questionResult.question.text,
-        acknowledgment: questionResult.acknowledgment,
-        input: questionResult.question.input,
-        knowledgeStateUpdate: questionResult.knowledgeStateUpdate,
-        domainCoverage: questionResult.domainCoverage,
-        goal: questionResult.question.goal,
-        expectedCoverage: questionResult.question.expectedCoverage,
-        probeAlignment: questionResult.question.probeAlignment,
-        questionType: questionResult.question.questionType,
-        suggestedAnswers: questionResult.question.suggestedAnswers,
-      },
-    ],
   };
 
   return {
@@ -1017,6 +1042,7 @@ roleContexts.post('/:id/respond', async (c) => {
       participant,
       clientState: clientState as import('../../lib/agents/interview/types').InterviewState | undefined,
       provider,
+      env: c.env,
     });
   };
 
@@ -1095,15 +1121,19 @@ roleContexts.post('/:id/respond', async (c) => {
 
       return c.json({
         participantId: participant.id,
+        type: 'synthesis',
         synthesis: turnResult.synthesis,
         persona: turnResult.persona,
         jobDescription: turnResult.jobDescription,
         rcd: turnResult.rcd ? JSON.parse(JSON.stringify(turnResult.rcd)) : null,
+        state: turnResult.state,
         knowledgeState: turnResult.state.knowledgeState,
         progress: {
           asked: turnResult.state.questionsAsked,
           budget: participant.question_budget,
           domains: turnResult.state.coverage,
+          currentDomain: turnResult.state.currentDomain,
+          domainCompletion: turnResult.state.domainCompletion,
         },
         status: 'COMPLETE',
       });
@@ -1113,12 +1143,16 @@ roleContexts.post('/:id/respond', async (c) => {
 
     const payload: Record<string, unknown> = {
       participantId: participant.id,
+      type: 'question',
       acknowledgment: turnResult.acknowledgment,
       question: turnResult.question,
+      state: turnResult.state,
       progress: {
         asked: turnResult.state.questionsAsked,
         budget: participant.question_budget,
         domains: turnResult.state.coverage,
+        currentDomain: turnResult.state.currentDomain,
+        domainCompletion: turnResult.state.domainCompletion,
       },
       status: 'INTERVIEWING',
       toolsUsed: turnResult.toolsUsed,
@@ -1135,307 +1169,14 @@ roleContexts.post('/:id/respond', async (c) => {
   }
 });
 
-// ─── POST /:id/state — Run the interview reducer ─────────────────────────────
-
-roleContexts.post('/:id/state', async (c) => {
-  const userId = c.var.userId;
-  const { id } = c.req.param();
-
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
-  }
-
-  const parsed = stateActionSchema.safeParse(body);
-  if (!parsed.success) {
-    const message = parsed.error.errors.map((e) => e.message).join('; ');
-    return apiError(c, 'VALIDATION_ERROR', message);
-  }
-
-  const { state: clientState, action } = parsed.data;
-
-  // Verify ownership
-  const row = await c.env.DB.prepare('SELECT owner_id FROM role_contexts WHERE id = ?1')
-    .bind(id)
-    .first<{ owner_id: string }>();
-
-  if (!row) {
-    return apiError(c, 'NOT_FOUND', 'Role context not found.');
-  }
-  if (row.owner_id !== userId) {
-    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
-  }
-
-  // If client sent state, use it; otherwise we would need to reconstruct from DB.
-  // For now, require client state (frontend holds state in the new architecture).
-  if (!clientState) {
-    return apiError(c, 'VALIDATION_ERROR', 'state is required in the new architecture.');
-  }
-
-  // After zod parsing, use the validated state
-  const state = clientState as import('../../lib/agents/interview/types').InterviewState;
-
-  const newState = interviewReducer(state, action as import('../../lib/agents/interview/types').InterviewAction);
-
-  return c.json({ state: newState });
-});
-
-// ─── POST /:id/question — Generate next question from state ──────────────────
+// ─── POST /:id/question — DEPRECATED: Use /respond instead ───────────────────
 
 roleContexts.post('/:id/question', async (c) => {
-  const reqStart = Date.now();
-  const userId = c.var.userId;
-  const { id } = c.req.param();
-
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
-  }
-
-  const parsed = questionSchema.safeParse(body);
-  if (!parsed.success) {
-    const message = parsed.error.errors.map((e) => e.message).join('; ');
-    return apiError(c, 'VALIDATION_ERROR', message);
-  }
-
-  const { state: clientState, enableEval } = parsed.data;
-
-  // Verify ownership
-  const row = await c.env.DB.prepare('SELECT owner_id FROM role_contexts WHERE id = ?1')
-    .bind(id)
-    .first<{ owner_id: string }>();
-
-  if (!row) {
-    return apiError(c, 'NOT_FOUND', 'Role context not found.');
-  }
-  if (row.owner_id !== userId) {
-    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
-  }
-
-  // After zod parsing, use the validated state
-  const state = clientState as import('../../lib/agents/interview/types').InterviewState;
-  const provider = createRoleAgentProvider(c.env);
-
-  // ── Streaming path: SSE for real-time token delivery ──
-  const acceptHeader = c.req.header('Accept');
-  if (acceptHeader === 'text/event-stream') {
-    const response = streamSSE(c, async (stream) => {
-      try {
-        if (!provider) {
-          await stream.writeSSE({ event: 'error', data: 'No AI provider is configured.' });
-          return;
-        }
-
-        const generator = generateQuestionStream(state, provider);
-        let result: Awaited<ReturnType<typeof generateQuestion>>;
-        while (true) {
-          const next = await generator.next();
-          if (next.done) {
-            result = next.value;
-            break;
-          }
-          await stream.writeSSE({ event: 'chunk', data: next.value });
-        }
-        logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' });
-
-        // Optional eval gate
-        if (enableEval) {
-          const evalResult = await evaluateQuestion(state, result, provider);
-          if (!evalResult.approved && evalResult.dimensions.length > 0) {
-            await stream.writeSSE({
-              event: 'done',
-              data: JSON.stringify({ ...result, eval: evalResult }),
-            });
-            return;
-          }
-        }
-
-        await stream.writeSSE({
-          event: 'done',
-          data: JSON.stringify(result),
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[roleContexts/question] Streaming error:', msg);
-        logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' }, { success: false, errorMessage: msg });
-        await stream.writeSSE({ event: 'error', data: msg });
-      }
-    });
-    response.headers.set('Content-Type', 'text/event-stream; charset=utf-8');
-    return response;
-  }
-
-  // ── Non-streaming path ──
-  // Stack-first: pop a pre-generated question if available.
-  const stack = (state as import('../../lib/agents/interview/types').InterviewState).questionStack ?? [];
-  if (stack.length > 0) {
-    const next = stack[0]!;
-    const rest = stack.slice(1);
-    console.log(`[question] stack hit: ${rest.length} remaining, serving ${next.questionId} instantly`);
-    return c.json({
-      reasoning: 'Served from pre-generated stack.',
-      acknowledgment: next.acknowledgment,
-      question: {
-        id: next.questionId,
-        text: next.text,
-        goal: next.goal,
-        expectedCoverage: next.expectedCoverage,
-        probeAlignment: next.probeAlignment,
-        questionType: next.questionType,
-        input: next.input,
-        suggestedAnswers: next.suggestedAnswers,
-      },
-      knowledgeStateUpdate: next.knowledgeStateUpdate,
-      domainCoverage: next.domainCoverage,
-      questionStack: rest,
-    });
-  }
-
-  // Stack empty — generate a fresh batch.
-  let batch: Awaited<ReturnType<typeof generateQuestionBatch>>;
-  try {
-    batch = await generateQuestionBatch(state, provider, { batchSize: 3 });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[roleContexts/question] Primary provider failed:', msg);
-    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' }, { success: false, errorMessage: msg });
-
-    // Try fallback provider
-    const fallback = createRoleAgentFallbackProvider(c.env);
-    if (fallback) {
-      console.log('[roleContexts/question] Trying fallback provider:', fallback.name);
-      try {
-        batch = await generateQuestionBatch(state, fallback, { batchSize: 3 });
-        logRoleAgentUsage(c, fallback, { roleContextId: id, participantId: 'question-api' });
-      } catch (fallbackErr) {
-        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-        console.error('[roleContexts/question] Fallback provider also failed:', fallbackMsg);
-        logRoleAgentUsage(c, fallback, { roleContextId: id, participantId: 'question-api' }, { success: false, errorMessage: fallbackMsg });
-        return apiError(c, 'SERVICE_UNAVAILABLE', `AI generation failed. Primary: ${msg}. Fallback: ${fallbackMsg}`);
-      }
-    } else {
-      return apiError(c, 'SERVICE_UNAVAILABLE', `AI generation failed: ${msg}`);
-    }
-  }
-  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-api' });
-
-  if (batch.length === 0) {
-    return apiError(c, 'INTERNAL_ERROR', 'Batch generator returned empty batch.');
-  }
-
-  const result = batch[0]!;
-  const rest = batch.slice(1);
-
-  // Transform batch items into QueuedQuestion shape for the stack
-  const questionStack = rest.map((item) => ({
-    questionId: item.question.id,
-    text: item.question.text,
-    acknowledgment: item.acknowledgment,
-    goal: item.question.goal,
-    expectedCoverage: item.question.expectedCoverage,
-    probeAlignment: item.question.probeAlignment,
-    questionType: item.question.questionType,
-    input: item.question.input,
-    suggestedAnswers: item.question.suggestedAnswers,
-    knowledgeStateUpdate: item.knowledgeStateUpdate,
-    domainCoverage: item.domainCoverage,
-  }));
-
-  // Optional eval gate (only on the first item of the batch)
-  if (enableEval) {
-    const evalStart = Date.now();
-    const evalResult = await evaluateQuestion(state, result, provider);
-    console.log(`[question] eval gate: ${Date.now() - evalStart}ms approved=${evalResult.approved}`);
-    if (!evalResult.approved && evalResult.dimensions.length > 0) {
-      console.log(`[question] TOTAL ${Date.now() - reqStart}ms (with eval)`);
-      return c.json({ ...result, eval: evalResult, questionStack });
-    }
-  }
-
-  console.log(`[question] TOTAL ${Date.now() - reqStart}ms (batch ${batch.length}, no eval)`);
-  return c.json({ ...result, questionStack });
+  return c.json({ error: 'DEPRECATED: Use POST /:id/respond instead.' }, 410);
 });
 
-// ─── POST /:id/question/prefetch — Pre-fill the question stack ───────────────
-
 roleContexts.post('/:id/question/prefetch', async (c) => {
-  const reqStart = Date.now();
-  const userId = c.var.userId;
-  const { id } = c.req.param();
-
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
-  }
-
-  const parsed = questionSchema.safeParse(body);
-  if (!parsed.success) {
-    const message = parsed.error.errors.map((e) => e.message).join('; ');
-    return apiError(c, 'VALIDATION_ERROR', message);
-  }
-
-  const { state: clientState } = parsed.data;
-
-  // Verify ownership
-  const row = await c.env.DB.prepare('SELECT owner_id FROM role_contexts WHERE id = ?1')
-    .bind(id)
-    .first<{ owner_id: string }>();
-
-  if (!row) {
-    return apiError(c, 'NOT_FOUND', 'Role context not found.');
-  }
-  if (row.owner_id !== userId) {
-    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
-  }
-
-  const state = clientState as import('../../lib/agents/interview/types').InterviewState;
-  const stack = state.questionStack ?? [];
-
-  // If stack is healthy, skip
-  if (stack.length >= 2) {
-    return c.json({ questionStack: stack, prefetched: false, reason: 'stack_healthy' });
-  }
-
-  const provider = createRoleAgentProvider(c.env);
-  if (!provider) {
-    return c.json({ questionStack: stack, prefetched: false, reason: 'no_provider' });
-  }
-
-  // Generate a fresh batch and append to existing stack
-  let batch: Awaited<ReturnType<typeof generateQuestionBatch>>;
-  try {
-    batch = await generateQuestionBatch(state, provider, { batchSize: 3, maxTokens: 4096 });
-  } catch (err) {
-    logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-prefetch' }, { success: false, errorMessage: err instanceof Error ? err.message : String(err) });
-    return c.json({ questionStack: stack, prefetched: false, reason: 'generation_failed', error: err instanceof Error ? err.message : String(err) });
-  }
-  logRoleAgentUsage(c, provider, { roleContextId: id, participantId: 'question-prefetch' });
-
-  const newStackItems = batch.map((item) => ({
-    questionId: item.question.id,
-    text: item.question.text,
-    acknowledgment: item.acknowledgment,
-    goal: item.question.goal,
-    expectedCoverage: item.question.expectedCoverage,
-    probeAlignment: item.question.probeAlignment,
-    questionType: item.question.questionType,
-    input: item.question.input,
-    suggestedAnswers: item.question.suggestedAnswers,
-    knowledgeStateUpdate: item.knowledgeStateUpdate,
-    domainCoverage: item.domainCoverage,
-  }));
-
-  const questionStack = [...stack, ...newStackItems];
-
-  console.log(`[question/prefetch] TOTAL ${Date.now() - reqStart}ms | added=${batch.length} | total=${questionStack.length}`);
-
-  return c.json({ questionStack, prefetched: true, added: batch.length });
+  return c.json({ error: 'DEPRECATED: Use POST /:id/respond instead.' }, 410);
 });
 
 // ─── POST /:id/synthesize — Synthesize persona + JD from state ───────────────
@@ -1472,7 +1213,7 @@ roleContexts.post('/:id/synthesize', async (c) => {
   }
 
   // After zod parsing, use the validated state
-  const state = clientState as import('../../lib/agents/interview/types').InterviewState;
+  const state = clientState as unknown as import('../../lib/agents/interview/types').InterviewState;
   const provider = createRoleAgentSynthesisProvider(c.env);
   const fallbackProvider = createRoleAgentSynthesisFallbackProvider(c.env);
 

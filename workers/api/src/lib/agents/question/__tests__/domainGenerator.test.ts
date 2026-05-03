@@ -110,6 +110,21 @@ describe('generateDomainQuestions', () => {
     expect(questions).toHaveLength(1);
     // The prompt content is verified in domainPrompts tests; here we just verify the call succeeds.
   });
+
+  it('extracts questions from truncated JSON via fallback', async () => {
+    // Simulate a truncated response where JSON.parse would fail
+    const truncated = `{"questions":[{"id":"dq-1","text":"Tell me about the team.","intent":"Surface team dynamics","drillingHints":["What makes them tick?"],"ladderingTarget":"Team values"},{"id":"dq-2","text":"How do you handle disagreements?","intent":"Surface conflict style","drillingHints":["Give me an example.","How mod`;
+
+    const provider = makeMockProvider(truncated);
+    const state = makeState();
+    const questions = await generateDomainQuestions('team', state, provider, { count: 2 });
+
+    expect(questions.length).toBeGreaterThanOrEqual(1);
+    expect(questions[0].id).toBe('dq-1');
+    expect(questions[0].text).toBe('Tell me about the team.');
+    expect(questions[0].drillingHints).toEqual(['What makes them tick?']);
+    expect(questions[0].ladderingTarget).toBe('Team values');
+  });
 });
 
 describe('generateDomainQuestionsStream', () => {

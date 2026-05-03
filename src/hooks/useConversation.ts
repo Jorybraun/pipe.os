@@ -20,6 +20,7 @@ import type {
   RoleContextProgress,
   RoleContextExchange,
   DomainCoverage,
+  DomainCompletionStatus,
   CandidatePersona,
   GeneratedJobDescription,
 } from '../lib/api/types';
@@ -69,9 +70,9 @@ export interface UseConversationResult {
    */
   hydrateInterviewing: (data: {
     exchanges: RoleContextExchange[];
-    questionsAsked: number;
-    questionBudget: number;
     knowledgeState: Record<string, unknown>;
+    currentDomain?: string | null | undefined;
+    domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }) => void;
   /** Wipe all conversation state back to IDLE — used by step-nav back-buttons. */
   reset: () => void;
@@ -237,11 +238,11 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
 
   const hydrateInterviewing = useCallback((data: {
     exchanges: RoleContextExchange[];
-    questionsAsked: number;
-    questionBudget: number;
     knowledgeState: Record<string, unknown>;
+    currentDomain?: string | null | undefined;
+    domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }): void => {
-    const { exchanges, questionsAsked, questionBudget, knowledgeState } = data;
+    const { exchanges, knowledgeState, currentDomain, domainCompletion } = data;
 
     // Last exchange without an answer is the current question awaiting response.
     const lastExchange = exchanges[exchanges.length - 1];
@@ -268,7 +269,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     setPastExchanges(restored);
     setCurrentQuestion(restoredQuestion);
     setAcknowledgment(currentExchange?.acknowledgment ?? null);
-    setProgress({ asked: questionsAsked, budget: questionBudget, domains: coverage });
+    setProgress({ asked: exchanges.length, budget: 0, domains: coverage, currentDomain, domainCompletion });
     setPhase('INTERVIEWING');
     setIsLoading(false);
     setError(null);

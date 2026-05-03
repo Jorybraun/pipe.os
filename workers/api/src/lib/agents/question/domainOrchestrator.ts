@@ -1,44 +1,66 @@
 /**
- * Domain Orchestrator — Column-by-column interview flow.
+ * Domain Orchestrator — Conversational column-by-column interview flow.
  *
- * Manages the domain-driven question pipeline:
- *   1. Pick next pending domain
- *   2. Generate + cache domain questions (one LLM call per domain)
+ * Architecture:
+ *   1. Pick next pending domain (team → work → bar → codebase → process → why)
+ *   2. Generate + cache 4-6 domain questions (one LLM call per domain)
  *   3. Serve cached questions one by one
- *   4. Run depth evaluator when cache is exhausted
- *   5. Generate follow-ups if shallow, or advance to next domain if deep
+ *   4. After EACH answer, evaluate its quality
+ *   5. If thin → warm drilling follow-up (light-hearted, non-invasive)
+ *   6. If rich or max questions reached → advance to next domain
  *
- * Falls back to legacy per-turn generation when not in DISCOVERY phase
- * or when the domain-driven flag is not set.
+ * When all domains are complete, returns a completion marker so the caller
+ * can run synthesis.
  */
 
 import type { LLMProvider } from '../../llm/types';
 import type { Domain } from '../../../types';
-import type { InterviewState, GeneratedQuestion, DomainCompletionStatus } from '../interview/types';
+import type { InterviewState, DomainCompletionStatus } from '../interview/types';
 import { DOMAIN_COLUMN_ORDER } from '../interview/types';
 import { generateDomainQuestions } from './domainGenerator';
-import { evaluateDomainDepth } from './depthEvaluator';
-import { generateQuestion } from './generator';
+import { evaluateLatestAnswer, buildWarmFollowUp } from './answerEvaluator';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface DomainDrivenQuestion {
-  /** The question to ask. */
-  question: GeneratedQuestion;
-  /** State updates to apply before serving the question. */
+export interface DomainDrivenResult {
+  type: 'question';
+  /** Legacy-compatible question result (same shape as generateQuestion()). */
+  result: {
+    reasoning: string;
+    acknowledgment: string;
+    question: {
+      id: string;
+      text: string;
+      goal?: string;
+      input: { type: 'text' | 'textarea' | 'tags' | 'select' | 'radio'; options?: string[]; placeholder?: string };
+      suggestedAnswers?: string[];
+    };
+    knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+    domainCoverage: Record<string, import('../../../types').DomainCoverage>;
+  };
+  /** State patches to apply before serving the question. */
   statePatches: Partial<Pick<InterviewState,
-    'currentDomain' | 'domainCompletion' | 'domainQuestions' | 'domainFollowUpsDelivered'
+    'currentDomain' | 'domainCompletion' | 'domainQuestions' | 'domainQuestionsDelivered' | 'domainFollowUpsDelivered'
   >>;
   /** Whether this question came from the domain cache (true) or a fresh LLM call (false). */
   fromCache: boolean;
 }
 
+export interface DomainDrivenComplete {
+  type: 'complete';
+  /** All domains are deep/complete. */
+  statePatches: Partial<Pick<InterviewState,
+    'currentDomain' | 'domainCompletion' | 'domainQuestions' | 'domainQuestionsDelivered' | 'domainFollowUpsDelivered'
+  >>;
+}
+
+export type DomainDrivenOutcome = DomainDrivenResult | DomainDrivenComplete;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function pickNextDomain(state: InterviewState): Domain | null {
-  const completion = state.domainCompletion ?? {};
   for (const d of DOMAIN_COLUMN_ORDER) {
-    const status = completion[d] ?? 'pending';
+    const status = state.domainCompletion[d] ?? 'pending';
     if (status === 'pending' || status === 'generating') {
       return d;
     }
@@ -46,12 +68,50 @@ function pickNextDomain(state: InterviewState): Domain | null {
   return null;
 }
 
-function getCachedQuestions(state: InterviewState, domain: Domain): GeneratedQuestion[] {
-  return state.domainQuestions?.[domain] ?? [];
+function allDomainsComplete(state: InterviewState): boolean {
+  return DOMAIN_COLUMN_ORDER.every((d) => state.domainCompletion[d] === 'complete');
+}
+
+function getCachedQuestions(state: InterviewState, domain: Domain) {
+  return state.domainQuestions[domain] ?? [];
 }
 
 function getDeliveredCount(state: InterviewState, domain: Domain): number {
-  return state.domainQuestionsDelivered?.[domain] ?? 0;
+  return state.domainQuestionsDelivered[domain] ?? 0;
+}
+
+/** Build a warm acknowledgment for a domain question. Rotates so it feels natural. */
+function buildAcknowledgment(state: InterviewState, domain: Domain): string {
+  const delivered = getDeliveredCount(state, domain);
+  const acks = [
+    "Got it — let's keep going.",
+    "Interesting. Onward.",
+    "Noted. Here's what's next.",
+    "Makes sense. Moving along.",
+    "Cool. Next up:",
+    "Appreciate that. Let's dig into the next one.",
+  ];
+  return acks[delivered % acks.length]!;
+}
+
+/** Wrap a lightweight domain question into the legacy GeneratedQuestion shape. */
+function wrapAsLegacy(
+  q: { id: string; text: string; intent: string },
+  _state: InterviewState,
+  _domain: Domain,
+): DomainDrivenResult['result'] {
+  return {
+    reasoning: `Domain-driven question for ${_domain}: ${q.intent}`,
+    acknowledgment: buildAcknowledgment(_state, _domain),
+    question: {
+      id: q.id,
+      text: q.text,
+      goal: q.intent,
+      input: { type: 'textarea' as const, placeholder: 'Share your thoughts…' },
+    },
+    knowledgeStateUpdate: {},
+    domainCoverage: {},
+  };
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -59,11 +119,9 @@ function getDeliveredCount(state: InterviewState, domain: Domain): number {
 /**
  * Get the next question using domain-driven flow.
  *
- * - If not in DISCOVERY phase, falls back to legacy `generateQuestion()`.
- * - If in DISCOVERY, manages the column-by-column pipeline.
- *
- * This function may trigger LLM calls (domain generation or follow-up generation).
- * It returns the question + any state patches that must be applied before serving.
+ * - If all domains are complete, returns `{ type: 'complete' }`.
+ * - Evaluates the most recent answer and decides: drill deeper, serve next
+ *   cached question, or advance to the next domain.
  */
 export async function getNextDomainDrivenQuestion(
   state: InterviewState,
@@ -71,33 +129,28 @@ export async function getNextDomainDrivenQuestion(
   opts: {
     /** Enable soul-style questioning for cultural domains. */
     enableSoulTrack?: boolean;
-    /** Target number of questions per domain. Default: 6. */
+    /** Target number of questions per domain. Default: 4. */
     questionsPerDomain?: number;
-    /** Max follow-ups when depth is shallow. Default: 3. */
+    /** Max drilling follow-ups per domain. Default: 2. */
     maxFollowUps?: number;
   } = {},
-): Promise<DomainDrivenQuestion> {
-  // Not in DISCOVERY — fall back to legacy generation
-  if (state.phase !== 'DISCOVERY') {
-    const legacy = await generateQuestion(state, provider);
+): Promise<DomainDrivenOutcome> {
+  // All domains complete — signal caller to run synthesis
+  if (allDomainsComplete(state)) {
     return {
-      question: {
-        id: legacy.question.id,
-        text: legacy.question.text,
-        intent: legacy.question.goal ?? '',
-      },
+      type: 'complete',
       statePatches: {},
-      fromCache: false,
     };
   }
 
-  const questionsPerDomain = opts.questionsPerDomain ?? 6;
-  const maxFollowUps = opts.maxFollowUps ?? 3;
+  const questionsPerDomain = opts.questionsPerDomain ?? 4;
+  const maxFollowUps = opts.maxFollowUps ?? 2;
 
   let currentDomain = state.currentDomain;
-  let domainCompletion = { ...(state.domainCompletion ?? {}) };
-  let domainQuestions = { ...(state.domainQuestions ?? {}) };
-  let domainFollowUpsDelivered = state.domainFollowUpsDelivered ?? 0;
+  let domainCompletion: Record<string, DomainCompletionStatus> = { ...state.domainCompletion };
+  let domainQuestions = { ...state.domainQuestions };
+  let domainQuestionsDelivered = { ...state.domainQuestionsDelivered };
+  let domainFollowUpsDelivered = state.domainFollowUpsDelivered;
 
   // ── Determine current domain ──
   if (!currentDomain || domainCompletion[currentDomain] === 'complete') {
@@ -107,17 +160,12 @@ export async function getNextDomainDrivenQuestion(
     }
   }
 
-  // No pending domains — this should not happen in DISCOVERY, but handle gracefully
+  // No pending domains — this should not happen (allDomainsComplete catches it),
+  // but handle gracefully
   if (!currentDomain) {
-    const legacy = await generateQuestion(state, provider);
     return {
-      question: {
-        id: legacy.question.id,
-        text: legacy.question.text,
-        intent: legacy.question.goal ?? '',
-      },
-      statePatches: {},
-      fromCache: false,
+      type: 'complete',
+      statePatches: { currentDomain, domainCompletion, domainQuestions, domainQuestionsDelivered, domainFollowUpsDelivered },
     };
   }
 
@@ -142,56 +190,58 @@ export async function getNextDomainDrivenQuestion(
     domainCompletion[currentDomain] = 'asking';
   }
 
+  // ── Evaluate the most recent answer (if any) ──
+  // If the user just gave a thin answer, serve a warm drilling follow-up
+  // instead of jumping to the next cached question.
+  if (delivered > 0 && domainFollowUpsDelivered < maxFollowUps) {
+    const evalResult = evaluateLatestAnswer(state);
+
+    if (evalResult.needsFollowUp) {
+      const currentQ = cached[delivered - 1];
+      const followUp = buildWarmFollowUp(state, currentQ?.drillingHints?.[0], domainFollowUpsDelivered);
+
+      domainFollowUpsDelivered += 1;
+      domainQuestionsDelivered[currentDomain] = delivered + 1;
+      domainCompletion[currentDomain] = 'follow_up';
+
+      return {
+        type: 'question',
+        result: wrapAsLegacy(followUp, state, currentDomain),
+        statePatches: {
+          currentDomain,
+          domainCompletion,
+          domainQuestions,
+          domainQuestionsDelivered,
+          domainFollowUpsDelivered,
+        },
+        fromCache: false,
+      };
+    }
+  }
+
   // ── Serve from cache if available ──
   if (delivered < cached.length) {
     const nextQuestion = cached[delivered]!;
+    domainQuestionsDelivered[currentDomain] = delivered + 1;
     return {
-      question: nextQuestion,
+      type: 'question',
+      result: wrapAsLegacy(nextQuestion, state, currentDomain),
       statePatches: {
         currentDomain,
         domainCompletion,
         domainQuestions,
+        domainQuestionsDelivered,
         domainFollowUpsDelivered,
       },
       fromCache: true,
     };
   }
 
-  // ── Cache exhausted — run depth evaluator ──
-  const depthResult = evaluateDomainDepth(currentDomain, state);
-
-  if (!depthResult.isDeep && domainFollowUpsDelivered < maxFollowUps) {
-    // Generate 1 follow-up question for this domain
-    if (!provider) {
-      throw new Error('No AI provider is configured.');
-    }
-
-    const followUp = await generateDomainQuestions(currentDomain, state, provider, {
-      count: 1,
-      style: opts.enableSoulTrack && currentDomain === 'team' ? 'soul' : undefined,
-    });
-
-    cached = followUp;
-    domainQuestions[currentDomain] = followUp;
-    domainCompletion[currentDomain] = 'follow_up';
-    domainFollowUpsDelivered += 1;
-
-    const nextQuestion = cached[0]!;
-    return {
-      question: nextQuestion,
-      statePatches: {
-        currentDomain,
-        domainCompletion,
-        domainQuestions,
-        domainFollowUpsDelivered,
-      },
-      fromCache: true,
-    };
-  }
-
-  // ── Domain is deep (or follow-ups exhausted) — mark complete and recurse ──
+  // ── Cache exhausted (all main + any needed follow-ups asked) ──
+  // Mark domain complete and recurse to the next domain
   domainCompletion[currentDomain] = 'complete';
   domainQuestions[currentDomain] = [];
+  domainQuestionsDelivered[currentDomain] = 0;
   domainFollowUpsDelivered = 0;
 
   const nextState: InterviewState = {
@@ -199,6 +249,7 @@ export async function getNextDomainDrivenQuestion(
     currentDomain,
     domainCompletion,
     domainQuestions,
+    domainQuestionsDelivered,
     domainFollowUpsDelivered,
   };
 

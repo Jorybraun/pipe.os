@@ -109,6 +109,12 @@ export const interviewStateSchema = z.object({
   reasoning: z.string().optional(),
   urgentGaps: z.array(z.string()).optional(),
   questionStack: z.array(queuedQuestionSchema).optional().default([]),
+  // Domain-driven column tracking (optional for backward compat)
+  currentDomain: z.string().nullable().optional(),
+  domainCompletion: z.record(z.string()).optional(),
+  domainQuestions: z.record(z.array(z.record(z.unknown()))).optional(),
+  domainQuestionsDelivered: z.record(z.number()).optional(),
+  domainFollowUpsDelivered: z.number().optional(),
 });
 
 export const stateActionSchema = z.object({

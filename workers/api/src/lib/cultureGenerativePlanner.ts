@@ -97,6 +97,7 @@ export function buildGenerativePlannerSystemPrompt(): string {
 4. In role_fit mode: if a prior screening exists, skip dimensions already well-covered and go deeper on thin ones.
 5. Tone: conversational, curious, sharp — not HR-formal.
 6. The question must be answerable as a STAR story (Situation, Task, Action, Result).
+7. CRITICAL: Do NOT reference any prior interviews, screenings, role discovery documents, or the Role Context Document (RCD) as if the candidate has seen them. The candidate has NOT participated in any prior interview with you and has NOT seen these documents. Only reference details from the candidate's background (resume, experiences, projects) or frame team context as general company culture, never as something the candidate should already know.
 
 # STAR slot rubric (for targetSlots)
 S = Situation: concrete context (when, where, with whom)
@@ -213,6 +214,7 @@ Generate the NEXT question for this candidate. It must:
 - Target an uncovered or thin dimension
 - Be phrased as a single, natural question (not a list)
 - Assume the candidate will answer with a STAR story
+- NEVER mention prior interviews, screenings, or internal documents. The candidate has not seen these.
 
 Produce the JSON object now. Nothing else.`;
 }

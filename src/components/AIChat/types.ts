@@ -19,7 +19,6 @@ import type {
 export interface AdapterConfig {
   /** For role discovery: pre-collected baseline fields. */
   baseline?: Record<string, unknown>;
-  questionBudget?: number;
   /** For candidate assessment: challenge ID + session token. */
   challengeId?: string;
   sessionToken?: string | null;
@@ -135,9 +134,7 @@ export interface AIChatProps {
    */
   onLiveEnd?: () => void;
 
-  // Interview phase metadata (optional — surfaced when provided by the adapter)
-  interviewPhase?: string;
-  reasoning?: string | undefined;
-  urgentGaps?: string[] | undefined;
-  synthesisAllowed?: boolean;
+  // Domain-driven interview metadata (optional — surfaced by the adapter)
+  currentDomain?: string | null | undefined;
+  domainCompletion?: Record<string, import('../../lib/api/types').DomainCompletionStatus> | undefined;
 }

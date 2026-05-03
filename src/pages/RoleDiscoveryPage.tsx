@@ -47,10 +47,6 @@ import type {
 } from '../lib/api/types';
 import type { AdapterConfig } from '../components/AIChat/types';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const DEFAULT_BUDGET = 15;
-
 // ─── Quick-start presets ──────────────────────────────────────────────────────
 
 const ROLE_PRESETS: RolePreset[] = [
@@ -515,14 +511,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // ── Hook callback: fire the AI interview with the finalised answers ──
   const handleFire = useCallback((answers: Record<string, string>, liveMode: boolean): void => {
     setDefaultLiveMode(liveMode);
-    setInitConfig({ baseline: buildBaseline(answers) as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setInitConfig({ baseline: buildBaseline(answers) as unknown as Record<string, unknown> });
     setPeeking(false);
   }, []);
 
   // ── Hook callback: JD import delivered a baseline — start the interview ──
   const handleJdImport = useCallback((baseline: RoleContextBaseline): void => {
     setDefaultLiveMode(false);
-    setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
     setPeeking(false);
   }, []);
 
@@ -575,7 +571,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           // Context is COMPLETE — hydrate directly to synthesis, skip the interview
           rd.hydrateComplete({ id: ctx.id, baseline: ctx.baseline ?? baseline, persona: ctx.persona, jobDescription: ctx.jobDescription, rcd: ctx.rcd });
           setDefaultLiveMode(false);
-          setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+          setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
           return;
         }
 
@@ -588,13 +584,12 @@ export default function RoleDiscoveryPage(): JSX.Element {
             participantRole: creator.participantRole,
             baseline: ctx.baseline ?? baseline,
             exchanges: creator.exchanges,
-            questionsAsked: creator.questionsAsked,
-            questionBudget: creator.questionBudget,
             knowledgeState: ctx.knowledgeState,
-            phase: creator.phase,
+            currentDomain: undefined,
+            domainCompletion: undefined,
           });
           setDefaultLiveMode(saved.defaultLiveMode);
-          setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: creator.questionBudget });
+          setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
           return;
         }
       } catch {
@@ -604,7 +599,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
     // No resumable context — restart the AI interview from the saved baseline
     setDefaultLiveMode(saved.defaultLiveMode);
-    setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
   }, [api, rd]);
 
   // ── JD import modal — closes the modal then hands parsed payload to the hook ──
@@ -1120,10 +1115,8 @@ export default function RoleDiscoveryPage(): JSX.Element {
             greeting="Hi, I'm Pipe's interview assistant. I'll ask you a few questions to help define the role you're building for. Let's get started."
             showDomainBars
             onLiveEnd={handleLiveEnd}
-            interviewPhase={rd.interviewPhase}
-            reasoning={rd.reasoning}
-            urgentGaps={rd.urgentGaps}
-            synthesisAllowed={rd.synthesisAllowed}
+            currentDomain={rd.currentDomain}
+            domainCompletion={rd.domainCompletion}
           />
         </div>
       )}
