@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useParams } from 'react-router-dom';
 import {
   Phone,
   Video,
@@ -21,11 +21,17 @@ import {
   ToggleRight,
   Type,
   Mic,
+  FileQuestion,
+  Edit3,
+  Plus,
 } from 'lucide-react';
 import { SectionCard } from '../../components';
 import { useStageMutations } from '../../hooks/useStageMutations';
+import { useApiClient } from '../../hooks/useApiClient';
+import { QuestionVideoRecorder } from '../../components/Challenge/QuestionVideoRecorder';
+import { normalizeShortAnswerConfig } from '../../lib/shortAnswerUtils';
 import type { StagePanelContext } from '../StagePanel';
-import type { ScreeningFormat } from '../../lib/api/types';
+import type { ScreeningFormat, ChallengeItem } from '../../lib/api/types';
 
 const mono = '"Space Mono", monospace';
 
@@ -65,7 +71,9 @@ const FORMAT_OPTIONS: Array<{
 
 export default function ScreeningDetailTab(): JSX.Element {
   const { stage, stageId, refetchStage } = useOutletContext<StagePanelContext>();
+  const { id: pipelineId } = useParams<{ id: string }>();
   const { updateStage } = useStageMutations();
+  const api = useApiClient();
 
   const currentFormat = stage.screeningFormat as ScreeningFormat | null;
   const isScheduled = stage.isScheduled ?? false;
@@ -114,6 +122,28 @@ export default function ScreeningDetailTab(): JSX.Element {
   }, [stageId, updateStage, refetchStage]);
 
   const activeOption = FORMAT_OPTIONS.find((o) => o.key === currentFormat);
+
+  // ── Screening questions (QUIZ_SHORT_ANSWER challenges) ───────────────────
+  const screeningQuestions = (stage.challenges ?? []).filter(
+    (c): c is ChallengeItem & { type: 'QUIZ_SHORT_ANSWER' } => c.type === 'QUIZ_SHORT_ANSWER',
+  );
+
+  const handleVideoUploaded = useCallback(
+    async (challengeId: string, s3Key: string) => {
+      try {
+        await api.put(`/api/v1/challenges/${challengeId}`, {
+          config: {
+            ...((stage.challenges ?? []).find((c) => c.id === challengeId)?.config ?? {}),
+            questionVideoS3Key: s3Key,
+          },
+        });
+        await refetchStage();
+      } catch (err) {
+        console.error('[ScreeningDetailTab] Failed to update challenge video:', err);
+      }
+    },
+    [api, stage.challenges, refetchStage],
+  );
 
   return (
     <div
@@ -425,6 +455,260 @@ export default function ScreeningDetailTab(): JSX.Element {
             )}
           </div>
         </SectionCard>
+      )}
+
+      {/* Questions list */}
+      <SectionCard
+        label="SCREENING_QUESTIONS"
+        icon={<FileQuestion size={16} color="var(--pipe-text-dim)" />}
+        meta={`${screeningQuestions.length} QUESTION${screeningQuestions.length !== 1 ? 'S' : ''}`}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {screeningQuestions.length === 0 ? (
+            <EmptyQuestionsState pipelineId={pipelineId} stageId={stageId} />
+          ) : (
+            screeningQuestions.map((challenge, index) => (
+              <QuestionRow
+                key={challenge.id}
+                challenge={challenge}
+                index={index}
+                pipelineId={pipelineId}
+                onVideoUploaded={(s3Key) => void handleVideoUploaded(challenge.id, s3Key)}
+              />
+            ))
+          )}
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+/** Single screening question row with optional recruiter video recorder. */
+function QuestionRow({
+  challenge,
+  index,
+  pipelineId,
+  onVideoUploaded,
+}: {
+  challenge: ChallengeItem & { type: 'QUIZ_SHORT_ANSWER' };
+  index: number;
+  pipelineId: string | undefined;
+  onVideoUploaded: (s3Key: string) => void;
+}): JSX.Element {
+  const cfg = normalizeShortAnswerConfig(challenge.config ?? {});
+  const questionText = cfg.question || challenge.title || 'Untitled question';
+  const inputMode = cfg.inputMode || 'text';
+  const existingVideoKey = ((cfg as unknown) as Record<string, unknown>).questionVideoS3Key as string | undefined;
+
+  const modeColors: Record<string, { bg: string; border: string; text: string }> = {
+    text: { bg: 'rgba(96,165,250,0.08)', border: 'rgba(96,165,250,0.25)', text: '#60a5fa' },
+    voice: { bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.25)', text: '#a78bfa' },
+    video: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.25)', text: '#fbbf24' },
+  };
+  const modeColor = modeColors[inputMode]!;
+
+  const editUrl = pipelineId ? `/pipeline/${pipelineId}/challenges/${challenge.id}` : undefined;
+
+  return (
+    <div
+      style={{
+        padding: '20px 24px',
+        background: 'var(--pipe-surface)',
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 10,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        {/* Question number */}
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            background: 'var(--pipe-surface-hover)',
+            border: '1px solid var(--pipe-border-light)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            marginTop: 2,
+          }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text-dim)', fontFamily: mono }}>
+            {index + 1}
+          </span>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Header row: badges + edit link */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+            <span
+              style={{
+                fontSize: 8,
+                letterSpacing: '0.15em',
+                fontWeight: 700,
+                fontFamily: mono,
+                padding: '3px 8px',
+                borderRadius: 4,
+                background: modeColor.bg,
+                border: `1px solid ${modeColor.border}`,
+                color: modeColor.text,
+                textTransform: 'uppercase',
+              }}
+            >
+              {inputMode}
+            </span>
+            {existingVideoKey && (
+              <span
+                style={{
+                  fontSize: 8,
+                  letterSpacing: '0.15em',
+                  fontWeight: 700,
+                  fontFamily: mono,
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  background: 'rgba(74,222,128,0.08)',
+                  border: '1px solid rgba(74,222,128,0.25)',
+                  color: '#4ade80',
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <Check size={10} />
+                VIDEO ATTACHED
+              </span>
+            )}
+            {editUrl && (
+              <a
+                href={editUrl}
+                style={{
+                  fontSize: 8,
+                  letterSpacing: '0.1em',
+                  fontFamily: mono,
+                  color: 'var(--pipe-text-dim)',
+                  textDecoration: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  marginLeft: 'auto',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--pipe-text)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--pipe-text-dim)'; }}
+              >
+                <Edit3 size={10} />
+                EDIT
+              </a>
+            )}
+          </div>
+
+          {/* Question text */}
+          <p
+            style={{
+              fontSize: 13,
+              lineHeight: 1.6,
+              color: 'var(--pipe-text)',
+              margin: '0 0 16px 0',
+              fontFamily: mono,
+            }}
+          >
+            {questionText}
+          </p>
+
+          {/* Optional recruiter video recorder */}
+          <div
+            style={{
+              padding: '16px 20px',
+              background: 'var(--pipe-bg)',
+              border: '1px solid var(--pipe-border-light)',
+              borderRadius: 8,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 8,
+                letterSpacing: '0.15em',
+                fontWeight: 700,
+                fontFamily: mono,
+                color: 'var(--pipe-text-dim)',
+                marginBottom: 12,
+                textTransform: 'uppercase',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <Video size={12} color="var(--pipe-text-dim)" />
+              RECRUITER QUESTION VIDEO (OPTIONAL)
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, lineHeight: 1.5, marginBottom: 14 }}>
+              Record yourself asking this question so candidates see a human face instead of plain text. Makes the experience feel more personal.
+            </div>
+            <QuestionVideoRecorder
+              challengeId={challenge.id}
+              {...(existingVideoKey ? { existingS3Key: existingVideoKey } : {})}
+              onUploaded={onVideoUploaded}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Empty state when no screening questions exist yet. */
+function EmptyQuestionsState({
+  pipelineId,
+  stageId,
+}: {
+  pipelineId: string | undefined;
+  stageId: string;
+}): JSX.Element {
+  const addUrl = pipelineId
+    ? `/pipeline/${pipelineId}/stage/${stageId}`
+    : undefined;
+
+  return (
+    <div
+      style={{
+        padding: '40px 24px',
+        textAlign: 'center',
+        background: 'var(--pipe-surface)',
+        border: '1px dashed var(--pipe-border)',
+        borderRadius: 10,
+      }}
+    >
+      <FileQuestion size={28} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: mono, letterSpacing: '0.05em', marginBottom: 8 }}>
+        NO QUESTIONS YET
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, lineHeight: 1.6, marginBottom: 20 }}>
+        Screening questions are added as QUIZ_SHORT_ANSWER challenges.<br />
+        Go to the Challenges tab to add your first question.
+      </div>
+      {addUrl && (
+        <a
+          href={addUrl}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 16px',
+            background: 'var(--pipe-surface-hover)',
+            border: '1px solid var(--pipe-border)',
+            borderRadius: 6,
+            color: 'var(--pipe-text)',
+            fontSize: 9,
+            letterSpacing: '0.1em',
+            fontWeight: 700,
+            fontFamily: mono,
+            textDecoration: 'none',
+          }}
+        >
+          <Plus size={12} />
+          ADD QUESTIONS
+        </a>
       )}
     </div>
   );

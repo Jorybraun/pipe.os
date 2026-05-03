@@ -115,7 +115,7 @@ export function QuestionVideoRecorder({
       setError('Upload failed. Please try again.');
       setState('error');
     }
-  }, [recordedBlob, challengeId, onUploaded]);
+  }, [recordedBlob, challengeId, onUploaded, storage]);
 
   const reset = useCallback(() => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -134,9 +134,9 @@ export function QuestionVideoRecorder({
   const btn = (active = false): React.CSSProperties => ({
     ...mono,
     padding: '8px 16px',
-    background: active ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)',
-    border: `1px solid ${active ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`,
-    color: active ? '#fbbf24' : 'rgba(255,255,255,0.6)',
+    background: active ? 'rgba(251,191,36,0.12)' : 'var(--pipe-surface)',
+    border: `1px solid ${active ? 'rgba(251,191,36,0.4)' : 'var(--pipe-border)'}`,
+    color: active ? '#fbbf24' : 'var(--pipe-text-muted)',
     cursor: 'pointer',
     borderRadius: 4,
   });
@@ -190,7 +190,7 @@ export function QuestionVideoRecorder({
           </>
         )}
         {state === 'uploading' && (
-          <span style={{ ...mono, color: 'rgba(255,255,255,0.4)' }}>UPLOADING...</span>
+          <span style={{ ...mono, color: 'var(--pipe-text-dim)' }}>UPLOADING...</span>
         )}
         {(state === 'done' || state === 'error') && (
           <>
