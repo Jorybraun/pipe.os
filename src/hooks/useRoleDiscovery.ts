@@ -113,6 +113,7 @@ export interface UseRoleDiscoveryResult {
     baseline: RoleContextBaseline;
     exchanges: RoleContextExchange[];
     knowledgeState: Record<string, unknown>;
+    questionBudget: number;
     currentDomain?: string | null | undefined;
     domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }) => void;
@@ -169,7 +170,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
         interviewStateRef.current = {
           baseline: baseline as unknown as Record<string, unknown>,
           participantRole: null,
-          questionBudget: 0,
+          questionBudget: started.progress.budget,
           exchanges: [{
             questionId: started.question.id,
             question: started.question.text,
@@ -348,6 +349,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     baseline: RoleContextBaseline;
     exchanges: RoleContextExchange[];
     knowledgeState: Record<string, unknown>;
+    questionBudget: number;
     currentDomain?: string | null | undefined;
     domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }): void => {
@@ -377,7 +379,7 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
       const reconstructedState: InterviewState = {
       baseline: data.baseline as unknown as Record<string, unknown>,
       participantRole: data.participantRole,
-      questionBudget: 0,
+      questionBudget: data.questionBudget,
       exchanges: data.exchanges.map((ex) => ({
         questionId: ex.questionId,
         question: ex.question,

@@ -585,6 +585,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
             baseline: ctx.baseline ?? baseline,
             exchanges: creator.exchanges,
             knowledgeState: ctx.knowledgeState,
+            questionBudget: creator.questionBudget,
             currentDomain: undefined,
             domainCompletion: undefined,
           });
