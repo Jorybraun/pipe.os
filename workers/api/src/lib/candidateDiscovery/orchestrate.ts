@@ -215,14 +215,14 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
 
 // ─── Match + Assign ─────────────────────────────────────────────────────────
 
-interface MatchAndAssignInput {
+export interface MatchAndAssignInput {
   env: Env;
   db: D1Database;
   candidateId: string;
   discoveryResult: CandidateDiscoveryResult;
 }
 
-async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
+export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   const { env, db, candidateId, discoveryResult } = input;
 
   // Load candidate's pipeline + match config
@@ -822,6 +822,78 @@ async function trackStep<T>(
     await recordStepDuration(db, stepName, Date.now() - start, candidateId);
     throw err;
   }
+}
+
+// ─── Discovery result reloader ───────────────────────────────────────────────
+
+/**
+ * Reconstruct a CandidateDiscoveryResult from the D1 row written by
+ * persistCandidateProfile. Used by the post-screener pipeline when the
+ * original discovery result object is no longer in scope.
+ */
+export async function loadDiscoveryResultFromDb(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateDiscoveryResult | null> {
+  const row = await db
+    .prepare(
+      `SELECT candidate_searchable_profile, key_concepts_json, career_context_json,
+              situation_signature_json, profile_version, model_used
+         FROM candidate_ingestion
+        WHERE candidate_id = ?1`,
+    )
+    .bind(candidateId)
+    .first<{
+      candidate_searchable_profile: string | null;
+      key_concepts_json: string | null;
+      career_context_json: string | null;
+      situation_signature_json: string | null;
+      profile_version: string | null;
+      model_used: string | null;
+    }>();
+
+  if (!row || !row.candidate_searchable_profile) {
+    return null;
+  }
+
+  function safeJson<T>(raw: string | null, fallback: T): T {
+    if (!raw) return fallback;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return {
+    candidateSearchableProfile: row.candidate_searchable_profile,
+    keyConcepts: safeJson(row.key_concepts_json, {
+      mustHaveSkills: [],
+      niceToHaveSkills: [],
+      seniority: 'mid' as const,
+      primary_language: '',
+      detected_domain: '',
+    }),
+    careerContext: safeJson(row.career_context_json, {
+      company_stages: [],
+      company_size_exposure: [],
+      tenure_pattern: 'unknown' as const,
+      progression_velocity: 'unknown' as const,
+      ownership_depth: 'unknown' as const,
+      system_scale_exposure: [],
+      greenfield_ratio: 0,
+    }),
+    situationSignature: safeJson(row.situation_signature_json, {
+      primary_challenge_types: [],
+      architecture_exposure: [],
+      test_culture_exposure: '',
+      review_culture: '',
+      impact_signals: [],
+    }),
+    profileVersion: row.profile_version ?? 'unknown',
+    modelUsed: row.model_used ?? 'unknown',
+    rawText: '',
+  };
 }
 
 // ─── Utility ────────────────────────────────────────────────────────────────

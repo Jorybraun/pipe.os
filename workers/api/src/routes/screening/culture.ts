@@ -41,7 +41,7 @@ import {
 } from '../../lib/cultureAgentAdaptive';
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
-import { decomposeCandidateAnswer, persistDecomposition } from '../../lib/cultureAgentDecomposition';
+import { runInterviewTerminationPipeline } from '../../lib/cultureAgentPipeline';
 import { decomposeCultureScoreToGraph } from '../../lib/candidateDiscovery/decomposeCultureScore';
 import {
   scoreCultureInterview,
@@ -980,50 +980,6 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     useStaticFallback,
   });
 
-  // ─── Decomposition (non-blocking, best-effort) ─────────────────────────────
-  const pendingTurn = [...result.transcript.turns].reverse().find((t) => t.candidateResponse !== null);
-  if (pendingTurn && pendingTurn.candidateResponse) {
-    const targetDimension = result.transcript.scratchpad.questionMetadata?.find(
-      (m) => m.questionText === pendingTurn.questionText,
-    )?.targetDimension ?? 'ownership';
-
-    const decomposition = await decomposeCandidateAnswer({
-      provider,
-      questionText: pendingTurn.questionText,
-      candidateAnswer: pendingTurn.candidateResponse,
-      targetDimension: targetDimension as import('../../lib/cultureQuestionBank').CompetencyDimension,
-    });
-
-    if (decomposition) {
-      // Persist to candidate_nodes when table exists (currently a no-op stub)
-      await persistDecomposition({
-        db: c.env.DB,
-        candidateId: session.candidate_id,
-        sessionId: session.id,
-        turnTimestamp: pendingTurn.timestamp,
-        mode,
-        decomposition,
-      });
-
-      // Audit log
-      if (decomposition.culturalSignals.length > 0) {
-        await c.env.DB.prepare(
-          `INSERT INTO culture_compliance_audit (session_id, event_type, actor_type, metadata)
-           VALUES (?1, 'answer_decomposed', 'system', ?2)`,
-        )
-          .bind(
-            session.id,
-            JSON.stringify({
-              signalsExtracted: decomposition.culturalSignals.length,
-              dimensions: decomposition.culturalSignals.map((s) => s.dimension),
-              clarificationNeeded: decomposition.clarificationNeeded,
-            }),
-          )
-          .run();
-      }
-    }
-  }
-
   // ─── Audit: question_generated for new generative questions ─────────────────
   const latestTurn = [...result.transcript.turns].reverse().find((t) => t.probeOf === null && t.candidateResponse === null);
   if (latestTurn && latestTurn.questionId.startsWith('gen-')) {
@@ -1069,6 +1025,20 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
 
     // Fire scoring in background — does not block the candidate response
     c.executionCtx.waitUntil(runScoringJob(c.env, session.id));
+
+    // Fire dual-output termination pipeline (profile synthesis + decomposition + enrichment + matching)
+    c.executionCtx.waitUntil(
+      runInterviewTerminationPipeline({
+        env: c.env,
+        db: c.env.DB,
+        candidateId: session.candidate_id,
+        sessionId: session.id,
+        transcript: result.transcript,
+        mode,
+        provider,
+        assessmentId: session.assessment_id,
+      }),
+    );
 
     return c.json({
       state: 'complete',
