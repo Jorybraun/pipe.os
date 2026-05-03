@@ -35,10 +35,7 @@ import {
   defaultCultureTranscript,
   type CultureTranscript,
 } from '../../lib/cultureAgent';
-import {
-  startAdaptiveCultureInterview,
-  advanceAdaptiveCultureInterview,
-} from '../../lib/cultureAgentAdaptive';
+
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
 import { runInterviewTerminationPipeline } from '../../lib/cultureAgentPipeline';
@@ -849,18 +846,12 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
     ? withCultureMetering(rawStartProvider, session.id, 'conversation', c.env.DB, c.executionCtx)
     : null;
 
-  // Seed first question (adaptive generative or static fallback)
-  const { transcript, nextQuestion } = await startAdaptiveCultureInterview({
-    provider: startProvider,
-    db: c.env.DB,
-    candidateId: session.candidate_id,
-    assessmentId: session.assessment_id,
+  // Seed first question
+  const { transcript, nextQuestion } = startCultureInterview({
     mode,
-    teamContext: roleContext.teamContext,
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
-    useStaticFallback,
   });
 
   const consentAt = now();
@@ -963,13 +954,8 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
   const mode = session.screener_mode ?? transcript.scratchpad.mode ?? 'role_fit';
   const useStaticFallback = c.env.USE_STATIC_QUESTION_BANK === 'true';
 
-  const result = await advanceAdaptiveCultureInterview({
+  const result = await advanceCultureInterview({
     provider,
-    db: c.env.DB,
-    candidateId: session.candidate_id,
-    assessmentId: session.assessment_id,
-    mode,
-    teamContext: roleContext.teamContext,
     transcript,
     candidateAnswer: answer.trim(),
     maxQuestions: CULTURE_BANK_SIZE,
@@ -977,7 +963,6 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
-    useStaticFallback,
   });
 
   // ─── Audit: question_generated for new generative questions ─────────────────

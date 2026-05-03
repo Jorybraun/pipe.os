@@ -59,7 +59,7 @@ describe('cultureAgent — profile_builder mode', () => {
     expect(result.action).toBe('next');
     transcript = result.transcript;
 
-    // Coverage should have increased for the first probe's dimension.
+    // Coverage should have been updated for the first probe's dimension.
     const firstDim = transcript.turns[0]!.questionId.startsWith('career-history')
       ? 'career_history'
       : 'behavioral_depth';
@@ -67,7 +67,7 @@ describe('cultureAgent — profile_builder mode', () => {
   });
 
   it('terminates when all profile dimensions are covered', async () => {
-    // Build a transcript with all dimensions covered.
+    // Build a transcript with all dimensions covered via rich STAR slots.
     const transcript: CultureTranscript = {
       turns: [],
       scratchpad: {
@@ -86,24 +86,43 @@ describe('cultureAgent — profile_builder mode', () => {
       },
     };
 
-    // Add enough turns to hit min questions using real probe IDs.
-    const realProbeIds = PROFILE_PROBE_BANK.slice(0, 5).map((p) => p.id);
-    for (let i = 0; i < 5; i++) {
-      transcript.turns.push({
-        idx: i,
-        questionId: realProbeIds[i]!,
-        questionText: 'Question text',
-        probeOf: null,
-        candidateResponse: 'Answer',
-        starSlots: null,
-        timestamp: new Date().toISOString(),
-      });
+    // Add one completed turn per dimension with full STAR slots.
+    const dims = PROFILE_PROBE_DIMENSIONS;
+    const probesByDim = new Map<string, typeof PROFILE_PROBE_BANK[number]>();
+    for (const probe of PROFILE_PROBE_BANK) {
+      if (!probesByDim.has(probe.dimension)) {
+        probesByDim.set(probe.dimension, probe);
+      }
     }
 
-    // Add a pending turn using a real probe ID.
+    let idx = 0;
+    for (const dim of dims) {
+      const probe = probesByDim.get(dim);
+      if (!probe) continue;
+      transcript.turns.push({
+        idx,
+        questionId: probe.id,
+        questionText: 'Question text',
+        probeOf: null,
+        candidateResponse: 'Answer with full STAR.',
+        starSlots: {
+          S: { present: true, specificity: 2 },
+          T: { present: true, specificity: 2 },
+          A: { present: true, specificity: 2 },
+          R: { present: true, specificity: 2 },
+        },
+        timestamp: new Date().toISOString(),
+      });
+      idx++;
+    }
+
+    // Add a pending turn.
+    const pendingProbe = PROFILE_PROBE_BANK.find(
+      (p) => !Array.from(probesByDim.values()).map((q) => q.id).includes(p.id),
+    ) ?? PROFILE_PROBE_BANK[0]!;
     transcript.turns.push({
-      idx: 5,
-      questionId: PROFILE_PROBE_BANK[5]!.id,
+      idx,
+      questionId: pendingProbe.id,
       questionText: 'Question text',
       probeOf: null,
       candidateResponse: null,
@@ -115,6 +134,7 @@ describe('cultureAgent — profile_builder mode', () => {
       provider: makeMockProvider(ADEQUATE_STAR) as unknown as import('../llm/types').LLMProvider,
       transcript,
       candidateAnswer: 'Final answer.',
+      minQuestions: 1,
     });
 
     expect(result.action).toBe('terminate');
@@ -154,22 +174,43 @@ describe('cultureAgent — role_fit mode', () => {
       },
     };
 
-    const realQuestionIds = CULTURE_QUESTION_BANK.slice(0, 5).map((q) => q.id);
-    for (let i = 0; i < 5; i++) {
-      transcript.turns.push({
-        idx: i,
-        questionId: realQuestionIds[i]!,
-        questionText: 'Question',
-        probeOf: null,
-        candidateResponse: 'Answer',
-        starSlots: null,
-        timestamp: new Date().toISOString(),
-      });
+    // Add one completed turn per dimension with full STAR slots.
+    const dims = COMPETENCY_DIMENSIONS;
+    const qsByDim = new Map<string, typeof CULTURE_QUESTION_BANK[number]>();
+    for (const q of CULTURE_QUESTION_BANK) {
+      const primary = q.dimensions[0]!;
+      if (!qsByDim.has(primary)) {
+        qsByDim.set(primary, q);
+      }
     }
 
+    let idx = 0;
+    for (const dim of dims) {
+      const q = qsByDim.get(dim);
+      if (!q) continue;
+      transcript.turns.push({
+        idx,
+        questionId: q.id,
+        questionText: 'Question',
+        probeOf: null,
+        candidateResponse: 'Answer with full STAR.',
+        starSlots: {
+          S: { present: true, specificity: 2 },
+          T: { present: true, specificity: 2 },
+          A: { present: true, specificity: 2 },
+          R: { present: true, specificity: 2 },
+        },
+        timestamp: new Date().toISOString(),
+      });
+      idx++;
+    }
+
+    const pendingQ = CULTURE_QUESTION_BANK.find(
+      (q) => !Array.from(qsByDim.values()).map((qq) => qq.id).includes(q.id),
+    ) ?? CULTURE_QUESTION_BANK[0]!;
     transcript.turns.push({
-      idx: 5,
-      questionId: CULTURE_QUESTION_BANK[5]!.id,
+      idx,
+      questionId: pendingQ.id,
       questionText: 'Question',
       probeOf: null,
       candidateResponse: null,
@@ -181,6 +222,7 @@ describe('cultureAgent — role_fit mode', () => {
       provider: makeMockProvider(ADEQUATE_STAR) as unknown as import('../llm/types').LLMProvider,
       transcript,
       candidateAnswer: 'Final answer.',
+      minQuestions: 1,
     });
 
     expect(result.action).toBe('terminate');

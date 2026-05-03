@@ -164,6 +164,7 @@ export function computeCoverageState(
   const dimensionDepths: DimensionDepth[] = [];
   for (const dim of dimensions) {
     const stats = dimStats[dim];
+    if (!stats) continue;
     const { turnCount, slotCounts } = stats;
 
     const missingSlots: StarSlot[] = [];
@@ -247,7 +248,7 @@ function buildProbeRecommendations(gapDimensions: DimensionDepth[]): ProbeRecomm
     const suggestedProbes: string[] = [];
     for (const slot of targetSlots.slice(0, 2)) {
       const templates = SLOT_PROBE_TEMPLATES[slot];
-      suggestedProbes.push(templates[dim.turnCount % templates.length]);
+      suggestedProbes.push(templates[dim.turnCount % templates.length]!);
     }
     return {
       dimension: dim.dimension,

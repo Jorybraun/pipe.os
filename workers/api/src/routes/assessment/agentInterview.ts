@@ -17,9 +17,9 @@ import type { CandidateVariables } from '../../middleware/candidateAuth';
 import { candidateAuth } from '../../middleware/candidateAuth';
 import { verifyJwt } from '../../lib/jwt';
 import {
-  startAdaptiveCultureInterview,
-  advanceAdaptiveCultureInterview,
-} from '../../lib/cultureAgentAdaptive';
+  startCultureInterview,
+  advanceCultureInterview,
+} from '../../lib/cultureAgent';
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
 import { createCultureAgentProvider } from '../../lib/llm/createProvider';
@@ -309,17 +309,11 @@ agentInterviewRouter.post('/:challengeId/start', async (c) => {
       ? withCultureMetering(rawProvider, session.id, 'conversation', db, c.executionCtx)
       : null;
 
-    const { transcript, nextQuestion } = await startAdaptiveCultureInterview({
-      provider,
-      db,
-      candidateId: session.candidate_id,
-      assessmentId: session.assessment_id,
+    const { transcript, nextQuestion } = startCultureInterview({
       mode,
-      teamContext: roleContext.teamContext,
       seniority: roleContext.seniority,
       roleOverlayId: roleContext.roleOverlayId,
       probeBank,
-      useStaticFallback,
     });
 
     const consentAt = now();
@@ -377,17 +371,11 @@ agentInterviewRouter.post('/:challengeId/start', async (c) => {
       ? withCultureMetering(rawProvider, session.id, 'conversation', db, c.executionCtx)
       : null;
 
-    const { transcript, nextQuestion } = await startAdaptiveCultureInterview({
-      provider,
-      db,
-      candidateId: session.candidate_id,
-      assessmentId: session.assessment_id,
+    const { transcript, nextQuestion } = startCultureInterview({
       mode,
-      teamContext: roleContext.teamContext,
       seniority: roleContext.seniority,
       roleOverlayId: roleContext.roleOverlayId,
       probeBank,
-      useStaticFallback,
     });
 
     await db
@@ -500,13 +488,8 @@ async function doRespond(
   const mode = session.screener_mode ?? transcript.scratchpad.mode ?? 'role_fit';
   const useStaticFallback = ctx.env.USE_STATIC_QUESTION_BANK === 'true';
 
-  const result = await advanceAdaptiveCultureInterview({
+  const result = await advanceCultureInterview({
     provider,
-    db,
-    candidateId: session.candidate_id,
-    assessmentId: session.assessment_id,
-    mode,
-    teamContext: roleContext.teamContext,
     transcript,
     candidateAnswer: answer,
     maxQuestions: CULTURE_BANK_SIZE,
@@ -514,7 +497,6 @@ async function doRespond(
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
-    useStaticFallback,
   });
 
   if (result.action === 'terminate') {

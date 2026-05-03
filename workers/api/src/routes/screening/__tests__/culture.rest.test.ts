@@ -96,7 +96,7 @@ describe('startCultureInterview', () => {
   });
 
   it('initialises dimensionCoverage to zero for all dimensions', () => {
-    const { transcript } = startCultureInterview();
+    const { transcript } = startCultureInterview({ mode: 'role_fit' });
     for (const dim of COMPETENCY_DIMENSIONS) {
       expect(transcript.scratchpad.dimensionCoverage[dim]).toBe(0);
     }
