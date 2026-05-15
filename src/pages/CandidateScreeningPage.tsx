@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { ArrowLeft, Eye, Mic, Video, Type, AlertCircle } from 'lucide-react';
 import { ChromeMeshGrid, LiquidMetalCard } from '../components';
 import { SmartInterviewInput } from '../components/AIChat';
-import { InlineVideoRecorder } from '../components/InlineVideoRecorder';
 import { useStageDetail } from '../hooks/useStageDetail';
 import { SCREENING_QUESTIONS } from '../content/screeningQuestions';
 import type { ChallengeItem } from '../lib/api/types';
@@ -81,9 +80,7 @@ export default function CandidateScreeningPage(): JSX.Element {
 
   const handleSubmit = (): void => {
     if (!canAdvance) return;
-    if (currentQuestion?.inputMode !== 'video') {
-      setAnswers((prev) => ({ ...prev, [currentIndex]: answer.trim() }));
-    }
+    setAnswers((prev) => ({ ...prev, [currentIndex]: answer.trim() }));
     if (!isLast) {
       setCurrentIndex((i) => i + 1);
     }
@@ -209,25 +206,21 @@ export default function CandidateScreeningPage(): JSX.Element {
             </div>
           </div>
 
-          {/* Answer input — respects configured input mode */}
-          {currentQuestion?.inputMode === 'video' ? (
-            <InlineVideoRecorder
-              key={currentIndex}
-              recordedBlob={videoBlobs[currentIndex] ?? null}
-              onRecorded={handleVideoRecorded}
-              onClear={handleVideoClear}
-            />
-          ) : (
-            <SmartInterviewInput
-              value={answer}
-              onChange={(v) => setAnswers((prev) => ({ ...prev, [currentIndex]: v }))}
-              onSubmit={handleSubmit}
-              questionText={currentQuestion?.text ?? ''}
-              enableVoice={currentQuestion?.inputMode === 'voice'}
-              enableTTS
-              placeholder={currentQuestion?.placeholder ?? 'Share your thoughts...'}
-            />
-          )}
+          {/* Answer input — unified SmartInterviewInput handles text / voice / video */}
+          <SmartInterviewInput
+            key={currentIndex}
+            value={answer}
+            onChange={(v) => setAnswers((prev) => ({ ...prev, [currentIndex]: v }))}
+            onSubmit={handleSubmit}
+            questionText={currentQuestion?.text ?? ''}
+            enableVoice={currentQuestion?.inputMode === 'voice'}
+            enableVideo={currentQuestion?.inputMode === 'video'}
+            enableTTS
+            placeholder={currentQuestion?.placeholder ?? 'Share your thoughts...'}
+            recordedVideoBlob={videoBlobs[currentIndex] ?? null}
+            onVideoRecorded={handleVideoRecorded}
+            onVideoClear={handleVideoClear}
+          />
 
           {/* Navigation */}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 32 }}>

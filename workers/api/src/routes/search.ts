@@ -25,6 +25,8 @@ import {
   matchCandidatesVectorNative,
   matchRolesVectorNative,
 } from '../lib/match/matchVectorNative';
+import { routeMatchRead } from '../lib/match/matchRouter';
+import { shadowMatchRead } from '../lib/match/shadowRead';
 import type { Env, Variables } from '../types';
 
 const search = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -140,6 +142,53 @@ search.post('/candidates', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'provide at least one of roleContextId, repoId, candidateId, or query');
   }
 
+  // ── Neo4j structured matching path (roleContextId only) ────────────────────
+  // When SHADOW_READ_NEO4J='true' or PRIMARY_MATCH_STORE='neo4j', use the
+  // graph-structured Cypher matcher instead of coarse ANN vector search.
+  if (roleContextId && (c.env.SHADOW_READ_NEO4J === 'true' || c.env.PRIMARY_MATCH_STORE === 'neo4j')) {
+    let matchResults: Awaited<ReturnType<typeof routeMatchRead>>;
+    if (c.env.SHADOW_READ_NEO4J === 'true') {
+      const shadowResult = await shadowMatchRead({
+        roleContextId,
+        db: c.env.DB,
+        env: c.env,
+        limit,
+        ownerId: userId,
+      });
+      matchResults = shadowResult.results;
+    } else {
+      matchResults = await routeMatchRead({
+        roleContextId,
+        db: c.env.DB,
+        env: c.env,
+        limit,
+        ownerId: userId,
+      });
+    }
+
+    const candidates = matchResults.map((m) => ({
+      candidateId: m.candidateId,
+      name: m.name ?? '',
+      email: m.email ?? '',
+      pipelineId: m.pipelineId ?? '',
+      pipelineName: m.pipelineName ?? '',
+      status: m.status ?? 'pending',
+      searchableProfile: m.searchableProfile ?? '',
+      triangulatedScore: m.triangulatedScore ?? null,
+      score: m.score,
+      // Neo4j-only enrichment
+      requirementMatches: m.requirementMatches,
+      dealbreakerFailures: m.dealbreakerFailures,
+    }));
+
+    return c.json({
+      candidates,
+      source: { type: 'role', id: roleContextId },
+      store: c.env.PRIMARY_MATCH_STORE ?? 'd1',
+    });
+  }
+
+  // ── Legacy Vectorize ANN path ──────────────────────────────────────────────
   const source = await resolveQueryVector(c.env.DB, c.env.AI, {
     roleContextId,
     repoId,

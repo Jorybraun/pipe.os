@@ -15,7 +15,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback, type JSX } from 'react';
-import { Mic, Square, Loader2, ArrowRight, Volume2, VolumeX, RotateCw } from 'lucide-react';
+import { Mic, Square, Loader2, ArrowRight, Volume2, VolumeX, RotateCw, Video, VideoOff } from 'lucide-react';
 import { useTTS } from '../../hooks/useTTS';
 import { useVoiceInput } from '../../hooks/useVoiceInput';
 
@@ -26,9 +26,9 @@ import type { RoleContextQuestion } from '../../lib/api/types';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface SmartInterviewInputProps {
-  /** Current input value. */
+  /** Current input value (text transcript or typed answer). */
   value: string;
-  /** Called when the input value changes. */
+  /** Called when the text value changes. */
   onChange: (value: string) => void;
   /** Called when the user submits their answer. */
   onSubmit: () => void;
@@ -46,8 +46,19 @@ export interface SmartInterviewInputProps {
 
   /** Enable the push-to-talk mic button. Default: true. */
   enableVoice?: boolean;
+  /** Enable inline video recording. Default: false. */
+  enableVideo?: boolean;
+  /** When true and enableVideo is true, a video recording is required to submit (text alone is insufficient). Default: false. */
+  requireVideo?: boolean;
   /** Enable Google Cloud TTS auto-read + replay. Default: false. */
   enableTTS?: boolean;
+
+  /** Existing recorded video blob (for re-hydration / playback). */
+  recordedVideoBlob?: Blob | null;
+  /** Called when a video recording is completed. */
+  onVideoRecorded?: (blob: Blob) => void;
+  /** Called when the user clears/re-records a video. */
+  onVideoClear?: () => void;
 
   /** Show loading spinner on the send button. */
   isLoading?: boolean;
@@ -78,7 +89,12 @@ export function SmartInterviewInput({
   suggestedAnswers,
   question,
   enableVoice = true,
+  enableVideo = false,
+  requireVideo = false,
   enableTTS = false,
+  recordedVideoBlob,
+  onVideoRecorded,
+  onVideoClear,
   isLoading = false,
   disabled = false,
   placeholder = 'Take your time and answer thoughtfully…',
@@ -88,6 +104,120 @@ export function SmartInterviewInput({
 }: SmartInterviewInputProps): JSX.Element {
   // ── Voice on/off toggle — gates both TTS and mic ───────────────────────────
   const [voiceOn, setVoiceOn] = useState(enableTTS);
+
+  // ── Video recording state ──────────────────────────────────────────────────
+  type VideoState = 'idle' | 'previewing' | 'recording' | 'recorded';
+  const [videoState, setVideoState] = useState<VideoState>(recordedVideoBlob ? 'recorded' : 'idle');
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoElapsed, setVideoElapsed] = useState(0);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoStreamRef = useRef<MediaStream | null>(null);
+  const videoRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoChunksRef = useRef<BlobEvent['data'][]>([]);
+  const videoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Hydrate playback when recordedVideoBlob is provided from parent
+  useEffect(() => {
+    if (recordedVideoBlob && videoState !== 'recording') {
+      const url = URL.createObjectURL(recordedVideoBlob);
+      setVideoPreviewUrl(url);
+      setVideoState('recorded');
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        videoRef.current.src = url;
+        videoRef.current.muted = false;
+      }
+      return () => { URL.revokeObjectURL(url); };
+    }
+    return undefined;
+  }, [recordedVideoBlob]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clean up video on unmount
+  useEffect(() => {
+    return () => {
+      if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+      videoStreamRef.current?.getTracks().forEach((t) => t.stop());
+      if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+    };
+  }, [videoPreviewUrl]);
+
+  const startVideoPreview = useCallback(async () => {
+    setVideoError(null);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch {
+      setVideoError('Could not access camera/microphone. Check browser permissions.');
+      return;
+    }
+    videoStreamRef.current = stream;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true;
+      void videoRef.current.play();
+    }
+    setVideoState('previewing');
+  }, []);
+
+  const startVideoRecording = useCallback(() => {
+    if (!videoStreamRef.current) return;
+    videoChunksRef.current = [];
+    setVideoElapsed(0);
+
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+      ? 'video/webm;codecs=vp9,opus'
+      : 'video/webm';
+
+    const recorder = new MediaRecorder(videoStreamRef.current, { mimeType });
+    videoRecorderRef.current = recorder;
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) videoChunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      videoStreamRef.current?.getTracks().forEach((t) => t.stop());
+      if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+      const blob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      setVideoPreviewUrl(url);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+        videoRef.current.src = url;
+        videoRef.current.muted = false;
+      }
+      setVideoState('recorded');
+      onVideoRecorded?.(blob);
+    };
+
+    recorder.start(100);
+    setVideoState('recording');
+
+    videoTimerRef.current = setInterval(() => {
+      setVideoElapsed((prev) => prev + 1);
+    }, 1000);
+  }, [onVideoRecorded]);
+
+  const stopVideoRecording = useCallback(() => {
+    videoRecorderRef.current?.stop();
+  }, []);
+
+  const handleVideoReRecord = useCallback(() => {
+    if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+    setVideoPreviewUrl(null);
+    setVideoElapsed(0);
+    setVideoError(null);
+    onVideoClear?.();
+    void startVideoPreview();
+  }, [videoPreviewUrl, onVideoClear, startVideoPreview]);
+
+  const videoTimeStr = (s: number): string => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
   const ttsActive = enableTTS && voiceOn;
   const { speak, cancel: cancelSpeech, isPlaying: isTTSPlaying, analyserRef } = useTTS(ttsActive);
 
@@ -119,7 +249,7 @@ export function SmartInterviewInput({
 
   // ── Voice input hook ───────────────────────────────────────────────────────
   const voice = useVoiceInput({
-    enabled: enableVoice && voiceOn && !disabled,
+    enabled: enableVoice && !disabled,
     onTranscript: onChange,
     onError: (msg) => {
       // Error is already set inside the hook; no extra action needed.
@@ -138,14 +268,18 @@ export function SmartInterviewInput({
   }, [value, question]);
 
   // ── Submit handler ─────────────────────────────────────────────────────────
-  const canSubmit = value.trim().length > 0 && !isLoading && !disabled;
+  const hasVideo = videoState === 'recorded' && recordedVideoBlob != null;
+  const canSubmit = (requireVideo ? hasVideo : (value.trim().length > 0 || hasVideo)) && !isLoading && !disabled;
 
   const handleSubmit = useCallback((): void => {
     if (!canSubmit) return;
     cancelSpeech();
     voice.stopRecording();
+    if (videoState === 'recording') {
+      stopVideoRecording();
+    }
     onSubmit();
-  }, [canSubmit, cancelSpeech, voice, onSubmit]);
+  }, [canSubmit, cancelSpeech, voice, videoState, stopVideoRecording, onSubmit]);
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   const handleKeyDown = useCallback(
@@ -207,8 +341,154 @@ export function SmartInterviewInput({
         </div>
       )}
 
+      {/* Inline video recorder */}
+      {enableVideo && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {(videoState !== 'idle' || videoPreviewUrl) && (
+            <div style={{ position: 'relative' }}>
+              <video
+                ref={videoRef}
+                style={{
+                  width: '100%',
+                  maxHeight: 260,
+                  borderRadius: 6,
+                  border: '1px solid var(--pipe-border)',
+                  background: '#000',
+                  objectFit: 'cover',
+                  display: 'block',
+                }}
+                controls={videoState === 'recorded'}
+                playsInline
+              />
+              {videoState === 'recording' && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 12,
+                    left: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: 'rgba(0,0,0,0.6)',
+                    padding: '4px 10px',
+                    borderRadius: 4,
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 11,
+                    color: '#f87171',
+                  }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f87171', display: 'inline-block' }} />
+                  REC {videoTimeStr(videoElapsed)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {videoError && (
+            <div style={{ fontFamily: '"Space Mono", monospace', fontSize: 10, color: '#f87171', lineHeight: 1.5 }}>
+              {videoError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {videoState === 'idle' && (
+              <button
+                onClick={() => void startVideoPreview()}
+                style={{
+                  padding: '10px 20px',
+                  background: 'rgba(74,222,128,0.1)',
+                  border: '1px solid rgba(74,222,128,0.4)',
+                  color: '#4ade80',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  fontSize: 11,
+                  letterSpacing: '0.1em',
+                }}
+              >
+                <Video size={14} style={{ display: 'inline', marginRight: 6 }} />
+                ENABLE CAMERA
+              </button>
+            )}
+
+            {videoState === 'previewing' && (
+              <button
+                onClick={startVideoRecording}
+                style={{
+                  padding: '10px 20px',
+                  background: 'rgba(74,222,128,0.1)',
+                  border: '1px solid rgba(74,222,128,0.4)',
+                  color: '#4ade80',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  fontSize: 11,
+                  letterSpacing: '0.1em',
+                }}
+              >
+                <Video size={14} style={{ display: 'inline', marginRight: 6 }} />
+                START RECORDING
+              </button>
+            )}
+
+            {videoState === 'recording' && (
+              <button
+                onClick={stopVideoRecording}
+                style={{
+                  padding: '10px 20px',
+                  background: 'rgba(248,113,113,0.1)',
+                  border: '1px solid rgba(248,113,113,0.4)',
+                  color: '#f87171',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  fontSize: 11,
+                  letterSpacing: '0.1em',
+                }}
+              >
+                <VideoOff size={14} style={{ display: 'inline', marginRight: 6 }} />
+                STOP RECORDING
+              </button>
+            )}
+
+            {videoState === 'recorded' && (
+              <>
+                <button
+                  onClick={handleVideoReRecord}
+                  style={{
+                    padding: '10px 20px',
+                    background: 'var(--pipe-surface)',
+                    border: '1px solid var(--pipe-border)',
+                    color: 'var(--pipe-text-muted)',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 11,
+                    letterSpacing: '0.1em',
+                  }}
+                >
+                  RE-RECORD
+                </button>
+                <span style={{ fontFamily: '"Space Mono", monospace', fontSize: 10, color: '#4ade80', letterSpacing: '0.1em' }}>
+                  ✓ RECORDED
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Divider between video and text */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--pipe-border-light)' }} />
+            <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+              OR_TYPE_BELOW
+            </span>
+            <div style={{ flex: 1, height: 1, background: 'var(--pipe-border-light)' }} />
+          </div>
+        </div>
+      )}
+
       {/* Voice button (mic / stop / EQ visualizer) */}
-      {enableVoice && voiceOn && (
+      {enableVoice && (
         <>
           <div
             style={{

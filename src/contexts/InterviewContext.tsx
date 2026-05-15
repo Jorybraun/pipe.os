@@ -20,7 +20,7 @@ export interface InterviewState {
 
   // Navigation
   canAdvance: boolean;
-  submit: () => void;
+  submit: (overrideSubmission?: Record<string, unknown>) => void;
 
   // Run state (CODE_IMPLEMENTATION)
   runState: RunState;
@@ -91,8 +91,8 @@ export function InterviewProvider({
 
   const canAdvance = currentChallenge.isComplete(submission);
 
-  const submit = useCallback(() => {
-    onSubmit(submission);
+  const submit = useCallback((overrideSubmission?: Record<string, unknown>) => {
+    onSubmit(overrideSubmission ?? submission);
   }, [onSubmit, submission]);
 
   const value = useMemo<InterviewState>(() => ({

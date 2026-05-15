@@ -74,6 +74,8 @@ interface RepoRow {
   has_signals: number;
   top_skills_csv: string | null;
   challenge_suitability_verdict: string | null;
+  confidence_score: number | null;
+  confidence_verdict: string | null;
 }
 
 interface SamplePRRow {
@@ -147,6 +149,8 @@ adminRepos.get('/repos', async (c) => {
        qr.pass, qr.crawled_at,
        CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
        res.challenge_suitability_verdict,
+       res.confidence_score,
+       res.confidence_verdict,
        (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
          SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
        )) AS top_skills_csv
@@ -193,6 +197,10 @@ interface SignalsRow {
   red_flags_json: string | null;
   seniority_justification: string | null;
   ideal_role_match: string | null;
+  confidence_score: number | null;
+  confidence_scores_json: string | null;
+  confidence_verdict: string | null;
+  confidence_scored_at: number | null;
 }
 
 adminRepos.get('/repos/:id', async (c) => {
@@ -209,6 +217,8 @@ adminRepos.get('/repos/:id', async (c) => {
        qr.pass, qr.crawled_at,
        CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
        res.challenge_suitability_verdict,
+       res.confidence_score,
+       res.confidence_verdict,
        (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
          SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
        )) AS top_skills_csv
@@ -228,7 +238,9 @@ adminRepos.get('/repos/:id', async (c) => {
             admin_verdict, admin_feedback_text, verdict_at, vectorized_at,
             challenge_suitability_verdict, challenge_suitability_reason,
             top_pr_picks_json, red_flags_json,
-            seniority_justification, ideal_role_match
+            seniority_justification, ideal_role_match,
+            confidence_score, confidence_scores_json,
+            confidence_verdict, confidence_scored_at
      FROM repo_engineering_signals WHERE repo_id = ?`,
   ).bind(id).first<SignalsRow>();
 

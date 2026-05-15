@@ -26,6 +26,7 @@ const SCREENING_QUESTIONS: PresetChallenge[] = [
       question: 'How many years of professional software engineering experience do you have?',
       placeholder: 'e.g. 5 years',
       maxLength: 200,
+      inputMode: 'text',
     },
   },
   {
@@ -36,6 +37,7 @@ const SCREENING_QUESTIONS: PresetChallenge[] = [
       question: 'What is your current role and company?',
       placeholder: 'e.g. Senior Frontend Engineer at Acme Corp',
       maxLength: 300,
+      inputMode: 'text',
     },
   },
   {
@@ -46,6 +48,7 @@ const SCREENING_QUESTIONS: PresetChallenge[] = [
       question: 'Why are you interested in this role and what excites you about it?',
       placeholder: 'Tell us what drew you to this opportunity...',
       maxLength: 1000,
+      inputMode: 'text',
     },
   },
   {
@@ -56,6 +59,7 @@ const SCREENING_QUESTIONS: PresetChallenge[] = [
       question: 'What is your notice period or earliest start date?',
       placeholder: 'e.g. 2 weeks, available immediately, etc.',
       maxLength: 300,
+      inputMode: 'text',
     },
   },
   {
@@ -66,6 +70,7 @@ const SCREENING_QUESTIONS: PresetChallenge[] = [
       question: 'What are your salary expectations (base + any equity/bonus requirements)?',
       placeholder: 'e.g. $150K–$180K base',
       maxLength: 300,
+      inputMode: 'text',
     },
   },
   {
@@ -76,6 +81,7 @@ const SCREENING_QUESTIONS: PresetChallenge[] = [
       question: 'Are you legally authorized to work in the country where this role is based?',
       placeholder: 'Yes / No / Requires sponsorship',
       maxLength: 300,
+      inputMode: 'text',
     },
   },
 ];

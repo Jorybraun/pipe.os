@@ -20,6 +20,7 @@ import { D1Client, loadD1Config } from '../shared/d1Client.js';
 import type { Pass3Data, Pass3Output, RepoSubElement } from '../shared/types.js';
 import { logger } from '../shared/logger.js';
 import { preprocessForEmbedding } from '../../../src/lib/embedding/preprocess';
+import { writeRepoGraph } from '../../../src/lib/neo4j/writeRepoGraph';
 import type { PersistResult } from './types.js';
 
 const VECTORIZE_INDEX_NAME = 'repo-searchable-profiles';
@@ -35,7 +36,7 @@ function nowSeconds(): number {
  * Vectorize. Best-effort: logged on failure, does not throw. SQL remains the
  * authoritative store (STRATEGY Decision Log 2026-04-14).
  */
-async function upsertToVectorize(data: Pass3Data): Promise<void> {
+export async function upsertToVectorize(data: Pass3Data): Promise<void> {
   const accountId = process.env['CLOUDFLARE_ACCOUNT_ID'];
   const apiToken = process.env['CLOUDFLARE_API_TOKEN'];
   if (!accountId || !apiToken) {
@@ -162,8 +163,12 @@ export async function persistPass3(
       top_pr_picks_json,
       red_flags_json,
       seniority_justification,
-      ideal_role_match
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ideal_role_match,
+      confidence_score,
+      confidence_scores_json,
+      confidence_verdict,
+      confidence_scored_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.repo_id,
       data.signals_version,
@@ -191,6 +196,10 @@ export async function persistPass3(
       JSON.stringify(data.red_flags ?? []),
       data.seniority_justification,
       data.ideal_role_match,
+      data.confidence_score,
+      data.confidence_scores_json,
+      data.confidence_verdict,
+      data.confidence_scored_at,
     ],
   );
 
@@ -395,7 +404,6 @@ export async function persistAndVerify(
   db: D1Client,
   data: Pass3Output,
   dryRun = false,
-  skipVectorize = false,
 ): Promise<PersistResult> {
   await persistPass3(db, data, dryRun);
   const repoNodeEmbeddings = await persistRepoNodes(db, data, dryRun);
@@ -428,11 +436,40 @@ export async function persistAndVerify(
 
   // Embed + upsert into Vectorize only after D1 confirmed the write.
   // Keeps SQL authoritative — an orphan Vectorize row without a matching D1
-  // signal would be worse than no vector at all. skipVectorize preserves the
-  // human ingest gate when Pass 3 runs auto-chained from Pass 2.
-  if (verified && !skipVectorize) {
+  // signal would be worse than no vector at all.
+  // Auto-approve verdict bypasses the human ingest gate; manual_review and
+  // auto_reject skip Vectorize until a human or re-run changes the verdict.
+  if (verified && data.confidence_verdict === 'auto_approve') {
     await upsertToVectorize(data);
     await upsertRepoNodesToVectorize(data, repoNodeEmbeddings);
+  }
+
+  // Neo4j dual-write (fire-and-forget, non-blocking)
+  if (process.env['DUAL_WRITE_NEO4J'] === 'true' && verified) {
+    const neo4jUri = process.env['NEO4J_URI'];
+    const neo4jPassword = process.env['NEO4J_PASSWORD'];
+    if (neo4jUri && neo4jPassword) {
+      const subElementsWithEmbeddings = data.subElements.map((el) => {
+        const localId = `${data.repo_id}_${el.node_type}_${el.slug}`;
+        const embedding = repoNodeEmbeddings.find((e) => e.id === localId)?.vector ?? null;
+        return { ...el, embedding };
+      });
+      writeRepoGraph({
+        repoId: data.repo_id,
+        signalsVersion: data.signals_version,
+        subElements: subElementsWithEmbeddings,
+        env: {
+          NEO4J_URI: neo4jUri,
+          NEO4J_USER: process.env['NEO4J_USER'],
+          NEO4J_PASSWORD: neo4jPassword,
+        },
+      }).catch((err) => {
+        logger.warn('[pass3/persist] Neo4j dual-write failed (non-blocking)', {
+          repo_id: data.repo_id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
   }
 
   return {

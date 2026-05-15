@@ -42,7 +42,7 @@ export interface SynthesisResult {
   jobDescription: GeneratedJobDescription | null;
   progress: RoleContextProgress;
   /** Raw transcript — present for voice sessions. */
-  transcript?: Array<{ role: 'user' | 'model'; text: string }>;
+  transcript?: Array<{ role: 'user' | 'model'; text: string; videoR2Key?: string }>;
 }
 
 export type TurnResult = QuestionTurnResult | SynthesisResult;
@@ -65,6 +65,11 @@ export type StreamEvent =
   | { event: 'done'; result: TurnResult }
   | { event: 'error'; message: string };
 
+export interface RespondMedia {
+  /** R2 key for a video recording associated with this answer. */
+  videoR2Key?: string;
+}
+
 export interface ConversationAdapter {
   /**
    * One-time setup — called before the first question.
@@ -72,12 +77,12 @@ export interface ConversationAdapter {
    */
   initialize(config: AdapterConfig): Promise<QuestionTurnResult>;
   /** Submit an answer, receive the next question or final synthesis. */
-  respond(answer: string, questionId: string): Promise<TurnResult>;
+  respond(answer: string, questionId: string, media?: RespondMedia): Promise<TurnResult>;
   /**
    * Optional: streaming version of respond. Yields chunk events as tokens arrive,
    * then a done event with the final result. Falls back to respond if not implemented.
    */
-  respondStream?(answer: string, questionId: string): AsyncGenerator<StreamEvent>;
+  respondStream?(answer: string, questionId: string, media?: RespondMedia): AsyncGenerator<StreamEvent>;
   /** Trigger synthesis before the budget is exhausted. */
   completeEarly(): Promise<SynthesisResult>;
   /** Optional: flag a question for tuning. */
@@ -121,6 +126,8 @@ export interface AIChatProps {
   showDomainBars?: boolean;
   /** Auto-read AI questions aloud using Google Cloud TTS. Default: false. */
   enableTTS?: boolean;
+  /** Enable inline video recording for candidate answers. Default: false. */
+  enableVideo?: boolean;
   /**
    * Opening line spoken by the AI when the interview starts (before the first
    * question). Only plays in text/hybrid mode — skipped in live voice mode.

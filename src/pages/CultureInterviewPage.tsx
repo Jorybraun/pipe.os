@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { SmartInterviewInput } from '../components/AIChat';
+import { CoverageProgress, type CoveragePhase } from '../components/Assessment/CoverageProgress';
 import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 // ─── Local Types ──────────────────────────────────────────────────────────────
@@ -12,6 +13,8 @@ interface CultureSessionState {
   turnsAsked: number;
   totalBudget: number;
   consentRequired: boolean;
+  coverage?: Record<string, number>;
+  phase?: CoveragePhase;
 }
 
 interface RespondResponse {
@@ -20,6 +23,8 @@ interface RespondResponse {
   turnsAsked: number;
   totalBudget: number;
   message?: string;
+  coverage?: Record<string, number>;
+  phase?: CoveragePhase;
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -304,6 +309,8 @@ function InterviewUI({
   question,
   turnsAsked,
   totalBudget,
+  coverage,
+  phase,
   onSubmit,
   submitting,
   submitError,
@@ -312,6 +319,8 @@ function InterviewUI({
   question: { id: string; text: string };
   turnsAsked: number;
   totalBudget: number;
+  coverage?: Record<string, number>;
+  phase?: CoveragePhase;
   onSubmit: (answer: string) => void;
   submitting: boolean;
   submitError: string | null;
@@ -373,6 +382,25 @@ function InterviewUI({
           Question {turnsAsked} of up to {totalBudget}
         </div>
       </div>
+
+      {/* Coverage progress — floats in the top-right during interview */}
+      {coverage && phase && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 72,
+            right: 24,
+            zIndex: 50,
+          }}
+        >
+          <CoverageProgress
+            coverage={coverage}
+            phase={phase}
+            turnsAsked={turnsAsked}
+            totalBudget={totalBudget}
+          />
+        </div>
+      )}
 
       {/* Main content */}
       <div
@@ -647,7 +675,9 @@ export default function CultureInterviewPage(): JSX.Element {
     if (!token) return;
     setLoadingConsent(true);
     postConsent(token)
-      .then((s) => { setSession(s); })
+      .then((s) => {
+        setSession(s);
+      })
       .catch((err: unknown) => {
         setLoadError(
           err instanceof Error ? err.message : 'Failed to record consent.',
@@ -676,13 +706,22 @@ export default function CultureInterviewPage(): JSX.Element {
                   currentQuestion: nextQuestion,
                   turnsAsked: res.turnsAsked,
                   totalBudget: res.totalBudget,
+                  ...(res.coverage !== undefined ? { coverage: res.coverage } : {}),
+                  ...(res.phase !== undefined ? { phase: res.phase } : {}),
                 }
               : prev,
           );
         } else {
           // complete or scoring — show terminal screen
           setSession((prev) =>
-            prev ? { ...prev, state: res.state } : prev,
+            prev
+              ? {
+                  ...prev,
+                  state: res.state,
+                  ...(res.coverage !== undefined ? { coverage: res.coverage } : {}),
+                  ...(res.phase !== undefined ? { phase: res.phase } : {}),
+                }
+              : prev,
           );
         }
       })
@@ -731,6 +770,8 @@ export default function CultureInterviewPage(): JSX.Element {
         question={session.currentQuestion}
         turnsAsked={session.turnsAsked}
         totalBudget={session.totalBudget}
+        {...(session.coverage !== undefined ? { coverage: session.coverage } : {})}
+        {...(session.phase !== undefined ? { phase: session.phase } : {})}
         onSubmit={handleSubmitAnswer}
         submitting={submitting}
         submitError={submitError}

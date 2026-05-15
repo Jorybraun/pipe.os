@@ -61,28 +61,30 @@ export function ShortAnswerEditor({ challenge, onChange }: EditorFormProps): JSX
           />
         </LiquidMetalCard>
 
-        {/* Video Instructions */}
-        <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
-          <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <VideoIcon size={16} color="var(--pipe-accent)" />
-              <SubTitle>VIDEO_INSTRUCTIONS</SubTitle>
+        {/* Video Instructions — only shown for video-mode questions */}
+        {currentMode === 'video' && (
+          <LiquidMetalCard variant="default" style={{ padding: 0, borderRadius: 16 }}>
+            <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <VideoIcon size={16} color="var(--pipe-accent)" />
+                <SubTitle>VIDEO_INSTRUCTIONS</SubTitle>
+              </div>
+              {existingVideoKey && (
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 10px #4ade80' }} />
+              )}
             </div>
-            {existingVideoKey && (
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 10px #4ade80' }} />
-            )}
-          </div>
-          <div style={{ padding: '32px' }}>
-            <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 24, lineHeight: 1.6, maxWidth: 500 }}>
-              Optional: Record a short video to introduce yourself or provide extra context for this question.
+            <div style={{ padding: '32px' }}>
+              <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginBottom: 24, lineHeight: 1.6, maxWidth: 500 }}>
+                Optional: Record a short video to introduce yourself or provide extra context for this question.
+              </div>
+              <QuestionVideoRecorder
+                challengeId={challenge.id}
+                {...(existingVideoKey ? { existingS3Key: existingVideoKey } : {})}
+                onUploaded={(s3Key) => setConfig({ questionVideoS3Key: s3Key })}
+              />
             </div>
-            <QuestionVideoRecorder
-              challengeId={challenge.id}
-              {...(existingVideoKey ? { existingS3Key: existingVideoKey } : {})}
-              onUploaded={(s3Key) => setConfig({ questionVideoS3Key: s3Key })}
-            />
-          </div>
-        </LiquidMetalCard>
+          </LiquidMetalCard>
+        )}
       </div>
 
       {/* CONFIGURATION SIDEBAR */}

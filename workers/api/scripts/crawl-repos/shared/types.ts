@@ -233,6 +233,14 @@ export interface Pass3Data {
   seniority_justification: string | null;
   /** Short role label, e.g. "senior backend engineer". */
   ideal_role_match: string | null;
+  /** Cross-family confidence score: unweighted mean of coverage, accuracy, groundedness, specificity (0–1). */
+  confidence_score: number | null;
+  /** JSON-serialized per-criterion scores. */
+  confidence_scores_json: string | null;
+  /** Auto-approval verdict derived from confidence_score. */
+  confidence_verdict: 'auto_approve' | 'manual_review' | 'auto_reject' | 'not_scored' | null;
+  /** Epoch seconds when confidence was last scored. */
+  confidence_scored_at: number | null;
 }
 
 /** Pass 3 output including decomposed sub-elements. */

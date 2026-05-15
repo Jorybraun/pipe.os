@@ -74,6 +74,8 @@ export interface CultureTurn {
   timestamp: string;
   /** V2: which phase this turn belonged to (optional for backward compat). */
   phase?: InterviewPhase;
+  /** R2 key for an associated video recording of this answer. */
+  videoR2Key?: string;
 }
 
 export interface QuestionMetadata {
@@ -298,7 +300,17 @@ export async function advanceCultureInterview(
     minQuestions,
     runningThemes: state.scratchpad.runningThemes,
   };
-  const llmResult = await runTurnAnalysis(input.provider, turnContext);
+  let llmResult = await runTurnAnalysis(input.provider, turnContext);
+
+  // Sanitize probe_text: smaller models (Llama 3.1 8B) sometimes return the
+  // probe key (e.g. "missing_A") instead of the human-readable text.
+  if (llmResult.probe_text && currentQuestion.probes) {
+    const key = llmResult.probe_text.trim();
+    const lookup = (currentQuestion.probes as Record<string, string | undefined>)[key];
+    if (lookup && typeof lookup === 'string') {
+      llmResult = { ...llmResult, probe_text: lookup };
+    }
+  }
 
   // 5. Dispatch answer action.
   if (state.phase === 'drilling') {

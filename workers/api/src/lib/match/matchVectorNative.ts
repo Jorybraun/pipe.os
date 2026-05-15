@@ -219,7 +219,7 @@ export async function matchCandidatesVectorNative(
   let sql = `SELECT
        c.id, c.name, c.email, c.pipeline_id,
        ci.status, ci.candidate_searchable_profile, ci.triangulated_score,
-       p.name AS pipeline_name
+       p.title AS pipeline_name
      FROM candidates c
      LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
      JOIN pipelines p ON p.id = c.pipeline_id

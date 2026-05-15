@@ -31,6 +31,7 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 | 3 | [`part3-repo-ingestion/INDEX.md`](part3-repo-ingestion/INDEX.md) | Repo crawl, confidence scoring, repo decomposition, PR narratives |
 | 4 | [`part4-candidate-ingestion/INDEX.md`](part4-candidate-ingestion/INDEX.md) | Candidate decomposition, GitHub enrichment, screener, assessment scoring |
 | 5 | [`part5-matching-migration/INDEX.md`](part5-matching-migration/INDEX.md) | Per-element matching, reliability/observability, Neo4j migration |
+| 5+ | [`part5-matching-migration/UNIFIED-NEO4J-MIGRATION.md`](part5-matching-migration/UNIFIED-NEO4J-MIGRATION.md) | **Neo4j-first ecosystem vision** — living graph, multi-dimensional matching, UX overhaul |
 | 6 | [`part6-market-research/INDEX.md`](part6-market-research/INDEX.md) | Calibration, ESCO, fairness/legal, learning-to-rank infra |
 
 ---

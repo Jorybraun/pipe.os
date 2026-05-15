@@ -616,41 +616,43 @@ function QuestionRow({
             {questionText}
           </p>
 
-          {/* Optional recruiter video recorder */}
-          <div
-            style={{
-              padding: '16px 20px',
-              background: 'var(--pipe-bg)',
-              border: '1px solid var(--pipe-border-light)',
-              borderRadius: 8,
-            }}
-          >
+          {/* Optional recruiter video recorder — only relevant for video-mode questions */}
+          {inputMode === 'video' && (
             <div
               style={{
-                fontSize: 8,
-                letterSpacing: '0.15em',
-                fontWeight: 700,
-                fontFamily: mono,
-                color: 'var(--pipe-text-dim)',
-                marginBottom: 12,
-                textTransform: 'uppercase',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
+                padding: '16px 20px',
+                background: 'var(--pipe-bg)',
+                border: '1px solid var(--pipe-border-light)',
+                borderRadius: 8,
               }}
             >
-              <Video size={12} color="var(--pipe-text-dim)" />
-              RECRUITER QUESTION VIDEO (OPTIONAL)
+              <div
+                style={{
+                  fontSize: 8,
+                  letterSpacing: '0.15em',
+                  fontWeight: 700,
+                  fontFamily: mono,
+                  color: 'var(--pipe-text-dim)',
+                  marginBottom: 12,
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Video size={12} color="var(--pipe-text-dim)" />
+                RECRUITER QUESTION VIDEO (OPTIONAL)
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, lineHeight: 1.5, marginBottom: 14 }}>
+                Record yourself asking this question so candidates see a human face instead of plain text. Makes the experience feel more personal.
+              </div>
+              <QuestionVideoRecorder
+                challengeId={challenge.id}
+                {...(existingVideoKey ? { existingS3Key: existingVideoKey } : {})}
+                onUploaded={onVideoUploaded}
+              />
             </div>
-            <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, lineHeight: 1.5, marginBottom: 14 }}>
-              Record yourself asking this question so candidates see a human face instead of plain text. Makes the experience feel more personal.
-            </div>
-            <QuestionVideoRecorder
-              challengeId={challenge.id}
-              {...(existingVideoKey ? { existingS3Key: existingVideoKey } : {})}
-              onUploaded={onVideoUploaded}
-            />
-          </div>
+          )}
         </div>
       </div>
     </div>

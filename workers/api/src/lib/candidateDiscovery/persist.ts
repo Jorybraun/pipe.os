@@ -212,6 +212,61 @@ export async function upsertCandidateChallengeAssignment(
     .run();
 }
 
+export interface CandidateRepoMatchInput {
+  id: string;
+  candidateId: string;
+  repoId: number;
+  rank: number;
+  triangulatedScore?: number | null;
+  dimensionsJson?: string | null;
+  rationale?: string | null;
+  prNumber?: number | null;
+  issueNumber?: number | null;
+  locationTag?: string | null;
+}
+
+/**
+ * Upsert ranked repo matches for a candidate. Re-running matching replaces
+ * prior rows for the same candidate so top-3 stays current.
+ */
+export async function upsertCandidateRepoMatches(
+  db: D1Database,
+  rows: CandidateRepoMatchInput[],
+): Promise<void> {
+  const now = nowIso();
+  for (const row of rows) {
+    await db
+      .prepare(
+        `INSERT INTO candidate_repo_matches
+           (id, candidate_id, repo_id, rank, triangulated_score, dimensions_json, rationale, pr_number, issue_number, location_tag, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT(candidate_id, rank) DO UPDATE SET
+           repo_id = excluded.repo_id,
+           triangulated_score = excluded.triangulated_score,
+           dimensions_json = excluded.dimensions_json,
+           rationale = excluded.rationale,
+           pr_number = excluded.pr_number,
+           issue_number = excluded.issue_number,
+           location_tag = excluded.location_tag,
+           created_at = excluded.created_at`,
+      )
+      .bind(
+        row.id,
+        row.candidateId,
+        row.repoId,
+        row.rank,
+        row.triangulatedScore ?? null,
+        row.dimensionsJson ?? null,
+        row.rationale ?? null,
+        row.prNumber ?? null,
+        row.issueNumber ?? null,
+        row.locationTag ?? null,
+        now,
+      )
+      .run();
+  }
+}
+
 export async function markIngestionEmbedded(
   db: D1Database,
   candidateId: string,
@@ -259,11 +314,12 @@ export async function markCandidateEnriching(
   const now = nowIso();
   await db
     .prepare(
-      `UPDATE candidate_ingestion
-         SET status = 'enriching',
-             current_step = 'post_screener_enrichment',
-             updated_at = ?2
-       WHERE candidate_id = ?1`,
+      `INSERT INTO candidate_ingestion (candidate_id, status, current_step, updated_at)
+       VALUES (?1, 'enriching', 'post_screener_enrichment', ?2)
+       ON CONFLICT(candidate_id) DO UPDATE SET
+         status = 'enriching',
+         current_step = 'post_screener_enrichment',
+         updated_at = excluded.updated_at`,
     )
     .bind(candidateId, now)
     .run();
@@ -283,15 +339,16 @@ export async function markCandidateEnriched(
   const { candidateId, enrichedEmbeddingJson, candidateProfileJson } = input;
   await db
     .prepare(
-      `UPDATE candidate_ingestion
-         SET status = 'enriched',
-             screener_completed_at = ?2,
-             enriched_embedding_json = ?3,
-             candidate_profile_json = ?4,
-             current_step = NULL,
-             error_text = NULL,
-             updated_at = ?5
-       WHERE candidate_id = ?1`,
+      `INSERT INTO candidate_ingestion (candidate_id, status, screener_completed_at, enriched_embedding_json, candidate_profile_json, current_step, error_text, updated_at)
+       VALUES (?1, 'enriched', ?2, ?3, ?4, NULL, NULL, ?5)
+       ON CONFLICT(candidate_id) DO UPDATE SET
+         status = 'enriched',
+         screener_completed_at = excluded.screener_completed_at,
+         enriched_embedding_json = excluded.enriched_embedding_json,
+         candidate_profile_json = excluded.candidate_profile_json,
+         current_step = NULL,
+         error_text = NULL,
+         updated_at = excluded.updated_at`,
     )
     .bind(
       candidateId,

@@ -32,7 +32,8 @@ import { auditSignals } from './audit.js';
 import { classifyTestStyle } from './testStyleClassifier.js';
 import { classifyChallengeSurfaces } from './challengeSurfaceClassifier.js';
 import { computeDeterministicStats, computeComplexityBand } from './deterministicStats.js';
-import { preprocessForEmbedding } from '../../../src/lib/embedding/preprocess';
+import { scoreRepoConfidence, type ScorerApiConfig } from '../../../src/lib/repoApproval/confidenceScorer';
+import type { Pass2SignalSummary } from '../../../src/lib/repoApproval/confidenceScorerPrompts';
 import type { Pass3Input, FetchOptions } from './types.js';
 import type {
   Pass3Data,
@@ -509,6 +510,7 @@ interface RepoResult {
   status: 'cache_hit' | 'written' | 'gemma_error' | 'parse_error' | 'validation_failed' | 'persist_failed';
   detail?: string;
   narrative_len?: number;
+  verdict?: 'auto_approve' | 'manual_review' | 'auto_reject';
 }
 
 export async function processRepo(
@@ -517,7 +519,7 @@ export async function processRepo(
   db: D1Client,
   input: Pass3Input,
   dryRun: boolean,
-  skipVectorize: boolean,
+  scorerConfig: ScorerApiConfig | null,
   progress?: { index: number; total: number },
 ): Promise<RepoResult> {
   const base = { repo_id: input.repo_id, full_name: input.full_name };
@@ -648,10 +650,73 @@ export async function processRepo(
     logger.warn(`[pass3] ${input.full_name} warnings: ${validation.warnings.join('; ')}`);
   }
 
+  // Step 4.5: Confidence scoring (cross-family: Qwen evaluates Gemma)
+  if (scorerConfig) {
+    logger.info(`[pass3] ${tag} ${input.full_name} — scoring confidence`);
+    try {
+      const pass2Signals: Pass2SignalSummary = {
+        repo_id: input.repo_id,
+        full_name: input.full_name,
+        primary_language: input.primary_language,
+        stars: input.stars,
+        sloc: input.sloc,
+        file_count: input.file_count,
+        mean_ccn: input.mean_ccn,
+        seniority_band: input.seniority_band,
+        has_ci: input.has_ci,
+        has_tests: input.has_tests,
+        test_framework: input.test_framework,
+        detected_domain: input.detected_domain,
+        pr_quality_score: input.pr_quality_score,
+        open_pr_count: input.open_pr_count,
+        open_feature_issue_count: input.open_feature_issue_count,
+        business_logic_ratio: input.business_logic_ratio,
+        cross_module_change_rate: input.cross_module_change_rate,
+        test_touch_rate: output.test_touch_rate,
+        mean_changed_files: output.mean_changed_files,
+        p90_changed_files: output.p90_changed_files,
+        issue_link_rate: output.issue_link_rate,
+        swe_bench_eligibility_rate: output.swe_bench_eligibility_rate,
+        complexity_band: output.complexity_band,
+        test_style: output.test_style,
+        challenge_surfaces: output.challenge_surfaces,
+        detected_stack_json: input.detected_stack_json,
+        constructs: input.constructs,
+      };
+      const confidence = await scoreRepoConfidence(
+        {
+          engineeringNarrative: output.engineering_narrative,
+          repoSearchableProfile: output.repo_searchable_profile,
+          pass2Signals,
+        },
+        scorerConfig,
+      );
+      output.confidence_score = confidence.aggregate;
+      output.confidence_scores_json = JSON.stringify(confidence.scores);
+      output.confidence_verdict = confidence.verdict;
+      output.confidence_scored_at = Math.floor(Date.now() / 1000);
+      logger.info(
+        `[pass3] ${tag} ${input.full_name} — confidence=${confidence.aggregate} verdict=${confidence.verdict}`,
+      );
+    } catch (err) {
+      logger.warn(`[pass3] ${tag} ${input.full_name} — confidence scoring failed, defaulting to manual_review`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      output.confidence_score = null;
+      output.confidence_scores_json = null;
+      output.confidence_verdict = 'manual_review';
+      output.confidence_scored_at = null;
+    }
+  } else {
+    // No scorer config — default to manual_review (existing queue behavior)
+    output.confidence_score = null;
+    output.confidence_scores_json = null;
+    output.confidence_verdict = 'manual_review';
+    output.confidence_scored_at = null;
+  }
+
   // Step 5: Persist
-  // Devstral judge removed — Gemma's output + deterministic validator carry
-  // the gate. Re-add a cross-family judge later if output drift warrants it.
-  const persistResult = await persistAndVerify(db, output, false, skipVectorize);
+  const persistResult = await persistAndVerify(db, output, false);
   if (!persistResult.verified) {
     return {
       ...base,
@@ -660,7 +725,7 @@ export async function processRepo(
     };
   }
 
-  return { ...base, status: 'written', narrative_len: output.engineering_narrative.length };
+  return { ...base, status: 'written', narrative_len: output.engineering_narrative.length, verdict: output.confidence_verdict ?? 'manual_review' };
 }
 
 // ─── Concurrency helper ────────────────────────────────────────────────────
@@ -689,6 +754,9 @@ interface RunStats {
   validationFailed: number;
   gemmaErrors: number;
   persistFailed: number;
+  autoApproved: number;
+  manualReview: number;
+  autoRejected: number;
 }
 
 export async function getAccessToken(): Promise<string> {
@@ -737,20 +805,31 @@ export async function getAccessToken(): Promise<string> {
 }
 
 export async function run(
-  opts: FetchOptions & { dryRun?: boolean; concurrency?: number; skipVectorize?: boolean },
+  opts: FetchOptions & { dryRun?: boolean; concurrency?: number },
 ): Promise<void> {
   const accessToken = await getAccessToken();
   const projectId = process.env['VERTEX_AI_PROJECT_ID'] ?? 'pipe-493116';
 
   const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
-  const skipVectorize = opts.skipVectorize ?? false;
   const db = new D1Client(loadD1Config());
   const runStart = new Date().toISOString();
+
+  // Build scorer config from env (optional — if missing, all repos default to manual_review)
+  const accountId = process.env['CLOUDFLARE_ACCOUNT_ID'];
+  const apiToken = process.env['CLOUDFLARE_API_TOKEN'];
+  const scorerConfig: ScorerApiConfig | null =
+    accountId && apiToken
+      ? {
+          accountId,
+          apiToken,
+          model: process.env['CONFIDENCE_SCORER_MODEL'] ?? undefined,
+        }
+      : null;
 
   logger.info('[pass3/run] Fetching batch...');
   const batch = await fetchBatch(db, opts);
   logger.info(
-    `[pass3/run] ${batch.length} repos in batch (concurrency=${concurrency}, skipVectorize=${skipVectorize})`,
+    `[pass3/run] ${batch.length} repos in batch (concurrency=${concurrency}, scorer=${scorerConfig ? 'enabled' : 'disabled'})`,
   );
 
   if (batch.length === 0) {
@@ -765,6 +844,9 @@ export async function run(
     validationFailed: 0,
     gemmaErrors: 0,
     persistFailed: 0,
+    autoApproved: 0,
+    manualReview: 0,
+    autoRejected: 0,
   };
 
   const failures: Array<{ repo_id: number; full_name: string; reason: string }> = [];
@@ -778,9 +860,16 @@ export async function run(
       db,
       input,
       opts.dryRun ?? false,
-      skipVectorize,
+      scorerConfig,
       { index, total: batch.length },
     );
+    // Track verdicts for written repos
+    if (result.status === 'written' && 'verdict' in result) {
+      const v = (result as unknown as { verdict: string }).verdict;
+      if (v === 'auto_approve') stats.autoApproved++;
+      else if (v === 'manual_review') stats.manualReview++;
+      else if (v === 'auto_reject') stats.autoRejected++;
+    }
 
     switch (result.status) {
       case 'cache_hit':
@@ -820,6 +909,9 @@ export async function run(
   console.log(`  Validation fail: ${stats.validationFailed}`);
   console.log(`  Gemma errors:    ${stats.gemmaErrors}`);
   console.log(`  Persist fail:    ${stats.persistFailed}`);
+  console.log(`  Auto-approved:   ${stats.autoApproved}`);
+  console.log(`  Manual review:   ${stats.manualReview}`);
+  console.log(`  Auto-rejected:   ${stats.autoRejected}`);
   console.log(`signals_version:   ${SIGNALS_VERSION}`);
   console.log(`model_used:        ${SUMMARIZER_MODEL}`);
   console.log(`concurrency:       ${concurrency}`);

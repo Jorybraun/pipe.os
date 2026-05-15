@@ -733,6 +733,7 @@ export function selectPhasePrompt(phase: ConversationPhase, participantRole?: st
   switch (phase) {
     case 'CONTEXT':       return buildContextPhasePrompt(participantRole);
     case 'DISCOVERY':     return buildDiscoveryPhasePrompt(participantRole);
+    case 'SOUL':          return buildDiscoveryPhasePrompt(participantRole);
     case 'PRIORITIZE':    return buildPrioritizePhasePrompt(participantRole);
     case 'EVP_FRICTION':  return buildEvpFrictionPhasePrompt(participantRole);
     case 'WRAP_UP':       return buildWrapUpPhasePrompt(participantRole);

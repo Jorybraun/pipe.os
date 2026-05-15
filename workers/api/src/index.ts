@@ -37,6 +37,9 @@ import { voiceSessions } from './routes/voice/voiceSessions';
 import { ttsRouter } from './routes/tts';
 // Internal tooling — scorer calibration (CAL-5 spine, ADR-036 / STRATEGY CAL-2+)
 import { calibrate } from './routes/internal/calibrate';
+// Neo4j health check (ADR-043 Phase A)
+import neo4jHealth from './routes/internal/neo4jHealth';
+import neo4jParity from './routes/internal/neo4jParity';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -159,6 +162,10 @@ app.route('/rpc', rpcAuth);
 // Internal: scorer calibration endpoint (shared-secret auth via X-Calibrate-Token;
 // disabled entirely when CALIBRATE_TOKEN is unset in env)
 app.route('/internal/calibrate', calibrate);
+
+// Internal: Neo4j health check (no auth — dev/ops smoke test)
+app.route('/api/v1/internal', neo4jHealth);
+app.route('/api/v1/internal', neo4jParity);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

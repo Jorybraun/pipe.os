@@ -350,6 +350,18 @@ export function ChallengeRegistry({
   }
 
   // ---------------------------------------------------------------------------
+  // WAITING_FOR_MATCH bypass — handled at page level, but guard here too
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'WAITING_FOR_MATCH') {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', fontSize: 11 }}>
+        WAITING_FOR_MATCH_RENDERED_AT_PAGE_LEVEL
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // INTAKE bypass — candidate self-serve profile building
   // ---------------------------------------------------------------------------
 

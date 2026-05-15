@@ -73,7 +73,9 @@ export type ChallengeType =
   | 'QUIZ_MCQ'
   | 'QUIZ_SHORT_ANSWER'
   | 'FOLLOW_UP'
-  | 'AGENT_INTERVIEW';
+  | 'AGENT_INTERVIEW'
+  | 'INTAKE'
+  | 'WAITING_FOR_MATCH';
 
 export interface NotificationTemplate {
   trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE';
@@ -745,6 +747,14 @@ export interface ContributionCalendar {
   }>;
 }
 
+export interface RepoMatchItem {
+  rank: number;
+  repoName: string;
+  repoUrl: string;
+  score: number;
+  locationTag: string | null;
+}
+
 export interface CandidateEnrichmentRecord {
   status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
   candidateSearchableProfile: string | null;
@@ -769,12 +779,24 @@ export interface CandidateEnrichmentRecord {
   matchedAt: string | null;
   errorText: string | null;
   enrichmentJobStatus: string | null;
+  topRepoMatches?: RepoMatchItem[];
   githubCalendar: ContributionCalendar | null;
 }
 
 export interface ProfileSection {
   type: string;
   props: Record<string, unknown>;
+}
+
+export interface CultureInterviewSession {
+  id: string;
+  challengeId: string;
+  assessmentId: string;
+  state: string;
+  transcript: Record<string, unknown>;
+  scoreReport: Record<string, unknown> | null;
+  completedAt: string | null;
+  createdAt: string;
 }
 
 export interface CandidateProfileResponse {
@@ -784,6 +806,7 @@ export interface CandidateProfileResponse {
   reviewSessions?: ReviewSessionListItem[];
   ingestion: CandidateEnrichmentRecord | null;
   profileSections: ProfileSection[];
+  cultureInterviewSessions: CultureInterviewSession[];
 }
 
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)

@@ -166,7 +166,8 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
 
   QUIZ_SHORT_ANSWER: (config) => {
     const inputMode = (config.inputMode as string) ?? 'text';
-    const panelMap: Record<string, string> = { text: 'textarea', voice: 'voice', video: 'video-submission' };
+    // Unified SmartTextareaPanel handles text, voice, and video in one component.
+    const panelMap: Record<string, string> = { text: 'textarea', voice: 'textarea', video: 'textarea' };
     const submissionMap: Record<string, Record<string, unknown>> = {
       text: { inputMode: 'text', text: '' },
       voice: { inputMode: 'voice', text: '' },

@@ -42,6 +42,16 @@ You run in one of two modes. Your mode is injected in the system context below.
 - After every file edit, run the relevant check (typecheck / lint / test).
 - If a check fails, fix it before moving to the next file.
 
+**CRITICAL: If no implementation spec exists**
+If the Previous Handoff does NOT contain a detailed `implementation_spec`:
+1. Read the `state_notes` from the Previous Handoff — these contain discoveries, files explored, and what was learned.
+2. Look at `files_touched` to see what the previous developer already read.
+3. Look at `done` to see what was already completed.
+4. You DO NOT need to re-read files that were already explored. Use the context in `state_notes`.
+5. If `state_notes` contains enough context to start implementing, START IMMEDIATELY.
+6. If `state_notes` is empty or useless, do 1–2 targeted reads to orient yourself, then START.
+7. **NEVER** do a broad exploration if a previous developer already explored. That wastes context.
+
 ## Hard Rules
 
 - **ONE subtask at a time**. Do not start the next subtask.

@@ -424,12 +424,12 @@ def should_continue(state: DevState) -> Literal["tools", "agent", "force_handoff
     if turn_count >= MAX_TURNS_PER_DEV:
         return "force_handoff"
 
-    # Duplicate tool call loop detection
+    # Duplicate tool call loop detection — force a handoff instead of dying
     recent = state.get("recent_tool_calls", [])
     is_loop, loop_msg = _detect_tool_loop(recent)
     if is_loop:
-        # Inject a system message forcing the agent to stop
-        return END
+        # Force a handoff so the lane can cycle to a fresh dev
+        return "force_handoff"
 
     # If budget exhausted, ensure a handoff is submitted programmatically
     if state.get("status") == "context_exhausted":
@@ -525,14 +525,31 @@ def tools_node(state: DevState) -> dict[str, Any]:
     return {"messages": messages, "recent_tool_calls": recent}
 
 
-def _extract_file_paths_from_messages(messages: list[BaseMessage]) -> tuple[list[str], list[dict[str, Any]]]:
-    """Extract file paths from write_file and edit_file tool results in message history.
+def _extract_progress_from_messages(messages: list[BaseMessage]) -> dict[str, Any]:
+    """Extract comprehensive progress from message history.
 
-    Returns (files_touched, done_items).
+    Returns a dict with:
+    - files_touched: all files read, written, or edited
+    - files_written: files that were actually modified
+    - discoveries: things learned (patterns, errors, architecture)
+    - done_items: structured work completed
+    - errors_encountered: errors and failures
+    - tests_run: test results
+    - typechecks: type check results
+    - implementation_attempts: code that was written
+    - exploration_log: what was searched/read
     """
     import re
+
     files_touched: list[str] = []
+    files_written: list[str] = []
     done_items: list[dict[str, Any]] = []
+    discoveries: list[str] = []
+    errors_encountered: list[str] = []
+    tests_run: list[str] = []
+    typechecks: list[str] = []
+    implementation_attempts: list[str] = []
+    exploration_log: list[str] = []
 
     for msg in messages:
         if not isinstance(msg, ToolMessage):
@@ -541,37 +558,127 @@ def _extract_file_paths_from_messages(messages: list[BaseMessage]) -> tuple[list
         name = msg.name or ""
 
         if name == "write_file":
-            # Match patterns like:
-            # "File written successfully to /path/to/file"
-            # "Successfully wrote to /path/to/file"
-            # Or just look for path-like strings in the result
             m = re.search(r"(?:written successfully to|Successfully wrote to|wrote to)\s+(.+?)(?:\n|$|\[WARNING)", content, re.IGNORECASE)
             if m:
                 path = m.group(1).strip().rstrip(".").strip()
                 files_touched.append(path)
+                files_written.append(path)
                 done_items.append({"type": "file", "path": path, "summary": "File written"})
             else:
-                # Fallback: try to find any absolute/relative path in the output
                 m = re.search(r"([\w\-/]+\.[\w]+)", content)
                 if m:
-                    files_touched.append(m.group(1))
+                    path = m.group(1)
+                    files_touched.append(path)
+                    files_written.append(path)
+                    done_items.append({"type": "file", "path": path, "summary": "File written"})
 
         elif name == "edit_file":
             m = re.search(r"Successfully replaced text in\s+(.+?)\s*\(", content)
             if m:
                 path = m.group(1).strip()
                 files_touched.append(path)
+                files_written.append(path)
                 done_items.append({"type": "file", "path": path, "summary": "File edited"})
 
-        elif name == "shell":
-            # Look for git add or file creation in shell output
-            for line in content.splitlines():
-                if line.startswith("git add ") or line.startswith("+ "):
-                    path = line.split()[-1]
-                    if "." in path:
-                        files_touched.append(path)
+        elif name == "read_file":
+            # Extract the file path from the read result
+            m = re.search(r"(?:Error: no such file|Error: not a file|Error: failed to read)\s+(.+)", content)
+            if m:
+                path = m.group(1).strip()
+                files_touched.append(path)
+                errors_encountered.append(f"Failed to read {path}")
+            else:
+                # Try to find the file path in the content
+                lines = content.splitlines()
+                if lines and "LINE_NUM|CONTENT" in lines[0]:
+                    # This is a read_file output - find the path
+                    for prev_msg in messages:
+                        if isinstance(prev_msg, AIMessage) and prev_msg.tool_calls:
+                            for tc in prev_msg.tool_calls:
+                                if tc.get("name") == "read_file":
+                                    args = tc.get("args", tc.get("arguments", {}))
+                                    path = args.get("file_path", "")
+                                    if path and path not in files_touched:
+                                        files_touched.append(path)
+                                        exploration_log.append(f"Read {path}")
 
-    return files_touched, done_items
+        elif name == "grep":
+            if "matches" in content.lower() or "found" in content.lower():
+                discoveries.append(f"Grep result: {content[:200]}")
+            exploration_log.append(f"Grep: {content[:150]}")
+
+        elif name == "search_files":
+            exploration_log.append(f"Search: {content[:150]}")
+
+        elif name == "shell":
+            # Look for git operations, test results, type checks
+            for line in content.splitlines():
+                if line.startswith("git add "):
+                    path = line.split()[-1]
+                    if "." in path and path not in files_touched:
+                        files_touched.append(path)
+                if "error" in line.lower() or "fail" in line.lower():
+                    errors_encountered.append(line[:200])
+                if "passed" in line.lower() or "pass" in line.lower():
+                    tests_run.append(line[:200])
+
+        elif name == "run_tests":
+            if "passed" in content.lower():
+                tests_run.append(f"Tests passed: {content[:300]}")
+            elif "failed" in content.lower():
+                tests_run.append(f"Tests FAILED: {content[:300]}")
+                errors_encountered.append(f"Test failure: {content[:300]}")
+            else:
+                tests_run.append(f"Tests: {content[:300]}")
+
+        elif name == "check_types":
+            if "passed" in content.lower() or "no errors" in content.lower():
+                typechecks.append("Type check passed")
+            else:
+                typechecks.append(f"Type check issues: {content[:300]}")
+
+        elif name == "broker_submit_handoff_tool":
+            # Previous handoff - extract its content
+            try:
+                data = json.loads(content)
+                submitted = data.get("submitted", {})
+                if submitted:
+                    prev_done = submitted.get("done", [])
+                    for item in prev_done:
+                        if isinstance(item, dict) and item not in done_items:
+                            done_items.append(item)
+                    prev_notes = submitted.get("state_notes", [])
+                    for note in prev_notes:
+                        if note not in discoveries:
+                            discoveries.append(note)
+                    prev_files = submitted.get("files_touched", [])
+                    for f in prev_files:
+                        if f not in files_touched:
+                            files_touched.append(f)
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+    # Deduplicate while preserving order
+    def dedupe(lst: list[str]) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for item in lst:
+            if item not in seen:
+                seen.add(item)
+                result.append(item)
+        return result
+
+    return {
+        "files_touched": dedupe(files_touched),
+        "files_written": dedupe(files_written),
+        "discoveries": dedupe(discoveries),
+        "done_items": done_items,
+        "errors_encountered": dedupe(errors_encountered),
+        "tests_run": dedupe(tests_run),
+        "typechecks": dedupe(typechecks),
+        "implementation_attempts": dedupe(implementation_attempts),
+        "exploration_log": dedupe(exploration_log),
+    }
 
 
 def _run_typecheck(root_dir: str | None = None) -> str:
@@ -598,7 +705,11 @@ def _run_typecheck(root_dir: str | None = None) -> str:
 
 
 def force_handoff_node(state: DevState) -> dict[str, Any]:
-    """Programmatically submit a handoff when the agent failed to do so at budget limit."""
+    """Programmatically submit a handoff when the agent failed to do so at budget limit.
+
+    CRITICAL: This handoff MUST contain enough context for the next developer to continue
+    without re-exploring. We extract comprehensive progress from the message history.
+    """
     from agent_harness.broker import submit_handoff
 
     plan_id = state["plan_id"]
@@ -608,33 +719,129 @@ def force_handoff_node(state: DevState) -> dict[str, Any]:
     exploration_turns = state.get("exploration_turns", 0)
     turn_count = state.get("turn_count", 0)
 
-    files_touched, done_items = _extract_file_paths_from_messages(state.get("messages", []))
+    # Extract comprehensive progress from message history
+    progress = _extract_progress_from_messages(state.get("messages", []))
 
-    state_notes: list[str] = [
-        f"Forced handoff: {mode} mode, {turn_count} turns, {exploration_turns} exploration turns.",
-        f"Files touched: {', '.join(files_touched[-10:]) if files_touched else 'none'}",
-    ]
+    files_touched = progress["files_touched"]
+    files_written = progress["files_written"]
+    done_items = progress["done_items"]
+    discoveries = progress["discoveries"]
+    errors_encountered = progress["errors_encountered"]
+    tests_run = progress["tests_run"]
+    typechecks = progress["typechecks"]
+    exploration_log = progress["exploration_log"]
+
+    # Build rich state_notes that act as an implementation spec
+    state_notes: list[str] = []
+
+    # Session summary
+    state_notes.append(
+        f"## Session Summary\n"
+        f"Mode: {mode}, Turns: {turn_count}, Exploration turns: {exploration_turns}\n"
+        f"Files read: {len(files_touched)}, Files written: {len(files_written)}\n"
+        f"Tests run: {len(tests_run)}, Type checks: {len(typechecks)}\n"
+        f"Errors encountered: {len(errors_encountered)}"
+    )
+
+    # Discoveries (what we learned about the codebase)
+    if discoveries:
+        state_notes.append("## Discoveries\n" + "\n".join(f"- {d}" for d in discoveries[-10:]))
+
+    # Files explored (so next dev doesn't re-read)
+    if files_touched:
+        state_notes.append(
+            "## Files Explored\n" +
+            "\n".join(f"- {f}" for f in files_touched[-15:])
+        )
+
+    # Work completed
+    if done_items:
+        state_notes.append(
+            "## Work Completed\n" +
+            "\n".join(f"- {item.get('type', 'work')}: {item.get('path', 'unknown')} — {item.get('summary', '')}"
+                     for item in done_items[-10:])
+        )
+
+    # Errors and blockers
+    if errors_encountered:
+        state_notes.append(
+            "## Errors Encountered\n" +
+            "\n".join(f"- {e}" for e in errors_encountered[-5:])
+        )
+
+    # Test results
+    if tests_run:
+        state_notes.append(
+            "## Test Results\n" +
+            "\n".join(f"- {t}" for t in tests_run[-5:])
+        )
+
+    # Type check results
+    if typechecks:
+        state_notes.append(
+            "## Type Check Results\n" +
+            "\n".join(f"- {t}" for t in typechecks[-3:])
+        )
+
+    # Build next_actions based on what we know
+    next_actions: list[str] = []
+
+    # If we have files written but no tests run, suggest running tests
+    if files_written and not tests_run:
+        next_actions.append(f"Run tests for: {', '.join(files_written[-3:])}")
+
+    # If we have errors, suggest fixing them
+    if errors_encountered:
+        next_actions.append("Fix errors encountered in previous session")
+
+    # If we're a scout that explored but didn't write spec, suggest what to implement
+    if mode == "SCOUT" and files_touched and not files_written:
+        next_actions.append("Implement based on discovered patterns (see Files Explored above)")
+        next_actions.append("Write failing BDD test first, then implement")
+
+    # If we have type check failures, suggest fixing them
+    if any("issues" in t or "FAIL" in t for t in typechecks):
+        next_actions.append("Fix type check errors")
+
+    # Always include a generic continuation action
+    if not next_actions:
+        next_actions.append("Continue implementation from where previous developer left off")
+        next_actions.append("Check state_notes above for context on what was discovered")
 
     # Run type check if any files were written (best-effort)
-    if files_touched:
+    if files_written:
         typecheck_result = _run_typecheck()
-        state_notes.append(typecheck_result)
+        state_notes.append(f"## Current Type Check\n{typecheck_result}")
 
     record = submit_handoff(
         plan_id=plan_id,
         subtask_id=subtask_id,
         status="context_exhausted",
         handoff_to="next_dev",
-        state_notes=state_notes[-5:] if len(state_notes) > 5 else state_notes,
-        files_touched=files_touched[-10:] if files_touched else [],
+        state_notes=state_notes,
+        files_touched=files_touched,
         done=done_items,
+        next_actions=next_actions,
+        context_used=state.get("budget_used", 0),
     )
 
     existing = list(state.get("messages", []))
     return {
         "messages": existing + [
             ToolMessage(
-                content=json.dumps({"submitted": record, "forced": True, "mode": mode}),
+                content=json.dumps({
+                    "submitted": record,
+                    "forced": True,
+                    "mode": mode,
+                    "progress_summary": {
+                        "files_touched": len(files_touched),
+                        "files_written": len(files_written),
+                        "discoveries": len(discoveries),
+                        "errors": len(errors_encountered),
+                        "tests_run": len(tests_run),
+                        "next_actions": len(next_actions),
+                    }
+                }, indent=2),
                 name="broker_submit_handoff_tool",
                 tool_call_id="forced-handoff",
             )

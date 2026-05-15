@@ -12,6 +12,7 @@ import { InterviewProvider } from '../contexts/InterviewContext';
 import { StageRenderer } from '../components/Assessment/StageRenderer';
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
+import { WaitingForMatch } from '../components/Assessment/WaitingForMatch';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
 import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig';
@@ -97,6 +98,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     submitChallenge,
     onStart,
     reset,
+    refresh,
     sessionToken,
   } = useAssessment(token || '');
 
@@ -299,6 +301,32 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   }
 
   // ---------------------------------------------------------------------------
+  // WAITING_FOR_MATCH — full-page waiting state, bypasses StageShell
+  // ---------------------------------------------------------------------------
+
+  if (currentType === 'WAITING_FOR_MATCH' && challengeContent) {
+    const waitConfig = typeof challengeContent.config === 'object' && challengeContent.config !== null
+      ? (challengeContent.config as Record<string, unknown>)
+      : {};
+    return (
+      <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
+        <ChromeMeshGrid />
+        <WaitingForMatch
+          title={challengeContent.title ?? 'Building your personalized challenge'}
+          instructions={challengeContent.instructions ?? 'We are analyzing your profile to find the best open-source project match. This takes a few moments.'}
+          config={{
+            autoRefresh: waitConfig.autoRefresh === true,
+            refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
+            estimatedSecondsRemaining: typeof waitConfig.estimatedSecondsRemaining === 'number' ? waitConfig.estimatedSecondsRemaining : 180,
+          }}
+          onRefresh={() => void refresh()}
+          sessionToken={sessionToken}
+        />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Challenge workspace
   // ---------------------------------------------------------------------------
 
@@ -319,6 +347,14 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     currentType === 'CODE_REVIEW' &&
     challengeContent?.reviewSession?.requiresInit &&
     reviewSessionInitLoading;
+
+  // Use the challenge's own isComplete logic rather than a generic null-check.
+  // This prevents empty video/voice submissions and ensures recruiters get
+  // actual answers on the candidate profile.
+  const currentChallengeNode = resolvedConfig?.challenges?.[currentOrder];
+  const isChallengeComplete = currentChallengeNode
+    ? currentChallengeNode.isComplete(((currentSubmission ?? {}) as Record<string, unknown>))
+    : false;
 
   return (
     <SessionTokenProvider value={sessionToken}>
@@ -389,11 +425,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
                   currentType !== 'LIVE_VIDEO' &&
                   !isReviewSessionV2 &&
                   !isIntake &&
-                  (
-                    currentType === 'AGENT_INTERVIEW'
-                      ? currentSubmission !== null
-                      : (followUpReady || (!isFollowUp && currentSubmission !== null))
-                  )
+                  (followUpReady || (!isFollowUp && isChallengeComplete))
                 }
                 isSubmitting={isLoading}
                 hideFooter={isReviewSessionV2 || isIntake}

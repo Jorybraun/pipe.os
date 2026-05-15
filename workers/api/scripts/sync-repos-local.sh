@@ -17,7 +17,7 @@ if [ -f .dev.vars ]; then
 fi
 
 WRANGLER="./node_modules/.bin/wrangler"
-DB="pipe-dev"
+DB="pipe-db"
 TMP=$(mktemp -d)
 
 echo "→ Clearing local repo tables (ignoring missing tables)..."

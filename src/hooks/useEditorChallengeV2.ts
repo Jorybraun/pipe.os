@@ -49,7 +49,7 @@ const QUIZ_MCQ_TEMPLATE: Partial<EditorChallenge> = {
 
 const QUIZ_SHORT_ANSWER_TEMPLATE: Partial<EditorChallenge> = {
   instructions: '',
-  config: { question: '' },
+  config: { question: '', inputMode: 'text' },
   serverConfig: { sampleAnswer: '' },
 };
 

@@ -37,6 +37,7 @@ import {
   markIngestionMatched,
   markIngestionFailed,
   upsertCandidateChallengeAssignment,
+  upsertCandidateRepoMatches,
   type MarkIngestionMatchedInput,
 } from './persist';
 import {
@@ -49,6 +50,7 @@ import {
 } from './candidateSituationFit';
 import { cosineSimilarity, parseEmbeddingJson, meanPoolVectors } from '../embedding/cosine';
 import { getActiveCandidateNodes } from './candidateNodes';
+import { writeCandidateGraphFireAndForget } from '../neo4j/writeCandidateGraph';
 import { decomposeResumeToGraph } from './resumeDecomposition';
 import { computeRecencyMultiplier } from './candidateRecency';
 import { getCandidateCoverage } from './candidateCoverage';
@@ -152,6 +154,20 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);
+  }
+
+  // Step 3.6: Dual-write candidate graph to Neo4j (ADR-044)
+  // Fire-and-forget: D1 is authoritative; Neo4j failure is non-blocking.
+  if (env.DUAL_WRITE_NEO4J === 'true') {
+    try {
+      const activeNodes = await getActiveCandidateNodes(db, candidateId);
+      if (activeNodes.length > 0) {
+        writeCandidateGraphFireAndForget({ candidateId, nodes: activeNodes, env });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[ingestion] neo4j dual-write prep failed (non-blocking):', msg);
+    }
   }
 
   // Step 4: Embed into CANDIDATE_INDEX
@@ -726,6 +742,68 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     matchPhilosophy: philosophy,
   };
   await markIngestionMatched(db, matchedInput);
+
+  // Step 11b: Persist top-3 repo matches for recruiter visibility
+  try {
+    const shortlistScores = triangulateShortlist({
+      philosophy,
+      graphResult: matchResult,
+      situationRankings: situationRankings.rankings,
+      roleRepoAlignments,
+      roleCandidateCosine,
+      vectorCandidateRepo,
+      vectorRoleRepo,
+      vectorRoleCandidate,
+      evidenceDensity,
+    });
+
+    // Extract location from candidate Context nodes
+    let locationTag: string | null = null;
+    const contextNodes = await getActiveCandidateNodes(db, candidateId, 'Context');
+    for (const node of contextNodes) {
+      const props = node.extracted_properties_json
+        ? (JSON.parse(node.extracted_properties_json) as Record<string, unknown>)
+        : {};
+      if (props.subtype === 'location' && typeof props.value === 'string') {
+        locationTag = props.value;
+        break;
+      }
+      if (props.subtype === 'location' && typeof props.location === 'string') {
+        locationTag = props.location;
+        break;
+      }
+    }
+
+    const top3 = shortlistScores.slice(0, 3);
+    const repoMap = new Map<number, { full_name: string; html_url: string }>();
+    for (const score of top3) {
+      const row = await db
+        .prepare('SELECT full_name, html_url FROM qualified_repos WHERE id = ?1')
+        .bind(score.repo_id)
+        .first<{ full_name: string; html_url: string }>();
+      if (row) repoMap.set(score.repo_id, row);
+    }
+
+    const matchRows = top3.map((score, idx) => {
+      const isWinner = score.repo_id === winnerRepoId;
+      return {
+        id: cryptoRandomId(),
+        candidateId,
+        repoId: score.repo_id,
+        rank: idx + 1,
+        triangulatedScore: score.triangulated_score,
+        rationale: isWinner ? reasoningJson : undefined,
+        prNumber: isWinner ? (winnerReview?.prNumber ?? null) : null,
+        issueNumber: isWinner ? (winnerImplementation?.issueNumber ?? null) : null,
+        locationTag,
+      };
+    });
+
+    await upsertCandidateRepoMatches(db, matchRows);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to persist top-3 repo matches for ${candidateId}:`, msg);
+  }
 
   // Step 12: Persist profile sections for dynamic frontend rendering
   try {

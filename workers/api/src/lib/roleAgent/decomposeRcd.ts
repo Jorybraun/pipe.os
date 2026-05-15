@@ -20,6 +20,7 @@ import type {
   TechnicalContext,
 } from '../../types';
 import type { Env } from '../../types';
+import { writeRoleGraphFireAndForget, resolvePolicyFromConfig } from '../neo4j/writeRoleGraph';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -159,6 +160,55 @@ export async function persistRoleNodes(
   );
 
   await db.batch(d1Batch);
+
+  // 5. Dual-write to Neo4j (fire-and-forget, non-blocking)
+  if (env.DUAL_WRITE_NEO4J === 'true') {
+    const rcd = nodes[0]!;
+
+    // Load pipeline_id and match config for policy resolution
+    let realPipelineId = '';
+    let policy = resolvePolicyFromConfig({});
+    try {
+      const configRow = await db
+        .prepare(
+          `SELECT rc.pipeline_id, rc.match_philosophy, rc.tolerance,
+                  pmc.match_philosophy AS pmc_phil, pmc.tolerance AS pmc_tol, pmc.hybrid_mix_ratio
+           FROM role_contexts rc
+           LEFT JOIN pipeline_match_config pmc ON pmc.pipeline_id = rc.pipeline_id
+           WHERE rc.id = ?1`,
+        )
+        .bind(roleContextId)
+        .first<{
+          pipeline_id: string;
+          match_philosophy: string | null;
+          tolerance: string | null;
+          pmc_phil: string | null;
+          pmc_tol: string | null;
+          hybrid_mix_ratio: number | null;
+        }>();
+
+      if (configRow) {
+        realPipelineId = configRow.pipeline_id;
+        policy = resolvePolicyFromConfig({
+          tolerance: configRow.pmc_tol ?? configRow.tolerance,
+          match_philosophy: configRow.pmc_phil ?? configRow.match_philosophy,
+          hybrid_mix_ratio: configRow.hybrid_mix_ratio ?? undefined,
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[persistRoleNodes] failed to load match config for policy:', msg);
+    }
+
+    writeRoleGraphFireAndForget({
+      roleContextId: rcd.role_context_id,
+      pipelineId: realPipelineId || rcd.role_context_id,
+      rcdVersion: rcd.rcd_version,
+      nodes: embeddedNodes,
+      policy,
+      env,
+    });
+  }
 
   console.error('[persistRoleNodes] wrote nodes for role', {
     roleContextId,

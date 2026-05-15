@@ -71,8 +71,6 @@ export interface Env {
   GOOGLE_CLOUD_PROJECT?: string;
   /** Metered.ca API key for TURN credential fetching. */
   METERED_API_KEY?: string;
-  /** Pipeline ID used for the public demo / self-registration flow. */
-  DEMO_PIPELINE_ID?: string;
   /** Calendly OAuth client ID. */
   CALENDLY_CLIENT_ID?: string;
   /** Calendly OAuth client secret. */
@@ -161,6 +159,19 @@ export interface Env {
   KIMI_BASE_URL?: string;
   /** Kimi model override for scorer. Default: kimi-for-coding */
   KIMI_SCORER_MODEL?: string;
+  // ─── Neo4j Graph+Vector Store (ADR-043 through ADR-047) ─────────────────────
+  /** Bolt URI for Neo4j. e.g. bolt://localhost:7687 or neo4j+s://host:7687 */
+  NEO4J_URI?: string;
+  /** Neo4j username. Default: neo4j */
+  NEO4J_USER?: string;
+  /** Neo4j password */
+  NEO4J_PASSWORD?: string;
+  /** When 'true', ingestion pipelines write to Neo4j after D1 (fire-and-forget). */
+  DUAL_WRITE_NEO4J?: string;
+  /** When 'true', matching queries run against Neo4j in shadow and log divergence. */
+  SHADOW_READ_NEO4J?: string;
+  /** 'd1' | 'neo4j' — selects the primary match store during cutover. */
+  PRIMARY_MATCH_STORE?: string;
 }
 
 /**

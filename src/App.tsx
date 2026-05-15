@@ -33,7 +33,6 @@ const RoleDiscoveryPage = lazy(() => import("./pages/RoleDiscoveryPage"));
 const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
-const DemoIntakePage = lazy(() => import("./pages/DemoIntakePage"));
 const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
 const OutreachPage = lazy(() => import("./pages/OutreachPage"));
 const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
@@ -387,20 +386,6 @@ function App(): JSX.Element {
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                   <CultureInterviewPage />
-                </Suspense>
-              </ErrorBoundary>
-            </ThemeProvider>
-          }
-        />
-
-        {/* Public Demo / Self-Registration Route */}
-        <Route
-          path="/demo"
-          element={
-            <ThemeProvider forceMode="dark">
-              <ErrorBoundary>
-                <Suspense fallback={<PageLoader />}>
-                  <DemoIntakePage />
                 </Suspense>
               </ErrorBoundary>
             </ThemeProvider>

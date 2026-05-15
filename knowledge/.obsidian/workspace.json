@@ -255,6 +255,8 @@
   },
   "active": "ce33edbe69485dd6",
   "lastOpenFiles": [
+    "plan/culture-agent-redesign/handoffs/fsm-agent-2026-05-02.md",
+    "plan/culture-agent-redesign/handoffs/prompt-agent-2026-05-03.md",
     "plan/culture-agent-redesign/handoffs/conversation-synthesis-2026-05-03.md",
     "plan/culture-agent-redesign/handoffs/evaluator-agent-2026-05-03.md",
     "plan/culture-agent-redesign/handoffs/phase2-probe-bank-2026-05-02.md",
@@ -280,8 +282,6 @@
     "plan/culture-agent-redesign/architecture/decomposition-contract.md",
     "plan/culture-agent-redesign/architecture/state-machine-spec.md",
     "plan/culture-agent-redesign/architecture/agent-flow-spec.md",
-    "plan/culture-agent-redesign/INDEX.md",
-    "plan/culture-agent-redesign/culture-agent-redesign-master.md",
     "plan/culture-agent-redesign/validation",
     "plan/culture-agent-redesign/integration",
     "plan/culture-agent-redesign/implementation",

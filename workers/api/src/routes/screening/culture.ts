@@ -898,6 +898,8 @@ cultureCandidate.post('/session/:token/consent', async (c) => {
     turnsAsked: 0,
     totalBudget: CULTURE_BANK_SIZE,
     consentRequired: false,
+    coverage: transcript.scratchpad.dimensionCoverage ?? {},
+    phase: transcript.scratchpad.phase ?? 'rapport_building',
   });
 });
 
@@ -1057,6 +1059,8 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     nextQuestion,
     turnsAsked,
     totalBudget: CULTURE_BANK_SIZE,
+    coverage: result.transcript.scratchpad.dimensionCoverage ?? {},
+    phase: result.transcript.scratchpad.phase ?? 'probing',
   });
 });
 

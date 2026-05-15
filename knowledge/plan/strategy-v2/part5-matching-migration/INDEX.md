@@ -52,20 +52,27 @@ Depends on Phase 0 completion + Phase 1 candidate decomposition (Part 4).
 
 ---
 
-## Phase 2 — Neo4j migration (months 4–6)
+## Phase 2 — Neo4j-first migration (3 weeks)
 
-Depends on Phase 0 + Phase 1 validated. Execute in sequence within the phase.
+**⚠️ Replaces previous dual-write/shadow-read plan.** Dead code already exists (gated `false`). Rip it out, make Neo4j primary immediately.
 
-| File | Subtasks | Est. | Migration Phase | Status |
+See [`UNIFIED-NEO4J-MIGRATION.md`](UNIFIED-NEO4J-MIGRATION.md) for cohesive summary.
+
+| File | Subtasks | Est. | Phase | Status |
 |---|---|---|---|---|
-| [`neo4j-vps-provisioning.md`](neo4j-vps-provisioning.md) | 3 | 1w | Phase A (setup) | PENDING |
-| [`neo4j-driver-and-binding.md`](neo4j-driver-and-binding.md) | 2 | 0.5w | Phase A | PENDING |
-| [`neo4j-schema-and-constraints.md`](neo4j-schema-and-constraints.md) | 4 | 0.5w | Phase A | PENDING |
-| [`neo4j-dual-write-ingestion.md`](neo4j-dual-write-ingestion.md) | 4 | 2w | Phase B (wks 3–6) | PENDING |
-| [`neo4j-validation-parity.md`](neo4j-validation-parity.md) | 3 | 1w | Phase B–C | PENDING |
-| [`neo4j-matching-cutover.md`](neo4j-matching-cutover.md) | 3 | 3w | Phase C–D (wks 7–12) | PENDING |
+| [`neo4j-migration/03-phase-1-dead-code-removal.md`](neo4j-migration/03-phase-1-dead-code-removal.md) | — | 0.5w | Phase 1: Dead code | PENDING |
+| [`neo4j-migration/02-schema-design.md`](neo4j-migration/02-schema-design.md) | — | 0.5w | Phase 2: Schema | PENDING |
+| [`neo4j-migration/04-phase-2-write-path-migration.md`](neo4j-migration/04-phase-2-write-path-migration.md) | — | 1w | Phase 2: Write path | PENDING |
+| [`neo4j-migration/05-phase-3-matching-cypher-queries.md`](neo4j-migration/05-phase-3-matching-cypher-queries.md) | — | 1.5w | Phase 3: Matching | PENDING |
+| [`neo4j-migration/11-how-similarity-works.md`](neo4j-migration/11-how-similarity-works.md) | — | — | Phase 3: Matching | PENDING |
+| [`neo4j-migration/06-phase-4-matching-ux-overhaul.md`](neo4j-migration/06-phase-4-matching-ux-overhaul.md) | — | 1w | Phase 4: UX | PENDING |
+| [`neo4j-migration/07-phase-5-repo-backfill.md`](neo4j-migration/07-phase-5-repo-backfill.md) | — | 1w | Phase 5: Repos | PENDING |
+| [`neo4j-migration/10-unified-ecosystem-vision.md`](neo4j-migration/10-unified-ecosystem-vision.md) | — | — | Reference | PENDING |
+| [`neo4j-migration/09-concrete-graph-example.md`](neo4j-migration/09-concrete-graph-example.md) | — | — | Reference | PENDING |
 
-**Phase 2 subtotal:** 19 subtasks
+**Phase 2 subtotal:** ~6 weeks (phases 1–5 parallelizable where noted)
+
+**Open decision:** Cultural matching model (Option A/B/C) — gates Phase 3 Cypher finalization. See `UNIFIED-NEO4J-MIGRATION.md` §Cultural Matching Gap.
 
 ---
 
@@ -95,12 +102,14 @@ Phase 1:
   per-element-matching-algorithm → match-reports-schema → triangulation-summary-layer
   phase0/Subagent G → triangulation-summary-layer
 
-Phase 2:
-  neo4j-vps-provisioning → neo4j-driver-and-binding → neo4j-schema-and-constraints
-    → neo4j-dual-write-ingestion → neo4j-validation-parity
-    → neo4j-matching-cutover → neo4j-retirement-plan
-
-  per-element-matching-algorithm (Phase 1) → neo4j-matching-cutover (Cypher replaces it)
+Phase 2 (Neo4j-first):
+  phase1-dead-code-removal → phase2-schema-design → phase2-write-path
+    → phase3-matching-cypher → phase4-ux-overhaul
+    → phase5-repo-backfill
+  
+  phase3-matching-cypher → phase6-cultural-matching (gated on model decision)
+  
+  culture-agent-redesign (Part 4) → phase6-cultural-matching
 ```
 
 ---

@@ -162,16 +162,16 @@ async function loadOrgBenchmark(db: D1Database, challengeId: string): Promise<Or
   return DEFAULT_ORG_BENCHMARK;
 }
 
-function buildTranscriptFromCulture(session: CultureSessionRow): Array<{ role: 'user' | 'model'; text: string }> {
+function buildTranscriptFromCulture(session: CultureSessionRow): Array<{ role: 'user' | 'model'; text: string; videoR2Key?: string }> {
   const transcript = parseJsonColumn<CultureTranscript>(session.transcript, defaultCultureTranscript());
-  const result: Array<{ role: 'user' | 'model'; text: string }> = [];
+  const result: Array<{ role: 'user' | 'model'; text: string; videoR2Key?: string }> = [];
 
   for (const turn of transcript.turns) {
     if (turn.questionText) {
       result.push({ role: 'model', text: turn.questionText });
     }
     if (turn.candidateResponse) {
-      result.push({ role: 'user', text: turn.candidateResponse });
+      result.push({ role: 'user', text: turn.candidateResponse, videoR2Key: turn.videoR2Key });
     }
   }
 
@@ -421,6 +421,7 @@ agentInterviewRouter.post('/:challengeId/respond', async (c) => {
   if (typeof answer !== 'string' || answer.trim().length === 0) {
     return c.json({ error: { code: 'VALIDATION_ERROR', message: 'answer must be a non-empty string.' } }, 422);
   }
+  const videoR2Key = (body as Record<string, unknown>)?.videoR2Key as string | undefined;
 
   const resolved = await resolveOrCreateSession(db, candidateId, challengeId);
   if (!resolved) {
@@ -454,7 +455,7 @@ agentInterviewRouter.post('/:challengeId/respond', async (c) => {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Session lost after auto-start.' } }, 404);
     }
     // Fall through to respond with refreshed session
-    return doRespond(c, db, refreshed, answer.trim());
+    return doRespond(c, db, refreshed, answer.trim(), videoR2Key);
   }
 
   if (session.state !== 'in_progress') {
@@ -464,7 +465,7 @@ agentInterviewRouter.post('/:challengeId/respond', async (c) => {
     );
   }
 
-  return doRespond(c, db, session, answer.trim());
+  return doRespond(c, db, session, answer.trim(), videoR2Key);
 });
 
 async function doRespond(
@@ -472,6 +473,7 @@ async function doRespond(
   db: D1Database,
   session: CultureSessionRow,
   answer: string,
+  videoR2Key?: string,
 ) {
   const transcript = parseJsonColumn<CultureTranscript>(session.transcript, defaultCultureTranscript());
 
@@ -498,6 +500,19 @@ async function doRespond(
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
   });
+
+  // Attach video R2 key to the most recent answered turn
+  // (advanceCultureInterview may append a probe turn at the end, so we walk
+  // backwards to find the last turn with a non-null candidateResponse.)
+  if (videoR2Key && result.transcript.turns.length > 0) {
+    for (let i = result.transcript.turns.length - 1; i >= 0; i--) {
+      const turn = result.transcript.turns[i]!;
+      if (turn.candidateResponse !== null) {
+        turn.videoR2Key = videoR2Key;
+        break;
+      }
+    }
+  }
 
   if (result.action === 'terminate') {
     await db

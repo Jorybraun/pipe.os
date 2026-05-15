@@ -27,6 +27,20 @@ export function isShortAnswerSubmission(s: unknown): s is ShortAnswerSubmission 
 export type StageSubmission = CodeReviewSubmission | QuizSubmission | ShortAnswerSubmission | Record<string, unknown>;
 
 /** Stage rendering config returned by get-stage-config Worker */
+export interface WaitingChallengeConfig {
+  autoRefresh: boolean;
+  refreshIntervalSeconds: number;
+  estimatedSecondsRemaining: number;
+}
+
+export interface WaitingChallengeDTO {
+  id: string;
+  type: 'WAITING_FOR_MATCH';
+  title: string;
+  instructions: string;
+  config: WaitingChallengeConfig;
+}
+
 export interface StageConfigDTO {
   isComplete: boolean;
   stageId?: string;
@@ -38,6 +52,7 @@ export interface StageConfigDTO {
   screeningInputMode?: 'text' | 'voice' | 'video' | null;
   challenges?: Array<{ type: string; order: number; title?: string }>;
   currentIndex?: number;
+  waitingChallenge?: WaitingChallengeDTO;
 }
 
 /** Challenge content returned by get-challenge Worker */
@@ -87,6 +102,7 @@ interface UseAssessmentReturn extends AssessmentState {
   submitChallenge: (submission: StageSubmission) => Promise<void>;
   onStart: () => Promise<void>;
   reset: () => void;
+  refresh: () => Promise<void>;
   sessionToken: string | null;
 }
 
@@ -253,7 +269,21 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       }
 
       const currentIndex = config.currentIndex ?? 0;
-      const content = await loadChallenge(currentIndex);
+      const currentChallenge = config.challenges?.[currentIndex];
+
+      // WAITING_FOR_MATCH: synthetic challenge — skip get-challenge, use waitingChallenge data
+      let content: ChallengeContentDTO | null = null;
+      if (currentChallenge?.type === 'WAITING_FOR_MATCH' && config.waitingChallenge) {
+        content = {
+          id: config.waitingChallenge.id,
+          type: config.waitingChallenge.type,
+          title: config.waitingChallenge.title,
+          instructions: config.waitingChallenge.instructions,
+          config: config.waitingChallenge.config,
+        };
+      } else {
+        content = await loadChallenge(currentIndex);
+      }
 
       setState((prev) => ({
         ...prev,
@@ -280,7 +310,19 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
     if (nextOrder < stageConfig.challenges.length) {
       try {
-        const content = await loadChallenge(nextOrder);
+        const nextChallenge = stageConfig.challenges[nextOrder];
+        let content: ChallengeContentDTO | null = null;
+        if (nextChallenge?.type === 'WAITING_FOR_MATCH' && stageConfig.waitingChallenge) {
+          content = {
+            id: stageConfig.waitingChallenge.id,
+            type: stageConfig.waitingChallenge.type,
+            title: stageConfig.waitingChallenge.title,
+            instructions: stageConfig.waitingChallenge.instructions,
+            config: stageConfig.waitingChallenge.config,
+          };
+        } else {
+          content = await loadChallenge(nextOrder);
+        }
         setState((prev) => ({
           ...prev,
           isLoading: false,
@@ -309,7 +351,19 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         }
 
         const newIndex = config.currentIndex ?? 0;
-        const content = await loadChallenge(newIndex);
+        const newChallenge = config.challenges?.[newIndex];
+        let content: ChallengeContentDTO | null = null;
+        if (newChallenge?.type === 'WAITING_FOR_MATCH' && config.waitingChallenge) {
+          content = {
+            id: config.waitingChallenge.id,
+            type: config.waitingChallenge.type,
+            title: config.waitingChallenge.title,
+            instructions: config.waitingChallenge.instructions,
+            config: config.waitingChallenge.config,
+          };
+        } else {
+          content = await loadChallenge(newIndex);
+        }
         setState((prev) => ({
           ...prev,
           isLoading: false,
@@ -371,11 +425,56 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     void fetchData();
   }, [fetchData]);
 
+  // Refresh current stage config + challenge (used by WAITING_FOR_MATCH auto-refresh)
+  const refresh = useCallback(async () => {
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    try {
+      const config = await loadStageConfig();
+
+      if (!config || config.isComplete) {
+        setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
+        return;
+      }
+
+      const currentIndex = config.currentIndex ?? 0;
+      const currentChallenge = config.challenges?.[currentIndex];
+
+      let content: ChallengeContentDTO | null = null;
+      if (currentChallenge?.type === 'WAITING_FOR_MATCH' && config.waitingChallenge) {
+        content = {
+          id: config.waitingChallenge.id,
+          type: config.waitingChallenge.type,
+          title: config.waitingChallenge.title,
+          instructions: config.waitingChallenge.instructions,
+          config: config.waitingChallenge.config,
+        };
+      } else {
+        content = await loadChallenge(currentIndex);
+      }
+
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        stageConfig: config,
+        challengeContent: content,
+        currentOrder: currentIndex,
+        followUpQuestions: null,
+        followUpLoading: false,
+        error: null,
+      }));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Refresh failed');
+      console.error('[useAssessment] refresh error:', error);
+      setState((prev) => ({ ...prev, isLoading: false, error }));
+    }
+  }, [loadStageConfig, loadChallenge]);
+
   return {
     ...state,
     submitChallenge,
     onStart,
     reset,
+    refresh,
     sessionToken: sessionTokenRef.current,
   };
 }

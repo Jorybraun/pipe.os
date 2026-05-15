@@ -229,128 +229,6 @@ rpcPublic.post('/refresh-session', async (c) => {
   return c.json({ sessionToken });
 });
 
-// ── POST /rpc/demo-register ─────────────────────────────────────────────────
-// Public self-registration for demo/trial candidates. Creates a fresh candidate
-// in the configured demo pipeline and returns a session token immediately.
-
-rpcPublic.post('/demo-register', async (c) => {
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
-  }
-
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
-  const githubHandle = typeof body.githubHandle === 'string' ? body.githubHandle.trim().replace(/^@/, '') : '';
-  const linkedinUrl = typeof body.linkedinUrl === 'string' ? body.linkedinUrl.trim() : '';
-  const rawAssessmentType = typeof body.assessmentType === 'string' ? body.assessmentType.trim().toUpperCase() : 'CODE_REVIEW';
-
-  // Map user-facing assessment types to internal challenge types
-  const TYPE_MAP: Record<string, string> = {
-    'CODE_REVIEW': 'CODE_REVIEW',
-    'CULTURE': 'AGENT_INTERVIEW',
-    'OPEN_SOURCE': 'CODE_IMPLEMENTATION',
-    'CULTURAL_FIT': 'AGENT_INTERVIEW',
-  };
-  const assessmentType = TYPE_MAP[rawAssessmentType] || rawAssessmentType;
-
-  if (!name || name.length < 1) {
-    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'name is required.' } }, 400);
-  }
-  if (!email || !email.includes('@')) {
-    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'valid email is required.' } }, 400);
-  }
-
-  const db = c.env.DB;
-  const secret = c.env.SESSION_TOKEN_SECRET;
-  if (!secret) {
-    console.error('[demo-register] SESSION_TOKEN_SECRET not configured');
-    return c.json({ error: { code: 'INTERNAL_ERROR', message: 'Auth not configured.' } }, 500);
-  }
-
-  // Find demo pipeline that has a challenge of the requested type.
-  // Priority: DEMO_PIPELINE_ID env var, then title match with challenge type,
-  // then any pipeline with "demo" in the title that has the right challenge type.
-  let pipelineId = c.env.DEMO_PIPELINE_ID;
-
-  if (!pipelineId) {
-    // Look for a pipeline with "demo" in the title that contains the requested challenge type
-    const pipeline = await db.prepare(
-      `SELECT DISTINCT p.id
-       FROM pipelines p
-       JOIN stages s ON s.pipeline_id = p.id
-       JOIN challenges c ON c.stage_id = s.id
-       WHERE lower(p.title) LIKE '%demo%'
-         AND c.type = ?1
-       ORDER BY p.created_at DESC
-       LIMIT 1`,
-    ).bind(assessmentType).first<{ id: string }>();
-    if (pipeline) pipelineId = pipeline.id;
-  }
-
-  if (!pipelineId) {
-    return c.json({
-      error: { code: 'NOT_CONFIGURED', message: `No demo pipeline configured for ${assessmentType}. Set DEMO_PIPELINE_ID or create a pipeline with "demo" in the title and a ${assessmentType} challenge.` },
-    }, 503);
-  }
-
-  // Verify pipeline exists
-  const pipeline = await db.prepare(
-    `SELECT id, owner_id FROM pipelines WHERE id = ?1`,
-  ).bind(pipelineId).first<{ id: string; owner_id: string }>();
-
-  if (!pipeline) {
-    return c.json({ error: { code: 'NOT_FOUND', message: 'Demo pipeline not found.' } }, 404);
-  }
-
-  // Find the first stage that has a challenge of the requested type
-  const stage = await db.prepare(
-    `SELECT s.id
-     FROM stages s
-     JOIN challenges c ON c.stage_id = s.id
-     WHERE s.pipeline_id = ?1 AND c.type = ?2
-     ORDER BY s.sort_order ASC, c.sort_order ASC
-     LIMIT 1`,
-  ).bind(pipelineId, assessmentType).first<{ id: string }>();
-
-  if (!stage) {
-    return c.json({ error: { code: 'NOT_CONFIGURED', message: `Demo pipeline has no ${assessmentType} challenge.` } }, 503);
-  }
-
-  // Create candidate
-  const candidateId = crypto.randomUUID();
-  const inviteToken = crypto.randomUUID();
-  const now = new Date().toISOString();
-
-  await db.prepare(
-    `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, github_handle, linkedin_url, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'INVITED', ?7, ?8, ?9, ?10, ?10)`,
-  ).bind(candidateId, pipelineId, pipeline.owner_id, name, email, inviteToken, stage.id, githubHandle || null, linkedinUrl || null, now).run();
-
-  // Create assessment for the stage
-  const assessmentId = crypto.randomUUID();
-  await db.prepare(
-    `INSERT INTO assessments (id, candidate_id, stage_id, status, owner_id, started_at, created_at, updated_at)
-     VALUES (?1, ?2, ?3, 'PENDING', ?4, ?5, ?5, ?5)`,
-  ).bind(assessmentId, candidateId, stage.id, pipeline.owner_id, now).run();
-
-  // Issue session token directly (bypass invite token claim)
-  const sessionToken = await signJwt(
-    { sub: candidateId, pid: pipelineId },
-    secret,
-  );
-
-  return c.json({
-    candidateId,
-    pipelineId,
-    sessionToken,
-    inviteToken,
-    status: 'INVITED',
-  });
-});
-
 // ─── Authenticated routes (candidate JWT) ───────────────────────────────────
 
 const rpcAuth = new Hono<{ Bindings: Env; Variables: CandidateVariables }>();
@@ -562,7 +440,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
     });
   }
 
-  // If candidate has an explicit current_stage_id (e.g. from demo-register),
+  // If candidate has an explicit current_stage_id,
   // try that stage first so candidates start where they were assigned.
   if (candidate.current_stage_id) {
     const targetStage = stages.find((s) => s.id === candidate.current_stage_id);
@@ -698,10 +576,14 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // Inject stage-level screening_input_mode into QUIZ_SHORT_ANSWER challenges
   // so candidates see the format (text / voice / video) configured by the recruiter.
+  // Challenge-level config takes precedence — only fall back to stage default when
+  // the challenge itself has not explicitly set an inputMode.
   if ((ch.type as string) === 'QUIZ_SHORT_ANSWER' && stageInfo?.screening_input_mode) {
     const cfg = (config ?? {}) as Record<string, unknown>;
-    cfg.inputMode = stageInfo.screening_input_mode;
-    config = cfg;
+    if (!cfg.inputMode) {
+      cfg.inputMode = stageInfo.screening_input_mode;
+      config = cfg;
+    }
   }
 
   // Parse cached diff JSON if stored as string
@@ -995,7 +877,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     const githubHandle = typeof intakePayload.githubHandle === 'string' ? intakePayload.githubHandle : '';
     const linkedinUrl = typeof intakePayload.linkedinUrl === 'string' ? intakePayload.linkedinUrl : '';
 
-    // 1. Update candidate record with resume key
+    // 1. Update candidate record with resume key + run ingestion immediately
     if (resumeR2Key) {
       try {
         await c.env.DB.prepare(`UPDATE candidates SET resume_s3_key = ?1, updated_at = ?2 WHERE id = ?3`)
@@ -1005,18 +887,23 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
         console.error(`[rpc/intake] failed to update candidate resume key:`, err);
       }
 
-      // Queue resume ingestion job (processed by enrichment worker cron)
-      try {
-        await c.env.DB.prepare(
-          `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
-           VALUES (?1, ?2, 'resume', ?3, 'PENDING', unixepoch())`,
-        )
-          .bind(crypto.randomUUID(), candidateId, resumeR2Key)
-          .run();
-        console.log(`[rpc/intake] queued resume ingestion for candidate ${candidateId}`);
-      } catch (err) {
-        console.error(`[rpc/intake] failed to queue resume ingestion:`, err);
-      }
+      // Run ingestion immediately — candidate graph must be live before they proceed
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const result = await processResumeFromR2({
+              env: c.env,
+              db: c.env.DB,
+              candidateId,
+              r2Key: resumeR2Key,
+            });
+            console.log(`[rpc/intake] resume ingestion for candidate ${candidateId}:`, result.success);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`[rpc/intake] resume ingestion failed for ${candidateId}:`, msg);
+          }
+        })(),
+      );
     }
 
     // 2. Queue GitHub enrichment
@@ -1275,6 +1162,30 @@ rpcAuth.post('/submit-status', async (c) => {
   return c.json({ success: true });
 });
 
+// ── GET /rpc/candidate-profile ──────────────────────────────────────────────
+
+rpcAuth.get('/candidate-profile', async (c) => {
+  const candidateId = c.get('candidateId');
+  const db = c.env.DB;
+
+  const row = await db.prepare(
+    `SELECT candidate_profile_json FROM candidate_ingestion WHERE candidate_id = ?1`
+  )
+    .bind(candidateId)
+    .first<{ candidate_profile_json: string | null }>();
+
+  if (!row || !row.candidate_profile_json) {
+    return c.json({ profile: null, error: 'profile_not_found' }, 404);
+  }
+
+  try {
+    const profile = JSON.parse(row.candidate_profile_json) as unknown;
+    return c.json({ profile });
+  } catch {
+    return c.json({ profile: null, error: 'profile_parse_error' }, 500);
+  }
+});
+
 // ── POST /rpc/upload-media ──────────────────────────────────────────────────
 //
 // Accepts a media file (audio or video) as multipart/form-data and writes it
@@ -1381,6 +1292,38 @@ rpcAuth.post('/upload-media', async (c) => {
   });
 
   console.log('[rpc/upload-media] Stored media', { candidateId, challengeId, r2Key, size: fileEntry.size });
+
+  // ── Auto-ingest resume documents ───────────────────────────────────────────
+  // Document uploads (PDF/DOCX) are always resumes. Run ingestion immediately
+  // so the candidate graph is live before they proceed to the next stage.
+  if (isDocument) {
+    const now = new Date().toISOString();
+    try {
+      await c.env.DB.prepare(`UPDATE candidates SET resume_s3_key = ?1, updated_at = ?2 WHERE id = ?3`)
+        .bind(r2Key, now, candidateId)
+        .run();
+    } catch (err) {
+      console.error(`[rpc/upload-media] failed to update candidate resume key:`, err);
+    }
+
+    // Run ingestion immediately — candidate graph must be live before they proceed
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const result = await processResumeFromR2({
+            env: c.env,
+            db: c.env.DB,
+            candidateId,
+            r2Key,
+          });
+          console.log(`[rpc/upload-media] resume ingestion for candidate ${candidateId}:`, result.success);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[rpc/upload-media] resume ingestion failed for ${candidateId}:`, msg);
+        }
+      })(),
+    );
+  }
 
   // Auto-transcribe audio files via Workers AI Whisper (free, at-edge)
   let transcript: string | null = null;
