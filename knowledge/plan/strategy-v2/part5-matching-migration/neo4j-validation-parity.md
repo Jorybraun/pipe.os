@@ -35,7 +35,7 @@ Parity testing against synthetic data catches schema bugs and query logic errors
 
 ### Subtask 2 — Shadow-read divergence analysis dashboard
 **Files:**
-- `workers/api/src/routes/cockpit/neo4jParity.ts` (extend from `neo4j-dual-write-ingestion.md`)
+- `workers/api/src/routes/cockpit/neo4jParity.ts` (extend from `neo4j-migration/MASTER-PLAN.md` Phase 3 validation)
 
 **Spec:**
 - Extend the parity endpoint to include shadow-read statistics:
@@ -64,7 +64,7 @@ Parity testing against synthetic data catches schema bugs and query logic errors
 ## Dependencies
 
 - Depends on: `neo4j-schema-and-constraints.md`
-- Depends on: `neo4j-dual-write-ingestion.md`
+- Depends on: `neo4j-migration/MASTER-PLAN.md` Phase 2 (write path must be active to populate Neo4j)
 - Blocks: `neo4j-matching-cutover.md` (parity validation gates the cutover; the cutover plan's shadow-read step then feeds back into the post-cutover spot-check cron defined here)
 
 ## Acceptance criteria

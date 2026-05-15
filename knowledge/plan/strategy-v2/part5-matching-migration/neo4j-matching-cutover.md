@@ -79,7 +79,7 @@ Shadow reads validate Neo4j result correctness under real production load before
 
 ## Dependencies
 
-- Depends on: `neo4j-dual-write-ingestion.md` (Neo4j must be populated before shadow reads)
+- Depends on: `neo4j-migration/MASTER-PLAN.md` Phase 2 (Neo4j must be populated before shadow reads)
 - Depends on: `neo4j-validation-parity.md` (shadow divergence analysis is part of parity validation)
 - Depends on: `per-element-matching-algorithm.md` (Cypher queries replace the per-element algorithm for the Neo4j path)
 

@@ -141,12 +141,14 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 
 Sequential within phase. Gated behind Phase 0/1 stability.
 
+**Note:** The old dual-write plans (`neo4j-candidate-dual-write.md`, `neo4j-role-dual-write.md`, `neo4j-repo-dual-write.md`) have been removed. They are superseded by the Neo4j-first migration in `neo4j-migration/MASTER-PLAN.md` and `UNIFIED-NEO4J-MIGRATION.md`.
+
 | Plan | Part | Status | Est. |
 |---|---|---|---|
 | [neo4j-vps-provisioning](part5-matching-migration/neo4j-vps-provisioning.md) | 5 | PENDING | 1w |
 | [neo4j-driver-and-binding](part5-matching-migration/neo4j-driver-and-binding.md) | 5 | PENDING | 0.5w |
 | [neo4j-schema-and-constraints](part5-matching-migration/neo4j-schema-and-constraints.md) | 5 | PENDING | 0.5w |
-| [neo4j-dual-write-ingestion](part5-matching-migration/neo4j-dual-write-ingestion.md) | 5 | PENDING | 2w |
+| [neo4j-dual-write-ingestion](part5-matching-migration/neo4j-dual-write-ingestion.md) | 5 | **SUPERSEDED** | — |
 | [neo4j-validation-parity](part5-matching-migration/neo4j-validation-parity.md) | 5 | PENDING | 1w |
 | [neo4j-matching-cutover](part5-matching-migration/neo4j-matching-cutover.md) | 5 | PENDING | 3w |
 | [neo4j-retirement-plan](part5-matching-migration/neo4j-retirement-plan.md) | 5 | PENDING (deferred) | 0.5w |

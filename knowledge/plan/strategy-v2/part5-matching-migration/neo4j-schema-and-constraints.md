@@ -100,7 +100,7 @@ Schema and constraints are the foundation everything else depends on — uniquen
 ## Dependencies
 
 - Depends on: `neo4j-driver-and-binding.md`
-- Blocks: `neo4j-dual-write-ingestion.md`
+- Blocks: `neo4j-migration/MASTER-PLAN.md` (Phase 2 write path)
 - Blocks: `neo4j-matching-cutover.md`
 
 ## Acceptance criteria
