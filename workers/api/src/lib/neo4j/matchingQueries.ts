@@ -246,3 +246,91 @@ export async function scoreCandidateAgainstRole(
     dealbreakerFailures,
   };
 }
+
+// ─── Repo Matching ───────────────────────────────────────────────────────────
+
+export interface RepoMatchResult {
+  repo_id: number;
+  full_name: string;
+  score: number;
+  evidence: RepoEvidence[];
+  match_count: number;
+}
+
+export interface RepoEvidence {
+  node_type: string;
+  narrative: string;
+  similarity: number;
+}
+
+/**
+ * Find the best-matching repos for a candidate using graph-native Cypher.
+ *
+ * Replaces: matchReposForCandidate.ts (Vectorize + SQL graph matcher)
+ *
+ * @param driver Neo4j driver instance
+ * @param candidateId Candidate to match repos for
+ * @param options.topK Number of repos to return (default 10)
+ * @param options.minSimilarity Minimum cosine similarity (default 0.55)
+ */
+export async function matchReposForCandidateNeo4j(
+  driver: Driver,
+  candidateId: string,
+  options?: {
+    topK?: number;
+    minSimilarity?: number;
+  },
+): Promise<RepoMatchResult[]> {
+  const topK = options?.topK ?? 10;
+  const minSimilarity = options?.minSimilarity ?? 0.55;
+
+  const results = await runReadQuery(
+    driver,
+    `
+    // Step 1: Get candidate's active nodes
+    MATCH (c:Candidate {candidate_id: $candidate_id})-[:HAS]->(cn:CandidateNode)
+    WHERE cn.superseded_at IS NULL
+
+    // Step 2: Match against repo sub-elements
+    MATCH (r:Repo)-[:HAS]->(rn:RepoNode)
+    WHERE rn.node_type IN ['Feature', 'TechnicalStack', 'ArchitecturalPattern', 'PRSample']
+
+    // Step 3: Compute similarities
+    WITH r, cn, rn, vector.similarity.cosine(cn.embedding, rn.embedding) AS sim
+    WHERE sim >= $min_similarity
+
+    // Step 4: Aggregate per-repo
+    WITH r, avg(sim) * log(1 + count(rn)) AS repo_score,
+         collect({
+           node_type: labels(rn)[1],
+           narrative: rn.narrative_text,
+           similarity: sim
+         })[0..3] AS evidence,
+         count(rn) AS match_count
+
+    // Step 5: Return ranked results
+    RETURN
+      r.repo_id AS repo_id,
+      r.full_name AS full_name,
+      repo_score AS score,
+      evidence AS evidence,
+      match_count AS match_count
+    ORDER BY repo_score DESC
+    LIMIT $top_k
+    `,
+    { candidate_id: candidateId, min_similarity: minSimilarity, top_k: topK },
+    (record) => ({
+      repo_id: (record.get('repo_id') as number) ?? 0,
+      full_name: (record.get('full_name') as string) ?? '',
+      score: (record.get('score') as number) ?? 0,
+      evidence: (record.get('evidence') as unknown[] ?? []).map((e: any) => ({
+        node_type: e.node_type,
+        narrative: e.narrative,
+        similarity: e.similarity,
+      })),
+      match_count: (record.get('match_count') as number) ?? 0,
+    }),
+  );
+
+  return results;
+}

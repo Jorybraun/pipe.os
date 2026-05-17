@@ -9,7 +9,7 @@
  *     detected_domain, stars, pr_quality_score, architecture_style,
  *     searchable_profile, embedding
  *   })
- *   (:Repo)-[:HAS]->(:RepoElement { id, node_type, narrative, embedding })
+ *   (:Repo)-[:HAS]->(:RepoNode { id, node_type, narrative, embedding })
  *   (:Repo)-[:HAS_CONSTRUCT {evidence_count}]->(:RepoConstruct { name })
  *   (:Repo)-[:HAS_PR {eligible, changed_file_count}]->(:PullRequest {
  *     pr_number, title, narrative, embedding
@@ -335,7 +335,7 @@ async function main() {
             await tx.run(
               `
               MATCH (r:Repo {repo_id: $repo_id})
-              MERGE (e:RepoElement {id: $el_id})
+              MERGE (e:RepoNode:ChallengeSurface {id: $el_id})
               SET e.node_type = 'ChallengeSurface',
                   e.narrative = $narrative,
                   e.score = $score
@@ -357,7 +357,7 @@ async function main() {
             await tx.run(
               `
               MATCH (r:Repo {repo_id: $repo_id})
-              MERGE (e:RepoElement {id: $el_id})
+              MERGE (e:RepoNode:EngineeringNarrative {id: $el_id})
               SET e.node_type = 'EngineeringNarrative',
                   e.narrative = $narrative
               MERGE (r)-[:HAS]->(e)

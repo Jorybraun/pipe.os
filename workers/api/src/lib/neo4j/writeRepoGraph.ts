@@ -1,8 +1,9 @@
 /**
- * writeRepoGraph.ts — ADR-045 Repo Ingestion Neo4j Dual-Write
+ * writeRepoGraph.ts — ADR-045 Repo Ingestion Neo4j Write
  *
- * MERGEs a Repo and their RepoNode sub-elements into Neo4j.
- * All sub-elements connect via plain [:HAS] edges.
+ * MERGEs a Repo and their RepoNode sub-elements into Neo4j with typed labels.
+ * Sub-element types: :RepoNode:Feature, :RepoNode:TechnicalStack,
+ * :RepoNode:ArchitecturalPattern, :RepoNode:PRSample
  *
  * Idempotent: running twice with the same data produces no duplicates.
  */
@@ -77,10 +78,112 @@ export async function writeRepoGraph(
     updated_at: now,
   });
 
-  let result: WriteRepoGraphResult = { nodesCreated: 0, nodesSet: 0, relationshipsCreated: 0 };
+  let totalResult: WriteRepoGraphResult = { nodesCreated: 0, nodesSet: 0, relationshipsCreated: 0 };
 
-  if (nodeParams.length > 0) {
-    result = await runWriteQuery(driver, `
+  // Partition by type for typed-label writes
+  const features = nodeParams.filter((n) => n.node_type === 'Feature');
+  const technicalStacks = nodeParams.filter((n) => n.node_type === 'TechnicalStack');
+  const architecturalPatterns = nodeParams.filter((n) => n.node_type === 'ArchitecturalPattern');
+  const prSamples = nodeParams.filter((n) => n.node_type === 'PRSample');
+  const others = nodeParams.filter(
+    (n) =>
+      n.node_type !== 'Feature' &&
+      n.node_type !== 'TechnicalStack' &&
+      n.node_type !== 'ArchitecturalPattern' &&
+      n.node_type !== 'PRSample',
+  );
+
+  // Feature nodes with :RepoNode:Feature
+  if (features.length > 0) {
+    const result = await runWriteQuery(driver, `
+      MATCH (r:Repo {repo_id: $repo_id})
+      WITH r
+      UNWIND $nodes AS node
+      MERGE (n:RepoNode:Feature {id: node.id})
+      SET n.narrative_text = node.narrative_text,
+          n.embedding = node.embedding,
+          n.node_type = node.node_type,
+          n.source_reference = node.source_reference,
+          n.created_at = node.created_at
+      MERGE (r)-[:HAS]->(n)
+    `, {
+      repo_id: repoId,
+      nodes: features,
+    });
+    totalResult.nodesCreated += result.nodesCreated;
+    totalResult.nodesSet += result.nodesSet;
+    totalResult.relationshipsCreated += result.relationshipsCreated;
+  }
+
+  // TechnicalStack nodes with :RepoNode:TechnicalStack
+  if (technicalStacks.length > 0) {
+    const result = await runWriteQuery(driver, `
+      MATCH (r:Repo {repo_id: $repo_id})
+      WITH r
+      UNWIND $nodes AS node
+      MERGE (n:RepoNode:TechnicalStack {id: node.id})
+      SET n.narrative_text = node.narrative_text,
+          n.embedding = node.embedding,
+          n.node_type = node.node_type,
+          n.source_reference = node.source_reference,
+          n.created_at = node.created_at
+      MERGE (r)-[:HAS]->(n)
+    `, {
+      repo_id: repoId,
+      nodes: technicalStacks,
+    });
+    totalResult.nodesCreated += result.nodesCreated;
+    totalResult.nodesSet += result.nodesSet;
+    totalResult.relationshipsCreated += result.relationshipsCreated;
+  }
+
+  // ArchitecturalPattern nodes with :RepoNode:ArchitecturalPattern
+  if (architecturalPatterns.length > 0) {
+    const result = await runWriteQuery(driver, `
+      MATCH (r:Repo {repo_id: $repo_id})
+      WITH r
+      UNWIND $nodes AS node
+      MERGE (n:RepoNode:ArchitecturalPattern {id: node.id})
+      SET n.narrative_text = node.narrative_text,
+          n.embedding = node.embedding,
+          n.node_type = node.node_type,
+          n.source_reference = node.source_reference,
+          n.created_at = node.created_at
+      MERGE (r)-[:HAS]->(n)
+    `, {
+      repo_id: repoId,
+      nodes: architecturalPatterns,
+    });
+    totalResult.nodesCreated += result.nodesCreated;
+    totalResult.nodesSet += result.nodesSet;
+    totalResult.relationshipsCreated += result.relationshipsCreated;
+  }
+
+  // PRSample nodes with :RepoNode:PRSample
+  if (prSamples.length > 0) {
+    const result = await runWriteQuery(driver, `
+      MATCH (r:Repo {repo_id: $repo_id})
+      WITH r
+      UNWIND $nodes AS node
+      MERGE (n:RepoNode:PRSample {id: node.id})
+      SET n.narrative_text = node.narrative_text,
+          n.embedding = node.embedding,
+          n.node_type = node.node_type,
+          n.source_reference = node.source_reference,
+          n.created_at = node.created_at
+      MERGE (r)-[:HAS]->(n)
+    `, {
+      repo_id: repoId,
+      nodes: prSamples,
+    });
+    totalResult.nodesCreated += result.nodesCreated;
+    totalResult.nodesSet += result.nodesSet;
+    totalResult.relationshipsCreated += result.relationshipsCreated;
+  }
+
+  // All other node types with plain :RepoNode
+  if (others.length > 0) {
+    const result = await runWriteQuery(driver, `
       MATCH (r:Repo {repo_id: $repo_id})
       WITH r
       UNWIND $nodes AS node
@@ -93,21 +196,28 @@ export async function writeRepoGraph(
       MERGE (r)-[:HAS]->(n)
     `, {
       repo_id: repoId,
-      nodes: nodeParams,
+      nodes: others,
     });
+    totalResult.nodesCreated += result.nodesCreated;
+    totalResult.nodesSet += result.nodesSet;
+    totalResult.relationshipsCreated += result.relationshipsCreated;
   }
 
   console.log(
     JSON.stringify({
       event: 'neo4j.repoWrite',
       repoId,
-      nodesIn: nodeParams.length,
-      nodesCreated: result.nodesCreated,
-      relationshipsCreated: result.relationshipsCreated,
+      features: features.length,
+      technicalStacks: technicalStacks.length,
+      architecturalPatterns: architecturalPatterns.length,
+      prSamples: prSamples.length,
+      others: others.length,
+      nodesCreated: totalResult.nodesCreated,
+      relationshipsCreated: totalResult.relationshipsCreated,
     }),
   );
 
-  return result;
+  return totalResult;
 }
 
 /**
@@ -117,7 +227,7 @@ export function writeRepoGraphFireAndForget(
   input: WriteRepoGraphInput,
 ): void {
   writeRepoGraph(input).catch((err) => {
-    console.error('[dual-write] neo4j repo write failed:', {
+    console.error('[neo4j] repo write failed:', {
       repo_id: input.repoId,
       error: err instanceof Error ? err.message : String(err),
     });
