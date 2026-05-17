@@ -166,10 +166,6 @@ export interface Env {
   NEO4J_USER?: string;
   /** Neo4j password */
   NEO4J_PASSWORD?: string;
-  /** When 'true', ingestion pipelines write to Neo4j after D1 (fire-and-forget). */
-  DUAL_WRITE_NEO4J?: string;
-  /** When 'true', matching queries run against Neo4j in shadow and log divergence. */
-  SHADOW_READ_NEO4J?: string;
   /** 'd1' | 'neo4j' — selects the primary match store during cutover. */
   PRIMARY_MATCH_STORE?: string;
 }
@@ -819,7 +815,7 @@ export type ConversationPhase =
   | 'EVP_FRICTION'
   | 'WRAP_UP';
 
-/** Gartner five-category Employer Value Proposition dimensions (RD-37). */
+/** Gartner five-category Employer Value Proposition dimensions. */
 export type EvpCategory =
   | 'Rewards'
   | 'Opportunity'
@@ -827,7 +823,7 @@ export type EvpCategory =
   | 'People'
   | 'Organisation';
 
-/** A concrete story record extracted during discovery (RD-31). */
+/** A concrete story record extracted during discovery. */
 export interface ExtractedStory {
   protagonist: string;
   situation: string;
@@ -838,7 +834,7 @@ export interface ExtractedStory {
   retellabilityScore: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
-/** MEDDIC qualification state tracked by the controller (RD-36). */
+/** MEDDIC qualification state tracked by the controller. */
 export interface QualificationStatus {
   economicBuyerIdentified: boolean;
   championIdentified: boolean;
@@ -849,7 +845,7 @@ export interface QualificationStatus {
 
 /**
  * Full conversation context assembled from knowledgeState each turn.
- * Passed to the deterministic controller (RD-41, RD-42).
+ * Passed to the deterministic controller.
  */
 export interface ConversationContext {
   phase: ConversationPhase;
@@ -860,13 +856,13 @@ export interface ConversationContext {
   mustHavesPrioritized: boolean;
   frictionProbed: boolean;
   dayInLifeProbed: boolean;
-  /** RD-P5 probe progression: how many of the 6 calibrated probes have been delivered. */
+  /** Probe progression: how many of the 6 calibrated probes have been delivered. */
   probesDelivered: number;
 }
 
 /**
  * Output of the deterministic phase controller.
- * Passed to callRoleAgent() to select the phase-specific system prompt (RD-25, RD-26).
+ * Passed to callRoleAgent() to select the phase-specific system prompt.
  */
 export interface PhaseDirective {
   phase: ConversationPhase;
@@ -875,7 +871,7 @@ export interface PhaseDirective {
   /** Specific gaps the agent should address this turn. */
   urgentGaps: string[];
   /**
-   * True when all forcing-function gates are met (RD-42).
+   * True when all forcing-function gates are met.
    * Informational only — budget exhaustion still triggers synthesis regardless.
    */
   synthesisAllowed: boolean;
@@ -884,7 +880,7 @@ export interface PhaseDirective {
 }
 
 /**
- * Structured artifact for recruiter outreach (RD-39).
+ * Structured artifact for recruiter outreach.
  * Sits alongside the RoleContextDocument (which serves the scorecard).
  * Different consumers: RCD = internal assessment; RecruitmentBrief = candidate pitch.
  */
@@ -1131,7 +1127,7 @@ export interface TemplatePackItemResponse {
   challenge?: ChallengeTemplateResponse;
 }
 
-// ─── Discovered Repos (CR-13, repo-discovery-pipeline.md) ─────────────────
+// ─── Discovered Repos (ADR-032, repo-discovery-pipeline.md) ─────────────────
 
 export type DiscoverySource = 'LIBRARIES_IO' | 'GITHUB_TOPICS' | 'SOURCEGRAPH' | 'MANUAL';
 export type RepoStatus =

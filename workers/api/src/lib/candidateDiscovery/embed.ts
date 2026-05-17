@@ -77,14 +77,6 @@ export async function embedAndUpsertCandidate(
     throw new Error(`[candidateEmbed] non-finite values for candidate ${candidateId}`);
   }
 
-  await vectorize.upsert([
-    {
-      id: `candidate_${candidateId}`,
-      values: vector,
-      metadata: metadata ?? {},
-    },
-  ]);
-
   const embeddedAt = new Date().toISOString();
 
   if (db) {
@@ -139,14 +131,6 @@ export async function upsertCandidateVector(
   if (vector.some((n) => !Number.isFinite(n))) {
     throw new Error(`[candidateEmbed] non-finite values for candidate ${candidateId}`);
   }
-
-  await vectorize.upsert([
-    {
-      id: `candidate_${candidateId}`,
-      values: vector,
-      metadata: metadata ?? {},
-    },
-  ]);
 
   const embeddedAt = new Date().toISOString();
 

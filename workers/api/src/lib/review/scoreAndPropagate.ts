@@ -156,7 +156,7 @@ export async function scoreAndPropagate(
         }>();
 
       if (session) {
-        await decomposeCodeReviewToGraph(env.DB, env, session, scoreReport, env.CANDIDATE_INDEX, transcript.rounds);
+        await decomposeCodeReviewToGraph(env.DB, env, session, scoreReport, transcript.rounds);
       }
     } catch (decompErr) {
       const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);

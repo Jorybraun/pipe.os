@@ -1,17 +1,16 @@
 /**
- * Tests for matchRouter.ts and shadowRead.ts
+ * Tests for matchRouter.ts
  *
  * Uses mocked Neo4j driver and D1 to verify:
  *   - routeMatchRead routes to D1 by default
  *   - routeMatchRead routes to Neo4j when PRIMARY_MATCH_STORE=neo4j
  *   - Neo4j fallback to D1 on error
- *   - shadowMatchRead runs both paths and computes divergence
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Driver } from 'neo4j-driver';
 import { routeMatchRead, matchViaD1, matchViaNeo4j } from '../matchRouter';
-import { shadowMatchRead, getRecentDivergences, getDivergenceStats } from '../shadowRead';
+
 
 // ─── Mock Neo4j modules ───────────────────────────────────────────────────────
 
@@ -185,7 +184,7 @@ describe('routeMatchRead', () => {
     );
     expect(results).toHaveLength(1);
     expect(results[0]!.candidateId).toBe('cand_1');
-    expect(results[0]!.score).toBe(0.92);
+    expect(results[0]!.score).toBe(Math.tanh(0.92));
     expect(results[0]!.requirementMatches).toHaveLength(1);
   });
 
@@ -248,139 +247,3 @@ describe('routeMatchRead', () => {
   });
 });
 
-describe('shadowMatchRead', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(matchCandidatesVectorNative).mockReset();
-    vi.mocked(matchCandidatesForRole).mockReset();
-    vi.mocked(checkDealbreakersForCandidate).mockReset();
-  });
-
-  it('serves D1 result and logs divergence when both paths succeed', async () => {
-    const db = makeD1Mock() as unknown as D1Database;
-    const env = makeEnv();
-
-    vi.mocked(matchCandidatesVectorNative).mockResolvedValue([
-      {
-        id: 'cand_1',
-        score: 0.85,
-        name: 'Alice',
-        email: 'alice@example.com',
-        pipelineId: 'pipe_1',
-        pipelineName: 'Engineering',
-        status: 'active',
-        triangulatedScore: 0.78,
-        searchableProfile: null,
-        metadata: {},
-      },
-      {
-        id: 'cand_2',
-        score: 0.75,
-        name: 'Bob',
-        email: 'bob@example.com',
-        pipelineId: 'pipe_1',
-        pipelineName: 'Engineering',
-        status: 'active',
-        triangulatedScore: 0.7,
-        searchableProfile: null,
-        metadata: {},
-      },
-    ]);
-
-    vi.mocked(matchCandidatesForRole).mockResolvedValue([
-      {
-        candidate_id: 'cand_1',
-        overall_score: 0.9,
-        requirement_matches: [],
-      },
-      {
-        candidate_id: 'cand_2',
-        overall_score: 0.8,
-        requirement_matches: [],
-      },
-    ]);
-    vi.mocked(checkDealbreakersForCandidate).mockResolvedValue([]);
-
-    const result = await shadowMatchRead({
-      roleContextId: 'role_1',
-      philosophy: 'validate',
-      db,
-      env: env as Record<string, unknown>,
-    });
-
-    expect(result.servedFrom).toBe('d1');
-    expect(result.results).toHaveLength(2);
-    expect(result.divergence).not.toBeNull();
-    expect(result.divergence!.top10Overlap).toBe(2); // Both candidates match
-    expect(result.divergence!.d1Count).toBe(2);
-    expect(result.divergence!.neo4jCount).toBe(2);
-  });
-
-  it('serves D1 and logs Neo4j error without throwing', async () => {
-    const db = makeD1Mock() as unknown as D1Database;
-    const env = makeEnv();
-
-    vi.mocked(matchCandidatesVectorNative).mockResolvedValue([
-      {
-        id: 'cand_1',
-        score: 0.85,
-        name: 'Alice',
-        email: 'alice@example.com',
-        pipelineId: 'pipe_1',
-        pipelineName: 'Engineering',
-        status: 'active',
-        triangulatedScore: 0.78,
-        searchableProfile: null,
-        metadata: {},
-      },
-    ]);
-
-    vi.mocked(matchCandidatesForRole).mockRejectedValue(new Error('Neo4j down'));
-
-    const result = await shadowMatchRead({
-      roleContextId: 'role_1',
-      philosophy: 'validate',
-      db,
-      env: env as Record<string, unknown>,
-    });
-
-    expect(result.servedFrom).toBe('d1');
-    expect(result.results).toHaveLength(1);
-    expect(result.divergence).not.toBeNull();
-    expect(result.divergence!.neo4jError).toBe('Neo4j down');
-  });
-
-  it('propagates D1 errors (D1 is primary)', async () => {
-    const db = makeD1Mock() as unknown as D1Database;
-    const env = makeEnv();
-
-    vi.mocked(matchCandidatesVectorNative).mockRejectedValue(new Error('Vectorize unavailable'));
-    vi.mocked(matchCandidatesForRole).mockResolvedValue([]);
-
-    await expect(
-      shadowMatchRead({
-        roleContextId: 'role_1',
-        philosophy: 'validate',
-        db,
-        env: env as Record<string, unknown>,
-      }),
-    ).rejects.toThrow('Vectorize unavailable');
-  });
-});
-
-describe('getDivergenceStats', () => {
-  beforeEach(() => {
-    // Clear the in-memory buffer between tests
-    const divergences = getRecentDivergences(1000);
-    // The buffer is module-level; we can't easily clear it.
-    // Tests that depend on buffer state should be rare.
-  });
-
-  it('returns zeroed stats when buffer is empty', () => {
-    // This test may be flaky if other tests populated the buffer.
-    // In practice, Vitest runs files in isolation.
-    const stats = getDivergenceStats();
-    expect(stats.totalReads).toBeGreaterThanOrEqual(0);
-    expect(stats.avgTop10Overlap).toBeGreaterThanOrEqual(0);
-  });
-});

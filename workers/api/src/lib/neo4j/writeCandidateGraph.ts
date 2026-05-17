@@ -1,18 +1,11 @@
 /**
- * writeCandidateGraph.ts — ADR-044 Candidate Ingestion Neo4j Dual-Write
+ * writeCandidateGraph.ts — ADR-044 Candidate Ingestion Neo4j Write
  *
  * MERGEs a Candidate and their active CandidateNode sub-elements into Neo4j.
  * Idempotent: running twice with the same data produces no duplicates.
  *
  * Uses plain Cypher (no APOC) so it works with stock Neo4j Community Edition.
  * Node type is stored as a property (`node_type`) rather than a dynamic label.
- *
- * Usage:
- *   if (env.DUAL_WRITE_NEO4J === 'true') {
- *     writeCandidateGraph({ candidateId, nodes, env }).catch(err =>
- *       console.error('[dual-write] neo4j candidate write failed:', err)
- *     );
- *   }
  */
 
 import type { CandidateNode } from '../../types';

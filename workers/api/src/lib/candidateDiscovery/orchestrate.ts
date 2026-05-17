@@ -156,18 +156,16 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);
   }
 
-  // Step 3.6: Dual-write candidate graph to Neo4j (ADR-044)
-  // Fire-and-forget: D1 is authoritative; Neo4j failure is non-blocking.
-  if (env.DUAL_WRITE_NEO4J === 'true') {
-    try {
-      const activeNodes = await getActiveCandidateNodes(db, candidateId);
-      if (activeNodes.length > 0) {
-        writeCandidateGraphFireAndForget({ candidateId, nodes: activeNodes, env });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn('[ingestion] neo4j dual-write prep failed (non-blocking):', msg);
+  // Step 3.6: Write candidate graph to Neo4j (ADR-044)
+  // Fire-and-forget: Neo4j is the primary graph store; failure is non-blocking.
+  try {
+    const activeNodes = await getActiveCandidateNodes(db, candidateId);
+    if (activeNodes.length > 0) {
+      writeCandidateGraphFireAndForget({ candidateId, nodes: activeNodes, env });
     }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[ingestion] neo4j write prep failed (non-blocking):', msg);
   }
 
   // Step 4: Embed into CANDIDATE_INDEX

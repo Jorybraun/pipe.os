@@ -74,14 +74,6 @@ export async function embedAndUpsertRole(
     throw new Error(`[roleEmbed] non-finite values for role ${roleContextId}`);
   }
 
-  await vectorize.upsert([
-    {
-      id: `role_${roleContextId}`,
-      values: vector,
-      metadata: metadata ?? {},
-    },
-  ]);
-
   const embeddedAt = new Date().toISOString();
 
   if (db) {

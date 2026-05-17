@@ -731,26 +731,8 @@ async function vectorizeAndMark(env: Env, id: number, profile: string): Promise<
     return { vectorized: false, vectorizedAt: null };
   }
 
-  try {
-    await env.REPO_INDEX.upsert([{
-      id: `repo_${id}`,
-      values: vector,
-      metadata: { disqualified: 0, admin_status: 'approved' },
-    }]);
-  } catch (err) {
-    const errAny = err as { name?: string; message?: string; cause?: unknown; stack?: string };
-    console.error(
-      `[adminRepos] upsert failed for repo ${id}:`,
-      JSON.stringify({
-        name: errAny?.name,
-        message: errAny?.message,
-        cause: errAny?.cause ? String(errAny.cause) : undefined,
-        profileLen: profile.length,
-        vectorLen: vector.length,
-      }),
-    );
-    return { vectorized: false, vectorizedAt: null };
-  }
+  // Vectorize is now read-only; skip upsert.
+  // The embedding is still persisted to D1 via the caller.
 
   await env.DB.prepare(
     `UPDATE repo_engineering_signals SET vectorized_at = ?, embedding_json = ?, embedding_model_version = ? WHERE repo_id = ?`,

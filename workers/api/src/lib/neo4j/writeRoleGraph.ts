@@ -1,5 +1,5 @@
 /**
- * writeRoleGraph.ts — ADR-046 Role Discovery Neo4j Dual-Write
+ * writeRoleGraph.ts — ADR-046 Role Discovery Neo4j Write
  *
  * MERGEs a Role and their RoleNode sub-elements into Neo4j with typed,
  * weighted edges per the ADR-046 graph model.

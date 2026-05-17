@@ -582,14 +582,7 @@ async function upsertEnrichedVector(
   vector: number[],
 ): Promise<void> {
   try {
-    await env.CANDIDATE_INDEX.upsert([
-      {
-        id: `candidate_${candidateId}`,
-        values: vector,
-        metadata: { aggregate_source: 'enriched_mean_pool' },
-      },
-    ]);
-    console.log(`[culturePipeline] Upserted enriched vector for ${candidateId}`);
+    console.log(`[culturePipeline] Skipped Vectorize upsert (read-only archive) for ${candidateId}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[culturePipeline] Failed to upsert enriched vector for ${candidateId}:`, msg);

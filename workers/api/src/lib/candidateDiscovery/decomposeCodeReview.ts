@@ -194,7 +194,6 @@ export async function decomposeCodeReviewToGraph(
     challenge_id: string;
   },
   scoreReport: ScoreReport,
-  vectorize?: VectorizeIndex,
   transcript?: ReviewRound[],
 ): Promise<void> {
   const candidateId = session.candidate_id;
@@ -211,8 +210,6 @@ export async function decomposeCodeReviewToGraph(
     string,
     number,
   ][];
-
-  const vectorizeUpserts: VectorizeVector[] = [];
 
   for (const [dimension, barsScore] of dimensionEntries) {
     const evidenceKey = DIMENSION_TO_EVIDENCE_KEY[dimension];
@@ -254,20 +251,6 @@ export async function decomposeCodeReviewToGraph(
         decomposition_version: decompositionVersion,
       });
 
-      if (vectorize) {
-        vectorizeUpserts.push({
-          id: insertedNode.id,
-          values: embedding,
-          metadata: {
-            entity_type: 'candidate',
-            candidate_id: candidateId,
-            node_type: insertedNode.node_type,
-            source_type: insertedNode.source_type,
-            confidence: insertedNode.confidence ?? 0.5,
-            superseded: 0,
-          },
-        });
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
@@ -275,18 +258,6 @@ export async function decomposeCodeReviewToGraph(
         msg,
       );
       // Continue to next dimension — partial decomposition is acceptable
-    }
-  }
-
-  if (vectorize && vectorizeUpserts.length > 0) {
-    try {
-      await vectorize.upsert(vectorizeUpserts);
-    } catch (vErr) {
-      const msg = vErr instanceof Error ? vErr.message : String(vErr);
-      console.error(
-        `[decomposeCodeReview] Vectorize upsert failed for candidate ${candidateId}, session ${session.id}:`,
-        msg,
-      );
     }
   }
 

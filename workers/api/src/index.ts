@@ -39,7 +39,6 @@ import { ttsRouter } from './routes/tts';
 import { calibrate } from './routes/internal/calibrate';
 // Neo4j health check (ADR-043 Phase A)
 import neo4jHealth from './routes/internal/neo4jHealth';
-import neo4jParity from './routes/internal/neo4jParity';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -96,7 +95,7 @@ app.route('/api/v1/stages', stageOps);
 app.route('/api/v1/stages', stageChallenges);
 // Challenge CRUD: GET/PUT /api/v1/challenges/:id, POST /api/v1/challenges/:id/clone
 app.route('/api/v1/challenges', challenges);
-// Repo discovery: role-matched repo discovery for code review challenges (CR-13)
+// Repo discovery: role-matched repo discovery for code review challenges (ADR-032, repo-discovery-pipeline.md)
 app.route('/api/v1/repos', repoDiscovery);
 // Admin: human approval of qualified_repos catalog
 app.route('/api/v1/admin', adminRepos);
@@ -165,7 +164,6 @@ app.route('/internal/calibrate', calibrate);
 
 // Internal: Neo4j health check (no auth — dev/ops smoke test)
 app.route('/api/v1/internal', neo4jHealth);
-app.route('/api/v1/internal', neo4jParity);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

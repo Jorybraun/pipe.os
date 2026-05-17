@@ -87,7 +87,7 @@ export async function runBackfill(options: BackfillOptions): Promise<{
     }
 
     try {
-      await decomposeCodeReviewToGraph(db, env, session, scoreReport, env.CANDIDATE_INDEX);
+      await decomposeCodeReviewToGraph(db, env, session, scoreReport);
       console.log(`[backfill-code-review] Processed ${id} for candidate ${candidate_id}`);
       result.processed++;
       result.details.push(`${id}: OK`);
