@@ -15,6 +15,8 @@
 import type { Env } from '../../types';
 import { parseResume, extractTextFromPDF } from '../cvParser';
 import { decomposeResumeToGraph } from './resumeDecomposition';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
+import { candidateHasNodesFromSourceType } from '../neo4j/candidateGraphQueries';
 
 interface BackfillOptions {
   db: import('@cloudflare/workers-types').D1Database;
@@ -35,6 +37,9 @@ export async function runBackfill(options: BackfillOptions): Promise<{
   details: string[];
 }> {
   const { db, env, batchSize, dryRun } = options;
+
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
 
   const result = {
     processed: 0,
@@ -76,6 +81,20 @@ export async function runBackfill(options: BackfillOptions): Promise<{
       console.log(`[backfill] Skipping ${candidate_id}: no resume_s3_key`);
       result.skipped++;
       continue;
+    }
+
+    // Check Neo4j first for resume-sourced nodes
+    if (driver) {
+      try {
+        const hasNodes = await candidateHasNodesFromSourceType(driver, candidate_id, 'resume');
+        if (hasNodes) {
+          result.skipped++;
+          continue;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[backfill] Neo4j check failed for ${candidate_id}:`, msg);
+      }
     }
 
     if (dryRun) {

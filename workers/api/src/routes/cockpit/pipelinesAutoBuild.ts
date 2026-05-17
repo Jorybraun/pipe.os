@@ -106,7 +106,7 @@ autoBuild.post('/auto-build', async (c) => {
   //    the pipeline at build time — it's the "same canonical repo for everyone"
   //    mode. 'tailored' and 'hybrid' defer repo/PR/issue selection to the
   //    Ingestion pre-stage, which fires on resume upload and writes per-candidate
-  //    rows to candidate_challenge_assignment. See STRATEGY.md Decision Log
+  //    rows to candidate_challenge_assignment. See ADR-032 Decision Log
   //    2026-04-21 (ADR-039 sequencing override).
   const shouldMatchNow = input.match_config.match_philosophy === 'validate';
   let plan: Awaited<ReturnType<typeof autoStageBuilder>> | null = null;

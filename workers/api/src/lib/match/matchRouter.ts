@@ -1,15 +1,9 @@
 /**
  * matchRouter.ts — Routing layer for role→candidate matching.
  *
- * Decides which store to query based on PRIMARY_MATCH_STORE env var:
- *   'd1'  (default) → Vectorize ANN + D1 hydration
- *   'neo4j'         → Cypher per-element matching + D1 hydration for metadata
+ * Neo4j-first: always uses Cypher per-element matching + D1 hydration for metadata.
  *
- * Fallback: when PRIMARY_MATCH_STORE=neo4j and Neo4j errors, automatically
- * falls back to D1 with structured logging.
- *
- * Feature flags:
- *   PRIMARY_MATCH_STORE = 'd1' | 'neo4j'
+ * Target latency: <100ms
  */
 
 import type { D1Database } from '@cloudflare/workers-types';
@@ -21,7 +15,6 @@ import type {
 import {
   matchCandidatesForRole,
 } from '../neo4j/matchingQueries';
-import { matchCandidatesVectorNative } from './matchVectorNative';
 import { parseEmbeddingJson } from '../embedding/cosine';
 import { buildNeo4jConfig, createNeo4jDriver } from '../neo4j/driver';
 
@@ -45,108 +38,37 @@ export interface UnifiedCandidateMatch {
   requirementMatches?: RequirementMatch[];
   /** Neo4j-only: failed dealbreakers (empty = passed all) */
   dealbreakerFailures?: DealbreakerFailure[];
-  /** D1-only: previous triangulated score from ingestion */
-  triangulatedScore?: number | null;
-  /** D1-only: searchable profile text */
-  searchableProfile?: string | null;
 }
 
 /**
- * Route a role→candidate matching query to the appropriate store.
+ * Route a role→candidate matching query through Neo4j.
  *
  * @returns Ranked list of candidates with unified shape.
  */
 export async function routeMatchRead(
   input: MatchRouterInput,
 ): Promise<UnifiedCandidateMatch[]> {
-  const { roleContextId, db, env, limit = 20, ownerId } = input;
-  const primaryStore = env.PRIMARY_MATCH_STORE ?? 'd1';
+  const { roleContextId, db, env } = input;
   const t0 = Date.now();
 
-  if (primaryStore === 'neo4j') {
-    try {
-      const results = await matchViaNeo4j({ roleContextId, db, env });
-      const latency = Date.now() - t0;
-      console.log(
-        JSON.stringify({
-          event: 'match_read',
-          store: 'neo4j',
-          latency_ms: latency,
-          candidate_count: results.length,
-          role_context_id_hash: hashRoleId(roleContextId),
-        }),
-      );
-      return results;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[matchRouter] Neo4j read failed, falling back to D1:', msg);
-      const fallbackResults = await matchViaD1({ roleContextId, db, env, limit, ownerId });
-      const latency = Date.now() - t0;
-      console.log(
-        JSON.stringify({
-          event: 'match_read',
-          store: 'd1',
-          latency_ms: latency,
-          candidate_count: fallbackResults.length,
-          role_context_id_hash: hashRoleId(roleContextId),
-          fallback_reason: msg,
-        }),
-      );
-      return fallbackResults;
-    }
+  try {
+    const results = await matchViaNeo4j({ roleContextId, db, env });
+    const latency = Date.now() - t0;
+    console.log(
+      JSON.stringify({
+        event: 'match_read',
+        store: 'neo4j',
+        latency_ms: latency,
+        candidate_count: results.length,
+        role_context_id_hash: hashRoleId(roleContextId),
+      }),
+    );
+    return results;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[matchRouter] Neo4j read failed:', msg);
+    throw err;
   }
-
-  // Default D1 path
-  const results = await matchViaD1({ roleContextId, db, env, limit, ownerId });
-  const latency = Date.now() - t0;
-  console.log(
-    JSON.stringify({
-      event: 'match_read',
-      store: 'd1',
-      latency_ms: latency,
-      candidate_count: results.length,
-      role_context_id_hash: hashRoleId(roleContextId),
-    }),
-  );
-  return results;
-}
-
-// ─── D1 path: Vectorize ANN + hydration ─────────────────────────────────────
-
-export async function matchViaD1(
-  input: Omit<MatchRouterInput, 'philosophy'>,
-): Promise<UnifiedCandidateMatch[]> {
-  const { roleContextId, db, env, limit, ownerId } = input;
-
-  // Resolve role embedding from D1
-  const row = await db
-    .prepare('SELECT embedding_json FROM role_contexts WHERE id = ?1')
-    .bind(roleContextId)
-    .first<{ embedding_json: string | null }>();
-  const vector = parseEmbeddingJson(row?.embedding_json);
-  if (!vector) {
-    throw new Error(`No embedding found for role ${roleContextId}`);
-  }
-
-  const matches = await matchCandidatesVectorNative({
-    db,
-    targetIndex: env.CANDIDATE_INDEX,
-    queryVector: vector,
-    topK: limit,
-    ownerId,
-  });
-
-  return matches.map((m) => ({
-    candidateId: m.id,
-    score: m.score,
-    name: m.name,
-    email: m.email,
-    pipelineId: m.pipelineId,
-    pipelineName: m.pipelineName,
-    status: m.status,
-    triangulatedScore: m.triangulatedScore,
-    searchableProfile: m.searchableProfile,
-  }));
 }
 
 // ─── Neo4j path: Cypher per-element matching + D1 hydration ─────────────────

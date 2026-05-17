@@ -6,7 +6,8 @@
  *
  * Research basis:
  *   - knowledge/outputs/code-review-content-sourcing.md (2026-04-08)
- *   - knowledge/STRATEGY.md — CR-2, CR-3, CR-4, CR-25, CR-26
+ *   - ADR-032 (code review research integration)
+ *   - ADR-034 (challenge authoring system)
  *
  * Scale: 1-5 per dimension, encounter-level scoring (per PR, not per turn).
  * Anchors follow Hodges-compliant BARS: concrete observable behaviors only.
@@ -314,7 +315,7 @@ export const SCORER_RUBRIC: Rubric = {
         'Can the reviewer direct, evaluate, and push back on AI-generated code? This measures judgment on acceptance — not blind acceptance of suggested changes, not blanket rejection, but merit-based evaluation. Weighted more heavily for senior-level assessments.',
       needsGroundTruth: false,
       research: 'Jellyfish 2025 [R6-P11], Graphite Diamond [R6-S11]',
-      note: 'This dimension has no prior empirical BARS validation (OQ-11 in STRATEGY.md). Anchors are inferred from operational metrics. Treat scores as directional until a critical-incident study with expert reviewers can validate the anchor points.',
+      note: 'This dimension has no prior empirical BARS validation. Anchors are inferred from operational metrics. Treat scores as directional until a critical-incident study with expert reviewers can validate the anchor points.',
       anchors: [
         {
           level: 5,

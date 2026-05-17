@@ -1,5 +1,5 @@
 /**
- * Repo Discovery routes — CR-13, repo-discovery-pipeline.md
+ * Repo Discovery routes — ADR-032, repo-discovery-pipeline.md
  *
  * Mounts under /api/v1/repos.
  * All routes require a valid Clerk JWT via authMiddleware.

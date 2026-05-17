@@ -12,6 +12,8 @@
 import type { Env } from '../../types';
 import { decomposeCodeReviewToGraph } from './decomposeCodeReview';
 import type { ScoreReport } from '../scorerAgent';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
+import { sessionHasNodesFromSourceType } from '../neo4j/candidateGraphQueries';
 
 interface BackfillOptions {
   db: import('@cloudflare/workers-types').D1Database;
@@ -36,6 +38,9 @@ export async function runBackfill(options: BackfillOptions): Promise<{
   details: string[];
 }> {
   const { db, env, batchSize, dryRun } = options;
+
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
 
   const result = {
     processed: 0,
@@ -78,6 +83,20 @@ export async function runBackfill(options: BackfillOptions): Promise<{
       console.warn(`[backfill-code-review] Skipping ${id}: invalid score_report JSON`);
       result.skipped++;
       continue;
+    }
+
+    // Check Neo4j first for code-review-sourced nodes
+    if (driver) {
+      try {
+        const hasNodes = await sessionHasNodesFromSourceType(driver, id, 'code_review_session');
+        if (hasNodes) {
+          result.skipped++;
+          continue;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[backfill-code-review] Neo4j check failed for ${id}:`, msg);
+      }
     }
 
     if (dryRun) {

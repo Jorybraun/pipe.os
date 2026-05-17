@@ -11,7 +11,7 @@
  * Workers AI binding as fallback. Routed via `createCandidateAgentProvider`
  * in `lib/llm/createProvider.ts`.
  *
- * See STRATEGY.md Decision Log 2026-04-21 and ADR-039.
+ * See ADR-039 and knowledge/business-requirements.md Decision Log 2026-04-21.
  */
 
 import type { ParsedCV } from '../cvParser';

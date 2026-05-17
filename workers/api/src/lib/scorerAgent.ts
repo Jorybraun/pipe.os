@@ -243,7 +243,7 @@ async function callGoogleAI(
  *
  * Provisional default pending the κ calibration harness: once we measure
  * Gemma vs Devstral vs Sonnet κ on a 30–50 fixture set, we keep whichever
- * model clears κ ≥ 0.75 cheapest. See STRATEGY.md "Scorer calibration".
+ * model clears κ ≥ 0.75 cheapest. See ADR-032 scorer calibration.
  */
 // Qwen 2.5 Coder 32B — trying this instead of Gemma 4 26B which is unreliable
 const SCORER_WORKERS_AI_MODEL = '@cf/qwen/qwen2.5-coder-32b-instruct';

@@ -393,7 +393,7 @@ export interface PickNextQuestionOptions {
   /** Discipline filter; defaults to `eng`-friendly (eng + universal only). */
   discipline?: Discipline;
   /**
-   * RCD-derived enriched probe bank (ADR-036 Phase 2 / RD-12). When present,
+   * RCD-derived enriched probe bank (ADR-036 Phase 2). When present,
    * questions whose dimensions have team-specific probes get a small selector
    * bonus and their probe library is merged with the enriched entries before
    * return. Empty bank = static-only fallback (migration window).
@@ -479,7 +479,7 @@ export function pickNextQuestion(
     if (overlay.preferredTags.some((t) => tags.includes(t))) tagPreference += 0.2;
     if (overlay.deprioritizedTags.some((t) => tags.includes(t))) tagPreference -= 0.2;
 
-    // RD-12: bias the selector toward questions whose dimensions already have
+    // ADR-036 Phase 2: bias the selector toward questions whose dimensions already have
     // recruiter-approved, RCD-grounded probes waiting in the bank. Capped
     // at +0.25 so a large probe pile can't starve uncovered dimensions.
     const enrichmentBonus = Math.min(enrichedProbeCount(probeBank, q.dimensions) * 0.05, 0.25);

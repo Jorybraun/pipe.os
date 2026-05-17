@@ -1,5 +1,5 @@
 /**
- * Repo Discovery Orchestrator — CR-13
+ * Repo Discovery Orchestrator — ADR-032
  *
  * Queries the pre-populated qualified_repos catalog via matchRepos.
  * No external API calls at runtime; everything is a D1 query.

@@ -7,13 +7,12 @@
  *   2. discoverCandidateProfile (rich extraction)
  *   3. persistRichCandidateProfile
  *   4. embedAndUpsertCandidate (self-persists status + embedding to D1 when db passed)
- *   5. matchReposForCandidate (graph + optional cosine)
+ *   5. matchRepos (catalog query — legacy Vectorize path removed)
  *   6. Load role_repo_alignment for pipeline's role_context
- *   7. Load cultural signal nodes for prompt enrichment
- *   8. candidateSituationFit on top repos
- *   9. triangulateMatch
- *   10. Write candidate_challenge_assignment rows
- *   11. markIngestionMatched
+ *   7. Pick PR + issue for winner repo
+ *   8. Build placeholder triangulated result
+ *   9. Write candidate_challenge_assignment rows
+ *   10. markIngestionMatched
  *
  * Every step after (2) is wrapped in its own try/catch. Failures write
  * markIngestionFailed and return without throwing — the upload route must
@@ -22,13 +21,12 @@
  * See ADR-040 Meaning-Based Candidate-Repo-Role Triangulation.
  */
 
-import type { Env, RepoEngineeringSignalsRow, CandidateNode } from '../../types';
+import type { Env } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import type { DecompositionResult } from './candidateDecompositionPrompt';
 import { createCandidateAgentProvider } from '../llm/createProvider';
-import { matchReposForCandidate } from '../match/matchReposForCandidate';
-import { triangulateMatch, triangulateShortlist } from '../match/triangulateMatch';
 import { pickReviewPr, pickImplementationIssue } from '../match/autoStageBuilder';
+import { matchRepos, type MatchRequest } from '../repoDiscovery/matchRepos';
 import { discoverCandidateProfile, type CandidateDiscoveryResult } from './agent';
 import { embedAndUpsertCandidate, upsertCandidateVector } from './embed';
 import {
@@ -40,18 +38,11 @@ import {
   upsertCandidateRepoMatches,
   type MarkIngestionMatchedInput,
 } from './persist';
-import {
-  candidateSituationFit,
-  buildSituationFitCacheKey,
-  getCachedSituationFit,
-  storeSituationFitCache,
-  type SituationFitCandidate,
-  type SituationFitRanking,
-} from './candidateSituationFit';
+// candidateSituationFit removed — simplified matching path post-Neo4j cutover
 import { cosineSimilarity, parseEmbeddingJson, meanPoolVectors } from '../embedding/cosine';
-import { getActiveCandidateNodes, getActiveCandidateNodesWithFallback } from './candidateNodes';
+import { getActiveCandidateNodesWithFallback } from './candidateNodes';
 import { decomposeResumeToGraph } from './resumeDecomposition';
-import { computeRecencyMultiplier } from './candidateRecency';
+// computeRecencyMultiplier removed — simplified matching path post-Neo4j cutover
 import { getCandidateCoverage } from './candidateCoverage';
 import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
 import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
@@ -256,18 +247,25 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     .first<{ embedding_json: string | null }>();
   const candidateVec = parseEmbeddingJson(candidateEmbeddingRow?.embedding_json);
 
-  // Step 6: Graph + optional cosine match
-  const matchResult = await matchReposForCandidate({
-    db,
-    ai: env.AI,
-    vectorize: env.REPO_INDEX,
-    candidateProfile: discoveryResult.candidateSearchableProfile,
-    keyConcepts: discoveryResult.keyConcepts,
-    candidateLimit: 10,
-    rerankTopK: 50,
-    cosineWeight: philosophy === 'validate' ? 0.3 : 0.5,
-    candidateEmbeddingJson: candidateVec,
-  });
+  // Step 6: Simple repo matching via catalog query (legacy Vectorize path removed)
+  const seniorityRaw = discoveryResult.keyConcepts.seniority;
+  const normalizedSeniority = ['junior', 'mid', 'senior', 'staff'].includes(seniorityRaw)
+    ? (seniorityRaw as 'junior' | 'mid' | 'senior' | 'staff')
+    : 'mid';
+
+  const matchRequest: MatchRequest = {
+    mustHaveSkills: discoveryResult.keyConcepts.mustHaveSkills,
+    niceToHaveSkills: discoveryResult.keyConcepts.niceToHaveSkills,
+    seniority: normalizedSeniority,
+    domain: discoveryResult.keyConcepts.detected_domain || 'general',
+    primaryLanguage: discoveryResult.keyConcepts.primary_language || 'typescript',
+    limit: 10,
+  };
+
+  const matchedRepos = await matchRepos(db, matchRequest);
+  if (matchedRepos.length === 0) {
+    throw new Error('No repos matched for candidate');
+  }
 
   // Step 7: Load role_repo_alignment for pipeline's role_context
   const roleContextRow = await db
@@ -297,9 +295,6 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
       roleRepoAlignments.set(row.repo_id, row.alignment_score);
     }
 
-    // Dual-layer exact cosine: load ground-truth vectors from D1,
-    // compute exact similarity. Falls back to null if either side
-    // hasn't been embedded yet (triangulateMatch then uses skill_coverage).
     const roleEmbeddingRow = await db
       .prepare(`SELECT embedding_json AS role_embedding FROM role_contexts WHERE id = ?1`)
       .bind(roleContextRow.id)
@@ -316,16 +311,13 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
       }
     }
 
-    // Vector-native ANN signals: query Vectorize with role vector to get
-    // approximate role→repo and role→candidate similarities.
-    // These are best-effort; failures fall back to null.
     if (roleVec) {
       try {
         const [repoQuery, candidateQuery] = await Promise.all([
           env.REPO_INDEX.query(roleVec, { topK: 20 }),
           env.CANDIDATE_INDEX.query(roleVec, { topK: 20 }),
         ]);
-        const winnerRepoId = matchResult.repoChoice.repoId;
+        const winnerRepoId = matchedRepos[0]!.id;
         const repoMatch = repoQuery.matches.find((m) => m.id === `repo_${winnerRepoId}`);
         if (repoMatch) {
           vectorRoleRepo = repoMatch.score;
@@ -341,219 +333,37 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     }
   }
 
-  // Step 8: Candidate situation fit
-  // Build candidate pool from: (a) role-aligned repos, (b) graph shortlist
-  const repoIdsToFetch = new Set<number>([
-    ...roleRepoAlignments.keys(),
-    ...matchResult.shortlist.map((s) => s.repoId),
+  // Step 8: Pick winner repo and challenges
+  let winnerRepoId = matchedRepos[0]!.id;
+  let winnerRepoUrl = matchedRepos[0]!.githubUrl;
+
+  const [winnerReview, winnerImplementation] = await Promise.all([
+    pickReviewPr(db, winnerRepoId, candidateVec),
+    pickImplementationIssue(db, winnerRepoId, normalizedSeniority),
   ]);
 
-  if (repoIdsToFetch.size === 0) {
-    throw new Error('No repos to evaluate for candidate situation fit');
-  }
+  // Step 9: Build placeholder triangulated result (legacy triangulateMatch removed)
+  const triangulated = {
+    repo_id: winnerRepoId,
+    triangulated_score: matchedRepos[0]!.score,
+    dimensions: {
+      skill_coverage: 0.5,
+      semantic_similarity: 0.5,
+      situation_fit: 0.5,
+      role_alignment: roleCandidateCosine ?? 0.5,
+    },
+    raw_signals: {
+      role_repo_alignment: roleRepoAlignments.get(winnerRepoId) ?? null,
+      candidate_repo_fit: matchedRepos[0]!.score,
+      role_candidate_cosine: roleCandidateCosine,
+      vector_role_repo: vectorRoleRepo,
+      vector_cand_repo: null,
+      vector_role_cand: vectorRoleCandidate,
+    },
+  };
 
-  // Load engineering signals for all candidate repos
-  const signalsRows = await db
-    .prepare(
-      `SELECT repo_id, repo_searchable_profile, engineering_narrative, signals_version,
-              test_touch_rate, mean_changed_files, p90_changed_files, issue_link_rate,
-              complexity_band, swe_bench_eligibility_rate, architecture_style,
-              review_density, test_style, challenge_surfaces
-         FROM repo_engineering_signals
-        WHERE repo_id IN (${Array.from(repoIdsToFetch).map(() => '?').join(',')})`,
-    )
-    .bind(...repoIdsToFetch)
-    .all<{
-      repo_id: number;
-      repo_searchable_profile: string;
-      engineering_narrative: string;
-      signals_version: string;
-      test_touch_rate: number | null;
-      mean_changed_files: number | null;
-      p90_changed_files: number | null;
-      issue_link_rate: number | null;
-      complexity_band: string | null;
-      swe_bench_eligibility_rate: number | null;
-      architecture_style: string | null;
-      review_density: number | null;
-      test_style: string | null;
-      challenge_surfaces: string | null;
-    }>();
-
-  const signalsByRepo = new Map<number, RepoEngineeringSignalsRow>();
-  for (const row of signalsRows.results ?? []) {
-    signalsByRepo.set(row.repo_id, {
-      repo_id: row.repo_id,
-      signals_version: row.signals_version,
-      content_hash: '',
-      test_touch_rate: row.test_touch_rate,
-      mean_changed_files: row.mean_changed_files,
-      p90_changed_files: row.p90_changed_files,
-      issue_link_rate: row.issue_link_rate,
-      complexity_band: row.complexity_band as RepoEngineeringSignalsRow['complexity_band'],
-      swe_bench_eligibility_rate: row.swe_bench_eligibility_rate,
-      architecture_style: row.architecture_style as RepoEngineeringSignalsRow['architecture_style'],
-      review_density: row.review_density,
-      commit_cadence: null,
-      satd_density: null,
-      test_style: row.test_style as RepoEngineeringSignalsRow['test_style'],
-      challenge_surfaces: row.challenge_surfaces,
-      repo_searchable_profile: row.repo_searchable_profile,
-      engineering_narrative: row.engineering_narrative,
-      signal_json: '',
-      generated_at: '',
-      model_used: '',
-      model_version: '',
-    });
-  }
-
-  const situationCandidates: SituationFitCandidate[] = [];
-  for (const repoId of repoIdsToFetch) {
-    const signals = signalsByRepo.get(repoId);
-    if (!signals) continue;
-    situationCandidates.push({
-      repo_id: repoId,
-      full_name: `repo_${repoId}`, // Will be enriched from matchResult shortlist if needed
-      signals,
-    });
-  }
-
-  // Enrich full_name from shortlist
-  const shortlistNameMap = new Map(matchResult.shortlist.map((s) => [s.repoId, s.fullName]));
-  for (const c of situationCandidates) {
-    const name = shortlistNameMap.get(c.repo_id);
-    if (name) c.full_name = name;
-  }
-
-  // Step 8: Load candidate nodes for prompt enrichment (graph-enabled matching)
-  let culturalSignalNodes: CandidateNode[] = [];
-  let experienceNodes: CandidateNode[] = [];
-  let projectNodes: CandidateNode[] = [];
-  let skillNodes: CandidateNode[] = [];
-  let careerArcNodes: CandidateNode[] = [];
-  try {
-    [culturalSignalNodes, experienceNodes, projectNodes, skillNodes, careerArcNodes] = await Promise.all([
-      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'CulturalSignal'),
-      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Experience'),
-      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Project'),
-      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Skill'),
-      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'CareerArc'),
-    ]);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[ingestion] failed to load candidate nodes for ${candidateId}:`, msg);
-  }
-
-  // Compute recency multiplier from all active resume-derived nodes
-  const allResumeNodes = [...experienceNodes, ...projectNodes, ...skillNodes, ...careerArcNodes];
-  const recencyMultiplier = allResumeNodes.length > 0 ? computeRecencyMultiplier(allResumeNodes) : 1.0;
-
-  const hasGraphNodes =
-    culturalSignalNodes.length > 0 ||
-    experienceNodes.length > 0 ||
-    projectNodes.length > 0 ||
-    skillNodes.length > 0 ||
-    careerArcNodes.length > 0;
-
-  // v3-graph-enriched: includes CareerArc + enriched Experience/Skill fields
-  // v2-graph: basic graph nodes without enrichment
-  // v1: flat profile only
-  const promptVersion = careerArcNodes.length > 0 ? 'v3-graph-enriched' : hasGraphNodes ? 'v2-graph' : 'v1';
-
-  // Step 9: Candidate situation fit (with per-repo cache)
-  const cachedRankings: SituationFitRanking[] = [];
-  const missRepos: SituationFitCandidate[] = [];
-
-  for (const repo of situationCandidates) {
-    const cacheKey = await buildSituationFitCacheKey(
-      candidateId,
-      repo.repo_id,
-      discoveryResult.profileVersion,
-      repo.signals.signals_version,
-      promptVersion,
-    );
-    const cached = await getCachedSituationFit(db, cacheKey);
-    if (cached) {
-      cachedRankings.push(cached);
-    } else {
-      missRepos.push(repo);
-    }
-  }
-
-  console.log(
-    JSON.stringify({
-      event: 'situationFit.cache',
-      candidateId,
-      total: situationCandidates.length,
-      hits: cachedRankings.length,
-      misses: missRepos.length,
-    }),
-  );
-
-  let situationRankings: Awaited<ReturnType<typeof candidateSituationFit>>;
-  if (missRepos.length === 0) {
-    situationRankings = { rankings: cachedRankings, rawText: '' };
-  } else {
-    // Batch repos to avoid JSON truncation on long responses (Llama 3.1 8B
-    // struggles with structured JSON for >5 repos at once).
-    const BATCH_SIZE = 3;
-    const allRankings: SituationFitRanking[] = [...cachedRankings];
-    const rawTexts: string[] = [];
-
-    for (let i = 0; i < missRepos.length; i += BATCH_SIZE) {
-      const batch = missRepos.slice(i, i + BATCH_SIZE);
-      console.log(`[ingestion] situationFit batch ${i / BATCH_SIZE + 1}/${Math.ceil(missRepos.length / BATCH_SIZE)} — ${batch.length} repos`);
-      let llmResult: Awaited<ReturnType<typeof candidateSituationFit>>;
-      try {
-        llmResult = await candidateSituationFit({
-          provider: createCandidateAgentProvider(env)!,
-          candidateResult: discoveryResult,
-          candidateKeyConcepts: discoveryResult.keyConcepts,
-          repos: batch,
-          ...(culturalSignalNodes.length > 0 ? { culturalSignalNodes } : {}),
-          ...(roleContextRow ? { roleContextId: roleContextRow.id } : {}),
-          ...(experienceNodes.length > 0 ? { experienceNodes } : {}),
-          ...(projectNodes.length > 0 ? { projectNodes } : {}),
-          ...(skillNodes.length > 0 ? { skillNodes } : {}),
-          ...(careerArcNodes.length > 0 ? { careerArcNodes } : {}),
-          recencyMultiplier,
-        });
-      } catch (batchErr) {
-        console.error(`[ingestion] situationFit batch ${i / BATCH_SIZE + 1} failed:`, batchErr);
-        continue;
-      }
-
-      // Store cache for each miss in this batch
-      for (const ranking of llmResult.rankings) {
-        const repo = batch.find((r) => r.repo_id === ranking.repo_id);
-        if (!repo) continue;
-        const cacheKey = await buildSituationFitCacheKey(
-          candidateId,
-          ranking.repo_id,
-          discoveryResult.profileVersion,
-          repo.signals.signals_version,
-          promptVersion,
-        );
-        await storeSituationFitCache(
-          db,
-          cacheKey,
-          candidateId,
-          ranking.repo_id,
-          discoveryResult.profileVersion,
-          repo.signals.signals_version,
-          ranking,
-        );
-      }
-
-      allRankings.push(...llmResult.rankings);
-      if (llmResult.rawText) rawTexts.push(llmResult.rawText);
-    }
-
-    situationRankings = {
-      rankings: allRankings,
-      rawText: rawTexts.join('\n---\n'),
-    };
-  }
+  // Empty situation rankings (legacy candidateSituationFit removed)
+  const situationRankings = { rankings: [] as Array<never>, rawText: '' };
 
   // Step 9.5: Load coverage for evidence density multiplier
   let evidenceDensity: number | null = null;
@@ -580,95 +390,8 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     console.warn(`[ingestion] failed to compute coverage for ${candidateId}:`, msg);
   }
 
-  // Step 10: Triangulate
-  const vectorCandidateRepo = matchResult.repoChoice.cosine;
-  let triangulated = triangulateMatch({
-    philosophy,
-    graphResult: matchResult,
-    situationRankings: situationRankings.rankings,
-    roleRepoAlignments,
-    roleCandidateCosine,
-    vectorCandidateRepo,
-    vectorRoleRepo,
-    vectorRoleCandidate,
-    evidenceDensity,
-  });
-
-  let winnerRepoId = triangulated.repo_id;
-  let winnerRepoUrl = matchResult.repoChoice.githubUrl;
-  let winnerReview = matchResult.review;
-  let winnerImplementation = matchResult.implementation;
-
-  // Tailored mode: re-rank the full shortlist and potentially switch winner
-  if (philosophy === 'tailored' && matchResult.shortlist.length > 1) {
-    const shortlistScores = triangulateShortlist({
-      philosophy,
-      graphResult: matchResult,
-      situationRankings: situationRankings.rankings,
-      roleRepoAlignments,
-      roleCandidateCosine,
-      vectorCandidateRepo,
-      vectorRoleRepo,
-      vectorRoleCandidate,
-      evidenceDensity,
-    });
-
-    if (shortlistScores.length > 0) {
-      const top = shortlistScores[0]!;
-      if (top.repo_id !== winnerRepoId) {
-        winnerRepoId = top.repo_id;
-        // Look up github_url from qualified_repos
-        const repoRow = await db
-          .prepare('SELECT full_name, html_url FROM qualified_repos WHERE id = ?1')
-          .bind(winnerRepoId)
-          .first<{ full_name: string; html_url: string }>();
-        winnerRepoUrl = repoRow?.html_url ?? '';
-
-        // Fetch PR/issue for the new winner
-        const [pr, issue] = await Promise.all([
-          pickReviewPr(db, winnerRepoId, candidateVec),
-          pickImplementationIssue(db, winnerRepoId, discoveryResult.keyConcepts.seniority),
-        ]);
-        winnerReview = pr;
-        winnerImplementation = issue;
-
-        // Re-triangulate the single winner so dimensions/raw_signals are accurate
-        const tailoredWinner = matchResult.shortlist.find((s) => s.repoId === winnerRepoId);
-        if (tailoredWinner) {
-          triangulated = triangulateMatch({
-            philosophy,
-            graphResult: {
-              ...matchResult,
-              repoChoice: {
-                repoId: winnerRepoId,
-                fullName: repoRow?.full_name ?? `repo_${winnerRepoId}`,
-                githubUrl: winnerRepoUrl,
-                score: tailoredWinner.score,
-                cosine: tailoredWinner.cosine,
-                rationale: `tailored re-rank winner (score ${top.triangulated_score.toFixed(3)})`,
-              },
-            },
-            situationRankings: situationRankings.rankings,
-            roleRepoAlignments,
-            roleCandidateCosine,
-            vectorCandidateRepo: tailoredWinner.cosine,
-            vectorRoleRepo,
-            vectorRoleCandidate,
-            evidenceDensity,
-          });
-        }
-      }
-    }
-  }
-
-  // Extract reasoning for the winner from situation fit rankings
-  const winnerSituation = situationRankings.rankings.find((r) => r.repo_id === winnerRepoId);
-  const reasoningJson = winnerSituation
-    ? JSON.stringify({
-        matches: winnerSituation.reasoning.matches,
-        mismatches: winnerSituation.reasoning.mismatches,
-      })
-    : undefined;
+  // No reasoning from situation fit (legacy path removed)
+  const reasoningJson = undefined;
 
   // Telemetry: record vector vs LLM signal correlation for empirical calibration
   // NOTE: match_feedback table (migration 0040) currently lacks columns for
@@ -743,18 +466,6 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
 
   // Step 11b: Persist top-3 repo matches for recruiter visibility
   try {
-    const shortlistScores = triangulateShortlist({
-      philosophy,
-      graphResult: matchResult,
-      situationRankings: situationRankings.rankings,
-      roleRepoAlignments,
-      roleCandidateCosine,
-      vectorCandidateRepo,
-      vectorRoleRepo,
-      vectorRoleCandidate,
-      evidenceDensity,
-    });
-
     // Extract location from candidate Context nodes
     let locationTag: string | null = null;
     const contextNodes = await getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Context');
@@ -772,24 +483,16 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
       }
     }
 
-    const top3 = shortlistScores.slice(0, 3);
-    const repoMap = new Map<number, { full_name: string; html_url: string }>();
-    for (const score of top3) {
-      const row = await db
-        .prepare('SELECT full_name, html_url FROM qualified_repos WHERE id = ?1')
-        .bind(score.repo_id)
-        .first<{ full_name: string; html_url: string }>();
-      if (row) repoMap.set(score.repo_id, row);
-    }
+    const top3 = matchedRepos.slice(0, 3);
 
-    const matchRows = top3.map((score, idx) => {
-      const isWinner = score.repo_id === winnerRepoId;
+    const matchRows = top3.map((repo, idx) => {
+      const isWinner = repo.id === winnerRepoId;
       return {
         id: cryptoRandomId(),
         candidateId,
-        repoId: score.repo_id,
+        repoId: repo.id,
         rank: idx + 1,
-        triangulatedScore: score.triangulated_score,
+        triangulatedScore: repo.score,
         rationale: isWinner ? reasoningJson : undefined,
         prNumber: isWinner ? (winnerReview?.prNumber ?? null) : null,
         issueNumber: isWinner ? (winnerImplementation?.issueNumber ?? null) : null,
@@ -814,12 +517,7 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
         situationFit: dims.situation_fit ?? 0,
         roleAlignment: dims.role_alignment ?? 0,
       },
-      reasoning: winnerSituation
-        ? {
-            matches: winnerSituation.reasoning.matches,
-            mismatches: winnerSituation.reasoning.mismatches,
-          }
-        : undefined,
+      reasoning: undefined,
       philosophy,
       repoName: winnerRepoUrl ? winnerRepoUrl.replace('https://github.com/', '') : undefined,
       repoUrl: winnerRepoUrl,

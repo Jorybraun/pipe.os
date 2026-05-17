@@ -66,6 +66,9 @@ interface NodeParam {
   source_reference: string | null;
   captured_at: number;
   superseded_at: number | null;
+  extracted_properties_json: string | null;
+  decomposition_version: string | null;
+  supersedes: string | null;
   // Type-specific properties
   esco_id?: string | null;
   bars_score?: number | null;
@@ -125,6 +128,9 @@ function buildNodeParam(node: CandidateNode): NodeParam {
     source_reference: node.source_reference,
     captured_at: node.captured_at,
     superseded_at: node.superseded_at,
+    extracted_properties_json: node.extracted_properties_json,
+    decomposition_version: node.decomposition_version,
+    supersedes: node.supersedes,
     ...typeSpecific,
   };
 }
@@ -224,7 +230,7 @@ export async function writeCandidateGraph(
       `,
       {
         candidate_id: candidateId,
-        nodes: experiences.map((n) => ({ ...n, created_at: now })),
+        nodes: experiences.map((n) => ({ ...n, created_at: now, updated_at: now })),
       },
     );
     totalResult.nodesCreated += result.nodesCreated;
@@ -249,12 +255,16 @@ export async function writeCandidateGraph(
             n.captured_at = node.captured_at,
             n.superseded_at = node.superseded_at,
             n.esco_id = node.esco_id,
-            n.created_at = node.created_at
+            n.extracted_properties_json = node.extracted_properties_json,
+            n.decomposition_version = node.decomposition_version,
+            n.supersedes = node.supersedes,
+            n.created_at = node.created_at,
+            n.updated_at = node.updated_at
         MERGE (c)-[:HAS]->(n)
       `,
       {
         candidate_id: candidateId,
-        nodes: skills.map((n) => ({ ...n, created_at: now })),
+        nodes: skills.map((n) => ({ ...n, created_at: now, updated_at: now })),
       },
     );
     totalResult.nodesCreated += result.nodesCreated;
@@ -280,12 +290,16 @@ export async function writeCandidateGraph(
             n.superseded_at = node.superseded_at,
             n.bars_score = node.bars_score,
             n.dimension = node.dimension,
-            n.created_at = node.created_at
+            n.extracted_properties_json = node.extracted_properties_json,
+            n.decomposition_version = node.decomposition_version,
+            n.supersedes = node.supersedes,
+            n.created_at = node.created_at,
+            n.updated_at = node.updated_at
         MERGE (c)-[:HAS]->(n)
       `,
       {
         candidate_id: candidateId,
-        nodes: technicalDemonstrations.map((n) => ({ ...n, created_at: now })),
+        nodes: technicalDemonstrations.map((n) => ({ ...n, created_at: now, updated_at: now })),
       },
     );
     totalResult.nodesCreated += result.nodesCreated;
@@ -313,12 +327,16 @@ export async function writeCandidateGraph(
             n.dimension_name = node.dimension_name,
             n.is_role_specific = node.is_role_specific,
             n.role_context_id = node.role_context_id,
-            n.created_at = node.created_at
+            n.extracted_properties_json = node.extracted_properties_json,
+            n.decomposition_version = node.decomposition_version,
+            n.supersedes = node.supersedes,
+            n.created_at = node.created_at,
+            n.updated_at = node.updated_at
         MERGE (c)-[:HAS]->(n)
       `,
       {
         candidate_id: candidateId,
-        nodes: culturalSignals.map((n) => ({ ...n, created_at: now })),
+        nodes: culturalSignals.map((n) => ({ ...n, created_at: now, updated_at: now })),
       },
     );
     totalResult.nodesCreated += result.nodesCreated;
@@ -343,12 +361,16 @@ export async function writeCandidateGraph(
             n.source_reference = node.source_reference,
             n.captured_at = node.captured_at,
             n.superseded_at = node.superseded_at,
-            n.created_at = node.created_at
+            n.extracted_properties_json = node.extracted_properties_json,
+            n.decomposition_version = node.decomposition_version,
+            n.supersedes = node.supersedes,
+            n.created_at = node.created_at,
+            n.updated_at = node.updated_at
         MERGE (c)-[:HAS]->(n)
       `,
       {
         candidate_id: candidateId,
-        nodes: others.map((n) => ({ ...n, created_at: now })),
+        nodes: others.map((n) => ({ ...n, created_at: now, updated_at: now })),
       },
     );
     totalResult.nodesCreated += result.nodesCreated;

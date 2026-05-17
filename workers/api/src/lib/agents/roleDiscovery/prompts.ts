@@ -465,7 +465,7 @@ const DEFAULT_QUALIFICATION: QualificationStatus = {
 /**
  * Assembles ConversationContext from the knowledge_state blob.
  * All new context keys (_evpCoverage, _stories, etc.) default to empty/false
- * so this is safe on first turn and on legacy rows that pre-date RD-P5.
+ * so this is safe on first turn and on legacy rows that pre-date the phase-switching architecture.
  */
 export function buildConversationContext(
   knowledgeState: Record<string, unknown>,
@@ -510,14 +510,14 @@ function coverageGte(a: DomainCoverage, threshold: DomainCoverage): boolean {
  * Reads ConversationContext and returns a PhaseDirective that tells
  * callRoleAgent which phase prompt to use and what gaps to address.
  *
- * Phase selection order (RD-26):
+ * Phase selection order:
  *   1. CONTEXT        — fewer than 3 Qs OR all domains at 'none'
  *   2. DISCOVERY      — any domain sparse/none OR no stories OR no day-in-the-life
  *   3. PRIORITIZE     — must-haves not yet ranked
  *   4. EVP_FRICTION   — any EVP category uncovered OR friction not probed
  *   5. WRAP_UP        — default; synthesis gates checked here
  *
- * synthesisAllowed = true only when all forcing-function gates pass (RD-42),
+ * synthesisAllowed = true only when all forcing-function gates pass,
  * OR when budget is exhausted (forced fallback).
  */
 export function buildPhaseDirective(
@@ -537,7 +537,7 @@ export function buildPhaseDirective(
   const allProbesDelivered = probesDelivered >= 6;
   const personalityQuestionsDelivered = probesDelivered >= 8;
 
-  // Gates for synthesisAllowed (RD-42)
+  // Gates for synthesisAllowed
   const allGatesPass = mustHavesPrioritized && frictionProbed && storiesExtracted.length >= 1 && allProbesDelivered && personalityQuestionsDelivered;
 
   // Phase selection — probe progression drives DISCOVERY, not domain coverage arcs

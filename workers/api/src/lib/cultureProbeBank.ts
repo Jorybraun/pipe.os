@@ -1,5 +1,5 @@
 /**
- * Culture Interview probe bank loader + merger (ADR-036 Phase 2 / RD-12).
+ * Culture Interview probe bank loader + merger (ADR-036 Phase 2).
  *
  * The static probe library lives on `CultureQuestion.probes` in
  * `cultureQuestionBank.ts`. The RCD-enriched layer lives in the
@@ -150,7 +150,7 @@ export function mergeEnrichedProbes(
 /**
  * Flat count of enriched probes on the bank — used by the selector to apply a
  * small scoring bonus to questions whose dimensions have team-specific
- * enrichment available (RD-12: prefer probes grounded in the RCD when they
+ * enrichment available (ADR-036: prefer probes grounded in the RCD when they
  * exist, without penalizing dimensions that don't have any yet).
  */
 export function enrichedProbeCount(bank: RoleProbeBank, dimensions: readonly CompetencyDimension[]): number {
