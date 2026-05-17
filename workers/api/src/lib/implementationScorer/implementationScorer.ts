@@ -15,7 +15,8 @@ import {
   buildDebuggingMaintenancePrompt,
 } from './prompts';
 import { insertCandidateNode, embedCandidateNode } from '../candidateDiscovery/candidateNodes';
-import { computeCandidateCoverage } from '../candidateDiscovery/candidateCoverage';
+import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { logAiUsage } from '../aiUsage';
 
 const MODEL = '@cf/google/gemma-3-27b-it';
@@ -293,8 +294,10 @@ async function decomposeImplementationToGraph(
   }
 
   // Update coverage
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
   try {
-    await computeCandidateCoverage(env.DB, candidateId);
+    await computeCandidateCoverageWithFallback(env.DB, candidateId, driver);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[implementationScorer] computeCandidateCoverage failed for ${candidateId}:`, msg);

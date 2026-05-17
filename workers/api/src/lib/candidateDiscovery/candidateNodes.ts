@@ -1,5 +1,7 @@
 import type { CandidateNode, CandidateNodeType } from '../../types';
 import { preprocessForEmbedding } from '../embedding/preprocess';
+import type { Driver } from 'neo4j-driver';
+import { getActiveCandidateNodesFromNeo4j } from '../neo4j/candidateGraphQueries';
 
 export async function insertCandidateNode(
   db: D1Database,
@@ -104,6 +106,26 @@ export async function getActiveCandidateNodeSummaries(
     }>();
 
   return result.results ?? [];
+}
+
+export async function getActiveCandidateNodesWithFallback(
+  db: D1Database,
+  candidateId: string,
+  driver: Driver | null,
+  nodeType?: CandidateNodeType,
+): Promise<CandidateNode[]> {
+  if (driver) {
+    try {
+      return await getActiveCandidateNodesFromNeo4j(driver, candidateId, nodeType);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[candidateNodes] Neo4j read failed for ${candidateId}, falling back to D1:`,
+        msg,
+      );
+    }
+  }
+  return getActiveCandidateNodes(db, candidateId, nodeType);
 }
 
 export async function supersedeCandidateNode(

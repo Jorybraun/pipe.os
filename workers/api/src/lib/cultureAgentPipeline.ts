@@ -20,9 +20,11 @@
 import type { LLMProvider, LLMMessage } from './llm/types';
 import type { Env, CandidateNodeType } from '../types';
 import type { CultureTranscript } from './cultureAgent';
-import { insertCandidateNode, embedCandidateNode, getActiveCandidateNodes } from './candidateDiscovery/candidateNodes';
-import { computeCandidateCoverage } from './candidateDiscovery/candidateCoverage';
+import { embedCandidateNode, getActiveCandidateNodesWithFallback } from './candidateDiscovery/candidateNodes';
+import { computeCandidateCoverageWithFallback } from './neo4j/candidateGraphQueries';
 import { meanPoolVectors, parseEmbeddingJson } from './embedding/cosine';
+import { writeCandidateGraph } from './neo4j/writeCandidateGraph';
+import { buildNeo4jConfig, getNeo4jDriver } from './neo4j/driver';
 
 import { markCandidateEnriching, markCandidateEnriched } from './candidateDiscovery/persist';
 import { runMatchAndAssign, loadDiscoveryResultFromDb } from './candidateDiscovery/orchestrate';
@@ -504,6 +506,7 @@ async function persistDecomposedNodes(
 ): Promise<void> {
   const sourceType = mode === 'profile_builder' ? 'automated_screener' : 'culture_interview';
   const capturedAt = Math.floor(Date.now() / 1000);
+  const candidateNodes: import('../types').CandidateNode[] = [];
 
   for (const node of decomposition.nodes) {
     if (!node.narrative || node.narrative.trim().length === 0) continue;
@@ -514,7 +517,8 @@ async function persistDecomposedNodes(
         env as { AI: { run: (model: string, input: { text: string[] }) => Promise<{ data?: number[][] }> } },
       );
 
-      await insertCandidateNode(db, {
+      candidateNodes.push({
+        id: crypto.randomUUID(),
         candidate_id: candidateId,
         node_type: node.nodeType,
         narrative_text: node.narrative,
@@ -527,20 +531,34 @@ async function persistDecomposedNodes(
         supersedes: null,
         superseded_at: null,
         decomposition_version: PIPELINE_VERSION,
+        created_at: capturedAt,
+        updated_at: capturedAt,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
-        `[culturePipeline] Failed to persist node ${node.nodeType} for candidate ${candidateId}:`,
+        `[culturePipeline] Failed to embed node ${node.nodeType} for candidate ${candidateId}:`,
         msg,
       );
       // Continue to next node — partial persistence is acceptable
     }
   }
 
-  // Update coverage after all nodes are inserted
+  // Write to Neo4j
+  if (candidateNodes.length > 0) {
+    try {
+      await writeCandidateGraph({ candidateId, nodes: candidateNodes, env });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[culturePipeline] Neo4j write failed for ${candidateId}:`, msg);
+    }
+  }
+
+  // Update coverage
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
   try {
-    await computeCandidateCoverage(db, candidateId);
+    await computeCandidateCoverageWithFallback(db, candidateId, driver);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[culturePipeline] computeCandidateCoverage failed for ${candidateId}:`, msg);
@@ -551,9 +569,12 @@ async function persistDecomposedNodes(
 
 async function computeEnrichedEmbedding(
   db: D1Database,
+  env: Env,
   candidateId: string,
 ): Promise<number[] | null> {
-  const nodes = await getActiveCandidateNodes(db, candidateId);
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
+  const nodes = await getActiveCandidateNodesWithFallback(db, candidateId, driver);
   const vectors: number[][] = [];
 
   for (const node of nodes) {
@@ -610,7 +631,7 @@ export async function runPostScreenerEnrichment(
   // 2. Compute enriched embedding from all active nodes
   let enrichedEmbeddingJson: string | null = null;
   try {
-    const embedding = await computeEnrichedEmbedding(db, candidateId);
+    const embedding = await computeEnrichedEmbedding(db, env, candidateId);
     if (embedding) {
       enrichedEmbeddingJson = JSON.stringify(embedding);
       await upsertEnrichedVector(env, candidateId, embedding);

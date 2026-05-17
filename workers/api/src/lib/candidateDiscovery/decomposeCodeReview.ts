@@ -9,8 +9,10 @@
 import type { Env } from '../../types';
 import type { ScoreReport } from '../scorerAgent';
 import type { ReviewRound } from '../implementerAgent';
-import { insertCandidateNode, embedCandidateNode } from './candidateNodes';
-import { computeCandidateCoverage } from './candidateCoverage';
+import { embedCandidateNode } from './candidateNodes';
+import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
+import { writeCandidateGraph } from '../neo4j/writeCandidateGraph';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 
 const DIMENSION_TO_EVIDENCE_KEY: Record<
   string,
@@ -211,6 +213,8 @@ export async function decomposeCodeReviewToGraph(
     number,
   ][];
 
+  const candidateNodes: import('../../types').CandidateNode[] = [];
+
   for (const [dimension, barsScore] of dimensionEntries) {
     const evidenceKey = DIMENSION_TO_EVIDENCE_KEY[dimension];
     const evidence = evidenceKey
@@ -236,7 +240,8 @@ export async function decomposeCodeReviewToGraph(
     try {
       const embedding = await embedCandidateNode(narrativeText, env as { AI: { run: (model: string, input: { text: string[] }) => Promise<{ data?: number[][] }> } });
 
-      const insertedNode = await insertCandidateNode(db, {
+      candidateNodes.push({
+        id: crypto.randomUUID(),
         candidate_id: candidateId,
         node_type: 'TechnicalDemonstration',
         narrative_text: narrativeText,
@@ -245,25 +250,41 @@ export async function decomposeCodeReviewToGraph(
         source_type: 'code_review_session',
         source_reference: session.id,
         captured_at: capturedAt,
-        confidence: barsScore / 5, // normalize 1-5 to 0-1
+        confidence: barsScore / 5,
         supersedes: null,
         superseded_at: null,
         decomposition_version: decompositionVersion,
+        created_at: capturedAt,
+        updated_at: capturedAt,
       });
-
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
-        `[decomposeCodeReview] failed to create node for dimension ${dimension}, session ${session.id}:`,
+        `[decomposeCodeReview] failed to embed node for dimension ${dimension}, session ${session.id}:`,
         msg,
       );
       // Continue to next dimension — partial decomposition is acceptable
     }
   }
 
-  // Update coverage after all nodes are inserted
+  // Write to Neo4j
+  if (candidateNodes.length > 0) {
+    try {
+      await writeCandidateGraph({ candidateId, nodes: candidateNodes, env });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[decomposeCodeReview] Neo4j write failed for candidate ${candidateId}, session ${session.id}:`,
+        msg,
+      );
+    }
+  }
+
+  // Update coverage after all nodes are written
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
   try {
-    await computeCandidateCoverage(db, candidateId);
+    await computeCandidateCoverageWithFallback(db, candidateId, driver);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(

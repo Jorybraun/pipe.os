@@ -9,7 +9,8 @@
 import type { Env, CulturalSignalProperties } from '../../types';
 import type { CultureScoreReport, CompetencyScoreResult, CultureProfileScoreResult } from '../cultureScorer';
 import { insertCandidateNode, embedCandidateNode } from './candidateNodes';
-import { computeCandidateCoverage } from './candidateCoverage';
+import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { resolveCultureRoleContext, hasTeamContext } from '../cultureRoleResolution';
 
 const DECOMPOSITION_VERSION = 'culture_score_v1';
@@ -134,8 +135,10 @@ export async function decomposeCultureScoreToGraph(
   }
 
   // Update coverage after all nodes are inserted
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
   try {
-    await computeCandidateCoverage(db, candidateId);
+    await computeCandidateCoverageWithFallback(db, candidateId, driver);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(

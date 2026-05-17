@@ -356,8 +356,8 @@ describe('runInterviewTerminationPipeline', () => {
 
     // LLM should have been called twice (synthesis + decomposition)
     expect(provider.complete).toHaveBeenCalledTimes(2);
-    // Vectorize upsert should have been called for enriched embedding
-    expect(env.CANDIDATE_INDEX.upsert).toHaveBeenCalledTimes(1);
+    // Vectorize upsert is skipped in read-only archive mode
+    expect(env.CANDIDATE_INDEX.upsert).toHaveBeenCalledTimes(0);
   });
 
   it('completes gracefully when provider is null', async () => {
@@ -376,8 +376,8 @@ describe('runInterviewTerminationPipeline', () => {
       assessmentId: 'assess1',
     });
 
-    // Enrichment still runs on existing nodes and upserts the mean-pooled embedding
-    expect(env.CANDIDATE_INDEX.upsert).toHaveBeenCalledTimes(1);
+    // Vectorize upsert is skipped in read-only archive mode
+    expect(env.CANDIDATE_INDEX.upsert).toHaveBeenCalledTimes(0);
   });
 
   it('completes gracefully when discovery result is missing', async () => {

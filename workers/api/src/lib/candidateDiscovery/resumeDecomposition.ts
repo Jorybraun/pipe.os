@@ -27,13 +27,14 @@
  *   - Partial failure (some node types fail): write what succeeded, log failures
  */
 
-import type { Env } from '../../types';
+import type { Env, CandidateNode } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import {
-  insertCandidateNode,
   embedCandidateNode,
 } from './candidateNodes';
-import { computeCandidateCoverage } from './candidateCoverage';
+import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
+import { writeCandidateGraph } from '../neo4j/writeCandidateGraph';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { slugifySkills } from '../skills/slugifySkills';
 import { attributeSkillTenure } from './attributeSkillTenure';
 import {
@@ -78,7 +79,7 @@ function experienceToNode(
   candidateId: string,
   exp: DecomposedExperience,
   index: number,
-): Parameters<typeof insertCandidateNode>[1] {
+): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
     node_type: 'Experience',
@@ -110,7 +111,7 @@ function projectToNode(
   candidateId: string,
   proj: DecomposedProject,
   index: number,
-): Parameters<typeof insertCandidateNode>[1] {
+): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
     node_type: 'Project',
@@ -137,7 +138,7 @@ function skillToNode(
   candidateId: string,
   skill: DecomposedSkill,
   index: number,
-): Parameters<typeof insertCandidateNode>[1] {
+): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
     node_type: 'Skill',
@@ -165,7 +166,7 @@ function educationToNode(
   candidateId: string,
   edu: DecomposedEducation,
   index: number,
-): Parameters<typeof insertCandidateNode>[1] {
+): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
     node_type: 'Education',
@@ -192,7 +193,7 @@ function credentialToNode(
   candidateId: string,
   cred: DecomposedCredential,
   index: number,
-): Parameters<typeof insertCandidateNode>[1] {
+): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
     node_type: 'Credential',
@@ -218,7 +219,7 @@ function careerArcToNode(
   candidateId: string,
   arc: DecomposedCareerArc,
   decomposition: DecompositionResult,
-): Parameters<typeof insertCandidateNode>[1] {
+): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
     node_type: 'CareerArc',
@@ -243,7 +244,7 @@ function careerArcToNode(
 }
 
 async function writeParserOnlyNodes(
-  db: import('@cloudflare/workers-types').D1Database,
+  _db: import('@cloudflare/workers-types').D1Database,
   candidateId: string,
   parsedCV: ParsedCV,
   env: Env,
@@ -252,12 +253,14 @@ async function writeParserOnlyNodes(
   let inserted = 0;
   let embedded = 0;
   const embeddings: number[][] = [];
+  const candidateNodes: CandidateNode[] = [];
+  const now = nowEpoch();
 
-  const nodesToInsert: Parameters<typeof insertCandidateNode>[1][] = [];
+  const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [];
 
   // Canonicalize parser-extracted skills and create Skill nodes
   const canonicalSkills = parsedCV.skills.length > 0
-    ? await slugifySkills(db, parsedCV.skills)
+    ? await slugifySkills(_db, parsedCV.skills)
     : [];
   for (let i = 0; i < canonicalSkills.length; i++) {
     const skill = canonicalSkills[i]!;
@@ -275,7 +278,7 @@ async function writeParserOnlyNodes(
       embedding_json: null,
       source_type: 'resume',
       source_reference: null,
-      captured_at: nowEpoch(),
+      captured_at: now,
       confidence: DEFAULT_CONFIDENCE,
       supersedes: null,
       superseded_at: null,
@@ -300,7 +303,7 @@ async function writeParserOnlyNodes(
       embedding_json: null,
       source_type: 'resume',
       source_reference: null,
-      captured_at: nowEpoch(),
+      captured_at: now,
       confidence: DEFAULT_CONFIDENCE,
       supersedes: null,
       superseded_at: null,
@@ -324,7 +327,7 @@ async function writeParserOnlyNodes(
       embedding_json: null,
       source_type: 'resume',
       source_reference: null,
-      captured_at: nowEpoch(),
+      captured_at: now,
       confidence: DEFAULT_CONFIDENCE,
       supersedes: null,
       superseded_at: null,
@@ -347,7 +350,7 @@ async function writeParserOnlyNodes(
       embedding_json: null,
       source_type: 'resume',
       source_reference: null,
-      captured_at: nowEpoch(),
+      captured_at: now,
       confidence: DEFAULT_CONFIDENCE,
       supersedes: null,
       superseded_at: null,
@@ -370,7 +373,7 @@ async function writeParserOnlyNodes(
       embedding_json: null,
       source_type: 'resume',
       source_reference: null,
-      captured_at: nowEpoch(),
+      captured_at: now,
       confidence: DEFAULT_CONFIDENCE,
       supersedes: null,
       superseded_at: null,
@@ -378,29 +381,44 @@ async function writeParserOnlyNodes(
     });
   }
 
-  // Insert and embed
+  // Embed and build CandidateNode array
   for (const node of nodesToInsert) {
     try {
-      const insertedNode = await insertCandidateNode(db, node);
-      inserted++;
+      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
+      embedded++;
+      embeddings.push(embedding);
 
-      try {
-        const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
-        await db
-          .prepare(
-            `UPDATE candidate_nodes SET embedding_json = ?1 WHERE id = ?2`,
-          )
-          .bind(JSON.stringify(embedding), insertedNode.id)
-          .run();
-        embedded++;
-        embeddings.push(embedding);
-      } catch (embedErr) {
-        const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
-        errors.push(`Embed failed for ${node.node_type}: ${msg}`);
-      }
-    } catch (insertErr) {
-      const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
-      errors.push(`Insert failed for ${node.node_type}: ${msg}`);
+      candidateNodes.push({
+        id: crypto.randomUUID(),
+        candidate_id: node.candidate_id,
+        node_type: node.node_type,
+        narrative_text: node.narrative_text,
+        extracted_properties_json: node.extracted_properties_json,
+        embedding_json: JSON.stringify(embedding),
+        source_type: node.source_type,
+        source_reference: node.source_reference,
+        captured_at: node.captured_at,
+        confidence: node.confidence,
+        supersedes: node.supersedes,
+        superseded_at: node.superseded_at,
+        decomposition_version: node.decomposition_version,
+        created_at: now,
+        updated_at: now,
+      });
+      inserted++;
+    } catch (embedErr) {
+      const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
+      errors.push(`Embed failed for ${node.node_type}: ${msg}`);
+    }
+  }
+
+  // Write to Neo4j
+  if (candidateNodes.length > 0) {
+    try {
+      await writeCandidateGraph({ candidateId, nodes: candidateNodes, env });
+    } catch (writeErr) {
+      const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+      errors.push(`Neo4j write failed: ${msg}`);
     }
   }
 
@@ -462,7 +480,7 @@ export async function decomposeResumeToGraph(
   let decomposition: DecompositionResult | null = decompositionResult ?? null;
 
   // Step 2: Build node list
-  const nodesToInsert: Parameters<typeof insertCandidateNode>[1][] = [];
+  const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [];
 
   if (decomposition) {
     // Canonicalize all skills from LLM decomposition against skill_aliases
@@ -534,8 +552,10 @@ export async function decomposeResumeToGraph(
       result.errors.push(`Profile state update failed: ${msg}`);
     }
 
+    const neo4jConfig = buildNeo4jConfig(env);
+    const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
     try {
-      await computeCandidateCoverage(db, candidateId);
+      await computeCandidateCoverageWithFallback(db, candidateId, driver);
     } catch (coverageErr) {
       const msg = coverageErr instanceof Error ? coverageErr.message : String(coverageErr);
       result.errors.push(`Coverage computation failed: ${msg}`);
@@ -564,31 +584,48 @@ export async function decomposeResumeToGraph(
     return result;
   }
 
-  // Step 3: Insert and embed nodes
+  // Step 3: Embed nodes and build CandidateNode array
+  const candidateNodes: CandidateNode[] = [];
+  const now = nowEpoch();
   for (const node of nodesToInsert) {
     try {
-      const insertedNode = await insertCandidateNode(db, node);
-      result.nodesInserted++;
+      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
+      result.nodesEmbedded++;
+      result.embeddings.push(embedding);
 
-      try {
-        const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
-        await db
-          .prepare(
-            `UPDATE candidate_nodes SET embedding_json = ?1 WHERE id = ?2`,
-          )
-          .bind(JSON.stringify(embedding), insertedNode.id)
-          .run();
-        result.nodesEmbedded++;
-        result.embeddings.push(embedding);
-      } catch (embedErr) {
-        const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
-        console.warn('[resumeDecomposition] Embed failed for', node.node_type, ':', msg);
-        result.errors.push(`Embed failed for ${node.node_type}: ${msg}`);
-      }
-    } catch (insertErr) {
-      const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
-      console.warn('[resumeDecomposition] Insert failed for', node.node_type, ':', msg);
-      result.errors.push(`Insert failed for ${node.node_type}: ${msg}`);
+      candidateNodes.push({
+        id: crypto.randomUUID(),
+        candidate_id: node.candidate_id,
+        node_type: node.node_type,
+        narrative_text: node.narrative_text,
+        extracted_properties_json: node.extracted_properties_json,
+        embedding_json: JSON.stringify(embedding),
+        source_type: node.source_type,
+        source_reference: node.source_reference,
+        captured_at: node.captured_at,
+        confidence: node.confidence,
+        supersedes: node.supersedes,
+        superseded_at: node.superseded_at,
+        decomposition_version: node.decomposition_version,
+        created_at: now,
+        updated_at: now,
+      });
+      result.nodesInserted++;
+    } catch (embedErr) {
+      const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
+      console.warn('[resumeDecomposition] Embed failed for', node.node_type, ':', msg);
+      result.errors.push(`Embed failed for ${node.node_type}: ${msg}`);
+    }
+  }
+
+  // Write to Neo4j
+  if (candidateNodes.length > 0) {
+    try {
+      await writeCandidateGraph({ candidateId, nodes: candidateNodes, env });
+    } catch (writeErr) {
+      const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+      console.warn('[resumeDecomposition] Neo4j write failed:', msg);
+      result.errors.push(`Neo4j write failed: ${msg}`);
     }
   }
 
@@ -606,8 +643,10 @@ export async function decomposeResumeToGraph(
   }
 
   // Step 5: Update coverage
+  const neo4jConfig = buildNeo4jConfig(env);
+  const driver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
   try {
-    await computeCandidateCoverage(db, candidateId);
+    await computeCandidateCoverageWithFallback(db, candidateId, driver);
   } catch (coverageErr) {
     const msg = coverageErr instanceof Error ? coverageErr.message : String(coverageErr);
     console.warn('[resumeDecomposition] Coverage computation failed:', msg);

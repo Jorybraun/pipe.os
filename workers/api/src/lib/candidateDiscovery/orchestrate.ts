@@ -22,7 +22,7 @@
  * See ADR-040 Meaning-Based Candidate-Repo-Role Triangulation.
  */
 
-import type { Env, RepoEngineeringSignalsRow } from '../../types';
+import type { Env, RepoEngineeringSignalsRow, CandidateNode } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import type { DecompositionResult } from './candidateDecompositionPrompt';
 import { createCandidateAgentProvider } from '../llm/createProvider';
@@ -49,11 +49,12 @@ import {
   type SituationFitRanking,
 } from './candidateSituationFit';
 import { cosineSimilarity, parseEmbeddingJson, meanPoolVectors } from '../embedding/cosine';
-import { getActiveCandidateNodes } from './candidateNodes';
-import { writeCandidateGraphFireAndForget } from '../neo4j/writeCandidateGraph';
+import { getActiveCandidateNodes, getActiveCandidateNodesWithFallback } from './candidateNodes';
 import { decomposeResumeToGraph } from './resumeDecomposition';
 import { computeRecencyMultiplier } from './candidateRecency';
 import { getCandidateCoverage } from './candidateCoverage';
+import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { buildProfileSections } from './buildProfileSections';
 import { recordStepDuration, estimateCompletion } from '../telemetry/stepDurationTracker';
 
@@ -155,18 +156,6 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);
   }
 
-  // Step 3.6: Write candidate graph to Neo4j (ADR-044)
-  // Fire-and-forget: Neo4j is the primary graph store; failure is non-blocking.
-  try {
-    const activeNodes = await getActiveCandidateNodes(db, candidateId);
-    if (activeNodes.length > 0) {
-      writeCandidateGraphFireAndForget({ candidateId, nodes: activeNodes, env });
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[ingestion] neo4j write prep failed (non-blocking):', msg);
-  }
-
   // Step 4: Embed into CANDIDATE_INDEX
   // Primary: aggregate sub-element embeddings (mean pool + L2 norm).
   // Fallback: embed the prose profile directly if decomposition yielded no vectors.
@@ -237,6 +226,10 @@ export interface MatchAndAssignInput {
 
 export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   const { env, db, candidateId, discoveryResult } = input;
+
+  // Neo4j driver for graph reads (fallback to D1 if unavailable)
+  const neo4jConfig = buildNeo4jConfig(env);
+  const neo4jDriver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
 
   // Load candidate's pipeline + match config
   const candidateRow = await db
@@ -433,18 +426,18 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
   }
 
   // Step 8: Load candidate nodes for prompt enrichment (graph-enabled matching)
-  let culturalSignalNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
-  let experienceNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
-  let projectNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
-  let skillNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
-  let careerArcNodes: Awaited<ReturnType<typeof getActiveCandidateNodes>> = [];
+  let culturalSignalNodes: CandidateNode[] = [];
+  let experienceNodes: CandidateNode[] = [];
+  let projectNodes: CandidateNode[] = [];
+  let skillNodes: CandidateNode[] = [];
+  let careerArcNodes: CandidateNode[] = [];
   try {
     [culturalSignalNodes, experienceNodes, projectNodes, skillNodes, careerArcNodes] = await Promise.all([
-      getActiveCandidateNodes(db, candidateId, 'CulturalSignal'),
-      getActiveCandidateNodes(db, candidateId, 'Experience'),
-      getActiveCandidateNodes(db, candidateId, 'Project'),
-      getActiveCandidateNodes(db, candidateId, 'Skill'),
-      getActiveCandidateNodes(db, candidateId, 'CareerArc'),
+      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'CulturalSignal'),
+      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Experience'),
+      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Project'),
+      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Skill'),
+      getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'CareerArc'),
     ]);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -577,6 +570,14 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[ingestion] failed to load coverage for ${candidateId}:`, msg);
+  }
+
+  // Ensure coverage is up-to-date in D1 (Neo4j-primary with D1 fallback)
+  try {
+    await computeCandidateCoverageWithFallback(db, candidateId, neo4jDriver);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to compute coverage for ${candidateId}:`, msg);
   }
 
   // Step 10: Triangulate
@@ -756,7 +757,7 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
 
     // Extract location from candidate Context nodes
     let locationTag: string | null = null;
-    const contextNodes = await getActiveCandidateNodes(db, candidateId, 'Context');
+    const contextNodes = await getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Context');
     for (const node of contextNodes) {
       const props = node.extracted_properties_json
         ? (JSON.parse(node.extracted_properties_json) as Record<string, unknown>)

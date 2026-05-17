@@ -233,6 +233,71 @@ function computeContext(
   return subtypes.size >= 2 ? 1.0 : 0.5;
 }
 
+export function computeCoverageFromRows(
+  rows: {
+    node_type: CandidateNodeType;
+    confidence: number | null;
+    extracted_properties_json: string | null;
+    source_type: string | null;
+  }[],
+): CoverageResult {
+  const experienceNodes = rows.filter((r) =>
+    EXPERIENCE_NODE_TYPES.includes(r.node_type),
+  );
+  const culturalNodes = rows.filter((r) => r.node_type === 'CulturalSignal');
+  const technicalNodes = rows.filter((r) =>
+    TECHNICAL_NODE_TYPES.includes(r.node_type),
+  );
+  const motivationNodes = rows.filter((r) =>
+    MOTIVATION_NODE_TYPES.includes(r.node_type),
+  );
+  const contextNodes = rows.filter((r) => r.node_type === 'Context');
+
+  return {
+    experience: computeExperience(experienceNodes),
+    cultural: computeCultural(culturalNodes),
+    technical: computeTechnical(technicalNodes),
+    motivation: computeMotivation(motivationNodes),
+    context: computeContext(contextNodes),
+  };
+}
+
+export async function persistCandidateCoverage(
+  db: D1Database,
+  candidateId: string,
+  coverage: CoverageResult,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO candidate_coverage (
+         candidate_id,
+         experience_coverage,
+         cultural_coverage,
+         technical_coverage,
+         motivation_coverage,
+         context_coverage,
+         updated_at
+       )
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch())
+       ON CONFLICT(candidate_id) DO UPDATE SET
+         experience_coverage = excluded.experience_coverage,
+         cultural_coverage = excluded.cultural_coverage,
+         technical_coverage = excluded.technical_coverage,
+         motivation_coverage = excluded.motivation_coverage,
+         context_coverage = excluded.context_coverage,
+         updated_at = excluded.updated_at`,
+    )
+    .bind(
+      candidateId,
+      coverage.experience,
+      coverage.cultural,
+      coverage.technical,
+      coverage.motivation,
+      coverage.context,
+    )
+    .run();
+}
+
 export async function computeCandidateCoverage(
   db: D1Database,
   candidateId: string,
@@ -270,56 +335,10 @@ export async function computeCandidateCoverage(
     throw new Error(`[candidateCoverage] D1 query failed: ${msg}`);
   }
 
-  const experienceNodes = rows.filter((r) =>
-    EXPERIENCE_NODE_TYPES.includes(r.node_type),
-  );
-  const culturalNodes = rows.filter((r) => r.node_type === 'CulturalSignal');
-  const technicalNodes = rows.filter((r) =>
-    TECHNICAL_NODE_TYPES.includes(r.node_type),
-  );
-  const motivationNodes = rows.filter((r) =>
-    MOTIVATION_NODE_TYPES.includes(r.node_type),
-  );
-  const contextNodes = rows.filter((r) => r.node_type === 'Context');
-
-  const coverage: CoverageResult = {
-    experience: computeExperience(experienceNodes),
-    cultural: computeCultural(culturalNodes),
-    technical: computeTechnical(technicalNodes),
-    motivation: computeMotivation(motivationNodes),
-    context: computeContext(contextNodes),
-  };
+  const coverage = computeCoverageFromRows(rows);
 
   try {
-    await db
-      .prepare(
-        `INSERT INTO candidate_coverage (
-           candidate_id,
-           experience_coverage,
-           cultural_coverage,
-           technical_coverage,
-           motivation_coverage,
-           context_coverage,
-           updated_at
-         )
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch())
-         ON CONFLICT(candidate_id) DO UPDATE SET
-           experience_coverage = excluded.experience_coverage,
-           cultural_coverage = excluded.cultural_coverage,
-           technical_coverage = excluded.technical_coverage,
-           motivation_coverage = excluded.motivation_coverage,
-           context_coverage = excluded.context_coverage,
-           updated_at = excluded.updated_at`,
-      )
-      .bind(
-        candidateId,
-        coverage.experience,
-        coverage.cultural,
-        coverage.technical,
-        coverage.motivation,
-        coverage.context,
-      )
-      .run();
+    await persistCandidateCoverage(db, candidateId, coverage);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(

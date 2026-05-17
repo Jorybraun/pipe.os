@@ -9,32 +9,29 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
+const writtenNodes: Array<Record<string, unknown>> = [];
+
+vi.mock('../../neo4j/writeCandidateGraph', () => ({
+  writeCandidateGraph: vi.fn(async ({ nodes }: { nodes: Array<Record<string, unknown>> }) => {
+    writtenNodes.push(...nodes);
+    return { nodesCreated: nodes.length, nodesSet: nodes.length, relationshipsCreated: nodes.length };
+  }),
+}));
+
+vi.mock('../../neo4j/driver', () => ({
+  buildNeo4jConfig: vi.fn(() => null),
+  getNeo4jDriver: vi.fn(),
+}));
+
+vi.mock('../../neo4j/candidateGraphQueries', () => ({
+  computeCandidateCoverageWithFallback: vi.fn(async () => undefined),
+}));
+
 function buildMockDb() {
-  const inserts: Array<Record<string, unknown>> = [];
   const coverageCalls: string[] = [];
 
   const db = {
     prepare: (sql: string) => {
-      if (sql.includes('INSERT INTO candidate_nodes')) {
-        return {
-          bind: (...args: unknown[]) => ({
-            first: async <T>(): Promise<T> => {
-              const row = Object.fromEntries(
-                [
-                  'id', 'candidate_id', 'node_type', 'narrative_text',
-                  'extracted_properties_json', 'embedding_json', 'source_type',
-                  'source_reference', 'captured_at', 'confidence',
-                  'supersedes', 'superseded_at', 'decomposition_version',
-                  'created_at', 'updated_at',
-                ].map((k, i) => [k, args[i]]),
-              );
-              row.id = crypto.randomUUID();
-              inserts.push(row);
-              return row as T;
-            },
-          }),
-        };
-      }
       if (sql.includes('INSERT INTO candidate_coverage')) {
         return {
           bind: () => ({
@@ -63,7 +60,7 @@ function buildMockDb() {
     },
   } as unknown as D1Database;
 
-  return { db, inserts, coverageCalls };
+  return { db, coverageCalls };
 }
 
 function buildMockEnv(): Env {
@@ -124,8 +121,12 @@ function makeScoreReport(partial?: Partial<ScoreReport['evidence']>): ScoreRepor
 }
 
 describe('decomposeCodeReviewToGraph', () => {
+  beforeEach(() => {
+    writtenNodes.length = 0;
+  });
+
   it('inserts 6 TechnicalDemonstration nodes for a full score report', async () => {
-    const { db, inserts, coverageCalls } = buildMockDb();
+    const { db, coverageCalls } = buildMockDb();
     const env = buildMockEnv();
 
     await decomposeCodeReviewToGraph(
@@ -141,18 +142,18 @@ describe('decomposeCodeReviewToGraph', () => {
       makeScoreReport(),
     );
 
-    expect(inserts.length).toBe(6);
-    for (const row of inserts) {
+    expect(writtenNodes.length).toBe(6);
+    for (const row of writtenNodes) {
       expect(row.node_type).toBe('TechnicalDemonstration');
       expect(row.candidate_id).toBe('candidate-1');
       expect(row.source_type).toBe('code_review_session');
       expect(row.source_reference).toBe('session-1');
     }
-    expect(coverageCalls.length).toBe(1);
+    expect(coverageCalls.length).toBe(0);
   });
 
   it('uses evidence strings when present', async () => {
-    const { db, inserts } = buildMockDb();
+    const { db } = buildMockDb();
     const env = buildMockEnv();
 
     await decomposeCodeReviewToGraph(
@@ -168,7 +169,7 @@ describe('decomposeCodeReviewToGraph', () => {
       makeScoreReport(),
     );
 
-    const issueNode = inserts.find((r) => {
+    const issueNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'issue_identification';
     });
@@ -177,7 +178,7 @@ describe('decomposeCodeReviewToGraph', () => {
   });
 
   it('falls back to generic narrative when evidence is missing or empty', async () => {
-    const { db, inserts } = buildMockDb();
+    const { db } = buildMockDb();
     const env = buildMockEnv();
 
     await decomposeCodeReviewToGraph(
@@ -193,7 +194,7 @@ describe('decomposeCodeReviewToGraph', () => {
       makeScoreReport({ question_formation_evidence: '' }),
     );
 
-    const questionNode = inserts.find((r) => {
+    const questionNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'question_formation';
     });
@@ -202,7 +203,7 @@ describe('decomposeCodeReviewToGraph', () => {
   });
 
   it('continues on individual embedding failure and still calls coverage', async () => {
-    const { db, inserts, coverageCalls } = buildMockDb();
+    const { db, coverageCalls } = buildMockDb();
     const env = {
       AI: {
         run: vi.fn().mockRejectedValue(new Error('Embedding failed')),
@@ -222,20 +223,17 @@ describe('decomposeCodeReviewToGraph', () => {
       makeScoreReport(),
     );
 
-    expect(inserts.length).toBe(0);
-    expect(coverageCalls.length).toBe(1);
+    expect(writtenNodes.length).toBe(0);
+    expect(coverageCalls.length).toBe(0);
   });
 
-  it('still inserts nodes when coverage computation fails', async () => {
-    const { db, inserts, coverageCalls } = buildMockDb();
+  it('still writes nodes when coverage computation fails', async () => {
+    const { db, coverageCalls } = buildMockDb();
     const env = buildMockEnv();
 
     // Override the coverage query to throw
     const throwingDb = {
       prepare: (sql: string) => {
-        if (sql.includes('INSERT INTO candidate_nodes')) {
-          return db.prepare(sql);
-        }
         if (sql.includes('INSERT INTO candidate_coverage')) {
           return {
             bind: () => ({
@@ -268,12 +266,12 @@ describe('decomposeCodeReviewToGraph', () => {
       makeScoreReport(),
     );
 
-    expect(inserts.length).toBe(6);
+    expect(writtenNodes.length).toBe(6);
     expect(coverageCalls.length).toBe(0);
   });
 
   it('writes correct extracted_properties_json shape', async () => {
-    const { db, inserts } = buildMockDb();
+    const { db } = buildMockDb();
     const env = buildMockEnv();
 
     await decomposeCodeReviewToGraph(
@@ -289,7 +287,7 @@ describe('decomposeCodeReviewToGraph', () => {
       makeScoreReport(),
     );
 
-    const prioritizationNode = inserts.find((r) => {
+    const prioritizationNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'prioritization';
     });
@@ -302,7 +300,7 @@ describe('decomposeCodeReviewToGraph', () => {
   });
 
   it('sets confidence = bars_score / 5', async () => {
-    const { db, inserts } = buildMockDb();
+    const { db } = buildMockDb();
     const env = buildMockEnv();
 
     await decomposeCodeReviewToGraph(
@@ -318,7 +316,7 @@ describe('decomposeCodeReviewToGraph', () => {
       makeScoreReport(),
     );
 
-    const issueNode = inserts.find((r) => {
+    const issueNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'issue_identification';
     });
@@ -327,7 +325,7 @@ describe('decomposeCodeReviewToGraph', () => {
   });
 
   it('uses LLM-generated transcript narrative when available', async () => {
-    const { db, inserts } = buildMockDb();
+    const { db } = buildMockDb();
     const env = {
       AI: {
         run: vi.fn().mockImplementation(async (_model: string, input: { messages?: Array<{ content: string }>; text?: string[] }) => {
@@ -386,18 +384,17 @@ describe('decomposeCodeReviewToGraph', () => {
         challenge_id: 'challenge-1',
       },
       makeScoreReport(),
-      undefined,
       transcript,
     );
 
-    const issueNode = inserts.find((r) => {
+    const issueNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'issue_identification';
     });
     expect(issueNode).toBeDefined();
     expect(issueNode!.narrative_text).toBe('The candidate spotted a critical race condition during code review.');
 
-    const reasoningNode = inserts.find((r) => {
+    const reasoningNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'reasoning_quality';
     });
@@ -406,7 +403,7 @@ describe('decomposeCodeReviewToGraph', () => {
   });
 
   it('falls back to evidence when LLM transcript generation fails', async () => {
-    const { db, inserts } = buildMockDb();
+    const { db } = buildMockDb();
     const env = {
       AI: {
         run: vi.fn().mockImplementation(async (_model: string, input: { messages?: Array<{ content: string }>; text?: string[] }) => {
@@ -441,11 +438,10 @@ describe('decomposeCodeReviewToGraph', () => {
         challenge_id: 'challenge-1',
       },
       makeScoreReport(),
-      undefined,
       transcript,
     );
 
-    const issueNode = inserts.find((r) => {
+    const issueNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'issue_identification';
     });
@@ -455,7 +451,7 @@ describe('decomposeCodeReviewToGraph', () => {
   });
 
   it('falls back to evidence when transcript is empty', async () => {
-    const { db, inserts } = buildMockDb();
+    const { db } = buildMockDb();
     const env = buildMockEnv();
 
     await decomposeCodeReviewToGraph(
@@ -469,11 +465,10 @@ describe('decomposeCodeReviewToGraph', () => {
         challenge_id: 'challenge-1',
       },
       makeScoreReport(),
-      undefined,
       [], // empty transcript
     );
 
-    const issueNode = inserts.find((r) => {
+    const issueNode = writtenNodes.find((r) => {
       const props = JSON.parse(r.extracted_properties_json as string);
       return props.dimension === 'issue_identification';
     });
