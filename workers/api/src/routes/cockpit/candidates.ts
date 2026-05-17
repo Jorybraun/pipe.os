@@ -13,7 +13,8 @@ import { apiError } from '../../middleware/errors';
 import { parseResume, persistParsedCV } from '../../lib/cvParser';
 import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 import { sendNotificationEmail } from '../../lib/email';
-import { runDealbreakerGates } from '../../lib/match/dealbreakerGate';
+import { checkDealbreakersForCandidate } from '../../lib/neo4j/matchingQueries';
+import { buildNeo4jConfig, createNeo4jDriver } from '../../lib/neo4j/driver';
 import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileSections';
 import type { Env, Variables } from '../../types';
 
@@ -519,11 +520,24 @@ candidateOps.get('/:candidateId', async (c) => {
       .first<{ id: string }>();
 
     if (roleCtxRow) {
-      dealbreakerResult = await runDealbreakerGates(
-        db,
-        roleCtxRow.id,
-        candidateId,
-      );
+      const neo4jConfig = buildNeo4jConfig(c.env);
+      if (neo4jConfig) {
+        const driver = createNeo4jDriver(neo4jConfig);
+        try {
+          const failures = await checkDealbreakersForCandidate(driver, roleCtxRow.id, candidateId);
+          dealbreakerResult = {
+            autoFail: failures.length > 0,
+            failures: failures.map((f) => ({
+              dealbreakerId: f.dealbreaker_id,
+              label: f.narrative_text,
+              reason: `similarity ${(f.matched_similarity ?? 0).toFixed(2)}`,
+            })),
+            warnings: [],
+          };
+        } finally {
+          await driver.close();
+        }
+      }
     }
   } catch (err) {
     console.error('[candidates] Dealbreaker gate failed:', err);
