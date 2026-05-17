@@ -54,7 +54,7 @@ export interface ResumeDecompositionInput {
   /** Pre-computed decomposition from cvParser.ts. If null/undefined, falls back to parser-only nodes. */
   decompositionResult?: DecompositionResult | null;
   env: Env;
-  /** Optional Vectorize index for upserting sub-element embeddings. If omitted, embeddings stay in D1 only. */
+  /** @deprecated Vectorize upserts removed in Neo4j migration Phase 2. Kept for API compatibility. */
   vectorize?: VectorizeIndex;
 }
 
@@ -247,7 +247,6 @@ async function writeParserOnlyNodes(
   candidateId: string,
   parsedCV: ParsedCV,
   env: Env,
-  vectorize?: VectorizeIndex,
 ): Promise<{ inserted: number; embedded: number; errors: string[]; embeddings: number[][] }> {
   const errors: string[] = [];
   let inserted = 0;
@@ -380,7 +379,6 @@ async function writeParserOnlyNodes(
   }
 
   // Insert and embed
-  const vectorizeUpserts: VectorizeVector[] = [];
   for (const node of nodesToInsert) {
     try {
       const insertedNode = await insertCandidateNode(db, node);
@@ -396,21 +394,6 @@ async function writeParserOnlyNodes(
           .run();
         embedded++;
         embeddings.push(embedding);
-
-        if (vectorize) {
-          vectorizeUpserts.push({
-            id: insertedNode.id,
-            values: embedding,
-            metadata: {
-              entity_type: 'candidate',
-              candidate_id: candidateId,
-              node_type: insertedNode.node_type,
-              source_type: insertedNode.source_type,
-              confidence: insertedNode.confidence ?? 0.5,
-              superseded: 0,
-            },
-          });
-        }
       } catch (embedErr) {
         const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
         errors.push(`Embed failed for ${node.node_type}: ${msg}`);
@@ -418,15 +401,6 @@ async function writeParserOnlyNodes(
     } catch (insertErr) {
       const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
       errors.push(`Insert failed for ${node.node_type}: ${msg}`);
-    }
-  }
-
-  if (vectorize && vectorizeUpserts.length > 0) {
-    try {
-      await vectorize.upsert(vectorizeUpserts);
-    } catch (vErr) {
-      const msg = vErr instanceof Error ? vErr.message : String(vErr);
-      errors.push(`Vectorize upsert failed: ${msg}`);
     }
   }
 
@@ -474,7 +448,7 @@ async function updateDecompositionVersion(
 export async function decomposeResumeToGraph(
   input: ResumeDecompositionInput,
 ): Promise<ResumeDecompositionResult> {
-  const { db, candidateId, resumeText, parsedCV, decompositionResult, env, vectorize } = input;
+  const { db, candidateId, resumeText, parsedCV, decompositionResult, env } = input;
 
   const result: ResumeDecompositionResult = {
     nodesInserted: 0,
@@ -546,7 +520,7 @@ export async function decomposeResumeToGraph(
   } else {
     // No decomposition — fall back to parser-only nodes with lower confidence
     console.log('[resumeDecomposition] No decomposition result provided; falling back to parser-only nodes');
-    const fallback = await writeParserOnlyNodes(db, candidateId, parsedCV, env, vectorize);
+    const fallback = await writeParserOnlyNodes(db, candidateId, parsedCV, env);
     result.nodesInserted = fallback.inserted;
     result.nodesEmbedded = fallback.embedded;
     result.errors.push(...fallback.errors);
@@ -591,7 +565,6 @@ export async function decomposeResumeToGraph(
   }
 
   // Step 3: Insert and embed nodes
-  const vectorizeUpserts: VectorizeVector[] = [];
   for (const node of nodesToInsert) {
     try {
       const insertedNode = await insertCandidateNode(db, node);
@@ -607,21 +580,6 @@ export async function decomposeResumeToGraph(
           .run();
         result.nodesEmbedded++;
         result.embeddings.push(embedding);
-
-        if (vectorize) {
-          vectorizeUpserts.push({
-            id: insertedNode.id,
-            values: embedding,
-            metadata: {
-              entity_type: 'candidate',
-              candidate_id: candidateId,
-              node_type: insertedNode.node_type,
-              source_type: insertedNode.source_type,
-              confidence: insertedNode.confidence ?? 0.5,
-              superseded: 0,
-            },
-          });
-        }
       } catch (embedErr) {
         const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
         console.warn('[resumeDecomposition] Embed failed for', node.node_type, ':', msg);
@@ -631,17 +589,6 @@ export async function decomposeResumeToGraph(
       const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
       console.warn('[resumeDecomposition] Insert failed for', node.node_type, ':', msg);
       result.errors.push(`Insert failed for ${node.node_type}: ${msg}`);
-    }
-  }
-
-  if (vectorize && vectorizeUpserts.length > 0) {
-    try {
-      await vectorize.upsert(vectorizeUpserts);
-      console.log('[resumeDecomposition] Upserted', vectorizeUpserts.length, 'node vectors to CANDIDATE_INDEX');
-    } catch (vErr) {
-      const msg = vErr instanceof Error ? vErr.message : String(vErr);
-      console.warn('[resumeDecomposition] Vectorize upsert failed:', msg);
-      result.errors.push(`Vectorize upsert failed: ${msg}`);
     }
   }
 

@@ -83,15 +83,7 @@ export async function persistRoleNodes(
 
   const roleContextId = nodes[0]!.role_context_id;
 
-  // 1. Mark existing nodes as superseded
-  await db
-    .prepare(
-      `UPDATE role_nodes SET superseded_at = unixepoch() WHERE role_context_id = ? AND superseded_at IS NULL`,
-    )
-    .bind(roleContextId)
-    .run();
-
-  // 2. Generate embeddings in batches of 10 (BGE rate-limit friendly)
+  // 1. Generate embeddings in batches of 10 (BGE rate-limit friendly)
   const batchSize = 10;
   const embeddedNodes: Array<RoleNodeRow & { embedding_json: string }> = [];
 
@@ -124,44 +116,7 @@ export async function persistRoleNodes(
     }
   }
 
-  // 3. Upsert to Vectorize ROLE_INDEX
-  const vectorizeBatch = embeddedNodes.map((n) => ({
-    id: `role_node_${n.id}`,
-    values: JSON.parse(n.embedding_json) as number[],
-    metadata: {
-      entity_type: 'role',
-      entity_id: n.role_context_id,
-      node_type: n.node_type,
-      rcd_version: n.rcd_version,
-    },
-  }));
-
-  await env.ROLE_INDEX.upsert(vectorizeBatch);
-
-  // 4. Write to D1 role_nodes
-  const d1Batch = embeddedNodes.map((n) =>
-    db
-      .prepare(
-        `INSERT INTO role_nodes (id, role_context_id, rcd_version, node_type, narrative_text, extracted_properties_json, embedding_json, source_section, source_stakeholder, weight, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())`,
-      )
-      .bind(
-        n.id,
-        n.role_context_id,
-        n.rcd_version,
-        n.node_type,
-        n.narrative_text,
-        n.extracted_properties_json,
-        n.embedding_json,
-        n.source_section,
-        n.source_stakeholder,
-        n.weight,
-      ),
-  );
-
-  await db.batch(d1Batch);
-
-  // 5. Write to Neo4j (fire-and-forget, non-blocking)
+  // 3. Write to Neo4j (fire-and-forget, non-blocking)
   const rcd = nodes[0]!;
 
   // Load pipeline_id and match config for policy resolution

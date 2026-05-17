@@ -49,7 +49,7 @@
 	"containers": [
 		{
 			"class_name": "DevContainerDO",
-			"image": "../../containers/code-server/Dockerfile",
+			"image": "../../infra/containers/code-server/Dockerfile",
 			"max_instances": 50,
 			"instance_type": "standard-1"
 		}

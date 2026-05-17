@@ -145,9 +145,123 @@ describe('writeCandidateGraph', () => {
     });
   });
 
-  it('MERGEs candidate and nodes with embeddings', async () => {
-    const { _mockDriver } = getMocks();
+  it('MERGEs candidate and Skill nodes with typed labels', async () => {
+    const { _mockSessionRun, _mockDriver } = getMocks();
     const result = await writeCandidateGraph({
+      candidateId: 'cand-123',
+      nodes: [
+        {
+          id: 'node-1',
+          candidate_id: 'cand-123',
+          node_type: 'Skill',
+          narrative_text: 'TypeScript',
+          extracted_properties_json: JSON.stringify({ esco_id: '1234' }),
+          embedding_json: JSON.stringify([0.1, 0.2, 0.3]),
+          source_type: 'resume',
+          source_reference: null,
+          captured_at: 1234567890,
+          confidence: 0.9,
+          supersedes: null,
+          superseded_at: null,
+          decomposition_version: 'v1',
+          created_at: 1234567890,
+          updated_at: 1234567890,
+        },
+      ],
+      env: {
+        NEO4J_URI: 'bolt://localhost:7687',
+        NEO4J_USER: 'neo4j',
+        NEO4J_PASSWORD: 'test',
+      },
+    });
+
+    expect(result.nodesCreated).toBe(1);
+    expect(result.relationshipsCreated).toBe(1);
+
+    const calls = _mockSessionRun.mock.calls as [string, Record<string, unknown>][];
+    const skillCypher = calls.find((c) => c[0].includes(':CandidateNode:Skill'));
+    expect(skillCypher).toBeDefined();
+    expect(skillCypher![0]).toContain('MERGE (n:CandidateNode:Skill {id: node.id})');
+    expect(skillCypher![0]).toContain('n.esco_id = node.esco_id');
+  });
+
+  it('writes TechnicalDemonstration nodes with bars_score and dimension', async () => {
+    const { _mockSessionRun, _mockDriver } = getMocks();
+    await writeCandidateGraph({
+      candidateId: 'cand-123',
+      nodes: [
+        {
+          id: 'node-2',
+          candidate_id: 'cand-123',
+          node_type: 'TechnicalDemonstration',
+          narrative_text: 'Found a race condition in the auth module',
+          extracted_properties_json: JSON.stringify({ dimension: 'issue_identification', bars_score: 4.5 }),
+          embedding_json: JSON.stringify([0.1, 0.2, 0.3]),
+          source_type: 'code_review_session',
+          source_reference: 'session-1',
+          captured_at: 1234567890,
+          confidence: 0.9,
+          supersedes: null,
+          superseded_at: null,
+          decomposition_version: 'v1',
+          created_at: 1234567890,
+          updated_at: 1234567890,
+        },
+      ],
+      env: {
+        NEO4J_URI: 'bolt://localhost:7687',
+        NEO4J_USER: 'neo4j',
+        NEO4J_PASSWORD: 'test',
+      },
+    });
+
+    const calls = _mockSessionRun.mock.calls as [string, Record<string, unknown>][];
+    const tdCypher = calls.find((c) => c[0].includes(':CandidateNode:TechnicalDemonstration'));
+    expect(tdCypher).toBeDefined();
+    expect(tdCypher![0]).toContain('n.bars_score = node.bars_score');
+    expect(tdCypher![0]).toContain('n.dimension = node.dimension');
+  });
+
+  it('writes CulturalSignal nodes with dimension_name and is_role_specific', async () => {
+    const { _mockSessionRun, _mockDriver } = getMocks();
+    await writeCandidateGraph({
+      candidateId: 'cand-123',
+      nodes: [
+        {
+          id: 'node-3',
+          candidate_id: 'cand-123',
+          node_type: 'CulturalSignal',
+          narrative_text: 'Strong ownership signal',
+          extracted_properties_json: JSON.stringify({ dimension: 'ownership', scoreEstimate: 4, is_role_specific: true, role_context_id: 'role-1' }),
+          embedding_json: JSON.stringify([0.1, 0.2, 0.3]),
+          source_type: 'culture_interview',
+          source_reference: 'session-2',
+          captured_at: 1234567890,
+          confidence: 0.85,
+          supersedes: null,
+          superseded_at: null,
+          decomposition_version: 'v1',
+          created_at: 1234567890,
+          updated_at: 1234567890,
+        },
+      ],
+      env: {
+        NEO4J_URI: 'bolt://localhost:7687',
+        NEO4J_USER: 'neo4j',
+        NEO4J_PASSWORD: 'test',
+      },
+    });
+
+    const calls = _mockSessionRun.mock.calls as [string, Record<string, unknown>][];
+    const csCypher = calls.find((c) => c[0].includes(':CandidateNode:CulturalSignal'));
+    expect(csCypher).toBeDefined();
+    expect(csCypher![0]).toContain('n.dimension_name = node.dimension_name');
+    expect(csCypher![0]).toContain('n.is_role_specific = node.is_role_specific');
+  });
+
+  it('supersedes existing nodes from the same source type before writing', async () => {
+    const { _mockSessionRun, _mockDriver } = getMocks();
+    await writeCandidateGraph({
       candidateId: 'cand-123',
       nodes: [
         {
@@ -175,8 +289,12 @@ describe('writeCandidateGraph', () => {
       },
     });
 
-    expect(result.nodesCreated).toBe(1);
-    expect(result.relationshipsCreated).toBe(1);
+    const calls = _mockSessionRun.mock.calls as [string, Record<string, unknown>][];
+    const supersedeCypher = calls.find((c) => c[0].includes('SET n.superseded_at = $now'));
+    expect(supersedeCypher).toBeDefined();
+    expect(supersedeCypher![1]).toMatchObject({
+      source_type: 'resume',
+    });
   });
 
   it('skips nodes without embeddings', async () => {

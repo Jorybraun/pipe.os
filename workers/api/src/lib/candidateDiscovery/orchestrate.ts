@@ -147,7 +147,6 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
         parsedCV: parsed,
         env,
         decompositionResult: input.decompositionResult,
-        vectorize: env.CANDIDATE_INDEX,
       }),
     );
     decompositionEmbeddings = decompResult.embeddings;

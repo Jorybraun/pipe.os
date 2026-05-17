@@ -783,6 +783,42 @@ export interface CandidateEnrichmentRecord {
   githubCalendar: ContributionCalendar | null;
 }
 
+// ─── Per-Requirement Matching (Neo4j) ───────────────────────────────────────
+
+export interface EvidenceNode {
+  nodeId: string;
+  nodeType: 'Experience' | 'TechnicalDemonstration' | 'Skill' | 'CulturalSignal';
+  narrative: string;
+  similarity: number;
+  barsScore?: number;
+  sourceType: string;
+  capturedAt: string;
+}
+
+export interface RequirementMatch {
+  requirementId: string;
+  requirementText: string;
+  score: number;
+  weight: number;
+  matchCount: number;
+  evidence: EvidenceNode[];
+}
+
+export interface DealbreakerFailure {
+  dealbreakerId: string;
+  narrative: string;
+  matchedSimilarity: number;
+}
+
+export interface UnifiedMatchResult {
+  candidateId: string;
+  score: number;
+  name?: string;
+  email?: string;
+  requirementMatches: RequirementMatch[];
+  dealbreakerFailures: DealbreakerFailure[];
+}
+
 export interface ProfileSection {
   type: string;
   props: Record<string, unknown>;

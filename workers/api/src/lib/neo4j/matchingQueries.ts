@@ -79,7 +79,7 @@ export async function matchCandidatesForRole(
     // Step 3: Aggregate per-requirement scores with evidence
     WITH role, req, cand,
          avg(sim) * log(1 + count(node)) AS per_req_score,
-         collect({node_id: node.id, sim: sim, type: node.node_type})[0..role.evidence_cap] AS top_evidence,
+         collect({node_id: node.id, sim: sim, type: labels(node)[1]})[0..role.evidence_cap] AS top_evidence,
          count(node) AS match_count
 
     // Step 4: Apply philosophy multiplier to requirement weights
@@ -209,7 +209,7 @@ export async function scoreCandidateAgainstRole(
     WHERE sim >= role.similarity_threshold
     WITH role, req, cand,
          avg(sim) * log(1 + count(node)) AS per_req_score,
-         collect({node_id: node.id, sim: sim, type: node.node_type})[0..role.evidence_cap] AS top_evidence
+         collect({node_id: node.id, sim: sim, type: labels(node)[1]})[0..role.evidence_cap] AS top_evidence
     WITH role, cand,
          collect({
            requirement_id: req.id,

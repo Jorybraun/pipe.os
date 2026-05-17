@@ -7,9 +7,10 @@
  * instead of forcing the recruiter to click through stage tabs.
  */
 
-import type { ProfileStage, CandidateEnrichmentRecord, CandidateProfileRecord, ProfileSection, CultureInterviewSession } from '../../lib/api/types';
+import type { ProfileStage, CandidateEnrichmentRecord, CandidateProfileRecord, ProfileSection, CultureInterviewSession, UnifiedMatchResult } from '../../lib/api/types';
 import { LiquidMetalCard, SubTitle } from '../';
 import { CandidateEnrichmentTab } from './CandidateEnrichmentTab';
+import { RequirementMatchList } from '../Match/RequirementMatchList';
 import { CheckCircle, XCircle, Minus, Briefcase, GraduationCap, Award, TrendingUp, MessageSquare } from 'lucide-react';
 import { SecureVideoPlayer } from './SecureVideoPlayer';
 
@@ -22,6 +23,7 @@ interface CandidateOverviewTabProps {
   profileSections: ProfileSection[];
   cultureInterviewSessions: CultureInterviewSession[];
   candidateId: string;
+  matchResult?: UnifiedMatchResult | null;
 }
 
 // ─── Mini components ───────────────────────────────────────────────────────
@@ -296,7 +298,7 @@ function CultureInterviewSnapshot({ sessions, candidateId }: { sessions: Culture
   );
 }
 
-function MatchSnapshot({ ingestion }: { ingestion: CandidateEnrichmentRecord | null }): JSX.Element | null {
+function LegacyMatchSnapshot({ ingestion }: { ingestion: CandidateEnrichmentRecord | null }): JSX.Element | null {
   if (!ingestion || ingestion.status !== 'matched') return null;
 
   const score = ingestion.triangulatedScore;
@@ -433,6 +435,7 @@ export function CandidateOverviewTab({
   profileSections,
   cultureInterviewSessions,
   candidateId,
+  matchResult,
 }: CandidateOverviewTabProps): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -448,7 +451,15 @@ export function CandidateOverviewTab({
       <CultureInterviewSnapshot sessions={cultureInterviewSessions} candidateId={candidateId} />
 
       {/* Match analysis */}
-      <MatchSnapshot ingestion={ingestion} />
+      {matchResult ? (
+        <RequirementMatchList
+          overallScore={matchResult.score}
+          requirementMatches={matchResult.requirementMatches}
+          dealbreakerFailures={matchResult.dealbreakerFailures}
+        />
+      ) : ingestion?.status === 'matched' ? (
+        <LegacyMatchSnapshot ingestion={ingestion} />
+      ) : null}
 
       {/* Assessment summary */}
       <AssessmentSnapshot stages={stages} />

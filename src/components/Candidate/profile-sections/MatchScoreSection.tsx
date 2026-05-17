@@ -21,6 +21,11 @@ interface MatchScoreSectionProps {
     philosophy?: string;
     repoName?: string;
     repoUrl?: string;
+    requirementMatches?: Array<{
+      score: number;
+      evidence?: unknown[];
+    }>;
+    dealbreakerFailures?: unknown[];
   };
 }
 
@@ -67,8 +72,12 @@ function DimensionBar({ label, value }: { label: string; value: number }): JSX.E
 }
 
 export function MatchScoreSection({ props }: MatchScoreSectionProps): JSX.Element {
-  const { score, dimensions, reasoning, philosophy, repoName, repoUrl } = props;
+  const { score, dimensions, reasoning, philosophy, repoName, repoUrl, requirementMatches, dealbreakerFailures } = props;
   const scoreColor = getScoreColor(score);
+
+  const matchedReqCount = requirementMatches?.filter((r) => r.score >= 0.4).length ?? 0;
+  const totalEvidence = requirementMatches?.reduce((sum, r) => sum + (r.evidence?.length ?? 0), 0) ?? 0;
+  const hasSubtitle = requirementMatches != null && requirementMatches.length > 0;
 
   return (
     <LiquidMetalCard variant="default" style={{ padding: 32, borderRadius: 16 }}>
@@ -139,6 +148,24 @@ export function MatchScoreSection({ props }: MatchScoreSectionProps): JSX.Elemen
                 TRIANGULATED
               </div>
             </div>
+          </div>
+        )}
+
+        {hasSubtitle && (
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--pipe-text-dim)',
+              fontFamily: '"Space Mono", monospace',
+              marginTop: -16,
+            }}
+          >
+            Based on {matchedReqCount} matched requirement{matchedReqCount !== 1 ? 's' : ''} with {totalEvidence} evidence node{totalEvidence !== 1 ? 's' : ''}
+            {dealbreakerFailures != null && dealbreakerFailures.length > 0 && (
+              <span style={{ color: '#f87171', marginLeft: 8 }}>
+                · {dealbreakerFailures.length} dealbreaker flag{dealbreakerFailures.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
         )}
 

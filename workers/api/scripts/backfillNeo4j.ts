@@ -41,6 +41,13 @@ interface CandidateNodeRow {
   confidence: number | null;
   captured_at: number | null;
   superseded_at: number | null;
+  source_type: string;
+  source_reference: string | null;
+  extracted_properties_json: string | null;
+  supersedes: string | null;
+  decomposition_version: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 interface RoleContextRow {
@@ -103,7 +110,9 @@ async function backfillCandidates(db: any) {
 
   const nodes = db.prepare(`
     SELECT id, candidate_id, node_type, narrative_text, embedding_json,
-           confidence, captured_at, superseded_at
+           confidence, captured_at, superseded_at, source_type,
+           source_reference, extracted_properties_json, supersedes,
+           decomposition_version, created_at, updated_at
     FROM candidate_nodes
     WHERE superseded_at IS NULL
   `).all() as CandidateNodeRow[];
@@ -122,12 +131,20 @@ async function backfillCandidates(db: any) {
       profileState: statusByCandidate.get(c.id) ?? 'seed',
       nodes: candidateNodes.map((n) => ({
         id: n.id,
+        candidate_id: n.candidate_id,
         narrative_text: n.narrative_text,
         embedding_json: n.embedding_json,
         confidence: n.confidence,
-        node_type: n.node_type,
-        captured_at: n.captured_at,
+        node_type: n.node_type as any,
+        source_type: n.source_type,
+        source_reference: n.source_reference,
+        captured_at: n.captured_at ?? 0,
         superseded_at: n.superseded_at,
+        extracted_properties_json: n.extracted_properties_json,
+        supersedes: n.supersedes,
+        decomposition_version: n.decomposition_version,
+        created_at: n.created_at,
+        updated_at: n.updated_at,
       })),
       env,
     });
