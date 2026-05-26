@@ -1,7 +1,11 @@
 interface TextInputProps {
   value?: string | undefined;
   onChange?: ((value: string) => void) | undefined;
+  onBlur?: (() => void) | undefined;
   placeholder?: string | undefined;
+  id?: string | undefined;
+  name?: string | undefined;
+  ariaLabel?: string | undefined;
 }
 
 const inputStyle = {
@@ -18,12 +22,16 @@ const inputStyle = {
 /**
  * TextInput - Single-line text input with consistent styling
  */
-export function TextInput({ value, onChange, placeholder }: TextInputProps): JSX.Element {
+export function TextInput({ value, onChange, onBlur, placeholder, id, name, ariaLabel }: TextInputProps): JSX.Element {
   return (
     <input
       type="text"
+      id={id}
+      name={name}
+      aria-label={ariaLabel}
       value={value || ''}
       onChange={(e) => onChange?.(e.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       style={inputStyle}
     />

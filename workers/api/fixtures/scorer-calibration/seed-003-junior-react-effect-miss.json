@@ -1,0 +1,143 @@
+{
+  "id": "seed-003-junior-react-effect-miss",
+  "description": "Junior reviewer misses a critical useEffect missing dependency that causes stale closure, focuses on prop naming and indentation. Low bands on technical dimensions, especially revision_evaluation anchor.",
+  "tags": [
+    "typescript",
+    "react",
+    "hooks",
+    "low-score-anchor",
+    "revision-evaluation-anchor"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add auto-save hook for challenge editor",
+    "description": "Adds a useAutoSave hook that debounces content changes and posts to /api/save every 2s. Used in the challenge code editor.",
+    "instructions": "Review this hook for correctness and React best practices.",
+    "diff": "diff --git a/src/hooks/useAutoSave.ts b/src/hooks/useAutoSave.ts\n@@ -0,0 +1,32 @@\n+import { useEffect, useRef } from 'react';\n+\n+export function useAutoSave(content: string, onSave: (v: string) => void) {\n+  const lastSaved = useRef(content);\n+\n+  useEffect(() => {\n+    const timer = setTimeout(() => {\n+      if (content !== lastSaved.current) {\n+        onSave(content);\n+        lastSaved.current = content;\n+      }\n+    }, 2000);\n+    return () => clearTimeout(timer);\n+  }, []);\n+\n+  return { lastSaved: lastSaved.current };\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/hooks/useAutoSave.ts",
+      "line": 12,
+      "description": "useEffect dependency array is empty [] — content and onSave are stale on subsequent renders. The timer will always compare against the initial content value and call onSave with stale data.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/hooks/useAutoSave.ts",
+      "line": 5,
+      "description": "No cleanup on unmount race: if component unmounts during the API call, onSave may set state on an unmounted component. Need an AbortController or isMounted guard.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/hooks/useAutoSave.ts",
+      "line": 16,
+      "description": "return { lastSaved: lastSaved.current } returns a primitive string, not a ref. This is fine but misleading naming — lastSavedValue would be clearer.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 301,
+            "file": "src/hooks/useAutoSave.ts",
+            "line": 16,
+            "category": "style",
+            "severity": "nit",
+            "what": "The return key is named lastSaved but it returns a string, not a ref. Kinda confusing.",
+            "why": "readability",
+            "positive": false
+          },
+          {
+            "id": 302,
+            "file": "src/hooks/useAutoSave.ts",
+            "line": 1,
+            "category": "style",
+            "severity": "nit",
+            "what": "Import order should be alphabetical.",
+            "why": "consistency",
+            "positive": false
+          },
+          {
+            "id": 303,
+            "file": "src/hooks/useAutoSave.ts",
+            "line": 5,
+            "category": "positive",
+            "severity": "nit",
+            "what": "Nice use of useRef to track state.",
+            "why": "",
+            "positive": true
+          }
+        ],
+        "reviewer_verdict": "approve",
+        "reviewer_summary": "LGTM, just a small naming nit.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 301,
+            "move": "change",
+            "content": "Good point, renamed to lastSavedValue.",
+            "updated_code": "return { lastSavedValue: lastSaved.current };"
+          },
+          {
+            "to_comment_id": 302,
+            "move": "comment",
+            "content": "I think they are alphabetical already? useEffect before useRef."
+          },
+          {
+            "to_comment_id": 303,
+            "move": "comment",
+            "content": "Thanks!"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "LGTM with the rename. Clean hook.",
+      "submittedAt": "2026-04-28T03:47:05.956Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Caught 0 of 3 planted bugs. Missed the critical stale-closure bug entirely. Only style nits. BARS level 1."
+    },
+    "prioritization": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Treated naming nit as equal priority to correctness. Approved with unfound critical bug. Level 1-2."
+    },
+    "revision_evaluation": {
+      "min": 1,
+      "max": 1,
+      "rationale": "Reviewer accepted both responses without any verification. Never re-examined the code after the rename. Zero fix verification. Level 1."
+    },
+    "reasoning_quality": {
+      "min": 1,
+      "max": 2,
+      "rationale": "One-word rationales (readability, consistency). No failure mechanism described. Level 1-2."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "Zero questions. Did not ask why dependency array was empty — the exact question that would surface the critical bug. Level 1."
+    },
+    "ai_direction": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No actionable guidance. The rename suggestion was cosmetic. Level 1-2."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

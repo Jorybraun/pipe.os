@@ -30,6 +30,8 @@ export interface UseOverviewDataResult {
   error: Error | null;
   refetch: () => Promise<void>;
   publishPipeline: () => Promise<void>;
+  unpublishPipeline: () => Promise<void>;
+  updatePipeline: (updates: { title?: string; level?: string | null; stack?: string[]; description?: string | null }) => Promise<void>;
 }
 
 /**
@@ -104,6 +106,52 @@ export function useOverviewData(pipelineId: string | undefined): UseOverviewData
     }
   }, [pipelineId, getToken, fetchOverview]);
 
+  const unpublishPipeline = useCallback(async (): Promise<void> => {
+    if (!pipelineId) return;
+
+    const api = createApiClient({ getToken });
+
+    try {
+      await api.patch(`/api/v1/pipelines/${pipelineId}`, { status: 'DRAFT' });
+      await fetchOverview();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        console.error('[useOverviewData] Unpublish failed:', err.code, err.message);
+        throw new Error(err.message);
+      }
+      const message = err instanceof Error ? err.message : 'Failed to unpublish pipeline';
+      console.error('[useOverviewData] Unpublish error:', message);
+      throw new Error(message);
+    }
+  }, [pipelineId, getToken, fetchOverview]);
+
+  const updatePipeline = useCallback(
+    async (updates: {
+      title?: string;
+      level?: string | null;
+      stack?: string[];
+      description?: string | null;
+    }): Promise<void> => {
+      if (!pipelineId) return;
+
+      const api = createApiClient({ getToken });
+
+      try {
+        await api.patch(`/api/v1/pipelines/${pipelineId}`, updates);
+        await fetchOverview();
+      } catch (err) {
+        if (err instanceof ApiError) {
+          console.error('[useOverviewData] Update failed:', err.code, err.message);
+          throw new Error(err.message);
+        }
+        const message = err instanceof Error ? err.message : 'Failed to update pipeline';
+        console.error('[useOverviewData] Update error:', message);
+        throw new Error(message);
+      }
+    },
+    [pipelineId, getToken, fetchOverview],
+  );
+
   return {
     pipeline,
     stages,
@@ -115,5 +163,7 @@ export function useOverviewData(pipelineId: string | undefined): UseOverviewData
     error,
     refetch: fetchOverview,
     publishPipeline,
+    unpublishPipeline,
+    updatePipeline,
   };
 }

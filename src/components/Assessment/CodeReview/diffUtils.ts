@@ -9,12 +9,13 @@ export function formatCustomDiff(code: string, filename: string): string {
   // Create a git-style diff header
   // Quoting the filename helps handle titles with spaces
   const safeName = filename.replace(/"/g, '');
+  const quotedName = safeName.includes(' ') ? `"${safeName}"` : safeName;
   const header = [
-    `diff --git a/"${safeName}" b/"${safeName}"`,
+    `diff --git a/${quotedName} b/${quotedName}`,
     `new file mode 100644`,
     `index 0000000..0000000`,
     `--- /dev/null`,
-    `+++ b/"${safeName}"`,
+    `+++ b/${quotedName}`,
     `@@ -0,0 +1,${lineCount} @@`
   ];
 

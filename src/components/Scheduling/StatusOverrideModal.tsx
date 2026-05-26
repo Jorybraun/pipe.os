@@ -115,7 +115,7 @@ export function StatusOverrideModal({
           <button
             onClick={onClose}
             style={{ background: 'transparent', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}
-          >
+           aria-label="Close">
             <X size={18} />
           </button>
         </div>

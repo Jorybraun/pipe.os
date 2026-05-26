@@ -1,0 +1,127 @@
+{
+  "id": "seed-011-junior-pii-leak",
+  "description": "Junior reviewer finds a PII logging leak and provides decent reasoning. Good junior performance.",
+  "tags": [
+    "typescript",
+    "node",
+    "security",
+    "high-score-junior"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add request logging middleware",
+    "description": "Adds a logger middleware for debugging API requests.",
+    "instructions": "Review for security and performance.",
+    "diff": "diff --git a/src/middleware/logger.ts b/src/middleware/logger.ts\n@@ -0,0 +1,25 @@\n+import { Hono } from 'hono';\n+\n+export const logger = async (c, next) => {\n+  const start = Date.now();\n+  await next();\n+  const duration = Date.now() - start;\n+  console.log({\n+    method: c.req.method,\n+    path: c.req.path,\n+    status: c.res.status,\n+    body: c.req.json(),\n+    duration,\n+  });\n+};\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/middleware/logger.ts",
+      "line": 9,
+      "description": "c.req.json() logs the entire request body — may contain PII like passwords, SSNs, or resume content. GDPR/privacy violation.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/middleware/logger.ts",
+      "line": 9,
+      "description": "c.req.json() is called after await next() — the request body stream may already be consumed, causing hang or error on some runtimes.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/middleware/logger.ts",
+      "line": 6,
+      "description": "console.log instead of structured logger — no log levels, no sampling, no async batching.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1101,
+            "file": "src/middleware/logger.ts",
+            "line": 9,
+            "category": "security",
+            "severity": "blocking",
+            "what": "Logging the entire request body could leak PII.",
+            "why": "We should never log passwords, tokens, or personal data. This is a privacy risk.",
+            "positive": false
+          },
+          {
+            "id": 1102,
+            "file": "src/middleware/logger.ts",
+            "line": 6,
+            "category": "style",
+            "severity": "nit",
+            "what": "Use the app logger instead of console.log.",
+            "why": "Structured logs are easier to query.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Blocking: PII leak. Optional: use structured logger.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1101,
+            "move": "change",
+            "content": "Removed body logging entirely.",
+            "updated_code": "console.log({ method: c.req.method, path: c.req.path, status: c.res.status, duration });"
+          },
+          {
+            "to_comment_id": 1102,
+            "move": "comment",
+            "content": "We do not have a structured logger set up yet. Keeping console.log for now."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "PII leak fixed. Console log is acceptable for now.",
+      "submittedAt": "2026-04-28T03:47:05.961Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 1 of 3 bugs (PII leak). Missed stream consumption and structured logging. Flagged critical correctly. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "PII flagged as blocking. Logger nit correctly deprioritized. Good triage for junior. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted removal of body logging. Accepted logger pushback. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete privacy risk explanation. Good technical awareness. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions but implied question about what to log instead. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Direction to remove body logging is clear and actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-011-junior-pii-leak",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/middleware/logger.ts",
+      "line": 9,
+      "description": "c.req.json() logs the entire request body — may contain PII like passwords, SSNs, or resume content. GDPR/privacy violation.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/middleware/logger.ts",
+      "line": 9,
+      "description": "c.req.json() is called after await next() — the request body stream may already be consumed, causing hang or error on some runtimes.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/middleware/logger.ts",
+      "line": 6,
+      "description": "console.log instead of structured logger — no log levels, no sampling, no async batching.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 1,
+    "major": 1,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 2
+  }
+}

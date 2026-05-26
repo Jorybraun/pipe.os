@@ -45,7 +45,7 @@ export interface ReviewRound {
   implementer_responses: ImplementerResponse[];
 }
 
-export type LLMProvider = 'workers-ai' | 'google-ai';
+export type LLMProvider = 'workers-ai' | 'google-ai' | 'kimi';
 
 export interface CallImplementerAgentInput {
   apiKey: string;
@@ -69,6 +69,37 @@ export interface CallImplementerAgentInput {
 }
 
 const VALID_MOVES: ImplementerMove[] = ['comment', 'change', 'pushback'];
+
+// ─── Kimi (Moonshot AI) ────────────────────────────────────────────────────
+
+async function callKimi(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
+  const response = await fetch('https://api.kimi.com/coding/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'User-Agent': 'Kilo-Code/1.0.0',
+    },
+    body: JSON.stringify({
+      model: 'kimi-for-coding',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+      max_tokens: 2048,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Kimi API error ${response.status}: ${text}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return data.choices?.[0]?.message?.content?.trim() ?? '';
+}
 
 // ─── Workers AI (Cloudflare) ───────────────────────────────────────────────
 
@@ -184,6 +215,8 @@ export async function callImplementerAgent(
   try {
     if (provider === 'workers-ai') {
       raw = await callWorkersAI(ai!, systemPrompt, userMessage);
+    } else if (provider === 'kimi') {
+      raw = await callKimi(apiKey, systemPrompt, userMessage);
     } else {
       throw new Error(`[implementerAgent] Provider '${provider}' is not supported.`);
     }

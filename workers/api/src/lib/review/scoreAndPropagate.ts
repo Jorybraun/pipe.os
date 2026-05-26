@@ -15,6 +15,7 @@ import { computeImplementerMetrics } from '../implementerMetrics';
 import { loadRcdForAssessment } from '../rcd';
 import type { ReviewRound } from '../implementerAgent';
 import type { ComprehensionExchange } from '../explainerAgent';
+import { decomposeCodeReviewToGraph } from '../candidateDiscovery/decomposeCodeReview';
 
 export interface ScoreAndPropagateTranscript {
   rounds: ReviewRound[];
@@ -138,6 +139,29 @@ export async function scoreAndPropagate(
     )
       .bind(JSON.stringify(fullReport), scoredAt, sessionId)
       .run();
+
+    // Decompose score report into candidate graph nodes (non-blocking — errors caught inside)
+    try {
+      const session = await env.DB.prepare(
+        `SELECT id, candidate_id, updated_at, implementer_persona, challenge_id
+         FROM review_sessions WHERE id = ?1`,
+      )
+        .bind(sessionId)
+        .first<{
+          id: string;
+          candidate_id: string;
+          updated_at: string;
+          implementer_persona: string;
+          challenge_id: string;
+        }>();
+
+      if (session) {
+        await decomposeCodeReviewToGraph(env.DB, env, session, scoreReport, transcript.rounds);
+      }
+    } catch (decompErr) {
+      const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);
+      console.error(`[${scope}] Graph decomposition failed for session ${sessionId}:`, msg);
+    }
 
     const sub = await env.DB.prepare(
       `SELECT id FROM challenge_submissions

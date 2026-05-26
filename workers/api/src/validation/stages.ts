@@ -20,6 +20,7 @@ export const CHALLENGE_TYPES = [
   'QUIZ_MCQ',
   'QUIZ_SHORT_ANSWER',
   'FOLLOW_UP',
+  'INTAKE',
 ] as const;
 
 /**
@@ -84,6 +85,9 @@ export const createChallengeSchema = z.object({
   githubPrNumber: z.number().int().positive().optional(),
   githubPrTitle: z.string().optional(),
   githubPrDescription: z.string().optional(),
+  // Dev container fields (CODE_IMPLEMENTATION / OPEN_SOURCE)
+  devContainerRepoUrl: z.string().url().optional(),
+  devContainerChallengeBranch: z.string().optional(),
 });
 
 export type CreateChallengeInput = z.infer<typeof createChallengeSchema>;

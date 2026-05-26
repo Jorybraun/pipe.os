@@ -1,0 +1,118 @@
+{
+  "id": "culture-019",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benchmark showing 60% reduction, got it merged in three hours, and added a monitor."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My counterpart wanted to deploy a ranking model to 100% traffic. I prepared a brief with three scenarios, proposed 5% with rollback triggers, and we co-developed criteria. We caught a regression at 15%."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I advocated for a service mesh. Operational overhead was 3x my estimate. I ran a retrospective, identified I'd anchored on blog posts, and we adopted mTLS-via-gateway. I now interview two practitioners before advocating."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I move to solution mode too quickly. I started structured restatement. My 360 showed improvement by four colleagues. I still have to consciously activate the habit."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "collaboration": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "we co-developed criteria."
+      ]
+    },
+    "learning-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "conflict-handling": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "self-awareness": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "autonomy": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "work-pace": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "collaboration-style": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out on mobile. I traced it with Jaeger, found an N+1 query, wrote a PR with fix and benc"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "high-band",
+    "ownership",
+    "learning-orientation",
+    "conflict-handling",
+    "feedback-orientation"
+  ],
+  "confidence": "heuristic"
+}

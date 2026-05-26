@@ -12,8 +12,72 @@
  */
 
 import type { LLMProvider } from '../llm/types';
-import type { RepoEngineeringSignalsRow } from '../../types';
+import type { RepoEngineeringSignalsRow, CandidateNode } from '../../types';
 import type { CandidateDiscoveryResult, CandidateKeyConcepts } from './agent';
+import { retryWithBackoff } from '../ai/retryHelper';
+
+// ─── Cache helpers ───────────────────────────────────────────────────────────
+
+const CACHE_TTL_DAYS = 7;
+
+async function sha256Hex(input: string): Promise<string> {
+  const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function buildSituationFitCacheKey(
+  candidateId: string,
+  repoId: number,
+  profileVersion: string,
+  signalsVersion: string,
+  promptVersion = 'v1',
+): Promise<string> {
+  const payload = `${candidateId}|${repoId}|${profileVersion}|${signalsVersion}|${promptVersion}`;
+  return sha256Hex(payload);
+}
+
+export async function getCachedSituationFit(
+  db: D1Database,
+  cacheKey: string,
+): Promise<SituationFitRanking | null> {
+  const row = await db
+    .prepare(
+      `SELECT result_json
+         FROM situation_fit_cache
+        WHERE cache_key = ?1
+          AND created_at > datetime('now', '-${CACHE_TTL_DAYS} days')`,
+    )
+    .bind(cacheKey)
+    .first<{ result_json: string }>();
+
+  if (!row) return null;
+
+  try {
+    const parsed = JSON.parse(row.result_json) as SituationFitRanking;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function storeSituationFitCache(
+  db: D1Database,
+  cacheKey: string,
+  candidateId: string,
+  repoId: number,
+  profileVersion: string,
+  signalsVersion: string,
+  ranking: SituationFitRanking,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO situation_fit_cache
+         (cache_key, candidate_id, repo_id, profile_version, signals_version, result_json, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+    )
+    .bind(cacheKey, candidateId, repoId, profileVersion, signalsVersion, JSON.stringify(ranking))
+    .run();
+}
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -28,6 +92,20 @@ export interface CandidateSituationFitInput {
   candidateResult: CandidateDiscoveryResult;
   candidateKeyConcepts: CandidateKeyConcepts;
   repos: SituationFitCandidate[];
+  /** Optional CulturalSignal nodes to enrich the prompt. */
+  culturalSignalNodes?: CandidateNode[];
+  /** When provided, prefer role-specific CulturalSignal nodes for this role. */
+  roleContextId?: string;
+  /** Optional Experience nodes to enrich the prompt. */
+  experienceNodes?: CandidateNode[];
+  /** Optional Project nodes to enrich the prompt. */
+  projectNodes?: CandidateNode[];
+  /** Optional Skill nodes to enrich the prompt. */
+  skillNodes?: CandidateNode[];
+  /** Optional CareerArc nodes to enrich the prompt with trajectory synthesis. */
+  careerArcNodes?: CandidateNode[];
+  /** Optional recency multiplier to discount fit scores for stale profiles. */
+  recencyMultiplier?: number;
 }
 
 export type FitBand = 'strong' | 'moderate' | 'weak' | 'mismatch';
@@ -61,14 +139,33 @@ export async function candidateSituationFit(
   }
 
   const systemPrompt = buildSystemPrompt();
-  const userMessage = buildUserMessage(candidateResult, candidateKeyConcepts, repos);
+  const userMessage = buildUserMessage(
+    candidateResult,
+    candidateKeyConcepts,
+    repos,
+    input.culturalSignalNodes,
+    input.roleContextId,
+    input.experienceNodes,
+    input.projectNodes,
+    input.skillNodes,
+    input.careerArcNodes,
+  );
 
-  const completion = await provider.complete(
-    [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-    { forceJson: true, maxTokens: 4096 },
+  const completion = await retryWithBackoff(
+    async () =>
+      provider.complete(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        { forceJson: true, maxTokens: 8192 },
+      ),
+    {
+      maxRetries: 3,
+      baseDelayMs: 1000,
+      onRetry: (attempt, delay) =>
+        console.warn(`[retry] attempt ${attempt} after ${delay}ms delay for candidateSituationFit`),
+    },
   );
 
   const rawText = completion.content ?? '';
@@ -77,7 +174,7 @@ export async function candidateSituationFit(
   }
 
   const parsed = parseFitResponse(rawText);
-  const rankings = buildRankings(parsed, repos);
+  const rankings = buildRankings(parsed, repos, input.recencyMultiplier);
 
   return { rankings, rawText };
 }
@@ -100,51 +197,241 @@ function buildSystemPrompt(): string {
     'Scoring rubric (per repo):',
     '  - fit_score: a number in [0.0, 1.0]. 1.0 = perfect challenge fit. 0.0 = completely inappropriate.',
     '  - fit_band: one of "strong" (>= 0.75), "moderate" (>= 0.5), "weak" (>= 0.25), "mismatch" (< 0.25).',
-    '  - reasoning.matches: 1-3 short bullets naming concrete candidate→repo alignments.',
-    '    Each bullet MUST quote at least one verbatim token from the candidate\'s situation_signature.',
-    '  - reasoning.mismatches: 0-3 short bullets naming concrete misalignments.',
-    '  - reasoning.summary: one sentence (≤ 30 words) explaining the overall fit.',
-    '  - per_signal_scores: object with the following keys, each a number in [0.0, 1.0]:',
-    '      • skill_coverage — how well repo skills overlap with candidate must-have skills',
-    '      • seniority_fit — is repo complexity appropriate for candidate seniority?',
-    '      • complexity_fit — repo complexity_band vs candidate ownership_depth and system_scale_exposure',
-    '      • architecture_fit — repo architecture_style vs candidate architecture_exposure',
-    '      • test_culture_fit — repo test_style + test_touch_rate vs candidate test_culture_exposure',
-    '      • challenge_surface_fit — repo challenge_surfaces vs candidate primary_challenge_types',
-    '    Use null for any dimension you genuinely cannot judge. Do NOT fabricate scores.',
     '',
     'Hard rules:',
     '  - Do not invent signals that are not in the candidate input.',
-    '  - Do not phrase any repo as "disqualified" — explain fit, do not gate.',
-    '  - Reference candidate situation_signature fields verbatim — this is auditable downstream.',
-    '  - A junior candidate + high-complexity repo = low complexity_fit.',
-    '  - A platform-level candidate + simple library repo = low complexity_fit.',
-    '  - A candidate with no event-driven exposure + event-driven repo = architecture mismatch.',
-    '  - Output a single JSON object matching the schema below. No prose, no markdown.',
+    '  - A junior candidate + high-complexity repo = low score.',
+    '  - A platform-level candidate + simple library repo = low score.',
+    '  - Output a single compact JSON object. No prose, no markdown.',
     '',
     'Output schema:',
     '{',
     '  "rankings": [',
-    '    {',
-    '      "repo_id": <number>,',
-    '      "fit_score": <number 0..1>,',
-    '      "fit_band": "strong" | "moderate" | "weak" | "mismatch",',
-    '      "reasoning": {',
-    '        "matches": [<string>, ...],',
-    '        "mismatches": [<string>, ...],',
-    '        "summary": <string>',
-    '      },',
-    '      "per_signal_scores": { "<signal_name>": <number 0..1>, ... }',
-    '    }',
+    '    { "repo_id": <number>, "fit_score": <number 0..1>, "fit_band": "strong" | "moderate" | "weak" | "mismatch" }',
     '  ]',
     '}',
   ].join('\n');
+}
+
+function buildCulturalSignalBlock(
+  nodes: CandidateNode[] | undefined,
+  targetRoleId: string | undefined,
+): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const culturalNodes = nodes.filter((n) => n.node_type === 'CulturalSignal');
+  if (culturalNodes.length === 0) return '';
+
+  // Group by dimension, preferring role-specific when targetRoleId is provided
+  const selected = new Map<string, CandidateNode>();
+
+  for (const node of culturalNodes) {
+    const props = safeParseJson(node.extracted_properties_json);
+    const dimension = typeof props?.dimension === 'string' ? props.dimension : null;
+    if (!dimension) continue;
+
+    const isRoleSpecific = props?.is_role_specific === true;
+    const nodeRoleId = typeof props?.role_context_id === 'string' ? props.role_context_id : null;
+
+    const existing = selected.get(dimension);
+    if (!existing) {
+      selected.set(dimension, node);
+      continue;
+    }
+
+    const existingProps = safeParseJson(existing.extracted_properties_json);
+    const existingIsRoleSpecific = existingProps?.is_role_specific === true;
+    const existingRoleId = typeof existingProps?.role_context_id === 'string' ? existingProps.role_context_id : null;
+
+    if (targetRoleId) {
+      // Prefer role-specific nodes for the target role
+      const preferNew =
+        isRoleSpecific && nodeRoleId === targetRoleId && !(existingIsRoleSpecific && existingRoleId === targetRoleId);
+      if (preferNew) {
+        selected.set(dimension, node);
+      }
+    }
+  }
+
+  if (selected.size === 0) return '';
+
+  const lines = Array.from(selected.values()).map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const dimension = props?.dimension ?? 'unknown';
+    const score = typeof props?.bars_score === 'number' ? props.bars_score : '?';
+    const reasoning = typeof props?.reasoning === 'string' ? props.reasoning : '';
+    return `${dimension}: ${score}/5 — ${reasoning}`;
+  });
+
+  return [
+    '',
+    '### cultural_signals',
+    'Structured behavioral and cultural signals extracted from the candidate\'s interview:',
+    ...lines,
+  ].join('\n');
+}
+
+function buildExperienceBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'Experience' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 5);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const company = typeof props?.company === 'string' ? props.company : '';
+    const role = typeof props?.role === 'string' ? props.role : '';
+    const narrative = node.narrative_text;
+    const recencyTag = recencyTagForNode(node);
+
+    const domain = typeof props?.domain === 'string' ? props.domain : null;
+    const stage = typeof props?.company_stage === 'string' ? props.company_stage : null;
+    const impact = typeof props?.impact_summary === 'string' ? props.impact_summary : null;
+
+    let line = `- ${role}${company ? ` at ${company}` : ''}${recencyTag}: ${narrative}`;
+    if (domain || stage || impact) {
+      const extras: string[] = [];
+      if (domain) extras.push(`domain: ${domain}`);
+      if (stage) extras.push(`stage: ${stage}`);
+      if (impact) extras.push(`impact: ${impact}`);
+      line += ` [${extras.join('; ')}]`;
+    }
+    return line;
+  });
+
+  return [
+    '',
+    '### candidate_experiences',
+    'Career history extracted from the candidate\'s resume:',
+    ...lines,
+  ].join('\n');
+}
+
+function buildProjectBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'Project' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 3);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const name = typeof props?.name === 'string' ? props.name : '';
+    const description = typeof props?.description === 'string' ? props.description : node.narrative_text;
+    const recencyTag = recencyTagForNode(node);
+    return `- ${name}${recencyTag}: ${description}`;
+  });
+
+  return [
+    '',
+    '### candidate_projects',
+    'Notable projects extracted from the candidate\'s resume:',
+    ...lines,
+  ].join('\n');
+}
+
+function buildSkillBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'Skill' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 10);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const name = typeof props?.name === 'string' ? props.name : node.narrative_text;
+    const proficiency = typeof props?.proficiency === 'string' ? props.proficiency : '';
+    const years = typeof props?.years_exposure === 'number' ? props.years_exposure : null;
+    const depthPattern = typeof props?.depth_pattern === 'string' ? props.depth_pattern : null;
+    const recencyTag = recencyTagForNode(node);
+
+    const innerParts: string[] = [];
+    if (proficiency) innerParts.push(proficiency);
+    if (years !== null) innerParts.push(`${years} years`);
+    if (depthPattern) innerParts.push(depthPattern);
+
+    const inner = innerParts.length > 0 ? ` (${innerParts.join(', ')})` : '';
+    return `- ${name}${inner}${recencyTag}`;
+  });
+
+  return [
+    '',
+    '### candidate_skills',
+    'Skill profile extracted from the candidate\'s resume:',
+    ...lines,
+  ].join('\n');
+}
+
+function buildCareerArcBlock(nodes: CandidateNode[] | undefined): string {
+  if (!nodes || nodes.length === 0) return '';
+
+  const eligible = nodes
+    .filter((n) => n.node_type === 'CareerArc' && (n.confidence ?? 0) >= 0.5)
+    .slice(0, 1);
+
+  if (eligible.length === 0) return '';
+
+  const lines = eligible.map((node) => {
+    const props = safeParseJson(node.extracted_properties_json);
+    const domainSpec = typeof props?.domain_specialization === 'string' ? props.domain_specialization : null;
+    const stagePattern = Array.isArray(props?.company_stage_pattern) ? props.company_stage_pattern : null;
+    const ownership = typeof props?.ownership_progression === 'string' ? props.ownership_progression : null;
+    const themes = Array.isArray(props?.impact_themes) ? props.impact_themes : null;
+    const narrative = node.narrative_text;
+
+    const parts: string[] = [narrative];
+    if (domainSpec) parts.push(`domain specialization: ${domainSpec}`);
+    if (stagePattern) parts.push(`company stages: ${stagePattern.join(', ')}`);
+    if (ownership) parts.push(`ownership progression: ${ownership}`);
+    if (themes) parts.push(`impact themes: ${themes.join(', ')}`);
+
+    return parts.join(' | ');
+  });
+
+  return [
+    '',
+    '### candidate_career_arc',
+    'Synthesized career trajectory and cross-cutting patterns:',
+    ...lines,
+  ].join('\n');
+}
+
+function recencyTagForNode(node: CandidateNode): string {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const age = nowSec - node.captured_at;
+  const TWO_YEARS_SEC = 2 * 365 * 24 * 60 * 60;
+  const FOUR_YEARS_SEC = 4 * 365 * 24 * 60 * 60;
+  if (age > FOUR_YEARS_SEC) return ' [4+ years old]';
+  if (age > TWO_YEARS_SEC) return ' [2+ years old]';
+  return '';
+}
+
+function safeParseJson(json: string | null): Record<string, unknown> | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function buildUserMessage(
   candidate: CandidateDiscoveryResult,
   keyConcepts: CandidateKeyConcepts,
   repos: SituationFitCandidate[],
+  culturalSignalNodes?: CandidateNode[],
+  roleContextId?: string,
+  experienceNodes?: CandidateNode[],
+  projectNodes?: CandidateNode[],
+  skillNodes?: CandidateNode[],
+  careerArcNodes?: CandidateNode[],
 ): string {
   const candidateBlock = [
     '## Candidate Profile',
@@ -174,10 +461,21 @@ function buildUserMessage(
     `impact_signals: [${candidate.situationSignature.impact_signals.join(', ')}]`,
   ].join('\n');
 
+  const culturalBlock = buildCulturalSignalBlock(culturalSignalNodes, roleContextId);
+  const experienceBlock = buildExperienceBlock(experienceNodes);
+  const projectBlock = buildProjectBlock(projectNodes);
+  const skillBlock = buildSkillBlock(skillNodes);
+  const careerArcBlock = buildCareerArcBlock(careerArcNodes);
+
   const repoBlock = repos.map((r, i) => formatRepo(r, i + 1)).join('\n\n');
 
   return [
     candidateBlock,
+    culturalBlock,
+    experienceBlock,
+    projectBlock,
+    skillBlock,
+    careerArcBlock,
     '',
     '---',
     '',
@@ -344,6 +642,7 @@ function stripCodeFences(s: string): string {
 function buildRankings(
   parsed: ParsedFitResponse,
   repos: SituationFitCandidate[],
+  recencyMultiplier = 1.0,
 ): SituationFitRanking[] {
   const repoById = new Map(repos.map((r) => [r.repo_id, r]));
   const out: SituationFitRanking[] = [];
@@ -353,7 +652,12 @@ function buildRankings(
       console.error('[candidateSituationFit] dropping unknown repo_id from response:', ranking.repo_id);
       continue;
     }
-    out.push(ranking);
+    const adjustedScore = clamp01(ranking.fit_score * recencyMultiplier);
+    out.push({
+      ...ranking,
+      fit_score: adjustedScore,
+      fit_band: deriveBand(adjustedScore),
+    });
   }
 
   // Stable sort: highest fit first.

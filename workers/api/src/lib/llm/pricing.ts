@@ -15,7 +15,8 @@ export type PricingProvider =
   | 'cloudflare-ai'
   | 'google-ai'
   | 'vertex-ai'
-  | 'vertex-live';
+  | 'vertex-live'
+  | 'kimi';
 
 export interface ModelPrice {
   provider: PricingProvider;
@@ -57,6 +58,13 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
     neuronsPerMInput: 9091,
     neuronsPerMOutput: 27273,
   },
+  '@cf/meta/llama-3.1-8b-instruct': {
+    provider: 'cloudflare-ai',
+    inputUsdPerM: 0.05,
+    outputUsdPerM: 0.15,
+    neuronsPerMInput: 4545,
+    neuronsPerMOutput: 13636,
+  },
   '@cf/openai/whisper-large-v3-turbo': {
     provider: 'cloudflare-ai',
     usdPerAudioMinute: 0.0005,
@@ -73,6 +81,13 @@ export const MODEL_PRICING: Record<string, ModelPrice> = {
     provider: 'vertex-ai',
     inputUsdPerM: 0.15,
     outputUsdPerM: 0.60,
+  },
+
+  // Kimi — Moonshot AI coding endpoint (role discovery fallback / primary).
+  'kimi-for-coding': {
+    provider: 'kimi',
+    inputUsdPerM: 0.50,
+    outputUsdPerM: 2.00,
   },
 
   // Vertex AI — Gemini 2.5 Flash Live API (voice interviews; TTS+STT combined).

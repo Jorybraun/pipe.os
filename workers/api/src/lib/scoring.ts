@@ -4,7 +4,7 @@
  * All functions here are deterministic — no LLM calls, no side effects.
  * This makes them fully unit-testable.
  *
- * Rubric source of truth: scorerRubric.ts (CR-2, CR-3, CR-4)
+ * Rubric source of truth: scorerRubric.ts (ADR-032)
  */
 
 import {
@@ -22,6 +22,8 @@ export interface PlantedBug {
   file?: string;
   line?: number;
   description: string;
+  /** Whether the fixture author expects this bug to be found by a competent reviewer at this seniority level. */
+  expectedFound?: boolean;
 }
 
 export interface EffectivenessScore {

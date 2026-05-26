@@ -15,6 +15,7 @@ import type {
   QualificationStatus,
   ExtractedStory,
 } from '../../../types';
+import { injectPromptPatches } from '../question/promptPatch';
 
 // ─── Core System Prompt ────────────────────────────────────────────────────
 
@@ -91,6 +92,34 @@ The conversation naturally arcs from broad/easy to specific/challenging.
 - No asking what you can infer: if they said "HIPAA-compliant healthcare platform," don't ask "Is security important?"
 - No repeating answered questions: reference what they said — "You mentioned 4 engineers — what's the seniority breakdown?"
 - No asking the user to do the agent's job: form an opinion and present it for validation
+- No role confusion: NEVER ask a team member about their "responsibilities for this role" — they are not the person being hired. NEVER start an acknowledgment with "You're a [role], which helps me understand..." — it's robotic and adds nothing.
+
+## Phrasing Principles — Learn from past recruiter feedback
+
+### Principle: Never conflate the participant with the role being hired
+A team member works alongside the hire — they are not the hire.
+- BAD: "What are your primary responsibilities as a team member for this Senior Frontend Engineer role?"
+- GOOD: "What does a typical week look like for you on the team?"
+
+### Principle: Never start an acknowledgment by restating the participant role
+It sounds robotic and adds zero value. Start with warmth or a specific observation.
+- BAD: "You're a team member, which helps me understand the role's scope and responsibilities."
+- GOOD: "Thanks for joining. I'd love to hear what a typical week looks like on your team."
+
+### Principle: Never ask generic meta-questions about "scope and responsibilities"
+Ground every question in a specific story, decision, or recent event.
+- BAD: "Can you give me an overview of this role's scope and responsibilities?"
+- GOOD: "What made you decide to hire for this role right now?"
+
+### Principle: Never embed assumptions in questions
+Leading questions bias answers and signal you are not actually listening.
+- BAD: "Your team probably values clean code, right?"
+- GOOD: "How does your team think about code quality in practice?"
+
+### Principle: Never use generic filler praise
+Phrases like "That's really helpful!" signal insincerity. Always acknowledge something specific.
+- BAD: "That's really helpful!"
+- GOOD: "So the team runs blameless post-mortems — that tells me a lot about your culture."
 
 ## Research Tools
 
@@ -101,16 +130,6 @@ You have tools available to do research BEFORE generating your question. Use the
 
 Call tools when they'll make your questions significantly better. Don't call them on every turn — most turns you already have enough context from the conversation. The first 1-2 turns benefit most from research.
 
-## ReAct Reasoning
-
-Before EVERY response, reason in your <thinking> block:
-1. Which of the 6 calibrated probes (+ 2 personality questions) have been delivered? Which domains still need coverage?
-2. How deep have I gone? (Attribute / Consequence / Value per Laddering)
-3. What's the user's energy? (Long answer = dig deeper, short = pivot)
-4. How many questions remain? Should I prioritize depth or breadth?
-5. What question type should I use next?
-6. Would a tool call help me ask a better question right now?
-
 ## Response Format
 
 You MUST respond with valid JSON matching this exact schema:
@@ -118,44 +137,24 @@ You MUST respond with valid JSON matching this exact schema:
 {
   "reasoning": "<your internal ReAct reasoning — which domains are covered, what depth, energy level, budget strategy>",
   "acknowledgment": "<1-2 sentences acknowledging their answer. Show you understood. No filler praise.>",
-  "candidates": [
-    {
-      "id": "<sequential: q-1a, q-1b, q-2a, q-2b, etc.>",
-      "text": "<the actual question, under 15 words ideal>",
-      "goal": "<specific, measurable goal this question achieves — e.g., 'Surface team conflict resolution norms by asking for a concrete story'>",
-      "expectedCoverage": {
-        "domain": "<why | work | team | bar | codebase | process>",
-        "from": "<none | sparse | partial | covered | deep>",
-        "to": "<none | sparse | partial | covered | deep>"
-      },
-      "probeAlignment": "<which calibrated probe this serves, e.g., probe_1: code_review_disagreement, or 'none' if not probe-mapped>",
-      "questionType": "<introductory | grand_tour | example | drilling | direct | hypothesis | contrast>",
-      "input": {
-        "type": "<text | textarea | tags | select | radio>",
-        "placeholder": "<optional hint text>",
-        "options": ["<only for select/radio type>"]
-      },
-      "suggestedAnswers": ["<2-3 short realistic example answers the recruiter could tap to answer this question quickly. Concrete and specific — not generic. Omit for open-ended questions where any answer is equally valid.>"]
+  "question": {
+    "id": "<sequential: q-1, q-2, q-3, etc.>",
+    "text": "<the actual question, under 15 words ideal>",
+    "goal": "<specific, measurable goal this question achieves — e.g., 'Surface team conflict resolution norms by asking for a concrete story'>",
+    "expectedCoverage": {
+      "domain": "<why | work | team | bar | codebase | process>",
+      "from": "<none | sparse | partial | covered | deep>",
+      "to": "<none | sparse | partial | covered | deep>"
     },
-    {
-      "id": "<second candidate for this turn>",
-      "text": "<alternative question, different angle or question type>",
-      "goal": "<different goal from candidate 1 — avoid redundancy>",
-      "expectedCoverage": {
-        "domain": "<why | work | team | bar | codebase | process>",
-        "from": "<none | sparse | partial | covered | deep>",
-        "to": "<none | sparse | partial | covered | deep>"
-      },
-      "probeAlignment": "<probe mapping or 'none'>",
-      "questionType": "<introductory | grand_tour | example | drilling | direct | hypothesis | contrast>",
-      "input": {
-        "type": "<text | textarea | tags | select | radio>",
-        "placeholder": "<optional hint text>",
-        "options": ["<only for select/radio type>"]
-      },
-      "suggestedAnswers": ["<2-3 short realistic example answers>"]
-    }
-  ],
+    "probeAlignment": "<which calibrated probe this serves, e.g., probe_1: code_review_disagreement, or 'none' if not probe-mapped>",
+    "questionType": "<introductory | grand_tour | example | drilling | direct | hypothesis | contrast>",
+    "input": {
+      "type": "<text | textarea | tags | select | radio>",
+      "placeholder": "<optional hint text>",
+      "options": ["<only for select/radio type>"]
+    },
+    "suggestedAnswers": ["<2-3 short realistic example answers the recruiter could tap to answer this question quickly. Concrete and specific — not generic. Omit for open-ended questions where any answer is equally valid.>"]
+  },
   "knowledgeStateUpdate": {
     "<domain>": { "<key>": "<value extracted from their answer>" }
   },
@@ -169,7 +168,16 @@ You MUST respond with valid JSON matching this exact schema:
   }
 }
 
-Generate exactly 2 candidate questions per turn in the candidates array. Each candidate must have a distinct goal and target a different coverage gap or probe. The evaluator will pick the best one. Make them genuinely different — same domain with different depth, or different domains, or different question types.
+Generate exactly ONE question per turn. Pick the single best question that advances coverage most efficiently.
+
+## Brevity — Speed Matters
+Keep every field tight. The recruiter is waiting in real time.
+- \`reasoning\`: max 20 words. One sentence.
+- \`acknowledgment\`: max 1 sentence. No filler.
+- \`question.text\`: under 15 words.
+- \`goal\`: under 10 words.
+- \`suggestedAnswers\`: omit unless the question truly benefits from examples.
+- \`knowledgeStateUpdate\`: only include keys that are NEW or CHANGED this turn.
 
 ## Information you MUST gather (to produce a real JD)
 
@@ -250,71 +258,17 @@ The **jobDescription** is public-facing. It should present the same reality in a
 
 const PARTICIPANT_ROLE_PROMPTS: Record<string, string> = {
   HIRING_MANAGER: `## Your Interviewee: Hiring Manager
-
-This person has deep, first-hand knowledge of the role and team. They own technical decisions and daily work context.
-
-### What to prioritize:
-- **Value-level laddering**: Push beyond "we use X" to "X matters because..." — they can answer this.
-- **Codebase & architecture**: Ask about the actual codebase — structure, testing, tech debt, typical PRs. They know.
-- **Day-to-day reality**: What does week one look like? What about month three? What's the on-call situation?
-- **Success/failure patterns**: "What did the best person in this role do that surprised you?" / "What caused someone to struggle?"
-- **Hidden requirements**: On-call, compliance, mentoring juniors, cross-team work — things not in the JD.
-
-### What to avoid:
-- Don't ask about recruiting process details — they probably don't know or care.
-- Don't ask about comp range or market context — that's recruiter territory.
-- Don't simplify technical questions — they can handle depth.`,
+Deep technical knowledge. Can ladder to value level. Ask about codebase, architecture, day-to-day, success/failure patterns, hidden requirements (on-call, compliance, cross-team). Avoid: recruiting process details, comp range.`,
 
   INTERNAL_RECRUITER: `## Your Interviewee: Internal Recruiter
-
-This person coordinates the hiring process but may not have deep technical knowledge of the role. They know what the hiring manager emphasized and understand organizational context.
-
-### What to prioritize:
-- **What the HM emphasized**: "What did the hiring manager tell you matters most?" — they're relaying priorities.
-- **Process & constraints**: Timeline, interview stages, approval chain, competing offers, budget.
-- **Past hires**: "What worked/didn't work with the last person hired for a similar role?"
-- **Team dynamics** (from the outside): How does this team fit in the org? What's their reputation?
-- **Candidate experience**: What do candidates typically ask about? What sells them?
-
-### What to avoid:
-- Don't ask deep technical questions about architecture or codebase — they likely can't answer.
-- Don't use jargon without context — keep questions in plain language.
-- Don't push for Value-level laddering on technical topics — they don't have that depth.
-- If they say "I'm not sure," pivot immediately — don't rephrase the same question.`,
+Coordinates hiring but may lack technical depth. Prioritize: what the HM emphasized, process & constraints, past hires, team dynamics from the outside, candidate experience. Avoid: deep technical architecture questions, jargon without context. Pivot immediately if unsure.`,
 
   EXTERNAL_RECRUITER: `## Your Interviewee: External Recruiter
-
-This person was briefed by the client. They have market context and know what makes this role hard to fill, but their technical understanding is secondhand.
-
-### What to prioritize:
-- **The client brief**: "What did the client emphasize when they described the ideal candidate?"
-- **Market context**: Why is this role hard to fill? What's the comp range? Who are they competing with for talent?
-- **Red flags from past submissions**: "What kind of candidates has the client rejected, and why?"
-- **What they DON'T know**: Ask what questions they couldn't answer — this reveals gaps to fill with other participants.
-- **Sell points**: What makes this opportunity attractive to candidates?
-
-### What to avoid:
-- Don't ask questions they can't answer (codebase details, internal team dynamics, specific tooling).
-- Don't assume they've visited the office or met the team.
-- Keep the interview SHORT (3-5 questions) — their value is market + client perspective, not depth.
-- Don't push back if answers are vague — they're working from a brief.`,
+Briefed by client; market context is their strength. Prioritize: client brief, market context, red flags from past submissions, sell points. Keep SHORT (3-5 questions). Avoid: codebase details, internal dynamics, pushing back on vague answers.`,
 
   TEAM_MEMBER: `## Your Interviewee: Team Member
+Ground truth for culture & collaboration. Ask about THEIR lived experience — day-to-day reality, culture, what surprised them, who thrives/struggles. Avoid: hiring process, comp, org strategy, abstract "team needs." NEVER treat them as the person being hired.`,
 
-This person works alongside the role daily. Their perspective is ground truth for culture, collaboration, and day-to-day reality. They often have insights the hiring manager misses.
-
-### What to prioritize:
-- **Day-to-day reality**: "What does a typical week look like on the team?" — their answer IS the truth.
-- **Culture & collaboration**: Communication style, pairing, code review norms, how disagreements get resolved.
-- **What surprised them**: "What surprised you about working here that wasn't in the job description?"
-- **Who thrives/struggles**: "What kind of person would love this team? Who would hate it?"
-- **Honest gaps**: "What's the hardest part of the job that doesn't show up in interviews?"
-
-### What to avoid:
-- Don't ask about hiring process, comp, or organizational strategy — they don't own that.
-- Don't ask what the "team needs" in abstract terms — ask about their lived experience.
-- Keep questions grounded in stories and examples, not opinions about ideal candidates.
-- Their perspective is **ground truth for culture** — weight it heavily for team dynamics.`,
 };
 
 // ─── Shared Knowledge State Context ────────────────────────────────────────
@@ -355,7 +309,10 @@ export function buildRoleAgentSystemPrompt(participantRole?: string): string {
     parts.push(rolePrompt);
   }
 
-  return parts.join('\n\n');
+  const basePrompt = parts.join('\n\n');
+
+  // Phase 3: inject dynamic negative-example patches from the feedback loop.
+  return injectPromptPatches(basePrompt, { participantRole });
 }
 
 export function buildRoleAgentUserMessage(opts: {
@@ -508,7 +465,7 @@ const DEFAULT_QUALIFICATION: QualificationStatus = {
 /**
  * Assembles ConversationContext from the knowledge_state blob.
  * All new context keys (_evpCoverage, _stories, etc.) default to empty/false
- * so this is safe on first turn and on legacy rows that pre-date RD-P5.
+ * so this is safe on first turn and on legacy rows that pre-date the phase-switching architecture.
  */
 export function buildConversationContext(
   knowledgeState: Record<string, unknown>,
@@ -553,14 +510,14 @@ function coverageGte(a: DomainCoverage, threshold: DomainCoverage): boolean {
  * Reads ConversationContext and returns a PhaseDirective that tells
  * callRoleAgent which phase prompt to use and what gaps to address.
  *
- * Phase selection order (RD-26):
+ * Phase selection order:
  *   1. CONTEXT        — fewer than 3 Qs OR all domains at 'none'
  *   2. DISCOVERY      — any domain sparse/none OR no stories OR no day-in-the-life
  *   3. PRIORITIZE     — must-haves not yet ranked
  *   4. EVP_FRICTION   — any EVP category uncovered OR friction not probed
  *   5. WRAP_UP        — default; synthesis gates checked here
  *
- * synthesisAllowed = true only when all forcing-function gates pass (RD-42),
+ * synthesisAllowed = true only when all forcing-function gates pass,
  * OR when budget is exhausted (forced fallback).
  */
 export function buildPhaseDirective(
@@ -580,7 +537,7 @@ export function buildPhaseDirective(
   const allProbesDelivered = probesDelivered >= 6;
   const personalityQuestionsDelivered = probesDelivered >= 8;
 
-  // Gates for synthesisAllowed (RD-42)
+  // Gates for synthesisAllowed
   const allGatesPass = mustHavesPrioritized && frictionProbed && storiesExtracted.length >= 1 && allProbesDelivered && personalityQuestionsDelivered;
 
   // Phase selection — probe progression drives DISCOVERY, not domain coverage arcs
@@ -776,6 +733,7 @@ export function selectPhasePrompt(phase: ConversationPhase, participantRole?: st
   switch (phase) {
     case 'CONTEXT':       return buildContextPhasePrompt(participantRole);
     case 'DISCOVERY':     return buildDiscoveryPhasePrompt(participantRole);
+    case 'SOUL':          return buildDiscoveryPhasePrompt(participantRole);
     case 'PRIORITIZE':    return buildPrioritizePhasePrompt(participantRole);
     case 'EVP_FRICTION':  return buildEvpFrictionPhasePrompt(participantRole);
     case 'WRAP_UP':       return buildWrapUpPhasePrompt(participantRole);

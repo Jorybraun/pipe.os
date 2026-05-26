@@ -38,13 +38,13 @@ export function QuestionInput({
     }
   };
 
-  const inputProps = { value: value || '', onChange, placeholder: question.input.placeholder ?? '' };
+  const inputProps = { value: value || '', onChange, placeholder: question.input.placeholder ?? '', ariaLabel: question.text };
 
   return (
     <div onKeyDown={handleKeyDown}>
       {question.input.type === 'textarea' && <TextareaInput {...inputProps} rows={4} />}
       {question.input.type === 'text' && <TextInput {...inputProps} />}
-      {typeInstead && isChoice && <TextInput value={value || ''} onChange={onChange} placeholder="Type your answer…" />}
+      {typeInstead && isChoice && <TextInput value={value || ''} onChange={onChange} placeholder="Type your answer…" ariaLabel={question.text} />}
       {!typeInstead && question.input.type === 'select' && question.input.options && <SelectInput {...inputProps} options={question.input.options} />}
       {!typeInstead && question.input.type === 'radio' && question.input.options && <RadioGroup value={value} onChange={onChange} options={question.input.options} />}
       {!typeInstead && question.input.type === 'tags' && (
@@ -52,6 +52,7 @@ export function QuestionInput({
           value={value ? value.split('|||') : []}
           onChange={(tags) => onChange(tags.join('|||'))}
           placeholder={question.input.placeholder ?? ''}
+          ariaLabel={question.text}
         />
       )}
       <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>

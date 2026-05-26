@@ -19,6 +19,7 @@ export interface RawChallenge {
   githubPrNumber?: number | null;
   githubPrDescription?: string | null;
   devContainerRepoUrl?: string | null;
+  issueBody?: { title?: string | null; body?: string | null; labels?: string[] } | null;
 }
 
 export interface RawStage {
@@ -63,6 +64,20 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
     // devcontainer panel instead of Monaco. NULL = legacy in-browser editor.
     const repoUrl = config.devContainerRepoUrl;
     if (typeof repoUrl === 'string' && repoUrl.trim() !== '') {
+      // OPEN_SOURCE-style challenge: show issue description alongside dev container
+      const hasIssueBody =
+        config.issueBody &&
+        (typeof (config.issueBody as Record<string, unknown>).title === 'string' ||
+          typeof (config.issueBody as Record<string, unknown>).body === 'string');
+      if (hasIssueBody) {
+        return {
+          layout: 'workspace',
+          panels: { left: ['problem'], center: ['devcontainer'] },
+          shells: [],
+          initialSubmission: {},
+          isComplete: () => true,
+        };
+      }
       return {
         layout: 'fullbleed',
         panels: { center: ['devcontainer'] },
@@ -151,7 +166,8 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
 
   QUIZ_SHORT_ANSWER: (config) => {
     const inputMode = (config.inputMode as string) ?? 'text';
-    const panelMap: Record<string, string> = { text: 'textarea', voice: 'voice', video: 'video-submission' };
+    // Unified SmartTextareaPanel handles text, voice, and video in one component.
+    const panelMap: Record<string, string> = { text: 'textarea', voice: 'textarea', video: 'textarea' };
     const submissionMap: Record<string, Record<string, unknown>> = {
       text: { inputMode: 'text', text: '' },
       voice: { inputMode: 'voice', text: '' },
@@ -204,6 +220,14 @@ const BLUEPRINT_MAP: Record<string, BlueprintResolver> = {
     isComplete: (s: Record<string, unknown>) =>
       typeof s.transcript === 'string' && s.transcript.length > 0,
   }),
+
+  INTAKE: () => ({
+    layout: 'fullbleed',
+    panels: { center: [] },
+    shells: [],
+    initialSubmission: {},
+    isComplete: () => true,
+  }),
 };
 
 const FALLBACK_BLUEPRINT: Blueprint = {
@@ -244,6 +268,8 @@ function resolveChallengeNode(raw: RawChallenge, stageTimeLimit?: number | null)
     ...(raw.githubRepoUrl != null ? { githubRepoUrl: raw.githubRepoUrl } : {}),
     ...(raw.githubPrNumber != null ? { githubPrNumber: raw.githubPrNumber } : {}),
     ...(raw.githubPrDescription != null ? { githubPrDescription: raw.githubPrDescription } : {}),
+    ...(raw.devContainerRepoUrl != null ? { devContainerRepoUrl: raw.devContainerRepoUrl } : {}),
+    ...(raw.issueBody != null ? { issueBody: raw.issueBody } : {}),
   };
 
   // Time limit: challenge config overrides stage-level
@@ -283,9 +309,13 @@ export function resolveStageConfig(raw: RawStage): StageConfig {
   const sorted = [...raw.challenges].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const challenges = sorted.map((c) => resolveChallengeNode(c, raw.timeLimit));
 
-  return {
+  const result: StageConfig = {
     id: raw.id,
     shells: stageShells,
     challenges,
   };
+  if (raw.title) {
+    result.title = raw.title;
+  }
+  return result;
 }

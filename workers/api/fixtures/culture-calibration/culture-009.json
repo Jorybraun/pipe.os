@@ -1,0 +1,124 @@
+{
+  "id": "culture-009",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliation script, identified 4,000 dropped records over two weeks, backfilled them, and added a daily row-count alert. The data team was surprised."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about something you shipped that broke in a way that affected other people."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I pushed a migration that dropped a column I thought was unused. A reporting job was still reading it. Reports went dark for two hours. I restored the column from backup and wrote a SQL query we now run before any migration to catch live column references."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My lead wanted to handle rate limiting in each service individually. I thought a shared middleware layer was cleaner. We spent an hour on a whiteboard and acknowledged his concern about coupling. We went with middleware but with a per-service config override."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've been reading more about distributed systems but I haven't had a specific moment where I was dramatically wrong yet. I try to stay curious."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I think I'm pretty good at most things. I sometimes go deep on problems longer than necessary, but I've gotten better at timeboxing. I'm generally pretty self-aware."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 3,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed it while debugging something unrelated."
+      ]
+    },
+    "collaboration": {
+      "min": 3,
+      "max": 4,
+      "evidenceQuotes": [
+        "we now run before any migration to catch live column references."
+      ]
+    },
+    "learning-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    },
+    "conflict-handling": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    },
+    "self-awareness": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records silently. I noticed it while debugging something unrelated. I wrote a reconciliat"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "ownership",
+    "collaboration",
+    "conflict-handling"
+  ],
+  "confidence": "heuristic"
+}

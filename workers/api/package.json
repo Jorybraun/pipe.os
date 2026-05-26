@@ -12,13 +12,15 @@
     "@clerk/backend": "^1.19.2",
     "@cloudflare/containers": "^0.3.0",
     "hono": "^4.6.20",
+    "neo4j-driver": "^6.0.1",
     "resend": "^6.10.0",
-    "unpdf": "^1.4.0",
+    "unpdf": "^1.6.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",
     "@vitest/coverage-v8": "^2.1.8",
+    "better-sqlite3": "^12.9.0",
     "dotenv": "^17.4.2",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",

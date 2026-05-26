@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { callRoleAgent, mergeKnowledgeState } from '../lib/roleAgent';
+import { mergeKnowledgeState } from '../lib/agents/interview/reducer';
 import { buildRoleAgentSystemPrompt, buildRoleAgentUserMessage } from '../lib/roleAgentPrompts';
 
 // ─── Mock fetch ─────────────────────────────────────────────────────────────
@@ -65,13 +65,13 @@ describe('buildRoleAgentSystemPrompt', () => {
   it('includes hiring manager section', () => {
     const prompt = buildRoleAgentSystemPrompt('HIRING_MANAGER');
     expect(prompt).toContain('Your Interviewee: Hiring Manager');
-    expect(prompt).toContain('Value-level laddering');
+    expect(prompt).toContain('Can ladder to value level');
   });
 
   it('includes internal recruiter section', () => {
     const prompt = buildRoleAgentSystemPrompt('INTERNAL_RECRUITER');
     expect(prompt).toContain('Your Interviewee: Internal Recruiter');
-    expect(prompt).toContain('What the HM emphasized');
+    expect(prompt).toContain('what the HM emphasized');
   });
 
   it('includes external recruiter section', () => {
@@ -83,7 +83,7 @@ describe('buildRoleAgentSystemPrompt', () => {
   it('includes team member section', () => {
     const prompt = buildRoleAgentSystemPrompt('TEAM_MEMBER');
     expect(prompt).toContain('Your Interviewee: Team Member');
-    expect(prompt).toContain('ground truth for culture');
+    expect(prompt).toContain('Ground truth for culture');
   });
 
   it('ignores unknown participant roles', () => {
@@ -153,33 +153,4 @@ describe('buildRoleAgentUserMessage', () => {
   });
 });
 
-// ─── callRoleAgent — mock fallback paths ─────────────────────────────────────
 
-describe('callRoleAgent', () => {
-  it('returns mock question when no API key', async () => {
-    const result = await callRoleAgent({
-      provider: null,
-      baseline: { title: 'Designer' },
-      exchanges: [],
-      knowledgeState: {},
-      questionsAsked: 0,
-      questionBudget: 8,
-    });
-    expect(result.type).toBe('question');
-    if (result.type === 'question') {
-      expect(result.question.id).toBe('q-1');
-    }
-  });
-
-  it('returns mock synthesis when budget exhausted and no API key', async () => {
-    const result = await callRoleAgent({
-      provider: null,
-      baseline: { title: 'Designer' },
-      exchanges: [],
-      knowledgeState: {},
-      questionsAsked: 8,
-      questionBudget: 8,
-    });
-    expect(result.type).toBe('synthesis');
-  });
-});

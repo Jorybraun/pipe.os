@@ -55,7 +55,7 @@ describe('discoverCandidateProfile', () => {
     expect(result.keyConcepts.mustHaveSkills).toEqual(['typescript', 'react', 'next.js', 'postgresql']);
     expect(result.keyConcepts.seniority).toBe('mid');
     expect(result.keyConcepts.primary_language).toBe('typescript');
-    expect(result.profileVersion).toBe('candidate-v2');
+    expect(result.profileVersion).toBe('candidate-v3');
     expect(result.modelUsed).toBe('stub-gemma');
   });
 

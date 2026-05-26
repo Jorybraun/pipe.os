@@ -141,7 +141,7 @@ export function PipelineTemplateModal({
                 cursor: isApplying ? 'not-allowed' : 'pointer',
                 opacity: isApplying ? 0.4 : 1,
               }}
-            >
+             aria-label="Close">
               <X size={20} />
             </button>
           </div>

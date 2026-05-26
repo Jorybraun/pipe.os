@@ -1,5 +1,7 @@
-import { type ComponentType, createElement } from 'react';
+import { type ComponentType, createElement, memo } from 'react';
 import { connectInterview } from './connectInterview';
+import { useInterview } from '../../contexts/InterviewContext';
+import { useCandidateId } from '../../contexts/CandidateIdContext';
 import type { VirtualFS } from './virtualFS';
 import { legacyToVFS, mergeSubmissionIntoFS } from './virtualFS';
 
@@ -11,7 +13,7 @@ import { VideoShell } from '../../components/Shells/VideoShell';
 import { ProblemPanel } from '../../components/Panels/ProblemPanel';
 import { MonacoPanel } from '../../components/Panels/MonacoPanel';
 import { OptionsPanel } from '../../components/Panels/OptionsPanel';
-import { TextareaPanel } from '../../components/Panels/TextareaPanel';
+import { SmartTextareaPanel } from '../../components/Panels/SmartTextareaPanel';
 import { PreviewPanel } from '../../components/Panels/PreviewPanel';
 import { VerdictPanel } from '../../components/Panels/VerdictPanel';
 import { ReviewTabPanel } from '../../components/Panels/ReviewTabPanel';
@@ -20,6 +22,7 @@ import { FileViewerPanel } from '../../components/Panels/FileViewerPanel';
 import { DiffPanel, type Annotation, type InlineThread, type ResolvedLine } from '../../components/Assessment/DiffPanel';
 import type { ReviewRound } from '../../types/conversation';
 import { VoicePanel } from '../../components/Panels/VoicePanel';
+import { VideoSubmissionPanel } from '../../components/Panels/VideoSubmissionPanel';
 import { CodeEditorPanel } from '../../components/Panels/CodeEditorPanel';
 import { RunConsolePanel } from '../../components/Panels/RunConsolePanel';
 import { DevContainerPanel } from '../../components/Panels/DevContainerPanel';
@@ -41,6 +44,9 @@ const ConnectedProblemPanel = connectInterview(ProblemPanel, (ctx) => ({
   markdown: ctx.currentChallenge.instructions || 'No instructions provided.',
   ...(typeof ctx.currentChallenge.data.prDescription === 'string'
     ? { prDescription: ctx.currentChallenge.data.prDescription }
+    : {}),
+  ...(ctx.currentChallenge.data.issueBody
+    ? { issueBody: ctx.currentChallenge.data.issueBody as { title?: string | null; body?: string | null; labels?: string[] } }
     : {}),
   ...(Array.isArray(ctx.currentChallenge.data.examples)
     ? { examples: ctx.currentChallenge.data.examples as Array<{ input: string; output: string; explanation?: string }> }
@@ -92,14 +98,23 @@ const ConnectedOptionsPanel = connectInterview(OptionsPanel, (ctx) => {
   };
 });
 
-const ConnectedTextareaPanel = connectInterview(TextareaPanel, (ctx) => ({
-  question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
-  value: (ctx.submission.text as string) || '',
-  onChange: (text: string) => ctx.updateSubmission({ text }),
-  ...(typeof ctx.currentChallenge.data.maxLength === 'number'
-    ? { maxLength: ctx.currentChallenge.data.maxLength }
-    : {}),
-}));
+const ConnectedTextareaPanel = connectInterview(SmartTextareaPanel, (ctx) => {
+  const inputMode = (ctx.currentChallenge.data.inputMode as string) ?? 'text';
+  return {
+    question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
+    value: (ctx.submission.text as string) || '',
+    onChange: (text: string) => ctx.updateSubmission({ text }),
+    onSubmit: () => ctx.submit(),
+    challengeId: ctx.currentChallenge.id,
+    updateSubmission: ctx.updateSubmission,
+    enableVoice: inputMode === 'voice',
+    enableVideo: inputMode === 'video',
+    enableTTS: false,
+    ...(typeof ctx.currentChallenge.data.maxLength === 'number'
+      ? { maxLength: ctx.currentChallenge.data.maxLength }
+      : {}),
+  };
+});
 
 const ConnectedPreviewPanel = connectInterview(PreviewPanel, (ctx) => ({
   code: (ctx.submission.code as string) || (ctx.currentChallenge.data.starterCode as string) || '',
@@ -149,6 +164,13 @@ export function normalizeDiffJson(raw: unknown): import('../../components/Assess
   const empty: import('../../components/Assessment/DiffPanel').DiffJson = {
     files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 },
   };
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return empty;
+    }
+  }
   if (typeof raw !== 'object' || raw === null || !('files' in (raw as Record<string, unknown>))) return empty;
 
   const rawObj = raw as Record<string, unknown>;
@@ -394,6 +416,25 @@ const ConnectedVoicePanel = connectInterview(VoicePanel, (ctx) => ({
   challengeId: (ctx.currentChallenge.data.id as string) ?? '',
 }));
 
+const ConnectedVideoSubmissionPanel = memo(function ConnectedVideoSubmissionPanel() {
+  const ctx = useInterview();
+  const ids = useCandidateId();
+  return createElement(VideoSubmissionPanel, {
+    question: (ctx.currentChallenge.data.question as string) || ctx.currentChallenge.title,
+    videoS3Key: (ctx.submission.videoS3Key as string) || '',
+    filename: (ctx.submission.filename as string) || '',
+    onUploaded: (s3Key: string, filename: string, transcript: string) =>
+      ctx.updateSubmission({ inputMode: 'video', videoS3Key: s3Key, filename, transcript }),
+    questionVideoUrl: (ctx.currentChallenge.data.questionVideoUrl as string) || undefined,
+    maxDurationSeconds:
+      typeof ctx.currentChallenge.data.maxDurationSeconds === 'number'
+        ? (ctx.currentChallenge.data.maxDurationSeconds as number)
+        : 120,
+    candidateId: ids?.candidateId ?? '',
+    challengeId: ctx.currentChallenge.id,
+  });
+});
+
 // CODE_IMPLEMENTATION connected panels
 
 const ConnectedCodeEditorPanel = connectInterview(CodeEditorPanel, (ctx) => {
@@ -451,12 +492,19 @@ const ConnectedCodePreviewPanel = connectInterview(PreviewPanel, (ctx) => {
 });
 
 // Synthetic challenge panels — connected via InterviewContext
-const ConnectedWelcomePanel = connectInterview(WelcomeScreen, (ctx) => ({
-  pipelineName: ctx.currentChallenge.title || 'Technical Assessment',
-  stageName: ctx.currentChallenge.title || 'Interview',
-  challengeType: 'CODE_REVIEW' as const,
-  onStart: () => ctx.submit(),
-}));
+const ConnectedWelcomePanel = connectInterview(WelcomeScreen, (ctx) => {
+  return {
+    pipelineName: ctx.stageConfig.title || 'Technical Assessment',
+    stageName: 'Welcome',
+    challenges: ctx.stageConfig.challenges.map((ch) => ({
+      title: ch.title,
+      type: ch.type,
+      timeLimit: ch.timeLimit ?? null,
+      data: ch.data,
+    })),
+    onStart: () => ctx.submit(),
+  };
+});
 
 // LIVE_VIDEO challenge panel
 import { VideoInterviewStep } from '../../components/Video/VideoInterviewStep';
@@ -486,6 +534,7 @@ export const COMPONENT_MAP: Record<string, ComponentType<any>> = {
   'review-left': ReviewLeftPanel,
   'review-center': ConnectedReviewCenterPanel,
   'voice': ConnectedVoicePanel,
+  'video-submission': ConnectedVideoSubmissionPanel,
 
   // CODE_IMPLEMENTATION panels
   'code-editor': ConnectedCodeEditorPanel,

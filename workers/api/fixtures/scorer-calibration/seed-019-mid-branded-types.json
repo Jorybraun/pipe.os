@@ -1,0 +1,126 @@
+{
+  "id": "seed-019-mid-branded-types",
+  "description": "Mid reviewer finds most type safety issues and provides solid direction. Good mid-level performance.",
+  "tags": [
+    "typescript",
+    "types",
+    "high-score-mid"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add candidate ID types",
+    "description": "Introduces branded types for candidate IDs to prevent mixing with other ID types.",
+    "instructions": "Review for TypeScript type safety and patterns.",
+    "diff": "diff --git a/src/types/ids.ts b/src/types/ids.ts\n@@ -0,0 +1,30 @@\n+type CandidateId = string & { __brand: 'CandidateId' };\n+type PipelineId = string & { __brand: 'PipelineId' };\n+\n+export function toCandidateId(id: string): CandidateId {\n+  return id as CandidateId;\n+}\n+\n+export function toPipelineId(id: string): PipelineId {\n+  return id as PipelineId;\n+}\n+\n+export function moveCandidate(cid: CandidateId, pid: PipelineId) {\n+  // implementation\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/types/ids.ts",
+      "line": 4,
+      "description": "toCandidateId does no validation — any string can be cast, defeating the purpose of branded types. Should validate UUID format.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/types/ids.ts",
+      "line": 8,
+      "description": "moveCandidate takes branded types but internal implementation may still accept plain strings via implicit any. Function body should be shown and validated.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/types/ids.ts",
+      "line": 1,
+      "description": "Branded type uses intersection with string — nominal typing is better achieved with unique symbol or abstract class for stronger encapsulation.",
+      "expectedFound": true
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1901,
+            "file": "src/types/ids.ts",
+            "line": 4,
+            "category": "types",
+            "severity": "blocking",
+            "what": "toCandidateId casts without validation — any string works.",
+            "why": "This defeats the safety purpose of branded types. Should validate UUID format.",
+            "positive": false
+          },
+          {
+            "id": 1902,
+            "file": "src/types/ids.ts",
+            "line": 1,
+            "category": "types",
+            "severity": "suggestion",
+            "what": "Consider using a unique symbol for the brand instead of string intersection.",
+            "why": "Stronger nominal typing prevents accidental structural compatibility.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Validation is blocking. Symbol brand is recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1901,
+            "move": "change",
+            "content": "Added UUID regex validation.",
+            "updated_code": "if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Invalid CandidateId'); return id as CandidateId;"
+          },
+          {
+            "to_comment_id": 1902,
+            "move": "comment",
+            "content": "Symbol brands are verbose in TS. String intersection is the standard pattern in our codebase."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Validation looks good. String intersection is acceptable per codebase convention.",
+      "submittedAt": "2026-04-28T03:47:05.963Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 3 bugs (validation, brand type). Missed implementation body check. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Validation flagged as blocking. Type suggestion as non-blocking. Good triage. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified UUID regex. Accepted pushback on brand type with reasoning. Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete rationale for validation and nominal typing. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested regex validation and symbol brand — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

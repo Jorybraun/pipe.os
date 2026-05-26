@@ -85,7 +85,7 @@ devContainer.post('/launch', async (c) => {
   let repoGitUrl: string | null = null;
   let challengeBranch: string | null = null;
   if (challengeId) {
-    const meta = await getChallengeTtlMeta(c.env.DB, challengeId);
+    const meta = await getChallengeTtlMeta(c.env.DB, challengeId, candidateId);
     if (meta) {
       challengeTtl = meta.dev_container_ttl_seconds;
       repoGitUrl = meta.repo_git_url;

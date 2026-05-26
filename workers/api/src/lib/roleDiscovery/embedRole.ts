@@ -9,7 +9,8 @@
  * unrecoverable errors (bad vector shape, upsert failure).
  */
 
-import { preprocessForEmbedding } from '../embedding/preprocess';
+import { preprocessForEmbedding, EMBEDDING_MODEL_VERSION } from '../embedding/preprocess';
+import { retryWithBackoff } from '../ai/retryHelper';
 
 export interface EmbedRoleInput {
   ai: Ai;
@@ -18,6 +19,8 @@ export interface EmbedRoleInput {
   profile: string;
   /** Optional metadata to attach to the vector — kept small (Vectorize metadata limits). */
   metadata?: Record<string, string | number | boolean>;
+  /** Optional D1 database for persisting the embedding and model version stamp. */
+  db?: D1Database;
 }
 
 export interface EmbedRoleResult {
@@ -25,6 +28,8 @@ export interface EmbedRoleResult {
   vectorDim: number;
   /** The raw embedding vector (also persisted to D1 as ground truth). */
   vector: number[];
+  /** Version stamp of the embedding model that produced this vector. */
+  modelVersion: string;
 }
 
 const BGE_MODEL = '@cf/baai/bge-large-en-v1.5';
@@ -33,7 +38,7 @@ const EXPECTED_DIM = 1024;
 export async function embedAndUpsertRole(
   input: EmbedRoleInput,
 ): Promise<EmbedRoleResult> {
-  const { ai, vectorize, roleContextId, profile, metadata } = input;
+  const { ai, vectorize, roleContextId, profile, metadata, db } = input;
 
   if (!profile || profile.trim().length === 0) {
     throw new Error(`[roleEmbed] empty profile for role ${roleContextId}`);
@@ -41,9 +46,18 @@ export async function embedAndUpsertRole(
 
   const normalized = preprocessForEmbedding(profile, 'document');
 
-  const embedResult = (await ai.run(BGE_MODEL, {
-    text: [normalized],
-  })) as { data?: number[][] };
+  const embedResult = await retryWithBackoff(
+    async () =>
+      ai.run(BGE_MODEL, {
+        text: [normalized],
+      }) as Promise<{ data?: number[][] }>,
+    {
+      maxRetries: 3,
+      baseDelayMs: 1000,
+      onRetry: (attempt, delay) =>
+        console.warn(`[retry] attempt ${attempt} after ${delay}ms delay for embedAndUpsertRole`),
+    },
+  );
 
   const vector = embedResult?.data?.[0];
   if (!vector || !Array.isArray(vector)) {
@@ -60,17 +74,25 @@ export async function embedAndUpsertRole(
     throw new Error(`[roleEmbed] non-finite values for role ${roleContextId}`);
   }
 
-  await vectorize.upsert([
-    {
-      id: `role_${roleContextId}`,
-      values: vector,
-      metadata: metadata ?? {},
-    },
-  ]);
+  const embeddedAt = new Date().toISOString();
+
+  if (db) {
+    await db
+      .prepare(
+        `UPDATE role_contexts
+           SET embedding_json = ?,
+               updated_at = ?,
+               embedding_model_version = ?
+         WHERE id = ?`,
+      )
+      .bind(JSON.stringify(vector), embeddedAt, EMBEDDING_MODEL_VERSION, roleContextId)
+      .run();
+  }
 
   return {
-    embeddedAt: new Date().toISOString(),
+    embeddedAt,
     vectorDim: vector.length,
     vector,
+    modelVersion: EMBEDDING_MODEL_VERSION,
   };
 }

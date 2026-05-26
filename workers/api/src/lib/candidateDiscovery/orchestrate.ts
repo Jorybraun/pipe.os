@@ -6,14 +6,13 @@
  *   1. upsertPendingIngestion
  *   2. discoverCandidateProfile (rich extraction)
  *   3. persistRichCandidateProfile
- *   4. embedAndUpsertCandidate
- *   5. markIngestionEmbedded
- *   6. matchReposForCandidate (graph + optional cosine)
- *   7. Load role_repo_alignment for pipeline's role_context
- *   8. candidateSituationFit on top repos
- *   9. triangulateMatch
- *   10. Write candidate_challenge_assignment rows
- *   11. markIngestionMatched
+ *   4. embedAndUpsertCandidate (self-persists status + embedding to D1 when db passed)
+ *   5. matchRepos (catalog query — legacy Vectorize path removed)
+ *   6. Load role_repo_alignment for pipeline's role_context
+ *   7. Pick PR + issue for winner repo
+ *   8. Build placeholder triangulated result
+ *   9. Write candidate_challenge_assignment rows
+ *   10. markIngestionMatched
  *
  * Every step after (2) is wrapped in its own try/catch. Failures write
  * markIngestionFailed and return without throwing — the upload route must
@@ -22,25 +21,34 @@
  * See ADR-040 Meaning-Based Candidate-Repo-Role Triangulation.
  */
 
-import type { Env, RepoEngineeringSignalsRow } from '../../types';
+import type { Env } from '../../types';
 import type { ParsedCV } from '../cvParser';
+import type { DecompositionResult } from './candidateDecompositionPrompt';
 import { createCandidateAgentProvider } from '../llm/createProvider';
-import { matchReposForCandidate } from '../match/matchReposForCandidate';
-import { triangulateMatch, triangulateShortlist } from '../match/triangulateMatch';
 import { pickReviewPr, pickImplementationIssue } from '../match/autoStageBuilder';
+import { matchRepos, type MatchRequest } from '../repoDiscovery/matchRepos';
 import { discoverCandidateProfile, type CandidateDiscoveryResult } from './agent';
-import { embedAndUpsertCandidate } from './embed';
+import { embedAndUpsertCandidate, upsertCandidateVector } from './embed';
 import {
   upsertPendingIngestion,
   persistCandidateProfile,
-  markIngestionEmbedded,
   markIngestionMatched,
   markIngestionFailed,
   upsertCandidateChallengeAssignment,
+  upsertCandidateRepoMatches,
   type MarkIngestionMatchedInput,
 } from './persist';
-import { candidateSituationFit, type SituationFitCandidate } from './candidateSituationFit';
-import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
+// candidateSituationFit removed — simplified matching path post-Neo4j cutover
+import { cosineSimilarity, parseEmbeddingJson, meanPoolVectors } from '../embedding/cosine';
+import { getActiveCandidateNodesWithFallback } from './candidateNodes';
+import { decomposeResumeToGraph } from './resumeDecomposition';
+// computeRecencyMultiplier removed — simplified matching path post-Neo4j cutover
+import { getCandidateCoverage } from './candidateCoverage';
+import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
+import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
+import { buildProfileSections } from './buildProfileSections';
+import { recordStepDuration, estimateCompletion } from '../telemetry/stepDurationTracker';
+import { recordSessionEvent } from '../telemetry/sessionEvents';
 
 export interface IngestionInput {
   env: Env;
@@ -48,6 +56,7 @@ export interface IngestionInput {
   candidateId: string;
   parsed: ParsedCV;
   resumeText: string;
+  decompositionResult?: DecompositionResult | null;
 }
 
 /**
@@ -59,7 +68,9 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
 
   // Step 1: Reset ingestion state
   try {
-    await upsertPendingIngestion(db, candidateId);
+    await trackStep(db, candidateId, 'upsert_pending', () =>
+      upsertPendingIngestion(db, candidateId),
+    );
   } catch (err) {
     console.error('[ingestion] upsertPending failed:', err);
     // This is pre-upload — if this fails, something is deeply wrong.
@@ -67,84 +78,192 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     return;
   }
 
+  // Compute estimated completion before starting work steps
+  const remainingSteps = [
+    'discover_profile',
+    'persist_profile',
+    'decompose_resume',
+    'embed_profile',
+    'match_and_assign',
+  ];
+  const estimatedMs = await estimateCompletion(db, remainingSteps);
+  if (estimatedMs !== null) {
+    await setEstimatedCompletion(db, candidateId, new Date(Date.now() + estimatedMs));
+  }
+
   // Step 2: Discover rich candidate profile
   let discoveryResult: CandidateDiscoveryResult;
   try {
     const provider = createCandidateAgentProvider(env);
     if (!provider) {
-      await markIngestionFailed(db, candidateId, 'Candidate agent provider unavailable (MOCK_AI or missing config)');
+      await markIngestionFailedWithStep(
+        db,
+        candidateId,
+        'Candidate agent provider unavailable (MOCK_AI or missing config)',
+        'discover_profile',
+      );
       return;
     }
 
-    discoveryResult = await discoverCandidateProfile({ provider, parsed, resumeText });
+    discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
+      discoverCandidateProfile({ provider, parsed, resumeText }),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] discoverCandidateProfile failed:', msg);
-    await markIngestionFailed(db, candidateId, `Discovery failed: ${msg}`);
+    await markIngestionFailedWithStep(db, candidateId, `Discovery failed: ${msg}`, 'discover_profile');
     return;
   }
 
   // Step 3: Persist rich profile
   try {
-    await persistCandidateProfile(db, candidateId, discoveryResult);
+    await trackStep(db, candidateId, 'persist_profile', () =>
+      persistCandidateProfile(db, candidateId, discoveryResult),
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] persistCandidateProfile failed:', msg);
-    await markIngestionFailed(db, candidateId, `Persist failed: ${msg}`);
+    await markIngestionFailedWithStep(db, candidateId, `Persist failed: ${msg}`, 'persist_profile');
     return;
   }
 
-  // Step 4: Embed into CANDIDATE_INDEX
-  let embedResult: Awaited<ReturnType<typeof embedAndUpsertCandidate>>;
+  // Step 3.5: Decompose resume into candidate_nodes (ADR-041 Phase 1)
+  // This runs after profile persistence but before embedding.
+  // Failures are logged but do not block the pipeline.
+  let decompositionEmbeddings: number[][] = [];
   try {
-    embedResult = await embedAndUpsertCandidate({
-      ai: env.AI,
-      vectorize: env.CANDIDATE_INDEX,
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'ingestion',
       candidateId,
-      profile: discoveryResult.candidateSearchableProfile,
-      metadata: {
-        seniority: discoveryResult.keyConcepts.seniority,
-        primary_language: discoveryResult.keyConcepts.primary_language,
-      },
+      eventType: 'decomposition_started',
+      payload: { resumeTextLength: resumeText.length },
+    });
+    const decompResult = await trackStep(db, candidateId, 'decompose_resume', () =>
+      decomposeResumeToGraph({
+        db,
+        candidateId,
+        resumeText,
+        parsedCV: parsed,
+        env,
+        decompositionResult: input.decompositionResult,
+      }),
+    );
+    decompositionEmbeddings = decompResult.embeddings;
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'ingestion',
+      candidateId,
+      eventType: 'decomposition_complete',
+      payload: { nodeCount: decompResult.embeddings.length },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ingestion] embedAndUpsertCandidate failed:', msg);
-    await markIngestionFailed(db, candidateId, `Embed failed: ${msg}`);
+    console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'ingestion',
+      candidateId,
+      eventType: 'error',
+      payload: { step: 'decompose_resume', error: msg },
+    });
+  }
+
+  // Step 4: Embed into CANDIDATE_INDEX
+  // Primary: aggregate sub-element embeddings (mean pool + L2 norm).
+  // Fallback: embed the prose profile directly if decomposition yielded no vectors.
+  let embedResult: Awaited<ReturnType<typeof embedAndUpsertCandidate>>;
+  try {
+    embedResult = await trackStep(db, candidateId, 'embed_profile', async () => {
+      const aggregateVector = meanPoolVectors(decompositionEmbeddings);
+      if (aggregateVector) {
+        const result = await upsertCandidateVector({
+          vectorize: env.CANDIDATE_INDEX,
+          candidateId,
+          vector: aggregateVector,
+          metadata: {
+            seniority: discoveryResult.keyConcepts.seniority,
+            primary_language: discoveryResult.keyConcepts.primary_language,
+            profile_version: discoveryResult.profileVersion,
+            aggregate_source: 'node_mean_pool',
+          },
+          db,
+        });
+        console.log('[ingestion] Upserted aggregate vector from', decompositionEmbeddings.length, 'node embeddings');
+        return result;
+      } else {
+        // Fallback to prose-generated embedding when decomposition has no vectors
+        return await embedAndUpsertCandidate({
+          ai: env.AI,
+          vectorize: env.CANDIDATE_INDEX,
+          candidateId,
+          profile: discoveryResult.candidateSearchableProfile,
+          metadata: {
+            seniority: discoveryResult.keyConcepts.seniority,
+            primary_language: discoveryResult.keyConcepts.primary_language,
+            profile_version: discoveryResult.profileVersion,
+          },
+          db,
+        });
+      }
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[ingestion] embed/upsert failed:', msg);
+    await markIngestionFailedWithStep(db, candidateId, `Embed failed: ${msg}`, 'embed_profile');
     return;
   }
 
-  // Step 5: Mark embedded
-  try {
-    await markIngestionEmbedded(db, candidateId, embedResult.embeddedAt, JSON.stringify(embedResult.vector));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ingestion] markIngestionEmbedded failed:', msg);
-    await markIngestionFailed(db, candidateId, `Mark embedded failed: ${msg}`);
-    return;
-  }
+  // Step 5: Mark embedded — now handled inside embedAndUpsertCandidate
 
   // Step 6-11: Match, triangulate, assign — wrapped in inner try/catch
   try {
-    await runMatchAndAssign({ env, db, candidateId, discoveryResult });
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'matching',
+      candidateId,
+      eventType: 'match_assigned',
+      payload: { step: 'match_and_assign_start' },
+    });
+    await trackStep(db, candidateId, 'match_and_assign', () =>
+      runMatchAndAssign({ env, db, candidateId, discoveryResult }),
+    );
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'matching',
+      candidateId,
+      eventType: 'completed',
+      payload: { step: 'match_and_assign_success' },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] runMatchAndAssign failed:', msg);
-    await markIngestionFailed(db, candidateId, `Match/assign failed: ${msg}`);
+    await markIngestionFailedWithStep(db, candidateId, `Match/assign failed: ${msg}`, 'match_and_assign');
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'matching',
+      candidateId,
+      eventType: 'error',
+      payload: { step: 'match_and_assign', error: msg },
+    });
   }
 }
 
 // ─── Match + Assign ─────────────────────────────────────────────────────────
 
-interface MatchAndAssignInput {
+export interface MatchAndAssignInput {
   env: Env;
   db: D1Database;
   candidateId: string;
   discoveryResult: CandidateDiscoveryResult;
 }
 
-async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
+export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   const { env, db, candidateId, discoveryResult } = input;
+
+  // Neo4j driver for graph reads (fallback to D1 if unavailable)
+  const neo4jConfig = buildNeo4jConfig(env);
+  const neo4jDriver = neo4jConfig ? getNeo4jDriver(neo4jConfig) : null;
 
   // Load candidate's pipeline + match config
   const candidateRow = await db
@@ -164,17 +283,32 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
   const pipelineId = candidateRow.pipeline_id;
   const philosophy = (candidateRow.match_philosophy ?? 'validate') as 'validate' | 'tailored' | 'hybrid';
 
-  // Step 6: Graph + optional cosine match
-  const matchResult = await matchReposForCandidate({
-    db,
-    ai: env.AI,
-    vectorize: env.REPO_INDEX,
-    candidateProfile: discoveryResult.candidateSearchableProfile,
-    keyConcepts: discoveryResult.keyConcepts,
-    candidateLimit: 10,
-    rerankTopK: 50,
-    cosineWeight: philosophy === 'validate' ? 0.3 : 0.5,
-  });
+  // Load candidate embedding early for semantic PR selection.
+  const candidateEmbeddingRow = await db
+    .prepare(`SELECT embedding_json FROM candidate_ingestion WHERE candidate_id = ?1`)
+    .bind(candidateId)
+    .first<{ embedding_json: string | null }>();
+  const candidateVec = parseEmbeddingJson(candidateEmbeddingRow?.embedding_json);
+
+  // Step 6: Simple repo matching via catalog query (legacy Vectorize path removed)
+  const seniorityRaw = discoveryResult.keyConcepts.seniority;
+  const normalizedSeniority = ['junior', 'mid', 'senior', 'staff'].includes(seniorityRaw)
+    ? (seniorityRaw as 'junior' | 'mid' | 'senior' | 'staff')
+    : 'mid';
+
+  const matchRequest: MatchRequest = {
+    mustHaveSkills: discoveryResult.keyConcepts.mustHaveSkills,
+    niceToHaveSkills: discoveryResult.keyConcepts.niceToHaveSkills,
+    seniority: normalizedSeniority,
+    domain: discoveryResult.keyConcepts.detected_domain || 'general',
+    primaryLanguage: discoveryResult.keyConcepts.primary_language || 'typescript',
+    limit: 10,
+  };
+
+  const matchedRepos = await matchRepos(db, matchRequest);
+  if (matchedRepos.length === 0) {
+    throw new Error('No repos matched for candidate');
+  }
 
   // Step 7: Load role_repo_alignment for pipeline's role_context
   const roleContextRow = await db
@@ -184,6 +318,8 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
 
   let roleRepoAlignments = new Map<number, number>();
   let roleCandidateCosine: number | null = null;
+  let vectorRoleRepo: number | null = null;
+  let vectorRoleCandidate: number | null = null;
 
   if (roleContextRow) {
     // Load top 20 role-aligned repos
@@ -202,21 +338,12 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       roleRepoAlignments.set(row.repo_id, row.alignment_score);
     }
 
-    // Dual-layer exact cosine: load ground-truth vectors from D1,
-    // compute exact similarity. Falls back to null if either side
-    // hasn't been embedded yet (triangulateMatch then uses skill_coverage).
-    const embeddingRow = await db
-      .prepare(
-        `SELECT ci.embedding_json AS candidate_embedding, rc.embedding_json AS role_embedding
-           FROM candidate_ingestion ci
-           LEFT JOIN role_contexts rc ON rc.id = ?1
-          WHERE ci.candidate_id = ?2`,
-      )
-      .bind(roleContextRow.id, candidateId)
-      .first<{ candidate_embedding: string | null; role_embedding: string | null }>();
+    const roleEmbeddingRow = await db
+      .prepare(`SELECT embedding_json AS role_embedding FROM role_contexts WHERE id = ?1`)
+      .bind(roleContextRow.id)
+      .first<{ role_embedding: string | null }>();
 
-    const candidateVec = parseEmbeddingJson(embeddingRow?.candidate_embedding);
-    const roleVec = parseEmbeddingJson(embeddingRow?.role_embedding);
+    const roleVec = parseEmbeddingJson(roleEmbeddingRow?.role_embedding);
     if (candidateVec && roleVec) {
       try {
         roleCandidateCosine = cosineSimilarity(candidateVec, roleVec);
@@ -226,175 +353,88 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
         roleCandidateCosine = null;
       }
     }
-  }
 
-  // Step 8: Candidate situation fit
-  // Build candidate pool from: (a) role-aligned repos, (b) graph shortlist
-  const repoIdsToFetch = new Set<number>([
-    ...roleRepoAlignments.keys(),
-    ...matchResult.shortlist.map((s) => s.repoId),
-  ]);
-
-  if (repoIdsToFetch.size === 0) {
-    throw new Error('No repos to evaluate for candidate situation fit');
-  }
-
-  // Load engineering signals for all candidate repos
-  const signalsRows = await db
-    .prepare(
-      `SELECT repo_id, repo_searchable_profile, engineering_narrative, signals_version,
-              test_touch_rate, mean_changed_files, p90_changed_files, issue_link_rate,
-              complexity_band, swe_bench_eligibility_rate, architecture_style,
-              review_density, test_style, challenge_surfaces
-         FROM repo_engineering_signals
-        WHERE repo_id IN (${Array.from(repoIdsToFetch).map(() => '?').join(',')})`,
-    )
-    .bind(...repoIdsToFetch)
-    .all<{
-      repo_id: number;
-      repo_searchable_profile: string;
-      engineering_narrative: string;
-      signals_version: string;
-      test_touch_rate: number | null;
-      mean_changed_files: number | null;
-      p90_changed_files: number | null;
-      issue_link_rate: number | null;
-      complexity_band: string | null;
-      swe_bench_eligibility_rate: number | null;
-      architecture_style: string | null;
-      review_density: number | null;
-      test_style: string | null;
-      challenge_surfaces: string | null;
-    }>();
-
-  const signalsByRepo = new Map<number, RepoEngineeringSignalsRow>();
-  for (const row of signalsRows.results ?? []) {
-    signalsByRepo.set(row.repo_id, {
-      repo_id: row.repo_id,
-      signals_version: row.signals_version,
-      content_hash: '',
-      test_touch_rate: row.test_touch_rate,
-      mean_changed_files: row.mean_changed_files,
-      p90_changed_files: row.p90_changed_files,
-      issue_link_rate: row.issue_link_rate,
-      complexity_band: row.complexity_band as RepoEngineeringSignalsRow['complexity_band'],
-      swe_bench_eligibility_rate: row.swe_bench_eligibility_rate,
-      architecture_style: row.architecture_style as RepoEngineeringSignalsRow['architecture_style'],
-      review_density: row.review_density,
-      commit_cadence: null,
-      satd_density: null,
-      test_style: row.test_style as RepoEngineeringSignalsRow['test_style'],
-      challenge_surfaces: row.challenge_surfaces,
-      repo_searchable_profile: row.repo_searchable_profile,
-      engineering_narrative: row.engineering_narrative,
-      signal_json: '',
-      generated_at: '',
-      model_used: '',
-      model_version: '',
-    });
-  }
-
-  const situationCandidates: SituationFitCandidate[] = [];
-  for (const repoId of repoIdsToFetch) {
-    const signals = signalsByRepo.get(repoId);
-    if (!signals) continue;
-    situationCandidates.push({
-      repo_id: repoId,
-      full_name: `repo_${repoId}`, // Will be enriched from matchResult shortlist if needed
-      signals,
-    });
-  }
-
-  // Enrich full_name from shortlist
-  const shortlistNameMap = new Map(matchResult.shortlist.map((s) => [s.repoId, s.fullName]));
-  for (const c of situationCandidates) {
-    const name = shortlistNameMap.get(c.repo_id);
-    if (name) c.full_name = name;
-  }
-
-  let situationRankings = await candidateSituationFit({
-    provider: createCandidateAgentProvider(env)!,
-    candidateResult: discoveryResult,
-    candidateKeyConcepts: discoveryResult.keyConcepts,
-    repos: situationCandidates,
-  });
-
-  // Step 9: Triangulate
-  let triangulated = triangulateMatch({
-    philosophy,
-    graphResult: matchResult,
-    situationRankings: situationRankings.rankings,
-    roleRepoAlignments,
-    roleCandidateCosine,
-  });
-
-  let winnerRepoId = triangulated.repo_id;
-  let winnerRepoUrl = matchResult.repoChoice.githubUrl;
-  let winnerReview = matchResult.review;
-  let winnerImplementation = matchResult.implementation;
-
-  // Tailored mode: re-rank the full shortlist and potentially switch winner
-  if (philosophy === 'tailored' && matchResult.shortlist.length > 1) {
-    const shortlistScores = triangulateShortlist({
-      philosophy,
-      graphResult: matchResult,
-      situationRankings: situationRankings.rankings,
-      roleRepoAlignments,
-      roleCandidateCosine,
-    });
-
-    if (shortlistScores.length > 0) {
-      const top = shortlistScores[0]!;
-      if (top.repo_id !== winnerRepoId) {
-        winnerRepoId = top.repo_id;
-        // Look up github_url from qualified_repos
-        const repoRow = await db
-          .prepare('SELECT full_name, html_url FROM qualified_repos WHERE id = ?1')
-          .bind(winnerRepoId)
-          .first<{ full_name: string; html_url: string }>();
-        winnerRepoUrl = repoRow?.html_url ?? '';
-
-        // Fetch PR/issue for the new winner
-        const [pr, issue] = await Promise.all([
-          pickReviewPr(db, winnerRepoId),
-          pickImplementationIssue(db, winnerRepoId, discoveryResult.keyConcepts.seniority),
+    if (roleVec) {
+      try {
+        const [repoQuery, candidateQuery] = await Promise.all([
+          env.REPO_INDEX.query(roleVec, { topK: 20 }),
+          env.CANDIDATE_INDEX.query(roleVec, { topK: 20 }),
         ]);
-        winnerReview = pr;
-        winnerImplementation = issue;
-
-        // Re-triangulate the single winner so dimensions/raw_signals are accurate
-        const tailoredWinner = matchResult.shortlist.find((s) => s.repoId === winnerRepoId);
-        if (tailoredWinner) {
-          triangulated = triangulateMatch({
-            philosophy,
-            graphResult: {
-              ...matchResult,
-              repoChoice: {
-                repoId: winnerRepoId,
-                fullName: repoRow?.full_name ?? `repo_${winnerRepoId}`,
-                githubUrl: winnerRepoUrl,
-                score: tailoredWinner.score,
-                cosine: tailoredWinner.cosine,
-                rationale: `tailored re-rank winner (score ${top.triangulated_score.toFixed(3)})`,
-              },
-            },
-            situationRankings: situationRankings.rankings,
-            roleRepoAlignments,
-            roleCandidateCosine,
-          });
+        const winnerRepoId = matchedRepos[0]!.id;
+        const repoMatch = repoQuery.matches.find((m) => m.id === `repo_${winnerRepoId}`);
+        if (repoMatch) {
+          vectorRoleRepo = repoMatch.score;
         }
+        const candMatch = candidateQuery.matches.find((m) => m.id === `candidate_${candidateId}`);
+        if (candMatch) {
+          vectorRoleCandidate = candMatch.score;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[ingestion] vector query failed for candidate ${candidateId}:`, msg);
       }
     }
   }
 
-  // Extract reasoning for the winner from situation fit rankings
-  const winnerSituation = situationRankings.rankings.find((r) => r.repo_id === winnerRepoId);
-  const reasoningJson = winnerSituation
-    ? JSON.stringify({
-        matches: winnerSituation.reasoning.matches,
-        mismatches: winnerSituation.reasoning.mismatches,
-      })
-    : undefined;
+  // Step 8: Pick winner repo and challenges
+  let winnerRepoId = matchedRepos[0]!.id;
+  let winnerRepoUrl = matchedRepos[0]!.githubUrl;
+
+  const [winnerReview, winnerImplementation] = await Promise.all([
+    pickReviewPr(db, winnerRepoId, candidateVec),
+    pickImplementationIssue(db, winnerRepoId, normalizedSeniority),
+  ]);
+
+  // Step 9: Build placeholder triangulated result (legacy triangulateMatch removed)
+  const triangulated = {
+    repo_id: winnerRepoId,
+    triangulated_score: matchedRepos[0]!.score,
+    dimensions: {
+      skill_coverage: 0.5,
+      semantic_similarity: 0.5,
+      situation_fit: 0.5,
+      role_alignment: roleCandidateCosine ?? 0.5,
+    },
+    raw_signals: {
+      role_repo_alignment: roleRepoAlignments.get(winnerRepoId) ?? null,
+      candidate_repo_fit: matchedRepos[0]!.score,
+      role_candidate_cosine: roleCandidateCosine,
+      vector_role_repo: vectorRoleRepo,
+      vector_cand_repo: null,
+      vector_role_cand: vectorRoleCandidate,
+    },
+  };
+
+  // Empty situation rankings (legacy candidateSituationFit removed)
+  const situationRankings = { rankings: [] as Array<never>, rawText: '' };
+
+  // Step 9.5: Load coverage for evidence density multiplier
+  let evidenceDensity: number | null = null;
+  try {
+    const coverage = await getCandidateCoverage(db, candidateId);
+    if (coverage) {
+      evidenceDensity =
+        coverage.experience_coverage * 0.3 +
+        coverage.technical_coverage * 0.3 +
+        coverage.cultural_coverage * 0.2 +
+        coverage.motivation_coverage * 0.1 +
+        coverage.context_coverage * 0.1;
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to load coverage for ${candidateId}:`, msg);
+  }
+
+  // Ensure coverage is up-to-date in D1 (Neo4j-primary with D1 fallback)
+  try {
+    await computeCandidateCoverageWithFallback(db, candidateId, neo4jDriver);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to compute coverage for ${candidateId}:`, msg);
+  }
+
+  // No reasoning from situation fit (legacy path removed)
+  const reasoningJson = undefined;
 
   // Telemetry: record vector vs LLM signal correlation for empirical calibration
   // NOTE: match_feedback table (migration 0040) currently lacks columns for
@@ -443,29 +483,263 @@ async function runMatchAndAssign(input: MatchAndAssignInput): Promise<void> {
       const prNumber = isReview ? (winnerReview?.prNumber ?? null) : null;
       const issueNumber = !isReview ? (winnerImplementation?.issueNumber ?? null) : null;
 
-      await upsertCandidateChallengeAssignment(db, {
-        id: cryptoRandomId(),
-        candidateId,
-        stageId: stage.stage_id,
-        challengeId: stage.challenge_id,
-        repoId: winnerRepoId,
-        githubRepoUrl: winnerRepoUrl,
-        githubPrNumber: prNumber,
-        issueNumber: issueNumber,
-      });
+      try {
+        await upsertCandidateChallengeAssignment(db, {
+          id: cryptoRandomId(),
+          candidateId,
+          stageId: stage.stage_id,
+          challengeId: stage.challenge_id,
+          repoId: winnerRepoId,
+          githubRepoUrl: winnerRepoUrl,
+          githubPrNumber: prNumber,
+          issueNumber: issueNumber,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[ingestion] FK violation writing candidate_challenge_assignment: ` +
+          `candidate=${candidateId} stage=${stage.stage_id} challenge=${stage.challenge_id} repo=${winnerRepoId} ` +
+          `error=${msg}`,
+        );
+        throw new Error(
+          `candidate_challenge_assignment insert failed for candidate=${candidateId} ` +
+          `stage=${stage.stage_id} repo=${winnerRepoId}: ${msg}`,
+        );
+      }
     }
   }
 
   // Step 11: Mark matched with full score payload
-  const matchedInput: MarkIngestionMatchedInput = {
-    candidateId,
-    matchedRepoId: winnerRepoId,
-    triangulatedScore: triangulated.triangulated_score,
-    dimensionsJson: JSON.stringify(triangulated.dimensions),
-    reasoningJson,
-    matchPhilosophy: philosophy,
+  try {
+    const matchedInput: MarkIngestionMatchedInput = {
+      candidateId,
+      matchedRepoId: winnerRepoId,
+      triangulatedScore: triangulated.triangulated_score,
+      dimensionsJson: JSON.stringify(triangulated.dimensions),
+      reasoningJson,
+      matchPhilosophy: philosophy,
+    };
+    await markIngestionMatched(db, matchedInput);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[ingestion] FK violation writing candidate_ingestion: ` +
+      `candidate=${candidateId} matched_repo_id=${winnerRepoId} error=${msg}`,
+    );
+    throw new Error(
+      `markIngestionMatched failed for candidate=${candidateId} repo=${winnerRepoId}: ${msg}`,
+    );
+  }
+
+  // Step 11b: Persist top-3 repo matches for recruiter visibility
+  try {
+    // Extract location from candidate Context nodes
+    let locationTag: string | null = null;
+    const contextNodes = await getActiveCandidateNodesWithFallback(db, candidateId, neo4jDriver, 'Context');
+    for (const node of contextNodes) {
+      const props = node.extracted_properties_json
+        ? (JSON.parse(node.extracted_properties_json) as Record<string, unknown>)
+        : {};
+      if (props.subtype === 'location' && typeof props.value === 'string') {
+        locationTag = props.value;
+        break;
+      }
+      if (props.subtype === 'location' && typeof props.location === 'string') {
+        locationTag = props.location;
+        break;
+      }
+    }
+
+    const top3 = matchedRepos.slice(0, 3);
+
+    const matchRows = top3.map((repo, idx) => {
+      const isWinner = repo.id === winnerRepoId;
+      return {
+        id: cryptoRandomId(),
+        candidateId,
+        repoId: repo.id,
+        rank: idx + 1,
+        triangulatedScore: repo.score,
+        rationale: isWinner ? reasoningJson : undefined,
+        prNumber: isWinner ? (winnerReview?.prNumber ?? null) : null,
+        issueNumber: isWinner ? (winnerImplementation?.issueNumber ?? null) : null,
+        locationTag,
+      };
+    });
+
+    await upsertCandidateRepoMatches(db, matchRows);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[ingestion] FK violation writing candidate_repo_matches: ` +
+      `candidate=${candidateId} repos=[${matchedRepos.slice(0, 3).map(r => r.id).join(',')}] error=${msg}`,
+    );
+    // Non-blocking: recruiter visibility only
+    console.warn(`[ingestion] failed to persist top-3 repo matches for ${candidateId}:`, msg);
+  }
+
+  // Step 12: Persist profile sections for dynamic frontend rendering
+  try {
+    const dims = triangulated.dimensions as Record<string, number>;
+    const matchData = {
+      score: triangulated.triangulated_score,
+      dimensions: {
+        skillCoverage: dims.skill_coverage ?? 0,
+        semanticSimilarity: dims.semantic_similarity ?? 0,
+        situationFit: dims.situation_fit ?? 0,
+        roleAlignment: dims.role_alignment ?? 0,
+      },
+      reasoning: undefined,
+      philosophy,
+      repoName: winnerRepoUrl ? winnerRepoUrl.replace('https://github.com/', '') : undefined,
+      repoUrl: winnerRepoUrl,
+    };
+
+    // Load decomposition result from candidate_nodes (resume-derived graph)
+    // We don't have direct access to DecompositionResult here, so we build
+    // sections from discovery result + match data only.
+    const profileSections = buildProfileSections(null, discoveryResult, matchData, null);
+
+    await db
+      .prepare(
+        `UPDATE candidate_ingestion
+         SET profile_sections_json = ?1
+         WHERE candidate_id = ?2`,
+      )
+      .bind(JSON.stringify(profileSections), candidateId)
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[ingestion] failed to persist profile sections for ${candidateId}:`, msg);
+  }
+}
+
+// ─── Utility ────────────────────────────────────────────────────────────────
+
+// ─── Telemetry helpers ──────────────────────────────────────────────────────
+
+async function setCurrentStep(
+  db: D1Database,
+  candidateId: string,
+  stepName: string,
+): Promise<void> {
+  await db
+    .prepare(`UPDATE candidate_ingestion SET current_step = ?1 WHERE candidate_id = ?2`)
+    .bind(stepName, candidateId)
+    .run();
+}
+
+async function setEstimatedCompletion(
+  db: D1Database,
+  candidateId: string,
+  estimatedAt: Date,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE candidate_ingestion SET estimated_completion_at = ?1 WHERE candidate_id = ?2`,
+    )
+    .bind(estimatedAt.toISOString(), candidateId)
+    .run();
+}
+
+async function markIngestionFailedWithStep(
+  db: D1Database,
+  candidateId: string,
+  reason: string,
+  stepName: string,
+): Promise<void> {
+  await markIngestionFailed(db, candidateId, reason);
+  await setCurrentStep(db, candidateId, stepName);
+}
+
+async function trackStep<T>(
+  db: D1Database,
+  candidateId: string,
+  stepName: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  await setCurrentStep(db, candidateId, stepName);
+  const start = Date.now();
+  try {
+    const result = await fn();
+    await recordStepDuration(db, stepName, Date.now() - start, candidateId);
+    return result;
+  } catch (err) {
+    await recordStepDuration(db, stepName, Date.now() - start, candidateId);
+    throw err;
+  }
+}
+
+// ─── Discovery result reloader ───────────────────────────────────────────────
+
+/**
+ * Reconstruct a CandidateDiscoveryResult from the D1 row written by
+ * persistCandidateProfile. Used by the post-screener pipeline when the
+ * original discovery result object is no longer in scope.
+ */
+export async function loadDiscoveryResultFromDb(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateDiscoveryResult | null> {
+  const row = await db
+    .prepare(
+      `SELECT candidate_searchable_profile, key_concepts_json, career_context_json,
+              situation_signature_json, profile_version, model_used
+         FROM candidate_ingestion
+        WHERE candidate_id = ?1`,
+    )
+    .bind(candidateId)
+    .first<{
+      candidate_searchable_profile: string | null;
+      key_concepts_json: string | null;
+      career_context_json: string | null;
+      situation_signature_json: string | null;
+      profile_version: string | null;
+      model_used: string | null;
+    }>();
+
+  if (!row || !row.candidate_searchable_profile) {
+    return null;
+  }
+
+  function safeJson<T>(raw: string | null, fallback: T): T {
+    if (!raw) return fallback;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return {
+    candidateSearchableProfile: row.candidate_searchable_profile,
+    keyConcepts: safeJson(row.key_concepts_json, {
+      mustHaveSkills: [],
+      niceToHaveSkills: [],
+      seniority: 'mid' as const,
+      primary_language: '',
+      detected_domain: '',
+    }),
+    careerContext: safeJson(row.career_context_json, {
+      company_stages: [],
+      company_size_exposure: [],
+      tenure_pattern: 'unknown' as const,
+      progression_velocity: 'unknown' as const,
+      ownership_depth: 'unknown' as const,
+      system_scale_exposure: [],
+      greenfield_ratio: 0,
+    }),
+    situationSignature: safeJson(row.situation_signature_json, {
+      primary_challenge_types: [],
+      architecture_exposure: [],
+      test_culture_exposure: '',
+      review_culture: '',
+      impact_signals: [],
+    }),
+    profileVersion: row.profile_version ?? 'unknown',
+    modelUsed: row.model_used ?? 'unknown',
+    rawText: '',
   };
-  await markIngestionMatched(db, matchedInput);
 }
 
 // ─── Utility ────────────────────────────────────────────────────────────────

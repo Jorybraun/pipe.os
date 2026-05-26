@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-012-mid-context-rerender-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 14,
+      "description": "Context value object is recreated every render — any consumer re-renders whenever PipelineProvider re-renders, even if pipeline/candidates did not change. Should use useMemo.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 8,
+      "description": "No error handling for fetch failures — rejected promises crash the component tree.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 9,
+      "description": "Race condition: if pipelineId changes rapidly, stale responses may overwrite newer data. Need abort controller or ignore stale flag.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/contexts/PipelineContext.tsx",
+      "line": 3,
+      "description": "createContext(null) loses type safety — should be createContext<PipelineContextType | null>(null).",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

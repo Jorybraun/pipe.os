@@ -24,13 +24,15 @@ import type {
   GeneratedJobDescription,
   RoleContextDocument,
   RoleContextFullState,
+  DomainCoverage,
   CreateRoleContextResponse,
   StartRoleContextResponse,
-  RespondRoleContextResponse,
-  RespondSynthesisResponse,
-  RespondQuestionResponse,
   FlagAttributeResponse,
   SubmitGapAnswerResponse,
+  InterviewState,
+  DomainCompletionStatus,
+  PostRespondResponse,
+  PostSynthesizeResponse,
 } from '../lib/api/types';
 import type {
   ConversationAdapter,
@@ -38,7 +40,6 @@ import type {
   QuestionTurnResult,
   SynthesisResult,
   TurnResult,
-  StreamEvent,
 } from '../components/AIChat/types';
 import type { UseConversationResult } from './useConversation';
 
@@ -83,12 +84,16 @@ export interface UseRoleDiscoveryResult {
   /** Full Role Context Document — null until synthesis runs. */
   rcd: RoleContextDocument | null;
 
+  // Domain-driven interview metadata
+  currentDomain: string | null;
+  domainCompletion: Record<string, DomainCompletionStatus> | undefined;
+
   // Loading & error
   isLoading: boolean;
   error: string | null;
 
   // Actions
-  createAndStart: (baseline: RoleContextBaseline, questionBudget?: number) => Promise<void>;
+  createAndStart: (baseline: RoleContextBaseline) => Promise<void>;
   respond: (answer: string, questionId: string) => Promise<void>;
   completeEarly: () => Promise<void>;
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
@@ -107,9 +112,10 @@ export interface UseRoleDiscoveryResult {
     participantRole: ParticipantRole | null;
     baseline: RoleContextBaseline;
     exchanges: RoleContextExchange[];
-    questionsAsked: number;
-    questionBudget: number;
     knowledgeState: Record<string, unknown>;
+    questionBudget: number;
+    currentDomain?: string | null | undefined;
+    domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }) => void;
   /** Wipe the whole discovery back to IDLE — used by step-indicator back-nav. */
   reset: () => void;
@@ -125,6 +131,12 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const participantRoleRef = useRef<ParticipantRole | null>(null);
   const baselineRef = useRef<RoleContextBaseline | null>(null);
 
+  // Interview state is held in refs (not React state) so it survives adapter
+  // re-creation when useApiClient returns a new object.
+  const interviewStateRef = useRef<InterviewState | null>(null);
+  const pendingKsuRef = useRef<Record<string, Record<string, unknown>> | undefined>(undefined);
+  const pendingDcRef = useRef<Record<string, DomainCoverage> | undefined>(undefined);
+
   // Override state for hydrateComplete — bypasses useConversation when resuming
   // a COMPLETE context directly from the server without re-running the interview.
   const [overridePhase, setOverridePhase] = useState<DiscoveryPhase | null>(null);
@@ -132,16 +144,18 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const [hydratedJobDescription, setHydratedJobDescription] = useState<GeneratedJobDescription | null>(null);
   const [hydratedRcd, setHydratedRcd] = useState<RoleContextDocument | null>(null);
 
-  const roleDiscoveryAdapter: ConversationAdapter = useMemo<ConversationAdapter>(
+  const roleDiscoveryAdapter: ConversationAdapter & {
+    hydrateInterviewState(state: InterviewState): void;
+    resetInterviewState(): void;
+  } = useMemo(
     () => ({
       async initialize(config: AdapterConfig): Promise<QuestionTurnResult> {
         const baseline = config.baseline as unknown as RoleContextBaseline;
-        const questionBudget = config.questionBudget ?? 10;
 
         // Step 1: Create role context — returns id + participantId for creator.
         const created = await api.post<CreateRoleContextResponse>(
           '/api/v1/role-contexts',
-          { baseline, questionBudget },
+          { baseline },
         );
         contextIdRef.current = created.id;
         participantIdRef.current = created.participantId;
@@ -153,6 +167,47 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
           { participantId: created.participantId },
         );
 
+        interviewStateRef.current = {
+          baseline: baseline as unknown as Record<string, unknown>,
+          participantRole: null,
+          questionBudget: started.progress.budget,
+          exchanges: [{
+            questionId: started.question.id,
+            question: started.question.text,
+            acknowledgment: started.acknowledgment,
+            input: started.question.input,
+          }],
+          knowledgeState: {},
+          coverage: started.progress.domains,
+          phase: 'CONTEXT',
+          questionsAsked: 0,
+          synthesisReady: false,
+          reasoning: 'Phase CONTEXT. Warm-up not yet complete.',
+          urgentGaps: ['Warm-up not yet complete'],
+          questionStack: [],
+          currentDomain: null,
+          domainCompletion: {
+            team: 'pending',
+            work: 'pending',
+            bar: 'pending',
+            codebase: 'pending',
+            process: 'pending',
+            why: 'pending',
+          },
+          domainQuestions: {},
+          domainQuestionsDelivered: {
+            team: 0,
+            work: 0,
+            bar: 0,
+            codebase: 0,
+            process: 0,
+            why: 0,
+          },
+          domainFollowUpsDelivered: 0,
+        };
+        pendingKsuRef.current = undefined;
+        pendingDcRef.current = undefined;
+
         return {
           type: 'question',
           acknowledgment: started.acknowledgment,
@@ -163,119 +218,71 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
 
       async respond(answer: string, questionId: string): Promise<TurnResult> {
         const contextId = contextIdRef.current;
+        const state = interviewStateRef.current;
         const participantId = participantIdRef.current;
-        if (!contextId || !participantId) {
+        if (!contextId || !state || !participantId) {
           throw new Error('No context created');
         }
 
-        const data = await api.post<RespondRoleContextResponse>(
+        const res = await api.post<PostRespondResponse>(
           `/api/v1/role-contexts/${contextId}/respond`,
-          { answer, questionId, participantId },
+          {
+            answer,
+            questionId,
+            state,
+            participantId,
+          },
         );
 
-        if (data.status === 'COMPLETE') {
-          const synth = data as RespondSynthesisResponse;
-          if (synth.rcd) setHydratedRcd(synth.rcd);
-          const result: SynthesisResult = {
+        // Update local state with the server's authoritative state
+        interviewStateRef.current = res.state;
+
+        if (res.participantRole) {
+          participantRoleRef.current = res.participantRole as ParticipantRole;
+        }
+
+        if (res.type === 'synthesis') {
+          return {
             type: 'synthesis',
-            synthesis: synth.synthesis,
-            persona: synth.persona,
-            jobDescription: synth.jobDescription,
-            progress: synth.progress,
+            synthesis: res.synthesis ?? '',
+            persona: res.persona ?? null,
+            jobDescription: res.jobDescription ?? null,
+            progress: res.progress,
           };
-          return result;
         }
 
-        // INTERVIEWING turn — capture participantRole on first answer.
-        const question = data as RespondQuestionResponse;
-        if (question.participantRole) {
-          participantRoleRef.current = question.participantRole;
-        }
-
-        const result: QuestionTurnResult = {
+        return {
           type: 'question',
-          acknowledgment: question.acknowledgment,
-          question: question.question,
-          progress: question.progress,
+          acknowledgment: res.acknowledgment,
+          question: res.question!,
+          progress: res.progress,
         };
-        return result;
-      },
-
-      async *respondStream(answer: string, questionId: string): AsyncGenerator<StreamEvent> {
-        const contextId = contextIdRef.current;
-        const participantId = participantIdRef.current;
-        if (!contextId || !participantId) {
-          yield { event: 'error', message: 'No context created' };
-          return;
-        }
-
-        // Type for the streaming done payload (matches backend SSE done event)
-        interface StreamDonePayload {
-          participantId: string;
-          synthesis?: string;
-          persona?: RespondSynthesisResponse['persona'];
-          jobDescription?: string;
-          rcd?: RoleContextDocument;
-          acknowledgment?: string;
-          question?: RespondQuestionResponse['question'];
-          knowledgeState?: Record<string, unknown>;
-          progress: RespondRoleContextResponse['progress'];
-        }
-
-        for await (const event of api.postStream<StreamDonePayload>(
-          `/api/v1/role-contexts/${contextId}/respond`,
-          { answer, questionId, participantId },
-        )) {
-          if (event.event === 'chunk') {
-            yield { event: 'chunk', text: event.text };
-          } else if (event.event === 'done') {
-            const data = event.data;
-            // Check if synthesis (has synthesis field) or question (has question field)
-            if (data.synthesis !== undefined) {
-              if (data.rcd) setHydratedRcd(data.rcd);
-              const result: SynthesisResult = {
-                type: 'synthesis',
-                synthesis: data.synthesis,
-                persona: data.persona ?? null,
-                jobDescription: data.jobDescription ?? null,
-                progress: data.progress,
-              };
-              yield { event: 'done', result };
-            } else if (data.question) {
-              const result: QuestionTurnResult = {
-                type: 'question',
-                acknowledgment: data.acknowledgment ?? '',
-                question: data.question,
-                progress: data.progress,
-              };
-              yield { event: 'done', result };
-            }
-          } else if (event.event === 'error') {
-            yield { event: 'error', message: event.message };
-          }
-        }
       },
 
       async completeEarly(): Promise<SynthesisResult> {
         const contextId = contextIdRef.current;
-        const participantId = participantIdRef.current;
-        if (!contextId || !participantId) {
+        const state = interviewStateRef.current;
+        if (!contextId || !state) {
           throw new Error('No context created');
         }
 
-        const data = await api.post<RespondSynthesisResponse>(
-          `/api/v1/role-contexts/${contextId}/complete`,
-          { participantId },
+        const synthRes = await api.post<PostSynthesizeResponse>(
+          `/api/v1/role-contexts/${contextId}/synthesize`,
+          { state },
         );
-
-        if (data.rcd) setHydratedRcd(data.rcd);
 
         return {
           type: 'synthesis',
-          synthesis: data.synthesis,
-          persona: data.persona,
-          jobDescription: data.jobDescription,
-          progress: data.progress,
+          synthesis: synthRes.synthesis,
+          persona: synthRes.persona,
+          jobDescription: synthRes.jobDescription,
+          progress: {
+            asked: state.questionsAsked,
+            budget: 0,
+            domains: state.coverage,
+            currentDomain: state.currentDomain,
+            domainCompletion: state.domainCompletion,
+          },
         };
       },
 
@@ -290,6 +297,18 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
           participantId,
         });
       },
+
+      hydrateInterviewState(state: InterviewState): void {
+        interviewStateRef.current = state;
+        pendingKsuRef.current = undefined;
+        pendingDcRef.current = undefined;
+      },
+
+      resetInterviewState(): void {
+        interviewStateRef.current = null;
+        pendingKsuRef.current = undefined;
+        pendingDcRef.current = undefined;
+      },
     }),
     [api],
   );
@@ -297,13 +316,13 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
   const conv = useConversation(roleDiscoveryAdapter);
 
   const createAndStart = useCallback(
-    async (baseline: RoleContextBaseline, questionBudget = 10): Promise<void> => {
+    async (baseline: RoleContextBaseline): Promise<void> => {
       // Starting a fresh interview — clear any prior hydration so stale persona
       // from a previous COMPLETE session can't leak into the new one.
       setOverridePhase(null);
       setHydratedPersona(null);
       setHydratedJobDescription(null);
-      await conv.initialize({ baseline: baseline as unknown as Record<string, unknown>, questionBudget });
+      await conv.initialize({ baseline: baseline as unknown as Record<string, unknown> });
     },
     [conv],
   );
@@ -329,21 +348,74 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     participantRole: ParticipantRole | null;
     baseline: RoleContextBaseline;
     exchanges: RoleContextExchange[];
-    questionsAsked: number;
-    questionBudget: number;
     knowledgeState: Record<string, unknown>;
+    questionBudget: number;
+    currentDomain?: string | null | undefined;
+    domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }): void => {
     contextIdRef.current = data.id;
     participantIdRef.current = data.participantId;
     participantRoleRef.current = data.participantRole;
     baselineRef.current = data.baseline;
+
+    const defaultCoverage: Record<string, DomainCoverage> = {
+      why: 'none',
+      work: 'none',
+      team: 'none',
+      bar: 'none',
+      codebase: 'none',
+      process: 'none',
+    };
+
+    const domainCompletion = data.domainCompletion ?? {
+      team: 'pending',
+      work: 'pending',
+      bar: 'pending',
+      codebase: 'pending',
+      process: 'pending',
+      why: 'pending',
+    };
+
+      const reconstructedState: InterviewState = {
+      baseline: data.baseline as unknown as Record<string, unknown>,
+      participantRole: data.participantRole,
+      questionBudget: data.questionBudget,
+      exchanges: data.exchanges.map((ex) => ({
+        questionId: ex.questionId,
+        question: ex.question,
+        acknowledgment: ex.acknowledgment,
+        ...(ex.answer !== undefined ? { answer: ex.answer } : {}),
+        input: ex.input,
+      })),
+      knowledgeState: data.knowledgeState as Record<string, Record<string, unknown>>,
+      coverage: (data.knowledgeState._coverage as Record<string, DomainCoverage>) ?? defaultCoverage,
+      phase: 'DISCOVERY',
+      questionsAsked: data.exchanges.length,
+      synthesisReady: false,
+      questionStack: [],
+      currentDomain: (data.currentDomain ?? null) as import('../lib/api/types').Domain | null,
+      domainCompletion,
+      domainQuestions: {},
+      domainQuestionsDelivered: {
+        team: 0,
+        work: 0,
+        bar: 0,
+        codebase: 0,
+        process: 0,
+        why: 0,
+      },
+      domainFollowUpsDelivered: 0,
+    };
+
+    (roleDiscoveryAdapter as { hydrateInterviewState(state: InterviewState): void }).hydrateInterviewState(reconstructedState);
+
     conv.hydrateInterviewing({
       exchanges: data.exchanges,
-      questionsAsked: data.questionsAsked,
-      questionBudget: data.questionBudget,
       knowledgeState: data.knowledgeState,
+      currentDomain: data.currentDomain,
+      domainCompletion,
     });
-  }, [conv]);
+  }, [conv, roleDiscoveryAdapter]);
 
   const reset = useCallback((): void => {
     contextIdRef.current = null;
@@ -354,8 +426,9 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     setHydratedPersona(null);
     setHydratedJobDescription(null);
     setHydratedRcd(null);
+    (roleDiscoveryAdapter as { resetInterviewState(): void }).resetInterviewState();
     conv.reset();
-  }, [conv]);
+  }, [conv, roleDiscoveryAdapter]);
 
   const flagAttribute = useCallback(
     async (flagType: string, domain: string, attribute: string, note?: string): Promise<FlagAttributeResponse> => {
@@ -421,6 +494,8 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     jobDescription: hydratedJobDescription ?? conv.jobDescription,
     synthesis: conv.synthesis,
     rcd: hydratedRcd,
+    currentDomain: interviewStateRef.current?.currentDomain ?? null,
+    domainCompletion: interviewStateRef.current?.domainCompletion,
     isLoading: conv.isLoading,
     error: conv.error,
     createAndStart,

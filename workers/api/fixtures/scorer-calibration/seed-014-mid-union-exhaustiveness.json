@@ -1,0 +1,127 @@
+{
+  "id": "seed-014-mid-union-exhaustiveness",
+  "description": "Mid reviewer finds a discriminated union bug but misses exhaustiveness check. Acceptable mid-level performance.",
+  "tags": [
+    "typescript",
+    "types",
+    "mid-score"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add stage transition handler",
+    "description": "Handles candidate stage transitions with typed actions.",
+    "instructions": "Review for type safety and correctness.",
+    "diff": "diff --git a/src/lib/stageTransitions.ts b/src/lib/stageTransitions.ts\n@@ -0,0 +1,35 @@\n+type StageAction =\n+  | { type: 'move'; stageId: string }\n+  | { type: 'reject'; reason: string }\n+  | { type: 'hold'; until: Date };\n+\n+export function handleAction(action: StageAction, candidateId: string) {\n+  if (action.type === 'move') {\n+    return moveCandidate(candidateId, action.stageId);\n+  }\n+  if (action.type === 'reject') {\n+    return rejectCandidate(candidateId, action.reason);\n+  }\n+  if (action.type === 'hold') {\n+    return holdCandidate(candidateId, action.until);\n+  }\n+  return null;\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/lib/stageTransitions.ts",
+      "line": 14,
+      "description": "No exhaustiveness check — if a new StageAction type is added, handleAction silently returns null instead of failing at compile time. Should use switch with never or assertNever.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/stageTransitions.ts",
+      "line": 6,
+      "description": "Return type is inferred as Promise<unknown> | null — callers have no type safety on the result. Should explicitly type the return.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/lib/stageTransitions.ts",
+      "line": 8,
+      "description": "Each branch calls a different async function but results are not awaited — fire-and-forget pattern may hide errors.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1401,
+            "file": "src/lib/stageTransitions.ts",
+            "line": 6,
+            "category": "types",
+            "severity": "suggestion",
+            "what": "Return type should be explicit.",
+            "why": "Callers need to know what this function returns.",
+            "positive": false
+          },
+          {
+            "id": 1402,
+            "file": "src/lib/stageTransitions.ts",
+            "line": 8,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Should await the async calls.",
+            "why": "Otherwise errors are silently swallowed.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Type safety and async handling needed.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1401,
+            "move": "change",
+            "content": "Added explicit return type.",
+            "updated_code": "export async function handleAction(action: StageAction, candidateId: string): Promise<void> {"
+          },
+          {
+            "to_comment_id": 1402,
+            "move": "change",
+            "content": "Added await to all branches.",
+            "updated_code": "await moveCandidate(...)"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Both fixes look good.",
+      "submittedAt": "2026-04-28T03:47:05.962Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 1 of 3 bugs (return type). Missed exhaustiveness and async handling. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Both issues flagged as suggestions not blocking. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted both fixes. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Basic rationale. No deep analysis. Level 2-3."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No questions. Level 1-2."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested explicit return type and await — actionable. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

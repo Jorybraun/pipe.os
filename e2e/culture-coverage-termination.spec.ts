@@ -88,9 +88,11 @@ test.describe("Culture adaptive termination", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+            state: 'in_progress',
           currentQuestion: { questionId: first.questionId, text: first.text },
           turnsAsked: 0,
           totalBudget: 20,
+            consentRequired: false,
         }),
       });
     });
@@ -105,7 +107,7 @@ test.describe("Culture adaptive termination", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            done: true,
+            state: 'complete',
             message:
               "Thank you for completing the interview. Your responses have been submitted for review.",
           }),
@@ -117,9 +119,9 @@ test.describe("Culture adaptive termination", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            done: false,
+            state: 'in_progress',
             acknowledgment: "Thanks for walking me through that.",
-            currentQuestion: { questionId: next.questionId, text: next.text },
+            nextQuestion: { questionId: next.questionId, text: next.text },
             turnsAsked: questionIdx,
             totalBudget: 20,
           }),
@@ -206,9 +208,11 @@ test.describe("Culture adaptive termination", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+            state: 'in_progress',
           currentQuestion: questions[0],
           turnsAsked: 0,
           totalBudget: 20,
+            consentRequired: false,
         }),
       });
     });
@@ -222,7 +226,7 @@ test.describe("Culture adaptive termination", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            done: true,
+            state: 'complete',
             message:
               "Thank you for completing the interview. Your responses have been submitted for review.",
           }),
@@ -232,9 +236,9 @@ test.describe("Culture adaptive termination", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            done: false,
+            state: 'in_progress',
             acknowledgment: "Thanks.",
-            currentQuestion: questions[questionIdx],
+            nextQuestion: questions[questionIdx],
             turnsAsked: questionIdx,
             totalBudget: 20,
           }),

@@ -7,6 +7,7 @@
  */
 
 import type { RoleContextDocument } from '../../types';
+import { humanizeOpenCode } from './sanitize';
 
 export function deriveJobDescriptionFromRcd(rcd: RoleContextDocument, fallbackTitle?: string): string {
   const { consumer_slice, technical_context, domain_matrix } = rcd;
@@ -35,22 +36,31 @@ export function deriveJobDescriptionFromRcd(rcd: RoleContextDocument, fallbackTi
   for (const story of workStories.slice(0, 3)) {
     if (story.moral) responsibilities.push(story.moral);
   }
+  // Only fall back to generic bullets if we truly have nothing. Even then,
+  // derive from constructs or summary rather than hardcoding.
   if (responsibilities.length === 0) {
-    responsibilities.push('Ship features end-to-end in collaboration with the product and design teams.');
-    responsibilities.push('Own technical decisions within your domain of expertise.');
-    responsibilities.push('Participate in code review and help raise the team\'s engineering standards.');
+    const constructs = technical_context.constructs.slice(0, 2);
+    if (constructs.length > 0) {
+      responsibilities.push(`Work with ${constructs.join(' and ')} architectural patterns day-to-day.`);
+    }
+    if (roleOverview) {
+      responsibilities.push(roleOverview);
+    }
+    if (responsibilities.length === 0) {
+      responsibilities.push('Collaborate with the team to ship impactful features and maintain high engineering standards.');
+    }
   }
 
-  // Must-haves — consumer_slice.mustHaveSkills
+  // Must-haves — consumer_slice.mustHaveSkills (already cleaned)
   const mustHaves = consumer_slice.mustHaveSkills.length > 0
     ? consumer_slice.mustHaveSkills
     : technical_context.stack.length > 0
       ? technical_context.stack.map((s) => `Proficiency with ${s}`)
       : ['Relevant professional experience in a similar role.'];
 
-  // Nice-to-haves — consumer_slice.niceToHaveSkills
+  // Nice-to-haves — humanize open_codes so they don't appear as snake_case tokens
   const niceToHaves = consumer_slice.niceToHaveSkills.length > 0
-    ? consumer_slice.niceToHaveSkills
+    ? consumer_slice.niceToHaveSkills.map((s) => humanizeOpenCode(s) ?? s).filter(Boolean)
     : [];
 
   // Compensation — opportunistic; we don't invent numbers

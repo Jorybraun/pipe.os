@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-029-senior-schema-inference",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/inferSchema.ts",
+      "line": 4,
+      "description": "Type checker is a comment placeholder — actual implementation likely creates a new Program per call, which is extremely expensive. Must reuse the existing TypeScript program/checker.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/inferSchema.ts",
+      "line": 14,
+      "description": "No handling for arrays, unions, enums, tuples, or intersections — these all fall through to z.unknown(), producing incorrect schemas for common types.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/inferSchema.ts",
+      "line": 7,
+      "description": "Non-null assertion (!) on find result — if typeName does not exist in the file, this throws at runtime. Should validate and throw a descriptive error.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/inferSchema.ts",
+      "line": 18,
+      "description": "No memoization — recursive types will cause infinite recursion and stack overflow. Should cache visited types.",
+      "expectedFound": true
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 4,
+    "expectedMissed": 0
+  }
+}

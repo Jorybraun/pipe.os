@@ -22,6 +22,15 @@ export interface SamplePRSummary {
   changed_file_paths_json: string | null;
 }
 
+export interface RepoIssueSummary {
+  issue_number: number;
+  title: string;
+  state_at_crawl: string;
+  labels_json: string | null;
+  comment_count: number;
+  has_merged_pr: 0 | 1;
+}
+
 export interface Pass3Input {
   repo_id: number;
   full_name: string;
@@ -51,6 +60,7 @@ export interface Pass3Input {
   root_tree_json: string | null;
   prior_content_hash: string | null;
   prior_signals_version: string | null;
+  issues: RepoIssueSummary[];
 }
 
 export interface FetchOptions {

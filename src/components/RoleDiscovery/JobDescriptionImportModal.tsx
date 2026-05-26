@@ -70,7 +70,7 @@ export function JobDescriptionImportModal({
       formData.append('file', file);
 
       // useApiClient is JSON-only — multipart needs raw fetch.
-      const baseUrl = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+      const baseUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8787';
       const clerkWindow = window as {
         Clerk?: { session?: { getToken: () => Promise<string> } };
       };
@@ -124,7 +124,7 @@ export function JobDescriptionImportModal({
         style={{
           width: '100%',
           maxWidth: 560,
-          background: '#13131a',
+          background: 'var(--pipe-surface-solid)',
           border: '1px solid var(--pipe-border)',
           borderRadius: 12,
           padding: 32,
@@ -154,7 +154,7 @@ export function JobDescriptionImportModal({
             <div
               style={{
                 fontSize: 13,
-                color: 'var(--pipe-text-muted, rgba(255,255,255,0.55))',
+                color: 'var(--pipe-text-muted)',
                 fontFamily: '"Space Mono", monospace',
               }}
             >
@@ -199,10 +199,10 @@ export function JobDescriptionImportModal({
               : 'transparent',
             border: canParseText
               ? '1px solid rgba(74, 222, 128, 0.3)'
-              : '1px solid rgba(255,255,255,0.06)',
+              : '1px solid var(--pipe-border-light)',
             color: canParseText
               ? 'rgba(74, 222, 128, 0.9)'
-              : 'rgba(255,255,255,0.2)',
+              : 'var(--pipe-text-dim)',
             fontSize: 11,
             fontWeight: 700,
             letterSpacing: '0.15em',
@@ -236,7 +236,7 @@ export function JobDescriptionImportModal({
             style={{
               flex: 1,
               height: 1,
-              background: 'rgba(255,255,255,0.06)',
+              background: 'var(--pipe-border-light)',
             }}
           />
           <span
@@ -253,7 +253,7 @@ export function JobDescriptionImportModal({
             style={{
               flex: 1,
               height: 1,
-              background: 'rgba(255,255,255,0.06)',
+              background: 'var(--pipe-border-light)',
             }}
           />
         </div>
@@ -263,12 +263,12 @@ export function JobDescriptionImportModal({
           onClick={() => !isParsing && fileInputRef.current?.click()}
           style={{
             padding: '24px 20px',
-            border: '1px dashed rgba(255,255,255,0.12)',
+            border: '1px dashed var(--pipe-border)',
             borderRadius: 8,
             cursor: isParsing ? 'default' : 'pointer',
             fontSize: 11,
             fontFamily: '"Space Mono", monospace',
-            color: 'rgba(255,255,255,0.4)',
+            color: 'var(--pipe-text-dim)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

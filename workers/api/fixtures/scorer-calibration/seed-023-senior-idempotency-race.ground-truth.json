@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-023-senior-idempotency-race",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/idempotency.ts",
+      "line": 6,
+      "description": "In-memory Map is not shared across Worker instances — in a multi-process or edge deployment, idempotency keys are isolated per instance. Duplicate requests routed to different Workers will re-execute. Should use Redis/Durable Object.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/idempotency.ts",
+      "line": 6,
+      "description": "No locking around check-then-act — two concurrent requests with the same key can both pass the has() check, then both execute fn(), violating idempotency. Needs atomic compare-and-swap.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/idempotency.ts",
+      "line": 9,
+      "description": "No durability guarantee — if process crashes between fn() completion and store.set(), the operation is lost. Should persist BEFORE executing or use a two-phase commit.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/idempotency.ts",
+      "line": 5,
+      "description": "No TTL on keys — Map grows unbounded, causing memory leak. Should expire old entries.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 2,
+    "major": 1,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

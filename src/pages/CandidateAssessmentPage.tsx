@@ -11,43 +11,64 @@ import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { InterviewProvider } from '../contexts/InterviewContext';
 import { StageRenderer } from '../components/Assessment/StageRenderer';
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
+import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
+import { WaitingForMatch } from '../components/Assessment/WaitingForMatch';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
-import type { RawStage } from '../lib/challenge/resolveStageConfig';
+import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig';
 import { useReviewSessionV2 } from '../hooks/useReviewSessionV2';
 import { ReviewSessionPage } from './ReviewSessionPage';
 
 /**
  * Build a RawStage from the stage config DTO + current challenge content.
  * The composable system needs a StageConfig with challenges array.
- * We build it with a single challenge (the current one, hydrated with content).
+ * We include ALL challenges so the WelcomeScreen can show the full queue,
+ * and hydrate only the current challenge with content from get-challenge.
  */
 function buildRawStage(
   stageConfig: StageConfigDTO,
   content: ChallengeContentDTO,
   currentOrder: number,
 ): RawStage {
+  const allChallenges = (stageConfig.challenges ?? []).map((ch, index): RawChallenge => {
+    const isCurrent = index === currentOrder;
+    if (isCurrent) {
+      return {
+        id: content.id ?? `challenge-${currentOrder}`,
+        type: content.type ?? ch.type ?? 'QUIZ_MCQ',
+        title: content.title ?? ch.title ?? 'Challenge',
+        instructions: content.instructions ?? null,
+        config: typeof content.config === 'string'
+          ? content.config
+          : JSON.stringify(content.config ?? {}),
+        order: index,
+        codeArtifact: content.codeArtifact as any ?? null,
+        cachedDiffJson: content.cachedDiffJson ?? null,
+        githubPrTitle: (content.githubPrTitle as string) ?? null,
+        githubRepoUrl: (content.githubRepoUrl as string) ?? null,
+        githubPrNumber: (content.githubPrNumber as number) ?? null,
+        githubPrDescription: (content.githubPrDescription as string) ?? null,
+        devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
+        issueBody: content.issueBody ?? null,
+      };
+    }
+    // Non-current challenges: minimal info for WelcomeScreen preview
+    return {
+      id: `challenge-${index}`,
+      type: ch.type ?? 'QUIZ_MCQ',
+      title: ch.title ?? 'Challenge',
+      instructions: null,
+      config: '{}',
+      order: index,
+    };
+  });
+
   return {
     id: 'current-stage',
     title: stageConfig.stageTitle ?? 'Stage',
     order: 0,
     timeLimit: stageConfig.timeLimit ?? null,
-    challenges: [{
-      id: content.id ?? `challenge-${currentOrder}`,
-      type: content.type ?? stageConfig.challenges?.[currentOrder]?.type ?? 'QUIZ_MCQ',
-      title: content.title ?? 'Challenge',
-      instructions: content.instructions ?? null,
-      config: typeof content.config === 'string'
-        ? content.config
-        : JSON.stringify(content.config ?? {}),
-      order: 0,
-      codeArtifact: content.codeArtifact as any ?? null,
-      cachedDiffJson: content.cachedDiffJson ?? null,
-      githubPrTitle: (content.githubPrTitle as string) ?? null,
-      githubRepoUrl: (content.githubRepoUrl as string) ?? null,
-      githubPrNumber: (content.githubPrNumber as number) ?? null,
-      githubPrDescription: (content.githubPrDescription as string) ?? null,
-    }],
+    challenges: allChallenges,
   };
 }
 
@@ -55,7 +76,11 @@ function buildRawStage(
 // Component
 // ============================================================================
 
-export default function CandidateAssessmentPage(): JSX.Element {
+interface CandidateAssessmentPageProps {
+  hideHeader?: boolean;
+}
+
+export default function CandidateAssessmentPage({ hideHeader = false }: CandidateAssessmentPageProps): JSX.Element {
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const isPreview = searchParams.get('mode') === 'preview';
@@ -73,6 +98,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
     submitChallenge,
     onStart,
     reset,
+    refresh,
     sessionToken,
   } = useAssessment(token || '');
 
@@ -275,12 +301,39 @@ export default function CandidateAssessmentPage(): JSX.Element {
   }
 
   // ---------------------------------------------------------------------------
+  // WAITING_FOR_MATCH — full-page waiting state, bypasses StageShell
+  // ---------------------------------------------------------------------------
+
+  if (currentType === 'WAITING_FOR_MATCH' && challengeContent) {
+    const waitConfig = typeof challengeContent.config === 'object' && challengeContent.config !== null
+      ? (challengeContent.config as Record<string, unknown>)
+      : {};
+    return (
+      <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
+        <ChromeMeshGrid />
+        <WaitingForMatch
+          title={challengeContent.title ?? 'Building your personalized challenge'}
+          instructions={challengeContent.instructions ?? 'We are analyzing your profile to find the best open-source project match. This takes a few moments.'}
+          config={{
+            autoRefresh: waitConfig.autoRefresh === true,
+            refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
+            estimatedSecondsRemaining: typeof waitConfig.estimatedSecondsRemaining === 'number' ? waitConfig.estimatedSecondsRemaining : 180,
+          }}
+          onRefresh={() => void refresh()}
+          sessionToken={sessionToken}
+        />
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Challenge workspace
   // ---------------------------------------------------------------------------
 
   const isFollowUp = currentType === 'FOLLOW_UP';
   const followUpReady = isFollowUp && followUpQuestions && followUpQuestions.length > 0;
   const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
+  const isIntake = currentType === 'INTAKE';
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
 
@@ -294,6 +347,14 @@ export default function CandidateAssessmentPage(): JSX.Element {
     currentType === 'CODE_REVIEW' &&
     challengeContent?.reviewSession?.requiresInit &&
     reviewSessionInitLoading;
+
+  // Use the challenge's own isComplete logic rather than a generic null-check.
+  // This prevents empty video/voice submissions and ensures recruiters get
+  // actual answers on the candidate profile.
+  const currentChallengeNode = resolvedConfig?.challenges?.[currentOrder];
+  const isChallengeComplete = currentChallengeNode
+    ? currentChallengeNode.isComplete(((currentSubmission ?? {}) as Record<string, unknown>))
+    : false;
 
   return (
     <SessionTokenProvider value={sessionToken}>
@@ -342,7 +403,7 @@ export default function CandidateAssessmentPage(): JSX.Element {
       <InterviewProvider
         key={`${currentOrder}-${challengeContent.title}`}
         stageConfig={resolvedConfig}
-        currentIndex={0}
+        currentIndex={currentOrder}
         onSubmit={handleSubmit}
         onSubmissionChange={setCurrentSubmission}
       >
@@ -354,22 +415,20 @@ export default function CandidateAssessmentPage(): JSX.Element {
                 title={challengeContent.title ?? 'Challenge'}
                 totalChallenges={totalChallenges}
                 currentChallengeIndex={currentOrder}
+                hideHeader={hideHeader}
                 onNext={() => handleSubmit()}
                 isLastChallenge={isLastChallenge}
-                fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION'}
+                fullBleed={currentType === 'CODE_REVIEW' || currentType === 'CODE_IMPLEMENTATION' || isIntake}
                 canAdvance={
                   !isPreview &&
                   currentType !== 'WELCOME' &&
                   currentType !== 'LIVE_VIDEO' &&
                   !isReviewSessionV2 &&
-                  (
-                    currentType === 'AGENT_INTERVIEW'
-                      ? currentSubmission !== null
-                      : (followUpReady || (!isFollowUp && currentSubmission !== null))
-                  )
+                  !isIntake &&
+                  (followUpReady || (!isFollowUp && isChallengeComplete))
                 }
                 isSubmitting={isLoading}
-                hideFooter={isReviewSessionV2}
+                hideFooter={isReviewSessionV2 || isIntake}
               >
                 {isReviewSessionV2Loading ? (
                   <div data-testid="review-session-loader" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
@@ -391,6 +450,15 @@ export default function CandidateAssessmentPage(): JSX.Element {
                       setReviewSessionMeta(null);
                       void handleSubmit({ reviewSessionId: reviewSessionMeta.sessionId });
                     }}
+                  />
+                ) : isIntake ? (
+                  <IntakeChallenge
+                    challengeId={challengeContent.id ?? ''}
+                    onSubmit={(submission) => handleSubmit(submission)}
+                    isSubmitting={isLoading}
+                    candidateName={candidate?.name}
+                    candidateEmail={candidate?.email}
+                    allowSkip={typeof challengeContent.config === 'object' && challengeContent.config !== null && (challengeContent.config as Record<string, unknown>).allowSkip === true}
                   />
                 ) : followUpWaiting ? (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>

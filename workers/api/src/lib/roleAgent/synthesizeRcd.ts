@@ -23,8 +23,10 @@ import {
   buildRcdSynthesisSystemPrompt,
   buildRcdSynthesisUserMessage,
 } from '../roleAgentPrompts';
+import { cleanSkillArray, humanizeOpenCode } from './sanitize';
 import { deriveConsumerSlice } from './consumerSlice';
 import { verifyRcd, type VerifierIssue, type StakeholderTranscript } from './verifyRcd';
+export { decomposeRcdIntoNodes, persistRoleNodes } from './decomposeRcd';
 import type {
   BarsOverride,
   ConflictRecord,
@@ -305,7 +307,7 @@ function normalizeDomainCell(raw: Record<string, unknown> | undefined): DomainCe
     laddering_chains: asArray<Record<string, unknown>>(raw.laddering_chains).map(
       normalizeLadderingChain,
     ),
-    open_codes: asStringArray(raw.open_codes),
+    open_codes: cleanSkillArray(asStringArray(raw.open_codes)),
     axial_links: asArray<DomainCell['axial_links'][number]>(raw.axial_links).filter(
       (link) =>
         typeof link.from_code === 'string' &&
@@ -336,10 +338,10 @@ function normalizeLadderingChain(raw: Record<string, unknown>): DomainCell['ladd
 
 function normalizeTechnicalContext(raw: Record<string, unknown> | undefined): TechnicalContext {
   return {
-    stack: asStringArray(raw?.stack),
+    stack: cleanSkillArray(asStringArray(raw?.stack)),
     constructs: asStringArray(raw?.constructs),
     seniority_band: typeof raw?.seniority_band === 'string' ? raw.seniority_band : '',
-    codebase_expectations: asStringArray(raw?.codebase_expectations),
+    codebase_expectations: cleanSkillArray(asStringArray(raw?.codebase_expectations)),
     dispositional_weights: asNumberRecord(raw?.dispositional_weights),
   };
 }

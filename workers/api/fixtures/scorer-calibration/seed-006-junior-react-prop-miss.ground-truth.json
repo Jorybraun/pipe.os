@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-006-junior-react-prop-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/components/CandidateCard.tsx",
+      "line": 9,
+      "description": "Inline style object passed to style prop — creates a new object every render, causing unnecessary re-renders if parent is pure. Should use CSS class or memoized style.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/CandidateCard.tsx",
+      "line": 8,
+      "description": "No accessibility — div with onClick is not keyboard-focusable. Should be a button or have role=\"button\" + tabIndex + keydown handler.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/components/CandidateCard.tsx",
+      "line": 6,
+      "description": "Interface defined inline in same file — fine for small components but Candidate type should be imported from shared types.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 0,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 2
+  }
+}

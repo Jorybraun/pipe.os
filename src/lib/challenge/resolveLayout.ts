@@ -1,5 +1,5 @@
 
-export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP';
+export type ChallengeType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'INTAKE' | 'WAITING_FOR_MATCH';
 
 export type PanelType =
   | 'problem'
@@ -75,13 +75,7 @@ export function resolveLayout(challenge: { type: string | null; config?: any }):
       };
 
     case 'QUIZ_SHORT_ANSWER': {
-      const inputMode = (config as { inputMode?: string }).inputMode ?? 'text';
-      if (inputMode === 'voice') {
-        return { leftPanel: null, centerPanel: 'voice', rightPanel: null, layoutType: 'standard' };
-      }
-      if (inputMode === 'video') {
-        return { leftPanel: null, centerPanel: 'video-submission', rightPanel: null, layoutType: 'standard' };
-      }
+      // Unified SmartTextareaPanel handles text, voice, and video in one component.
       return { leftPanel: null, centerPanel: 'textarea', rightPanel: null, layoutType: 'standard' };
     }
 

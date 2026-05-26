@@ -14,6 +14,8 @@ export type ScreeningCategory =
   | 'availability'
   | 'logistics';
 
+export type InputMode = 'text' | 'voice' | 'video';
+
 export interface ScreeningQuestionTemplate {
   id: string;
   category: ScreeningCategory;
@@ -22,6 +24,8 @@ export interface ScreeningQuestionTemplate {
   purpose: string;
   /** Suggested follow-ups the recruiter can ask */
   followUps?: string[];
+  /** Preferred response format — recruiter can override when adding */
+  defaultInputMode?: InputMode;
 }
 
 export const SCREENING_CATEGORIES: Record<ScreeningCategory, { label: string; description: string }> = {
@@ -58,6 +62,7 @@ export const SCREENING_QUESTIONS: ScreeningQuestionTemplate[] = [
     category: 'background',
     text: 'Tell me a bit about yourself and your current role.',
     purpose: 'Warm-up opener — get a sense of who they are.',
+    defaultInputMode: 'voice',
     followUps: [
       'What does a typical day look like for you?',
       'What part of your current role do you enjoy most?',
@@ -74,6 +79,7 @@ export const SCREENING_QUESTIONS: ScreeningQuestionTemplate[] = [
     category: 'background',
     text: 'What are you most proud of professionally?',
     purpose: 'Reveals what they value and where they see their strengths.',
+    defaultInputMode: 'video',
   },
 
   // ── Motivation ──────────────────────────────────────────────────────────

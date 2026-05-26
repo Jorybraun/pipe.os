@@ -39,6 +39,8 @@ export interface ChallengeNode {
 /** Full stage configuration — describes the entire assessment experience */
 export interface StageConfig {
   id: string;
+  /** Human-readable stage title */
+  title?: string;
   /** Stage-level behavioral wrappers: ['timer'], ['timer', 'video'], etc. */
   shells: string[];
   /** Ordered challenge queue (mutable — follow-ups get inserted at runtime) */

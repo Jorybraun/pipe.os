@@ -18,7 +18,8 @@ import { FollowUpQuestionsPanel } from './FollowUpQuestionsPanel';
 import { VoicePanel } from '../Panels/VoicePanel';
 import { VideoSubmissionPanel } from '../Panels/VideoSubmissionPanel';
 import { VideoWaitingRoom } from '../Video/VideoWaitingRoom';
-import { WelcomeScreen, type ChallengeType } from './WelcomeScreen';
+import { WelcomeScreen } from './WelcomeScreen';
+import { IntakeChallenge } from './IntakeChallenge';
 import { normalizeShortAnswerConfig } from '../../lib/shortAnswerUtils';
 import type { FollowUpQuestion } from '../../hooks/useAssessment';
 
@@ -315,13 +316,19 @@ export function ChallengeRegistry({
   // ---------------------------------------------------------------------------
 
   if (challenge.type === 'WELCOME') {
-    // Determine the next real challenge type for the welcome screen display
     const nextType = (config.nextChallengeType as string) ?? 'QUIZ_SHORT_ANSWER';
     return (
       <WelcomeScreen
         pipelineName={challenge.title || 'Technical Assessment'}
         stageName={challenge.title || 'Interview'}
-        challengeType={nextType as ChallengeType}
+        challenges={[
+          {
+            title: challenge.title || 'Interview',
+            type: nextType,
+            timeLimit: stageTimeLimit ?? null,
+            data: config as Record<string, unknown>,
+          },
+        ]}
         onStart={() => onSubmit({})}
       />
     );
@@ -338,6 +345,56 @@ export function ChallengeRegistry({
         isRecruiterWaiting={false}
         isCandidatePresent={false}
         role="CANDIDATE"
+      />
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // WAITING_FOR_MATCH bypass — handled at page level, but guard here too
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'WAITING_FOR_MATCH') {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', fontSize: 11 }}>
+        WAITING_FOR_MATCH_RENDERED_AT_PAGE_LEVEL
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // INTAKE bypass — candidate self-serve profile building
+  // ---------------------------------------------------------------------------
+
+  if (challenge.type === 'INTAKE') {
+    if (!candidateId) {
+      return (
+        <div
+          style={{
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: 16,
+            color: 'var(--pipe-text-dim)',
+            fontFamily: 'Space Mono',
+            fontSize: 11,
+          }}
+        >
+          <div style={{ fontSize: 11, letterSpacing: '0.1em' }}>INTAKE_ERROR</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)' }}>
+            Candidate ID not available. Please refresh.
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <IntakeChallenge
+        challengeId={challenge.id}
+        onSubmit={(submission) => onSubmit(submission)}
+        isSubmitting={isSubmitting ?? false}
+        allowSkip={typeof challenge.config === 'object' && challenge.config !== null && (challenge.config as Record<string, unknown>).allowSkip === true}
       />
     );
   }

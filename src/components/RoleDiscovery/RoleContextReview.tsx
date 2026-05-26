@@ -31,15 +31,15 @@ interface RoleContextReviewProps {
 const SECTION_TITLE_STYLE: React.CSSProperties = {
   fontSize: 8,
   letterSpacing: '0.25em',
-  color: 'rgba(255,255,255,0.25)',
+  color: 'var(--pipe-text-dim)',
   fontFamily: '"Space Mono", monospace',
   marginBottom: 12,
 };
 
 const CARD_STYLE: React.CSSProperties = {
   padding: 20,
-  background: 'rgba(255,255,255,0.03)',
-  border: '1px solid rgba(255,255,255,0.08)',
+  background: 'var(--pipe-surface)',
+  border: '1px solid var(--pipe-border)',
   borderRadius: 6,
   marginBottom: 16,
 };
@@ -52,7 +52,7 @@ function EnergyDot({ signal }: { signal: LadderingChain['energy_signal'] }): JSX
         ? 'rgba(251, 191, 36, 0.8)'
         : signal === 'low'
           ? 'rgba(252, 165, 165, 0.8)'
-          : 'rgba(255,255,255,0.2)';
+          : 'var(--pipe-border)';
   return (
     <span
       style={{
@@ -142,7 +142,7 @@ function FlagButton({
       style={{
         padding: '5px 10px',
         background: 'transparent',
-        border: '1px solid rgba(255,255,255,0.1)',
+        border: '1px solid var(--pipe-border-light)',
         color: 'var(--pipe-text-dim)',
         fontSize: 9,
         letterSpacing: '0.08em',
@@ -161,7 +161,7 @@ function FlagButton({
         }
       }}
       onMouseOut={(e) => {
-        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+        e.currentTarget.style.borderColor = 'var(--pipe-border-light)';
         e.currentTarget.style.color = 'var(--pipe-text-dim)';
       }}
     >
@@ -274,8 +274,8 @@ export function RoleContextReview({
               <Field label="CODEBASE EXPECTATIONS" value={rcd.technical_context.codebase_expectations.join(', ')} />
             </div>
             {Object.keys(rcd.technical_context.dispositional_weights).length > 0 && (
-              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--pipe-border)' }}>
+                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
                   DISPOSITIONAL WEIGHTS
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -285,8 +285,8 @@ export function RoleContextReview({
                       style={{
                         fontSize: 10,
                         padding: '4px 10px',
-                        background: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'var(--pipe-surface)',
+                        border: '1px solid var(--pipe-border-light)',
                         color: 'var(--pipe-text-muted)',
                         fontFamily: '"Space Mono", monospace',
                         borderRadius: 4,
@@ -321,7 +321,7 @@ export function RoleContextReview({
 
           {rcd.team_culture_profile && (
             <div style={{ ...CARD_STYLE, marginTop: 16 }}>
-              <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
+              <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
                 TEAM CULTURE PROFILE
               </div>
               {Object.entries(rcd.team_culture_profile.per_stakeholder).map(([stakeholder, scores]) => {
@@ -342,7 +342,7 @@ export function RoleContextReview({
                 );
               })}
               {rcd.team_culture_profile.aggregated && (
-                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--pipe-border)' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
                     AGGREGATED · {rcd.team_culture_profile.aggregated.formula}
                   </div>
@@ -374,7 +374,7 @@ export function RoleContextReview({
 function Field({ label, value }: { label: string; value: string }): JSX.Element {
   return (
     <div>
-      <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>
+      <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>
         {label}
       </div>
       <div style={{ fontSize: 11, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>
@@ -390,8 +390,8 @@ function CulturePill({ label, value }: { label: string; value: number }): JSX.El
       style={{
         fontSize: 10,
         padding: '3px 8px',
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.1)',
+        background: 'var(--pipe-surface)',
+        border: '1px solid var(--pipe-border-light)',
         color: 'var(--pipe-text-muted)',
         fontFamily: '"Space Mono", monospace',
         borderRadius: 4,

@@ -1,0 +1,151 @@
+{
+  "id": "seed-018-mid-compound-pattern",
+  "description": "Mid reviewer finds compound component pattern issue and asks good questions. Above-average mid-level.",
+  "tags": [
+    "typescript",
+    "react",
+    "patterns",
+    "mid-high-score"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add Tabs compound component",
+    "description": "Tabs component with TabList, Tab, and TabPanel subcomponents.",
+    "instructions": "Review for React patterns and accessibility.",
+    "diff": "diff --git a/src/components/Tabs.tsx b/src/components/Tabs.tsx\n@@ -0,0 +1,55 @@\n+import { createContext, useContext, useState } from 'react';\n+\n+const TabsContext = createContext({ activeIndex: 0, setActiveIndex: (i: number) => {} });\n+\n+export function TabList({ children }) {\n+  return <div role=\"tablist\">{children}</div>;\n+}\n+\n+export function Tab({ index, children }) {\n+  const { activeIndex, setActiveIndex } = useContext(TabsContext);\n+  return (\n+    <button role=\"tab\" aria-selected={index === activeIndex} onClick={() => setActiveIndex(index)}>\n+      {children}\n+    </button>\n+  );\n+}\n+\n+export function TabPanel({ index, children }) {\n+  const { activeIndex } = useContext(TabsContext);\n+  if (index !== activeIndex) return null;\n+  return <div role=\"tabpanel\">{children}</div>;\n+}\n+\n+export function Tabs({ children }) {\n+  const [activeIndex, setActiveIndex] = useState(0);\n+  return (\n+    <TabsContext.Provider value={{ activeIndex, setActiveIndex }}>\n+      {children}\n+    </TabsContext.Provider>\n+  );\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/components/Tabs.tsx",
+      "line": 16,
+      "description": "Tab and TabPanel are not connected by aria-controls / aria-labelledby — screen readers cannot associate tabs with panels. Missing id generation and aria attributes.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/Tabs.tsx",
+      "line": 5,
+      "description": "createContext default value is a dummy function — if Tab is rendered outside Tabs, it silently fails instead of throwing a clear error. Should use null default and throw if context is missing.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/components/Tabs.tsx",
+      "line": 12,
+      "description": "Tab keyboard navigation missing — arrow keys should move focus between tabs per WAI-ARIA tabs pattern.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/Tabs.tsx",
+      "line": 19,
+      "description": "TabPanel renders null when inactive — this unmounts panel content, losing state. Should use hidden attribute instead.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 1801,
+            "file": "src/components/Tabs.tsx",
+            "line": 16,
+            "category": "accessibility",
+            "severity": "suggestion",
+            "what": "Tabs need aria-controls linking tab to panel.",
+            "why": "Screen readers need to know which panel belongs to which tab.",
+            "positive": false
+          },
+          {
+            "id": 1802,
+            "file": "src/components/Tabs.tsx",
+            "line": 12,
+            "category": "accessibility",
+            "severity": "suggestion",
+            "what": "Should support arrow key navigation between tabs.",
+            "why": "Keyboard users expect arrow keys for tab widgets.",
+            "positive": false
+          },
+          {
+            "id": 1803,
+            "file": "src/components/Tabs.tsx",
+            "line": 5,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Context default is a no-op. Should we throw if used outside Tabs?",
+            "why": "Better developer experience for misuse.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Accessibility improvements needed. Context error handling recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 1801,
+            "move": "change",
+            "content": "Added useId and aria attributes.",
+            "updated_code": "const tabId = useId(); ... aria-controls={panelId} aria-labelledby={tabId}"
+          },
+          {
+            "to_comment_id": 1802,
+            "move": "change",
+            "content": "Added arrow key handler.",
+            "updated_code": "onKeyDown={(e) => { if (e.key === 'ArrowRight') setActiveIndex((i) => Math.min(i + 1, tabCount - 1)); ... }}"
+          },
+          {
+            "to_comment_id": 1803,
+            "move": "comment",
+            "content": "I prefer the no-op default so tests do not need a provider wrapper. Is that a strong requirement?"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Accessibility fixes look good. Context default is acceptable for testability.",
+      "submittedAt": "2026-04-28T03:47:05.963Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 4 bugs (aria, keyboard). Missed context error handling and panel unmount. Level 3-4."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accessibility issues flagged as suggestions not blocking. Context as suggestion. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted aria and keyboard fixes. Caved on context pushback. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Good user-impact rationale for a11y. Context rationale is reasonable. Level 3-4."
+    },
+    "question_formation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Asked clarifying question about context default behavior. Level 3-4."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested aria attributes and keyboard handler — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

@@ -59,7 +59,13 @@ The gate is also the dominant bottleneck on corpus growth. You have 1000s of `pa
 
 **Construct taxonomy clarification.** The original strategy docs referenced construct slugs like "async", "event-driven", and "HIPAA-constrained" as if they existed. They don't. The 57 slugs in `constructs.config.ts` are engineering-pattern based (specific patterns like `async_callbacks`, `promises`, `async_await`, `event_emitters`, `pub_sub_kafka`, etc.), not architectural or domain-tagging. Architecture style is a separate 5-value enum produced by Gemma in Pass 3. Domain tags come from the Pass 3 narrative, not from a slug vocabulary.
 
-**Issue pipeline.** Separately from the main crawler, a cron-driven issue crawler (Sunday 03:00 UTC) populates `repo_issues` with open issues from qualified repos. An issue scorer (Sunday 04:00 UTC) runs a lightweight classifier that produces `issue_challenge_signals` with `difficulty_band`, `implementability_score`, `clarity_score`, and `disqualified` flags. This is what `autoStageBuilder.pickImplementationIssue` reads when assigning implementation challenges.
+**Issue pipeline.** The implementation challenge assignment relies on `repo_issues` + `issue_challenge_signals` for issue selection. The architecture is **lazy on-demand fetch** ([ADR-048](../../docs/decisions/current/ADR-048-lazy-issue-fetch.md)):
+
+- When `pickImplementationIssue()` is called (at match time or stage gate), it first queries the local `repo_issues` table.
+- If no eligible issues exist for the matched repo, it fetches open issues from the GitHub API inline, runs the lightweight classifier, caches results in `repo_issues` + `issue_challenge_signals`, and returns the best match.
+- A cron-driven issue crawler (Sunday 03:00 UTC) still runs as **background hydration** for popular repos, but is no longer on the critical path.
+
+This solves two problems: (1) the cron at 10 repos/week would take 4+ years to cover the full corpus, and (2) pre-crawled issues go stale (closed, assigned, merged PR linked) before they're ever matched. Lazy fetch ensures issues are always fresh and works immediately in local dev without running cron jobs.
 
 ---
 
@@ -238,7 +244,7 @@ Total 10-point scale converts to percentage for integration with other BARS scor
 
 This is a 3–4 week build, depending on rubric iteration. It is **the single highest-ROI piece of new scoring work** in the pipeline because it unblocks the most expensive assessment moment (candidate invested 1–4 hours in real work) from depending on manual recruiter evaluation.
 
-**Issue body pre-fetch.** Currently candidates get `"Implement issue #N on <url>"` and navigate to GitHub independently. Pre-fetching the issue body and surfacing it inline in the assessment UI is a small improvement that reduces friction and improves assessment completion rates. Cache the fetched issue body in `repo_issues.body_cache_json` with a TTL, refresh weekly via the existing issue crawler cron.
+**Issue body pre-fetch.** Currently candidates get `"Implement issue #N on <url>"` and navigate to GitHub independently. Pre-fetching the issue body and surfacing it inline in the assessment UI is a small improvement that reduces friction and improves assessment completion rates. Cache the fetched issue body in `repo_issues.body_cache_json` with a TTL. With the lazy-fetch architecture (ADR-048), the body is fetched and cached at match time. The weekly cron can refresh stale caches as background hydration.
 
 ---
 
@@ -258,7 +264,7 @@ Hand-curate `skill_adjacency` table. Rewrite `matchRepos.ts` SQL from `HAVING mu
 
 Fix silent `skill_aliases` fallback. Add alerting. Extend the table based on logged unknowns.
 
-Issue body pre-fetch. Extend issue crawler to capture `body_cache_json`. Surface in assessment UI.
+Issue body pre-fetch. Extend the lazy-fetch path (and optionally the cron) to capture `body_cache_json`. Surface in assessment UI. The cache TTL design stays valid; the source of truth shifts from cron to lazy fetch.
 
 **Phase 1 — Implementation challenge scorer:**
 
@@ -282,7 +288,7 @@ Update Pass 3 prompt to produce sub-element JSON. Add `repo_nodes` table migrati
 
 **Decomposition cost.** Each Pass 3 run currently makes one Gemma call per repo. The sub-element version makes one call with a longer output (all sub-elements in one response) — not a multiplicative cost increase, but a modest token increase. The confidence scorer adds one Qwen call per repo. Combined, Pass 3's per-repo cost goes up roughly 30–50%. At current corpus growth rate this is manageable; monitor via `ai_usage_events`.
 
-**The issue candidate pipeline is lighter-touch than Pass 3 on the repo.** `issue_challenge_signals` is scored by a lightweight classifier that doesn't produce narrative. For the implementation challenge to have the richest possible context, issues should get Gemma-generated narratives too — "what does this issue actually ask the candidate to do, what skills would it exercise, what's the expected complexity band." This is a Phase 2+ extension of the existing issue crawler, not a Phase 0 priority.
+**The issue candidate pipeline is lighter-touch than Pass 3 on the repo.** `issue_challenge_signals` is scored by a lightweight classifier that doesn't produce narrative. For the implementation challenge to have the richest possible context, issues should get Gemma-generated narratives too — "what does this issue actually ask the candidate to do, what skills would it exercise, what's the expected complexity band." This is a Phase 2+ extension, not a Phase 0 priority. With lazy fetch (ADR-048), the Gemma narrative generation would run inline at match time alongside the lightweight classifier.
 
 ---
 

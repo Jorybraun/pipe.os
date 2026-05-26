@@ -10,12 +10,18 @@ import {
   Briefcase,
   GraduationCap,
   Sparkles,
-  Activity
+  Activity,
+  Copy,
+  Mail,
+  Link as LinkIcon,
+  Send,
+  AlertCircle,
 } from "lucide-react";
 import { LiquidMetalCard } from "..";
 import { FieldGroup, TextInput } from "../ui/form";
 import { useCandidateCreate } from "../../hooks/useCandidateCreate";
 import { useAuth as useClerkAuth } from "@clerk/react";
+import { useTheme } from "../../contexts/ThemeContext";
 
 interface CandidateIntakeModalProps {
   pipelineId: string;
@@ -34,8 +40,14 @@ export function CandidateIntakeModal({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [githubHandle, setGithubHandle] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [skipEmail, setSkipEmail] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [parsedData, setParsedData] = useState<{
     name?: string;
     skills?: string[];
@@ -48,6 +60,11 @@ export function CandidateIntakeModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { create, isSubmitting: isCreating } = useCandidateCreate();
   const { getToken } = useClerkAuth();
+  const { theme } = useTheme();
+  const isLight = theme.mode === 'light' || theme.mode === 'anatomy';
+
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://pipe.build';
+  const inviteUrl = inviteToken ? `${baseUrl}/assess/${inviteToken}` : '';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -62,9 +79,69 @@ export function CandidateIntakeModal({
     }
   };
 
+  const handleGithubBlur = () => {
+    setGithubHandle((prev) => prev.replace(/^@/, ""));
+  };
+
+  const validateLinkedIn = (url: string): boolean => {
+    if (!url) return true;
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === 'www.linkedin.com' || parsed.hostname === 'linkedin.com';
+    } catch {
+      return false;
+    }
+  };
+
+  const handleCopyLink = async () => {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Failed to copy link to clipboard.");
+    }
+  };
+
+  const handleResendEmail = async () => {
+    if (!createdCandidateId || resendStatus === 'sending') return;
+    setResendStatus('sending');
+    try {
+      const token = await getToken();
+      const apiUrl =
+        typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
+          ? import.meta.env.VITE_API_URL
+          : "http://localhost:8787";
+
+      const response = await fetch(
+        `${apiUrl}/api/v1/candidates/${createdCandidateId}/send-invite`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to resend invite (${response.status})`);
+      }
+
+      setResendStatus('sent');
+      setTimeout(() => setResendStatus('idle'), 3000);
+    } catch (err) {
+      console.error('[CandidateIntake] Resend failed:', err);
+      setResendStatus('error');
+      setTimeout(() => setResendStatus('idle'), 3000);
+    }
+  };
+
   const handleProcess = async () => {
     if (!name || !email) {
       setError("Name and Email are required.");
+      return;
+    }
+    if (linkedinUrl.trim() && !validateLinkedIn(linkedinUrl.trim())) {
+      setError("Invalid LinkedIn URL.");
       return;
     }
 
@@ -74,15 +151,18 @@ export function CandidateIntakeModal({
     // If no file, skip parsing step entirely
     if (!file) {
       try {
-        const candidateId = await create({
+        const result = await create({
           pipelineId,
           name,
           email,
           ...(stageId ? { currentStageId: stageId } : {}),
+          skipEmail,
         });
 
-        if (!candidateId) throw new Error("Failed to create candidate");
-        onSuccess(candidateId);
+        if (!result) throw new Error("Failed to create candidate");
+        setCreatedCandidateId(result.id);
+        setInviteToken(result.inviteToken);
+        setStep("CONFIRM");
       } catch (err) {
         console.error("[CandidateIntake] Error:", err);
         setError(err instanceof Error ? err.message : "An error occurred during intake.");
@@ -98,20 +178,28 @@ export function CandidateIntakeModal({
 
     try {
       // 1. Create Candidate
-      candidateId = await create({
+      const createResult = await create({
         pipelineId,
         name,
         email,
         ...(stageId ? { currentStageId: stageId } : {}),
       });
 
-      if (!candidateId) throw new Error("Failed to create candidate");
+      if (!createResult) throw new Error("Failed to create candidate");
+      candidateId = createResult.id;
       setCreatedCandidateId(candidateId);
+      setInviteToken(createResult.inviteToken);
 
       // 2. Upload CV directly to the Worker, which stores it in R2.
       //    The Worker returns the R2 key and persists it on the candidate record.
       const formData = new FormData();
       formData.append("file", file);
+      if (githubHandle.trim()) {
+        formData.append("githubHandle", githubHandle.trim());
+      }
+      if (linkedinUrl.trim()) {
+        formData.append("linkedinUrl", linkedinUrl.trim());
+      }
 
       const token = await getToken();
       const baseUrl =
@@ -172,7 +260,7 @@ export function CandidateIntakeModal({
       position: "fixed",
       inset: 0,
       zIndex: 1000,
-      background: "rgba(0,0,0,0.8)",
+      background: isLight ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.8)",
       backdropFilter: "blur(8px)",
       display: "flex",
       alignItems: "center",
@@ -180,13 +268,14 @@ export function CandidateIntakeModal({
       padding: 20
     }}>
       <LiquidMetalCard 
-        variant="chrome" 
+        variant={isLight ? "default" : "chrome"} 
         style={{ 
           width: "100%", 
           maxWidth: 640, 
           padding: 0,
           overflow: "hidden",
-          boxShadow: "0 24px 60px rgba(0,0,0,0.5)"
+          background: isLight ? "var(--pipe-surface-solid, #ffffff)" : undefined,
+          boxShadow: isLight ? "0 24px 60px rgba(0,0,0,0.15)" : "0 24px 60px rgba(0,0,0,0.5)"
         }}
       >
         {/* Header */}
@@ -219,7 +308,7 @@ export function CandidateIntakeModal({
               color: "var(--pipe-text-dim)", 
               cursor: "pointer" 
             }}
-          >
+           aria-label="Close">
             <X size={20} />
           </button>
         </div>
@@ -245,6 +334,102 @@ export function CandidateIntakeModal({
                 </FieldGroup>
               </div>
 
+              {/* GitHub Handle */}
+              <div>
+                <label style={{
+                  display: "block",
+                  fontSize: 10,
+                  color: "var(--pipe-text-dim)",
+                  marginBottom: 12,
+                  fontFamily: "Space Mono",
+                  fontWeight: 600
+                }}>
+                  GITHUB_HANDLE (OPTIONAL)
+                </label>
+                <TextInput
+                  value={githubHandle}
+                  onChange={setGithubHandle}
+                  onBlur={handleGithubBlur}
+                  placeholder="username (not the full URL)"
+                  ariaLabel="GitHub handle"
+                />
+                <div style={{
+                  fontSize: 10,
+                  color: "var(--pipe-text-dim)",
+                  fontFamily: "Space Mono",
+                  marginTop: 8,
+                  lineHeight: 1.5
+                }}>
+                  We&apos;ll use your public GitHub activity to enrich your profile. We only read public data you&apos;ve shared.
+                </div>
+              </div>
+
+              {/* LinkedIn URL */}
+              <div>
+                <label style={{
+                  display: "block",
+                  fontSize: 10,
+                  color: "var(--pipe-text-dim)",
+                  marginBottom: 12,
+                  fontFamily: "Space Mono",
+                  fontWeight: 600
+                }}>
+                  LINKEDIN_PROFILE (OPTIONAL)
+                </label>
+                <TextInput
+                  value={linkedinUrl}
+                  onChange={setLinkedinUrl}
+                  placeholder="https://linkedin.com/in/your-profile"
+                  ariaLabel="LinkedIn profile URL"
+                />
+              </div>
+
+              {/* Skip email toggle */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: 12,
+                background: 'var(--pipe-surface)',
+                borderRadius: 4,
+                border: '1px solid var(--pipe-border-light)',
+              }}>
+                <button
+                  onClick={() => setSkipEmail((v) => !v)}
+                  style={{
+                    width: 36,
+                    height: 20,
+                    borderRadius: 10,
+                    border: 'none',
+                    background: skipEmail ? '#34d399' : 'var(--pipe-border)',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                  }}
+                  aria-label="Skip invitation email"
+                >
+                  <div style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: 2,
+                    left: skipEmail ? 18 : 2,
+                    transition: 'left 0.2s',
+                  }} />
+                </button>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: 'Space Mono' }}>
+                    SKIP_INVITE_EMAIL
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono', marginTop: 2 }}>
+                    Generate link only — no email will be sent
+                  </div>
+                </div>
+              </div>
+
               {/* CV Upload */}
               <div>
                 <label style={{ 
@@ -259,7 +444,7 @@ export function CandidateIntakeModal({
                 <div 
                   onClick={() => fileInputRef.current?.click()}
                   style={{
-                    border: "1px dashed rgba(255,255,255,0.1)",
+                    border: isLight ? "1px dashed var(--pipe-border)" : "1px dashed rgba(255,255,255,0.1)",
                     borderRadius: 8,
                     padding: 40,
                     textAlign: "center",
@@ -352,6 +537,30 @@ export function CandidateIntakeModal({
                   </>
                 )}
               </button>
+
+              <button 
+                onClick={onClose}
+                disabled={isCreating || isProcessing}
+                style={{
+                  width: "100%",
+                  padding: "16px",
+                  background: "transparent",
+                  color: "var(--pipe-text-dim)",
+                  border: "1px solid var(--pipe-border)",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  fontFamily: "Space Mono",
+                  cursor: (isCreating || isProcessing) ? "default" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 12,
+                  opacity: (isCreating || isProcessing) ? 0.5 : 1
+                }}
+              >
+                CANCEL
+              </button>
             </div>
           )}
 
@@ -421,6 +630,102 @@ export function CandidateIntakeModal({
                     {email}
                   </div>
                 </div>
+              </div>
+
+              {/* Invite link + actions */}
+              <div style={{ 
+                padding: 24,
+                background: "var(--pipe-surface)",
+                borderRadius: 8,
+                border: "1px solid var(--pipe-border-light)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 16
+              }}>
+                <div style={{ fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: "Space Mono", marginBottom: 4 }}>
+                  <Mail size={10} style={{ marginRight: 6 }} /> INVITE_STATUS
+                </div>
+                <div style={{ fontSize: 12, color: skipEmail ? '#fbbf24' : '#34d399', fontFamily: "Space Mono" }}>
+                  {skipEmail ? '⚠ Invite link generated — email not sent' : '✓ Invite email sent automatically'}
+                </div>
+
+                <div style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 12,
+                  padding: 12,
+                  background: "rgba(0,0,0,0.2)",
+                  borderRadius: 4,
+                  border: "1px solid var(--pipe-border-light)"
+                }}>
+                  <LinkIcon size={14} color="var(--pipe-text-dim)" />
+                  <div style={{ 
+                    flex: 1,
+                    fontSize: 11, 
+                    color: "var(--pipe-text-muted)", 
+                    fontFamily: "Space Mono",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}>
+                    {inviteUrl}
+                  </div>
+                  <button
+                    onClick={handleCopyLink}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 12px",
+                      background: copied ? "rgba(52, 211, 153, 0.1)" : "var(--pipe-surface-hover)",
+                      border: `1px solid ${copied ? "#34d399" : "var(--pipe-border)"}`,
+                      borderRadius: 4,
+                      color: copied ? "#34d399" : "var(--pipe-text-dim)",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: "Space Mono",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    <Copy size={12} />
+                    {copied ? "COPIED" : "COPY"}
+                  </button>
+                </div>
+
+                {!skipEmail && (
+                  <button
+                    onClick={handleResendEmail}
+                    disabled={resendStatus === 'sending'}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      background: "var(--pipe-surface-hover)",
+                      border: "1px solid var(--pipe-border)",
+                      borderRadius: 4,
+                      color: resendStatus === 'sent' ? '#34d399' : resendStatus === 'error' ? '#f87171' : 'var(--pipe-text-dim)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      fontFamily: "Space Mono",
+                      cursor: resendStatus === 'sending' ? 'default' : 'pointer',
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      opacity: resendStatus === 'sending' ? 0.6 : 1
+                    }}
+                  >
+                    {resendStatus === 'sending' ? (
+                      <><Loader2 size={14} className="animate-spin" /> SENDING...</>
+                    ) : resendStatus === 'sent' ? (
+                      <><CheckCircle size={14} /> EMAIL SENT</>
+                    ) : resendStatus === 'error' ? (
+                      <><AlertCircle size={14} /> FAILED — TRY AGAIN</>
+                    ) : (
+                      <><Send size={14} /> RESEND INVITE EMAIL</>
+                    )}
+                  </button>
+                )}
               </div>
 
               {parsedData && (

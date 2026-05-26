@@ -31,6 +31,10 @@ export interface Env {
   CLERK_SECRET_KEY: string;
   /** Session token secret for candidate JWT signing/verification. */
   SESSION_TOKEN_SECRET: string;
+  /** When 'true', bypasses Clerk JWT verification in local dev. Never set in production. */
+  DEV_AUTH_BYPASS?: string;
+  /** User ID to use when DEV_AUTH_BYPASS is enabled. */
+  DEV_BYPASS_USER_ID?: string;
   /**
    * GitHub personal access token for the PR fetch proxy.
    * Set via .dev.vars in dev, Worker secret in production.
@@ -38,13 +42,25 @@ export interface Env {
    */
   GITHUB_TOKEN?: string;
   GOOGLE_AI_API_KEY?: string;
-  /** 'cloudflare-ai' | 'google-ai' | 'vertex-ai' — selects the role agent provider. Default: 'cloudflare-ai'. */
+  /** 'cloudflare-ai' | 'google-ai' | 'vertex-ai' | 'kimi' — selects the role agent provider. Default: 'cloudflare-ai'. */
   ROLE_AGENT_PROVIDER?: string;
+  /**
+   * Override provider for role agent synthesis turns (budget exhausted).
+   * When unset, falls back to ROLE_AGENT_PROVIDER.
+   * Allows using a stronger model for synthesis while keeping questions fast.
+   */
+  ROLE_AGENT_SYNTHESIS_PROVIDER?: string;
   /**
    * When set to "true", AI agents return deterministic canned responses.
    * Used in E2E/integration tests to avoid real LLM calls.
    */
   MOCK_AI?: string;
+  /**
+   * When set to "true", the culture interview uses the static 15-question bank
+   * instead of the generative adaptive planner. Compliance escape hatch for
+   * strict regulatory regimes (NYC LL 144, EU AI Act Art 14).
+   */
+  USE_STATIC_QUESTION_BANK?: string;
   /** Durable Object binding for video call signaling rooms. */
   VIDEO_ROOM: DurableObjectNamespace;
   /** Durable Object binding for dev container sessions (ADR-037, Phase 3b). */
@@ -127,16 +143,35 @@ export interface Env {
    * Uses the simpler `aiplatform.googleapis.com/v1/publishers/google/models/{model}:generateContent?key=` endpoint.
    */
   VERTEX_API_KEY?: string;
-  /** GCP service account JSON string — used by VertexAIProvider and VertexLiveProvider for self-refreshing JWT auth. */
+  /** Cloudflare AI Gateway base URL for Vertex AI (e.g. https://gateway.ai.cloudflare.com/v1/ACCOUNT_ID/GATEWAY_NAME/google-vertex-ai). */
+  CF_AI_GATEWAY_URL?: string;
+  /** Cloudflare API token with AI Gateway:Read permission. */
+  CF_API_TOKEN?: string;
+  /** GCP service account JSON string — still required for VertexLiveProvider and TTS direct Google API calls. */
   VERTEX_SA_KEY_JSON?: string;
-  /** GCP project ID — read from VERTEX_SA_KEY_JSON if omitted. */
+  /** GCP project ID — required for Vertex AI URL path when using AI Gateway. */
   VERTEX_AI_PROJECT_ID?: string;
   /** GCP region for Vertex AI endpoints. Default: us-central1. */
   VERTEX_AI_REGION?: string;
-  /** Vertex AI model override. Default: gemma-4-26b-a4b-it. */
+  /** Vertex AI model override. Default: google/gemma-4-26b-a4b-it-maas. */
   VERTEX_AI_MODEL?: string;
   /** Vertex AI Live (BidiGenerateContent) model override. Default: gemini-live-2.5-flash-native-audio. */
   VERTEX_AI_LIVE_MODEL?: string;
+  /** Kimi API key for scorer calibration and other Kimi-backed agents. */
+  KIMI_API_KEY?: string;
+  /** Kimi base URL override. Default: https://api.kimi.com/coding/v1 */
+  KIMI_BASE_URL?: string;
+  /** Kimi model override for scorer. Default: kimi-for-coding */
+  KIMI_SCORER_MODEL?: string;
+  // ─── Neo4j Graph+Vector Store (ADR-043 through ADR-047) ─────────────────────
+  /** Bolt URI for Neo4j. e.g. bolt://localhost:7687 or neo4j+s://host:7687 */
+  NEO4J_URI?: string;
+  /** Neo4j username. Default: neo4j */
+  NEO4J_USER?: string;
+  /** Neo4j password */
+  NEO4J_PASSWORD?: string;
+  /** 'd1' | 'neo4j' — selects the primary match store during cutover. */
+  PRIMARY_MATCH_STORE?: string;
 }
 
 /**
@@ -171,6 +206,7 @@ export interface PipelineWithCountsRow extends PipelineRow {
 export interface StageRow {
   id: string;
   pipeline_id: string;
+  owner_id: string | null;
   title: string;
   description: string | null;
   sort_order: number;
@@ -178,6 +214,13 @@ export interface StageRow {
   mode: string | null;
   stage_type: string | null;
   is_scheduled: number;
+  notification_templates: string | null;
+  video_config: string | null;
+  scheduling_event_type_id: string | null;
+  screening_format: string | null;
+  screening_input_mode: string | null;
+  template_pack_id: string | null;
+  template_pack_version: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -185,7 +228,7 @@ export interface StageRow {
 export interface ChallengeRow {
   id: string;
   stage_id: string;
-  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'AGENT_INTERVIEW';
+  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'INTAKE' | 'AGENT_INTERVIEW';
   sort_order: number;
   title: string;
   instructions: string | null;
@@ -210,16 +253,15 @@ export interface ChallengeRow {
   repo_branch: string | null;
   repo_base_branch: string | null;
   repo_metadata_s3_key: string | null;
+  dev_container_ttl_seconds: number | null;
+  dev_container_repo_url: string | null;
+  dev_container_challenge_branch: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface StageWithOwnerRow extends StageRow {
-  owner_id: string | null;
-  notification_templates: string | null;
-  scheduling_event_type_id: string | null;
-  video_config: string | null;
-}
+/** @deprecated StageRow now includes all owner/config columns. Use StageRow directly. */
+export type StageWithOwnerRow = StageRow;
 
 export interface PhoneCallRow {
   id: string;
@@ -669,6 +711,11 @@ export interface RepoIssueRow {
 
   // PR linkage (for CODE_IMPLEMENTATION filtering)
   has_merged_pr: 0 | 1;
+
+  // Body cache (issue-body-prefetch subtask-1)
+  body_cache_json: string | null;
+  body_cached_at: number | null;
+  body_cache_ttl_days: number;
 }
 
 /** Difficulty band for challenge assignment (junior gets easier issues). */
@@ -687,7 +734,7 @@ export type IssueDisqualifiedReason =
 
 /**
  * AI-scored challenge suitability signals for an issue.
- * Scored by Gemma 4 26B in the issue scorer cron worker.
+ * Scored by Gemma 4 26B.
  */
 export interface IssueChallengeSignalsRow {
   id: number;
@@ -767,11 +814,12 @@ export type DomainCoverage = 'none' | 'sparse' | 'partial' | 'covered' | 'deep';
 export type ConversationPhase =
   | 'CONTEXT'
   | 'DISCOVERY'
+  | 'SOUL'
   | 'PRIORITIZE'
   | 'EVP_FRICTION'
   | 'WRAP_UP';
 
-/** Gartner five-category Employer Value Proposition dimensions (RD-37). */
+/** Gartner five-category Employer Value Proposition dimensions. */
 export type EvpCategory =
   | 'Rewards'
   | 'Opportunity'
@@ -779,7 +827,7 @@ export type EvpCategory =
   | 'People'
   | 'Organisation';
 
-/** A concrete story record extracted during discovery (RD-31). */
+/** A concrete story record extracted during discovery. */
 export interface ExtractedStory {
   protagonist: string;
   situation: string;
@@ -790,7 +838,7 @@ export interface ExtractedStory {
   retellabilityScore: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
-/** MEDDIC qualification state tracked by the controller (RD-36). */
+/** MEDDIC qualification state tracked by the controller. */
 export interface QualificationStatus {
   economicBuyerIdentified: boolean;
   championIdentified: boolean;
@@ -801,7 +849,7 @@ export interface QualificationStatus {
 
 /**
  * Full conversation context assembled from knowledgeState each turn.
- * Passed to the deterministic controller (RD-41, RD-42).
+ * Passed to the deterministic controller.
  */
 export interface ConversationContext {
   phase: ConversationPhase;
@@ -812,13 +860,13 @@ export interface ConversationContext {
   mustHavesPrioritized: boolean;
   frictionProbed: boolean;
   dayInLifeProbed: boolean;
-  /** RD-P5 probe progression: how many of the 6 calibrated probes have been delivered. */
+  /** Probe progression: how many of the 6 calibrated probes have been delivered. */
   probesDelivered: number;
 }
 
 /**
  * Output of the deterministic phase controller.
- * Passed to callRoleAgent() to select the phase-specific system prompt (RD-25, RD-26).
+ * Passed to callRoleAgent() to select the phase-specific system prompt.
  */
 export interface PhaseDirective {
   phase: ConversationPhase;
@@ -827,7 +875,7 @@ export interface PhaseDirective {
   /** Specific gaps the agent should address this turn. */
   urgentGaps: string[];
   /**
-   * True when all forcing-function gates are met (RD-42).
+   * True when all forcing-function gates are met.
    * Informational only — budget exhaustion still triggers synthesis regardless.
    */
   synthesisAllowed: boolean;
@@ -836,7 +884,7 @@ export interface PhaseDirective {
 }
 
 /**
- * Structured artifact for recruiter outreach (RD-39).
+ * Structured artifact for recruiter outreach.
  * Sits alongside the RoleContextDocument (which serves the scorecard).
  * Different consumers: RCD = internal assessment; RecruitmentBrief = candidate pitch.
  */
@@ -926,7 +974,7 @@ export interface ApiError {
 export interface ChallengeResponse {
   id: string;
   stageId: string;
-  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'AGENT_INTERVIEW';
+  type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION' | 'QUIZ_MCQ' | 'QUIZ_SHORT_ANSWER' | 'FOLLOW_UP' | 'INTAKE' | 'AGENT_INTERVIEW';
   order: number;
   title: string;
   instructions: string | null;
@@ -1083,7 +1131,7 @@ export interface TemplatePackItemResponse {
   challenge?: ChallengeTemplateResponse;
 }
 
-// ─── Discovered Repos (CR-13, repo-discovery-pipeline.md) ─────────────────
+// ─── Discovered Repos (ADR-032, repo-discovery-pipeline.md) ─────────────────
 
 export type DiscoverySource = 'LIBRARIES_IO' | 'GITHUB_TOPICS' | 'SOURCEGRAPH' | 'MANUAL';
 export type RepoStatus =
@@ -1252,4 +1300,202 @@ export interface EvalResult {
   redundancyCheck: 'novel' | 'duplicate' | 'near_duplicate';
   reason: string;
   suggestedRewrite?: string;
+}
+
+// ─── Candidate Ingestion Rows ────────────────────────────────────────────────
+
+export interface CandidateIngestionRow {
+  candidate_id: string;
+  status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
+  candidate_searchable_profile: string | null;
+  key_concepts_json: string | null;
+  profile_version: string | null;
+  model_used: string | null;
+  matched_repo_id: number | null;
+  profile_generated_at: string | null;
+  profile_embedded_at: string | null;
+  matched_at: string | null;
+  error_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CandidateChallengeAssignmentRow {
+  id: string;
+  candidate_id: string;
+  stage_id: string;
+  challenge_id: string;
+  repo_id: number | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  issue_number: number | null;
+  assigned_at: string;
+}
+
+export interface CandidateProfileStateRow {
+  candidate_id: string;
+  overall_status: 'seed' | 'enriching' | 'screening' | 'active' | 'dormant' | 'archived';
+  last_intake_at: number | null;
+  last_enriched_at: number | null;
+  last_screened_at: number | null;
+  last_matched_at: number | null;
+  re_engagement_eligible_at: number | null;
+  profile_version: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ChallengeSubmissionRow {
+  id: string;
+  candidate_id: string;
+  challenge_id: string;
+  response_json: string | null;
+  score_report_json: string | null;
+  hitl_status: 'PENDING_REVIEW' | 'CONFIRMED' | 'OVERRIDDEN' | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EnrichmentJobRow {
+  id: string;
+  candidate_id: string;
+  source_type: 'github' | 'url_content';
+  source_url: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'FAILED' | 'SKIPPED';
+  attempt_count: number;
+  last_attempted_at: number | null;
+  completed_at: number | null;
+  error_text: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SituationFitCacheRow {
+  cache_key: string;
+  candidate_id: string;
+  repo_id: number;
+  profile_version: string | null;
+  signals_version: string | null;
+  result_json: string;
+  created_at: string;
+}
+
+export interface MatchFeedbackRow {
+  id: string;
+  candidate_id: string;
+  repo_id: number | null;
+  pipeline_id: string;
+  stage_id: string;
+  thumb: 'up' | 'down';
+  reason: string | null;
+  triangulated_score: number | null;
+  role_repo_alignment: number | null;
+  candidate_repo_fit: number | null;
+  role_candidate_cosine: number | null;
+  created_at: string;
+}
+
+// ─── Candidate Living Graph (Phase 3) ────────────────────────────────────────
+
+export type CandidateNodeType =
+  | 'Experience'
+  | 'Project'
+  | 'Accomplishment'
+  | 'Skill'
+  | 'Education'
+  | 'Credential'
+  | 'CulturalSignal'
+  | 'TechnicalDemonstration'
+  | 'WorkingStyle'
+  | 'CommunicationStyle'
+  | 'CareerArc'
+  | 'Motivation'
+  | 'Context';
+
+export type CoverageAspect = 'experience' | 'cultural' | 'technical' | 'motivation' | 'context';
+
+export interface CandidateNode {
+  id: string;
+  candidate_id: string;
+  node_type: CandidateNodeType;
+  narrative_text: string;
+  extracted_properties_json: string | null;
+  embedding_json: string | null;
+  source_type: string;
+  source_reference: string | null;
+  captured_at: number;
+  confidence: number | null;
+  supersedes: string | null;
+  superseded_at: number | null;
+  decomposition_version: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CandidateCoverage {
+  candidate_id: string;
+  experience_coverage: number;
+  cultural_coverage: number;
+  technical_coverage: number;
+  motivation_coverage: number;
+  context_coverage: number;
+  last_probed_at: number | null;
+  next_probe_target: CoverageAspect | null;
+  updated_at: number;
+}
+
+export interface CoverageResult {
+  experience: number;
+  cultural: number;
+  technical: number;
+  motivation: number;
+  context: number;
+}
+
+/** Extracted properties for TechnicalDemonstration nodes sourced from code reviews */
+export interface CodeReviewDemonstrationProperties {
+  dimension:
+    | 'issue_identification'
+    | 'reasoning_quality'
+    | 'prioritization'
+    | 'question_formation'
+    | 'revision_evaluation'
+    | 'ai_direction';
+  bars_score: number;
+  effectiveness_metrics: {
+    bugs_found_pct?: number;
+    false_positive_count?: number;
+    cave_ratio?: number;
+    fix_verifications?: number;
+  };
+  implementer_persona: string;
+  challenge_repo_id: string;
+}
+
+/** Extracted properties for CulturalSignal nodes sourced from culture interviews */
+export interface CulturalSignalProperties {
+  dimension_type: 'competency' | 'profile';
+  dimension: string;
+  bars_score: number;
+  evidence_quotes: string[];
+  reasoning: string;
+  confidence: number;
+  rcd_version?: string;
+  role_context_id?: string;
+  is_role_specific: boolean;
+}
+
+export interface RecencyReport {
+  dimensions: Record<
+    CoverageAspect,
+    { lastCapturedAt: number | null; nodeCount: number; staleFlag: boolean }
+  >;
+  overallStaleness: 'fresh' | 'partial' | 'stale';
+}
+
+export interface ReEngagementPlan {
+  needsReEnrichment: boolean;
+  needsScreener: boolean;
+  thinDimensions: CoverageAspect[];
+  shouldRecomputeMatch: boolean;
 }

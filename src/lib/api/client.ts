@@ -192,7 +192,8 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
           if (line.startsWith('event: ')) {
             eventType = line.slice(7).trim();
           } else if (line.startsWith('data: ')) {
-            data = line.slice(6);
+            const lineData = line.slice(6);
+            data = data ? data + '\n' + lineData : lineData;
           }
         }
 

@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-024-senior-compiler-plugin",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 4,
+      "description": "Type checker is obtained via inline comment placeholder — actual implementation likely creates a new Program/TypeChecker per call, which is extremely expensive (seconds per call). Should reuse the existing Program from the transformer context.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 14,
+      "description": "tsTypeToZod only handles string and number — unions, arrays, objects, enums, and literals all fall through to z.unknown(), producing incorrect schemas.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 5,
+      "description": "No caching of inferred schemas — same type inferred repeatedly in large codebases, causing O(n^2) behavior. Should memoize by type ID.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 14,
+      "description": "Returns string literals like z.string() instead of actual Zod objects — the consumer must eval() or parse these strings, which is unsafe.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

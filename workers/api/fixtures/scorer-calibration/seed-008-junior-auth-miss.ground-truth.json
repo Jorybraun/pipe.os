@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-008-junior-auth-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 6,
+      "description": "No rate limiting — brute force password attacks possible. Should have IP-based or account-based rate limiting.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 6,
+      "description": "No input validation on email format or password length — could pass malformed data to bcrypt or DB.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 13,
+      "description": "Token has no expiry — infinite lifetime JWT is a security risk if leaked.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/auth/recruiter.ts",
+      "line": 14,
+      "description": "Error message reveals existence of account via timing — bcryptCompare on non-existent user would be faster than on existing user. Should use constant-time comparison.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 3
+  }
+}

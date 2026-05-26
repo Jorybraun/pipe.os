@@ -1,0 +1,124 @@
+{
+  "id": "culture-011",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike using Jaeger, found an N+1 query, wrote a PR with the fix and a benchmark showing 60% latency reduction, and got it merged."
+    },
+    {
+      "speaker": "agent",
+      "text": "What did you do after the fix was merged?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I added a Datadog monitor for that query pattern so if cardinality grew again we'd catch it in staging. The platform lead was grateful."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "The backend lead and I disagreed about whether the API should be versioned from day one. I proposed we look at three similar systems and measure the cost. The data showed two of three had significant rework. We designed a lightweight versioning scheme."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was an enthusiastic advocate for event-driven architecture before we had enough domain complexity. My team spent a sprint building a Kafka pipeline that a polling job would have solved in two days. I wrote it up as a learning doc and added a decision checklist."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I have a pattern of under-communicating when I'm uncertain. I go quiet in planning meetings. My manager flagged this. I started being explicit about confidence levels and it became natural."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike usi"
+      ]
+    },
+    "collaboration": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "we look at three similar systems and measure the cost."
+      ]
+    },
+    "learning-orientation": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        " I wrote it up as a learning doc and added a decision checklist."
+      ]
+    },
+    "conflict-handling": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        " backend lead and I disagreed about whether the API should be versioned from day one."
+      ]
+    },
+    "self-awareness": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike usi"
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike usi"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike usi"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike usi"
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike usi"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our checkout service was timing out for mobile users. It was the platform team's service. I traced the latency spike usi"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "balanced-medium-high",
+    "ownership",
+    "collaboration"
+  ],
+  "confidence": "heuristic"
+}

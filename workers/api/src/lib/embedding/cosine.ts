@@ -42,3 +42,31 @@ export function parseEmbeddingJson(raw: string | null | undefined): number[] | n
     return null;
   }
 }
+
+/**
+ * Mean-pool a list of equal-length vectors.
+ * Returns the element-wise average, L2-normalized.
+ * Used to aggregate sub-element embeddings into a candidate-level vector.
+ */
+export function meanPoolVectors(vectors: number[][]): number[] | null {
+  if (vectors.length === 0) return null;
+  const dim = vectors[0]!.length;
+  if (vectors.some((v) => v.length !== dim)) {
+    throw new Error(`meanPoolVectors: dimension mismatch`);
+  }
+
+  const sum = new Array(dim).fill(0);
+  for (const v of vectors) {
+    for (let i = 0; i < dim; i++) {
+      sum[i]! += v[i]!;
+    }
+  }
+
+  const mean = sum.map((s) => s / vectors.length);
+
+  // L2-normalize
+  let norm = 0;
+  for (const x of mean) norm += x * x;
+  const scale = norm === 0 ? 0 : 1 / Math.sqrt(norm);
+  return mean.map((x) => x * scale);
+}

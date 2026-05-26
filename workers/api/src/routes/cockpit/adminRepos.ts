@@ -34,6 +34,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
+import { EMBEDDING_MODEL_VERSION, preprocessForEmbedding } from '../../lib/embedding/preprocess';
 import { createRoleAgentProvider } from '../../lib/llm/createProvider';
 import { VertexAIProvider } from '../../lib/llm/vertexAIProvider';
 import { recordAiUsage } from '../../lib/aiUsage';
@@ -73,6 +74,8 @@ interface RepoRow {
   has_signals: number;
   top_skills_csv: string | null;
   challenge_suitability_verdict: string | null;
+  confidence_score: number | null;
+  confidence_verdict: string | null;
 }
 
 interface SamplePRRow {
@@ -146,6 +149,8 @@ adminRepos.get('/repos', async (c) => {
        qr.pass, qr.crawled_at,
        CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
        res.challenge_suitability_verdict,
+       res.confidence_score,
+       res.confidence_verdict,
        (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
          SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
        )) AS top_skills_csv
@@ -192,6 +197,10 @@ interface SignalsRow {
   red_flags_json: string | null;
   seniority_justification: string | null;
   ideal_role_match: string | null;
+  confidence_score: number | null;
+  confidence_scores_json: string | null;
+  confidence_verdict: string | null;
+  confidence_scored_at: number | null;
 }
 
 adminRepos.get('/repos/:id', async (c) => {
@@ -208,6 +217,8 @@ adminRepos.get('/repos/:id', async (c) => {
        qr.pass, qr.crawled_at,
        CASE WHEN res.repo_id IS NOT NULL THEN 1 ELSE 0 END AS has_signals,
        res.challenge_suitability_verdict,
+       res.confidence_score,
+       res.confidence_verdict,
        (SELECT GROUP_CONCAT(skill_slug, ',') FROM (
          SELECT skill_slug FROM repo_skills WHERE repo_id = qr.id ORDER BY confidence DESC LIMIT 8
        )) AS top_skills_csv
@@ -227,7 +238,9 @@ adminRepos.get('/repos/:id', async (c) => {
             admin_verdict, admin_feedback_text, verdict_at, vectorized_at,
             challenge_suitability_verdict, challenge_suitability_reason,
             top_pr_picks_json, red_flags_json,
-            seniority_justification, ideal_role_match
+            seniority_justification, ideal_role_match,
+            confidence_score, confidence_scores_json,
+            confidence_verdict, confidence_scored_at
      FROM repo_engineering_signals WHERE repo_id = ?`,
   ).bind(id).first<SignalsRow>();
 
@@ -696,7 +709,7 @@ async function vectorizeAndMark(env: Env, id: number, profile: string): Promise<
   let vector: number[];
   try {
     const embedResult = (await env.AI.run('@cf/baai/bge-large-en-v1.5', {
-      text: [profile],
+      text: [preprocessForEmbedding(profile, 'document')],
     })) as { data?: number[][] };
     const v = embedResult?.data?.[0];
     if (!v || !Array.isArray(v)) {
@@ -718,30 +731,12 @@ async function vectorizeAndMark(env: Env, id: number, profile: string): Promise<
     return { vectorized: false, vectorizedAt: null };
   }
 
-  try {
-    await env.REPO_INDEX.upsert([{
-      id: `repo_${id}`,
-      values: vector,
-      metadata: { disqualified: 0, admin_status: 'approved' },
-    }]);
-  } catch (err) {
-    const errAny = err as { name?: string; message?: string; cause?: unknown; stack?: string };
-    console.error(
-      `[adminRepos] upsert failed for repo ${id}:`,
-      JSON.stringify({
-        name: errAny?.name,
-        message: errAny?.message,
-        cause: errAny?.cause ? String(errAny.cause) : undefined,
-        profileLen: profile.length,
-        vectorLen: vector.length,
-      }),
-    );
-    return { vectorized: false, vectorizedAt: null };
-  }
+  // Vectorize is now read-only; skip upsert.
+  // The embedding is still persisted to D1 via the caller.
 
   await env.DB.prepare(
-    `UPDATE repo_engineering_signals SET vectorized_at = ?, embedding_json = ? WHERE repo_id = ?`,
-  ).bind(vectorizedAt, JSON.stringify(vector), id).run();
+    `UPDATE repo_engineering_signals SET vectorized_at = ?, embedding_json = ?, embedding_model_version = ? WHERE repo_id = ?`,
+  ).bind(vectorizedAt, JSON.stringify(vector), EMBEDDING_MODEL_VERSION, id).run();
   return { vectorized: true, vectorizedAt };
 }
 
@@ -1131,11 +1126,8 @@ adminRepos.post('/repos/search', async (c) => {
   let embedResult: { data?: number[][] };
   let queryResult: Awaited<ReturnType<typeof c.env.REPO_INDEX.query>>;
   try {
-    // BGE asymmetric retrieval: queries get the instruction prefix, documents don't.
-    // Matches the training objective of bge-large-en-v1.5.
-    const queryText = `Represent this sentence for searching relevant passages: ${query}`;
     embedResult = (await c.env.AI.run('@cf/baai/bge-large-en-v1.5', {
-      text: [queryText],
+      text: [preprocessForEmbedding(query, 'query')],
     })) as { data?: number[][] };
     const vector = embedResult?.data?.[0];
     if (!vector || !Array.isArray(vector)) {

@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-015-mid-hook-cleanup-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/hooks/usePolling.ts",
+      "line": 7,
+      "description": "setInterval callback fires even if component unmounts — fetch/setData on unmounted component causes memory leak and React warning. Missing cleanup function.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/hooks/usePolling.ts",
+      "line": 7,
+      "description": "Dependency array only includes url — if interval changes, the old interval keeps running and a new one starts. Should include interval and clear old interval.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/hooks/usePolling.ts",
+      "line": 8,
+      "description": "No error handling for fetch failures — repeated 500s will spam the console and never surface to UI.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/hooks/usePolling.ts",
+      "line": 9,
+      "description": "No AbortController for fetch — if component unmounts during fetch, the response may still call setData after unmount.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

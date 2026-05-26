@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileCode, MessageSquare, AlignJustify, Rows3, ChevronRight, Check, X, ExternalLink } from 'lucide-react';
 
 export interface DiffLine {
@@ -928,6 +928,14 @@ export function DiffPanel({
 }: DiffPanelProps): JSX.Element {
   const [viewMode, setViewMode] = useState<'TABBED' | 'LONG_FORM'>('TABBED');
   const [activeFileIdx, setActiveFileIdx] = useState(0);
+
+  // Clamp active file index when diff changes (e.g., fewer files after reload)
+  useEffect(() => {
+    if (diff.files.length > 0 && activeFileIdx >= diff.files.length) {
+      setActiveFileIdx(0);
+    }
+  }, [diff.files.length, activeFileIdx]);
+
   const [annotatingLine, setAnnotatingLine] = useState<number | null>(null);
   const [annotatingFilePath, setAnnotatingFilePath] = useState<string | null>(null);
   const [annotationSeverity, setAnnotationSeverity] = useState<'critical' | 'major' | 'minor'>('critical');

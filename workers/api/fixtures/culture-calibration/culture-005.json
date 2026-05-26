@@ -1,0 +1,125 @@
+{
+  "id": "culture-005",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging something else. I told the data team and they fixed it. I didn't get involved beyond flagging it."
+    },
+    {
+      "speaker": "agent",
+      "text": "What did you do after flagging it?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I moved on to my own tasks. They handled it from there. It was their system after all."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My lead wanted to handle rate limiting in each service individually. I thought a shared middleware layer was cleaner. We discussed it but he decided to go with his approach. I implemented it as he asked."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've been reading more about distributed systems but I haven't had a specific moment where I was dramatically wrong. I try to stay curious."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I think I'm pretty good at most things. I sometimes go deep on problems longer than necessary, but I've gotten better at timeboxing. I'm generally pretty self-aware."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "collaboration": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "We discussed it but he decided to go with his approach."
+      ]
+    },
+    "learning-orientation": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "conflict-handling": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "self-awareness": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "autonomy": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "work-pace": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our data pipeline was dropping records and no one had noticed because the monitoring was bad. I saw it while debugging s"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "ownership",
+    "learning-orientation",
+    "self-awareness",
+    "risk-tolerance"
+  ],
+  "confidence": "heuristic"
+}

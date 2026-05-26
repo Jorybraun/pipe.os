@@ -7,23 +7,40 @@ ANTHROPIC_API_KEY=sk-ant-your_key_here
 # generativelanguage.googleapis.com (confirmed Google bug, no fix).
 GOOGLE_AI_API_KEY=your_google_ai_studio_api_key_here
 
-# ── Vertex AI (optional — use for role/culture agents if you want Vertex over Workers AI) ──
+# ── Fast local config (sub-4s LLM latency) ──
+# Role agent on Cloudflare Workers AI with Gemma 4 is fastest for local dev.
+ROLE_AGENT_PROVIDER=cloudflare-ai
+ROLE_AGENT_MODEL=@cf/google/gemma-4-26b-a4b-it
+CANDIDATE_AGENT_PROVIDER=cloudflare-ai
+CULTURE_AGENT_PROVIDER=cloudflare-ai
+COPILOT_AGENT_PROVIDER=cloudflare-ai
+
+# ── Vertex AI via Cloudflare AI Gateway (optional) ──
 # Set ROLE_AGENT_PROVIDER=vertex-ai (and optionally CULTURE_AGENT_PROVIDER=vertex-ai)
-# then provide the service account JSON. The provider self-refreshes OAuth2 tokens via JWT.
+# then configure the Gateway credentials below.
 #
-# Get a service account key:
-#   gcloud iam service-accounts create pipe-vertex \
-#     --display-name "Pipe Vertex AI"
-#   gcloud projects add-iam-policy-binding YOUR_PROJECT \
-#     --member="serviceAccount:pipe-vertex@YOUR_PROJECT.iam.gserviceaccount.com" \
-#     --role="roles/aiplatform.user"
-#   gcloud iam service-accounts keys create sa-key.json \
-#     --iam-account=pipe-vertex@YOUR_PROJECT.iam.gserviceaccount.com
+# 1. Create an AI Gateway in the Cloudflare dashboard:
+#    https://dash.cloudflare.com/?to=/:account/ai/ai-gateway
+# 2. Add "Google Vertex AI" as a provider and paste your GCP service account JSON.
+# 3. Copy the Gateway URL (e.g. https://gateway.ai.cloudflare.com/v1/ACCOUNT_ID/GATEWAY_NAME/google-vertex-ai)
+# 4. Create a Cloudflare API token with "AI Gateway:Read" permission.
 #
-# Then paste the contents of sa-key.json as a single-line JSON string:
-# VERTEX_SA_KEY_JSON={"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}
+# CF_AI_GATEWAY_URL=https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT/YOUR_GATEWAY/google-vertex-ai
+# CF_API_TOKEN=your_cf_api_token_here
+# VERTEX_AI_PROJECT_ID=your-gcp-project-id
 # VERTEX_AI_REGION=us-central1
-# VERTEX_AI_MODEL=gemma-4-26b-a4b-it
+# VERTEX_AI_MODEL=google/gemma-4-26b-a4b-it-maas
 # ROLE_AGENT_PROVIDER=vertex-ai
 # CULTURE_AGENT_PROVIDER=vertex-ai
 # COPILOT_AGENT_PROVIDER=vertex-ai
+
+# ── GCP service account (still required for Live Voice WebSocket and TTS) ──
+# These features call Google APIs directly and cannot use AI Gateway.
+# VERTEX_SA_KEY_JSON={"type":"service_account","project_id":"...","private_key":"...","client_email":"..."}
+
+# ── Shared defaults ──
+# CLOUDFLARE_AI_MODEL=@cf/meta/llama-3.1-8b-instruct
+# VERTEX_AI_MODEL=google/gemma-4-26b-a4b-it-maas
+# KIMI_API_KEY=sk-your_kimi_key
+# KIMI_MODEL=moonshot-v1-32k
+# KIMI_BASE_URL=https://api.moonshot.cn/v1

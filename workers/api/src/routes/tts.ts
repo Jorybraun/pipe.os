@@ -11,7 +11,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { getAccessToken, type ServiceAccountKey } from '../lib/llm/vertexAIProvider';
+import { getAccessToken, type ServiceAccountKey } from '../lib/llm/vertexAuth';
 import type { Env, Variables } from '../types';
 
 export const ttsRouter = new Hono<{ Bindings: Env; Variables: Variables }>();

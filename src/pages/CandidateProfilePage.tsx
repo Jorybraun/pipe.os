@@ -6,8 +6,8 @@
  * record with all stages, challenges, and submissions in one round-trip.
  */
 
-import { useState, useEffect, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useAuth as useClerkAuth } from "@clerk/react";
 import {
   Calendar,
@@ -17,7 +17,6 @@ import {
   Mail,
   Clock,
   Brain,
-  GraduationCap,
   Send,
   Phone,
   PhoneCall,
@@ -25,6 +24,10 @@ import {
   Edit3,
   Check,
   X as XIcon,
+  ArrowLeft,
+  GitBranch,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { PhoneCallDrawer } from "../components/Phone/PhoneCallDrawer";
@@ -38,11 +41,13 @@ import { useApiClient } from "../hooks/useApiClient";
 import type { ProfileChallenge, ReviewSessionListItem } from "../lib/api/types";
 import { ReviewSessionReport } from "../components/Analytics/ReviewSessionReport";
 import { getReviewSessionStatusColors } from "../lib/reviewSessionStatus";
+import { CandidateEnrichmentTab } from "../components/Candidate/CandidateEnrichmentTab";
+import { CandidateOverviewTab } from "../components/Candidate/CandidateOverviewTab";
+import { SecureVideoPlayer } from "../components/Candidate/SecureVideoPlayer";
 
 // ============================================================================
 // Local types
 // ============================================================================
-
 interface FollowUpAnswer {
   questionId: string;
   answer: string;
@@ -357,18 +362,24 @@ function QuizMcqView({
  */
 function ChallengeCard({
   challenge,
+  candidateId,
   onScoreChange,
   onFeedbackChange,
   onViewReviewSession,
+  onViewResume,
 }: {
   challenge: ProfileChallenge;
+  candidateId: string;
   onScoreChange: (submissionId: string, score: number) => void;
   onFeedbackChange: (submissionId: string, feedback: string) => void;
   onViewReviewSession?: (session: ReviewSessionListItem) => void;
+  onViewResume?: () => void;
 }): JSX.Element {
   const sub = challenge.submission;
+  // Allow auto-scored short answers to display their score without manual override
   const isManual =
-    challenge.type === "QUIZ_SHORT_ANSWER" || challenge.type === "CODE_IMPLEMENTATION";
+    (challenge.type === "QUIZ_SHORT_ANSWER" && sub?.score == null) ||
+    challenge.type === "CODE_IMPLEMENTATION";
   const response = sub?.response ?? null;
 
   return (
@@ -620,29 +631,23 @@ function ChallengeCard({
                     (response.inputMode as string | undefined) ?? "text";
                   if (inputMode === "video")
                     return (
-                      <div
-                        style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                      >
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                         <SubTitle>CANDIDATE_VIDEO_RESPONSE</SubTitle>
-                        <div
-                          style={{
-                            padding: 40,
-                            textAlign: "center",
-                            background: "rgba(0,0,0,0.2)",
-                            borderRadius: 12,
-                            border: "1px dashed var(--pipe-border-light)",
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontFamily: '"Space Mono", monospace',
-                              fontSize: 10,
+                        {typeof response.videoS3Key === 'string' && response.videoS3Key ? (
+                          <SecureVideoPlayer candidateId={candidateId} r2Key={response.videoS3Key} />
+                        ) : (
+                          <div style={{
+                            padding: 40, textAlign: "center", background: "rgba(0,0,0,0.2)",
+                            borderRadius: 12, border: "1px dashed var(--pipe-border-light)",
+                          }}>
+                            <span style={{
+                              fontFamily: '"Space Mono", monospace', fontSize: 10,
                               color: "var(--pipe-text-dim)",
-                            }}
-                          >
-                            VIDEO_SUBMISSION
-                          </span>
-                        </div>
+                            }}>
+                              NO_VIDEO_UPLOADED
+                            </span>
+                          </div>
+                        )}
                       </div>
                     );
                   if (inputMode === "voice")
@@ -703,6 +708,58 @@ function ChallengeCard({
                   );
                 })()}
 
+              {challenge.type === "AGENT_INTERVIEW" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <SubTitle>CULTURE_INTERVIEW_TRANSCRIPT</SubTitle>
+                  {Array.isArray(response.turns) && (response.turns as Array<{ role: string; text: string; videoR2Key?: string }>).length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {(response.turns as Array<{ role: string; text: string; videoR2Key?: string }>).map((turn, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            background: turn.role === 'model' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.03)',
+                            padding: 16,
+                            borderRadius: 8,
+                            border: '1px solid var(--pipe-border-light)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span
+                              style={{
+                                fontSize: 8,
+                                fontWeight: 700,
+                                letterSpacing: '0.1em',
+                                fontFamily: '"Space Mono", monospace',
+                                color: turn.role === 'model' ? '#60a5fa' : '#4ade80',
+                              }}
+                            >
+                              {turn.role === 'model' ? 'AI' : 'CANDIDATE'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 14, color: 'var(--pipe-text)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                            {turn.text}
+                          </div>
+                          {turn.videoR2Key && (
+                            <div style={{ marginTop: 4 }}>
+                              <SecureVideoPlayer candidateId={candidateId} r2Key={turn.videoR2Key} />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.7, whiteSpace: 'pre-wrap', background: 'rgba(0,0,0,0.2)', padding: 24, borderRadius: 8, border: '1px solid var(--pipe-border-light)' }}>
+                      {(response.transcript as string) || (
+                        <span style={{ fontStyle: 'italic' }}>No transcript available.</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {challenge.type === "CODE_IMPLEMENTATION" && (
                 <div
                   style={{
@@ -727,6 +784,102 @@ function ChallengeCard({
                   </pre>
                 </div>
               )}
+
+              {challenge.type === "INTAKE" && (() => {
+                const intakeResponse = response as Record<string, unknown>;
+                const resumeR2Key = typeof intakeResponse.resumeR2Key === 'string' ? intakeResponse.resumeR2Key : '';
+                const githubHandle = typeof intakeResponse.githubHandle === 'string' ? intakeResponse.githubHandle : '';
+                const linkedinUrl = typeof intakeResponse.linkedinUrl === 'string' ? intakeResponse.linkedinUrl : '';
+                const resumeFilename = resumeR2Key.split('/').pop() ?? 'Resume';
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                      <FileDown size={14} color="var(--pipe-accent)" />
+                      <SubTitle>PROFILE & RESUME</SubTitle>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {resumeR2Key && (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '14px 18px', background: 'var(--pipe-surface)', borderRadius: 8,
+                          border: '1px solid var(--pipe-border-light)',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                            <div style={{
+                              width: 36, height: 36, borderRadius: 8, background: 'rgba(96,165,250,0.1)',
+                              border: '1px solid rgba(96,165,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0,
+                            }}>
+                              <FileDown size={16} color="#60a5fa" />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pipe-text, #fff)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {resumeFilename}
+                              </div>
+                              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 2 }}>
+                                PDF DOCUMENT
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => onViewResume?.()}
+                            style={{
+                              padding: '6px 14px', background: 'rgba(96,165,250,0.08)',
+                              border: '1px solid rgba(96,165,250,0.2)', borderRadius: 4,
+                              color: '#60a5fa', fontSize: 9, fontWeight: 700,
+                              fontFamily: '"Space Mono", monospace', letterSpacing: '0.08em',
+                              cursor: 'pointer', flexShrink: 0,
+                            }}
+                          >
+                            VIEW
+                          </button>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {githubHandle && (
+                          <a
+                            href={`https://github.com/${githubHandle}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '8px 14px', background: 'rgba(255,255,255,0.03)',
+                              border: '1px solid var(--pipe-border-light)', borderRadius: 6,
+                              color: 'var(--pipe-text-muted)', fontSize: 12,
+                              textDecoration: 'none', transition: 'all 0.2s',
+                            }}
+                          >
+                            <GitBranch size={14} color="#60a5fa" />
+                            <span style={{ fontWeight: 600 }}>@{githubHandle}</span>
+                          </a>
+                        )}
+                        {linkedinUrl && (
+                          <a
+                            href={linkedinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 8,
+                              padding: '8px 14px', background: 'rgba(255,255,255,0.03)',
+                              border: '1px solid var(--pipe-border-light)', borderRadius: 6,
+                              color: 'var(--pipe-text-muted)', fontSize: 12,
+                              textDecoration: 'none', transition: 'all 0.2s',
+                            }}
+                          >
+                            <Briefcase size={14} color="#60a5fa" />
+                            <span style={{ fontWeight: 600 }}>LinkedIn</span>
+                          </a>
+                        )}
+                      </div>
+                      {!resumeR2Key && !githubHandle && !linkedinUrl && (
+                        <div style={{ fontSize: 12, color: "var(--pipe-text-dim)", fontStyle: "italic", fontFamily: '"Space Mono", monospace' }}>
+                          No intake data provided.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Recruiter review panel */}
@@ -832,6 +985,125 @@ function ChallengeCard({
 }
 
 // ============================================================================
+// Empty / error state
+// ============================================================================
+
+function CandidateNotFoundState({ message }: { message: string }): JSX.Element {
+  const navigate = useNavigate();
+  return (
+    <div
+      data-testid="candidate-not-found"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "calc(100vh - 100px)",
+        padding: 40,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 480,
+          width: "100%",
+          padding: "48px 40px",
+          background: "var(--pipe-surface)",
+          border: "1px solid var(--pipe-border)",
+          borderRadius: 16,
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            background: "rgba(248, 113, 113, 0.08)",
+            border: "1px solid rgba(248, 113, 113, 0.25)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 24px",
+          }}
+        >
+          <XIcon size={24} style={{ color: "#f87171" }} />
+        </div>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 800,
+            color: "var(--pipe-text, #fff)",
+            marginBottom: 8,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          Candidate Not Found
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--pipe-text-dim)",
+            fontFamily: '"Space Mono", monospace',
+            lineHeight: 1.6,
+            marginBottom: 32,
+          }}
+        >
+          {message}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 20px",
+              background: "rgba(255, 255, 255, 0.06)",
+              border: "1px solid rgba(255, 255, 255, 0.14)",
+              borderRadius: 6,
+              color: "var(--pipe-text)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.15em",
+              fontFamily: '"Space Mono", monospace',
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft size={12} /> GO BACK
+          </button>
+          <button
+            onClick={() => navigate("/")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 20px",
+              background: "transparent",
+              border: "1px solid var(--pipe-border)",
+              borderRadius: 6,
+              color: "var(--pipe-text-dim)",
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.15em",
+              fontFamily: '"Space Mono", monospace',
+              cursor: "pointer",
+            }}
+          >
+            <ArrowLeft size={12} /> BACK TO ROLES
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Main page
 // ============================================================================
 
@@ -839,10 +1111,10 @@ export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { getToken } = useClerkAuth();
   const api = useApiClient();
-  const { candidate, stages, phoneCalls, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
+  const { candidate, stages, phoneCalls, ingestion, profileSections, cultureInterviewSessions, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
 
-  const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const [selectedTab, setSelectedTab] = useState<string | null>('PROFILE');
   const [viewingReviewSession, setViewingReviewSession] = useState<ReviewSessionListItem | null>(null);
   const [showPhoneDrawer, setShowPhoneDrawer] = useState(false);
   const [editingPhone, setEditingPhone] = useState(false);
@@ -850,6 +1122,9 @@ export default function CandidateProfilePage(): JSX.Element {
   const [resendingInvite, setResendingInvite] = useState(false);
   const [resendResult, setResendResult] = useState<'sent' | 'error' | null>(null);
   const [assessLink, setAssessLink] = useState<string | null>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [uploadResumeResult, setUploadResumeResult] = useState<'success' | 'error' | null>(null);
 
   const handleResendInvite = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -880,6 +1155,43 @@ export default function CandidateProfilePage(): JSX.Element {
       console.error('[CandidateProfilePage] Save phone failed:', err);
     }
   }, [id, phoneInput, api, refetch]);
+
+  const handleUploadResume = useCallback(async (file: File): Promise<void> => {
+    if (!id) return;
+    setUploadingResume(true);
+    setUploadResumeResult(null);
+    try {
+      const token = await getToken();
+      const baseUrl =
+        typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
+          ? import.meta.env.VITE_API_URL
+          : "http://localhost:8787";
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(`${baseUrl}/api/v1/candidates/${id}/resume`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+        throw new Error(body.error?.message ?? `Upload failed (${response.status})`);
+      }
+
+      setUploadResumeResult('success');
+      void refetch();
+      setTimeout(() => setUploadResumeResult(null), 3000);
+    } catch (err) {
+      console.error('[CandidateProfilePage] Resume upload failed:', err);
+      setUploadResumeResult('error');
+      setTimeout(() => setUploadResumeResult(null), 3000);
+    } finally {
+      setUploadingResume(false);
+    }
+  }, [id, getToken, refetch]);
 
   const handleViewResume = useCallback(async (): Promise<void> => {
     if (!id) return;
@@ -917,16 +1229,16 @@ export default function CandidateProfilePage(): JSX.Element {
 
   const [aiBlocks] = useState<IntelligenceBlockConfig[]>([]);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const hasIntelligenceGenerated = useRef(false);
 
-  // Auto-select first stage on load
+  // Auto-select PROFILE tab on load; fallback to first stage if no profile data
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
   useEffect(() => {
-    const firstStage = stages[0];
-    if (!hasAutoSelected && firstStage !== undefined) {
-      setSelectedTab(firstStage.id);
+    if (hasAutoSelected) return;
+    if (candidate || stages.length > 0) {
       setHasAutoSelected(true);
     }
-  }, [stages, hasAutoSelected]);
+  }, [candidate, stages, hasAutoSelected]);
 
   // Compute per-stage stats
   const stageStats = stages.map((stage) => {
@@ -965,7 +1277,8 @@ export default function CandidateProfilePage(): JSX.Element {
   const signalColors = getSignalColors(signal);
 
   useEffect(() => {
-    if (selectedTab === "INTELLIGENCE" && aiBlocks.length === 0 && !isAiGenerating) {
+    if (selectedTab === "INTELLIGENCE" && aiBlocks.length === 0 && !isAiGenerating && !hasIntelligenceGenerated.current) {
+      hasIntelligenceGenerated.current = true;
       setIsAiGenerating(true);
       setTimeout(() => setIsAiGenerating(false), 1000);
     }
@@ -979,6 +1292,15 @@ export default function CandidateProfilePage(): JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [viewingReviewSession]);
+
+  // Initialize assessLink from the candidate's existing invite token on load
+  useEffect(() => {
+    if (candidate?.inviteToken && !assessLink) {
+      const rawToken = candidate.inviteToken.replace(/^CLAIMED::/, '');
+      const baseUrl = window.location.origin;
+      setAssessLink(`${baseUrl}/assess/${rawToken}`);
+    }
+  }, [candidate, assessLink]);
 
   // ── Loading skeleton ────────────────────────────────────────────────────────
   if (isLoading && !candidate) {
@@ -1015,12 +1337,9 @@ export default function CandidateProfilePage(): JSX.Element {
   // ── Error / not found ───────────────────────────────────────────────────────
   if (error || !candidate) {
     return (
-      <div
-        data-testid="candidate-not-found"
-        style={{ padding: 40, color: "#f87171" }}
-      >
-        {error?.message ?? "Candidate not found."}
-      </div>
+      <CandidateNotFoundState
+        message={error?.message ?? "Candidate not found."}
+      />
     );
   }
 
@@ -1190,6 +1509,50 @@ export default function CandidateProfilePage(): JSX.Element {
             paddingBottom: 0,
           }}
         >
+          {/* PROFILE overview tab — default view */}
+          <button
+            onClick={() => setSelectedTab('PROFILE')}
+            style={{
+              padding: '10px 20px',
+              cursor: 'pointer',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: selectedTab === 'PROFILE'
+                ? '2px solid var(--pipe-accent)'
+                : '2px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: -1,
+            }}
+          >
+            <Briefcase
+              size={12}
+              color={selectedTab === 'PROFILE' ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.25)'}
+            />
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                color: selectedTab === 'PROFILE' ? 'var(--pipe-accent)' : 'rgba(255,255,255,0.35)',
+                fontFamily: '"Space Mono", monospace',
+                letterSpacing: '0.05em',
+              }}
+            >
+              PROFILE
+            </span>
+          </button>
+
+          <div
+            style={{
+              width: 1,
+              height: 20,
+              background: 'var(--pipe-surface-hover)',
+              alignSelf: 'center',
+              margin: '0 8px',
+            }}
+          />
+
           {stageStats.map((stat) => {
             const isActive = selectedTab === stat.id;
             return (
@@ -1294,7 +1657,62 @@ export default function CandidateProfilePage(): JSX.Element {
               INTELLIGENCE
             </span>
           </button>
+
+          {ingestion && (
+            <button
+              onClick={() => setSelectedTab("ENRICHMENT")}
+              style={{
+                padding: "10px 20px",
+                cursor: "pointer",
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  selectedTab === "ENRICHMENT"
+                    ? "2px solid #10b981"
+                    : "2px solid transparent",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: -1,
+              }}
+            >
+              <GitBranch
+                size={12}
+                color={
+                  selectedTab === "ENRICHMENT"
+                    ? "#10b981"
+                    : "rgba(255,255,255,0.25)"
+                }
+              />
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color:
+                    selectedTab === "ENRICHMENT"
+                      ? "#10b981"
+                      : "rgba(255,255,255,0.35)",
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: "0.05em",
+                }}
+              >
+                ENRICHMENT
+              </span>
+            </button>
+          )}
         </div>
+
+        {/* PROFILE overview tab */}
+        {selectedTab === 'PROFILE' && (
+          <CandidateOverviewTab
+            candidate={candidate}
+            stages={stages}
+            ingestion={ingestion}
+            profileSections={profileSections}
+            cultureInterviewSessions={cultureInterviewSessions}
+            candidateId={id!}
+          />
+        )}
 
         {/* INTELLIGENCE tab */}
         {selectedTab === "INTELLIGENCE" && (
@@ -1336,6 +1754,11 @@ export default function CandidateProfilePage(): JSX.Element {
               <IntelligenceReportRenderer blocks={aiBlocks} />
             )}
           </div>
+        )}
+
+        {/* ENRICHMENT tab */}
+        {selectedTab === "ENRICHMENT" && profileSections.length > 0 && (
+          <CandidateEnrichmentTab sections={profileSections} />
         )}
 
         {/* Stage content */}
@@ -1549,10 +1972,18 @@ export default function CandidateProfilePage(): JSX.Element {
                     )}
                   </LiquidMetalCard>
                 )}
+                {activeStage.challenges.length === 0 && (
+                  <LiquidMetalCard variant="default" style={{ padding: '48px 32px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+                      NO_CHALLENGES_CONFIGURED_FOR_THIS_STAGE
+                    </div>
+                  </LiquidMetalCard>
+                )}
                 {activeStage.challenges.map((challenge) => (
                   <ChallengeCard
                     key={challenge.id}
                     challenge={challenge}
+                    candidateId={id!}
                     onScoreChange={(submissionId, score) => {
                       void updateSubmissionScore(submissionId, score);
                     }}
@@ -1560,6 +1991,7 @@ export default function CandidateProfilePage(): JSX.Element {
                       void updateSubmissionFeedback(submissionId, feedback);
                     }}
                     onViewReviewSession={(session) => setViewingReviewSession(session)}
+                    onViewResume={handleViewResume}
                   />
                 ))}
               </div>
@@ -1608,7 +2040,7 @@ export default function CandidateProfilePage(): JSX.Element {
               <SignalBadge signal={signal} />
             </div>
 
-            {/* Per-stage breakdown */}
+            {/* Pipeline progress */}
             {stageStats.length > 0 && (
               <div
                 style={{
@@ -1617,47 +2049,169 @@ export default function CandidateProfilePage(): JSX.Element {
                   borderTop: "1px solid var(--pipe-border)",
                   display: "flex",
                   flexDirection: "column",
-                  gap: 8,
+                  gap: 10,
                 }}
               >
-                {stageStats.map((s) => (
-                  <div
-                    key={s.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <span
+                <div style={{
+                  fontSize: 9, letterSpacing: '0.2em',
+                  color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace',
+                  marginBottom: 4,
+                }}>
+                  PIPELINE_PROGRESS
+                </div>
+                {/* Visual pipeline bar */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {stageStats.map((s, idx) => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
+                      <div style={{
+                        flex: 1, height: 6, borderRadius: 3,
+                        background: s.isComplete
+                          ? (s.score != null && s.score >= 70 ? '#10b981' : s.score != null && s.score >= 50 ? '#fbbf24' : '#4ade80')
+                          : s.score != null ? '#60a5fa' : 'rgba(255,255,255,0.06)',
+                        transition: 'background 0.3s ease',
+                        cursor: 'pointer',
+                      }} onClick={() => setSelectedTab(s.id)} title={`${s.title} — ${s.score ?? 'No score'}`} />
+                      {idx < stageStats.length - 1 && (
+                        <div style={{
+                          width: 8, height: 1,
+                          background: s.isComplete ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)',
+                        }} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {/* Stage labels */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {stageStats.map((s) => (
+                    <div
+                      key={s.id}
+                      onClick={() => setSelectedTab(s.id)}
                       style={{
-                        fontSize: 9,
-                        color: "var(--pipe-text-dim)",
-                        fontFamily: '"Space Mono", monospace',
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        cursor: 'pointer', padding: '4px 0',
                       }}
                     >
-                      {s.title?.toUpperCase()}
-                    </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {s.isComplete && <CheckCircle size={10} color="#4ade80" />}
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 900,
+                      <span style={{
+                        fontSize: 9, color: "var(--pipe-text-dim)", fontFamily: '"Space Mono", monospace',
+                      }}>
+                        {s.title?.toUpperCase()}
+                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {s.isComplete && <CheckCircle size={10} color="#4ade80" />}
+                        <span style={{
+                          fontSize: 12, fontWeight: 900,
                           color: s.score != null ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
                           fontFamily: '"Space Mono", monospace',
-                        }}
-                      >
-                        {s.score ?? "—"}
-                      </span>
+                        }}>
+                          {s.score ?? "—"}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </div>
 
-          {/* Background — only when parsed data exists */}
+          {/* Assessment link */}
+          {assessLink && (
+            <div style={{ marginBottom: 28, paddingTop: 24, borderTop: '1px solid var(--pipe-border)' }}>
+              <div style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
+                ASSESSMENT_LINK
+              </div>
+              <div style={{
+                padding: '10px 14px',
+                background: 'rgba(96,165,250,0.06)',
+                border: '1px solid rgba(96,165,250,0.15)',
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 10,
+              }}>
+                <input
+                  readOnly
+                  value={assessLink}
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#60a5fa',
+                    fontSize: 11,
+                    fontFamily: '"Space Mono", monospace',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    void navigator.clipboard.writeText(assessLink);
+                  }}
+                  style={{
+                    padding: '4px 10px',
+                    background: 'rgba(96,165,250,0.1)',
+                    border: '1px solid rgba(96,165,250,0.25)',
+                    borderRadius: 3,
+                    color: '#60a5fa',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.08em',
+                    fontFamily: '"Space Mono", monospace',
+                    cursor: 'pointer',
+                  }}
+                >
+                  COPY
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  void api.post<{ inviteToken: string }>(`/api/v1/candidates/${id}/refresh-link`, {})
+                    .then((res) => {
+                      const baseUrl = window.location.origin;
+                      setAssessLink(`${baseUrl}/assess/${res.inviteToken}`);
+                      void handleResendInvite();
+                    });
+                }}
+                disabled={resendingInvite}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  background: resendResult === 'sent'
+                    ? 'rgba(74,222,128,0.1)'
+                    : resendResult === 'error'
+                      ? 'rgba(248,113,113,0.1)'
+                      : 'rgba(96,165,250,0.1)',
+                  border: resendResult === 'sent'
+                    ? '1px solid rgba(74,222,128,0.25)'
+                    : resendResult === 'error'
+                      ? '1px solid rgba(248,113,113,0.25)'
+                      : '1px solid rgba(96,165,250,0.25)',
+                  borderRadius: 4,
+                  color: resendResult === 'sent'
+                    ? '#4ade80'
+                    : resendResult === 'error'
+                      ? '#f87171'
+                      : '#60a5fa',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  fontFamily: '"Space Mono", monospace',
+                  cursor: resendingInvite ? 'wait' : 'pointer',
+                  opacity: resendingInvite ? 0.5 : 1,
+                  transition: 'all 0.2s',
+                }}
+              >
+                <Send size={10} />
+                {resendingInvite ? 'SENDING...' : resendResult === 'sent' ? 'SENT' : resendResult === 'error' ? 'FAILED' : 'REFRESH_LINK'}
+              </button>
+            </div>
+          )}
+
+          {/* Quick background — compact summary, full details in PROFILE tab */}
           {hasParsedProfile && (
             <div
               style={{
@@ -1671,7 +2225,7 @@ export default function CandidateProfilePage(): JSX.Element {
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
-                  marginBottom: 14,
+                  marginBottom: 10,
                 }}
               >
                 <Briefcase size={12} color="var(--pipe-text-dim)" />
@@ -1683,60 +2237,230 @@ export default function CandidateProfilePage(): JSX.Element {
                     fontFamily: '"Space Mono", monospace',
                   }}
                 >
-                  BACKGROUND
+                  QUICK_FACTS
                 </span>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {candidate.currentRole && (
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--pipe-text, #fff)" }}>
-                      {candidate.currentRole}
-                    </div>
-                    {candidate.yearsOfExperience != null && candidate.yearsOfExperience > 0 && (
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: "var(--pipe-text-dim)",
-                          fontFamily: '"Space Mono", monospace',
-                          marginTop: 4,
-                        }}
-                      >
-                        {candidate.yearsOfExperience} YRS
-                      </div>
-                    )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>ROLE</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pipe-text, #fff)' }}>{candidate.currentRole}</span>
                   </div>
                 )}
-
+                {candidate.yearsOfExperience != null && candidate.yearsOfExperience > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>EXPERIENCE</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pipe-text, #fff)' }}>{candidate.yearsOfExperience} yrs</span>
+                  </div>
+                )}
                 {candidate.skills && candidate.skills.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {candidate.skills.slice(0, 10).map((skill) => (
-                      <span
-                        key={skill}
-                        style={{
-                          padding: "3px 8px",
-                          background: "rgba(96,165,250,0.06)",
-                          border: "1px solid rgba(96,165,250,0.12)",
-                          borderRadius: 4,
-                          fontSize: 9,
-                          fontWeight: 700,
-                          color: "rgba(96,165,250,0.7)",
-                          fontFamily: '"Space Mono", monospace',
-                        }}
-                      >
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+                    {candidate.skills.slice(0, 6).map((skill) => (
+                      <span key={skill} style={{
+                        padding: '2px 6px', background: 'rgba(96,165,250,0.06)',
+                        border: '1px solid rgba(96,165,250,0.12)', borderRadius: 3,
+                        fontSize: 8, fontWeight: 700, color: 'rgba(96,165,250,0.7)',
+                        fontFamily: '"Space Mono", monospace',
+                      }}>
                         {skill.toUpperCase()}
                       </span>
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
 
-                {candidate.education && candidate.education.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 2 }}>
-                    <GraduationCap size={11} color="var(--pipe-text-dim)" style={{ marginTop: 2, flexShrink: 0 }} />
-                    <div style={{ fontSize: 10, color: "var(--pipe-text-dim)", lineHeight: 1.5 }}>
-                      {candidate.education.join(" · ")}
-                    </div>
-                  </div>
+          {/* Match — only when ingestion exists and status is matched */}
+          {ingestion?.status === 'matched' && (
+            <div
+              style={{
+                marginBottom: 28,
+                paddingTop: 24,
+                borderTop: "1px solid var(--pipe-border)",
+                cursor: 'pointer',
+              }}
+              onClick={() => setSelectedTab('PROFILE')}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: 'space-between',
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <GitBranch size={12} color="#10b981" />
+                  <span
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: "0.2em",
+                      color: "#10b981",
+                      fontFamily: '"Space Mono", monospace',
+                    }}
+                  >
+                    MATCH
+                  </span>
+                </div>
+                {ingestion.matchPhilosophy && (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      background: 'rgba(96,165,250,0.08)',
+                      border: '1px solid rgba(96,165,250,0.2)',
+                      borderRadius: 3,
+                      fontSize: 8,
+                      fontWeight: 700,
+                      color: '#60a5fa',
+                      letterSpacing: '0.08em',
+                      fontFamily: '"Space Mono", monospace',
+                    }}
+                  >
+                    {ingestion.matchPhilosophy.toUpperCase()}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {ingestion.topRepoMatches && ingestion.topRepoMatches.length > 0 ? (
+                  ingestion.topRepoMatches.map((match) => {
+                    const isWinner = match.rank === 1;
+                    const scoreColor = match.score >= 0.70 ? '#10b981' : match.score >= 0.40 ? '#fbbf24' : '#f87171';
+                    return (
+                      <div key={match.rank} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 900,
+                              color: isWinner ? scoreColor : 'var(--pipe-text-dim)',
+                              fontFamily: '"Space Mono", monospace',
+                              minWidth: 16,
+                            }}
+                          >
+                            #{match.rank}
+                          </span>
+                          <a
+                            href={match.repoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              fontSize: 11,
+                              fontWeight: isWinner ? 700 : 600,
+                              color: 'var(--pipe-text)',
+                              fontFamily: '"Space Mono", monospace',
+                              textDecoration: 'none',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1,
+                            }}
+                            title={match.repoName}
+                          >
+                            {match.repoName}
+                          </a>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 24 }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 900,
+                              color: scoreColor,
+                              fontFamily: '"Space Mono", monospace',
+                              minWidth: 28,
+                            }}
+                          >
+                            {Math.round(match.score * 100)}
+                          </span>
+                          <div
+                            style={{
+                              flex: 1,
+                              height: 3,
+                              background: 'rgba(255,255,255,0.05)',
+                              borderRadius: 2,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${Math.min(100, Math.max(0, match.score * 100))}%`,
+                                height: '100%',
+                                background: scoreColor,
+                                borderRadius: 2,
+                              }}
+                            />
+                          </div>
+                        </div>
+                        {match.locationTag && (
+                          <div style={{ paddingLeft: 24, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+                            📍 {match.locationTag}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <>
+                    {ingestion.matchedRepoName && (
+                      <a
+                        href={ingestion.matchedRepoUrl ?? '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--pipe-text)',
+                          fontFamily: '"Space Mono", monospace',
+                          textDecoration: 'none',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={ingestion.matchedRepoName}
+                      >
+                        {ingestion.matchedRepoName}
+                      </a>
+                    )}
+
+                    {ingestion.triangulatedScore !== null && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span
+                          style={{
+                            fontSize: 20,
+                            fontWeight: 900,
+                            color: ingestion.triangulatedScore >= 0.70 ? '#10b981' : ingestion.triangulatedScore >= 0.40 ? '#fbbf24' : '#f87171',
+                            fontFamily: '"Space Mono", monospace',
+                            lineHeight: 1,
+                          }}
+                        >
+                          {Math.round((ingestion.triangulatedScore ?? 0) * 100)}
+                        </span>
+                        <div
+                          style={{
+                            flex: 1,
+                            height: 3,
+                            background: 'rgba(255,255,255,0.05)',
+                            borderRadius: 2,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${Math.min(100, Math.max(0, ingestion.triangulatedScore * 100))}%`,
+                              height: '100%',
+                              background: ingestion.triangulatedScore >= 0.70 ? '#10b981' : ingestion.triangulatedScore >= 0.40 ? '#fbbf24' : '#f87171',
+                              borderRadius: 2,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1846,7 +2570,7 @@ export default function CandidateProfilePage(): JSX.Element {
                             onClick={async () => {
                               try {
                                 const token = await getToken();
-                                const baseUrl = import.meta.env?.VITE_API_URL ?? 'http://localhost:8787';
+                                const baseUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8787';
                                 const res = await fetch(`${baseUrl}/api/v1/phone/calls/${call.id}/recording`, {
                                   headers: token ? { Authorization: `Bearer ${token}` } : {},
                                 });
@@ -1930,6 +2654,17 @@ export default function CandidateProfilePage(): JSX.Element {
             >
               <Phone size={13} /> CALL
             </button>
+            <input
+              type="file"
+              ref={resumeInputRef}
+              style={{ display: 'none' }}
+              accept=".pdf,.docx"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleUploadResume(file);
+                e.target.value = '';
+              }}
+            />
             <button
               disabled={!candidate.resumeS3Key}
               onClick={() => void handleViewResume()}
@@ -1952,6 +2687,55 @@ export default function CandidateProfilePage(): JSX.Element {
               }}
             >
               <FileDown size={13} /> VIEW_RESUME
+            </button>
+            <button
+              disabled={uploadingResume}
+              onClick={() => resumeInputRef.current?.click()}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "12px",
+                background: uploadingResume
+                  ? 'rgba(96,165,250,0.08)'
+                  : uploadResumeResult === 'success'
+                    ? 'rgba(52,211,153,0.08)'
+                    : uploadResumeResult === 'error'
+                      ? 'rgba(248,113,113,0.08)'
+                      : 'rgba(96,165,250,0.08)',
+                border: uploadingResume
+                  ? '1px solid rgba(96,165,250,0.2)'
+                  : uploadResumeResult === 'success'
+                    ? '1px solid rgba(52,211,153,0.2)'
+                    : uploadResumeResult === 'error'
+                      ? '1px solid rgba(248,113,113,0.2)'
+                      : '1px solid rgba(96,165,250,0.2)',
+                borderRadius: 8,
+                color: uploadingResume
+                  ? '#60a5fa'
+                  : uploadResumeResult === 'success'
+                    ? '#34d399'
+                    : uploadResumeResult === 'error'
+                      ? '#f87171'
+                      : '#60a5fa',
+                fontSize: 10,
+                fontWeight: 800,
+                fontFamily: '"Space Mono", monospace',
+                cursor: uploadingResume ? 'default' : 'pointer',
+                opacity: uploadingResume ? 0.7 : 1,
+              }}
+            >
+              {uploadingResume ? (
+                <><Loader2 size={13} className="animate-spin" /> UPLOADING...</>
+              ) : uploadResumeResult === 'success' ? (
+                <><CheckCircle size={13} /> UPLOADED</>
+              ) : uploadResumeResult === 'error' ? (
+                <><XIcon size={13} /> FAILED</>
+              ) : (
+                <><Upload size={13} /> CHANGE_RESUME</>
+              )}
             </button>
           </div>
         </LiquidMetalCard>

@@ -16,6 +16,12 @@ export function sanitizeChallengeConfig(config: any, challengeType: string): any
 
 export type CandidateSignal = 'STRONG' | 'YES' | 'MAYBE' | 'NO';
 
+/**
+ * Converts a numeric score into a categorical hiring signal.
+ *
+ * @param {number | null} score - The candidate's assessment score. Null indicates insufficient data.
+ * @returns {CandidateSignal} The signal level derived from the score thresholds.
+ */
 export function calculateSignal(score: number | null): CandidateSignal {
   if (score === null) return 'MAYBE';
   if (score >= 85) return 'STRONG';

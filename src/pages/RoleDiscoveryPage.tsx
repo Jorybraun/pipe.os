@@ -47,10 +47,6 @@ import type {
 } from '../lib/api/types';
 import type { AdapterConfig } from '../components/AIChat/types';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const DEFAULT_BUDGET = 15;
-
 // ─── Quick-start presets ──────────────────────────────────────────────────────
 
 const ROLE_PRESETS: RolePreset[] = [
@@ -101,7 +97,7 @@ const ROLE_PRESETS: RolePreset[] = [
 function PersonaField({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255, 255, 255, 0.28)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
+      <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
         {label}
       </div>
       <div style={{ fontSize: 13, color: 'var(--pipe-text)', lineHeight: 1.7, fontFamily: '"Space Mono", monospace' }}>
@@ -111,18 +107,41 @@ function PersonaField({ label, children }: { label: string; children: React.Reac
   );
 }
 
+function humanizeTag(raw: string): string {
+  if (!raw) return '';
+  const hasDelimiter = /[_-]/.test(raw);
+  const isAllLower = raw === raw.toLowerCase();
+  const isAllUpper = raw === raw.toUpperCase();
+
+  if (hasDelimiter) {
+    return raw
+      .replace(/[_-]+/g, ' ')
+      .trim()
+      .split(' ')
+      .map((w) => (w.length === 0 ? '' : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
+      .join(' ');
+  }
+  if (isAllLower) {
+    return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+  }
+  if (isAllUpper && raw.length > 1) {
+    return raw;
+  }
+  return raw;
+}
+
 function PersonaTagList({ items, tone }: { items: string[]; tone: 'neutral' | 'warn' | 'danger' }): JSX.Element {
   if (items.length === 0) return <span style={{ color: 'var(--pipe-text-dim)' }}>—</span>;
   const palette = {
-    neutral: { bg: 'rgba(255, 255, 255, 0.06)', border: 'rgba(255, 255, 255, 0.12)', fg: 'rgba(255, 255, 255, 0.85)' },
+    neutral: { bg: 'var(--pipe-surface)', border: 'var(--pipe-border)', fg: 'var(--pipe-text-muted)' },
     warn:    { bg: 'rgba(251, 191, 36, 0.1)',  border: 'rgba(251, 191, 36, 0.3)',  fg: 'rgba(253, 224, 71, 0.95)' },
     danger:  { bg: 'rgba(252, 165, 165, 0.1)', border: 'rgba(252, 165, 165, 0.3)', fg: 'rgba(252, 165, 165, 0.95)' },
   }[tone];
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
       {items.map((item, i) => (
-        <span key={i} style={{ fontSize: 11, padding: '4px 10px', background: palette.bg, border: `1px solid ${palette.border}`, color: palette.fg, fontFamily: '"Space Mono", monospace' }}>
-          {item}
+        <span key={i} style={{ fontSize: 11, padding: '4px 10px', background: palette.bg, border: `1px solid ${palette.border}`, color: palette.fg, fontFamily: '"Space Mono", monospace', borderRadius: 4 }}>
+          {humanizeTag(item)}
         </span>
       ))}
     </div>
@@ -165,7 +184,7 @@ function SynthesisPhase({
       <button
         onClick={() => setTab(value)}
         data-testid={value === 'ROLE_CONTEXT' ? 'role-context-tab' : undefined}
-        style={{ padding: '10px 18px', background: active ? 'rgba(255, 255, 255, 0.08)' : 'transparent', border: active ? '1px solid rgba(255, 255, 255, 0.18)' : '1px solid var(--pipe-border)', color: active ? '#fff' : 'var(--pipe-text-muted)', fontSize: 9, letterSpacing: '0.2em', fontFamily: '"Space Mono", monospace', fontWeight: 700, cursor: 'pointer' }}
+        style={{ padding: '10px 18px', background: active ? 'var(--pipe-surface-hover)' : 'var(--pipe-surface)', border: active ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)', color: active ? 'var(--pipe-text)' : 'var(--pipe-text-muted)', fontSize: 9, letterSpacing: '0.2em', fontFamily: '"Space Mono", monospace', fontWeight: 700, cursor: 'pointer', borderRadius: 6 }}
       >
         {label}
       </button>
@@ -196,7 +215,7 @@ function SynthesisPhase({
 
       {/* Baseline metadata strip */}
       {baseline && (
-        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 24, padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--pipe-border)', borderRadius: 6 }}>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 24, padding: '12px 16px', background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 6 }}>
           {([
             ['ROLE', baseline.title],
             ['COMPANY', baseline.companyName],
@@ -205,8 +224,8 @@ function SynthesisPhase({
             ['STACK', baseline.techStack?.join(', ')],
           ] as [string, string | undefined][]).filter(([, v]) => !!v && v.trim() !== '').map(([label, value]) => (
             <div key={label}>
-              <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 3 }}>{label}</div>
-              <div style={{ fontSize: 11, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
+              <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 3 }}>{label}</div>
+              <div style={{ fontSize: 11, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
             </div>
           ))}
         </div>
@@ -221,26 +240,26 @@ function SynthesisPhase({
       </div>
 
       {tab === 'PERSONA' && (
-        <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 20 }}>
+        <LiquidMetalCard variant="solid" style={{ padding: 28, marginBottom: 20, borderRadius: 12 }}>
           {persona ? (
             <>
               {/* Hero: archetype + seniority */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--pipe-border)' }}>
                 <div>
-                  <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>ARCHETYPE</div>
+                  <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>ARCHETYPE</div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>{persona.archetype}</div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>SENIORITY</div>
+                  <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>SENIORITY</div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace' }}>{persona.seniority}</div>
                 </div>
               </div>
 
               {/* Career signal — narrative */}
               {persona.careerSignal && (
-                <div style={{ marginBottom: 24, padding: '14px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6 }}>
-                  <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'rgba(255,255,255,0.25)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>CAREER SIGNAL</div>
-                  <div style={{ fontSize: 13, color: 'var(--pipe-text-muted)', lineHeight: 1.7, fontFamily: '"Space Mono", monospace' }}>{persona.careerSignal}</div>
+                <div style={{ marginBottom: 24, padding: '14px 16px', background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 6 }}>
+                  <div style={{ fontSize: 7, letterSpacing: '0.25em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>CAREER SIGNAL</div>
+                  <div style={{ fontSize: 13, color: 'var(--pipe-text)', lineHeight: 1.7, fontFamily: '"Space Mono", monospace' }}>{persona.careerSignal}</div>
                 </div>
               )}
 
@@ -265,7 +284,7 @@ function SynthesisPhase({
 
               {/* Risk signals */}
               {(persona.redFlags.length > 0 || persona.dealbreakers.length > 0) && (
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                <div style={{ borderTop: '1px solid var(--pipe-border)', paddingTop: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                   <PersonaField label="RED FLAGS">
                     <PersonaTagList items={persona.redFlags} tone="warn" />
                   </PersonaField>
@@ -287,15 +306,15 @@ function SynthesisPhase({
       )}
 
       {tab === 'JOB_DESCRIPTION' && (
-        <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 20 }}>
+        <LiquidMetalCard variant="solid" style={{ padding: 28, marginBottom: 20, borderRadius: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            <MessageSquare size={14} style={{ color: 'rgba(255, 255, 255, 0.30)' }} />
-            <span style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255, 255, 255, 0.25)', fontFamily: '"Space Mono", monospace' }}>
+            <MessageSquare size={14} style={{ color: 'var(--pipe-text-dim)' }} />
+            <span style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               CANDIDATE-FACING JD
             </span>
           </div>
           {jobDescription ? (
-            <div className="jd-markdown" style={{ fontSize: 13, color: 'var(--pipe-text)', lineHeight: 1.75, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+            <div className="jd-markdown">
               <ReactMarkdown>{jobDescription}</ReactMarkdown>
             </div>
           ) : (
@@ -307,10 +326,10 @@ function SynthesisPhase({
       )}
 
       {tab === 'COVERAGE' && progress?.domains && (
-        <LiquidMetalCard variant="mercury" style={{ padding: 28, marginBottom: 20 }}>
+        <LiquidMetalCard variant="solid" style={{ padding: 28, marginBottom: 20, borderRadius: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            <Sparkles size={14} style={{ color: 'rgba(255, 255, 255, 0.30)' }} />
-            <span style={{ fontSize: 8, letterSpacing: '0.2em', color: 'rgba(255, 255, 255, 0.25)', fontFamily: '"Space Mono", monospace' }}>
+            <Sparkles size={14} style={{ color: 'var(--pipe-text-dim)' }} />
+            <span style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               DOMAIN COVERAGE
             </span>
           </div>
@@ -332,7 +351,7 @@ function SynthesisPhase({
         data-testid="create-pipeline-btn"
         onClick={onCreatePipeline}
         disabled={isCreating}
-        style={{ width: '100%', padding: '16px 32px', background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.10), rgba(59, 130, 246, 0.2))', border: '1px solid rgba(255, 255, 255, 0.18)', color: 'var(--pipe-text)', fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: isCreating ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 6 }}
+        style={{ width: '100%', padding: '16px 32px', background: 'var(--pipe-accent-surface)', border: '1px solid var(--pipe-accent-border)', color: 'var(--pipe-text)', fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: isCreating ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 6 }}
       >
         {isCreating ? (
           <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> CREATING PIPELINE...</>
@@ -387,6 +406,13 @@ function StepIndicator({
                     }
                   : undefined
               }
+              title={
+                isClickable
+                  ? `Back to ${step.label}`
+                  : isCurrent
+                    ? 'Current step'
+                    : 'Locked'
+              }
               style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '8px 14px', borderRadius: 6,
@@ -394,6 +420,7 @@ function StepIndicator({
                 border: isCurrent ? '1px solid var(--pipe-text-dim)' : isDone ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid transparent',
                 opacity: isCurrent ? 1 : isDone ? 1 : 0.35,
                 cursor: isClickable ? 'pointer' : 'default',
+                pointerEvents: isClickable ? 'auto' : 'none',
                 transition: 'background 0.15s ease, border-color 0.15s ease',
               }}
               onMouseOver={
@@ -484,14 +511,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // ── Hook callback: fire the AI interview with the finalised answers ──
   const handleFire = useCallback((answers: Record<string, string>, liveMode: boolean): void => {
     setDefaultLiveMode(liveMode);
-    setInitConfig({ baseline: buildBaseline(answers) as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setInitConfig({ baseline: buildBaseline(answers) as unknown as Record<string, unknown> });
     setPeeking(false);
   }, []);
 
   // ── Hook callback: JD import delivered a baseline — start the interview ──
   const handleJdImport = useCallback((baseline: RoleContextBaseline): void => {
     setDefaultLiveMode(false);
-    setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
     setPeeking(false);
   }, []);
 
@@ -544,7 +571,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
           // Context is COMPLETE — hydrate directly to synthesis, skip the interview
           rd.hydrateComplete({ id: ctx.id, baseline: ctx.baseline ?? baseline, persona: ctx.persona, jobDescription: ctx.jobDescription, rcd: ctx.rcd });
           setDefaultLiveMode(false);
-          setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+          setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
           return;
         }
 
@@ -557,12 +584,13 @@ export default function RoleDiscoveryPage(): JSX.Element {
             participantRole: creator.participantRole,
             baseline: ctx.baseline ?? baseline,
             exchanges: creator.exchanges,
-            questionsAsked: creator.questionsAsked,
-            questionBudget: creator.questionBudget,
             knowledgeState: ctx.knowledgeState,
+            questionBudget: creator.questionBudget,
+            currentDomain: undefined,
+            domainCompletion: undefined,
           });
           setDefaultLiveMode(saved.defaultLiveMode);
-          setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: creator.questionBudget });
+          setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
           return;
         }
       } catch {
@@ -572,7 +600,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
     // No resumable context — restart the AI interview from the saved baseline
     setDefaultLiveMode(saved.defaultLiveMode);
-    setInitConfig({ baseline: baseline as unknown as Record<string, unknown>, questionBudget: DEFAULT_BUDGET });
+    setInitConfig({ baseline: baseline as unknown as Record<string, unknown> });
   }, [api, rd]);
 
   // ── JD import modal — closes the modal then hands parsed payload to the hook ──
@@ -737,7 +765,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
               START OVER
             </button>
           )}
-          <StepIndicator active={currentStep} onStepClick={handleStepClick} />
+          <StepIndicator active={currentStep} {...(currentStep === 'interview' ? {} : { onStepClick: handleStepClick })} />
         </div>
       </div>
 
@@ -745,8 +773,8 @@ export default function RoleDiscoveryPage(): JSX.Element {
           Suppress once the interview/review is under way so a stale
           `showResumePrompt` flag can't re-appear over the active UI. */}
       {showResumePrompt && isInScriptedPhase && rd.phase !== 'COMPLETE' && (
-        <div style={{ padding: 32, background: 'var(--pipe-surface)', border: '1px solid rgba(255, 255, 255, 0.10)', borderRadius: 16 }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'rgba(255, 255, 255, 0.30)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
+        <div style={{ padding: 32, background: 'var(--pipe-surface-solid)', border: '1px solid var(--pipe-border)', borderRadius: 16 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 12 }}>
             PREVIOUS_SESSION_FOUND
           </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 8 }}>
@@ -759,13 +787,13 @@ export default function RoleDiscoveryPage(): JSX.Element {
           <div style={{ display: 'flex', gap: 12 }}>
             <button
               onClick={() => { handleResumeSession().catch(() => {}); }}
-              style={{ padding: '10px 24px', background: 'rgba(255, 255, 255, 0.06)', border: '1px solid rgba(255, 255, 255, 0.14)', color: 'rgba(255, 255, 255, 0.75)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+              style={{ padding: '10px 24px', background: 'var(--pipe-surface-solid-hover)', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
             >
               RESUME_SESSION
             </button>
             <button
               onClick={handleStartOver}
-              style={{ padding: '10px 24px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
+              style={{ padding: '10px 24px', background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-muted)', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', fontFamily: '"Space Mono", monospace', cursor: 'pointer' }}
             >
               START_NEW
             </button>
@@ -774,7 +802,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
       )}
 
       {/* ── Scripted phase — linear flow, shown until every question has been captured ── */}
-      {isInScriptedPhase && !showResumePrompt && !scripted.isComplete && (
+      {isInScriptedPhase && !showResumePrompt && !scripted.isComplete && !peeking && (
         <div>
           {/* Past scripted exchanges */}
           {scripted.exchanges.length > 0 && (
@@ -807,7 +835,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
                   <button
                     onClick={() => setIsJDModalOpen(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: 'transparent', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-muted)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-muted)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
                   >
                     <FileUp size={10} />
                     IMPORT_FROM_JD
@@ -815,7 +843,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
                   <div style={{ width: 1, height: 20, background: 'var(--pipe-border)', flexShrink: 0 }} />
 
-                  <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em', flexShrink: 0 }}>
+                  <span style={{ fontSize: 9, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em', flexShrink: 0 }}>
                     QUICK START:
                   </span>
 
@@ -823,9 +851,9 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     <button
                       key={preset.label}
                       onClick={() => scripted.presetSelect(preset)}
-                      style={{ padding: '6px 12px', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.10)', color: 'rgba(255, 255, 255, 0.40)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4, whiteSpace: 'nowrap' }}
-                      onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.07)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.20)'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.10)'; }}
+                      style={{ padding: '6px 12px', background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-muted)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4, whiteSpace: 'nowrap' }}
+                      onMouseOver={(e) => { e.currentTarget.style.background = 'var(--pipe-surface-hover)'; e.currentTarget.style.borderColor = 'var(--pipe-border)'; }}
+                      onMouseOut={(e) => { e.currentTarget.style.background = 'var(--pipe-surface)'; e.currentTarget.style.borderColor = 'var(--pipe-border-light)'; }}
                     >
                       {preset.label}
                     </button>
@@ -842,6 +870,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     <button
                       onClick={() => scriptedTTS.speak(currentScriptedQ.text)}
                       title={scriptedTTS.isPlaying ? 'AI speaking…' : 'Replay question'}
+                      aria-label={scriptedTTS.isPlaying ? 'AI speaking…' : 'Replay question'}
                       disabled={scriptedTTS.isPlaying}
                       style={{ padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border-light)', color: 'var(--pipe-text-dim)', cursor: scriptedTTS.isPlaying ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, height: 28, borderRadius: 4 }}
                     >
@@ -851,6 +880,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                   <button
                     onClick={handleScriptedVoiceToggle}
                     title={scriptedVoiceOn ? 'Mute voice' : 'Unmute voice'}
+                    aria-label={scriptedVoiceOn ? 'Mute voice' : 'Unmute voice'}
                     style={{ padding: '6px 10px', background: scriptedVoiceOn ? 'transparent' : 'rgba(248,113,113,0.08)', border: `1px solid ${scriptedVoiceOn ? 'var(--pipe-border-light)' : 'rgba(248,113,113,0.3)'}`, color: scriptedVoiceOn ? 'var(--pipe-text-dim)' : 'rgba(248,113,113,0.85)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 28, borderRadius: 4 }}
                   >
                     {scriptedVoiceOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
@@ -881,7 +911,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                       }}
                       onMouseOver={(e) => {
                         e.currentTarget.style.borderColor = 'rgba(74, 222, 128, 0.4)';
-                        e.currentTarget.style.background = 'rgba(74, 222, 128, 0.04)';
+                        e.currentTarget.style.background = 'var(--pipe-surface-solid-hover)';
                       }}
                       onMouseOut={(e) => {
                         e.currentTarget.style.borderColor = 'var(--pipe-border-light)';
@@ -909,12 +939,14 @@ export default function RoleDiscoveryPage(): JSX.Element {
                         value={scripted.answer ? scripted.answer.split('|||') : []}
                         onChange={(tags) => scripted.setAnswer(tags.join('|||'))}
                         placeholder={currentScriptedQ.placeholder}
+                        ariaLabel={currentScriptedQ.text}
                       />
                     ) : (
                       <TextInput
                         value={scripted.answer}
                         onChange={scripted.setAnswer}
                         placeholder={currentScriptedQ.placeholder}
+                        ariaLabel={currentScriptedQ.text}
                       />
                     )}
                     <div style={{ marginTop: 10, fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
@@ -965,10 +997,18 @@ export default function RoleDiscoveryPage(): JSX.Element {
       )}
 
       {/* ── Scripted phase — review & edit, shown when every question is answered ── */}
-      {isInScriptedPhase && !showResumePrompt && scripted.isComplete && (
+      {isInScriptedPhase && !showResumePrompt && (scripted.isComplete || peeking) && (
         <div>
+          {peeking && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, padding: '10px 14px', background: 'rgba(96, 165, 250, 0.06)', border: '1px solid rgba(96, 165, 250, 0.2)', borderRadius: 6 }}>
+              <ArrowLeft size={12} style={{ color: '#60a5fa' }} />
+              <span style={{ fontSize: 10, color: '#60a5fa', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
+                INTERVIEW PAUSED · REVIEWING BASELINE ANSWERS
+              </span>
+            </div>
+          )}
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 20 }}>
-            ROLE_SUMMARY · EDIT OR CONTINUE
+            {peeking ? 'ROLE_SUMMARY · READ-ONLY REVIEW' : 'ROLE_SUMMARY · EDIT OR CONTINUE'}
           </div>
 
           {SCRIPTED.map((q, i) => {
@@ -994,6 +1034,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     value={raw ? raw.split('|||').filter(Boolean) : []}
                     onChange={(tags) => scripted.editAnswer(q.id, tags.join('|||'))}
                     placeholder={q.placeholder}
+                    ariaLabel={q.text}
                   />
                 ) : q.inputType === 'choice' ? (
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -1023,6 +1064,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
                     value={raw}
                     onChange={(v) => scripted.editAnswer(q.id, v)}
                     placeholder={q.placeholder}
+                    ariaLabel={q.text}
                   />
                 )}
               </div>
@@ -1031,11 +1073,17 @@ export default function RoleDiscoveryPage(): JSX.Element {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
             <button
-              onClick={() => handleFire(scripted.answers, defaultLiveMode)}
+              onClick={() => {
+                if (peeking) {
+                  setPeeking(false);
+                } else {
+                  handleFire(scripted.answers, defaultLiveMode);
+                }
+              }}
               style={{
                 padding: '14px 28px',
-                background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(59, 130, 246, 0.16))',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
+                background: 'var(--pipe-accent-surface)',
+                border: '1px solid var(--pipe-accent-border)',
                 color: 'var(--pipe-text)',
                 fontSize: 11, fontWeight: 700, letterSpacing: '0.15em',
                 fontFamily: '"Space Mono", monospace',
@@ -1044,7 +1092,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
                 borderRadius: 6,
               }}
             >
-              CONTINUE TO INTERVIEW <ArrowRight size={14} />
+              {peeking ? (
+                <><ArrowRight size={14} /> RESUME INTERVIEW</>
+              ) : (
+                <>CONTINUE TO INTERVIEW <ArrowRight size={14} /></>
+              )}
             </button>
           </div>
         </div>
@@ -1064,6 +1116,8 @@ export default function RoleDiscoveryPage(): JSX.Element {
             greeting="Hi, I'm Pipe's interview assistant. I'll ask you a few questions to help define the role you're building for. Let's get started."
             showDomainBars
             onLiveEnd={handleLiveEnd}
+            currentDomain={rd.currentDomain}
+            domainCompletion={rd.domainCompletion}
           />
         </div>
       )}
@@ -1117,7 +1171,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
             style={{
               width: '100%',
               maxWidth: 720,
-              background: '#13131a',
+              background: 'var(--pipe-surface-solid)',
               border: '1px solid var(--pipe-border)',
               borderRadius: 12,
               padding: 32,

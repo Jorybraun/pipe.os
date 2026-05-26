@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-004-junior-input-validation-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 9,
+      "description": "Raw user CSV is parsed without validation — row.name, row.email, row.pipeline_id are passed directly to SQL. Although parameterized, there is no length limit or schema validation, enabling a CSV with 1M rows to DOS the worker.",
+      "expectedFound": false
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 8,
+      "description": "No input validation on csv field — missing check that csv is a string, non-empty, and within size limits.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 10,
+      "description": "Sequential await in a loop — N inserts for N rows. Should use batch insert or transaction.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/routes/candidates/bulkImport.ts",
+      "line": 14,
+      "description": "Returns count but no per-row error details. Failed inserts are silently swallowed by D1 default behavior.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 3
+  }
+}

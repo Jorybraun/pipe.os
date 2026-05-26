@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
+import { SmartInterviewInput } from '../components/AIChat';
+import { CoverageProgress, type CoveragePhase } from '../components/Assessment/CoverageProgress';
 import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 // ─── Local Types ──────────────────────────────────────────────────────────────
@@ -11,6 +13,8 @@ interface CultureSessionState {
   turnsAsked: number;
   totalBudget: number;
   consentRequired: boolean;
+  coverage?: Record<string, number>;
+  phase?: CoveragePhase;
 }
 
 interface RespondResponse {
@@ -18,6 +22,9 @@ interface RespondResponse {
   nextQuestion?: { id: string; text: string };
   turnsAsked: number;
   totalBudget: number;
+  message?: string;
+  coverage?: Record<string, number>;
+  phase?: CoveragePhase;
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -302,6 +309,8 @@ function InterviewUI({
   question,
   turnsAsked,
   totalBudget,
+  coverage,
+  phase,
   onSubmit,
   submitting,
   submitError,
@@ -310,50 +319,26 @@ function InterviewUI({
   question: { id: string; text: string };
   turnsAsked: number;
   totalBudget: number;
+  coverage?: Record<string, number>;
+  phase?: CoveragePhase;
   onSubmit: (answer: string) => void;
   submitting: boolean;
   submitError: string | null;
   onRetry: () => void;
 }): JSX.Element {
   const [answer, setAnswer] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-expand textarea
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
-      setAnswer(e.target.value);
-      const el = e.target;
-      el.style.height = 'auto';
-      el.style.height = `${el.scrollHeight}px`;
-    },
-    [],
-  );
-
-  // Reset textarea and answer when question changes
+  // Reset answer when question changes
   useEffect(() => {
     setAnswer('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.focus();
-    }
   }, [question.id]);
 
   const handleSubmit = useCallback((): void => {
     const trimmed = answer.trim();
     if (!trimmed || submitting) return;
+    setAnswer('');
     onSubmit(trimmed);
   }, [answer, submitting, onSubmit]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-      // Cmd/Ctrl+Enter submits
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleSubmit();
-      }
-    },
-    [handleSubmit],
-  );
 
   return (
     <div
@@ -398,6 +383,25 @@ function InterviewUI({
         </div>
       </div>
 
+      {/* Coverage progress — floats in the top-right during interview */}
+      {coverage && phase && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 72,
+            right: 24,
+            zIndex: 50,
+          }}
+        >
+          <CoverageProgress
+            coverage={coverage}
+            phase={phase}
+            turnsAsked={turnsAsked}
+            totalBudget={totalBudget}
+          />
+        </div>
+      )}
+
       {/* Main content */}
       <div
         style={{
@@ -439,160 +443,57 @@ function InterviewUI({
             </p>
           </LiquidMetalCard>
 
-          {/* Answer section */}
-          <div>
-            <label
-              htmlFor="culture-answer"
-              style={{
-                display: 'block',
-                fontSize: 9,
-                letterSpacing: '0.2em',
-                color: 'rgba(255,255,255,0.35)',
-                textTransform: 'uppercase',
-                marginBottom: 10,
-              }}
-            >
-              Your answer
-            </label>
-            <textarea
-              id="culture-answer"
-              ref={textareaRef}
-              value={answer}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              disabled={submitting}
-              placeholder="Take your time and answer thoughtfully..."
-              rows={4}
-              style={{
-                width: '100%',
-                minHeight: '120px',
-                padding: '16px 20px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: 0,
-                color: '#fff',
-                fontSize: 14,
-                fontFamily: '"Space Mono", monospace',
-                lineHeight: 1.7,
-                resize: 'none',
-                outline: 'none',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
-                transition: 'border-color 0.2s',
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)';
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
-              }}
-            />
+          {/* Answer section — powered by SmartInterviewInput */}
+          <SmartInterviewInput
+            value={answer}
+            onChange={setAnswer}
+            onSubmit={handleSubmit}
+            questionText={question.text}
+            inputId="culture-answer"
+            submitLabel="Submit answer"
+            enableVoice
+            enableTTS
+            isLoading={submitting}
+            disabled={submitting}
+            placeholder="Take your time and answer thoughtfully..."
+          />
 
-            {/* Error state */}
-            {submitError && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  marginTop: 12,
-                  padding: '12px 16px',
-                  background: 'rgba(239,68,68,0.08)',
-                  border: '1px solid rgba(239,68,68,0.2)',
-                }}
-                role="alert"
-              >
-                <AlertCircle size={14} style={{ color: '#ef4444', flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', flex: 1 }}>
-                  {submitError}
-                </span>
-                <button
-                  type="button"
-                  onClick={onRetry}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#60a5fa',
-                    fontSize: 11,
-                    letterSpacing: '0.1em',
-                    cursor: 'pointer',
-                    fontFamily: '"Space Mono", monospace',
-                    padding: '2px 0',
-                  }}
-                >
-                  RETRY
-                </button>
-              </div>
-            )}
-
-            {/* Submit button */}
+          {/* Error state */}
+          {submitError && (
             <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                gap: 10,
                 marginTop: 16,
+                padding: '12px 16px',
+                background: 'rgba(239,68,68,0.08)',
+                border: '1px solid rgba(239,68,68,0.2)',
               }}
+              role="alert"
             >
-              <span
-                style={{
-                  fontSize: 10,
-                  color: 'rgba(255,255,255,0.2)',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Press{' '}
-                <kbd
-                  style={{
-                    padding: '2px 6px',
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    fontSize: 10,
-                  }}
-                >
-                  ⌘ Enter
-                </kbd>{' '}
-                to submit
+              <AlertCircle size={14} style={{ color: '#ef4444', flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', flex: 1 }}>
+                {submitError}
               </span>
-
               <button
                 type="button"
-                onClick={handleSubmit}
-                disabled={submitting || !answer.trim()}
-                aria-busy={submitting}
+                onClick={onRetry}
                 style={{
-                  padding: '14px 28px',
-                  background:
-                    submitting || !answer.trim()
-                      ? 'rgba(255,255,255,0.04)'
-                      : 'linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  color:
-                    submitting || !answer.trim()
-                      ? 'rgba(255,255,255,0.25)'
-                      : '#fff',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#60a5fa',
                   fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  textTransform: 'uppercase',
-                  cursor: submitting || !answer.trim() ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
+                  letterSpacing: '0.1em',
+                  cursor: 'pointer',
                   fontFamily: '"Space Mono", monospace',
-                  transition: 'background 0.2s, color 0.2s',
+                  padding: '2px 0',
                 }}
               >
-                {submitting && (
-                  <Loader2
-                    size={14}
-                    style={{ animation: 'spin 1s linear infinite' }}
-                  />
-                )}
-                {submitting ? 'Submitting...' : 'Submit answer'}
+                RETRY
               </button>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -774,7 +675,9 @@ export default function CultureInterviewPage(): JSX.Element {
     if (!token) return;
     setLoadingConsent(true);
     postConsent(token)
-      .then((s) => { setSession(s); })
+      .then((s) => {
+        setSession(s);
+      })
       .catch((err: unknown) => {
         setLoadError(
           err instanceof Error ? err.message : 'Failed to record consent.',
@@ -803,13 +706,22 @@ export default function CultureInterviewPage(): JSX.Element {
                   currentQuestion: nextQuestion,
                   turnsAsked: res.turnsAsked,
                   totalBudget: res.totalBudget,
+                  ...(res.coverage !== undefined ? { coverage: res.coverage } : {}),
+                  ...(res.phase !== undefined ? { phase: res.phase } : {}),
                 }
               : prev,
           );
         } else {
           // complete or scoring — show terminal screen
           setSession((prev) =>
-            prev ? { ...prev, state: res.state } : prev,
+            prev
+              ? {
+                  ...prev,
+                  state: res.state,
+                  ...(res.coverage !== undefined ? { coverage: res.coverage } : {}),
+                  ...(res.phase !== undefined ? { phase: res.phase } : {}),
+                }
+              : prev,
           );
         }
       })
@@ -858,6 +770,8 @@ export default function CultureInterviewPage(): JSX.Element {
         question={session.currentQuestion}
         turnsAsked={session.turnsAsked}
         totalBudget={session.totalBudget}
+        {...(session.coverage !== undefined ? { coverage: session.coverage } : {})}
+        {...(session.phase !== undefined ? { phase: session.phase } : {})}
         onSubmit={handleSubmitAnswer}
         submitting={submitting}
         submitError={submitError}

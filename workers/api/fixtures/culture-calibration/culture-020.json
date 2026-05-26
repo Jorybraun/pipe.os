@@ -1,0 +1,123 @@
+{
+  "id": "culture-020",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory leak in the report generator, patched it, and it stopped failing. My manager was happy."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My teammate wanted GraphQL for our admin API and I thought REST was simpler. I wrote a comparison doc and we had a call. We went with REST with a plan to revisit."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was convinced optimistic locking was right for our cart service. After a production incident, I dug in and realized we needed pessimistic locking. I updated the implementation and bugs stopped."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I used to give feedback that landed as harsh. A colleague told me directly. I've been framing feedback as questions rather than statements."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "The PM wanted to ship behind a feature flag permanently. I sent an estimate of maintenance cost. We compromised on a six-week cleanup window."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "collaboration": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "we had a call."
+      ]
+    },
+    "learning-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "conflict-handling": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "self-awareness": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 3,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Our staging environment kept failing Fridays. It was the infra team's domain. I looked into cron logs, found a memory le"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "balanced-high",
+    "risk-tolerance"
+  ],
+  "confidence": "heuristic"
+}

@@ -1,0 +1,118 @@
+services:
+  # Fully isolated work environment — no volume mounts, no port exposure.
+  # Safe to run alongside your local app. Does not touch host files.
+  # Note: git history is NOT copied into this image, so git commands won't work here.
+  agent-harness-work:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-work
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - KIMI_BASE_URL=${KIMI_BASE_URL:-https://api.kimi.com/coding/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    stdin_open: true
+    tty: true
+    # No ports exposed, no volumes mounted — completely isolated
+    command: ["bash"]
+
+  # Dev container — mounts your real repo so git, branch switching, and edits
+  # persist on the host. The harness is installed inside the image.
+  # Your host app files are visible and editable inside.
+  # .env files are bind-mounted read-only so stash/reset can't destroy them.
+  agent-harness-dev:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-dev
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    volumes:
+      # Mount the entire project so git history and edits are live
+      - ../:/app
+      # Lock .env files read-only — agent harness can't stash or overwrite them
+      - ../.env:/app/.env:ro
+      - ../.env.local:/app/.env.local:ro
+      - ../agent-harness/.env:/app/agent-harness/.env:ro
+      # Keep the harness install from the image (don't overwrite with host venv)
+      - harness_venv:/app/agent-harness/.venv
+    command: ["bash"]
+
+  # Safe demo environment — isolated worktree, main repo untouched.
+  # The container can stash/branch/reset freely; your real working dir is safe.
+  agent-harness-demo:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-demo
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    stdin_open: true
+    tty: true
+    working_dir: /app
+    volumes:
+      # Mount the disposable worktree instead of the live repo
+      - ../.worktrees/agent-harness-demo:/app
+      # Mount .git so the worktree's git metadata resolves inside the container.
+      # The main working tree is NOT mounted, so file edits are isolated.
+      # Shared surface: refs and objects (don't delete branches you care about).
+      - ../.git:/Users/hans/Code/PIPE/PIPE-OS/.git
+      # Keep the harness install from the image
+      - harness_venv:/app/agent-harness/.venv
+      # Persist agent state (broker DB, checkpoints, messages) across resets
+      - swarm_data:/app/.swarm
+    command: ["bash"]
+
+  # For running tests inside the container (still isolated by default)
+  agent-harness-test:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-test
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+    command: ["python", "-m", "pytest", "agent-harness/tests/", "-v"]
+
+  # MCP server — stays alive so `docker exec -i` can attach stdio.
+  # Also exposes SSE/WebSocket ports for HTTP clients.
+  agent-harness-server:
+    build:
+      context: ..
+      dockerfile: agent-harness/Dockerfile
+    container_name: agent-harness-server
+    ports:
+      - "8765:8765"
+      - "8766:8766"
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PYTHONPATH=/app/agent-harness/src
+      # When set, all file-editing tools operate inside this subtree instead
+      # of the repo root. This lets swarm lanes edit in isolation.
+      - SWARM_SUBTREE=/app/subtree
+    working_dir: /app
+    volumes:
+      # Mount live repo so plans, code, and broker DB are shared with host
+      - ../:/app
+      # Lock .env files read-only
+      - ../.env:/app/.env:ro
+      - ../.env.local:/app/.env.local:ro
+      - ../agent-harness/.env:/app/agent-harness/.env:ro
+      # Keep container's installed packages
+      - harness_venv:/app/agent-harness/.venv
+    # Keep container running so lazy-wrapper can docker-exec into it
+    command: ["sleep", "infinity"]
+
+volumes:
+  harness_venv:
+  swarm_data:

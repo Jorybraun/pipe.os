@@ -19,6 +19,9 @@ export type EmbeddingSide = 'document' | 'query';
 const BGE_QUERY_PREFIX = 'Represent this sentence for searching relevant passages: ';
 const MAX_CHARS = 8192; // BGE-large-en-v1.5 effective limit (way below token limit)
 
+export const EMBEDDING_MODEL = '@cf/baai/bge-large-en-v1.5';
+export const EMBEDDING_MODEL_VERSION = 'bge-large-en-v1.5-2024';
+
 /**
  * Preprocess text for BGE embedding.
  *

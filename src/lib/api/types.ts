@@ -14,6 +14,8 @@ export interface PipelineListItem {
   id: string;
   title: string;
   level: string | null;
+  stack?: string[] | null;
+  description?: string | null;
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
   creationMode: string | null;
   stageCount: number;
@@ -24,6 +26,9 @@ export interface PipelineListItem {
 
 export interface PipelinesResponse {
   pipelines: PipelineListItem[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 // ─── Pipeline create ──────────────────────────────────────────────────────────
@@ -68,7 +73,9 @@ export type ChallengeType =
   | 'QUIZ_MCQ'
   | 'QUIZ_SHORT_ANSWER'
   | 'FOLLOW_UP'
-  | 'AGENT_INTERVIEW';
+  | 'AGENT_INTERVIEW'
+  | 'INTAKE'
+  | 'WAITING_FOR_MATCH';
 
 export interface NotificationTemplate {
   trigger: 'INVITATION' | 'SUCCESS' | 'FAILURE';
@@ -87,6 +94,8 @@ export interface ChallengeItem {
   githubRepoUrl: string | null;
   githubPrNumber: number | null;
   githubPrTitle: string | null;
+  devContainerRepoUrl: string | null;
+  devContainerChallengeBranch: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -106,6 +115,7 @@ export interface StageDetail {
   stageType: string | null;
   isScheduled: boolean;
   screeningFormat: ScreeningFormat | null;
+  screeningInputMode: 'text' | 'voice' | 'video' | null;
   createdAt: string;
   updatedAt: string;
   challenges: ChallengeItem[];
@@ -133,6 +143,8 @@ export interface CreateChallengeRequest {
   githubPrNumber?: number;
   githubPrTitle?: string;
   githubPrDescription?: string;
+  devContainerRepoUrl?: string;
+  devContainerChallengeBranch?: string;
 }
 
 export interface UpdateStageRequest {
@@ -144,6 +156,7 @@ export interface UpdateStageRequest {
   stageType?: string | null;
   isScheduled?: boolean;
   screeningFormat?: ScreeningFormat | null;
+  screeningInputMode?: 'text' | 'voice' | 'video' | null;
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -301,6 +314,10 @@ export interface RoleContextProgress {
   asked: number;
   budget: number;
   domains: Record<string, DomainCoverage>;
+  /** Current domain being interviewed (column-by-column flow). */
+  currentDomain?: string | null | undefined;
+  /** Per-domain completion status for the new architecture. */
+  domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
 }
 
 export interface CreateRoleContextRequest {
@@ -396,6 +413,7 @@ export interface RoleContextParticipantSummary {
   questionBudget: number;
   status: 'PENDING' | 'INVITED' | 'CALIBRATING' | 'INTERVIEWING' | 'COMPLETE';
   exchanges: RoleContextExchange[];
+  phase: InterviewPhase;
 }
 
 export interface RoleContextFullState {
@@ -648,6 +666,7 @@ export interface CandidateProfileRecord {
   pipelineId: string;
   currentStageId: string | null;
   resumeS3Key: string | null;
+  inviteToken: string;
   skills: string[] | null;
   yearsOfExperience: number | null;
   currentRole: string | null;
@@ -706,9 +725,272 @@ export interface ReviewSessionReportResponse {
   };
 }
 
+export interface CandidateMatchDimensions {
+  skillCoverage: number;
+  semanticSimilarity: number;
+  situationFit: number;
+  roleAlignment: number;
+}
+
+export interface CandidateMatchReasoning {
+  matches: string[];
+  mismatches: string[];
+}
+
+export interface ContributionCalendar {
+  totalContributions: number;
+  weeks: Array<{
+    contributionDays: Array<{
+      date: string;
+      count: number;
+    }>;
+  }>;
+}
+
+export interface RepoMatchItem {
+  rank: number;
+  repoName: string;
+  repoUrl: string;
+  score: number;
+  locationTag: string | null;
+}
+
+export interface CandidateEnrichmentRecord {
+  status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
+  candidateSearchableProfile: string | null;
+  keyConcepts: Record<string, unknown> | null;
+  profileVersion: string | null;
+  modelUsed: string | null;
+  decompositionVersion: string | null;
+  triangulatedScore: number | null;
+  roleCandidateCosine: number | null;
+  dimensions: CandidateMatchDimensions | null;
+  reasoning: CandidateMatchReasoning | null;
+  matchPhilosophy: string | null;
+  careerContext: Record<string, unknown> | null;
+  situationSignature: Record<string, unknown> | null;
+  keySituations: unknown[] | null;
+  matchedRepoName: string | null;
+  matchedRepoUrl: string | null;
+  githubUrl: string | null;
+  lastEnrichedAt: string | null;
+  profileGeneratedAt: string | null;
+  profileEmbeddedAt: string | null;
+  matchedAt: string | null;
+  errorText: string | null;
+  enrichmentJobStatus: string | null;
+  topRepoMatches?: RepoMatchItem[];
+  githubCalendar: ContributionCalendar | null;
+}
+
+// ─── Per-Requirement Matching (Neo4j) ───────────────────────────────────────
+
+export interface EvidenceNode {
+  nodeId: string;
+  nodeType: 'Experience' | 'TechnicalDemonstration' | 'Skill' | 'CulturalSignal';
+  narrative: string;
+  similarity: number;
+  barsScore?: number;
+  sourceType: string;
+  capturedAt: string;
+}
+
+export interface RequirementMatch {
+  requirementId: string;
+  requirementText: string;
+  score: number;
+  weight: number;
+  matchCount: number;
+  evidence: EvidenceNode[];
+}
+
+export interface DealbreakerFailure {
+  dealbreakerId: string;
+  narrative: string;
+  matchedSimilarity: number;
+}
+
+export interface UnifiedMatchResult {
+  candidateId: string;
+  score: number;
+  name?: string;
+  email?: string;
+  requirementMatches: RequirementMatch[];
+  dealbreakerFailures: DealbreakerFailure[];
+}
+
+export interface ProfileSection {
+  type: string;
+  props: Record<string, unknown>;
+}
+
+export interface CultureInterviewSession {
+  id: string;
+  challengeId: string;
+  assessmentId: string;
+  state: string;
+  transcript: Record<string, unknown>;
+  scoreReport: Record<string, unknown> | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
 export interface CandidateProfileResponse {
   candidate: CandidateProfileRecord;
   stages: ProfileStage[];
   phoneCalls: PhoneCallRecord[];
   reviewSessions?: ReviewSessionListItem[];
+  ingestion: CandidateEnrichmentRecord | null;
+  profileSections: ProfileSection[];
+  cultureInterviewSessions: CultureInterviewSession[];
+}
+
+// ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)
+
+export type InterviewPhase = 'CONTEXT' | 'DISCOVERY' | 'PRIORITIZE' | 'EVP_FRICTION' | 'WRAP_UP';
+
+export interface InterviewStateExchange {
+  questionId: string;
+  question: string;
+  acknowledgment: string;
+  answer?: string;
+  input?: RoleContextQuestionInput;
+}
+
+export interface InterviewQueuedQuestion {
+  questionId: string;
+  text: string;
+  acknowledgment: string;
+  goal?: string;
+  expectedCoverage?: { domain: string; from: DomainCoverage; to: DomainCoverage };
+  probeAlignment?: string;
+  questionType?: string;
+  input: RoleContextQuestionInput;
+  suggestedAnswers?: string[];
+  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+  domainCoverage: Record<string, DomainCoverage>;
+}
+
+export type DomainCompletionStatus =
+  | 'pending'
+  | 'generating'
+  | 'asking'
+  | 'depth_check'
+  | 'follow_up'
+  | 'complete';
+
+export interface InterviewState {
+  baseline: Record<string, unknown>;
+  participantRole: ParticipantRole | null;
+  questionBudget: number;
+  exchanges: InterviewStateExchange[];
+  knowledgeState: Record<string, Record<string, unknown>>;
+  coverage: Record<string, DomainCoverage>;
+  phase: InterviewPhase;
+  questionsAsked: number;
+  synthesisReady: boolean;
+  /** Why the current phase was selected (human-readable). */
+  reasoning?: string;
+  /** List of gaps that prevented synthesis (if any). */
+  urgentGaps?: string[];
+  /** Pre-generated questions served instantly without LLM latency. */
+  questionStack: InterviewQueuedQuestion[];
+
+  // ── Domain-driven column tracking ──
+  /** Which domain we're currently interviewing. Null before DISCOVERY starts. */
+  currentDomain?: Domain | null;
+  /** Per-domain completion status. */
+  domainCompletion?: Record<string, DomainCompletionStatus>;
+  /** Cached generated questions per domain (populated when entering 'asking'). */
+  domainQuestions?: Record<string, { id: string; text: string; intent: string; drillingHints?: string[]; ladderingTarget?: string }[]>;
+  /** How many questions have been asked per domain so far. */
+  domainQuestionsDelivered?: Record<string, number>;
+  /** How many follow-up questions asked in the current domain (during follow_up phase). */
+  domainFollowUpsDelivered?: number;
+}
+
+export interface PostStateRequest {
+  state?: InterviewState;
+  action:
+    | { type: 'ANSWER'; answer: string; knowledgeStateUpdate?: Record<string, Record<string, unknown>>; domainCoverage?: Record<string, DomainCoverage> }
+    | { type: 'SKIP' }
+    | { type: 'FORCE_SYNTHESIZE' };
+}
+
+export interface PostStateResponse {
+  state: InterviewState;
+}
+
+export interface PostQuestionRequest {
+  state: InterviewState;
+  enableEval?: boolean;
+}
+
+export interface PostQuestionResponse {
+  reasoning: string;
+  acknowledgment: string;
+  question: RoleContextQuestion & {
+    goal?: string;
+    expectedCoverage?: { domain: string; from: DomainCoverage; to: DomainCoverage };
+    probeAlignment?: string;
+    questionType?: string;
+  };
+  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+  domainCoverage: Record<string, DomainCoverage>;
+  /** Remaining pre-generated questions to pop from the stack. */
+  questionStack?: InterviewQueuedQuestion[];
+  eval?: {
+    approved: boolean;
+    dimensions: Array<{ id: string; verdict: 'pass' | 'fail' | 'warn'; score: number; reason: string }>;
+    rewrite?: string;
+  };
+}
+
+export interface PostQuestionPrefetchResponse {
+  questionStack: InterviewQueuedQuestion[];
+  prefetched: boolean;
+  reason?: string;
+  added?: number;
+  error?: string;
+}
+
+/** Response from POST /:id/respond — single-turn question or synthesis. */
+export interface PostRespondResponse {
+  participantId: string;
+  type: 'question' | 'synthesis';
+  acknowledgment: string;
+  question?: RoleContextQuestion & {
+    goal?: string;
+    expectedCoverage?: { domain: string; from: DomainCoverage; to: DomainCoverage };
+    probeAlignment?: string;
+    questionType?: string;
+  };
+  state: InterviewState;
+  progress: {
+    asked: number;
+    budget: number;
+    domains: Record<string, DomainCoverage>;
+  };
+  status: 'INTERVIEWING' | 'COMPLETE';
+  participantRole?: string;
+  // Synthesis fields (when type === 'synthesis')
+  synthesis?: string;
+  persona?: CandidatePersona;
+  jobDescription?: GeneratedJobDescription;
+  rcd?: RoleContextDocument | null;
+}
+
+export interface PostSynthesizeRequest {
+  state: InterviewState;
+}
+
+export interface PostSynthesizeResponse {
+  reasoning: string;
+  persona: CandidatePersona;
+  jobDescription: GeneratedJobDescription;
+  synthesis: string;
+  knowledgeStateUpdate: Record<string, Record<string, unknown>>;
+  domainCoverage: Record<string, DomainCoverage>;
+  /** Full Role Context Document — present when backend has cut over to RCD synthesis. */
+  rcd?: RoleContextDocument | null;
 }

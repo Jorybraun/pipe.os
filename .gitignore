@@ -15,6 +15,7 @@ dist-ssr
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/mcp.json
 .idea
 .DS_Store
 *.suo
@@ -53,3 +54,16 @@ workers/api/.wrangler/
 
 # Binary toolchain artifacts (keep out of repo)
 google-cloud-cli-*.tar.gz
+
+# Agent harness runtime state
+.swarm/
+*.db-shm
+*.db-wal
+
+# Temporary / sensitive files
+get_token.cjs
+.worktrees/
+subtree/
+e2e/screenshots/
+*.timestamp-*.mjs
+local.db

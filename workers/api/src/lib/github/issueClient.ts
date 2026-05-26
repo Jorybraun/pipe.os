@@ -1,8 +1,8 @@
 /**
- * GitHub Issue Client — fetches issues for the crawler pipeline (RD-P6).
+ * GitHub Issue Client — fetches issues from the GitHub API.
  *
  * Used by:
- *   - Issue crawler cron worker (weekly batch fetch)
+ *   - Lazy issue fetch (match-time on-demand fetch)
  *   - Issue state verifier (runtime check before challenge assignment)
  *
  * Rate limits:

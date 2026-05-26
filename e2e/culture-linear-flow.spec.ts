@@ -68,9 +68,11 @@ test.describe("Culture linear happy-path flow", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+          state: 'in_progress',
           currentQuestion: q,
           turnsAsked: 0,
           totalBudget: 20,
+          consentRequired: false,
         }),
       });
     });
@@ -86,7 +88,7 @@ test.describe("Culture linear happy-path flow", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            done: true,
+            state: 'complete',
             message:
               "Thank you for completing the interview. Your responses have been submitted for review.",
           }),
@@ -97,9 +99,9 @@ test.describe("Culture linear happy-path flow", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            done: false,
+            state: 'in_progress',
             acknowledgment: "Thanks for walking me through that.",
-            currentQuestion: nextQ,
+            nextQuestion: nextQ,
             turnsAsked: questionIdx,
             totalBudget: 20,
           }),

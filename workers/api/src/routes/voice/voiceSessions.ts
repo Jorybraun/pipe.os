@@ -98,7 +98,7 @@ voiceSessions.post('/transcript-callback', async (c) => {
     .run();
 
   // ── Optionally stash transcript reference on role_contexts ─────────────────
-  // Full synthesis pipeline is follow-up work (see STRATEGY.md).
+  // Full synthesis pipeline is follow-up work (see ADR-032).
   // For now we record that a voice session was completed so the context row is
   // queryable.  We use a simple JSON patch into knowledge_state rather than a
   // separate column, keeping the schema narrow.

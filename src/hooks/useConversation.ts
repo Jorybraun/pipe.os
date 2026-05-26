@@ -20,6 +20,7 @@ import type {
   RoleContextProgress,
   RoleContextExchange,
   DomainCoverage,
+  DomainCompletionStatus,
   CandidatePersona,
   GeneratedJobDescription,
 } from '../lib/api/types';
@@ -27,6 +28,8 @@ import type {
   ConversationAdapter,
   AdapterConfig,
   PastExchange,
+  RespondMedia,
+  SynthesisResult,
 } from '../components/AIChat/types';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -52,6 +55,7 @@ export interface UseConversationResult {
   persona: CandidatePersona | null;
   jobDescription: GeneratedJobDescription | null;
   synthesis: string | null;
+  transcript: Array<{ role: 'user' | 'model'; text: string; videoR2Key?: string }> | null;
 
   // Loading / error
   isLoading: boolean;
@@ -59,7 +63,7 @@ export interface UseConversationResult {
 
   // Actions
   initialize: (config: AdapterConfig) => Promise<void>;
-  respond: (answer: string, questionId: string) => Promise<void>;
+  respond: (answer: string, questionId: string, media?: RespondMedia) => Promise<void>;
   completeEarly: () => Promise<void>;
   submitFeedback: (questionId: string, feedback: string) => Promise<void>;
   /**
@@ -69,9 +73,9 @@ export interface UseConversationResult {
    */
   hydrateInterviewing: (data: {
     exchanges: RoleContextExchange[];
-    questionsAsked: number;
-    questionBudget: number;
     knowledgeState: Record<string, unknown>;
+    currentDomain?: string | null | undefined;
+    domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }) => void;
   /** Wipe all conversation state back to IDLE — used by step-nav back-buttons. */
   reset: () => void;
@@ -88,6 +92,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
   const [persona, setPersona] = useState<CandidatePersona | null>(null);
   const [jobDescription, setJobDescription] = useState<GeneratedJobDescription | null>(null);
   const [synthesis, setSynthesis] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<Array<{ role: 'user' | 'model'; text: string; videoR2Key?: string }> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
@@ -107,10 +112,11 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
 
   // ─── Synthesis helper — shared by respond() and completeEarly() ──────────
 
-  const applySynthesis = (synthesisText: string, resolvedPersona: CandidatePersona | null, resolvedJobDescription: GeneratedJobDescription | null, resolvedProgress: RoleContextProgress): void => {
-    setSynthesis(synthesisText);
-    setPersona(resolvedPersona);
-    setJobDescription(resolvedJobDescription);
+  const applySynthesis = (result: SynthesisResult, resolvedProgress: RoleContextProgress): void => {
+    setSynthesis(result.synthesis);
+    setPersona(result.persona);
+    setJobDescription(result.jobDescription);
+    setTranscript(result.transcript ?? null);
     setProgress(resolvedProgress);
     setCurrentQuestion(null);
     setAcknowledgment(null);
@@ -140,7 +146,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
   );
 
   const respond = useCallback(
-    async (answer: string, questionId: string): Promise<void> => {
+    async (answer: string, questionId: string, media?: RespondMedia): Promise<void> => {
       setIsLoading(true);
       setError(null);
       setStreamingText('');
@@ -161,14 +167,14 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
         // Use streaming if available
         console.log('[useConversation] respondStream available:', !!adapter.respondStream);
         if (adapter.respondStream) {
-          for await (const event of adapter.respondStream(answer, questionId)) {
+          for await (const event of adapter.respondStream(answer, questionId, media)) {
             if (event.event === 'chunk') {
               setStreamingText((prev) => prev + event.text);
             } else if (event.event === 'done') {
               setStreamingText('');
               const result = event.result;
               if (result.type === 'synthesis') {
-                applySynthesis(result.synthesis, result.persona, result.jobDescription, result.progress);
+                applySynthesis(result, result.progress);
               } else {
                 setAcknowledgment(result.acknowledgment);
                 setCurrentQuestion(result.question);
@@ -181,10 +187,10 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
           }
         } else {
           // Non-streaming fallback
-          const result = await adapter.respond(answer, questionId);
+          const result = await adapter.respond(answer, questionId, media);
 
           if (result.type === 'synthesis') {
-            applySynthesis(result.synthesis, result.persona, result.jobDescription, result.progress);
+            applySynthesis(result, result.progress);
           } else {
             setAcknowledgment(result.acknowledgment);
             setCurrentQuestion(result.question);
@@ -208,7 +214,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     setError(null);
     try {
       const result = await adapter.completeEarly();
-      applySynthesis(result.synthesis, result.persona, result.jobDescription, result.progress);
+      applySynthesis(result, result.progress);
     } catch (err) {
       handleError(err, 'complete early');
       throw err;
@@ -237,11 +243,11 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
 
   const hydrateInterviewing = useCallback((data: {
     exchanges: RoleContextExchange[];
-    questionsAsked: number;
-    questionBudget: number;
     knowledgeState: Record<string, unknown>;
+    currentDomain?: string | null | undefined;
+    domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
   }): void => {
-    const { exchanges, questionsAsked, questionBudget, knowledgeState } = data;
+    const { exchanges, knowledgeState, currentDomain, domainCompletion } = data;
 
     // Last exchange without an answer is the current question awaiting response.
     const lastExchange = exchanges[exchanges.length - 1];
@@ -268,7 +274,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     setPastExchanges(restored);
     setCurrentQuestion(restoredQuestion);
     setAcknowledgment(currentExchange?.acknowledgment ?? null);
-    setProgress({ asked: questionsAsked, budget: questionBudget, domains: coverage });
+    setProgress({ asked: exchanges.length, budget: 0, domains: coverage, currentDomain, domainCompletion });
     setPhase('INTERVIEWING');
     setIsLoading(false);
     setError(null);
@@ -301,6 +307,7 @@ export function useConversation(adapter: ConversationAdapter): UseConversationRe
     persona,
     jobDescription,
     synthesis,
+    transcript,
     isLoading,
     error,
     initialize,

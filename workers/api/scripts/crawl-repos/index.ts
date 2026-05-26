@@ -456,6 +456,23 @@ async function processPass2Repo(
         disqualified = 1;
         disqualifiedReason = prResult.disqualifiedReason;
       }
+
+      // Generate Gemma narratives + BGE embeddings for each sampled PR.
+      // Best-effort: failure is logged but never blocks the pass-2 persist.
+      if (samplePrs.length > 0 && !DRY_RUN) {
+        try {
+          const { getAccessToken } = await import('./pass3/run.js');
+          const { enrichSamplePRs } = await import('./pass2/prNarrative.js');
+          const accessToken = await getAccessToken();
+          const projectId = process.env['VERTEX_AI_PROJECT_ID'] ?? 'pipe-493116';
+          samplePrs = await enrichSamplePRs(samplePrs, accessToken, projectId);
+        } catch (err) {
+          logger.warn('[pass2] PR narrative enrichment failed (non-fatal)', {
+            full_name: fullName,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
     }
 
     // ── Persist ───────────────────────────────────────────────────────────

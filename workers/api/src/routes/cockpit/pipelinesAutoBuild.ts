@@ -15,6 +15,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { autoStageBuilder } from '../../lib/match/autoStageBuilder';
 import { checkGuardrails, type MatchConfigInput } from '../../lib/match/guardrails';
+import { getScreenerStage } from '../../lib/screener';
 import type { Env, Variables, RoleContextRow } from '../../types';
 
 const autoBuild = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -105,7 +106,7 @@ autoBuild.post('/auto-build', async (c) => {
   //    the pipeline at build time — it's the "same canonical repo for everyone"
   //    mode. 'tailored' and 'hybrid' defer repo/PR/issue selection to the
   //    Ingestion pre-stage, which fires on resume upload and writes per-candidate
-  //    rows to candidate_challenge_assignment. See STRATEGY.md Decision Log
+  //    rows to candidate_challenge_assignment. See ADR-032 Decision Log
   //    2026-04-21 (ADR-039 sequencing override).
   const shouldMatchNow = input.match_config.match_philosophy === 'validate';
   let plan: Awaited<ReturnType<typeof autoStageBuilder>> | null = null;
@@ -194,13 +195,16 @@ autoBuild.post('/auto-build', async (c) => {
     instructions: string;
   };
 
-  const stageRecords: StationRecord[] = plan
+  const screener = getScreenerStage();
+  const screenerStageId = generateId();
+
+  const builtStations: StationRecord[] = plan
     ? plan.stations.map((station) => ({
         stageId: generateId(),
         challengeId: generateId(),
         type: station.type,
         title: station.title,
-        sortOrder: station.sortOrder,
+        sortOrder: station.sortOrder + 2, // shift down for screener + cultural fit
         repoId: station.repoId,
         githubRepoUrl: station.githubRepoUrl,
         githubPrNumber: station.githubPrNumber ?? null,
@@ -216,7 +220,7 @@ autoBuild.post('/auto-build', async (c) => {
           challengeId: generateId(),
           type: 'CODE_REVIEW',
           title: 'Code Review',
-          sortOrder: 0,
+          sortOrder: 2,
           repoId: null,
           githubRepoUrl: null,
           githubPrNumber: null,
@@ -229,7 +233,7 @@ autoBuild.post('/auto-build', async (c) => {
           challengeId: generateId(),
           type: 'CODE_IMPLEMENTATION',
           title: 'Code Implementation',
-          sortOrder: 1,
+          sortOrder: 3,
           repoId: null,
           githubRepoUrl: null,
           githubPrNumber: null,
@@ -239,12 +243,79 @@ autoBuild.post('/auto-build', async (c) => {
         },
       ];
 
+  const stageRecords: StationRecord[] = builtStations;
+
+  // Insert automatic screener stage first.
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO stages (id, pipeline_id, title, description, sort_order, stage_type, screening_format, owner_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    ).bind(
+      screenerStageId,
+      pipelineId,
+      screener.title,
+      screener.description ?? null,
+      0,
+      'SCREENING',
+      'ONLINE',
+      userId,
+    ),
+  );
+
+  // Insert screener challenges.
+  for (let ci = 0; ci < screener.challenges.length; ci++) {
+    const challenge = screener.challenges[ci];
+    if (!challenge) continue;
+    const challengeId = generateId();
+    const configJson = JSON.stringify(challenge.config);
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO challenges (id, stage_id, type, sort_order, title, instructions, config, owner_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+      ).bind(
+        challengeId,
+        screenerStageId,
+        challenge.type,
+        ci,
+        challenge.title,
+        challenge.instructions,
+        configJson,
+        userId,
+      ),
+    );
+  }
+
+  // Insert Cultural Fit stage between screener and code stations.
+  const culturalStageId = generateId();
+  const culturalChallengeId = generateId();
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    ).bind(culturalStageId, pipelineId, 'Cultural Fit', 1, 'CULTURAL', userId),
+  );
+  statements.push(
+    c.env.DB.prepare(
+      `INSERT INTO challenges (id, stage_id, type, sort_order, title, instructions, config, owner_id)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    ).bind(
+      culturalChallengeId,
+      culturalStageId,
+      'AGENT_INTERVIEW',
+      0,
+      'Cultural Fit Interview',
+      'A structured behavioral interview assessing cultural alignment, communication style, and team-fit.',
+      JSON.stringify({ autoBuilt: true }),
+      userId,
+    ),
+  );
+
   for (const rec of stageRecords) {
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, 'CODE_REVIEW', userId),
+      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, rec.type === 'CODE_REVIEW' ? 'CODE_REVIEW' : 'CODE_IMPLEMENTATION', userId),
     );
   }
 

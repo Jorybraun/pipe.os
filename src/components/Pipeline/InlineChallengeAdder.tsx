@@ -31,6 +31,8 @@ import {
   PenLine,
   X,
   GitPullRequest,
+  Type,
+  Mic,
 } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../../lib/stageTemplates';
 import { useStageMutations } from '../../hooks/useStageMutations';
@@ -109,6 +111,7 @@ function ToggleSwitch({
   return (
     <button
       type="button"
+      aria-label="Toggle"
       onClick={() => onChange(!value)}
       style={{
         width: 36,
@@ -601,6 +604,7 @@ function AiGeneratedQuestions({
 }): JSX.Element {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generated, setGenerated] = useState<string[]>([]);
+  const [inputMode, setInputMode] = useState<'text' | 'voice' | 'video'>('text');
 
   const handleGenerate = async (): Promise<void> => {
     setIsGenerating(true);
@@ -617,12 +621,13 @@ function AiGeneratedQuestions({
   };
 
   const handleAddGenerated = async (text: string): Promise<void> => {
+    const placeholder = inputMode === 'text' ? 'Type your answer...' : inputMode === 'voice' ? 'Record a voice response...' : 'Record a video response...';
     await onAdd({
       id: `ai-${Date.now()}`,
       type: 'QUIZ_SHORT_ANSWER',
       title: text,
       instructions: text,
-      config: { inputMode: 'text' as const, question: text, placeholder: 'Type your answer...' },
+      config: { inputMode, question: text, placeholder },
     });
   };
 
@@ -672,26 +677,35 @@ function AiGeneratedQuestions({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }}>GENERATED_QUESTIONS</label>
-            <button
-              onClick={() => void handleGenerate()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '3px 8px',
-                background: 'none',
-                border: '1px solid var(--pipe-border)',
-                borderRadius: 3,
-                color: 'var(--pipe-text-dim)',
-                fontSize: 8,
-                fontFamily: '"Space Mono", monospace',
-                cursor: 'pointer',
-                letterSpacing: '0.1em',
-              }}
-            >
-              <Sparkles size={9} />
-              REGENERATE
-            </button>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {INLINE_INPUT_MODES.map((mode) => {
+                const Icon = mode.icon;
+                const isActive = inputMode === mode.key;
+                return (
+                  <button
+                    key={mode.key}
+                    onClick={() => setInputMode(mode.key)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '3px 8px',
+                      background: isActive ? 'var(--pipe-surface-hover)' : 'none',
+                      border: `1px solid ${isActive ? 'var(--pipe-text-dim)' : 'var(--pipe-border)'}`,
+                      borderRadius: 3,
+                      color: isActive ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                      fontSize: 8,
+                      fontFamily: '"Space Mono", monospace',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Icon size={9} />
+                    {mode.label.toUpperCase()}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           {generated.map((text, i) => (
             <button
@@ -723,6 +737,12 @@ function AiGeneratedQuestions({
 
 // Manual mode — write your own question
 
+const INLINE_INPUT_MODES: { key: 'text' | 'voice' | 'video'; label: string; icon: typeof Type }[] = [
+  { key: 'text', label: 'Text', icon: Type },
+  { key: 'voice', label: 'Voice', icon: Mic },
+  { key: 'video', label: 'Video', icon: Video },
+];
+
 function ManualQuestion({
   onAdd,
 }: {
@@ -730,10 +750,12 @@ function ManualQuestion({
 }): JSX.Element {
   const [question, setQuestion] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [inputMode, setInputMode] = useState<'text' | 'voice' | 'video'>('text');
 
   const handleAdd = async (): Promise<void> => {
     const text = question.trim();
     if (!text) return;
+    const placeholder = inputMode === 'text' ? 'Type your answer...' : inputMode === 'voice' ? 'Record a voice response...' : 'Record a video response...';
     setIsAdding(true);
     try {
       await onAdd({
@@ -741,7 +763,7 @@ function ManualQuestion({
         type: 'QUIZ_SHORT_ANSWER',
         title: text,
         instructions: text,
-        config: { inputMode: 'text' as const, question: text, placeholder: 'Type your answer...' },
+        config: { inputMode, question: text, placeholder },
       });
       setQuestion('');
     } finally {
@@ -790,6 +812,44 @@ function ManualQuestion({
           ⌘↵ to add quickly
         </div>
       </div>
+
+      {/* Response type */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <label style={{ ...labelStyle, marginBottom: 0 }}>RESPONSE_TYPE</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {INLINE_INPUT_MODES.map((mode) => {
+            const Icon = mode.icon;
+            const isActive = inputMode === mode.key;
+            return (
+              <button
+                key={mode.key}
+                onClick={() => setInputMode(mode.key)}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  padding: '8px 0',
+                  background: isActive ? 'var(--pipe-surface-hover)' : 'transparent',
+                  border: `1px solid ${isActive ? 'var(--pipe-text-dim)' : 'var(--pipe-border)'}`,
+                  borderRadius: 4,
+                  color: isActive ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                  fontSize: 9,
+                  fontFamily: '"Space Mono", monospace',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <Icon size={12} />
+                {mode.label.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <button
         onClick={() => void handleAdd()}
         disabled={!question.trim() || isAdding}

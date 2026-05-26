@@ -45,7 +45,7 @@ test.describe("Culture probe budget enforcement", () => {
     }> = [
       // Turn 1: short answer → probe
       {
-        done: false,
+        state: 'in_progress',
         acknowledgment: "Got it.",
         currentQuestion: {
           questionId: QUESTION_ID,
@@ -56,7 +56,7 @@ test.describe("Culture probe budget enforcement", () => {
       },
       // Turn 2: short answer again → second probe (budget = 2)
       {
-        done: false,
+        state: 'in_progress',
         acknowledgment: "Got it.",
         currentQuestion: {
           questionId: QUESTION_ID,
@@ -67,7 +67,7 @@ test.describe("Culture probe budget enforcement", () => {
       },
       // Turn 3: probe budget exhausted → advance to next question
       {
-        done: false,
+        state: 'in_progress',
         acknowledgment: "Thanks for walking me through that.",
         currentQuestion: {
           questionId: "q-collab-1",
@@ -106,9 +106,11 @@ test.describe("Culture probe budget enforcement", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+            state: 'in_progress',
           currentQuestion: { questionId: QUESTION_ID, text: QUESTION_TEXT },
           turnsAsked: 0,
           totalBudget: 20,
+            consentRequired: false,
         }),
       });
     });

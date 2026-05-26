@@ -96,7 +96,7 @@ export function AgentDrawer({ pipelineId, skillMode, onClose, onSkillModeChange 
             padding: 4,
             display: 'flex',
           }}
-        >
+         aria-label="Close">
           <X size={16} />
         </button>
       </div>

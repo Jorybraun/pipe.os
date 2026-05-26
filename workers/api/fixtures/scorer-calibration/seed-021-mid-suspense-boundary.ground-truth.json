@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-021-mid-suspense-boundary",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 9,
+      "description": "ErrorBoundary is inside Suspense — if DataFetcher throws, Suspense catches it first and shows fallback forever, never reaching ErrorBoundary. ErrorBoundary must be outside Suspense.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 4,
+      "description": "DataFetcher accesses data.name without null check — if promise resolves to null or missing name, throws. Should handle edge cases.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 15,
+      "description": "ErrorBoundary has no error logging — production errors are silently swallowed. Should include componentDidCatch with logging.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/DataBoundary.tsx",
+      "line": 1,
+      "description": "use is an experimental API — should document React version requirement.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

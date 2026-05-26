@@ -1,5 +1,5 @@
 /**
- * Repo Discovery Orchestrator — CR-13
+ * Repo Discovery Orchestrator — ADR-032
  *
  * Queries the pre-populated qualified_repos catalog via matchRepos.
  * No external API calls at runtime; everything is a D1 query.
@@ -15,6 +15,7 @@
 import { matchRepos, type MatchedRepo } from './matchRepos';
 import { rerankMatchedRepos } from './rerankPipeline';
 import { buildRcdSearchProfile } from './rcdSearchProfile';
+import { preprocessForEmbedding } from '../embedding/preprocess';
 import type { CandidatePersona, RoleContextDocument, RepoRoleAlignmentRow } from '../../types';
 import type { LLMProvider } from '../llm/types';
 
@@ -409,11 +410,8 @@ async function vectorizeRecall(input: VectorizeRecallInput): Promise<MatchedRepo
     const profile = buildRcdSearchProfile(rcd);
     if (!profile || profile.trim().length === 0) return [];
 
-    // BGE asymmetric retrieval: queries get the instruction prefix, documents don't.
-    // Matches the training objective of bge-large-en-v1.5.
-    const queryText = `Represent this sentence for searching relevant passages: ${profile}`;
     const embedResult = (await ai.run('@cf/baai/bge-large-en-v1.5', {
-      text: [queryText],
+      text: [preprocessForEmbedding(profile, 'query')],
     })) as { data?: number[][] };
     const vector = embedResult?.data?.[0];
     if (!vector || !Array.isArray(vector)) return [];

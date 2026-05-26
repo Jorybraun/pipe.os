@@ -1,0 +1,153 @@
+{
+  "fixture_id": "culture-003",
+  "provider": "devstral",
+  "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+  "score_report": {
+    "competencyScores": [
+      {
+        "dimension": "ownership",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working on it and got the failure rate down."
+        ],
+        "confidence": 0.95,
+        "reasoning": "Candidate provides a real example but the personal contribution is peripheral or reactive — candidate noticed a problem but waited to be assigned to it, or their action was one small step inside a larger managed effort they did not initiate.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working on it and got the failure rate down. It was a collaborative effort across the engineering org."
+        ],
+        "confidence": 0.9,
+        "reasoning": "The candidate provides a real example of working with others, but their specific contribution to the joint work is unclear. They describe the team's outcome without distinguishing their personal role. There is no mention of differing perspectives or friction points.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "learning-orientation",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I thought we needed microservices early on but the team ended up not doing that. Looking back they were probably right, a monolith was simpler for where we were. I adapted my thinking."
+        ],
+        "confidence": 0.9,
+        "reasoning": "Candidate demonstrates Level 2 learning orientation: describes a learning moment that was externally triggered (the team's decision), acknowledges the update, but does not describe any behavioral change or specific steps taken to adapt their thinking further. The example is real and specific but lacks depth in describing the learning process or outcome.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "conflict-handling",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "We held a meeting and each side presented their case. Eventually we voted and went with the majority view. I was on the side that didn't win but I was fine with it.",
+          "I mentioned it in the planning meeting. The team adjusted the scope slightly and we shipped on time."
+        ],
+        "confidence": 0.9,
+        "reasoning": "The candidate describes real conflicts but their handling was passive or procedural. They mention expressing their opinion once and dropping it, and deferring to the team's decision without engaging the substance of the disagreement. There is no evidence of genuine attempts to understand the opposing view or structured pushback.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "self-awareness",
+        "score": 2,
+        "rawScore": 2,
+        "dispositionalWeight": 0,
+        "barsOverrideApplied": false,
+        "evidenceQuotes": [
+          "I've struggled with context switching between many projects. My manager gave me feedback about this. I try to timebox my work now which has helped a bit."
+        ],
+        "confidence": 0.9,
+        "reasoning": "The candidate names a weakness but the description is abstract and lacks a concrete example of it manifesting in their work. They mention receiving feedback and trying a coping strategy, but do not provide specific behavioral evidence or acknowledge the impact on others.",
+        "repromptCount": 0
+      }
+    ],
+    "profileScores": [
+      {
+        "dimension": "autonomy",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working on it and got the failure rate down. It was a collaborative effort across the engineering org.",
+          "I once pushed back on a timeline that seemed unrealistic. I mentioned it in the planning meeting. The team adjusted the scope slightly and we shipped on time."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate demonstrates a balance between autonomy and collaboration. They describe working within a team structure and seeking consensus, but also taking initiative and pushing back when necessary. Position 2 is not warranted because they show initiative beyond well-defined lanes. Position 4 is not warranted because they describe collaborative efforts and seeking consensus, indicating a comfort with team alignment.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "risk-tolerance",
+        "candidatePosition": 2,
+        "evidenceQuotes": [
+          "We spent a sprint working on it and got the failure rate down. It was a collaborative effort across the engineering org.",
+          "I was fine with it.",
+          "I adapted my thinking.",
+          "The team adjusted the scope slightly and we shipped on time."
+        ],
+        "confidence": 0.8,
+        "reasoning": "Candidate describes a cautious approach to decision-making, preferring collaborative efforts and consensus. They mention adapting their thinking and being fine with not getting their way, indicating a willingness to validate and iterate. Position 3 is not warranted because they do not articulate a contextually calibrated risk tolerance. Position 1 is not warranted because they do show a willingness to act and adapt, even if cautiously.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "work-pace",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "We spent a sprint working on it and got the failure rate down.",
+          "I've struggled with context switching between many projects."
+        ],
+        "confidence": 0.85,
+        "reasoning": "The candidate describes working in sprints, which suggests they can handle focused work but also adapt to collaborative, time-boxed efforts. They mention struggling with context switching, which indicates they are not fully comfortable with rapid, constant changes (position 4 or 5). They also do not describe a strong preference for deep, sustained focus (position 1 or 2). The candidate's ability to adapt and work in both focused and collaborative environments places them at position 3.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "collaboration-style",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "We had a situation where our CI pipeline was flaky. The team noticed it was slowing us down. We spent a sprint working on it and got the failure rate down. It was a collaborative effort across the engineering org.",
+          "We were deciding between two database solutions and the team had split opinions. We held a meeting and each side presented their case. Eventually we voted and went with the majority view."
+        ],
+        "confidence": 0.8,
+        "reasoning": "The candidate describes both collaborative and individual efforts. They mention working collaboratively on the CI pipeline and adapting to the team's decision on the database solution. However, they also describe pushing back on a timeline and timeboxing work, which suggests a balance between collaboration and individual execution. Position 2 is not warranted because they actively seek alignment and collaboration. Position 4 is not warranted because they do not describe a strong preference for continuous collaboration or tight-loop team interaction.",
+        "repromptCount": 0
+      },
+      {
+        "dimension": "feedback-orientation",
+        "candidatePosition": 3,
+        "evidenceQuotes": [
+          "My manager gave me feedback about this. I try to timebox my work now which has helped a bit."
+        ],
+        "confidence": 0.85,
+        "reasoning": "The candidate is comfortable receiving feedback in both formal and informal settings, as evidenced by their willingness to accept and act on feedback from their manager. They do not actively seek feedback, nor do they describe discomfort with direct feedback. Position 2 is not warranted because they do not require a prior relationship to receive feedback. Position 4 is not warranted because they do not describe actively seeking feedback or integrating it into their workflow.",
+        "repromptCount": 0
+      }
+    ],
+    "dealbreakerFlags": [],
+    "hitlReviewRequired": false,
+    "synthesis": {
+      "headline": "Candidate demonstrates collaborative spirit but shows limited initiative.",
+      "narrative": "The candidate exhibits a strong collaborative spirit, consistently working well within a team structure. They describe several instances where they contributed to team efforts, such as improving the CI pipeline and adapting to the team's decision on the database solution. The candidate also shows a willingness to push back when necessary, as seen in their adjustment of an unrealistic timeline. Additionally, they demonstrate a learning orientation by acknowledging when they were wrong about a technical decision and adapting their thinking accordingly. The candidate's ability to work in sprints and handle focused work, while also adapting to collaborative, time-boxed efforts, indicates a balanced approach to work pace.\n\nThe transcript shows limited evidence of the candidate taking initiative on problems that were not explicitly assigned to them. While they mention contributing to the CI pipeline, it is described as a team effort without clear distinction of their personal role. Additionally, the candidate's conflict-handling style appears passive, as they defer to the team's decision without engaging the substance of disagreements. There is also limited evidence of the candidate actively seeking feedback or integrating it into their workflow. The candidate's self-awareness is somewhat abstract, lacking concrete examples of how their weaknesses manifest in their work. These areas suggest opportunities for development in taking more ownership and actively seeking feedback.\n\nThe candidate's working-style profile aligns well with the organization's benchmark on autonomy, work pace, collaboration style, and feedback orientation, indicating strong values alignment. However, there is a meaningful divergence on the risk-tolerance axis, where the candidate scores lower. The candidate's cautious approach to decision-making and preference for collaborative efforts and consensus suggest a more risk-averse style compared to the organization's benchmark. This divergence could indicate a culture add, bringing a more deliberate and consensus-driven perspective to the team. However, it may also require additional support to align with the organization's risk tolerance. Overall, the candidate's profile suggests a good balance of collaboration and individual execution, with areas for growth in initiative and conflict handling.",
+      "recommendation": "FLAG_FOR_REVIEW"
+    },
+    "orgBenchmark": {
+      "autonomy": 3,
+      "riskTolerance": 3,
+      "workPace": 3,
+      "collaborationStyle": 3,
+      "feedbackOrientation": 3
+    },
+    "scoredAt": "2026-04-28T02:52:45.633Z"
+  },
+  "meta": {
+    "wall_clock_ms": 27795,
+    "attempts": 1,
+    "status": "ok"
+  }
+}

@@ -40,8 +40,10 @@ interface IngestionListRow {
   candidate_searchable_profile: string | null;
   matched_repo_name: string | null;
   triangulated_score: number | null;
+  role_candidate_cosine: number | null;
   dimensions_json: string | null;
   reasoning_json: string | null;
+  match_philosophy: string | null;
   error_text: string | null;
   created_at: string;
   updated_at: string;
@@ -81,8 +83,10 @@ ingestion.get('/:pipelineId/ingestion', async (c) => {
          ci.candidate_searchable_profile,
          qr.full_name AS matched_repo_name,
          ci.triangulated_score,
+         ci.role_candidate_cosine,
          ci.dimensions_json,
          ci.reasoning_json,
+         ci.match_philosophy,
          ci.error_text,
          ci.created_at,
          ci.updated_at
@@ -110,8 +114,10 @@ ingestion.get('/:pipelineId/ingestion', async (c) => {
       candidateSearchableProfile: r.candidate_searchable_profile ?? '',
       matchedRepoName: r.matched_repo_name,
       triangulatedScore: r.triangulated_score,
+      roleCandidateCosine: r.role_candidate_cosine,
       dimensions: snakeToCamelDimensions(dimensions),
       reasoning,
+      matchPhilosophy: r.match_philosophy,
       errorText: r.error_text,
     };
   });
@@ -292,6 +298,7 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
   // Extract text + parse
   let resumeText = '';
   let parsed: Record<string, unknown> = { skills: [] };
+  let decompositionResult: import('../../lib/candidateDiscovery/candidateDecompositionPrompt').DecompositionResult | null = null;
 
   if (contentType === 'application/pdf') {
     try {
@@ -314,13 +321,14 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
   }
 
   try {
-    const parsedCV = await parseResume({
+    const parseResult = await parseResume({
       env: c.env,
       contentType,
       fileBuffer: buffer,
     });
-    if (parsedCV) {
-      parsed = parsedCV as unknown as Record<string, unknown>;
+    if (parseResult) {
+      parsed = parseResult.parsedCV as unknown as Record<string, unknown>;
+      decompositionResult = parseResult.decompositionResult;
     }
   } catch (err) {
     console.error('[ingestion/reingest] parseResume failed:', err);
@@ -349,16 +357,19 @@ ingestion.post('/:pipelineId/ingestion/:candidateId/reingest', async (c) => {
     .bind(candidateId, new Date().toISOString())
     .run();
 
-  // Fire-and-forget re-ingestion
-  runCandidateIngestion({
+  // Fire-and-forget re-ingestion — keep alive via waitUntil so the worker
+  // isolate doesn't drop the promise when the HTTP response is sent.
+  const ingestionPromise = runCandidateIngestion({
     env: c.env,
     db,
     candidateId,
-    parsed: parsed as { skills: string[] },
+    parsed: parsed as { skills: string[]; experiences: []; educationBlocks: []; credentials: []; projects: [] },
     resumeText,
+    decompositionResult,
   }).catch((err) => {
     console.error('[ingestion/reingest] background ingestion error:', err);
   });
+  c.executionCtx.waitUntil(ingestionPromise);
 
   return c.json({ success: true, message: 'Re-ingestion started.' });
 });

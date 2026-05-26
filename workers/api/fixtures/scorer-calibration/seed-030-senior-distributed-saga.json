@@ -1,0 +1,207 @@
+{
+  "id": "seed-030-senior-distributed-saga",
+  "description": "Senior reviewer finds consistency issue and asks deep design questions. Excellent all-around performance with question_formation anchor at ~5.",
+  "tags": [
+    "typescript",
+    "node",
+    "distributed-systems",
+    "high-score-anchor",
+    "question-formation-anchor"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add distributed transaction saga",
+    "description": "Saga pattern for multi-service candidate onboarding.",
+    "instructions": "Review for distributed consistency and failure handling.",
+    "diff": "diff --git a/src/lib/onboardingSaga.ts b/src/lib/onboardingSaga.ts\n@@ -0,0 +1,62 @@\n+export class OnboardingSaga {\n+  private steps: Array<{\n+    service: string;\n+    action: () => Promise<void>;\n+    compensate: () => Promise<void>;\n+  }> = [];\n+\n+  addStep(service: string, action: () => Promise<void>, compensate: () => Promise<void>) {\n+    this.steps.push({ service, action, compensate });\n+  }\n+\n+  async execute() {\n+    const completed: number[] = [];\n+    for (let i = 0; i < this.steps.length; i++) {\n+      try {\n+        await this.steps[i].action();\n+        completed.push(i);\n+      } catch (err) {\n+        for (let j = completed.length - 1; j >= 0; j--) {\n+          await this.steps[j].compensate();\n+        }\n+        throw err;\n+      }\n+    }\n+  }\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 12,
+      "description": "Compensation is not idempotent — if a compensation step fails and is retried, it may undo the same action twice or error out. Each compensate() must be idempotent with a deduplication key.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 12,
+      "description": "No persistence of saga state — if the process crashes mid-saga, there is no record of which steps completed. On restart, the saga starts from scratch, potentially double-executing actions. Should persist state to a saga log.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 12,
+      "description": "Compensation ignores failures — if a compensation step throws, the error is swallowed and the loop continues. Failed compensations must be logged and escalated for manual intervention.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "major",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 7,
+      "description": "No timeout on action or compensation steps — a hanging service will block the saga forever. Should wrap each step in a timeout with circuit breaker.",
+      "expectedFound": true
+    },
+    {
+      "id": 5,
+      "severity": "minor",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 5,
+      "description": "Saga is not reusable — the steps array is instance state, making the saga a singleton pattern. Should return a new saga instance per transaction.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 3001,
+            "file": "src/lib/onboardingSaga.ts",
+            "line": 12,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Compensation is not idempotent. If a step fails and is retried, it may double-undo.",
+            "why": "In distributed systems, retries are inevitable. Each compensate must be safe to run multiple times.",
+            "suggestion": "Add a deduplication key per step and check before compensating.",
+            "positive": false
+          },
+          {
+            "id": 3002,
+            "file": "src/lib/onboardingSaga.ts",
+            "line": 12,
+            "category": "reliability",
+            "severity": "blocking",
+            "what": "No saga state persistence. If the process crashes, we lose track of completed steps.",
+            "why": "A crash between step 2 and step 3 means step 1 and 2 may re-execute on restart. Use a saga log table.",
+            "suggestion": "Persist each step transition to D1 before executing the next step.",
+            "positive": false
+          },
+          {
+            "id": 3003,
+            "file": "src/lib/onboardingSaga.ts",
+            "line": 12,
+            "category": "reliability",
+            "severity": "blocking",
+            "what": "Compensation failures are silently swallowed.",
+            "why": "A failed compensation means the system is in an inconsistent state. This needs alerting and a dead-letter queue.",
+            "suggestion": "Catch compensation errors, log them, and publish to a DLQ for manual review.",
+            "positive": false
+          },
+          {
+            "id": 3004,
+            "file": "src/lib/onboardingSaga.ts",
+            "line": 7,
+            "category": "reliability",
+            "severity": "suggestion",
+            "what": "No timeouts on actions. A hanging service blocks the saga forever.",
+            "why": "Each step should have a bounded execution time.",
+            "suggestion": "Wrap action and compensate in Promise.race with a timeout.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Three blocking issues: idempotency, persistence, and compensation failure handling. Timeout is recommended.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 3001,
+            "move": "change",
+            "content": "Added idempotency keys.",
+            "updated_code": "const key = `compensate-${sagaId}-${stepIndex}`; if (await isCompensated(key)) return; ... await markCompensated(key);"
+          },
+          {
+            "to_comment_id": 3002,
+            "move": "change",
+            "content": "Added saga log persistence.",
+            "updated_code": "await db.prepare(\"INSERT INTO saga_log (saga_id, step_index, status) VALUES (?1, ?2, ?3)\").bind(sagaId, i, \"completed\").run();"
+          },
+          {
+            "to_comment_id": 3003,
+            "move": "change",
+            "content": "Added DLQ on compensation failure.",
+            "updated_code": "try { await step.compensate(); } catch (e) { await dlq.publish({ sagaId, stepIndex: j, error: e }); throw new CompensationFailedError(sagaId, j); }"
+          },
+          {
+            "to_comment_id": 3004,
+            "move": "change",
+            "content": "Added 30s timeout.",
+            "updated_code": "await Promise.race([step.action(), sleep(30000).then(() => { throw new TimeoutError(); })]);"
+          }
+        ]
+      },
+      {
+        "round": 2,
+        "reviewer_comments": [
+          {
+            "id": 3005,
+            "file": "src/lib/onboardingSaga.ts",
+            "line": 7,
+            "category": "design",
+            "severity": "blocking",
+            "what": "The timeout is fixed at 30s. Is that appropriate for all steps?",
+            "why": "Some steps (e.g., email verification) may need minutes, while others (e.g., DB insert) should fail fast. A one-size-fits-all timeout will either timeout legitimate long operations or wait too long for fast ones.",
+            "suggestion": "Make timeout per-step configurable with sensible defaults.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Timeout should be per-step, not global. Otherwise all fixes look correct.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 3005,
+            "move": "change",
+            "content": "Made timeout configurable per step.",
+            "updated_code": "addStep(service, action, compensate, { timeoutMs: 5000 })"
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "All fixes verified. Idempotency, saga log, DLQ, and per-step timeouts are all correct. Excellent iteration on the timeout design question.",
+      "submittedAt": "2026-04-28T03:47:05.966Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Found 4 of 5 bugs (idempotency, persistence, compensation failure, timeout). Missed saga reusability. Excellent coverage. Level 4-5."
+    },
+    "prioritization": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Three critical issues flagged as blocking. Timeout as suggestion initially, then elevated to blocking in round 2 with reasoning. Perfect triage evolution. Level 4-5."
+    },
+    "revision_evaluation": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Round 2 behavior is key: reviewer re-examined the timeout fix, identified a design flaw (global timeout), and elevated it to blocking with specific reasoning. Level 4-5."
+    },
+    "reasoning_quality": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Every comment explains the failure mechanism: double-undo, crash recovery, inconsistent state, bounded execution. Round 2 reasoning about per-step timeouts shows explicit tradeoff analysis. Level 4-5."
+    },
+    "question_formation": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Round 2 comment is framed as a design question that surfaced a second-order issue: \"Is 30s appropriate for all steps?\" This is a probing question that elicits design intent and exposes a flaw. Level 4-5."
+    },
+    "ai_direction": {
+      "min": 4,
+      "max": 5,
+      "rationale": "Each comment includes a concrete suggestion: deduplication key, saga log table, DLQ, Promise.race. Round 2 suggests per-step config. Level 4-5."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

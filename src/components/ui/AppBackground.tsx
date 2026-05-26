@@ -53,14 +53,15 @@ export function AppBackground(): JSX.Element {
         src="/bg-spine.png"
         alt=""
         style={{
-          width: '100%',
-          height: '100%',
+          width: '60%',
+          height: '60%',
           objectFit: 'contain',
           objectPosition: 'center',
           filter: theme.mode === 'anatomy-dark'
-            ? 'invert(1) grayscale(0.3) sepia(0.15) contrast(0.9)'
-            : 'grayscale(0.3) sepia(0.15) contrast(0.9)',
+            ? 'invert(1) grayscale(0.5) sepia(0.1) contrast(0.7) brightness(0.6)'
+            : 'grayscale(0.5) sepia(0.1) contrast(0.7) brightness(1.1)',
           mixBlendMode: theme.mode === 'anatomy-dark' ? 'screen' : 'multiply',
+          opacity: 0.7,
         }}
       />
     )
@@ -85,6 +86,20 @@ export function AppBackground(): JSX.Element {
           >
             {shader}
           </div>
+          {/* Readability overlay — ensures text contrast over the pipe image */}
+          {bg.shader === 'anatomy-spine' && (
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 0,
+                pointerEvents: 'none',
+                background: theme.mode === 'anatomy-dark'
+                  ? 'radial-gradient(ellipse at center, rgba(26,18,8,0.3) 0%, rgba(26,18,8,0.7) 100%)'
+                  : 'radial-gradient(ellipse at center, rgba(243,234,213,0.2) 0%, rgba(243,234,213,0.6) 100%)',
+              }}
+            />
+          )}
           <ChromeMeshGrid />
         </>
       )}

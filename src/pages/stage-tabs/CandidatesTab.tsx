@@ -6,25 +6,30 @@
  * so no extra fetch.
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { CheckCircle, Clock, Plus, Trash2, Users } from 'lucide-react';
+import { CheckCircle, Clock, Copy, Plus, Trash2, Users } from 'lucide-react';
 import { SectionCard } from '../../components';
 import { CandidateIntakeModal } from '../../components/Candidate/CandidateIntakeModal';
 import { useCandidateMutations } from '../../hooks/useCandidateMutations';
+import { usePipelineIngestion, type PipelineIngestionItem } from '../../hooks/usePipelineIngestion';
 import type { OverviewCandidate } from '../../lib/api/types';
 import type { StagePanelContext } from '../StagePanel';
 
 function CandidateRow({
   candidate,
+  ingestion,
   variant,
   onClick,
   onDelete,
+  onCopyLink,
 }: {
   candidate: OverviewCandidate;
+  ingestion?: PipelineIngestionItem | undefined;
   variant: 'completed' | 'pending';
   onClick: () => void;
   onDelete: () => void;
+  onCopyLink?: () => void;
 }): JSX.Element {
   const color = variant === 'completed' ? '#4ade80' : 'var(--pipe-text-dim)';
   const bg =
@@ -75,6 +80,54 @@ function CandidateRow({
         </span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Enrichment indicator */}
+        {ingestion && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background:
+                  ingestion.status === 'matched'
+                    ? '#10b981'
+                    : ingestion.status === 'failed'
+                      ? '#f87171'
+                      : '#9ca3af',
+              }}
+            />
+            {ingestion.status === 'matched' && ingestion.triangulatedScore !== null && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: '#10b981',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                {Math.round((ingestion.triangulatedScore ?? 0) * 100)}
+              </span>
+            )}
+            {ingestion.status === 'matched' && ingestion.matchPhilosophy && (
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  color: '#60a5fa',
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: '0.06em',
+                  padding: '1px 5px',
+                  background: 'rgba(96,165,250,0.08)',
+                  border: '1px solid rgba(96,165,250,0.15)',
+                  borderRadius: 3,
+                }}
+              >
+                {ingestion.matchPhilosophy.toUpperCase()}
+              </span>
+            )}
+          </div>
+        )}
+
         {variant === 'completed' && candidate.score !== null && (
           <span
             style={{
@@ -97,6 +150,25 @@ function CandidateRow({
           >
             {candidate.status === 'INVITED' ? 'INVITED' : 'IN PROGRESS'}
           </span>
+        )}
+        {onCopyLink && (
+          <button
+            onClick={onCopyLink}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--pipe-text-dim)',
+              padding: 4,
+              display: 'flex',
+              alignItems: 'center',
+              opacity: 0.5,
+              transition: 'opacity 0.2s',
+            }}
+            title="Copy invite link"
+          >
+            <Copy size={12} />
+          </button>
         )}
         <button
           onClick={onDelete}
@@ -124,6 +196,15 @@ export default function CandidatesTab(): JSX.Element {
   const { shell, stageId } = useOutletContext<StagePanelContext>();
   const navigate = useNavigate();
   const { deleteCandidate } = useCandidateMutations();
+  const { items: ingestionItems } = usePipelineIngestion(shell.pipelineId);
+
+  const ingestionByCandidate = useMemo(() => {
+    const map = new Map<string, PipelineIngestionItem>();
+    for (const item of ingestionItems) {
+      map.set(item.candidateId, item);
+    }
+    return map;
+  }, [ingestionItems]);
 
   const [showAdd, setShowAdd] = useState(false);
 
@@ -224,6 +305,7 @@ export default function CandidatesTab(): JSX.Element {
                   <CandidateRow
                     key={c.id}
                     candidate={c}
+                    ingestion={ingestionByCandidate.get(c.id)}
                     variant="completed"
                     onClick={() => navigate(`/candidates/${c.id}`)}
                     onDelete={() => void handleRemove(c)}
@@ -251,9 +333,15 @@ export default function CandidatesTab(): JSX.Element {
                   <CandidateRow
                     key={c.id}
                     candidate={c}
+                    ingestion={ingestionByCandidate.get(c.id)}
                     variant="pending"
                     onClick={() => navigate(`/candidates/${c.id}`)}
                     onDelete={() => void handleRemove(c)}
+                    onCopyLink={() => {
+                      const rawToken = c.inviteToken.replace(/^CLAIMED::/, '');
+                      const link = `${window.location.origin}/assess/${rawToken}`;
+                      void navigator.clipboard.writeText(link);
+                    }}
                   />
                 ))}
               </>

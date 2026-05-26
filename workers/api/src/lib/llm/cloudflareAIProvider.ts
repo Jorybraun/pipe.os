@@ -1,33 +1,43 @@
 /**
- * Cloudflare Workers AI provider — wraps env.AI.run() for Gemma 4.
+ * Cloudflare Workers AI provider — wraps env.AI.run() for text generation.
  *
- * Default model: @cf/google/gemma-4-26b-a4b-it
- * Pricing: $0.10 per M input tokens, $0.30 per M output tokens
- * (~1.5¢ per culture interview including scoring, per ADR-029).
+ * Default model: @cf/meta/llama-3.1-8b-instruct
+ * Override via CLOUDFLARE_AI_MODEL env var.
  *
  * The binding is already live in wrangler.toml — transcribe.ts uses the same
  * env.AI binding for Whisper. No API key needed.
  *
- * Tool calling is NOT exposed by this provider. Gemma's tool support on
- * Workers AI is limited and the culture agent (ADR-029) uses a deterministic
- * FSM rather than ReAct-with-tools, so supportsTools = false is correct.
+ * Tool calling is NOT exposed by this provider. The culture agent (ADR-029)
+ * uses a deterministic FSM rather than ReAct-with-tools, so supportsTools =
+ * false is correct.
  *
- * Forced-JSON mode prepends a JSON-only instruction to the system message
- * rather than using a response_format parameter, because Workers AI's
- * response_format support varies by model and Gemma 4 does not currently
- * honor it reliably.
+ * Forced-JSON mode uses response_format: { type: "json_object" } for models
+ * that support it (Llama 3.1/3.2, Mistral, etc.) and falls back to prompt-
+ * level JSON enforcement for models that don't (e.g. Gemma 4).
  */
 
 import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions } from './types';
 
 // Workers AI chat messages use OpenAI-compatible roles.
 interface CFChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+  role?: 'system' | 'user' | 'assistant';
+  content?: string | null;
+  reasoning?: string | null;
+  function_call?: unknown | null;
+  audio?: unknown | null;
+  annotations?: unknown | null;
+}
+
+interface CFChatChoice {
+  message?: CFChatMessage;
+  finish_reason?: string;
+  index?: number;
+  logprobs?: unknown | null;
 }
 
 interface CFChatResponse {
   response?: string;
+  choices?: CFChatChoice[];
   // Workers AI also exposes usage when available
   usage?: {
     prompt_tokens?: number;
@@ -95,17 +105,27 @@ export class CloudflareAIProvider implements LLMProvider {
 
   constructor(
     private readonly ai: Ai,
-    private readonly model: string = '@cf/google/gemma-4-26b-a4b-it',
+    readonly model: string = '@cf/meta/llama-3.1-8b-instruct',
   ) {}
 
   async complete(messages: LLMMessage[], options: CompleteOptions = {}): Promise<LLMCompletion> {
     const forceJson = options.forceJson === true;
     const cfMessages = toCFMessages(messages, forceJson);
 
-    const input = {
+    const input: Record<string, unknown> = {
       messages: cfMessages,
-      max_tokens: options.maxTokens ?? 1024,
     };
+    // Only cap output tokens when explicitly requested. Omitting max_tokens lets
+    // the model use its own default ceiling, which is often higher than 1024
+    // and prevents premature truncation during batch generation.
+    if (options.maxTokens !== undefined && options.maxTokens > 0) {
+      input.max_tokens = options.maxTokens;
+    }
+
+    // NOTE: We intentionally do NOT set `response_format` here.
+    // Cloudflare Workers AI models have inconsistent support for `json_object`
+    // vs `json_schema`; relying on the system prompt JSON instruction plus
+    // `stripJsonFences` post-processing is more portable.
 
     let result: CFChatResponse;
     try {
@@ -131,13 +151,19 @@ export class CloudflareAIProvider implements LLMProvider {
     let rawText = '';
     if (typeof result.response === 'string') {
       rawText = result.response.trim();
-    } else {
-      // Try alternate response shapes
-      const any = result as Record<string, unknown>;
-      // { choices: [{ message: { content: "..." } }] }
-      const choices = any['choices'] as Array<{ message?: { content?: string } }> | undefined;
-      if (choices?.[0]?.message?.content) {
-        rawText = choices[0].message.content.trim();
+    } else if (Array.isArray(result.choices) && result.choices.length > 0) {
+      const choice = result.choices[0]!;
+      const msg = choice.message;
+      if (typeof msg?.content === 'string' && msg.content.length > 0) {
+        rawText = msg.content.trim();
+      } else if (typeof msg?.reasoning === 'string' && msg.reasoning.length > 0) {
+        // Some reasoning models (e.g. Gemma 4) return thinking text in
+        // message.reasoning when content is null. Fall back to it so callers
+        // get *something* instead of an opaque "empty response" error.
+        console.warn(
+          `[cloudflareAIProvider] model ${this.model} returned empty content; falling back to message.reasoning (finish_reason=${choice.finish_reason ?? 'unknown'})`
+        );
+        rawText = msg.reasoning.trim();
       }
     }
     if (!rawText) {

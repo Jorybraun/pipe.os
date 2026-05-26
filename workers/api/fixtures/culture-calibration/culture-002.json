@@ -1,0 +1,125 @@
+{
+  "id": "culture-002",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventually the issue was resolved and everything was fine."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "There have been disagreements here and there. I usually try to see both sides. In the end we found a middle ground. I think it's important to be flexible."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've made mistakes, everyone has. I try to learn from them. I received feedback once that I needed to improve my communication and I've been working on that."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I can be a perfectionist sometimes. I've been working on prioritizing better. I think I'm a lot better at it now than I used to be."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I once disagreed with a technical choice but after hearing the reasoning I understood where they were coming from. I try to stay open-minded."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventual"
+      ]
+    },
+    "collaboration": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "we found a middle ground."
+      ]
+    },
+    "learning-orientation": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        " I try to learn from them."
+      ]
+    },
+    "conflict-handling": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        " There have been disagreements here and there."
+      ]
+    },
+    "self-awareness": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventual"
+      ]
+    },
+    "autonomy": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventual"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventual"
+      ]
+    },
+    "work-pace": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventual"
+      ]
+    },
+    "collaboration-style": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventual"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "My manager pointed out that there was a problem with one of our services. I was asked to look into it so I did. Eventual"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "collaboration",
+    "learning-orientation",
+    "autonomy",
+    "feedback-orientation"
+  ],
+  "confidence": "heuristic"
+}

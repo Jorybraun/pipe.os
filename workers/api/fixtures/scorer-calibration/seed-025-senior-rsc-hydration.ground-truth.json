@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-025-senior-rsc-hydration",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/components/Boundary.tsx",
+      "line": 10,
+      "description": "Client and server render different content — React hydration will fail because the server HTML does not match the client DOM. Should use suppressHydrationWarning or ensure consistent initial render.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/Boundary.tsx",
+      "line": 4,
+      "description": "useState(false) + useEffect causes a layout shift on hydration — the server renders serverComponent, then client immediately re-renders to clientComponent, causing visual flash. Should use initial props or CSS-based solution.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/components/Boundary.tsx",
+      "line": 1,
+      "description": "Props are untyped — serverComponent and clientComponent should be ReactNode, not any. Also no validation that both are provided.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/Boundary.tsx",
+      "line": 7,
+      "description": "No fallback for environments where neither server nor client is defined (e.g., test environments).",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 1,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

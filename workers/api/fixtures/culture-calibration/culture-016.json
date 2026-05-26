@@ -1,0 +1,123 @@
+{
+  "id": "culture-016",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug into the statistics layer, found sample ratio mismatch wasn't being detected, documented the bug with a worked example, submitted a fix with simulation showing false positive rate dropped from 22% to 4.8%, and ran a retrospective on four experiments. Two product decisions had to be revisited."
+    },
+    {
+      "speaker": "agent",
+      "text": "What did you do once you realized decisions needed revisiting?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I set up 30-minute calls with each PM, brought original data and corrected analysis. One was defensive. I walked through statistics step by step. The decision was reversed and metrics recovered to baseline within a sprint."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "My principal engineer wanted to rewrite our search service in Rust before profiling. I suggested one week profiling first. Profiling revealed the bottleneck was algorithmic. I rewrote the similarity function, achieved 70% latency reduction, and the Rust rewrite was deprioritized. He later said profiling-first would be a team norm."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was confidently wrong about CAP theorem implications for two years. A distributed systems engineer showed me my error. I rebuilt my understanding and ran an internal workshop to correct advice I'd given. I now say 'let me check this against the actual topology' before applying CAP reasoning."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I have a strong pattern of avoiding conflict. I'll give positive feedback in 1:1s and then vent to my manager. I made a commitment to say difficult things directly. I've had three difficult 1:1s in six months. Two resolved. One recovered. My manager said I'm no longer pre-processing issues for her."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "collaboration": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "My principal engineer wanted to rewrite our search service in Rust before profiling. I suggested one week profiling firs"
+      ]
+    },
+    "learning-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "conflict-handling": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "self-awareness": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "autonomy": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "work-pace": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "collaboration-style": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our A/B test platform had a p-value inflation bug. It was the data science team's domain. I noticed inconsistencies, dug"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "high-band",
+    "all-dimensions"
+  ],
+  "confidence": "heuristic"
+}

@@ -63,11 +63,12 @@ const updateStageSchema = z.object({
   stageType: z.enum(STAGE_TYPES).nullable().optional(),
   isScheduled: z.boolean().optional(),
   screeningFormat: z.enum(SCREENING_FORMATS).nullable().optional(),
+  screeningInputMode: z.enum(['text', 'voice', 'video']).nullable().optional(),
 });
 
 const createChallengeSchema = z.object({
   type: z.enum(
-    ['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP'],
+    ['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP', 'INTAKE'],
     { required_error: 'type is required' },
   ),
   title: z
@@ -82,6 +83,8 @@ const createChallengeSchema = z.object({
   githubPrNumber: z.number().int().optional(),
   githubPrTitle: z.string().optional(),
   githubPrDescription: z.string().optional(),
+  devContainerRepoUrl: z.string().url().optional(),
+  devContainerChallengeBranch: z.string().optional(),
   cachedDiffJson: z.unknown().optional(),
   cachedMetadata: z.unknown().optional(),
 });
@@ -269,6 +272,7 @@ stageOps.get('/:stageId', async (c) => {
             s.time_limit, s.mode, s.notification_templates,
             s.scheduling_event_type_id, s.stage_type, s.is_scheduled,
             s.screening_format,
+            s.screening_input_mode,
             s.created_at, s.updated_at,
             p.owner_id AS pipeline_owner_id
      FROM stages s
@@ -289,6 +293,7 @@ stageOps.get('/:stageId', async (c) => {
       stage_type: string | null;
       is_scheduled: number;
       screening_format: string | null;
+      screening_input_mode: string | null;
       created_at: string;
       updated_at: string;
       pipeline_owner_id: string;
@@ -306,6 +311,7 @@ stageOps.get('/:stageId', async (c) => {
   const { results: challengeRows } = await c.env.DB.prepare(
     `SELECT id, stage_id, type, sort_order, title, instructions, config,
             github_repo_url, github_pr_number, github_pr_title,
+            dev_container_repo_url, dev_container_challenge_branch,
             created_at, updated_at
      FROM challenges
      WHERE stage_id = ?1
@@ -325,6 +331,8 @@ stageOps.get('/:stageId', async (c) => {
         | 'github_repo_url'
         | 'github_pr_number'
         | 'github_pr_title'
+        | 'dev_container_repo_url'
+        | 'dev_container_challenge_branch'
         | 'created_at'
         | 'updated_at'
       >
@@ -345,10 +353,14 @@ stageOps.get('/:stageId', async (c) => {
     githubRepoUrl: row.github_repo_url ?? null,
     githubPrNumber: row.github_pr_number ?? null,
     githubPrTitle: row.github_pr_title ?? null,
+    devContainerRepoUrl: row.dev_container_repo_url ?? null,
+    devContainerChallengeBranch: row.dev_container_challenge_branch ?? null,
     // snake_case aliases (spec uses c.github_repo_url / c.github_pr_number)
     github_repo_url: row.github_repo_url ?? null,
     github_pr_number: row.github_pr_number ?? null,
     github_pr_title: row.github_pr_title ?? null,
+    dev_container_repo_url: row.dev_container_repo_url ?? null,
+    dev_container_challenge_branch: row.dev_container_challenge_branch ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
@@ -373,6 +385,7 @@ stageOps.get('/:stageId', async (c) => {
     stageType: stageRow.stage_type ?? null,
     isScheduled: !!stageRow.is_scheduled,
     screeningFormat: stageRow.screening_format ?? null,
+    screeningInputMode: stageRow.screening_input_mode ?? null,
     createdAt: stageRow.created_at,
     updatedAt: stageRow.updated_at,
     challenges,
@@ -435,6 +448,7 @@ stageOps.patch('/:stageId', async (c) => {
   if ('stageType' in input) addField('stage_type', input.stageType ?? null);
   if ('isScheduled' in input) addField('is_scheduled', input.isScheduled ? 1 : 0);
   if ('screeningFormat' in input) addField('screening_format', input.screeningFormat ?? null);
+  if ('screeningInputMode' in input) addField('screening_input_mode', input.screeningInputMode ?? null);
 
   if (setClauses.length === 0)
     return apiError(c, 'VALIDATION_ERROR', 'No updatable fields provided.');
@@ -453,7 +467,7 @@ stageOps.patch('/:stageId', async (c) => {
   const updated = await c.env.DB.prepare(
     `SELECT id, pipeline_id, title, description, sort_order, time_limit, mode,
             notification_templates, scheduling_event_type_id,
-            stage_type, is_scheduled, screening_format,
+            stage_type, is_scheduled, screening_format, screening_input_mode,
             created_at, updated_at
      FROM stages WHERE id = ?1`,
   )
@@ -471,6 +485,7 @@ stageOps.patch('/:stageId', async (c) => {
       stage_type: string | null;
       is_scheduled: number;
       screening_format: string | null;
+      screening_input_mode: string | null;
       created_at: string;
       updated_at: string;
     }>();
@@ -490,6 +505,7 @@ stageOps.patch('/:stageId', async (c) => {
     stageType: updated.stage_type ?? null,
     isScheduled: !!updated.is_scheduled,
     screeningFormat: updated.screening_format ?? null,
+    screeningInputMode: updated.screening_input_mode ?? null,
     createdAt: updated.created_at,
     updatedAt: updated.updated_at,
   });
@@ -619,13 +635,15 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
     )
     .run();
 
-  // Phase 2 columns (added via ALTER TABLE migration 0002).
+  // Phase 2+ columns (added via ALTER TABLE migrations 0002 and 0024).
   // Attempt to SET them in a follow-up UPDATE; ignore if columns don't exist yet.
   const hasPhase2Fields =
     input.githubRepoUrl ||
     input.githubPrNumber ||
     input.githubPrTitle ||
     input.githubPrDescription ||
+    input.devContainerRepoUrl ||
+    input.devContainerChallengeBranch ||
     input.cachedDiffJson != null ||
     input.cachedMetadata != null;
 
@@ -643,8 +661,10 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
              github_pr_title = ?3,
              github_pr_description = ?4,
              cached_diff_json = ?5,
-             cached_metadata = ?6
-         WHERE id = ?7`,
+             cached_metadata = ?6,
+             dev_container_repo_url = ?7,
+             dev_container_challenge_branch = ?8
+         WHERE id = ?9`,
       )
         .bind(
           input.githubRepoUrl ?? null,
@@ -653,6 +673,8 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
           input.githubPrDescription ?? null,
           cachedDiffJsonStr,
           cachedMetadataJsonStr,
+          input.devContainerRepoUrl ?? null,
+          input.devContainerChallengeBranch ?? null,
           challengeId,
         )
         .run();
@@ -672,6 +694,8 @@ stageChallenges.post('/:stageId/challenges', async (c) => {
     githubRepoUrl: input.githubRepoUrl ?? null,
     githubPrNumber: input.githubPrNumber ?? null,
     githubPrTitle: input.githubPrTitle ?? null,
+    devContainerRepoUrl: input.devContainerRepoUrl ?? null,
+    devContainerChallengeBranch: input.devContainerChallengeBranch ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

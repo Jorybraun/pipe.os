@@ -1,0 +1,123 @@
+{
+  "id": "culture-010",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewriting the getting-started guide, validated it with two new joiners, and got it merged. My tech lead thanked me."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "We had a disagreement about state management. My colleague wanted Redux and I preferred Zustand. The conversation got heated and my manager stepped in. We used Zustand."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I spent a full quarter building a caching layer before realizing our bottleneck was database query design. I had made an assumption without profiling. After that I now profile before I optimize — always."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "My skip-level told me I interrupt people in technical discussions. I started taking notes during meetings. My manager confirmed three months later the team had noticed a difference."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Engineering was asked to cut a security audit. I mentioned in sprint planning I was uncomfortable. My manager said the business call had been made. I documented my concern in the ADR and moved on."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 3,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined."
+      ]
+    },
+    "collaboration": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "We had a disagreement about state management."
+      ]
+    },
+    "learning-orientation": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewrit"
+      ]
+    },
+    "conflict-handling": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        " We had a disagreement about state management."
+      ]
+    },
+    "self-awareness": {
+      "min": 3,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewrit"
+      ]
+    },
+    "autonomy": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewrit"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewrit"
+      ]
+    },
+    "work-pace": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewrit"
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewrit"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "I noticed our onboarding docs were out of date when I joined. New engineers were confused. I spent my second week rewrit"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "learning-orientation",
+    "self-awareness"
+  ],
+  "confidence": "heuristic"
+}

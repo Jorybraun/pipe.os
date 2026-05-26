@@ -38,7 +38,7 @@ import {
 
 export type { PlantedBug, BarsDimensionScores, EffectivenessScore };
 
-export type LLMProvider = 'workers-ai' | 'vertex-ai' | 'google-ai';
+export type LLMProvider = 'workers-ai' | 'vertex-ai' | 'google-ai' | 'kimi';
 
 export interface ScorerInput {
   apiKey: string;
@@ -243,7 +243,7 @@ async function callGoogleAI(
  *
  * Provisional default pending the κ calibration harness: once we measure
  * Gemma vs Devstral vs Sonnet κ on a 30–50 fixture set, we keep whichever
- * model clears κ ≥ 0.75 cheapest. See STRATEGY.md "Scorer calibration".
+ * model clears κ ≥ 0.75 cheapest. See ADR-032 scorer calibration.
  */
 // Qwen 2.5 Coder 32B — trying this instead of Gemma 4 26B which is unreliable
 const SCORER_WORKERS_AI_MODEL = '@cf/qwen/qwen2.5-coder-32b-instruct';
@@ -328,6 +328,50 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string, 
   return '';
 }
 
+/**
+ * Kimi API via OpenAI-compatible chat/completions endpoint.
+ * Uses kimi-for-coding (or KIMI_SCORER_MODEL override) with Bearer token auth.
+ * Endpoint: https://api.kimi.com/coding/v1/chat/completions
+ */
+async function callKimi(
+  apiKey: string,
+  systemPrompt: string,
+  userMessage: string,
+  maxTokens = 2048,
+): Promise<string> {
+  const model = 'kimi-for-coding';
+  const url = 'https://api.kimi.com/coding/v1/chat/completions';
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'User-Agent': 'Kilo-Code/1.0.0',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[scorerAgent] Kimi error', { status: response.status, body: errorText });
+    throw new Error(`[scorerAgent] Kimi ${response.status}: ${errorText.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return data.choices?.[0]?.message?.content?.trim() ?? '';
+}
+
 async function callLLM(
   apiKey: string,
   provider: LLMProvider,
@@ -346,14 +390,70 @@ async function callLLM(
   if (provider === 'google-ai') {
     return callGoogleAI(apiKey, systemPrompt, userMessage, maxTokens);
   }
+  if (provider === 'kimi') {
+    return callKimi(apiKey, systemPrompt, userMessage, maxTokens);
+  }
   throw new Error(`[scorerAgent] Unknown provider: ${provider}`);
 }
 
 // ─── JSON extraction ────────────────────────────────────────────────────────
 
 function extractJson<T>(raw: string): T {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-  return JSON.parse(cleaned) as T;
+  // Strip markdown fences
+  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+
+  // Some models emit trailing text after the JSON (explanations, repeated blocks).
+  // Find the outermost JSON object or array by matching braces/brackets.
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+  const start = firstBrace === -1 ? firstBracket : firstBracket === -1 ? firstBrace : Math.min(firstBrace, firstBracket);
+  if (start === -1) {
+    throw new Error(`[extractJson] No JSON object or array found in response. Raw: ${cleaned.slice(0, 200)}`);
+  }
+
+  const opener = cleaned[start] as '{' | '[';
+  const closer = opener === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+  let end = -1;
+
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escapeNext = true;
+      continue;
+    }
+    if (ch === '"' && !inString) {
+      inString = true;
+      continue;
+    }
+    if (ch === '"' && inString) {
+      inString = false;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === opener) {
+      depth++;
+    } else if (ch === closer) {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+
+  if (end === -1) {
+    throw new Error(`[extractJson] Unmatched ${opener} in response. Raw: ${cleaned.slice(0, 200)}`);
+  }
+
+  const jsonText = cleaned.slice(start, end + 1);
+  return JSON.parse(jsonText) as T;
 }
 
 // ─── User message builders ──────────────────────────────────────────────────
@@ -426,8 +526,8 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   if (provider === 'workers-ai' && !ai) {
     throw new Error('[scorerAgent] Workers AI binding not available.');
   }
-  if ((provider === 'google-ai' || provider === 'vertex-ai') && !apiKey) {
-    throw new Error('[scorerAgent] No API key configured. Set GOOGLE_AI_API_KEY or VERTEX_AI_ACCESS_TOKEN.');
+  if ((provider === 'google-ai' || provider === 'vertex-ai' || provider === 'kimi') && !apiKey) {
+    throw new Error('[scorerAgent] No API key configured. Set GOOGLE_AI_API_KEY, VERTEX_AI_ACCESS_TOKEN, or KIMI_API_KEY.');
   }
 
   const prContext = [
@@ -443,7 +543,7 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   ]);
 
   // Debug: log raw LLM output before parsing (helps diagnose truncation)
-  if (provider === 'workers-ai') {
+  if (provider === 'workers-ai' || provider === 'kimi') {
     console.log('[scorerAgent] Scorer A raw length:', scorerARaw.length, 'last 200 chars:', JSON.stringify(scorerARaw.slice(-200)));
     console.log('[scorerAgent] Scorer B raw length:', scorerBRaw.length, 'last 200 chars:', JSON.stringify(scorerBRaw.slice(-200)));
   }

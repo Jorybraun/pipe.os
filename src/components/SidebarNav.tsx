@@ -577,7 +577,7 @@ export function SidebarNav({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            color: "#10b981",
+            color: "var(--pipe-text)",
             letterSpacing: "0.05em",
           }}
         >

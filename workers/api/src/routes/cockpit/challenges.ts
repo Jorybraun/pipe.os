@@ -27,7 +27,7 @@ const updateChallengeSchema = z.object({
     .max(400, 'title must be 400 characters or fewer')
     .optional(),
   type: z
-    .enum(['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP'])
+    .enum(['CODE_REVIEW', 'CODE_IMPLEMENTATION', 'QUIZ_MCQ', 'QUIZ_SHORT_ANSWER', 'FOLLOW_UP', 'INTAKE'])
     .optional(),
   instructions: z.string().nullable().optional(),
   config: z.union([z.record(z.unknown()), z.string()]).optional(),
@@ -304,7 +304,7 @@ challenges.post('/:challengeId/clone', async (c) => {
   const userId = c.var.userId;
   const challengeId = c.req.param('challengeId');
 
-  const body = await c.req.json<{ newId?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ newId?: string }>().catch((): { newId?: string } => ({}));
   const clientNewId = typeof body?.newId === 'string' && body.newId ? body.newId : null;
 
   const original = await c.env.DB.prepare(

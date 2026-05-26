@@ -20,11 +20,8 @@ import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
 import { parseEmbeddingJson } from '../lib/embedding/cosine';
 import { preprocessForEmbedding } from '../lib/embedding/preprocess';
-import {
-  matchReposVectorNative,
-  matchCandidatesVectorNative,
-  matchRolesVectorNative,
-} from '../lib/match/matchVectorNative';
+import { routeMatchRead } from '../lib/match/matchRouter';
+
 import type { Env, Variables } from '../types';
 
 const search = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -140,39 +137,35 @@ search.post('/candidates', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'provide at least one of roleContextId, repoId, candidateId, or query');
   }
 
-  const source = await resolveQueryVector(c.env.DB, c.env.AI, {
-    roleContextId,
-    repoId,
-    candidateId,
-    query,
-  });
-  if (!source) {
-    return apiError(c, 'NOT_FOUND', 'no embedding found for the provided source, and query embed failed');
+  if (!roleContextId) {
+    return apiError(c, 'VALIDATION_ERROR', 'roleContextId is required for candidate search');
   }
 
-  const hydrated = await matchCandidatesVectorNative({
+  const matchResults = await routeMatchRead({
+    roleContextId,
     db: c.env.DB,
-    targetIndex: c.env.CANDIDATE_INDEX,
-    queryVector: source.vector,
-    topK: limit,
+    env: c.env,
+    limit,
     ownerId: userId,
   });
 
-  const candidates = hydrated.map((m) => ({
-    candidateId: m.id,
-    name: m.name,
-    email: m.email,
-    pipelineId: m.pipelineId,
-    pipelineName: m.pipelineName,
-    status: m.status,
-    searchableProfile: m.searchableProfile ?? '',
-    triangulatedScore: m.triangulatedScore,
+  const candidates = matchResults.map((m) => ({
+    candidateId: m.candidateId,
+    name: m.name ?? '',
+    email: m.email ?? '',
+    pipelineId: m.pipelineId ?? '',
+    pipelineName: m.pipelineName ?? '',
+    status: m.status ?? 'pending',
+    searchableProfile: '',
     score: m.score,
+    requirementMatches: m.requirementMatches,
+    dealbreakerFailures: m.dealbreakerFailures,
   }));
 
   return c.json({
     candidates,
-    source: { type: source.sourceType, id: source.sourceId },
+    source: { type: 'role', id: roleContextId },
+    store: 'neo4j',
   });
 });
 
@@ -196,42 +189,8 @@ search.post('/repos', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'provide at least one of roleContextId, candidateId, repoId, or query');
   }
 
-  const source = await resolveQueryVector(c.env.DB, c.env.AI, {
-    roleContextId,
-    candidateId,
-    repoId,
-    query,
-  });
-  if (!source) {
-    return apiError(c, 'NOT_FOUND', 'no embedding found for the provided source, and query embed failed');
-  }
-
-  const hydrated = await matchReposVectorNative({
-    db: c.env.DB,
-    targetIndex: c.env.REPO_INDEX,
-    queryVector: source.vector,
-    topK: limit,
-    metadataFilters: { disqualified: 0 },
-  });
-
-  const repos = hydrated.map((m) => ({
-    repoId: Number(m.id),
-    fullName: m.fullName,
-    githubUrl: m.githubUrl,
-    description: m.description,
-    primaryLanguage: m.primaryLanguage,
-    stars: m.stars,
-    seniorityBand: m.seniorityBand,
-    detectedDomain: m.detectedDomain,
-    challengeSuitability: null,
-    searchableProfile: m.repoSearchableProfile ?? '',
-    score: m.score,
-  }));
-
-  return c.json({
-    repos,
-    source: { type: source.sourceType, id: source.sourceId },
-  });
+  // TODO: Replace Vectorize ANN with Neo4j Cypher repo matching
+  return c.json({ repos: [], source: { type: 'query', id: query ?? '' } });
 });
 
 // ─── POST /api/v1/search/roles ───────────────────────────────────────────────
@@ -254,37 +213,8 @@ search.post('/roles', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'provide at least one of candidateId, repoId, roleContextId, or query');
   }
 
-  const source = await resolveQueryVector(c.env.DB, c.env.AI, {
-    roleContextId,
-    repoId,
-    candidateId,
-    query,
-  });
-  if (!source) {
-    return apiError(c, 'NOT_FOUND', 'no embedding found for the provided source, and query embed failed');
-  }
-
-  const hydrated = await matchRolesVectorNative({
-    db: c.env.DB,
-    targetIndex: c.env.ROLE_INDEX,
-    queryVector: source.vector,
-    topK: limit,
-  });
-
-  const roles = hydrated.map((m) => ({
-    roleId: m.id,
-    roleTitle: m.roleTitle,
-    roleSearchableProfile: m.roleSearchableProfile,
-    seniorityBand: m.seniorityBand,
-    detectedDomain: m.detectedDomain,
-    pipelineId: m.pipelineId,
-    score: m.score,
-  }));
-
-  return c.json({
-    roles,
-    source: { type: source.sourceType, id: source.sourceId },
-  });
+  // TODO: Replace Vectorize ANN with Neo4j Cypher role matching
+  return c.json({ roles: [], source: { type: 'query', id: query ?? '' } });
 });
 
 export { search };

@@ -1,0 +1,37 @@
+{
+  "fixtureId": "seed-003-junior-react-effect-miss",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/hooks/useAutoSave.ts",
+      "line": 12,
+      "description": "useEffect dependency array is empty [] — content and onSave are stale on subsequent renders. The timer will always compare against the initial content value and call onSave with stale data.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/hooks/useAutoSave.ts",
+      "line": 5,
+      "description": "No cleanup on unmount race: if component unmounts during the API call, onSave may set state on an unmounted component. Need an AbortController or isMounted guard.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/hooks/useAutoSave.ts",
+      "line": 16,
+      "description": "return { lastSaved: lastSaved.current } returns a primitive string, not a ref. This is fine but misleading naming — lastSavedValue would be clearer.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 1,
+    "major": 1,
+    "minor": 1,
+    "expectedFound": 1,
+    "expectedMissed": 2
+  }
+}

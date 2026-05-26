@@ -1,0 +1,127 @@
+{
+  "id": "seed-007-junior-race-condition-miss",
+  "description": "Junior reviewer finds basic error handling gap but misses a race condition in concurrent update. Accepts minimal fix.",
+  "tags": [
+    "typescript",
+    "node",
+    "concurrency",
+    "mid-score"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add candidate status update endpoint",
+    "description": "PATCH /api/candidates/:id/status updates candidate stage.",
+    "instructions": "Review for correctness and concurrency.",
+    "diff": "diff --git a/src/routes/candidates/status.ts b/src/routes/candidates/status.ts\n@@ -0,0 +1,38 @@\n+import { Hono } from 'hono';\n+\n+export const statusRoutes = new Hono();\n+\n+statusRoutes.patch('/:id/status', async (c) => {\n+  const { status } = await c.req.json();\n+  const candidate = await c.env.DB\n+    .prepare('SELECT stage_id FROM candidates WHERE id = ?1')\n+    .bind(c.req.param('id'))\n+    .first();\n+  if (!candidate) return c.json({ error: 'not_found' }, 404);\n+\n+  await c.env.DB\n+    .prepare('UPDATE candidates SET stage_id = ?1 WHERE id = ?2')\n+    .bind(status, c.req.param('id'))\n+    .run();\n+\n+  return c.json({ success: true });\n+});\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/routes/candidates/status.ts",
+      "line": 6,
+      "description": "No validation on status field — accepts any string including SQL injection attempts (though parameterized, invalid status values corrupt data integrity).",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/routes/candidates/status.ts",
+      "line": 7,
+      "description": "Read-then-write race condition: two concurrent requests can read the same stage_id, then both overwrite, losing one update and any audit trail of the intermediate state.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/routes/candidates/status.ts",
+      "line": 15,
+      "description": "Success response returns no updated row data — client must refetch.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 701,
+            "file": "src/routes/candidates/status.ts",
+            "line": 6,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Should validate status against allowed values.",
+            "why": "Could update with invalid status string.",
+            "positive": false
+          },
+          {
+            "id": 702,
+            "file": "src/routes/candidates/status.ts",
+            "line": 10,
+            "category": "style",
+            "severity": "nit",
+            "what": "Prefer early return style with guard clause.",
+            "why": "readability",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Add status validation. Optional style fix.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 701,
+            "move": "change",
+            "content": "Added allowed status enum check.",
+            "updated_code": "const ALLOWED = ['new', 'screening', 'interview', 'offer']; if (!ALLOWED.includes(status)) return c.json({ error: 'invalid_status' }, 400);"
+          },
+          {
+            "to_comment_id": 702,
+            "move": "comment",
+            "content": "I find the current style readable enough."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Validation looks good. Style is fine as-is.",
+      "submittedAt": "2026-04-28T03:47:05.959Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 1 of 3 bugs (status validation). Missed race condition and response shape. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Validation flagged as suggestion not blocking. Style nit is non-blocking. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted enum check without verifying completeness. Accepted style pushback. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Basic rationale for validation. No technical depth. Level 2-3."
+    },
+    "question_formation": {
+      "min": 1,
+      "max": 2,
+      "rationale": "No questions. Level 1-2."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested enum check — actionable. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

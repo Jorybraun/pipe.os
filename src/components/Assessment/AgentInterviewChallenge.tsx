@@ -20,7 +20,7 @@ import { createCandidateConversationAdapter } from '../../lib/adapters/candidate
 import type { SynthesisResult } from '../AIChat/types';
 
 export function AgentInterviewChallenge(): JSX.Element {
-  const { currentChallenge, updateSubmission } = useInterview();
+  const { currentChallenge, updateSubmission, submit } = useInterview();
   const sessionToken = useSessionToken();
 
   const [done, setDone] = useState(false);
@@ -59,7 +59,25 @@ export function AgentInterviewChallenge(): JSX.Element {
       ? result.transcript.map((t) => `${t.role}: ${t.text}`).join('\n')
       : result.synthesis;
 
-    updateSubmission({ transcript: transcriptText, completedAt: new Date().toISOString() });
+    // Structured turns with video keys for recruiter profile rendering
+    const turns = result.transcript
+      ? result.transcript.map((t) => ({
+          role: t.role,
+          text: t.text,
+          ...(t.videoR2Key ? { videoR2Key: t.videoR2Key } : {}),
+        }))
+      : [];
+
+    const fullSubmission = {
+      transcript: transcriptText,
+      turns,
+      completedAt: new Date().toISOString(),
+    };
+    updateSubmission(fullSubmission);
+    // Auto-submit so the candidate doesn't need to click "Next" manually.
+    // The override ensures we submit the complete data even before React
+    // batches the setState update.
+    submit(fullSubmission);
   };
 
   if (done) {
@@ -82,8 +100,11 @@ export function AgentInterviewChallenge(): JSX.Element {
       conv={conv}
       initConfig={initConfig}
       enableVoice
+      enableTTS
+      enableVideo
       enableLiveVoice={false}
       onComplete={handleComplete}
+      showDomainBars
     />
   );
 }

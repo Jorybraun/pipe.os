@@ -1,0 +1,125 @@
+{
+  "id": "culture-017",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured connection pool, submitted a PR with a fix and a load-test showing 40% latency drop, got it merged in under two hours, and added a canary alert."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "The platform team had a completely different risk tolerance. They wanted six weeks of validation and we needed to ship in two. I set up a joint retro to surface constraints. We co-designed a staged rollout with automated rollback. The platform lead later told me it became their default."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I spent three years believing good tests meant high code coverage. After working with a property-based testing advocate, I realized I was optimizing the wrong thing. I ran a study group, reduced test count by 40% while tripling defect-catch rate, and gave a company-wide talk on what I'd gotten wrong."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "Three performance reviews mentioned I'm hard to read in disagreements. I go quiet instead of signaling I'm processing. After a team lead thought I'd disengaged when I was actually invested, I started ending meetings with explicit status. My skip-level said trust had visibly improved."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "The CPO had made a public commitment to a launch date I believed was irresponsible. I wrote a one-pager with three scenarios, presented it in leadership review, and accepted when the CPO overrode me. I shipped cleanly, documented tradeoffs in the ADR, and filed follow-up. Three months later the CPO cited it as the pushback they wanted more of."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "collaboration": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "we needed to ship in two."
+      ]
+    },
+    "learning-orientation": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "conflict-handling": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "self-awareness": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "autonomy": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "risk-tolerance": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "work-pace": {
+      "min": 4,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "collaboration-style": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    },
+    "feedback-orientation": {
+      "min": 3,
+      "max": 5,
+      "evidenceQuotes": [
+        "Our payment service was timing out in prod. It wasn't my squad's system. I traced the latency spike to a misconfigured c"
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "ownership",
+    "collaboration",
+    "learning-orientation",
+    "work-pace"
+  ],
+  "confidence": "heuristic"
+}

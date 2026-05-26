@@ -1,0 +1,126 @@
+{
+  "id": "seed-005-junior-type-safety-find",
+  "description": "Junior reviewer finds a type-safety bug (any usage) and a logic error, but misses a race condition. Decent reasoning for junior level.",
+  "tags": [
+    "typescript",
+    "types",
+    "mid-score"
+  ],
+  "seniority": "junior",
+  "prContext": {
+    "title": "Add candidate scoring utility",
+    "description": "Adds a computeScore helper that averages review scores.",
+    "instructions": "Review for correctness and type safety.",
+    "diff": "diff --git a/src/lib/scoring.ts b/src/lib/scoring.ts\n@@ -0,0 +1,28 @@\n+export function computeScore(scores: number[]): number {\n+  if (scores.length === 0) return 0;\n+  const sum = scores.reduce((a, b) => a + b, 0);\n+  return sum / scores.length;\n+}\n+\n+export async function computeScoreAsync(scores: number[]): Promise<number> {\n+  const cached = await getCache(scores.join(','));\n+  if (cached) return cached as any;\n+  const result = computeScore(scores);\n+  await setCache(scores.join(','), result);\n+  return result;\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/lib/scoring.ts",
+      "line": 8,
+      "description": "cached returned as any — defeats type safety. Should parse/validate cached value.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/scoring.ts",
+      "line": 7,
+      "description": "No cache key normalization — scores [1,2] and [2,1] produce different cache keys but same statistical result. Wasteful and incorrect for unordered data.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/lib/scoring.ts",
+      "line": 10,
+      "description": "Missing error handling if setCache throws. Promise rejection will bubble unhandled.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 501,
+            "file": "src/lib/scoring.ts",
+            "line": 8,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "Returning cached as any loses type safety.",
+            "why": "We should validate the cached value is a number before returning.",
+            "positive": false
+          },
+          {
+            "id": 502,
+            "file": "src/lib/scoring.ts",
+            "line": 3,
+            "category": "correctness",
+            "severity": "suggestion",
+            "what": "computeScore returns 0 for empty array. Should this be NaN or null instead?",
+            "why": "An empty array average is mathematically undefined.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Two suggestions to address before merge.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 501,
+            "move": "change",
+            "content": "Good catch — added Number(cached) check.",
+            "updated_code": "if (cached !== null) return Number(cached);"
+          },
+          {
+            "to_comment_id": 502,
+            "move": "comment",
+            "content": "I think 0 is fine for our use case — the UI handles empty states separately."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Type fix looks good. Keeping 0 for empty arrays per product spec.",
+      "submittedAt": "2026-04-28T03:47:05.958Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Found 1 of 3 bugs (any cast). Missed cache key normalization and error handling. Level 2-3."
+    },
+    "prioritization": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Flagged type safety as suggestion, not blocking. Flagged empty array as suggestion. Reasonable for junior. Level 2-3."
+    },
+    "revision_evaluation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Accepted Number(cached) fix without verifying it handles non-numeric strings. Accepted pushback on empty array without verifying product spec. Level 2-3."
+    },
+    "reasoning_quality": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Basic rationale for both comments. Some technical reasoning (type safety, math). Level 2-3."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "One implicit question about empty array behavior, but no explicit questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 2,
+      "max": 3,
+      "rationale": "Suggested Number(cached) — actionable but minimal. No guidance on cache key issue. Level 2-3."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

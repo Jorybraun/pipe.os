@@ -4,34 +4,33 @@
  * Tests for the role discovery client hook (v2 — Cloudflare Workers API).
  * Mocks useApiClient to avoid real HTTP calls.
  *
- * The adapter's respond() path goes through respondStream (adapter.respondStream
- * is defined, so useConversation always takes the streaming branch). The mock for
- * postStream must therefore return a real async generator. We queue up stream
- * payloads alongside the non-streaming post mocks.
+ * Architecture:
+ *   POST /role-contexts        → create context
+ *   POST /:id/start            → returns calibration question
+ *   POST /:id/state            → runs reducer (ANSWER, SKIP, FORCE_SYNTHESIZE)
+ *   POST /:id/question         → generates next question (or pops from stack)
+ *   POST /:id/question/prefetch → background stack refill
+ *   POST /:id/synthesize       → produces persona + JD
+ *
+ * The adapter uses non-streaming respond(). useConversation falls back to
+ * adapter.respond() because respondStream is not implemented.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useRoleDiscovery } from './useRoleDiscovery';
-import type { ApiClient, StreamEvent } from '../lib/api/client';
+import type { ApiClient } from '../lib/api/client';
 import type {
   CreateRoleContextResponse,
   StartRoleContextResponse,
-  RespondSynthesisResponse,
+  PostStateResponse,
+  PostQuestionResponse,
+  PostSynthesizeResponse,
+  InterviewQueuedQuestion,
   CandidatePersona,
   RoleContextProgress,
   RoleContextBaseline,
 } from '../lib/api/types';
-
-// ─── Async generator helper ───────────────────────────────────────────────────
-
-/**
- * Wraps a single value as an async generator that yields one `done` event.
- * This matches the shape postStream emits: { event: 'done', data: T }.
- */
-async function* singleDoneStream<T>(data: T): AsyncGenerator<StreamEvent<T>> {
-  yield { event: 'done', data };
-}
 
 // ─── Mock useApiClient ────────────────────────────────────────────────────────
 
@@ -48,7 +47,7 @@ vi.mock('./useApiClient', () => ({
     patch: vi.fn(),
     put: vi.fn(),
     del: vi.fn(),
-    postStream: mocks.mockPostStream as ApiClient['postStream'],
+    postStream: mocks.mockPostStream,
   }),
 }));
 
@@ -97,7 +96,58 @@ function makeStartResponse(): StartRoleContextResponse {
   };
 }
 
-function makeSynthesisResponse(): RespondSynthesisResponse {
+function makeStateResponse(overrides?: Partial<PostStateResponse['state']>): PostStateResponse {
+  return {
+    state: {
+      baseline: { title: 'Senior Backend Engineer' },
+      participantRole: null,
+      questionBudget: 10,
+      exchanges: [
+        {
+          questionId: 'q-1',
+          question: 'What does success look like in 90 days?',
+          acknowledgment: 'Got it.',
+          answer: 'Ship payment API v2.',
+        },
+      ],
+      knowledgeState: {},
+      coverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+      phase: 'CONTEXT',
+      questionsAsked: 1,
+      synthesisReady: false,
+      questionStack: [],
+      ...overrides,
+    },
+  };
+}
+
+function makeQuestionResponse(): PostQuestionResponse {
+  return {
+    reasoning: 'Ask about the team structure.',
+    acknowledgment: 'Got it.',
+    question: {
+      id: 'q-2',
+      text: 'Tell me about the team.',
+      input: { type: 'textarea' },
+    },
+    knowledgeStateUpdate: {},
+    domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+  };
+}
+
+function makeQueuedQuestion(overrides?: Partial<InterviewQueuedQuestion>): InterviewQueuedQuestion {
+  return {
+    questionId: 'q-prefetched',
+    text: 'Prefetched question from stack.',
+    acknowledgment: 'Ack.',
+    input: { type: 'textarea' },
+    knowledgeStateUpdate: {},
+    domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
+    ...overrides,
+  };
+}
+
+function makeSynthesisResponse(): PostSynthesizeResponse {
   const persona: CandidatePersona = {
     seniority: 'senior',
     archetype: 'Backend Engineer',
@@ -109,13 +159,12 @@ function makeSynthesisResponse(): RespondSynthesisResponse {
     dealbreakers: [],
   };
   return {
-    participantId: 'part-1',
-    synthesis: 'Strong candidate for senior backend role.',
+    reasoning: 'Synthesis complete.',
     persona,
     jobDescription: '# Senior Backend Engineer\n\nLead our payment platform.',
-    knowledgeState: {},
-    progress: { asked: 10, budget: 10, domains: {} },
-    status: 'COMPLETE',
+    synthesis: 'Strong candidate for senior backend role.',
+    knowledgeStateUpdate: {},
+    domainCoverage: { why: 'none', work: 'none', team: 'none', bar: 'none', codebase: 'none', process: 'none' },
   };
 }
 
@@ -145,6 +194,8 @@ describe('useRoleDiscovery', () => {
     expect(typeof result.current.respond).toBe('function');
     expect(typeof result.current.completeEarly).toBe('function');
     expect(typeof result.current.submitFeedback).toBe('function');
+    // Adapter uses non-streaming respond(); respondStream is not implemented
+    expect(result.current.adapter.respondStream).toBeUndefined();
   });
 
   it('calls POST /role-contexts and /start, then transitions to CALIBRATING', async () => {
@@ -174,26 +225,12 @@ describe('useRoleDiscovery', () => {
     );
   });
 
-  it('calls POST /respond and advances to next question', async () => {
+  it('calls POST /state then /question and advances to next question', async () => {
     mocks.mockPost
-      .mockResolvedValueOnce(makeCreateResponse())
-      .mockResolvedValueOnce(makeStartResponse());
-    // The respond path goes through respondStream → api.postStream (streaming branch).
-    // Stream done payload matches the backend shape: `question` is the full object
-    // (id + text + input), not a bare string. The adapter forwards it verbatim
-    // into the question turn result so `currentQuestion.text` must be available.
-    mocks.mockPostStream.mockReturnValueOnce(
-      singleDoneStream({
-        participantId: 'part-1',
-        acknowledgment: 'Got it.',
-        question: {
-          id: 'q-2',
-          text: 'Tell me about the team.',
-          input: { type: 'textarea' },
-        },
-        progress: { asked: 1, budget: 10, domains: {} },
-      }),
-    );
+      .mockResolvedValueOnce(makeCreateResponse())   // /role-contexts
+      .mockResolvedValueOnce(makeStartResponse())    // /start
+      .mockResolvedValueOnce(makeStateResponse())    // /state
+      .mockResolvedValueOnce(makeQuestionResponse()); // /question
 
     const { result } = renderHook(() => useRoleDiscovery());
 
@@ -211,28 +248,98 @@ describe('useRoleDiscovery', () => {
       expect(result.current.currentQuestion?.text).toBe('Tell me about the team.');
     });
 
-    expect(mocks.mockPostStream).toHaveBeenCalledWith(
-      '/api/v1/role-contexts/ctx-1/respond',
-      expect.objectContaining({ answer: 'Ship payment API v2.', questionId: 'q-1' }),
+    expect(mocks.mockPost).toHaveBeenCalledWith(
+      '/api/v1/role-contexts/ctx-1/state',
+      expect.objectContaining({
+        state: expect.objectContaining({ phase: 'CONTEXT' }),
+        action: expect.objectContaining({ type: 'ANSWER', answer: 'Ship payment API v2.' }),
+      }),
     );
+    expect(mocks.mockPost).toHaveBeenCalledWith(
+      '/api/v1/role-contexts/ctx-1/question',
+      expect.objectContaining({ state: expect.objectContaining({ phase: 'CONTEXT' }), enableEval: false }),
+    );
+  });
+
+  it('advances to next question via respond', async () => {
+    mocks.mockPost
+      .mockResolvedValueOnce(makeCreateResponse())   // /role-contexts
+      .mockResolvedValueOnce(makeStartResponse())    // /start
+      .mockResolvedValueOnce(makeStateResponse())    // /state
+      .mockResolvedValueOnce(makeQuestionResponse()); // /question
+
+    const { result } = renderHook(() => useRoleDiscovery());
+
+    await act(async () => {
+      await result.current.createAndStart(mockBaseline);
+    });
+
+    await waitFor(() => expect(result.current.currentQuestion?.id).toBe('q-1'));
+
+    await act(async () => {
+      await result.current.respond('Ship payment API v2.', 'q-1');
+    });
+
+    await waitFor(() => {
+      expect(result.current.currentQuestion?.text).toBe('Tell me about the team.');
+    });
+
+    expect(mocks.mockPost).toHaveBeenCalledWith(
+      '/api/v1/role-contexts/ctx-1/question',
+      expect.objectContaining({ state: expect.anything(), enableEval: false }),
+    );
+  });
+
+  it('pops from local questionStack without hitting POST /question', async () => {
+    const prefetched = makeQueuedQuestion({
+      questionId: 'q-local',
+      text: 'Local stack question.',
+      acknowledgment: 'Nice.',
+    });
+
+    mocks.mockPost
+      .mockResolvedValueOnce(makeCreateResponse())   // /role-contexts
+      .mockResolvedValueOnce(makeStartResponse())    // /start
+      .mockResolvedValueOnce(
+        makeStateResponse({ questionStack: [prefetched] }),
+      );                                             // /state
+    // NO /question mock — respond should skip the network call
+
+    const { result } = renderHook(() => useRoleDiscovery());
+
+    await act(async () => {
+      await result.current.createAndStart(mockBaseline);
+    });
+
+    await waitFor(() => expect(result.current.currentQuestion?.id).toBe('q-1'));
+
+    await act(async () => {
+      await result.current.respond('Ship payment API v2.', 'q-1');
+    });
+
+    await waitFor(() => {
+      expect(result.current.currentQuestion?.text).toBe('Local stack question.');
+    });
+
+    // Should call /state but NOT /question
+    expect(mocks.mockPost).toHaveBeenCalledWith(
+      '/api/v1/role-contexts/ctx-1/state',
+      expect.anything(),
+    );
+    const questionCalls = mocks.mockPost.mock.calls.filter(
+      (call) => (call[0] as string).includes('/question') && !(call[0] as string).includes('/prefetch'),
+    );
+    expect(questionCalls).toHaveLength(0);
   });
 
   it('transitions to COMPLETE and sets persona when synthesis is returned', async () => {
     mocks.mockPost
-      .mockResolvedValueOnce(makeCreateResponse())
-      .mockResolvedValueOnce(makeStartResponse());
-    // Synthesis comes through the streaming path.
-    const synthData = makeSynthesisResponse();
-    mocks.mockPostStream.mockReturnValueOnce(
-      singleDoneStream({
-        participantId: synthData.participantId,
-        synthesis: synthData.synthesis,
-        persona: synthData.persona,
-        jobDescription: synthData.jobDescription,
-        knowledgeState: synthData.knowledgeState,
-        progress: synthData.progress,
-      }),
-    );
+      .mockResolvedValueOnce(makeCreateResponse())   // /role-contexts
+      .mockResolvedValueOnce(makeStartResponse())    // /start
+      .mockResolvedValueOnce(
+        makeStateResponse({ synthesisReady: true, phase: 'WRAP_UP' }),
+      )                                              // /state
+      .mockResolvedValueOnce(makeSynthesisResponse()); // /synthesize
 
     const { result } = renderHook(() => useRoleDiscovery());
 

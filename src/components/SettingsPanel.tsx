@@ -56,7 +56,7 @@ export function SettingsPanel({ onClose, initialTab = 'display' }: SettingsPanel
             cursor: 'pointer',
             padding: 4,
           }}
-        >
+         aria-label="Close">
           <X size={14} />
         </button>
       </div>

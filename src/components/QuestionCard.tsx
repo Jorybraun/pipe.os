@@ -57,7 +57,7 @@ export default function QuestionCard({
                 color: "var(--pipe-text-dim)",
                 cursor: "grab",
               }}
-            >
+             aria-label="Drag to reorder">
               <GripVertical size={16} />
             </button>
             <div

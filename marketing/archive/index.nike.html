@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PIPE — One system for hiring engineers. · ΝΊΚΗ edition</title>
+<meta name="description" content="PIPE ingests every CV into a single graph, matches candidates to roles by structural fit, and runs interviews on real open-source pull requests. Sourcing, challenges, video, and scoring — in one window.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..900,0..100&family=JetBrains+Mono:wght@400;500;700&family=Archivo+Black&display=swap">
+<style>
+  :root{
+    --bg:#050509;
+    --bg-2:#0a0a12;
+    --bg-3:#0e0e18;
+    --ink:#e4e7ed;
+    --ink-dim:rgba(228,231,237,.58);
+    --ink-mute:rgba(228,231,237,.32);
+    --rule:rgba(228,231,237,.11);
+    --rule-2:rgba(228,231,237,.22);
+    --cyan:#6cc3ff;
+    --cyan-dim:rgba(108,195,255,.5);
+    --magenta:#ff4891;
+    --red:#e0382f;
+    --serif:"Fraunces",ui-serif,Georgia,serif;
+    --display:"Archivo Black",ui-sans-serif,Impact,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+    --chrome:linear-gradient(180deg,#f7f7fa 0%,#c7c7cd 18%,#8a8a92 30%,#f0f0f4 46%,#fcfcfe 52%,#b8b8bf 68%,#4a4a52 86%,#c8c8d0 100%);
+    --chrome-warm:linear-gradient(180deg,#fff 0%,#d6ccbb 20%,#8a8378 38%,#f3ecdb 52%,#fff7e6 58%,#b8ad97 74%,#3a362e 92%,#dcd0b8 100%);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:13.5px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  body{overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  ::selection{background:var(--cyan);color:#000}
+
+  /* Starfield + scanline + grain */
+  .stars{position:fixed;inset:0;z-index:-2;pointer-events:none;
+    background:
+      radial-gradient(1px 1px at 12% 8%, #fff 50%, transparent 100%),
+      radial-gradient(1px 1px at 82% 14%, rgba(255,255,255,.8) 50%, transparent 100%),
+      radial-gradient(1px 1px at 34% 52%, #fff 50%, transparent 100%),
+      radial-gradient(1.5px 1.5px at 67% 71%, rgba(255,255,255,.9) 50%, transparent 100%),
+      radial-gradient(1px 1px at 92% 44%, #fff 50%, transparent 100%),
+      radial-gradient(1px 1px at 18% 84%, rgba(255,255,255,.7) 50%, transparent 100%),
+      radial-gradient(1px 1px at 54% 22%, #fff 50%, transparent 100%),
+      radial-gradient(1.5px 1.5px at 4% 62%, rgba(180,220,255,.9) 50%, transparent 100%),
+      radial-gradient(1px 1px at 72% 38%, #fff 50%, transparent 100%),
+      radial-gradient(1px 1px at 46% 92%, rgba(255,255,255,.7) 50%, transparent 100%),
+      radial-gradient(ellipse at 20% -5%, rgba(108,195,255,.08) 0%, transparent 55%),
+      radial-gradient(ellipse at 95% 30%, rgba(255,72,145,.06) 0%, transparent 50%),
+      var(--bg);
+  }
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;
+    background:repeating-linear-gradient(to bottom,transparent 0,transparent 2px,rgba(0,0,0,.3) 2px,rgba(0,0,0,.3) 3px);
+    mix-blend-mode:multiply;opacity:.5;
+  }
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:100;
+    background-image:radial-gradient(rgba(255,255,255,.04) 1px,transparent 1px);background-size:3px 3px;opacity:.45
+  }
+
+  .wrap{max-width:1440px;margin:0 auto;padding:0 clamp(20px,4vw,56px);position:relative;z-index:1}
+
+  /* NAV */
+  nav{display:flex;align-items:center;justify-content:space-between;padding-top:24px;padding-bottom:12px;border-bottom:1px solid var(--rule)}
+  .brand{display:inline-flex;align-items:center;gap:12px;font-family:var(--display);font-size:26px;letter-spacing:.02em;line-height:1}
+  .brand .logo{width:30px;height:30px;flex-shrink:0;display:block;filter:drop-shadow(0 1px 0 rgba(255,255,255,.2)) drop-shadow(0 0 8px rgba(108,195,255,.15));transition:transform .3s ease}
+  .brand:hover .logo{transform:rotate(-8deg) scale(1.05)}
+  .brand .mark{background:var(--chrome);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 1px 0 rgba(255,255,255,.18));align-self:baseline}
+  .brand .cyr{font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.3em;color:var(--ink-mute);text-transform:uppercase;padding:4px 8px;border:1px solid var(--rule-2);align-self:center}
+  nav ul{display:flex;gap:30px;list-style:none;font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-dim)}
+  nav ul a:hover{color:var(--ink)}
+  .nav-cta{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.24em;text-transform:uppercase;border:1px solid var(--ink);padding:10px 16px;color:var(--ink);transition:all .2s ease}
+  .nav-cta:hover{background:var(--ink);color:var(--bg)}
+  .nav-cta .sq{width:6px;height:6px;background:var(--red);display:inline-block}
+
+  /* HERO */
+  header{position:relative;padding-top:clamp(40px,8vh,88px);padding-bottom:clamp(40px,6vh,72px);min-height:min(88vh,840px);display:flex;flex-direction:column;justify-content:center}
+  .hero-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:clamp(32px,5vw,80px);align-items:center}
+  .hero-art{position:relative;width:100%;aspect-ratio:1/1.05;max-height:min(78vh,720px)}
+  .wire{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;opacity:.85}
+  .hermes{position:absolute;inset:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;z-index:1}
+  .hermes-stack{position:relative;width:88%;height:100%;max-width:520px}
+  .hermes-stack img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center bottom}
+  .hermes-stack .base{filter:grayscale(1) contrast(1.25) brightness(1.06) drop-shadow(0 0 36px rgba(108,195,255,.22))}
+  .hermes-stack .ch-r{filter:grayscale(1) contrast(1.25) brightness(1.06) sepia(1) saturate(8) hue-rotate(295deg);mix-blend-mode:screen;transform:translate(6px,0);opacity:.5}
+  .hermes-stack .ch-b{filter:grayscale(1) contrast(1.25) brightness(1.06) sepia(1) saturate(8) hue-rotate(170deg);mix-blend-mode:screen;transform:translate(-6px,3px);opacity:.5}
+  .hermes-stack .ch-m{display:none}
+  .hermes-stack::before{content:"";position:absolute;inset:0;z-index:3;pointer-events:none;
+    background-image:radial-gradient(circle at center,#000 .55px,transparent .75px);
+    background-size:3.2px 3.2px;mix-blend-mode:multiply;opacity:.82}
+  .hermes-stack::after{content:"";position:absolute;inset:0;z-index:4;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,transparent 0,transparent 2px,rgba(0,0,0,.38) 2px,rgba(0,0,0,.38) 3px),
+               linear-gradient(to bottom,transparent 0,transparent 80%,var(--bg) 100%),
+               linear-gradient(to right,transparent 0,transparent 92%,var(--bg) 100%);
+    mix-blend-mode:normal}
+  .art-label{position:absolute;left:0;bottom:14px;z-index:5;font-family:var(--mono);font-size:9.5px;letter-spacing:.3em;color:var(--ink-mute);text-transform:uppercase}
+  .art-label b{color:var(--cyan);font-weight:500}
+  .art-corner{position:absolute;z-index:4;font-family:var(--mono);font-size:9.5px;letter-spacing:.26em;color:var(--ink-mute);text-transform:uppercase;pointer-events:none}
+  .art-corner.tl{top:8px;left:0}
+  .art-corner.tr{top:8px;right:0;text-align:right}
+  .art-corner.br{bottom:32px;right:0;text-align:right;color:var(--cyan-dim)}
+  .art-corner span{color:var(--ink)}
+
+  .kicker{display:inline-flex;flex-wrap:wrap;align-items:center;gap:10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:28px}
+  .kicker .dot{width:7px;height:7px;background:var(--red);box-shadow:0 0 10px rgba(224,56,47,.9);animation:blink 1.8s steps(2) infinite}
+  @keyframes blink{50%{opacity:.2}}
+  .kicker em{font-style:normal;color:var(--ink);font-weight:500}
+  .kicker .sep{color:var(--rule-2)}
+  .kicker .cyr{font-weight:500;color:var(--cyan-dim)}
+
+  h1{font-family:var(--serif);font-weight:340;font-variation-settings:"opsz" 144,"SOFT" 30;font-size:clamp(48px,6.8vw,108px);line-height:.94;letter-spacing:-.028em;color:var(--ink)}
+  h1 em{font-style:italic;font-weight:280;font-variation-settings:"opsz" 144,"SOFT" 90;background:var(--chrome-warm);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h1 b{font-weight:340;display:block}
+  .lede{margin-top:32px;max-width:560px;font-size:13.5px;line-height:1.7;color:var(--ink-dim)}
+  .lede b{color:var(--ink);font-weight:500}
+
+  .cta-row{margin-top:38px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:12px;font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;background:var(--ink);color:var(--bg);padding:16px 24px;transition:all .2s ease;border:1px solid var(--ink)}
+  .btn:hover{background:transparent;color:var(--ink)}
+  .btn::after{content:"▸";font-family:var(--mono);font-size:12px}
+  .btn-ghost{font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-dim);padding:16px 8px;border-bottom:1px solid var(--rule)}
+  .btn-ghost:hover{color:var(--cyan);border-color:var(--cyan)}
+
+  /* Module ticker */
+  .modules{margin-top:56px;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-dim)}
+  .modules > div{padding:16px 18px;border-right:1px solid var(--rule);display:flex;align-items:center;gap:10px}
+  .modules > div:last-child{border-right:0}
+  .modules .n{color:var(--cyan);font-family:var(--display);font-size:11px;letter-spacing:.1em}
+  .modules .name{color:var(--ink);font-weight:500}
+
+  /* Section chrome */
+  section{padding:clamp(96px,14vh,180px) 0;position:relative}
+  .sec-head{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:end;margin-bottom:56px}
+  .sec-num{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:10.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--cyan);margin-bottom:16px}
+  .sec-num .bar{display:inline-block;width:36px;height:1px;background:var(--cyan)}
+  h2{font-family:var(--serif);font-weight:340;font-variation-settings:"opsz" 144,"SOFT" 30;font-size:clamp(38px,5.2vw,72px);line-height:1;letter-spacing:-.022em;max-width:18ch}
+  h2 em{font-style:italic;font-weight:300;font-variation-settings:"opsz" 144,"SOFT" 85;background:var(--chrome-warm);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sec-sub{font-family:var(--mono);font-size:13px;color:var(--ink-dim);max-width:46ch;line-height:1.7}
+
+  /* SYSTEM section — 3 modules */
+  .system{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule-2)}
+  .mod{background:var(--bg);padding:36px 32px;display:flex;flex-direction:column;gap:20px;min-height:440px;position:relative;overflow:hidden}
+  .mod .mod-n{font-family:var(--mono);font-size:10px;letter-spacing:.28em;color:var(--cyan)}
+  .mod h3{font-family:var(--serif);font-weight:360;font-variation-settings:"opsz" 144,"SOFT" 30;font-size:30px;line-height:1.04;letter-spacing:-.015em;color:var(--ink);max-width:14ch}
+  .mod h3 em{font-style:italic;font-weight:300;font-variation-settings:"opsz" 144,"SOFT" 85}
+  .mod p{font-family:var(--mono);font-size:12px;line-height:1.72;color:var(--ink-dim)}
+  .mod p b{color:var(--ink);font-weight:500}
+  .mod-viz{margin-top:auto;padding-top:22px;border-top:1px dashed var(--rule);height:112px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+  .mod-viz svg{width:100%;height:100%}
+  .mod-viz pre{font-family:var(--mono);font-size:10px;line-height:1.2;color:var(--cyan-dim);white-space:pre;margin:0}
+
+  /* PR transcript */
+  .pr{background:var(--bg-2);border:1px solid var(--rule-2);display:grid;grid-template-columns:1fr}
+  .pr-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 24px;border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);letter-spacing:.04em}
+  .pr-head .title{color:var(--ink)}
+  .pr-head .repo{color:var(--cyan)}
+  .pr-head .tag{color:var(--red);border:1px solid var(--red);padding:2px 8px;font-size:9.5px;letter-spacing:.22em;text-transform:uppercase}
+  .pr-body{padding:32px clamp(22px,3vw,44px);display:grid;gap:32px}
+  .turn{display:grid;grid-template-columns:160px 1fr;gap:28px;align-items:start}
+  .turn .who{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-dim);padding-top:4px}
+  .turn .who b{display:block;color:var(--ink);font-weight:500;margin-bottom:4px;letter-spacing:.2em}
+  .turn .who .role{color:var(--cyan);font-size:9.5px}
+  .turn.author .who .role{color:var(--magenta)}
+  .turn .msg{font-family:var(--serif);font-weight:400;font-variation-settings:"opsz" 20,"SOFT" 40;font-size:18px;line-height:1.52;color:var(--ink);max-width:62ch}
+  .turn .msg code{font-family:var(--mono);font-size:13px;background:rgba(108,195,255,.08);padding:2px 6px;color:var(--cyan);border:1px solid rgba(108,195,255,.15)}
+  .turn .line{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-mute);margin-bottom:8px}
+  .merged{border-top:1px solid var(--rule);padding:20px 32px;display:flex;align-items:center;gap:16px;font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim);background:rgba(108,195,255,.03)}
+  .merged b{color:var(--cyan);font-weight:500}
+  .merged .tick{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:1px solid var(--cyan);color:var(--cyan);font-size:11px}
+
+  /* MANIFESTO */
+  .manifesto{padding:clamp(80px,12vh,140px) 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);text-align:center;position:relative;overflow:hidden}
+  .manifesto::before{content:"";position:absolute;inset:0;background:
+    radial-gradient(ellipse at center,rgba(108,195,255,.08),transparent 55%);pointer-events:none}
+  .manifesto blockquote{font-family:var(--serif);font-weight:300;font-variation-settings:"opsz" 144,"SOFT" 60;font-size:clamp(32px,4.8vw,68px);line-height:1.08;letter-spacing:-.02em;max-width:20ch;margin:0 auto;color:var(--ink);position:relative}
+  .manifesto blockquote em{font-style:italic;background:var(--chrome-warm);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .manifesto .attrib{margin-top:32px;font-family:var(--mono);font-size:10px;letter-spacing:.3em;color:var(--ink-mute);text-transform:uppercase}
+  .manifesto .attrib .sep{margin:0 10px;color:var(--rule-2)}
+
+  /* CTA */
+  .cta{padding:clamp(96px,14vh,160px) 0;background:radial-gradient(ellipse at top,rgba(108,195,255,.06),transparent 55%)}
+  .cta-inner{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:end}
+  .cta h2{max-width:18ch}
+  .cta-form{display:flex;flex-direction:column;gap:18px}
+  .cta-form p{font-family:var(--mono);font-size:12px;color:var(--ink-dim);line-height:1.7}
+  .cta-form .field{display:flex;border:1px solid var(--ink);background:transparent}
+  .cta-form input{flex:1;background:transparent;border:0;outline:0;color:var(--ink);font-family:var(--mono);font-size:12.5px;padding:18px 22px;letter-spacing:.02em}
+  .cta-form input::placeholder{color:var(--ink-mute);letter-spacing:.1em;text-transform:uppercase;font-size:11px}
+  .cta-form button{background:var(--ink);color:var(--bg);border:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;padding:0 26px;cursor:pointer;transition:background .2s ease}
+  .cta-form button:hover{background:var(--cyan)}
+  .cta-form .fine{font-size:10px;color:var(--ink-mute);letter-spacing:.14em;text-transform:uppercase}
+
+  /* FOOTER */
+  footer{padding:36px 0 56px;border-top:1px solid var(--rule);display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;font-family:var(--mono);font-size:10px;color:var(--ink-mute);letter-spacing:.18em;text-transform:uppercase}
+  footer a:hover{color:var(--ink)}
+  footer .f-right{text-align:right}
+  footer .f-cyr{color:var(--cyan-dim)}
+
+  /* Responsive */
+  @media (max-width:960px){
+    .hero-grid{grid-template-columns:1fr;gap:40px}
+    .hero-art{max-height:480px;order:-1;aspect-ratio:1/1}
+    .modules{grid-template-columns:repeat(2,1fr)}
+    .modules > div{border-right:0;border-bottom:1px solid var(--rule)}
+    .sec-head{grid-template-columns:1fr}
+    .system{grid-template-columns:1fr}
+    .turn{grid-template-columns:1fr;gap:12px}
+    .cta-inner{grid-template-columns:1fr;gap:32px}
+    .cta-form .field{flex-direction:column}
+    .cta-form button{padding:16px 0}
+    footer{grid-template-columns:1fr;gap:16px}
+    footer .f-right{text-align:left}
+  }
+</style>
+</head>
+<body>
+
+<div class="stars" aria-hidden="true"></div>
+
+<!-- Shared SVG defs: chrome gradient for logo -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="pipeChrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f7f7fa"/>
+      <stop offset="18%" stop-color="#c7c7cd"/>
+      <stop offset="30%" stop-color="#8a8a92"/>
+      <stop offset="46%" stop-color="#f0f0f4"/>
+      <stop offset="52%" stop-color="#fcfcfe"/>
+      <stop offset="68%" stop-color="#b8b8bf"/>
+      <stop offset="86%" stop-color="#4a4a52"/>
+      <stop offset="100%" stop-color="#c8c8d0"/>
+    </linearGradient>
+    <!-- 1-bit-ish dither via turbulence + threshold -->
+    <filter id="pipeDither" x="0" y="0" width="100%" height="100%">
+      <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" result="gray"/>
+      <feTurbulence type="turbulence" baseFrequency="0.9" numOctaves="1" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 1" result="noiseGray"/>
+      <feComposite in="gray" in2="noiseGray" operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.52" result="mixed"/>
+      <feComponentTransfer result="bw">
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 1"/>
+        <feFuncB type="discrete" tableValues="0 1"/>
+        <feFuncA type="linear" slope="1"/>
+      </feComponentTransfer>
+      <feColorMatrix type="matrix" values="0.85 0 0 0 0  1 0 0 0 0  1 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+    <!-- Red channel with magenta tint for chroma aberration -->
+    <filter id="pipeR" x="0" y="0" width="100%" height="100%">
+      <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" result="gray"/>
+      <feTurbulence type="turbulence" baseFrequency="0.9" numOctaves="1" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 1" result="noiseGray"/>
+      <feComposite in="gray" in2="noiseGray" operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.52" result="mixed"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 1"/>
+        <feFuncB type="discrete" tableValues="0 1"/>
+      </feComponentTransfer>
+      <feColorMatrix type="matrix" values="1 0 0 0 0  0.1 0 0 0 0  0.55 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+    <!-- Blue/cyan channel -->
+    <filter id="pipeB" x="0" y="0" width="100%" height="100%">
+      <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" result="gray"/>
+      <feTurbulence type="turbulence" baseFrequency="0.9" numOctaves="1" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 1" result="noiseGray"/>
+      <feComposite in="gray" in2="noiseGray" operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.52" result="mixed"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 1"/>
+        <feFuncB type="discrete" tableValues="0 1"/>
+      </feComponentTransfer>
+      <feColorMatrix type="matrix" values="0.05 0 0 0 0  0.75 0 0 0 0  1 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+    <!-- Magenta highlight channel -->
+    <filter id="pipeM" x="0" y="0" width="100%" height="100%">
+      <feColorMatrix type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 1 0" result="gray"/>
+      <feTurbulence type="turbulence" baseFrequency="1.8" numOctaves="1" seed="3" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 1" result="noiseGray"/>
+      <feComposite in="gray" in2="noiseGray" operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.62" result="mixed"/>
+      <feComponentTransfer>
+        <feFuncR type="discrete" tableValues="0 1"/>
+        <feFuncG type="discrete" tableValues="0 1"/>
+        <feFuncB type="discrete" tableValues="0 1"/>
+      </feComponentTransfer>
+      <feColorMatrix type="matrix" values="1 0 0 0 0  0.28 0 0 0 0  0.57 0 0 0 0  0 0 0 1 0"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <nav>
+    <a href="#" class="brand">
+      <svg class="logo" viewBox="0 0 1000 1000" aria-hidden="true">
+        <path d="M 740 500 L 740 752 A 120 120 0 0 1 500 752 L 500 248 A 120 120 0 0 0 260 248 L 260 500"
+              fill="none" stroke="url(#pipeChrome)" stroke-width="192" stroke-linecap="butt" stroke-linejoin="round"/>
+        <rect x="615" y="450" width="250" height="100" fill="url(#pipeChrome)"/>
+        <rect x="135" y="450" width="250" height="100" fill="url(#pipeChrome)"/>
+      </svg>
+      <span class="mark">PIPE</span>
+      <span class="cyr">ПАЙП / САМОФРАКИЯ</span>
+    </a>
+    <ul>
+      <li><a href="#system">System</a></li>
+      <li><a href="#work">The Work</a></li>
+      <li><a href="#manifesto">Manifesto</a></li>
+      <li><a href="#">Docs</a></li>
+    </ul>
+    <a href="#cta" class="nav-cta"><span class="sq"></span> Request Access</a>
+  </nav>
+
+  <header>
+    <div class="hero-grid">
+
+      <div class="hero-copy">
+        <div class="kicker">
+          <span class="dot"></span>
+          <span>Hiring Intelligence Layer</span>
+          <span class="sep">·</span>
+          <span class="cyr">ΝΊΚΗ · САМОФРАКИЯ</span>
+          <span class="sep">·</span>
+          <span>MMXXVI</span>
+        </div>
+        <h1>
+          See the whole
+          <em>pipeline.</em>
+        </h1>
+        <p class="lede">
+          PIPE is one system for hiring engineers. Every CV lands in a single <b>graph</b>,
+          every role gets matched by <b>structural fit</b>, and every interview runs on a
+          <b>real open-source pull request</b>. Sourcing, challenges, video, and scoring —
+          under one window.
+        </p>
+        <div class="cta-row">
+          <a href="#cta" class="btn">Request access</a>
+          <a href="#system" class="btn-ghost">See the system ▸</a>
+        </div>
+      </div>
+
+      <div class="hero-art" aria-hidden="true">
+
+        <div class="art-corner tl">◤ NODE-007 <span>/ OLY·Δ</span></div>
+        <div class="art-corner tr">RA 17h 45m · DEC −28°56′<br><span>FIX · 040.219</span></div>
+        <div class="art-corner br">λ = 0.74 · κ = 0.92<br>BAND · <span>CYAN · MAG</span></div>
+
+        <!-- 3D axis + gridplane wireframe, Jordan's-Lemma adjacent -->
+        <svg class="wire" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <pattern id="grid" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <path d="M24 0H0V24" fill="none" stroke="rgba(108,195,255,0.14)" stroke-width="0.6"/>
+            </pattern>
+            <linearGradient id="ringGlow" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#6cc3ff" stop-opacity="0"/>
+              <stop offset="50%" stop-color="#6cc3ff" stop-opacity="0.9"/>
+              <stop offset="100%" stop-color="#ff4891" stop-opacity="0.4"/>
+            </linearGradient>
+          </defs>
+
+          <!-- full-frame grid -->
+          <rect width="600" height="600" fill="url(#grid)" opacity="0.6"/>
+
+          <!-- center bracket -->
+          <g stroke="rgba(228,231,237,0.28)" stroke-width="0.7" fill="none">
+            <polyline points="28,28 28,76 76,28"/>
+            <polyline points="572,28 572,76 524,28"/>
+            <polyline points="28,572 28,524 76,572"/>
+            <polyline points="572,572 572,524 524,572"/>
+          </g>
+
+          <!-- Jordan-lemma-ish: perspective 3D axes -->
+          <g stroke="#6cc3ff" stroke-width="1" fill="none" opacity="0.7">
+            <!-- x-axis -->
+            <line x1="70" y1="420" x2="530" y2="420"/>
+            <polygon points="530,420 518,415 518,425" fill="#6cc3ff"/>
+            <text x="538" y="424" font-family="JetBrains Mono,monospace" font-size="10" fill="#6cc3ff" letter-spacing="0.15em">X</text>
+            <!-- y-axis (up) -->
+            <line x1="200" y1="540" x2="200" y2="80"/>
+            <polygon points="200,80 195,92 205,92" fill="#6cc3ff"/>
+            <text x="184" y="72" font-family="JetBrains Mono,monospace" font-size="10" fill="#6cc3ff" letter-spacing="0.15em">Y</text>
+            <!-- z-axis (depth) -->
+            <line x1="200" y1="420" x2="470" y2="150"/>
+            <polygon points="470,150 462,162 474,158" fill="#6cc3ff"/>
+            <text x="480" y="148" font-family="JetBrains Mono,monospace" font-size="10" fill="#6cc3ff" letter-spacing="0.15em">Z</text>
+            <!-- tick marks on x -->
+            <g>
+              <line x1="260" y1="416" x2="260" y2="424"/>
+              <line x1="330" y1="416" x2="330" y2="424"/>
+              <line x1="400" y1="416" x2="400" y2="424"/>
+              <line x1="470" y1="416" x2="470" y2="424"/>
+            </g>
+            <g>
+              <line x1="196" y1="380" x2="204" y2="380"/>
+              <line x1="196" y1="320" x2="204" y2="320"/>
+              <line x1="196" y1="260" x2="204" y2="260"/>
+              <line x1="196" y1="200" x2="204" y2="200"/>
+              <line x1="196" y1="140" x2="204" y2="140"/>
+            </g>
+          </g>
+
+          <!-- Tilted gridplane (horizon plane) -->
+          <g stroke="rgba(108,195,255,0.35)" stroke-width="0.6" fill="none">
+            <path d="M70 420 L530 420 L470 150 L140 150 Z" stroke="rgba(108,195,255,0.5)"/>
+            <line x1="140" y1="150" x2="530" y2="420"/>
+            <line x1="156" y1="180" x2="510" y2="420"/>
+            <line x1="172" y1="210" x2="490" y2="420"/>
+            <line x1="188" y1="240" x2="470" y2="420"/>
+            <line x1="204" y1="270" x2="450" y2="420"/>
+            <line x1="220" y1="300" x2="430" y2="420"/>
+            <line x1="236" y1="330" x2="410" y2="420"/>
+            <line x1="252" y1="360" x2="390" y2="420"/>
+            <line x1="268" y1="390" x2="370" y2="420"/>
+            <line x1="160" y1="150" x2="110" y2="420"/>
+            <line x1="200" y1="150" x2="180" y2="420"/>
+            <line x1="240" y1="150" x2="250" y2="420"/>
+            <line x1="280" y1="150" x2="320" y2="420"/>
+            <line x1="320" y1="150" x2="390" y2="420"/>
+            <line x1="360" y1="150" x2="460" y2="420"/>
+            <line x1="400" y1="150" x2="530" y2="420"/>
+          </g>
+
+          <!-- Contour / orbital ring -->
+          <ellipse cx="300" cy="280" rx="180" ry="60" fill="none" stroke="url(#ringGlow)" stroke-width="1.1" transform="rotate(-18 300 280)"/>
+          <ellipse cx="300" cy="280" rx="120" ry="38" fill="none" stroke="rgba(255,72,145,0.35)" stroke-width="0.8" transform="rotate(-18 300 280)"/>
+
+          <!-- pole marker -->
+          <circle cx="300" cy="280" r="3" fill="#ff4891"/>
+          <circle cx="300" cy="280" r="10" fill="none" stroke="#ff4891" stroke-width="0.6" opacity="0.7"/>
+          <text x="310" y="274" font-family="JetBrains Mono,monospace" font-size="9" fill="#ff4891" letter-spacing="0.2em">POLE</text>
+
+          <!-- node labels, light-touch -->
+          <g font-family="JetBrains Mono,monospace" font-size="8" fill="rgba(228,231,237,0.5)" letter-spacing="0.2em">
+            <text x="70" y="440">0</text>
+            <text x="262" y="440">0.25</text>
+            <text x="332" y="440">0.50</text>
+            <text x="402" y="440">0.75</text>
+            <text x="472" y="440">1.00</text>
+            <text x="172" y="383">0.1</text>
+            <text x="172" y="323">0.2</text>
+            <text x="172" y="263">0.3</text>
+            <text x="172" y="203">0.4</text>
+            <text x="172" y="143">0.5</text>
+          </g>
+
+        </svg>
+
+        <!-- Dithered Hermes behind the wireframe -->
+        <div class="hermes">
+          <div class="hermes-stack">
+            <img src="./assets/nike.jpg" alt="" class="ch-r">
+            <img src="./assets/nike.jpg" alt="" class="ch-b">
+            <img src="./assets/nike.jpg" alt="" class="base">
+            <img src="./assets/nike.jpg" alt="" class="ch-m">
+          </div>
+        </div>
+
+        <div class="art-label">▣ WINGED VICTORY · SAMOTHRACE · c. 190 BCE · <b>NODE TYPE: HERALD</b></div>
+      </div>
+
+    </div>
+
+    <div class="modules">
+      <div><span class="n">01</span><span class="name">Ingest</span></div>
+      <div><span class="n">02</span><span class="name">Ontology</span></div>
+      <div><span class="n">03</span><span class="name">Match</span></div>
+      <div><span class="n">04</span><span class="name">Review</span></div>
+      <div><span class="n">05</span><span class="name">Video</span></div>
+    </div>
+  </header>
+
+  <!-- SYSTEM -->
+  <section id="system">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num"><span class="bar"></span> 01 · The System</div>
+        <h2>Three modules. <em>One surface.</em></h2>
+      </div>
+      <p class="sec-sub">
+        PIPE replaces the seven-tab hiring stack with a single graph-backed workbench.
+        Nothing leaves the window. Nothing is copy-pasted. State is real.
+      </p>
+    </div>
+
+    <div class="system">
+
+      <article class="mod">
+        <div class="mod-n">◆ MODULE 01 · Ontology</div>
+        <h3>Sourcing is a <em>graph</em> problem.</h3>
+        <p>
+          Ingest every résumé in your pipeline into a shared ontology —
+          <b>skills, teams, commits, domains</b> as structural nodes, not keyword strings.
+          Filter candidates by the shape of their career, not their vocabulary. Deterministic,
+          explainable, reproducible. <b>No LLM review.</b>
+        </p>
+        <div class="mod-viz">
+          <svg viewBox="0 0 300 110" preserveAspectRatio="xMidYMid meet">
+            <g stroke="rgba(108,195,255,0.45)" stroke-width="0.8" fill="none">
+              <line x1="40" y1="55" x2="110" y2="30"/>
+              <line x1="40" y1="55" x2="110" y2="80"/>
+              <line x1="110" y1="30" x2="180" y2="25"/>
+              <line x1="110" y1="30" x2="180" y2="60"/>
+              <line x1="110" y1="80" x2="180" y2="60"/>
+              <line x1="110" y1="80" x2="180" y2="95"/>
+              <line x1="180" y1="25" x2="250" y2="20"/>
+              <line x1="180" y1="60" x2="250" y2="55"/>
+              <line x1="180" y1="60" x2="250" y2="85"/>
+              <line x1="180" y1="95" x2="250" y2="95"/>
+            </g>
+            <g fill="#6cc3ff">
+              <circle cx="40" cy="55" r="4"/>
+              <circle cx="110" cy="30" r="3"/>
+              <circle cx="110" cy="80" r="3"/>
+            </g>
+            <g fill="#ff4891">
+              <circle cx="180" cy="25" r="2.5"/>
+              <circle cx="180" cy="60" r="2.5"/>
+              <circle cx="180" cy="95" r="2.5"/>
+            </g>
+            <g fill="rgba(228,231,237,0.75)">
+              <circle cx="250" cy="20" r="2"/>
+              <circle cx="250" cy="55" r="2"/>
+              <circle cx="250" cy="85" r="2"/>
+              <circle cx="250" cy="95" r="2"/>
+            </g>
+            <g font-family="JetBrains Mono,monospace" font-size="7" fill="rgba(228,231,237,0.55)" letter-spacing="0.2em">
+              <text x="20" y="72">ROLE</text>
+              <text x="90" y="18">SKILL</text>
+              <text x="94" y="99">TEAM</text>
+              <text x="220" y="13">CVT</text>
+              <text x="220" y="49">CVT</text>
+              <text x="220" y="109">CVT</text>
+            </g>
+          </svg>
+        </div>
+      </article>
+
+      <article class="mod">
+        <div class="mod-n">◆ MODULE 02 · Review</div>
+        <h3>Interviews on <em>real work.</em></h3>
+        <p>
+          Every challenge is a live open-source pull request. Candidates read real code,
+          debate real decisions with the PR author, and ship fixes that land in the upstream
+          repo. <b>The community gets the PR.</b> You get the signal.
+        </p>
+        <div class="mod-viz">
+<pre>$ pipe review &#x2011;&#x2011;role=sr-fe
+┌─ pr/2847 · upstream/react
+│  replace useEffect sync
+│  <span style="color:#ff4891">+48  &#x2011;62</span>   3 files
+├─ turn 01 · candidate →
+├─ turn 02 · author ←
+├─ turn 03 · candidate →
+└─ merged · <span style="color:#6cc3ff">shipped</span></pre>
+        </div>
+      </article>
+
+      <article class="mod">
+        <div class="mod-n">◆ MODULE 03 · Surface</div>
+        <h3>No more <em>copy-paste</em> hiring.</h3>
+        <p>
+          Sourcing, challenges, video rooms, scheduling, scoring, notes — one surface.
+          Stop reconstructing candidate state across seven tools. Everything the recruiter
+          needs is <b>in the same window</b>.
+        </p>
+        <div class="mod-viz">
+          <svg viewBox="0 0 300 110" preserveAspectRatio="xMidYMid meet">
+            <g stroke="rgba(228,231,237,0.25)" stroke-width="0.5" fill="none">
+              <rect x="12" y="14" width="276" height="82"/>
+              <line x1="12" y1="30" x2="288" y2="30"/>
+              <line x1="80" y1="30" x2="80" y2="96"/>
+              <line x1="184" y1="30" x2="184" y2="96"/>
+            </g>
+            <g font-family="JetBrains Mono,monospace" font-size="7" letter-spacing="0.2em" fill="rgba(228,231,237,0.6)">
+              <text x="18" y="25">PIPE · SYS·01</text>
+              <text x="240" y="25" fill="#6cc3ff">LIVE ●</text>
+              <text x="18" y="44">SOURCE</text>
+              <text x="18" y="58">REVIEW</text>
+              <text x="18" y="72">VIDEO</text>
+              <text x="18" y="86">SCORE</text>
+              <text x="90" y="44" fill="#e4e7ed">candidate.anya</text>
+              <text x="90" y="58" fill="#e4e7ed">pr/2847</text>
+              <text x="90" y="72" fill="#ff4891">● 12:14 live</text>
+              <text x="90" y="86">4.3 / 5.0</text>
+              <text x="194" y="44">stage 02/05</text>
+              <text x="194" y="58">turn 03/04</text>
+              <text x="194" y="72">rec · on</text>
+              <text x="194" y="86">draft</text>
+            </g>
+          </svg>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- THE WORK -->
+  <section id="work">
+    <div class="sec-head">
+      <div>
+        <div class="sec-num"><span class="bar"></span> 02 · The Work</div>
+        <h2>The interview <em>answers back.</em></h2>
+      </div>
+      <p class="sec-sub">
+        A fragment from a live session. The candidate is reviewing a real PR in an
+        upstream repository. The author pushes back. The candidate adjusts. The PR gets
+        merged. This is what gets scored.
+      </p>
+    </div>
+
+    <article class="pr">
+      <div class="pr-head">
+        <span class="title">pr/2847 · replace useEffect sync with useSyncExternalStore</span>
+        <span class="repo">upstream/react</span>
+        <span>+48 −62 · 3 files</span>
+        <span class="tag">● Live</span>
+      </div>
+      <div class="pr-body">
+
+        <div class="turn reviewer">
+          <div class="who"><b>Reviewer</b><span class="role">candidate · turn 01</span></div>
+          <div class="msg">
+            <span class="line">useTabVisibility.ts · L24</span>
+            The <code>useSyncExternalStore</code> subscribe signature is correct — but you're not
+            memoizing <code>getSnapshot</code>. Every render re-subscribes. Stabilize with
+            <code>useCallback</code>, or lift it out of the component.
+          </div>
+        </div>
+
+        <div class="turn author">
+          <div class="who"><b>Author</b><span class="role">pipe agent · turn 02</span></div>
+          <div class="msg">
+            Fair — but <code>useSyncExternalStore</code> re-subscribes on <em>subscribe</em> identity,
+            not <em>getSnapshot</em>. <code>getSnapshot</code> is called every render anyway; that's
+            intentional. You might be thinking of <code>useEffect</code>?
+          </div>
+        </div>
+
+        <div class="turn reviewer">
+          <div class="who"><b>Reviewer</b><span class="role">candidate · turn 03</span></div>
+          <div class="msg">
+            You're right about subscribe vs. snapshot — dropping that. But the snapshot still reads
+            <code>document.visibilityState</code>, which mutates between renders under concurrent
+            mode and breaks tearing guarantees. That's the fix I want, even if my first reason was
+            wrong.
+          </div>
+        </div>
+
+      </div>
+
+      <div class="merged">
+        <span class="tick">✓</span>
+        <span><b>Merged upstream</b> · pr/2847 · +3 line diff · community contribution credited to candidate</span>
+      </div>
+    </article>
+  </section>
+
+  <!-- MANIFESTO -->
+  <section class="manifesto" id="manifesto">
+    <blockquote>
+      PIPE is the <em>seeing stone</em><br>
+      for engineering hiring.
+    </blockquote>
+    <div class="attrib">
+      ΝΊΚΗ · САМОФРАКИЯ <span class="sep">·</span> NEW YORK <span class="sep">·</span> MMXXVI
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta" id="cta">
+    <div class="cta-inner">
+      <div>
+        <div class="sec-num"><span class="bar"></span> 03 · Access</div>
+        <h2 style="margin-top:18px">One system. <em>Every signal.</em></h2>
+      </div>
+      <form class="cta-form" onsubmit="event.preventDefault();this.querySelector('input').value='';this.querySelector('.fine').textContent='☙ ACKNOWLEDGED — EXPECT A REPLY WITHIN 24H.'">
+        <p>Founding-team access. Bring one role. We wire your inbound CVs into the graph and run your first interview the same week.</p>
+        <div class="field">
+          <input type="email" required placeholder="you@your-co.com" autocomplete="email">
+          <button type="submit">Request access</button>
+        </div>
+        <p class="fine">No demo slides. The reply contains a live interview link.</p>
+      </form>
+    </div>
+  </section>
+
+  <footer>
+    <div>◈ PIPE · New York / Toronto · <span class="f-cyr">ПАЙП СИСТЕМА</span></div>
+    <div>Winged Victory of Samothrace · Louvre · c. 190 BCE · public domain</div>
+    <div class="f-right"><a href="#">Privacy</a> · <a href="#">Security</a> · <a href="#">GitHub</a></div>
+  </footer>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,53 @@
+{
+  "fixtureId": "seed-030-senior-distributed-saga",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 12,
+      "description": "Compensation is not idempotent — if a compensation step fails and is retried, it may undo the same action twice or error out. Each compensate() must be idempotent with a deduplication key.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "critical",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 12,
+      "description": "No persistence of saga state — if the process crashes mid-saga, there is no record of which steps completed. On restart, the saga starts from scratch, potentially double-executing actions. Should persist state to a saga log.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 12,
+      "description": "Compensation ignores failures — if a compensation step throws, the error is swallowed and the loop continues. Failed compensations must be logged and escalated for manual intervention.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "major",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 7,
+      "description": "No timeout on action or compensation steps — a hanging service will block the saga forever. Should wrap each step in a timeout with circuit breaker.",
+      "expectedFound": true
+    },
+    {
+      "id": 5,
+      "severity": "minor",
+      "file": "src/lib/onboardingSaga.ts",
+      "line": 5,
+      "description": "Saga is not reusable — the steps array is instance state, making the saga a singleton pattern. Should return a new saga instance per transaction.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "critical": 2,
+    "major": 2,
+    "minor": 1,
+    "expectedFound": 4,
+    "expectedMissed": 1
+  }
+}

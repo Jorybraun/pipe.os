@@ -76,7 +76,7 @@ function parsePatch(patch: string): DiffHunk[] {
       if (currentHunk) hunks.push(currentHunk);
       currentHunk = { header: line, lines: [] };
       const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
-      newLineNum = match ? parseInt(match[1], 10) : 1;
+      newLineNum = match ? parseInt(match[1] ?? '1', 10) : 1;
     } else if (currentHunk) {
       if (line.startsWith('+') && !line.startsWith('+++')) {
         currentHunk.lines.push({ type: 'added', content: line.slice(1), lineNumber: newLineNum });

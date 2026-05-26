@@ -13,14 +13,17 @@ export const cultureInterviewPlugin: AgentPlugin = {
   fsmConfig: {
     canAdvance: () => true,
     canTerminate: (session) => {
-      const covered = (session.transcript.scratchpad.dimensionsCovered as string[]) ?? [];
-      return covered.length >= 5;
+      const coverage = session.transcript.scratchpad.dimensionCoverage as Record<string, number>;
+      const dims = ['ownership', 'collaboration', 'learning-orientation', 'conflict-handling', 'self-awareness'];
+      return dims.every((d) => (coverage[d] ?? 0) >= 1);
     },
     minTurns: 5,
     maxTurns: 20,
   },
 
   async generateTurn(session): Promise<AgentTurn> {
+    // TODO(Phase 4): Wire to advanceAdaptiveCultureInterview via UAR orchestrator.
+    // For now this is a stub — the production path is in routes/screening/culture.ts.
     const idx = session.transcript.turns.length;
     return {
       idx,
@@ -28,7 +31,7 @@ export const cultureInterviewPlugin: AgentPlugin = {
       timestamp: new Date().toISOString(),
       questionId: undefined,
       candidateResponse: undefined,
-      metadata: { dimension: 'teamwork' },
+      metadata: { dimension: 'ownership' },
     };
   },
 
@@ -60,16 +63,18 @@ export const cultureInterviewPlugin: AgentPlugin = {
 
   scoringConfig: {
     dimensions: [
-      { id: 'ownership', weight: 0.1, promptTemplate: 'Score ownership 1-5', model: undefined },
-      { id: 'collaboration', weight: 0.1, promptTemplate: 'Score collaboration 1-5', model: undefined },
-      { id: 'adaptability', weight: 0.1, promptTemplate: 'Score adaptability 1-5', model: undefined },
-      { id: 'communication', weight: 0.1, promptTemplate: 'Score communication 1-5', model: undefined },
-      { id: 'problem_solving', weight: 0.1, promptTemplate: 'Score problem solving 1-5', model: undefined },
-      { id: 'clan_affinity', weight: 0.1, promptTemplate: 'Score clan affinity 1-5', model: undefined },
-      { id: 'adhocracy_affinity', weight: 0.1, promptTemplate: 'Score adhocracy affinity 1-5', model: undefined },
-      { id: 'market_affinity', weight: 0.1, promptTemplate: 'Score market affinity 1-5', model: undefined },
-      { id: 'hierarchy_affinity', weight: 0.1, promptTemplate: 'Score hierarchy affinity 1-5', model: undefined },
-      { id: 'psychological_safety', weight: 0.1, promptTemplate: 'Score psychological safety 1-5', model: undefined },
+      // 5 competency dimensions (BARS rubric scoring)
+      { id: 'ownership', weight: 0.1, promptTemplate: 'Score ownership 1-5 using BARS anchors', model: undefined },
+      { id: 'collaboration', weight: 0.1, promptTemplate: 'Score collaboration 1-5 using BARS anchors', model: undefined },
+      { id: 'learning-orientation', weight: 0.1, promptTemplate: 'Score learning-orientation 1-5 using BARS anchors', model: undefined },
+      { id: 'conflict-handling', weight: 0.1, promptTemplate: 'Score conflict-handling 1-5 using BARS anchors', model: undefined },
+      { id: 'self-awareness', weight: 0.1, promptTemplate: 'Score self-awareness 1-5 using BARS anchors', model: undefined },
+      // 5 culture-profile axes (position on a 1-5 spectrum)
+      { id: 'autonomy', weight: 0.1, promptTemplate: 'Score autonomy 1-5 using profile anchors', model: undefined },
+      { id: 'risk-tolerance', weight: 0.1, promptTemplate: 'Score risk-tolerance 1-5 using profile anchors', model: undefined },
+      { id: 'work-pace', weight: 0.1, promptTemplate: 'Score work-pace 1-5 using profile anchors', model: undefined },
+      { id: 'collaboration-style', weight: 0.1, promptTemplate: 'Score collaboration-style 1-5 using profile anchors', model: undefined },
+      { id: 'feedback-orientation', weight: 0.1, promptTemplate: 'Score feedback-orientation 1-5 using profile anchors', model: undefined },
     ],
     groundingRequirement: true,
     synthesisTemplate: `Synthesize a culture fit assessment. Return JSON: { "narrative": "...", "recommendation": "hire"|"flag"|"pass" }`,

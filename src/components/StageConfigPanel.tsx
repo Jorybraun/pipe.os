@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Phone, Users, FileText, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2 } from 'lucide-react';
+import { X, ArrowLeft, Phone, Users, FileText, Search, GitPullRequest, Loader, AlertCircle, Plus, Trash2, Calendar, Video, MonitorPlay, PhoneCall, Mail, Clock, CheckCircle2, Type, Mic } from 'lucide-react';
 import { STAGE_TYPE_CONFIGS, STAGE_TYPES, type StageType } from '../lib/stageTemplates';
 import { useStageMutations } from '../hooks/useStageMutations';
 import { useStageDetail } from '../hooks/useStageDetail';
@@ -32,6 +32,7 @@ import {
   SCREENING_CATEGORIES,
   type ScreeningCategory,
   type ScreeningQuestionTemplate,
+  type InputMode,
 } from '../content/screeningQuestions';
 
 interface StageConfigPanelProps {
@@ -160,7 +161,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
                 cursor: 'pointer',
                 padding: 4,
               }}
-            >
+             aria-label="Back">
               <ArrowLeft size={14} />
             </button>
           )}
@@ -194,7 +195,7 @@ export function StageConfigPanel({ stageId, onClose }: StageConfigPanelProps): J
             cursor: 'pointer',
             padding: 4,
           }}
-        >
+         aria-label="Close">
           <X size={14} />
         </button>
       </div>
@@ -599,6 +600,12 @@ function ScreeningCallConfig({ format, stageId, stage, updateStage, refetch, tri
 
 // ── Screening question picker (online format) ───────────────────────────────
 
+const INPUT_MODES: { key: InputMode; label: string; icon: typeof Type }[] = [
+  { key: 'text', label: 'Text', icon: Type },
+  { key: 'voice', label: 'Voice', icon: Mic },
+  { key: 'video', label: 'Video', icon: Video },
+];
+
 function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
   onAdd: (template: StagedItem) => Promise<void>;
   existingCount: number;
@@ -606,6 +613,7 @@ function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
 }): JSX.Element {
   const [search, setSearch] = useState('');
   const [expandedCategory, setExpandedCategory] = useState<ScreeningCategory | null>('background');
+  const [selectedInputMode, setSelectedInputMode] = useState<InputMode>('text');
 
   const filtered = useMemo(() => {
     if (!search.trim()) return SCREENING_QUESTIONS;
@@ -629,13 +637,14 @@ function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
   }, [filtered]);
 
   const handleAddQuestion = async (sq: ScreeningQuestionTemplate): Promise<void> => {
-    // Convert screening question to a QUIZ_SHORT_ANSWER challenge
+    const mode = sq.defaultInputMode ?? selectedInputMode;
+    const placeholder = mode === 'text' ? 'Type your answer...' : mode === 'voice' ? 'Record a voice response...' : 'Record a video response...';
     const instructions = sq.text + (sq.followUps?.length ? '\n\nFollow-up prompts:\n' + sq.followUps.map((f) => `- ${f}`).join('\n') : '');
     const template: StagedItem = {
       type: 'QUIZ_SHORT_ANSWER',
       title: sq.text,
       instructions,
-      config: { inputMode: 'text' as const, question: sq.text, placeholder: 'Type your answer...' },
+      config: { inputMode: mode, question: sq.text, placeholder },
     };
     await onAdd(template);
   };
@@ -694,6 +703,45 @@ function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
               outline: 'none',
             }}
           />
+        </div>
+
+        {/* Response type selector */}
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace' }}>
+            DEFAULT_RESPONSE_TYPE
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {INPUT_MODES.map((mode) => {
+              const Icon = mode.icon;
+              const isActive = selectedInputMode === mode.key;
+              return (
+                <button
+                  key={mode.key}
+                  onClick={() => setSelectedInputMode(mode.key)}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    padding: '8px 0',
+                    background: isActive ? 'var(--pipe-surface-hover)' : 'transparent',
+                    border: `1px solid ${isActive ? 'var(--pipe-text-dim)' : 'var(--pipe-border)'}`,
+                    borderRadius: 4,
+                    color: isActive ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                    fontSize: 9,
+                    fontFamily: '"Space Mono", monospace',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <Icon size={12} />
+                  {mode.label.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -775,12 +823,45 @@ function ScreeningQuestionPicker({ onAdd, existingCount, onBack }: {
                         {sq.text}
                       </div>
                       <div style={{
-                        fontSize: 8,
-                        color: 'var(--pipe-text-dim)',
-                        opacity: 0.6,
-                        lineHeight: 1.4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
                       }}>
-                        {sq.purpose}
+                        <div style={{
+                          fontSize: 8,
+                          color: 'var(--pipe-text-dim)',
+                          opacity: 0.6,
+                          lineHeight: 1.4,
+                          flex: 1,
+                        }}>
+                          {sq.purpose}
+                        </div>
+                        {(() => {
+                          const mode = sq.defaultInputMode ?? selectedInputMode;
+                          const modeConfig = INPUT_MODES.find((m) => m.key === mode);
+                          if (!modeConfig) return null;
+                          const Icon = modeConfig.icon;
+                          return (
+                            <span style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '2px 6px',
+                              background: sq.defaultInputMode ? 'rgba(96, 165, 250, 0.1)' : 'var(--pipe-surface)',
+                              border: `1px solid ${sq.defaultInputMode ? 'rgba(96, 165, 250, 0.3)' : 'var(--pipe-border)'}`,
+                              borderRadius: 3,
+                              fontSize: 7,
+                              color: sq.defaultInputMode ? '#60a5fa' : 'var(--pipe-text-dim)',
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                            }}>
+                              <Icon size={8} />
+                              {modeConfig.label.toUpperCase()}
+                              {sq.defaultInputMode && '*'}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </button>
                   ))}
@@ -1011,6 +1092,7 @@ function StageConfigToggles({ stageId, stage, updateStage, refetch }: {
 function ToggleSwitch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }): JSX.Element {
   return (
     <button
+      aria-label="Toggle"
       onClick={() => onChange(!value)}
       style={{
         width: 36,

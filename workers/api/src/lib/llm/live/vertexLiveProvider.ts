@@ -9,12 +9,12 @@
  *           google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent
  *
  * Auth: GCP service account (VERTEX_SA_KEY_JSON). Token is obtained via the
- * shared getAccessToken() helper from vertexAIProvider.ts (cached ~55 min).
+ * shared getAccessToken() helper from vertexAuth.ts (cached ~55 min).
  */
 
 import type { LiveProvider, LiveSession, LiveSessionConfig, LiveUsageTotals } from './types';
-import { getAccessToken } from '../vertexAIProvider';
-import type { ServiceAccountKey } from '../vertexAIProvider';
+import { getAccessToken } from '../vertexAuth';
+import type { ServiceAccountKey } from '../vertexAuth';
 
 // ─── Internal wire types ──────────────────────────────────────────────────────
 

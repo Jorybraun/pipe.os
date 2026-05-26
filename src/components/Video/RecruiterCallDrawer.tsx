@@ -218,7 +218,7 @@ function CallDetailView({
             background: 'none', border: 'none', color: '#888',
             cursor: 'pointer', padding: 4,
           }}
-        >
+         aria-label="Back">
           <ChevronLeft size={16} />
         </button>
         <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>CALL DETAIL</span>

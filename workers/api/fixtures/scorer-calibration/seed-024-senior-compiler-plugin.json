@@ -1,0 +1,135 @@
+{
+  "id": "seed-024-senior-compiler-plugin",
+  "description": "Senior reviewer finds type issue but misses performance impact. Mixed senior performance.",
+  "tags": [
+    "typescript",
+    "compiler",
+    "mid-score-senior"
+  ],
+  "seniority": "senior",
+  "prContext": {
+    "title": "Add TS transformer for schema inference",
+    "description": "TypeScript compiler plugin that infers Zod schemas from types.",
+    "instructions": "Review for correctness and compiler API usage.",
+    "diff": "diff --git a/src/lib/schemaTransformer.ts b/src/lib/schemaTransformer.ts\n@@ -0,0 +1,45 @@\n+import ts from 'typescript';\n+\n+export function inferSchema(typeNode: ts.TypeNode) {\n+  const checker = /* get type checker */;\n+  const type = checker.getTypeAtLocation(typeNode);\n+\n+  const properties = checker.getPropertiesOfType(type);\n+  const schema: Record<string, unknown> = {};\n+\n+  for (const prop of properties) {\n+    const propType = checker.getTypeOfSymbolAtLocation(prop, typeNode);\n+    schema[prop.name] = tsTypeToZod(propType, checker);\n+  }\n+\n+  return schema;\n+}\n+\n+function tsTypeToZod(type: ts.Type, checker: ts.TypeChecker) {\n+  if (type.flags & ts.TypeFlags.String) return 'z.string()';\n+  if (type.flags & ts.TypeFlags.Number) return 'z.number()';\n+  return 'z.unknown()';\n+}\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 4,
+      "description": "Type checker is obtained via inline comment placeholder — actual implementation likely creates a new Program/TypeChecker per call, which is extremely expensive (seconds per call). Should reuse the existing Program from the transformer context.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 14,
+      "description": "tsTypeToZod only handles string and number — unions, arrays, objects, enums, and literals all fall through to z.unknown(), producing incorrect schemas.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 5,
+      "description": "No caching of inferred schemas — same type inferred repeatedly in large codebases, causing O(n^2) behavior. Should memoize by type ID.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/schemaTransformer.ts",
+      "line": 14,
+      "description": "Returns string literals like z.string() instead of actual Zod objects — the consumer must eval() or parse these strings, which is unsafe.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2401,
+            "file": "src/lib/schemaTransformer.ts",
+            "line": 4,
+            "category": "performance",
+            "severity": "blocking",
+            "what": "Creating a type checker per call is extremely expensive.",
+            "why": "TypeScript type checking is the most expensive operation. Reusing the existing checker is critical.",
+            "positive": false
+          },
+          {
+            "id": 2402,
+            "file": "src/lib/schemaTransformer.ts",
+            "line": 14,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Only string and number are handled. Unions, arrays, and objects will silently produce z.unknown().",
+            "why": "This defeats the purpose of schema inference for complex types.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Performance and coverage are blocking.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2401,
+            "move": "change",
+            "content": "Now accepts checker as parameter.",
+            "updated_code": "export function inferSchema(typeNode: ts.TypeNode, checker: ts.TypeChecker) {"
+          },
+          {
+            "to_comment_id": 2402,
+            "move": "change",
+            "content": "Added union, array, and object handling.",
+            "updated_code": "if (type.isUnion()) return `z.union([${type.types.map(t => tsTypeToZod(t, checker)).join(',')}])`; ..."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Both fixes correct. Checker reuse and expanded type coverage look good.",
+      "submittedAt": "2026-04-28T03:47:05.965Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 4 bugs (checker reuse, type coverage). Missed caching and string return. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Both flagged as blocking. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified checker parameter and expanded types. Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete performance and coverage rationales. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested checker parameter and expanded types — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

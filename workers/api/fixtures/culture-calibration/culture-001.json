@@ -1,0 +1,117 @@
+{
+  "id": "culture-001",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and eventually we sorted it out. It was a good team effort."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I'm a pretty collaborative person so I don't really get into big disagreements. If something comes up we talk it through as a team and find the best solution. Communication is key."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I'm always looking to grow and I read a lot of tech blogs to stay current. You have to keep learning in this industry. I try to stay open to feedback."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you had to push back on a direction you disagreed with."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I think the best approach is to have open conversations. If I disagree with something I bring it up in the right forum and the team usually works it out. We have a good culture where disagreements get resolved constructively."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and "
+      ]
+    },
+    "collaboration": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "we had some issues with our deployment process."
+      ]
+    },
+    "learning-orientation": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        " You have to keep learning in this industry."
+      ]
+    },
+    "conflict-handling": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        " If I disagree with something I bring it up in the right forum and the team usually works it out."
+      ]
+    },
+    "self-awareness": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and "
+      ]
+    },
+    "autonomy": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and "
+      ]
+    },
+    "risk-tolerance": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and "
+      ]
+    },
+    "work-pace": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and "
+      ]
+    },
+    "collaboration-style": {
+      "min": 2,
+      "max": 4,
+      "evidenceQuotes": [
+        "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and "
+      ]
+    },
+    "feedback-orientation": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Yeah, we had some issues with our deployment process. The team got together and figured it out. Everyone pitched in and "
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "ownership",
+    "collaboration",
+    "conflict-handling",
+    "self-awareness"
+  ],
+  "confidence": "heuristic"
+}

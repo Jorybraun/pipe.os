@@ -44,7 +44,7 @@ export function EditorHeader({
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer' }} aria-label="Back">
           <ArrowLeft size={20} />
         </button>
         <div>

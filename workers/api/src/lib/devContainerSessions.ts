@@ -261,11 +261,33 @@ export interface ChallengeTtlRow {
  * Fetch the TTL + repo metadata for a challenge. Returns null when the
  * challenge does not exist (the launch handler falls through to global
  * defaults and a blank repo).
+ *
+ * When candidateId is provided, LEFT JOINs candidate_challenge_assignment
+ * so per-candidate repo overrides (from AI matching) take precedence over
+ * the challenge-level dev_container_repo_url.
  */
 export async function getChallengeTtlMeta(
   db: D1Database,
   challengeId: string,
+  candidateId?: string | null,
 ): Promise<ChallengeTtlRow | null> {
+  if (candidateId) {
+    return db
+      .prepare(
+        `SELECT ch.id,
+                ch.dev_container_ttl_seconds,
+                COALESCE(cca.github_repo_url, ch.dev_container_repo_url) AS repo_git_url,
+                ch.dev_container_challenge_branch AS challenge_branch
+         FROM challenges ch
+         LEFT JOIN candidate_challenge_assignment cca
+           ON cca.challenge_id = ch.id AND cca.candidate_id = ?2
+         WHERE ch.id = ?1
+         LIMIT 1`,
+      )
+      .bind(challengeId, candidateId)
+      .first<ChallengeTtlRow>();
+  }
+
   return db
     .prepare(
       `SELECT id,

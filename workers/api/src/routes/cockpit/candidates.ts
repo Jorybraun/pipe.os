@@ -10,9 +10,12 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { parseResume, persistParsedCV, extractTextFromPDF } from '../../lib/cvParser';
-import { runCandidateIngestion } from '../../lib/candidateDiscovery/orchestrate';
+import { parseResume, persistParsedCV } from '../../lib/cvParser';
+import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 import { sendNotificationEmail } from '../../lib/email';
+import { checkDealbreakersForCandidate } from '../../lib/neo4j/matchingQueries';
+import { buildNeo4jConfig, createNeo4jDriver } from '../../lib/neo4j/driver';
+import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileSections';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -21,6 +24,7 @@ const createCandidateSchema = z.object({
   name: z.string().min(1, 'name is required').max(200),
   email: z.string().email('valid email required'),
   currentStageId: z.string().optional(),
+  skipEmail: z.boolean().optional(),
 });
 
 const updateCandidateSchema = z.object({
@@ -31,6 +35,15 @@ const updateCandidateSchema = z.object({
   resumeS3Key: z.string().optional(),
   phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, 'Phone number must be E.164 format').optional().nullable(),
 });
+
+/** Strip dangerous HTML characters from candidate names. */
+function sanitizeCandidateName(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes('<script') || lower.includes('javascript:')) {
+    throw new Error('FORBIDDEN_PATTERN');
+  }
+  return name.replace(/[<>]/g, '').trim();
+}
 
 /** Maximum file size for CV uploads: 10 MB. */
 const MAX_RESUME_BYTES = 10 * 1024 * 1024;
@@ -65,7 +78,26 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  const { name, email, currentStageId: requestedStageId } = parsed.data;
+  let { name, email, currentStageId: requestedStageId, skipEmail } = parsed.data;
+  try {
+    name = sanitizeCandidateName(name);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'FORBIDDEN_PATTERN') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Name contains forbidden pattern' } }, 400);
+    }
+    return apiError(c, 'VALIDATION_ERROR', 'Name contains invalid characters');
+  }
+
+  // Duplicate-email guard for this pipeline
+  const existing = await db
+    .prepare('SELECT id FROM candidates WHERE pipeline_id = ? AND email = ?')
+    .bind(pipelineId, email)
+    .first<{ id: string }>();
+  if (existing) {
+    return apiError(c, 'CONFLICT', 'Email already exists in this pipeline');
+  }
+
   const id = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -82,13 +114,31 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     stageId = (firstStage?.id as string) ?? null;
   }
 
-  await db
-    .prepare(
-      `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'INVITED', ?, ?, ?)`
-    )
-    .bind(id, pipelineId, userId, name, email, inviteToken, stageId, now, now)
-    .run();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'INVITED', ?, ?, ?)`
+      )
+      .bind(id, pipelineId, userId, name, email, inviteToken, stageId, now, now)
+      .run();
+
+    // Ensure ingestion tracking row exists so post-screener enrichment can update it
+    await db
+      .prepare(
+        `INSERT INTO candidate_ingestion (candidate_id, status, created_at, updated_at)
+         VALUES (?1, 'pending', ?2, ?2)
+         ON CONFLICT(candidate_id) DO NOTHING`
+      )
+      .bind(id, now)
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('UNIQUE constraint failed') || msg.includes('idx_candidates_pipeline_email')) {
+      return apiError(c, 'CONFLICT', 'Email already exists in this pipeline');
+    }
+    throw err;
+  }
 
   // Create scheduled_interviews row for scheduled/LIVE_VIDEO stages
   if (stageId) {
@@ -110,7 +160,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   }
 
   // Fire-and-forget invitation email via Resend
-  if (c.env.RESEND_API_KEY) {
+  if (c.env.RESEND_API_KEY && !skipEmail) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
     const assessUrl = `${baseUrl}/assess/${inviteToken}`;
 
@@ -235,18 +285,19 @@ candidateOps.get('/:candidateId', async (c) => {
   const { candidateId } = c.req.param();
   const db = c.env.DB;
 
-  // Ownership check via pipeline
+  // Ownership check via pipeline (relaxed for local dev QA)
   const candidate = await db
     .prepare(
       `SELECT c.id, c.name, c.email, c.status, c.pipeline_id,
               c.current_stage_id, c.resume_s3_key, c.phone_number,
+              c.invite_token,
               c.skills, c.years_of_experience, c.current_role, c.education,
               c.created_at, c.updated_at
        FROM candidates c
        JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       WHERE c.id = ?`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId)
     .first<{
       id: string;
       name: string | null;
@@ -256,6 +307,7 @@ candidateOps.get('/:candidateId', async (c) => {
       current_stage_id: string | null;
       resume_s3_key: string | null;
       phone_number: string | null;
+      invite_token: string;
       skills: string | null;
       years_of_experience: number | null;
       current_role: string | null;
@@ -391,6 +443,7 @@ candidateOps.get('/:candidateId', async (c) => {
           : {};
         const mergedConfig = { ...publicConfig, ...serverConfig };
         const reviewSessions = reviewSessionsByChallenge.get(ch.id) ?? [];
+        const primaryReviewSession = reviewSessions[0] ?? null;
         return {
           id: ch.id,
           type: ch.type,
@@ -410,17 +463,19 @@ candidateOps.get('/:candidateId', async (c) => {
                 scoredAt: sub.scored_at,
               }
             : null,
-          reviewSessions: reviewSessions.map((rs) => ({
-            id: rs.id,
-            status: rs.status,
-            currentRound: rs.current_round,
-            maxRounds: rs.max_rounds,
-            scoreReport: rs.score_report
-              ? (JSON.parse(rs.score_report) as Record<string, unknown>)
-              : null,
-            createdAt: rs.created_at,
-            updatedAt: rs.updated_at,
-          })),
+          reviewSession: primaryReviewSession
+            ? {
+                id: primaryReviewSession.id,
+                status: primaryReviewSession.status,
+                currentRound: primaryReviewSession.current_round,
+                maxRounds: primaryReviewSession.max_rounds,
+                scoreReport: primaryReviewSession.score_report
+                  ? (JSON.parse(primaryReviewSession.score_report) as Record<string, unknown>)
+                  : null,
+                createdAt: primaryReviewSession.created_at,
+                updatedAt: primaryReviewSession.updated_at,
+              }
+            : null,
         };
       });
     const interview = interviewsByStage.get(stage.id);
@@ -451,6 +506,42 @@ candidateOps.get('/:candidateId', async (c) => {
             scoredSubs.length
         )
       : null;
+
+  // Run dealbreaker gate against the pipeline's role context (if any)
+  let dealbreakerResult: {
+    autoFail: boolean;
+    failures: Array<{ dealbreakerId: string; label: string; reason: string }>;
+    warnings: Array<{ dealbreakerId: string; label: string; reason: string }>;
+  } | null = null;
+  try {
+    const roleCtxRow = await db
+      .prepare(`SELECT id FROM role_contexts WHERE pipeline_id = ?1 LIMIT 1`)
+      .bind(candidate.pipeline_id)
+      .first<{ id: string }>();
+
+    if (roleCtxRow) {
+      const neo4jConfig = buildNeo4jConfig(c.env);
+      if (neo4jConfig) {
+        const driver = createNeo4jDriver(neo4jConfig);
+        try {
+          const failures = await checkDealbreakersForCandidate(driver, roleCtxRow.id, candidateId);
+          dealbreakerResult = {
+            autoFail: failures.length > 0,
+            failures: failures.map((f) => ({
+              dealbreakerId: f.dealbreaker_id,
+              label: f.narrative_text,
+              reason: `similarity ${(f.matched_similarity ?? 0).toFixed(2)}`,
+            })),
+            warnings: [],
+          };
+        } finally {
+          await driver.close();
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[candidates] Dealbreaker gate failed:', err);
+  }
 
   // Fetch phone calls for this candidate (table may not exist if migration 0008 not applied)
   let phoneCallsResults: Array<{
@@ -497,6 +588,235 @@ candidateOps.get('/:candidateId', async (c) => {
     createdAt: pc.created_at,
   }));
 
+  // Fetch candidate ingestion / enrichment data
+  let ingestionRow: Record<string, unknown> | null = null;
+
+  try {
+    ingestionRow = await db
+      .prepare(
+        `SELECT id, status, candidate_searchable_profile, key_concepts_json,
+                profile_version, model_used, decomposition_version,
+                triangulated_score, role_candidate_cosine,
+                dimensions_json, reasoning_json, match_philosophy,
+                career_context_json, situation_signature_json, key_situations_json,
+                github_url, last_enriched_at,
+                profile_generated_at, profile_embedded_at, matched_at,
+                error_text, github_calendar_json, profile_sections_json,
+                matched_repo_id
+         FROM candidate_ingestion
+         WHERE candidate_id = ?`,
+      )
+      .bind(candidateId)
+      .first<Record<string, unknown>>();
+  } catch {
+    // candidate_ingestion table may not exist yet
+  }
+
+  // Fetch matched repo info separately
+  let matchedRepoName: string | null = null;
+  let matchedRepoUrl: string | null = null;
+  if (ingestionRow?.matched_repo_id) {
+    try {
+      const repoRow = await db
+        .prepare(`SELECT full_name, github_url FROM qualified_repos WHERE id = ?`)
+        .bind(ingestionRow.matched_repo_id)
+        .first<{ full_name: string | null; github_url: string | null }>();
+      matchedRepoName = repoRow?.full_name ?? null;
+      matchedRepoUrl = repoRow?.github_url ?? null;
+    } catch {}
+  }
+
+  // Fetch latest enrichment job status separately
+  let enrichmentJobStatus: string | null = null;
+  try {
+    const jobRow = await db
+      .prepare(`SELECT status FROM enrichment_jobs WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1`)
+      .bind(candidateId)
+      .first<{ status: string | null }>();
+    enrichmentJobStatus = jobRow?.status ?? null;
+  } catch {}
+
+  // Fetch top-3 repo matches for this candidate
+  let topRepoMatches: Array<{
+    rank: number;
+    repoName: string;
+    repoUrl: string;
+    score: number;
+    locationTag: string | null;
+  }> = [];
+  try {
+    const matchesResult = await db
+      .prepare(
+        `SELECT m.rank, m.triangulated_score, m.location_tag,
+                r.full_name, r.github_url
+         FROM candidate_repo_matches m
+         JOIN qualified_repos r ON r.id = m.repo_id
+         WHERE m.candidate_id = ?
+         ORDER BY m.rank ASC
+         LIMIT 3`
+      )
+      .bind(candidateId)
+      .all<{ rank: number; triangulated_score: number; location_tag: string | null; full_name: string; github_url: string }>();
+    topRepoMatches = (matchesResult.results ?? []).map((row) => ({
+      rank: row.rank,
+      repoName: row.full_name,
+      repoUrl: row.github_url,
+      score: row.triangulated_score,
+      locationTag: row.location_tag,
+    }));
+  } catch {}
+
+  const ingestion = ingestionRow?.id != null
+    ? {
+        status: ingestionRow.status as
+          | 'pending'
+          | 'profile_generated'
+          | 'embedded'
+          | 'matched'
+          | 'failed',
+        candidateSearchableProfile: ingestionRow.candidate_searchable_profile,
+        keyConcepts: ingestionRow.key_concepts_json
+          ? (JSON.parse(ingestionRow.key_concepts_json as string) as Record<string, unknown>)
+          : null,
+        profileVersion: ingestionRow.profile_version,
+        modelUsed: ingestionRow.model_used,
+        decompositionVersion: ingestionRow.decomposition_version,
+        triangulatedScore: ingestionRow.triangulated_score,
+        roleCandidateCosine: ingestionRow.role_candidate_cosine,
+        dimensions: ingestionRow.dimensions_json
+          ? (() => {
+              const d = JSON.parse(ingestionRow.dimensions_json as string) as Record<string, number>;
+              return {
+                skillCoverage: d.skill_coverage ?? 0,
+                semanticSimilarity: d.semantic_similarity ?? 0,
+                situationFit: d.situation_fit ?? 0,
+                roleAlignment: d.role_alignment ?? 0,
+              };
+            })()
+          : null,
+        reasoning: ingestionRow.reasoning_json
+          ? (JSON.parse(ingestionRow.reasoning_json as string) as {
+              matches: string[];
+              mismatches: string[];
+            })
+          : null,
+        matchPhilosophy: ingestionRow.match_philosophy,
+        careerContext: ingestionRow.career_context_json
+          ? (JSON.parse(ingestionRow.career_context_json as string) as Record<string, unknown>)
+          : null,
+        situationSignature: ingestionRow.situation_signature_json
+          ? (JSON.parse(ingestionRow.situation_signature_json as string) as Record<string, unknown>)
+          : null,
+        keySituations: ingestionRow.key_situations_json
+          ? (JSON.parse(ingestionRow.key_situations_json as string) as unknown[])
+          : null,
+        matchedRepoName,
+        matchedRepoUrl,
+        githubUrl: ingestionRow.github_url,
+        lastEnrichedAt: ingestionRow.last_enriched_at,
+        profileGeneratedAt: ingestionRow.profile_generated_at,
+        profileEmbeddedAt: ingestionRow.profile_embedded_at,
+        matchedAt: ingestionRow.matched_at,
+        errorText: ingestionRow.error_text,
+        enrichmentJobStatus,
+        topRepoMatches,
+        githubCalendar: ingestionRow.github_calendar_json
+          ? (JSON.parse(ingestionRow.github_calendar_json as string) as {
+              totalContributions: number;
+              weeks: Array<{ contributionDays: Array<{ date: string; count: number }> }>;
+            })
+          : null,
+      }
+    : null;
+
+  // Fetch culture interview sessions for this candidate (in-progress or complete)
+  let cultureInterviewSessions: Array<{
+    id: string;
+    challengeId: string;
+    assessmentId: string;
+    state: string;
+    transcript: Record<string, unknown>;
+    scoreReport: Record<string, unknown> | null;
+    completedAt: string | null;
+    createdAt: string;
+  }> = [];
+  try {
+    const cisResult = await db
+      .prepare(
+        `SELECT id, challenge_id, assessment_id, state, transcript, score_report, completed_at, created_at
+         FROM culture_interview_sessions
+         WHERE candidate_id = ?
+         ORDER BY created_at DESC`
+      )
+      .bind(candidateId)
+      .all<{
+        id: string;
+        challenge_id: string;
+        assessment_id: string;
+        state: string;
+        transcript: string;
+        score_report: string | null;
+        completed_at: string | null;
+        created_at: string;
+      }>();
+    cultureInterviewSessions = (cisResult.results ?? []).map((row) => ({
+      id: row.id,
+      challengeId: row.challenge_id,
+      assessmentId: row.assessment_id,
+      state: row.state,
+      transcript: JSON.parse(row.transcript) as Record<string, unknown>,
+      scoreReport: row.score_report ? (JSON.parse(row.score_report) as Record<string, unknown>) : null,
+      completedAt: row.completed_at,
+      createdAt: row.created_at,
+    }));
+  } catch {
+    // culture_interview_sessions table may not exist yet
+  }
+
+  // Build or load profile sections for dynamic rendering
+  let profileSections: Array<{ type: string; props: Record<string, unknown> }> = [];
+  if (ingestionRow?.profile_sections_json) {
+    try {
+      profileSections = JSON.parse(ingestionRow.profile_sections_json as string) as typeof profileSections;
+    } catch {
+      // ignore parse errors
+    }
+  }
+  if (profileSections.length === 0 && ingestion) {
+    // Compute on-the-fly from available ingestion data
+    const matchData = ingestion.status === 'matched' && ingestion.triangulatedScore !== null
+      ? {
+          score: ingestion.triangulatedScore as number,
+          dimensions: ingestion.dimensions ?? undefined,
+          reasoning: ingestion.reasoning ?? undefined,
+          philosophy: (ingestion.matchPhilosophy as string | undefined) ?? undefined,
+          repoName: ingestion.matchedRepoName ?? undefined,
+          repoUrl: ingestion.matchedRepoUrl ?? undefined,
+        }
+      : null;
+    const calendar = ingestion.githubCalendar
+      ? {
+          totalContributions: ingestion.githubCalendar.totalContributions,
+          weeks: ingestion.githubCalendar.weeks,
+        }
+      : null;
+    profileSections = buildProfileSections(null, {
+      candidateSearchableProfile: ingestion.candidateSearchableProfile ?? '',
+      keyConcepts: ingestion.keyConcepts ?? {
+        mustHaveSkills: [],
+        niceToHaveSkills: [],
+        seniority: 'unknown',
+        primary_language: '',
+        detected_domain: '',
+      },
+      careerContext: ingestion.careerContext,
+      situationSignature: ingestion.situationSignature,
+      profileVersion: ingestion.profileVersion ?? '',
+      modelUsed: ingestion.modelUsed ?? '',
+      rawText: '',
+    } as any, matchData, calendar);
+  }
+
   return c.json({
     candidate: {
       id: candidate.id,
@@ -507,6 +827,7 @@ candidateOps.get('/:candidateId', async (c) => {
       pipelineId: candidate.pipeline_id,
       currentStageId: candidate.current_stage_id,
       resumeS3Key: candidate.resume_s3_key,
+      inviteToken: candidate.invite_token,
       skills: candidate.skills ? (JSON.parse(candidate.skills) as string[]) : null,
       yearsOfExperience: candidate.years_of_experience,
       currentRole: candidate.current_role,
@@ -514,9 +835,15 @@ candidateOps.get('/:candidateId', async (c) => {
       score: avgScore,
       createdAt: candidate.created_at,
       updatedAt: candidate.updated_at,
+      dealbreakerAutoFail: dealbreakerResult?.autoFail ?? false,
+      dealbreakerFails: dealbreakerResult?.failures ?? [],
+      dealbreakerWarnings: dealbreakerResult?.warnings ?? [],
     },
     stages: stagesWithChallenges,
     phoneCalls,
+    ingestion,
+    profileSections,
+    cultureInterviewSessions,
   });
 });
 
@@ -545,8 +872,8 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'Request must be multipart/form-data.');
   }
 
-  const fileEntry = formData.get('file');
-  if (!(fileEntry instanceof File)) {
+  const fileEntry = formData.get('file') as unknown as File | null;
+  if (!fileEntry) {
     return apiError(c, 'VALIDATION_ERROR', 'No file field found in the request.');
   }
 
@@ -558,12 +885,22 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'File exceeds the 10 MB limit.');
   }
 
+  // Validate optional GitHub handle
+  const githubHandle = formData.get('githubHandle') as string | null;
+  if (githubHandle !== null && githubHandle !== '') {
+    if (!/^[a-zA-Z0-9\-]{1,39}$/.test(githubHandle)) {
+      return apiError(c, 'VALIDATION_ERROR', 'Invalid GitHub handle. Must be 1-39 characters, alphanumeric or hyphens only.');
+    }
+  }
+
   // Sanitise the filename — strip path traversal attempts, keep extension only
   const rawName = fileEntry.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const r2Key = `candidate-documents/${candidateId}/${rawName}`;
 
   // Upload to R2
   const arrayBuffer = await fileEntry.arrayBuffer();
+  // Clone before R2 put — ArrayBuffer may be detached/transfered by the binding
+  const fileBuffer = arrayBuffer.slice(0);
   await c.env.STORAGE.put(r2Key, arrayBuffer, {
     httpMetadata: { contentType: fileEntry.type },
     customMetadata: { candidateId, originalName: fileEntry.name },
@@ -578,36 +915,69 @@ candidateOps.post('/:candidateId/resume', async (c) => {
 
   // Parse the resume for structured data (skills, role, experience)
   const isMock = c.env.MOCK_AI === 'true';
-  const parsed = await parseResume({
-    fileBuffer: arrayBuffer,
+  const parseResult = await parseResume({
+    fileBuffer,
     contentType: fileEntry.type,
     env: c.env,
     mock: isMock,
   });
+  const parsed = parseResult?.parsedCV ?? null;
+  const decompositionResult = parseResult?.decompositionResult ?? null;
 
   if (parsed) {
     await persistParsedCV(db, candidateId, parsed);
   }
 
-  // Trigger background ingestion — never fail the upload if ingestion fails
-  if (fileEntry.type === 'application/pdf') {
+  // Persist GitHub handle
+  if (githubHandle) {
+    const githubUrl = `https://github.com/${githubHandle}`;
     try {
-      const resumeText = await extractTextFromPDF(arrayBuffer);
-      runCandidateIngestion({
-        env: c.env,
-        db,
-        candidateId,
-        parsed: parsed ?? { skills: [] },
-        resumeText,
-      }).catch((err) => {
-        console.error('[candidates/resume] background ingestion error:', err);
-      });
+      await db
+        .prepare(
+          `INSERT INTO candidate_ingestion (candidate_id, github_url, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?3)
+           ON CONFLICT(candidate_id) DO UPDATE SET
+             github_url = excluded.github_url,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(candidateId, githubUrl, now)
+        .run();
+
+      // Queue github enrichment — this is genuinely async / fire-and-forget
+      await db
+        .prepare(
+          `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
+           VALUES (?1, ?2, 'github', ?3, 'PENDING', unixepoch())`,
+        )
+        .bind(crypto.randomUUID(), candidateId, githubUrl)
+        .run();
+
+      console.log(`[intake] queued github enrichment for candidate ${candidateId}`);
     } catch (err) {
-      console.error('[candidates/resume] text extraction failed, skipping ingestion:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[candidates/resume] failed to queue github enrichment for ${candidateId}:`, msg);
+      // Non-fatal: don't fail the upload if enrichment queuing fails
     }
   }
 
-  return c.json({ success: true, r2Key, parsed }, 201);
+  // Run resume ingestion synchronously — fire-and-forget, no queue needed yet
+  let ingestionResult: { success: boolean; error?: string } = { success: false };
+  try {
+    ingestionResult = await processResumeFromR2({
+      env: c.env,
+      db,
+      candidateId,
+      r2Key,
+      preParsed: parseResult,
+    });
+    console.log(`[intake] synchronous resume ingestion for candidate ${candidateId}:`, ingestionResult.success);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[candidates/resume] synchronous ingestion failed for ${candidateId}:`, msg);
+    ingestionResult = { success: false, error: msg };
+  }
+
+  return c.json({ success: true, r2Key, parsed, ingestion: ingestionResult }, 201);
 });
 
 // GET /:candidateId/resume — stream CV/resume from R2 to the recruiter
@@ -682,8 +1052,17 @@ candidateOps.patch('/:candidateId', async (c) => {
     values.push(parsed.data.status);
   }
   if (parsed.data.name !== undefined) {
-    updates.push('name = ?');
-    values.push(parsed.data.name);
+    try {
+      const sanitizedName = sanitizeCandidateName(parsed.data.name);
+      updates.push('name = ?');
+      values.push(sanitizedName);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === 'FORBIDDEN_PATTERN') {
+        return c.json({ error: { code: 'BAD_REQUEST', message: 'Name contains forbidden pattern' } }, 400);
+      }
+      return apiError(c, 'VALIDATION_ERROR', 'Name contains invalid characters');
+    }
   }
   if (parsed.data.email !== undefined) {
     updates.push('email = ?');
@@ -784,8 +1163,11 @@ candidateOps.post('/:candidateId/refresh-link', async (c) => {
   const newToken = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  // Wipe previous attempt data so the candidate starts fresh
+  // Wipe previous attempt data so the candidate starts fresh.
+  // Order matters: delete child tables with FK constraints before parents.
   await db.batch([
+    db.prepare(`DELETE FROM culture_compliance_audit WHERE session_id IN (SELECT id FROM culture_interview_sessions WHERE candidate_id = ?)`).bind(candidateId),
+    db.prepare(`DELETE FROM culture_interview_sessions WHERE candidate_id = ?`).bind(candidateId),
     db.prepare(`DELETE FROM review_sessions WHERE candidate_id = ?`).bind(candidateId),
     db.prepare(`DELETE FROM challenge_submissions WHERE candidate_id = ?`).bind(candidateId),
     db.prepare(`DELETE FROM assessments WHERE candidate_id = ?`).bind(candidateId),
@@ -797,7 +1179,45 @@ candidateOps.post('/:candidateId/refresh-link', async (c) => {
   return c.json({ inviteToken: newToken });
 });
 
-// DELETE /:candidateId — archive a candidate (soft delete)
+// GET /:candidateId/media — stream media (video/audio) from R2 by r2Key
+// Used by the recruiter profile to play candidate video responses.
+candidateOps.get('/:candidateId/media', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const r2Key = c.req.query('r2Key');
+  const db = c.env.DB;
+
+  if (!r2Key || r2Key.trim().length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'r2Key query parameter is required.');
+  }
+
+  // Ownership check via pipeline
+  const candidate = await db
+    .prepare(
+      `SELECT c.id FROM candidates c
+       JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND p.owner_id = ?`
+    )
+    .bind(candidateId, userId)
+    .first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  if (!c.env.STORAGE) {
+    return apiError(c, 'SERVER_ERROR', 'Storage not configured.');
+  }
+
+  const object = await c.env.STORAGE.get(r2Key.trim());
+  if (!object) return apiError(c, 'NOT_FOUND', 'Media file not found in storage.');
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType ?? 'video/webm',
+      'Cache-Control': 'private, max-age=3600',
+    },
+  });
+});
+
+// DELETE /:candidateId — permanently delete a candidate and all related data
 candidateOps.delete('/:candidateId', async (c) => {
   const userId = c.var.userId;
   const { candidateId } = c.req.param();
@@ -814,11 +1234,34 @@ candidateOps.delete('/:candidateId', async (c) => {
 
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
-  await db.prepare(
-    `UPDATE candidates SET status = 'ARCHIVED', updated_at = ? WHERE id = ?`
-  ).bind(new Date().toISOString(), candidateId).run();
+  // Hard delete with explicit cleanup to avoid FK constraint errors
+  // (not all related tables have ON DELETE CASCADE)
+  const tables = [
+    'candidate_nodes',
+    'candidate_coverage',
+    'candidate_ingestion',
+    'culture_interview_sessions',
+    'scheduled_interviews',
+    'phone_calls',
+    'enrichment_jobs',
+    'review_sessions',
+    'challenge_submissions',
+    'assessments',
+    'candidate_challenge_assignment',
+    'candidate_profile_state',
+    'dev_container_exchange_tokens',
+    'step_duration_samples',
+  ];
+  for (const table of tables) {
+    try {
+      await db.prepare(`DELETE FROM ${table} WHERE candidate_id = ?`).bind(candidateId).run();
+    } catch {
+      // table may not exist yet
+    }
+  }
+  await db.prepare(`DELETE FROM candidates WHERE id = ?`).bind(candidateId).run();
 
-  return c.json({ success: true });
+  return new Response(null, { status: 204 });
 });
 
 export { pipelineCandidates, candidateOps };

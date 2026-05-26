@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+.venv-harness/
+
+# Test artifacts
+.pytest_cache/
+test-results/
+
+# Node (host node_modules should not leak into container)
+node_modules/
+
+# Data / state (host DB/checkpoints should not leak into container)
+.swarm/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+logs/
+*.log
+
+# Git
+.git/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Build outputs
+dist/
+build/
+
+# Playwright
+playwright-report/
+test-results/

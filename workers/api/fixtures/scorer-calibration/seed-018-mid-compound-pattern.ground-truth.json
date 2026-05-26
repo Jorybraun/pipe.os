@@ -1,0 +1,45 @@
+{
+  "fixtureId": "seed-018-mid-compound-pattern",
+  "plantedBugs": [
+    {
+      "id": 1,
+      "severity": "major",
+      "file": "src/components/Tabs.tsx",
+      "line": 16,
+      "description": "Tab and TabPanel are not connected by aria-controls / aria-labelledby — screen readers cannot associate tabs with panels. Missing id generation and aria attributes.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/components/Tabs.tsx",
+      "line": 5,
+      "description": "createContext default value is a dummy function — if Tab is rendered outside Tabs, it silently fails instead of throwing a clear error. Should use null default and throw if context is missing.",
+      "expectedFound": false
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "file": "src/components/Tabs.tsx",
+      "line": 12,
+      "description": "Tab keyboard navigation missing — arrow keys should move focus between tabs per WAI-ARIA tabs pattern.",
+      "expectedFound": true
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/components/Tabs.tsx",
+      "line": 19,
+      "description": "TabPanel renders null when inactive — this unmounts panel content, losing state. Should use hidden attribute instead.",
+      "expectedFound": false
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "critical": 0,
+    "major": 2,
+    "minor": 2,
+    "expectedFound": 2,
+    "expectedMissed": 2
+  }
+}

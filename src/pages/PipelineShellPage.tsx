@@ -17,7 +17,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate, Outlet, useMatch, useLocation } from 'react-router-dom';
-import { Rocket, Plus, LayoutGrid, AlertTriangle, X } from 'lucide-react';
+import { Rocket, Plus, LayoutGrid, AlertTriangle, X, Pencil, Undo2 } from 'lucide-react';
 import { LiquidMetalCard } from '../components';
 // LiquidMetalCard is used for the error card only. The shell no longer wraps
 // the outlet in a container card — nested SectionCards provide their own
@@ -25,6 +25,7 @@ import { LiquidMetalCard } from '../components';
 import { Skeleton } from '../components/ui/Skeleton';
 import { CandidateIntakeModal } from '../components/Candidate/CandidateIntakeModal';
 import { NewStageModal } from '../components/Pipeline/NewStageModal';
+import EditPipelineModal from '../components/Pipeline/EditPipelineModal';
 import { StageStepper } from '../components/Pipeline/StageStepper';
 import { useOverviewData } from '../hooks/useOverviewData';
 import type {
@@ -85,10 +86,13 @@ export default function PipelineShellPage(): JSX.Element {
     error,
     refetch,
     publishPipeline,
+    unpublishPipeline,
+    updatePipeline,
   } = useOverviewData(id);
 
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [showNewStage, setShowNewStage] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   // Warnings arriving via navigate state from the auto-build wizard. Captured
   // once on mount so the banner persists even after route state is cleared.
@@ -113,6 +117,26 @@ export default function PipelineShellPage(): JSX.Element {
       console.error('[PipelineShellPage] Failed to publish:', err);
     }
   }, [publishPipeline]);
+
+  const handleUnpublish = useCallback(async (): Promise<void> => {
+    if (!window.confirm('Unpublish this pipeline? Candidates will no longer be able to access it.')) return;
+    try {
+      await unpublishPipeline();
+    } catch (err) {
+      console.error('[PipelineShellPage] Failed to unpublish:', err);
+    }
+  }, [unpublishPipeline]);
+
+  const handleUpdate = useCallback(
+    async (updates: Parameters<typeof updatePipeline>[0]): Promise<void> => {
+      try {
+        await updatePipeline(updates);
+      } catch (err) {
+        console.error('[PipelineShellPage] Failed to update:', err);
+      }
+    },
+    [updatePipeline],
+  );
 
   if (isLoading && !pipeline) {
     return <PipelineShellSkeleton />;
@@ -397,8 +421,69 @@ export default function PipelineShellPage(): JSX.Element {
             </button>
           )}
           {isActivePipeline && (
+            <>
+              <button
+                onClick={() => setShowEdit(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text)',
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  fontFamily: '"Space Mono", monospace',
+                  cursor: 'pointer',
+                }}
+              >
+                <Pencil size={14} />
+                EDIT
+              </button>
+              <button
+                onClick={() => void handleUnpublish()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text-dim)',
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  fontFamily: '"Space Mono", monospace',
+                  cursor: 'pointer',
+                }}
+              >
+                <Undo2 size={14} />
+                UNPUBLISH
+              </button>
+              <button
+                onClick={() => setShowAddCandidate(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '10px 20px',
+                  background: 'var(--pipe-surface)',
+                  border: '1px solid var(--pipe-border)',
+                  color: 'var(--pipe-text)',
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  fontFamily: '"Space Mono", monospace',
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={14} />
+                ADD_CANDIDATE
+              </button>
+            </>
+          )}
+          {isDraft && (
             <button
-              onClick={() => setShowAddCandidate(true)}
+              onClick={() => setShowEdit(true)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -413,8 +498,8 @@ export default function PipelineShellPage(): JSX.Element {
                 cursor: 'pointer',
               }}
             >
-              <Plus size={14} />
-              ADD_CANDIDATE
+              <Pencil size={14} />
+              EDIT
             </button>
           )}
         </div>
@@ -461,6 +546,19 @@ export default function PipelineShellPage(): JSX.Element {
             });
           }}
           onClose={() => setShowNewStage(false)}
+        />
+      )}
+
+      {showEdit && pipeline && (
+        <EditPipelineModal
+          initial={{
+            title: pipeline.title,
+            level: pipeline.level,
+            stack: pipeline.stack ?? null,
+            description: pipeline.description ?? null,
+          }}
+          onSave={handleUpdate}
+          onClose={() => setShowEdit(false)}
         />
       )}
     </div>

@@ -31,6 +31,12 @@ import type {
   RoleContextDocument,
   StakeholderType,
 } from '../../types';
+import {
+  cleanSkillArray,
+  cleanCareerSignal,
+  cleanDisposition,
+  humanize,
+} from './sanitize';
 
 const STAKEHOLDER_PRIORITY: StakeholderType[] = [
   'HIRING_MANAGER',
@@ -105,18 +111,18 @@ export function deriveConsumerSlice(rcd: RoleContextDocument): CandidatePersona 
     .join(' — ') || 'Not specified';
 
   // mustHaveSkills: stack + codebase expectations. Stack wins in case of overlap.
-  const mustHaveSkills = dedupe([
+  const mustHaveSkills = cleanSkillArray(dedupe([
     ...tech.stack,
     ...tech.codebase_expectations,
-  ]);
+  ]));
 
   // niceToHaveSkills: open codes from work/codebase cells not already covered.
   const workOpenCodes = allCells(matrix, 'work').flatMap((c) => c.open_codes);
   const codebaseOpenCodes = allCells(matrix, 'codebase').flatMap((c) => c.open_codes);
   const mustSet = new Set(mustHaveSkills.map((s) => s.toLowerCase()));
-  const niceToHaveSkills = dedupe(
+  const niceToHaveSkills = cleanSkillArray(dedupe(
     [...workOpenCodes, ...codebaseOpenCodes].filter((code) => !mustSet.has(code.trim().toLowerCase())),
-  );
+  ));
 
   // disposition: team + process summaries + dispositional weights keys. Summaries
   // are diplomatic per the synthesis tone rule; dispositional weight keys name
@@ -124,14 +130,20 @@ export function deriveConsumerSlice(rcd: RoleContextDocument): CandidatePersona 
   const teamSummaries = allCells(matrix, 'team').map((c) => c.summary).filter((s) => s.length > 0);
   const processSummaries = allCells(matrix, 'process').map((c) => c.summary).filter((s) => s.length > 0);
   const dispositionKeys = Object.keys(tech.dispositional_weights ?? {});
-  const disposition = dedupe([...teamSummaries, ...processSummaries, ...dispositionKeys]);
+  const disposition = cleanSkillArray(dedupe([
+    ...teamSummaries,
+    ...processSummaries,
+    ...dispositionKeys.map((k) => humanize(k)),
+  ]));
 
   // careerSignal: highest-energy chain in work or bar domains — the clearest
-  // signal of what this role is calibrated toward.
+  // signal of what this role is calibrated toward. We use ONLY the value field,
+  // not the raw attribute_quote, to avoid prompt leakage.
   const signalChain = highestEnergyChain(matrix, ['work', 'bar']);
-  const careerSignal = signalChain
-    ? `${signalChain.value} (via: ${signalChain.attribute_quote})`
+  const rawCareerSignal = signalChain
+    ? signalChain.value
     : barCell?.summary ?? 'Not specified';
+  const careerSignal = cleanCareerSignal(rawCareerSignal);
 
   return {
     seniority,
@@ -140,7 +152,7 @@ export function deriveConsumerSlice(rcd: RoleContextDocument): CandidatePersona 
     niceToHaveSkills,
     disposition,
     careerSignal,
-    redFlags: dedupe(red_flags.map((r) => r.label)),
-    dealbreakers: dedupe(dealbreakers.map((d) => d.label)),
+    redFlags: cleanSkillArray(dedupe(red_flags.map((r) => r.label))),
+    dealbreakers: cleanSkillArray(dedupe(dealbreakers.map((d) => d.label))),
   };
 }

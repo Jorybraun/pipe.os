@@ -90,6 +90,12 @@ export interface CompetencyScoreResult {
   confidence: number;
   /** One-paragraph explanation citing adjacent BARS levels. */
   reasoning: string;
+  /** Number of re-prompts issued for ungrounded scores (0 or 1). */
+  repromptCount: number;
+  /** Original score before re-prompt (populated only when repromptCount > 0). */
+  originalScore?: number;
+  /** Original confidence before re-prompt (populated only when repromptCount > 0). */
+  originalConfidence?: number;
 }
 
 export interface CultureProfileScoreResult {
@@ -102,6 +108,12 @@ export interface CultureProfileScoreResult {
   confidence: number;
   /** Reasoning explaining why adjacent positions were not chosen. */
   reasoning: string;
+  /** Number of re-prompts issued for ungrounded scores (0 or 1). */
+  repromptCount: number;
+  /** Original position before re-prompt (populated only when repromptCount > 0). */
+  originalPosition?: number;
+  /** Original confidence before re-prompt (populated only when repromptCount > 0). */
+  originalConfidence?: number;
 }
 
 /**
@@ -371,6 +383,138 @@ export interface ScoreCultureInterviewInput {
 }
 
 /**
+ * Re-prompt wrapper for competency dimension scoring.
+ * If the first response has empty evidenceQuotes and a non-neutral score,
+ * issues one re-prompt requesting direct transcript quotes.
+ */
+async function scoreCompetencyDimensionWithReprompt(
+  args: ScoreCompetencyArgs,
+): Promise<CompetencyScoreResult> {
+  const { provider, dimension, dispositionalWeight = 0 } = args;
+  const { messages, overridden } = buildCompetencyScorerMessages(args);
+
+  const content = await callProvider(provider, messages, 1024);
+  if (!content) {
+    console.warn('[cultureScorer] Empty response for competency dimension:', dimension);
+    return competencyFallback(dimension, overridden, dispositionalWeight);
+  }
+
+  let result = parseCompetencyResponse(dimension, content, {
+    barsOverrideApplied: overridden,
+    dispositionalWeight,
+  });
+
+  // Re-prompt on ungrounded non-neutral scores (ADR-029 §6)
+  if (result.evidenceQuotes.length === 0 && result.score !== 3) {
+    const originalScore = result.score;
+    const originalConfidence = result.confidence;
+    messages.push({ role: 'assistant', content });
+    messages.push({
+      role: 'user',
+      content: `Your previous score for ${dimension} had no evidence quotes. Please re-score with at least one direct quote from the interview transcript supporting your rating.`,
+    });
+
+    const repromptContent = await callProvider(provider, messages, 1024);
+    if (repromptContent) {
+      const repromptResult = parseCompetencyResponse(dimension, repromptContent, {
+        barsOverrideApplied: overridden,
+        dispositionalWeight,
+      });
+      result = {
+        ...repromptResult,
+        repromptCount: 1,
+        originalScore,
+        originalConfidence,
+        confidence:
+          repromptResult.evidenceQuotes.length === 0
+            ? Math.max(0, repromptResult.confidence - 0.3)
+            : repromptResult.confidence,
+      };
+      if (repromptResult.evidenceQuotes.length === 0) {
+        console.warn('[cultureScorer] ungrounded score accepted after re-prompt:', {
+          dimension,
+          score: repromptResult.score,
+          candidateId: undefined,
+        });
+      }
+    } else {
+      result = {
+        ...result,
+        repromptCount: 1,
+        originalScore,
+        originalConfidence,
+        confidence: Math.max(0, result.confidence - 0.3),
+      };
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Re-prompt wrapper for culture profile dimension scoring.
+ * If the first response has empty evidenceQuotes and a non-neutral position,
+ * issues one re-prompt requesting direct transcript quotes.
+ */
+async function scoreCultureProfileDimensionWithReprompt(
+  args: ScoreProfileArgs,
+): Promise<CultureProfileScoreResult> {
+  const { provider, dimension } = args;
+  const messages = buildCultureProfileScorerMessages(args);
+
+  const content = await callProvider(provider, messages, 1024);
+  if (!content) {
+    console.warn('[cultureScorer] Empty response for profile dimension:', dimension);
+    return profileFallback(dimension);
+  }
+
+  let result = parseProfileResponse(dimension, content);
+
+  // Re-prompt on ungrounded non-neutral positions (ADR-029 §6)
+  if (result.evidenceQuotes.length === 0 && result.candidatePosition !== 3) {
+    const originalPosition = result.candidatePosition;
+    const originalConfidence = result.confidence;
+    messages.push({ role: 'assistant', content });
+    messages.push({
+      role: 'user',
+      content: `Your previous position for ${dimension} had no evidence quotes. Please re-score with at least one direct quote from the interview transcript supporting your rating.`,
+    });
+
+    const repromptContent = await callProvider(provider, messages, 1024);
+    if (repromptContent) {
+      const repromptResult = parseProfileResponse(dimension, repromptContent);
+      result = {
+        ...repromptResult,
+        repromptCount: 1,
+        originalPosition,
+        originalConfidence,
+        confidence:
+          repromptResult.evidenceQuotes.length === 0
+            ? Math.max(0, repromptResult.confidence - 0.3)
+            : repromptResult.confidence,
+      };
+      if (repromptResult.evidenceQuotes.length === 0) {
+        console.warn('[cultureScorer] ungrounded score accepted after re-prompt:', {
+          dimension,
+          candidatePosition: repromptResult.candidatePosition,
+          candidateId: undefined,
+        });
+      }
+    } else {
+      result = {
+        ...result,
+        repromptCount: 1,
+        originalPosition,
+        originalConfidence,
+        confidence: Math.max(0, result.confidence - 0.3),
+      };
+    }
+  }
+
+  return result;
+}
+
+/**
  * Public entry point. Called by the route handler after the culture interview
  * agent returns `action: 'terminate'`.
  *
@@ -389,11 +533,11 @@ export async function scoreCultureInterview(
     return mockScoreReport(transcript, orgBenchmark);
   }
 
-  // Fire all 10 dimension calls concurrently.
+  // Fire all 10 dimension calls concurrently (with re-prompt guards).
   const [competencyResults, profileResults] = await Promise.all([
     Promise.all(
       COMPETENCY_DIMENSIONS.map((dim) =>
-        scoreCompetencyDimension({
+        scoreCompetencyDimensionWithReprompt({
           provider,
           dimension: dim,
           transcript,
@@ -404,7 +548,7 @@ export async function scoreCultureInterview(
     ),
     Promise.all(
       CULTURE_PROFILE_DIMENSIONS.map((dim) =>
-        scoreCultureProfileDimension({ provider, dimension: dim, transcript, orgBenchmark }),
+        scoreCultureProfileDimensionWithReprompt({ provider, dimension: dim, transcript, orgBenchmark }),
       ),
     ),
   ]);
@@ -505,8 +649,8 @@ export function applyDispositionalWeight(
  * `score: 3` (neutral midpoint) and `confidence: 0` to signal to the synthesis
  * agent and human reviewer that this dimension was not reliably scored.
  */
-export async function scoreCompetencyDimension(args: ScoreCompetencyArgs): Promise<CompetencyScoreResult> {
-  const { provider, dimension, transcript, barsOverrides = [], dispositionalWeight = 0 } = args;
+function buildCompetencyScorerMessages(args: ScoreCompetencyArgs): { messages: LLMMessage[]; overridden: boolean } {
+  const { dimension, transcript, barsOverrides = [] } = args;
   const entry = COMPETENCY_BARS_RUBRICS[dimension];
 
   // Apply RCD-approved anchor overrides before the model sees the rubric.
@@ -528,6 +672,13 @@ export async function scoreCompetencyDimension(args: ScoreCompetencyArgs): Promi
       }),
     },
   ];
+
+  return { messages, overridden };
+}
+
+export async function scoreCompetencyDimension(args: ScoreCompetencyArgs): Promise<CompetencyScoreResult> {
+  const { provider, dimension, dispositionalWeight = 0 } = args;
+  const { messages, overridden } = buildCompetencyScorerMessages(args);
 
   const content = await callProvider(provider, messages, 1024);
   if (!content) {
@@ -566,6 +717,7 @@ function parseCompetencyResponse(
       evidenceQuotes,
       confidence,
       reasoning,
+      repromptCount: 0,
     };
   } catch (err) {
     console.error('[cultureScorer] Failed to parse competency response for', dimension, ':', content.slice(0, 300), err);
@@ -587,6 +739,7 @@ function competencyFallback(
     evidenceQuotes: [],
     confidence: 0,
     reasoning: 'parse_failure',
+    repromptCount: 0,
   };
 }
 
@@ -654,15 +807,13 @@ interface ScoreProfileArgs {
  * only — scoring is independent of the benchmark. Comparison happens in
  * the synthesis call, not here.
  */
-export async function scoreCultureProfileDimension(
-  args: ScoreProfileArgs,
-): Promise<CultureProfileScoreResult> {
-  const { provider, dimension, transcript, orgBenchmark } = args;
+function buildCultureProfileScorerMessages(args: ScoreProfileArgs): LLMMessage[] {
+  const { dimension, transcript, orgBenchmark } = args;
   const entry = CULTURE_PROFILE_BARS[dimension];
   const benchmarkKey = dimensionToBenchmarkKey(dimension);
   const orgBenchmarkPosition = orgBenchmark[benchmarkKey];
 
-  const messages: LLMMessage[] = [
+  return [
     { role: 'system', content: buildCultureProfileScorerSystemPrompt() },
     {
       role: 'user',
@@ -674,6 +825,13 @@ export async function scoreCultureProfileDimension(
       }),
     },
   ];
+}
+
+export async function scoreCultureProfileDimension(
+  args: ScoreProfileArgs,
+): Promise<CultureProfileScoreResult> {
+  const { provider, dimension } = args;
+  const messages = buildCultureProfileScorerMessages(args);
 
   const content = await callProvider(provider, messages, 1024);
   if (!content) {
@@ -695,7 +853,7 @@ function parseProfileResponse(dimension: CultureProfileDimension, content: strin
     const confidence = parseConfidence(r.confidence);
     const reasoning = typeof r.reasoning === 'string' ? r.reasoning.trim() : 'parse_failure';
 
-    return { dimension, candidatePosition, evidenceQuotes, confidence, reasoning };
+    return { dimension, candidatePosition, evidenceQuotes, confidence, reasoning, repromptCount: 0 };
   } catch (err) {
     console.error('[cultureScorer] Failed to parse profile response for', dimension, ':', content.slice(0, 300), err);
     return profileFallback(dimension);
@@ -709,6 +867,7 @@ function profileFallback(dimension: CultureProfileDimension): CultureProfileScor
     evidenceQuotes: [],
     confidence: 0,
     reasoning: 'parse_failure',
+    repromptCount: 0,
   };
 }
 
@@ -816,6 +975,7 @@ export function mockScoreReport(
     evidenceQuotes: [],
     confidence: 0,
     reasoning: '[MOCK] Neutral midpoint — no provider.',
+    repromptCount: 0,
   }));
 
   const profileScores: CultureProfileScoreResult[] = CULTURE_PROFILE_DIMENSIONS.map((dim) => ({
@@ -824,6 +984,7 @@ export function mockScoreReport(
     evidenceQuotes: [],
     confidence: 0,
     reasoning: '[MOCK] Center position — no provider.',
+    repromptCount: 0,
   }));
 
   // Suppress unused parameter warning — transcript is accepted for signature

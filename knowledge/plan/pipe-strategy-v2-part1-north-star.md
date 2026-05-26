@@ -95,7 +95,7 @@ The culture interview is production-complete. Bespoke (not yet on UAR) FSM-drive
 
 Match config wizard (ADR-039) supports three philosophies: validate, tailored, hybrid. Triangulate combines role-repo alignment, candidate-repo fit, role-candidate cosine, and skill coverage with philosophy-specific weights.
 
-Ops: two cron-driven crawlers (issue crawler Sunday 03:00, issue scorer Sunday 04:00), Resend/Gmail/Microsoft email with OAuth, Clerk recruiter auth, custom JWT for candidate/participant, QUIZ_MCQ deterministic scoring, admin repo approval queue, 42 migrations in D1.
+Ops: cron-driven crawlers (issue crawler Sunday 03:00, issue scorer Sunday 04:00 — both now background hydration only; lazy on-demand fetch is the critical path for CODE_IMPLEMENTATION), Resend/Gmail/Microsoft email with OAuth, Clerk recruiter auth, custom JWT for candidate/participant, QUIZ_MCQ deterministic scoring, admin repo approval queue, 42 migrations in D1.
 
 **Scaffolded, not yet wired:**
 

@@ -1,0 +1,151 @@
+{
+  "id": "seed-020-mid-event-emitter",
+  "description": "Mid reviewer finds event emitter leak and provides good pushback. Solid mid-level with strong communication.",
+  "tags": [
+    "typescript",
+    "node",
+    "events",
+    "high-score-mid"
+  ],
+  "seniority": "mid",
+  "prContext": {
+    "title": "Add real-time notification service",
+    "description": "EventEmitter-based service for candidate status notifications.",
+    "instructions": "Review for memory safety and event handling.",
+    "diff": "diff --git a/src/lib/notifications.ts b/src/lib/notifications.ts\n@@ -0,0 +1,45 @@\n+import { EventEmitter } from 'events';\n+\n+class NotificationService extends EventEmitter {\n+  private listeners = new Map<string, Set<Function>>();\n+\n+  subscribe(candidateId: string, handler: Function) {\n+    if (!this.listeners.has(candidateId)) {\n+      this.listeners.set(candidateId, new Set());\n+    }\n+    this.listeners.get(candidateId)!.add(handler);\n+    this.on(candidateId, handler as any);\n+  }\n+\n+  unsubscribe(candidateId: string, handler: Function) {\n+    this.listeners.get(candidateId)?.delete(handler);\n+    this.off(candidateId, handler as any);\n+  }\n+\n+  notify(candidateId: string, event: unknown) {\n+    this.emit(candidateId, event);\n+  }\n+}\n+\n+export const notifications = new NotificationService();\n"
+  },
+  "groundTruth": [
+    {
+      "id": 1,
+      "severity": "critical",
+      "file": "src/lib/notifications.ts",
+      "line": 9,
+      "description": "EventEmitter.on adds listener but there is no cleanup when component unmounts — leaked listeners accumulate, causing memory growth and duplicate event handling.",
+      "expectedFound": true
+    },
+    {
+      "id": 2,
+      "severity": "major",
+      "file": "src/lib/notifications.ts",
+      "line": 14,
+      "description": "unsubscribe does not check if the set becomes empty — empty Sets remain in the Map, causing memory leak over time.",
+      "expectedFound": true
+    },
+    {
+      "id": 3,
+      "severity": "major",
+      "file": "src/lib/notifications.ts",
+      "line": 9,
+      "description": "handler typed as Function and cast as any — loses type safety. Should use generic or specific event type.",
+      "expectedFound": false
+    },
+    {
+      "id": 4,
+      "severity": "minor",
+      "file": "src/lib/notifications.ts",
+      "line": 19,
+      "description": "Singleton export — hard to test and mock. Should use factory or DI.",
+      "expectedFound": false
+    }
+  ],
+  "transcript": {
+    "rounds": [
+      {
+        "round": 1,
+        "reviewer_comments": [
+          {
+            "id": 2001,
+            "file": "src/lib/notifications.ts",
+            "line": 9,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "Listeners are never cleaned up on unmount. Need a way to auto-unsubscribe.",
+            "why": "Leaked event listeners cause memory growth and duplicate handling.",
+            "positive": false
+          },
+          {
+            "id": 2002,
+            "file": "src/lib/notifications.ts",
+            "line": 14,
+            "category": "correctness",
+            "severity": "blocking",
+            "what": "unsubscribe leaves empty Sets in the Map.",
+            "why": "Empty sets still consume memory and the Map grows unbounded.",
+            "positive": false
+          },
+          {
+            "id": 2003,
+            "file": "src/lib/notifications.ts",
+            "line": 9,
+            "category": "types",
+            "severity": "suggestion",
+            "what": "handler should be typed, not Function.",
+            "why": "Type safety.",
+            "positive": false
+          }
+        ],
+        "reviewer_verdict": "request_changes",
+        "reviewer_summary": "Two blocking memory issues. Type suggestion is optional.",
+        "implementer_responses": [
+          {
+            "to_comment_id": 2001,
+            "move": "change",
+            "content": "Added unsubscribeAll method called on unmount.",
+            "updated_code": "unsubscribeAll(candidateId: string) { this.listeners.get(candidateId)?.forEach(h => this.off(candidateId, h as any)); this.listeners.delete(candidateId); }"
+          },
+          {
+            "to_comment_id": 2002,
+            "move": "change",
+            "content": "Delete empty sets.",
+            "updated_code": "this.listeners.get(candidateId)?.delete(handler); if (this.listeners.get(candidateId)?.size === 0) this.listeners.delete(candidateId);"
+          },
+          {
+            "to_comment_id": 2003,
+            "move": "pushback",
+            "content": "Function is sufficient for now. We will type events in a follow-up."
+          }
+        ]
+      }
+    ],
+    "verdict": {
+      "decision": "approve",
+      "summary": "Memory fixes look good. Function type is acceptable for now.",
+      "submittedAt": "2026-04-28T03:47:05.963Z"
+    }
+  },
+  "expectedBands": {
+    "issue_identification": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Found 2 of 4 bugs (leak, empty sets). Missed handler typing and singleton pattern. Level 3-4."
+    },
+    "prioritization": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Both memory issues flagged as blocking. Type as suggestion. Good triage. Level 3-4."
+    },
+    "revision_evaluation": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Verified unsubscribeAll and empty set cleanup. Held line on type pushback with reasoning. Level 3-4."
+    },
+    "reasoning_quality": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Concrete memory rationales. Good technical depth. Level 3-4."
+    },
+    "question_formation": {
+      "min": 2,
+      "max": 3,
+      "rationale": "No explicit questions. Level 2-3."
+    },
+    "ai_direction": {
+      "min": 3,
+      "max": 4,
+      "rationale": "Suggested unsubscribeAll and set cleanup — actionable. Level 3-4."
+    }
+  },
+  "metadata": {
+    "confidence": "heuristic"
+  }
+}

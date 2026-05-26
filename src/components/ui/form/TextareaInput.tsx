@@ -3,6 +3,9 @@ interface TextareaInputProps {
   onChange?: ((value: string) => void) | undefined;
   placeholder?: string | undefined;
   rows?: number | undefined;
+  id?: string | undefined;
+  name?: string | undefined;
+  ariaLabel?: string | undefined;
 }
 
 const inputStyle = {
@@ -42,9 +45,15 @@ export function TextareaInput({
   onChange,
   placeholder,
   rows = 3,
+  id,
+  name,
+  ariaLabel,
 }: TextareaInputProps): JSX.Element {
   return (
     <textarea
+      id={id}
+      name={name}
+      aria-label={ariaLabel}
       value={value || ''}
       onChange={(e) => onChange?.(e.target.value)}
       placeholder={placeholder}

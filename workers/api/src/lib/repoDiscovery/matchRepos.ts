@@ -48,44 +48,7 @@ export interface SamplePR {
   changedFileCount: number;
 }
 
-// ─── Skill slug normalization (inline — no import from crawler scripts) ────────
-
-/**
- * Normalize a raw skill string to a canonical slug via the skill_aliases table.
- * Falls back to lowercased input if not found.
- */
-async function slugifySkills(
-  db: D1Database,
-  skills: string[],
-): Promise<string[]> {
-  if (skills.length === 0) return [];
-
-  // One query to fetch all aliases at once
-  const placeholders = skills.map(() => '?').join(', ');
-  const rows = await db
-    .prepare(`SELECT alias, canonical_slug FROM skill_aliases WHERE alias IN (${placeholders})`)
-    .bind(...skills)
-    .all<{ alias: string; canonical_slug: string }>();
-
-  const aliasMap = new Map<string, string>(
-    (rows.results ?? []).map((r) => [r.alias.toLowerCase(), r.canonical_slug]),
-  );
-
-  // Also try lowercased variants
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-
-  for (const skill of skills) {
-    const lower = skill.toLowerCase().trim();
-    const slug = aliasMap.get(lower) ?? lower;
-    if (!seen.has(slug)) {
-      seen.add(slug);
-      normalized.push(slug);
-    }
-  }
-
-  return normalized;
-}
+import { slugifySkills } from '../skills/slugifySkills';
 
 /** Returns adjacent seniority bands (±1). */
 function adjacentBands(band: string): string[] {
@@ -229,7 +192,15 @@ export async function matchRepos(
     .bind(...params)
     .all<ScoredRow>();
 
-  if (!scoredRows || scoredRows.length === 0) return [];
+  if (!scoredRows || scoredRows.length === 0) {
+    // Fallback: repo_skills may be empty (fresh DB or after reset).
+    // Return top repos by PR quality + low contamination instead of failing.
+    console.warn(
+      `[matchRepos] No repos matched must-haves [${mustSlugs.join(', ')}] — ` +
+      `repo_skills may be empty. Falling back to top repos.`
+    );
+    return fallbackTopRepos(db, req, limit);
+  }
 
   // 4. Second query: fetch matched skill + construct slugs per repo
   const repoIds = scoredRows.map((r) => r.id);

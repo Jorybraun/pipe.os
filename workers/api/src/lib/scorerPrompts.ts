@@ -1,7 +1,7 @@
 /**
  * Scorer prompt constants for the multi-turn code review scoring panel.
  *
- * 6-dimension BARS rubric (per ADR-032 / STRATEGY.md CR-2, CR-3, CR-4):
+ * 6-dimension BARS rubric (per ADR-032):
  *
  * Scorer A (needs ground truth):
  *   1. Issue Identification Depth (20%)

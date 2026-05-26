@@ -8,6 +8,7 @@ const ERROR_STATUS_MAP: Record<string, number> = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  CONFLICT: 409,
   VALIDATION_ERROR: 422,
   INTERNAL_ERROR: 500,
 };
@@ -19,7 +20,7 @@ const ERROR_STATUS_MAP: Record<string, number> = {
  *   return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
  */
 export function apiError(
-  c: Context<{ Bindings: Env; Variables: Variables }>,
+  c: Context,
   code: keyof typeof ERROR_STATUS_MAP,
   message: string,
 ): Response {

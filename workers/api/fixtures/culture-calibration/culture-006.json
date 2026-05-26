@@ -1,0 +1,125 @@
+{
+  "id": "culture-006",
+  "transcript": [
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you saw a problem that wasn't yours to fix, and you fixed it anyway."
+    },
+    {
+      "speaker": "candidate",
+      "text": "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the timeouts were too aggressive, bumped them, and it stopped failing. No one had asked me to do it."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about something you shipped that broke in a way that affected other people."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I shipped a config change that broke the admin panel for internal staff. I rolled it back within twenty minutes once the Slack message came in, identified the wrong env variable, and fixed it."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you disagreed with a teammate on a technical decision."
+    },
+    {
+      "speaker": "candidate",
+      "text": "We disagreed on whether to use a third-party auth library or build our own. I laid out the maintenance burden and my teammate agreed to use the library. It was a quick conversation."
+    },
+    {
+      "speaker": "agent",
+      "text": "Tell me about a time you were wrong about something technical."
+    },
+    {
+      "speaker": "candidate",
+      "text": "I was wrong about how React's rendering batching worked. I had assumed state updates were always batched. I refactored the components once I understood."
+    },
+    {
+      "speaker": "agent",
+      "text": "What's a weakness you've had to actively work on?"
+    },
+    {
+      "speaker": "candidate",
+      "text": "I've gotten feedback that my written communication is too terse. I've been adding more context. I think it's improved."
+    }
+  ],
+  "expectedScores": {
+    "ownership": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    },
+    "collaboration": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "We disagreed on whether to use a third-party auth library or build our own."
+      ]
+    },
+    "learning-orientation": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    },
+    "conflict-handling": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        " We disagreed on whether to use a third-party auth library or build our own."
+      ]
+    },
+    "self-awareness": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    },
+    "autonomy": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    },
+    "risk-tolerance": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    },
+    "work-pace": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    },
+    "collaboration-style": {
+      "min": 1,
+      "max": 3,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    },
+    "feedback-orientation": {
+      "min": 1,
+      "max": 2,
+      "evidenceQuotes": [
+        "Our integration test suite was timing out and causing CI failures. It wasn't really my task but I looked at it, saw the "
+      ]
+    }
+  },
+  "questionBankVersion": "v2026.04",
+  "tags": [
+    "collaboration",
+    "conflict-handling",
+    "autonomy",
+    "feedback-orientation"
+  ],
+  "confidence": "heuristic"
+}

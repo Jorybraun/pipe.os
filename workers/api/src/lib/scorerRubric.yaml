@@ -2,7 +2,8 @@
 #
 # Canonical reference for the scoring system described in:
 # - knowledge/outputs/code-review-content-sourcing.md (2026-04-08)
-# - knowledge/STRATEGY.md — CR-2, CR-3, CR-4, CR-25, CR-26
+# - ADR-032 (code review research integration)
+# - ADR-034 (challenge authoring system)
 #
 # This YAML is the human-readable source of truth.
 # The Worker imports the same data from scorerRubric.ts (kept in sync manually).
@@ -241,8 +242,8 @@ dimensions:
     needs_ground_truth: false
     research: "Jellyfish 2025 [R6-P11], Graphite Diamond [R6-S11]"
     note: >
-      This dimension has no prior empirical BARS validation (OQ-11 in
-      STRATEGY.md). Anchors are inferred from operational metrics.
+      This dimension has no prior empirical BARS validation.
+      Anchors are inferred from operational metrics.
       Treat scores as directional until a critical-incident study
       with expert reviewers can validate the anchor points.
     anchors:

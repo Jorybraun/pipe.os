@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-// Cron — scheduled handlers for issue crawling + scoring
-import { handleScheduled, type ScheduledEvent } from './routes/cron';
 // Cockpit — recruiter config + view CRUD
 import { pipelines } from './routes/cockpit/pipelines';
 import { autoBuild as pipelinesAutoBuild } from './routes/cockpit/pipelinesAutoBuild';
@@ -16,6 +14,7 @@ import { overview } from './routes/cockpit/overview';
 import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
 import { devContainerSessions } from './routes/cockpit/devContainerSessions';
 import { ingestion } from './routes/cockpit/ingestion';
+import { ingestionStatus } from './routes/cockpit/ingestionStatus';
 import { search } from './routes/search';
 import { schedulingAuth, schedulingPublic } from './routes/cockpit/scheduling';
 // Discovery — Role Discovery Agent
@@ -36,6 +35,8 @@ import { voiceSessions } from './routes/voice/voiceSessions';
 import { ttsRouter } from './routes/tts';
 // Internal tooling — scorer calibration (CAL-5 spine, ADR-036 / STRATEGY CAL-2+)
 import { calibrate } from './routes/internal/calibrate';
+// Neo4j health check (ADR-043 Phase A)
+import neo4jHealth from './routes/internal/neo4jHealth';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -92,7 +93,7 @@ app.route('/api/v1/stages', stageOps);
 app.route('/api/v1/stages', stageChallenges);
 // Challenge CRUD: GET/PUT /api/v1/challenges/:id, POST /api/v1/challenges/:id/clone
 app.route('/api/v1/challenges', challenges);
-// Repo discovery: role-matched repo discovery for code review challenges (CR-13)
+// Repo discovery: role-matched repo discovery for code review challenges (ADR-032, repo-discovery-pipeline.md)
 app.route('/api/v1/repos', repoDiscovery);
 // Admin: human approval of qualified_repos catalog
 app.route('/api/v1/admin', adminRepos);
@@ -110,6 +111,8 @@ app.route('/api/v1/pipelines', pipelineCandidates);
 app.route('/api/v1/candidates', candidateOps);
 // Ingestion: GET/POST /api/v1/pipelines/:pipelineId/ingestion
 app.route('/api/v1/pipelines', ingestion);
+// Ingestion status: SSE stream for a single candidate's ingestion progress
+app.route('/api/v1/candidates', ingestionStatus);
 // Search: POST /api/v1/search/candidates, POST /api/v1/search/repos
 app.route('/api/v1/search', search);
 // Dev container sessions: recruiter read-only cockpit routes (ADR-037, Phase 3b)
@@ -156,6 +159,9 @@ app.route('/rpc', rpcAuth);
 // Internal: scorer calibration endpoint (shared-secret auth via X-Calibrate-Token;
 // disabled entirely when CALIBRATE_TOKEN is unset in env)
 app.route('/internal/calibrate', calibrate);
+
+// Internal: Neo4j health check (no auth — dev/ops smoke test)
+app.route('/api/v1/internal', neo4jHealth);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>
@@ -206,10 +212,6 @@ export { VideoRoom } from './durable-objects/VideoRoom';
 export { DevContainerDO } from './durable-objects/DevContainerDO';
 export { VoiceSessionDO } from './durable-objects/VoiceSessionDO';
 
-// ─── Scheduled handler (cron triggers) ────────────────────────────────────────
 export default {
   fetch: app.fetch,
-  async scheduled(event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
-    await handleScheduled(event, env);
-  },
 };

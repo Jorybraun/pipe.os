@@ -323,8 +323,8 @@ describe('synthesizeRcd — Phase 1 seeded four-stakeholder synthesis', () => {
     expect(rcd.consumer_slice.mustHaveSkills).toContain('TypeScript');
     expect(rcd.consumer_slice.mustHaveSkills).toContain('monorepo');
     expect(rcd.consumer_slice.dealbreakers).toContain('Unwilling to code review');
-    // The career signal should reference a high-energy chain from work or bar.
-    expect(rcd.consumer_slice.careerSignal).toContain('code review');
+    // The career signal uses the highest-energy chain's value (no raw quote leakage).
+    expect(rcd.consumer_slice.careerSignal).toBe('Shared ownership of quality');
   });
 
   it('records validation_metadata with synthesis prompt version and model names', async () => {
