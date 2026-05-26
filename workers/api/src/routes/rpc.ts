@@ -22,6 +22,10 @@ import { cultureCandidate } from './screening/culture';
 import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import type { Env } from '../types';
+import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
+import { matchRepos } from '../lib/repoDiscovery/matchRepos';
+import { pickReviewPr, pickImplementationIssue, buildMatchRequest } from '../lib/match/autoStageBuilder';
+import { createNeo4jDriver, buildNeo4jConfig } from '../lib/neo4j/driver';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
@@ -47,7 +51,10 @@ async function checkMatchingGate(
   db: D1Database,
   candidateId: string,
   pipelineId: string,
+  stageId: string,
+  challengeId: string,
   nextChallengeType: string,
+  env: Env,
 ): Promise<GateResult> {
   const isCodeStage = ['CODE_REVIEW', 'CODE_IMPLEMENTATION'].includes(nextChallengeType);
   if (!isCodeStage) {
@@ -63,30 +70,146 @@ async function checkMatchingGate(
     return { blocked: false };
   }
 
-  const ingestion = await db.prepare(
-    `SELECT status FROM candidate_ingestion WHERE candidate_id = ?1`
-  ).bind(candidateId).first<{ status: string | null }>();
+  // 1. Check if assignment already exists for this candidate + stage
+  const existingAssignment = await db.prepare(
+    `SELECT id FROM candidate_challenge_assignment WHERE candidate_id = ?1 AND stage_id = ?2`
+  ).bind(candidateId, stageId).first<{ id: string }>();
 
-  const readyStatuses = ['enriched', 'matched'];
-  if (readyStatuses.includes(ingestion?.status ?? '')) {
+  if (existingAssignment) {
     return { blocked: false };
   }
 
-  return {
-    blocked: true,
-    reason: `candidate_ingestion.status = ${ingestion?.status ?? 'missing'}`,
-    syntheticChallenge: {
-      id: 'waiting-for-match',
-      type: 'WAITING_FOR_MATCH',
-      title: 'Building your personalized challenge',
-      instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
-      config: {
-        autoRefresh: true,
-        refreshIntervalSeconds: 30,
-        estimatedSecondsRemaining: 180,
+  // 2. No assignment — run on-demand matching
+  let repoId: number | null = null;
+  let githubRepoUrl: string | null = null;
+
+  // Try Neo4j first if PRIMARY_MATCH_STORE is neo4j
+  const primaryStore = env.PRIMARY_MATCH_STORE ?? 'neo4j';
+  if (primaryStore === 'neo4j') {
+    let neo4jConfig = buildNeo4jConfig(env);
+    if (!neo4jConfig) {
+      neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
+    }
+
+    let driver;
+    try {
+      driver = createNeo4jDriver(neo4jConfig);
+      const neo4jResults = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
+      if (neo4jResults.length > 0) {
+        const top = neo4jResults[0]!;
+        repoId = top.repo_id;
+        githubRepoUrl = `https://github.com/${top.full_name}`;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[checkMatchingGate] Neo4j matching failed for candidate ${candidateId}:`, msg);
+    } finally {
+      if (driver) {
+        try {
+          await driver.close();
+        } catch {
+          // ignore close errors
+        }
+      }
+    }
+  }
+
+  // Fallback to D1 SQL matcher if Neo4j returned nothing or failed
+  if (!repoId) {
+    try {
+      const roleContext = await db.prepare(
+        `SELECT id, persona_json, rcd_json, non_negotiable_skills_json FROM role_contexts WHERE pipeline_id = ?1 LIMIT 1`
+      ).bind(pipelineId).first<{ id: string; persona_json: string | null; rcd_json: string | null; non_negotiable_skills_json: string | null }>();
+
+      if (roleContext) {
+        const matchRequest = buildMatchRequest(roleContext as any);
+        const d1Results = await matchRepos(db, matchRequest);
+      if (d1Results.length > 0) {
+        const top = d1Results[0]!;
+        repoId = top.id;
+        githubRepoUrl = top.githubUrl;
+      }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[checkMatchingGate] D1 fallback matching failed for candidate ${candidateId}:`, msg);
+    }
+  }
+
+  if (!repoId || !githubRepoUrl) {
+    return {
+      blocked: true,
+      reason: 'No matching repos found for candidate',
+      syntheticChallenge: {
+        id: 'waiting-for-match',
+        type: 'WAITING_FOR_MATCH',
+        title: 'Building your personalized challenge',
+        instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
+        config: {
+          autoRefresh: true,
+          refreshIntervalSeconds: 30,
+          estimatedSecondsRemaining: 180,
+        },
       },
-    },
-  };
+    };
+  }
+
+  // 3. Pick challenge content based on type
+  let prNumber: number | null = null;
+  let issueNumber: number | null = null;
+
+  if (nextChallengeType === 'CODE_REVIEW') {
+    const prResult = await pickReviewPr(db, repoId);
+    if (!prResult) {
+      return {
+        blocked: true,
+        reason: 'No eligible PR found for matched repo',
+        syntheticChallenge: {
+          id: 'waiting-for-match',
+          type: 'WAITING_FOR_MATCH',
+          title: 'Building your personalized challenge',
+          instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
+          config: {
+            autoRefresh: true,
+            refreshIntervalSeconds: 30,
+            estimatedSecondsRemaining: 180,
+          },
+        },
+      };
+    }
+    prNumber = prResult.prNumber;
+  } else if (nextChallengeType === 'CODE_IMPLEMENTATION') {
+    const issueResult = await pickImplementationIssue(db, repoId, 'mid');
+    if (!issueResult) {
+      return {
+        blocked: true,
+        reason: 'No eligible implementation issue found for matched repo',
+        syntheticChallenge: {
+          id: 'waiting-for-match',
+          type: 'WAITING_FOR_MATCH',
+          title: 'Building your personalized challenge',
+          instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
+          config: {
+            autoRefresh: true,
+            refreshIntervalSeconds: 30,
+            estimatedSecondsRemaining: 180,
+          },
+        },
+      };
+    }
+    issueNumber = issueResult.issueNumber;
+  }
+
+  // 4. Write assignment
+  const assignmentId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db.prepare(
+    `INSERT INTO candidate_challenge_assignment
+       (id, candidate_id, stage_id, challenge_id, repo_id, github_repo_url, github_pr_number, issue_number)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+  ).bind(assignmentId, candidateId, stageId, challengeId, repoId, githubRepoUrl, prNumber, issueNumber).run();
+
+  return { blocked: false };
 }
 
 // ─── Public routes (no auth) ────────────────────────────────────────────────
@@ -383,7 +506,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
       if (!nextChallenge) {
         return null;
       }
-      const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, nextChallenge.type);
+      const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, stage.id, nextChallenge.id, nextChallenge.type, c.env);
       if (gateResult.blocked && gateResult.syntheticChallenge) {
         return c.json({
           isComplete: false,
@@ -550,9 +673,13 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   const ch = rows[dbOrder] as Record<string, unknown>;
 
-  const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, ch.type as string);
-  if (gateResult.blocked && gateResult.syntheticChallenge) {
-    return c.json(gateResult.syntheticChallenge);
+  // Use the LEFT JOIN result to skip matching when an assignment already exists
+  const hasAssignment = !!(ch.effective_repo_url as string | null);
+  if (!hasAssignment) {
+    const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, candidate.current_stage_id, ch.id as string, ch.type as string, c.env);
+    if (gateResult.blocked && gateResult.syntheticChallenge) {
+      return c.json(gateResult.syntheticChallenge);
+    }
   }
 
   // Apply per-candidate overrides from the LEFT JOIN

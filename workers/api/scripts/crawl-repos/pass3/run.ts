@@ -34,6 +34,7 @@ import { classifyChallengeSurfaces } from './challengeSurfaceClassifier.js';
 import { computeDeterministicStats, computeComplexityBand } from './deterministicStats.js';
 import { scoreRepoConfidence, type ScorerApiConfig } from '../../../src/lib/repoApproval/confidenceScorer';
 import type { Pass2SignalSummary } from '../../../src/lib/repoApproval/confidenceScorerPrompts';
+import { getAccessToken as getServiceAccountToken } from '../../../src/lib/llm/vertexAuth';
 import type { Pass3Input, FetchOptions } from './types.js';
 import type {
   Pass3Data,
@@ -48,7 +49,8 @@ import type {
 // ─── Config ────────────────────────────────────────────────────────────────
 
 const SIGNALS_VERSION = 'v2.0.0'; // migration 0028: RUC canonical enum + test_style + challenge_surfaces + repo_searchable_profile (STRATEGY Decision Log 2026-04-14)
-const SUMMARIZER_MODEL = process.env['VERTEX_AI_MODEL'] ?? 'gemma-4-26b-a4b-it-maas';
+const _rawModel = process.env['VERTEX_AI_MODEL'] ?? 'gemma-4-26b-a4b-it-maas';
+const SUMMARIZER_MODEL = _rawModel.replace(/^google\//, '');
 const MODEL_VERSION = 'v1';
 const DEFAULT_CONCURRENCY = 1;
 
@@ -182,15 +184,27 @@ challenge_suitability_verdict definitions (used to decide whether this repo shou
 Constraints:
 - Return ONLY the JSON object. No markdown, no commentary.
 - "engineering_narrative": 200–400 words. MUST mention the primary language (${input.primary_language}). Cover: test discipline, review culture, architecture style, complexity profile, notable PR-sample patterns.
-- "repo_searchable_profile": 100–400 words (density over length — the labeled structure carries signal; do NOT pad). This string is embedded for semantic retrieval. Produce EXACTLY this shape (keep the labels verbatim):
+- "repo_searchable_profile": 300–800 words. This is the MOST IMPORTANT field — it is embedded for semantic retrieval. Be thorough, specific, and expansive. Write dense, information-rich prose. Do NOT be terse. Produce EXACTLY this shape (keep the labels verbatim):
 
-  Language: <primary_language>. Domain: <detected_domain or "unknown">. Architecture: <architecture_style>. Seniority signal: <seniority_band or "unknown">. Test culture: <one short clause, e.g. "pytest, 80% touch rate" or "no tests">. Key technologies: <comma-separated deps/libs from detected_stack, 3–8 items>. Challenge surfaces: <comma-separated top 3 surface names>.
+  Language: <2–4 sentences. Name the primary language and explain how it shapes the codebase. Mention frameworks, paradigms, or language-specific patterns visible in the repo.>
 
-  Summary: <2–4 sentence engineering narrative. What the repo does, how it's built, and what makes it distinctive. Role-agnostic.>
+  Domain: <2–4 sentences. What problem space does this repo operate in? What would a developer build with it? Be specific about use cases and target users.>
 
-  PR shape: <1–2 sentences verbalising test_touch_rate, issue_link_rate, mean_changed_files, swe_bench_eligibility_rate from facts.>
+  Architecture: <2–4 sentences. Describe the structural pattern and WHY it fits. Mention layering, package organization, or deployment model. Cite specific directories or files if relevant.>
 
-  Key concepts: <8–15 comma-separated noun phrases capturing the engineering patterns a reviewer would encounter — e.g. "dependency injection, async endpoints, OpenAPI generation, typed pydantic models, token auth, rate limiting, error middleware".>
+  Seniority signal: <2–4 sentences. What complexity indicators place this repo at its seniority band? Discuss scale, abstraction depth, or advanced patterns.>
+
+  Test culture: <2–4 sentences. Describe testing practices in detail — framework, coverage philosophy, test touch rate meaning, what kinds of tests exist.>
+
+  Key technologies: <comma-separated deps/libs from detected_stack, 5–10 items>. Then <1–2 sentences explaining how the core technologies interact.>
+
+  Challenge surfaces: <comma-separated top 3 surface names>. Then <2–3 sentences describing WHERE bugs or complexity tend to surface and WHY.>
+
+  Summary: <5–8 sentence engineering narrative. What the repo does, how it's built, what makes it distinctive, and what a code reviewer would encounter. Role-agnostic. Cite specific technologies and patterns from the FACTS block.>
+
+  PR shape: <3–5 sentences. Describe the review culture — PR sizes, test inclusion, issue linkage, and what a typical contribution looks like. Use actual numbers from FACTS.>
+
+  Key concepts: <10–20 comma-separated noun phrases capturing engineering patterns>. Then <2–3 sentences tying the top 3-5 concepts to specific files or PR patterns in the repo.>
 
   Do not include any other sections, headings, or markdown. Labels must match exactly.
 - "challenge_suitability_reason": one sentence, ≤ 200 characters.
@@ -601,8 +615,9 @@ export async function processRepo(
       `[pass3] ${tag} ${input.full_name} — validation failed (${validation.failures.length} issues). Retrying Gemma with corrections.`,
     );
     const retryPrompt =
-      `${factsPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED validation. Fix ALL of the following issues in your new response:\n` +
-      validation.failures.map((f) => `- ${f}`).join('\n');
+      `${factsPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED validation. Your output was TOO SHORT and INSUFFICIENTLY DETAILED. Fix ALL of the following issues in your new response by DRAMATICALLY EXPANDING every section. Write at least TWICE as much content as before. Be verbose, specific, and thorough:\n` +
+      validation.failures.map((f) => `- ${f}`).join('\n') +
+      `\n\nCRITICAL: The repo_searchable_profile must be 300+ words. Write multiple detailed sentences for EVERY labeled section. Do NOT write brief clauses — write rich, informative paragraphs.`;
 
     let retryRaw: string;
     try {
@@ -760,8 +775,21 @@ interface RunStats {
 }
 
 export async function getAccessToken(): Promise<string> {
-  // Read ADC credentials file and exchange refresh_token for an access token.
-  // This avoids needing gcloud in the subprocess PATH.
+  // 1. Try service account key from VERTEX_SA_KEY_JSON (preferred — no browser needed)
+  const saJson = process.env['VERTEX_SA_KEY_JSON'];
+  if (saJson) {
+    try {
+      const sa = JSON.parse(saJson) as { private_key?: string; client_email?: string; project_id?: string };
+      if (sa.private_key && sa.client_email && sa.project_id) {
+        logger.info('[pass3] Using VERTEX_SA_KEY_JSON for Vertex AI auth...');
+        return getServiceAccountToken(sa as { private_key: string; client_email: string; project_id: string });
+      }
+    } catch {
+      logger.warn('[pass3] VERTEX_SA_KEY_JSON present but invalid, falling back to ADC');
+    }
+  }
+
+  // 2. Fall back to ADC (authorized_user credentials from gcloud)
   const { readFileSync } = await import('node:fs');
   const { homedir } = await import('node:os');
   const adcPath = process.env['GOOGLE_APPLICATION_CREDENTIALS']

@@ -11,6 +11,8 @@
 ## Why
 `issue_challenge_signals` currently produces only `difficulty_band`, `implementability_score`, `clarity_score`, and `disqualified` flags from a lightweight classifier. A Gemma-generated narrative per issue would enable semantic issue selection (choosing the issue whose context best matches the candidate's background) and would provide richer context for the implementation scorer.
 
+With [ADR-048](../../../docs/decisions/current/ADR-048-lazy-issue-fetch.md) (lazy on-demand fetch), Gemma narrative generation would run inline at match time rather than in a cron. This is feasible because match volume is low, but cost must be monitored via `ai_usage_events`.
+
 ## Why NEEDS-REFINEMENT
 The strategy explicitly defers this to Phase 2+ and calls it "not a Phase 0 priority." No implementation path, prompt design, or storage shape is described beyond the one-sentence description. This plan cannot be delegated until:
 

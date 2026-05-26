@@ -48,6 +48,7 @@ import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQue
 import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { buildProfileSections } from './buildProfileSections';
 import { recordStepDuration, estimateCompletion } from '../telemetry/stepDurationTracker';
+import { recordSessionEvent } from '../telemetry/sessionEvents';
 
 export interface IngestionInput {
   env: Env;
@@ -131,6 +132,13 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   // Failures are logged but do not block the pipeline.
   let decompositionEmbeddings: number[][] = [];
   try {
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'ingestion',
+      candidateId,
+      eventType: 'decomposition_started',
+      payload: { resumeTextLength: resumeText.length },
+    });
     const decompResult = await trackStep(db, candidateId, 'decompose_resume', () =>
       decomposeResumeToGraph({
         db,
@@ -142,9 +150,23 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
       }),
     );
     decompositionEmbeddings = decompResult.embeddings;
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'ingestion',
+      candidateId,
+      eventType: 'decomposition_complete',
+      payload: { nodeCount: decompResult.embeddings.length },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn('[ingestion] resumeDecomposition failed (non-blocking):', msg);
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'ingestion',
+      candidateId,
+      eventType: 'error',
+      payload: { step: 'decompose_resume', error: msg },
+    });
   }
 
   // Step 4: Embed into CANDIDATE_INDEX
@@ -196,13 +218,34 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
 
   // Step 6-11: Match, triangulate, assign — wrapped in inner try/catch
   try {
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'matching',
+      candidateId,
+      eventType: 'match_assigned',
+      payload: { step: 'match_and_assign_start' },
+    });
     await trackStep(db, candidateId, 'match_and_assign', () =>
       runMatchAndAssign({ env, db, candidateId, discoveryResult }),
     );
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'matching',
+      candidateId,
+      eventType: 'completed',
+      payload: { step: 'match_and_assign_success' },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[ingestion] runMatchAndAssign failed:', msg);
     await markIngestionFailedWithStep(db, candidateId, `Match/assign failed: ${msg}`, 'match_and_assign');
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'matching',
+      candidateId,
+      eventType: 'error',
+      payload: { step: 'match_and_assign', error: msg },
+    });
   }
 }
 
@@ -440,29 +483,53 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
       const prNumber = isReview ? (winnerReview?.prNumber ?? null) : null;
       const issueNumber = !isReview ? (winnerImplementation?.issueNumber ?? null) : null;
 
-      await upsertCandidateChallengeAssignment(db, {
-        id: cryptoRandomId(),
-        candidateId,
-        stageId: stage.stage_id,
-        challengeId: stage.challenge_id,
-        repoId: winnerRepoId,
-        githubRepoUrl: winnerRepoUrl,
-        githubPrNumber: prNumber,
-        issueNumber: issueNumber,
-      });
+      try {
+        await upsertCandidateChallengeAssignment(db, {
+          id: cryptoRandomId(),
+          candidateId,
+          stageId: stage.stage_id,
+          challengeId: stage.challenge_id,
+          repoId: winnerRepoId,
+          githubRepoUrl: winnerRepoUrl,
+          githubPrNumber: prNumber,
+          issueNumber: issueNumber,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[ingestion] FK violation writing candidate_challenge_assignment: ` +
+          `candidate=${candidateId} stage=${stage.stage_id} challenge=${stage.challenge_id} repo=${winnerRepoId} ` +
+          `error=${msg}`,
+        );
+        throw new Error(
+          `candidate_challenge_assignment insert failed for candidate=${candidateId} ` +
+          `stage=${stage.stage_id} repo=${winnerRepoId}: ${msg}`,
+        );
+      }
     }
   }
 
   // Step 11: Mark matched with full score payload
-  const matchedInput: MarkIngestionMatchedInput = {
-    candidateId,
-    matchedRepoId: winnerRepoId,
-    triangulatedScore: triangulated.triangulated_score,
-    dimensionsJson: JSON.stringify(triangulated.dimensions),
-    reasoningJson,
-    matchPhilosophy: philosophy,
-  };
-  await markIngestionMatched(db, matchedInput);
+  try {
+    const matchedInput: MarkIngestionMatchedInput = {
+      candidateId,
+      matchedRepoId: winnerRepoId,
+      triangulatedScore: triangulated.triangulated_score,
+      dimensionsJson: JSON.stringify(triangulated.dimensions),
+      reasoningJson,
+      matchPhilosophy: philosophy,
+    };
+    await markIngestionMatched(db, matchedInput);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[ingestion] FK violation writing candidate_ingestion: ` +
+      `candidate=${candidateId} matched_repo_id=${winnerRepoId} error=${msg}`,
+    );
+    throw new Error(
+      `markIngestionMatched failed for candidate=${candidateId} repo=${winnerRepoId}: ${msg}`,
+    );
+  }
 
   // Step 11b: Persist top-3 repo matches for recruiter visibility
   try {
@@ -503,6 +570,11 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     await upsertCandidateRepoMatches(db, matchRows);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[ingestion] FK violation writing candidate_repo_matches: ` +
+      `candidate=${candidateId} repos=[${matchedRepos.slice(0, 3).map(r => r.id).join(',')}] error=${msg}`,
+    );
+    // Non-blocking: recruiter visibility only
     console.warn(`[ingestion] failed to persist top-3 repo matches for ${candidateId}:`, msg);
   }
 

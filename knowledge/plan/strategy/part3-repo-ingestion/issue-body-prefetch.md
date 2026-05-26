@@ -5,6 +5,8 @@
 **Status:** PENDING
 **Estimate:** 0.5 weeks
 
+> **Architecture note (2026-05-15):** The issue pipeline has shifted from pre-crawl to [lazy on-demand fetch](../../../docs/decisions/current/ADR-048-lazy-issue-fetch.md). The cron crawler is retained as background hydration but is no longer on the critical path. The body cache is populated at match time when `pickImplementationIssue()` fetches issues from GitHub API inline. This plan's subtasks remain valid but the trigger changes from "cron refresh" to "lazy fetch + optional cron backfill."
+
 ## Source quote
 > Pre-fetching the issue body and surfacing it inline in the assessment UI is a small improvement that reduces friction and improves assessment completion rates. Cache the fetched issue body in `repo_issues.body_cache_json` with a TTL, refresh weekly via the existing issue crawler cron.
 
@@ -22,14 +24,14 @@ Candidates currently see `"Implement issue #N on <url>"` and must navigate to Gi
 - No NOT NULL constraint — existing rows keep NULL until backfilled.
 **Status:** ⏳ PENDING
 
-### Subtask 2 — Extend issue crawler to fetch and cache body
+### Subtask 2 — Extend lazy-fetch path to fetch and cache body
 **Files:**
-- `workers/api/src/routes/cron/issueScorer.ts` (Sunday 04:00 UTC cron handler)
+- `workers/api/src/lib/match/autoStageBuilder.ts` (`pickImplementationIssue` or new `fetchAndScoreIssuesForRepo` helper)
 
 **Spec:**
-- In the issue crawler/scorer that runs Sundays: after scoring each issue, fetch the issue body from GitHub REST API (`GET /repos/{owner}/{repo}/issues/{issue_number}`).
+- When `pickImplementationIssue()` finds no eligible issues and triggers lazy fetch: after fetching issues from GitHub REST API (`GET /repos/{owner}/{repo}/issues?state=open`), fetch each issue body via `GET /repos/{owner}/{repo}/issues/{issue_number}`.
 - Write `body_cache_json` as `JSON.stringify({ title, body, labels, state })`, set `body_cached_at = Date.now()`.
-- Refresh if `body_cached_at` is older than `body_cache_ttl_days * 86400000`.
+- The weekly cron (`issueScorer.ts`, Sunday 04:00 UTC) can refresh stale caches as background hydration: refresh if `body_cached_at` is older than `body_cache_ttl_days * 86400000`.
 - Handle GitHub 404 (deleted issue) gracefully: set `disqualified = 1` on the `repo_issues` row.
 - Rate-limit: respect GitHub secondary rate limits; use existing GitHub token from env.
 **Status:** ⏳ PENDING
@@ -45,13 +47,13 @@ Candidates currently see `"Implement issue #N on <url>"` and must navigate to Gi
 **Status:** ⏳ PENDING
 
 ## Dependencies
-- Depends on: existing issue crawler cron (Sunday 04:00 UTC) and `repo_issues` table — no new infra required
+- Depends on: `repo_issues` table, GitHub token, and lazy-fetch implementation — no new infra required
 - Does not block any other Part 3 plan
 
 ## Acceptance criteria
 - [ ] Migration applies cleanly
-- [ ] Issue crawler populates `body_cache_json` for qualifying issues
-- [ ] Crawler refreshes stale cache (>7 days) on next run
+- [ ] Lazy fetch populates `body_cache_json` when fetching issues at match time
+- [ ] Cron refreshes stale cache (>7 days) as background hydration
 - [ ] Challenge start endpoint returns `issueBody` field when cache is populated
 - [ ] 404 issues are disqualified, not left with stale cache
 - [ ] `npx tsc --noEmit` passes

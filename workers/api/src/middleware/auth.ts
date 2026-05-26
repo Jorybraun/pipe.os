@@ -18,11 +18,16 @@ import type { Env, Variables } from '../types';
  */
 export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Variables }>(
   async (c, next): Promise<void> => {
-    // Local dev bypass for testing
-    if (c.env.CLERK_SECRET_KEY === 'test' || c.req.header('X-Dev-Bypass') === 'local') {
-      c.set('userId', 'user_3BabJ4z5erBfxIMzV4eVYGCsfl6');
-      await next();
-      return;
+    // Local dev bypass — only when DEV_AUTH_BYPASS is explicitly 'true'.
+    // The user ID is read from DEV_BYPASS_USER_ID env var; never hardcoded.
+    // Never enable these in production.
+    if (c.env.DEV_AUTH_BYPASS === 'true') {
+      const bypassUserId = c.env.DEV_BYPASS_USER_ID;
+      if (bypassUserId) {
+        c.set('userId', bypassUserId);
+        await next();
+        return;
+      }
     }
 
     // Read Authorization: Bearer <token> header.

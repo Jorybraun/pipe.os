@@ -82,19 +82,9 @@
               "icon": "lucide-file",
               "title": "STRATEGY"
             }
-          },
-          {
-            "id": "ce33edbe69485dd6",
-            "type": "leaf",
-            "state": {
-              "type": "empty",
-              "state": {},
-              "icon": "lucide-file",
-              "title": "New tab"
-            }
           }
         ],
-        "currentTab": 6
+        "currentTab": 5
       }
     ],
     "direction": "vertical"
@@ -253,8 +243,18 @@
       "bases:Create new base": false
     }
   },
-  "active": "ce33edbe69485dd6",
+  "active": "8af6e68fc634f7eb",
   "lastOpenFiles": [
+    "research/role-discovery/role-discovery-guardrails-research-xai.md",
+    "research/role-discovery/role-discovery-guardrails-verification.md",
+    "research/role-discovery/role-discovery-guardrails.provenance.md",
+    "research/role-discovery/role-discovery-sales-intake.md",
+    "research/role-discovery/role-discovery-sales-intake-verification.md",
+    "research/role-discovery/role-discovery-sales-intake.provenance.md",
+    "research/role-discovery/role-discovery-guardrails-research-depth.md",
+    "research/role-discovery/role-discovery-guardrails-research-compliance.md",
+    "research/role-discovery/role-discovery-guardrails.md",
+    "requirements/candidate-graph-enrichment.md",
     "plan/culture-agent-redesign/handoffs/fsm-agent-2026-05-02.md",
     "plan/culture-agent-redesign/handoffs/prompt-agent-2026-05-03.md",
     "plan/culture-agent-redesign/handoffs/conversation-synthesis-2026-05-03.md",
@@ -272,16 +272,6 @@
     "plan/culture-agent-redesign/integration/post-screener-matching-trigger.md",
     "plan/culture-agent-redesign/integration/stage-progression-gate.md",
     "plan/culture-agent-redesign/implementation/telemetry-and-observability.md",
-    "plan/culture-agent-redesign/implementation/scoring-engine.md",
-    "plan/culture-agent-redesign/implementation/decomposition-pipeline.md",
-    "plan/culture-agent-redesign/implementation/mode-2-role-fit.md",
-    "plan/culture-agent-redesign/implementation/mode-1-profile-builder.md",
-    "plan/culture-agent-redesign/implementation/culture-agent-audit.md",
-    "plan/culture-agent-redesign/implementation/discovery-agent-analysis.md",
-    "plan/culture-agent-redesign/architecture/prompt-system-spec.md",
-    "plan/culture-agent-redesign/architecture/decomposition-contract.md",
-    "plan/culture-agent-redesign/architecture/state-machine-spec.md",
-    "plan/culture-agent-redesign/architecture/agent-flow-spec.md",
     "plan/culture-agent-redesign/validation",
     "plan/culture-agent-redesign/integration",
     "plan/culture-agent-redesign/implementation",

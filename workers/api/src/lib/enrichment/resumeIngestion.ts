@@ -3,7 +3,6 @@
  *
  * Used by:
  *   • Recruiter upload endpoint (routes/cockpit/candidates.ts)
- *   • Enrichment worker cron (routes/cron/enrichmentWorker.ts)
  *   • Candidate INTAKE challenge submission (routes/rpc.ts)
  *
  * Reads a resume PDF from R2, extracts text, parses structured data,

@@ -1,4 +1,4 @@
-# Role Discovery Agent Guardrails — Rationale, Sensitivity, Depth, Compliance
+/# Role Discovery Agent Guardrails — Rationale, Sensitivity, Depth, Compliance
 
 **Date:** 2026-04-17
 **Slug:** `role-discovery-guardrails`

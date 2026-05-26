@@ -137,6 +137,10 @@ search.post('/candidates', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'provide at least one of roleContextId, repoId, candidateId, or query');
   }
 
+  if (!roleContextId) {
+    return apiError(c, 'VALIDATION_ERROR', 'roleContextId is required for candidate search');
+  }
+
   const matchResults = await routeMatchRead({
     roleContextId,
     db: c.env.DB,

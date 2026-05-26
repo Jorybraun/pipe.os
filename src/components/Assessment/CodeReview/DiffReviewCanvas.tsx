@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { parseDiff, Diff, Hunk } from 'react-diff-view';
 import 'react-diff-view/style/index.css';
 import { formatCustomDiff } from './diffUtils';
@@ -77,7 +77,7 @@ export function DiffReviewCanvas({
     );
   }
 
-  const handleLineClick = (line: number) => {
+  const handleLineClick = useCallback((line: number) => {
     setActiveLine({ snippetId: currentSnippet.id, line });
     const existing = (annotations[currentSnippet.id] || []).find(a => a.line === line);
     if (existing) {
@@ -87,9 +87,9 @@ export function DiffReviewCanvas({
       setComment('');
       setSeverity('major');
     }
-  };
+  }, [annotations, currentSnippet.id]);
 
-  const saveAnnotation = () => {
+  const saveAnnotation = useCallback(() => {
     if (!activeLine) return;
     const snippetAnnotations = annotations[currentSnippet.id] || [];
     const otherAnnotations = snippetAnnotations.filter(a => a.line !== activeLine.line);
@@ -108,21 +108,21 @@ export function DiffReviewCanvas({
     setAnnotations(newAnnotations);
     onAnnotationsChange(newAnnotations);
     setActiveLine(null);
-  };
+  }, [activeLine, annotations, comment, currentSnippet.id, onAnnotationsChange, severity]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (currentSnippetIndex < snippets.length - 1) {
       setCurrentSnippetIndex(currentSnippetIndex + 1);
       setActiveLine(null);
     }
-  };
+  }, [currentSnippetIndex, snippets.length]);
 
-  const handlePrev = () => {
+  const handlePrev = useCallback(() => {
     if (currentSnippetIndex > 0) {
       setCurrentSnippetIndex(currentSnippetIndex - 1);
       setActiveLine(null);
     }
-  };
+  }, [currentSnippetIndex]);
 
   // Create widgets array for react-diff-view
   const widgets = useMemo(() => {
@@ -243,7 +243,7 @@ export function DiffReviewCanvas({
     }
 
     return widgetList;
-  }, [annotations, currentSnippet.id, activeLine, comment, severity]);
+  }, [annotations, currentSnippet.id, activeLine, comment, severity, handleLineClick, saveAnnotation]);
 
   return (
     <div className="diff-review-container">

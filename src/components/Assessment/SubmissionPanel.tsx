@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Send, CheckCircle2, XCircle, MessageSquare, AlertTriangle, Loader2 } from 'lucide-react';
 import { Annotation } from './DiffPanel';
 
@@ -32,6 +32,16 @@ export function SubmissionPanel({
   onError,
   readOnly = false,
 }: SubmissionPanelProps): JSX.Element {
+  const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const [state, setState] = useState<SubmissionState>({
     verdict: null,
     summary: '',
@@ -63,7 +73,7 @@ export function SubmissionPanel({
       onSubmitComplete({ success: true, submittedAt: response.submittedAt });
 
       // Reset after 2 seconds
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         setState({
           verdict: null,
           summary: '',
@@ -72,6 +82,7 @@ export function SubmissionPanel({
           success: false,
         });
       }, 2000);
+      resetTimeoutRef.current = timeoutId;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to submit review';
       setState(prev => ({ ...prev, isLoading: false, error: errorMsg }));

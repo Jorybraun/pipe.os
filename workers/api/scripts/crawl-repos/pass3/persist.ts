@@ -297,7 +297,7 @@ export async function persistRepoNodes(
     const id = `${data.repo_id}_${el.node_type}_${el.slug}`;
     const vector = embeddingMap.get(id);
     return {
-      sql: `INSERT INTO repo_nodes (
+      sql: `INSERT OR REPLACE INTO repo_nodes (
         id, repo_id, signals_version, node_type, narrative_text,
         extracted_properties_json, embedding_json, source_reference,
         created_at, updated_at

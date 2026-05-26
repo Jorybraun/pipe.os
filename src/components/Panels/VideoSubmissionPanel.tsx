@@ -15,7 +15,7 @@ export interface VideoSubmissionPanelProps {
   /** Called when upload completes — transcript is the live speech-to-text result */
   onUploaded: (s3Key: string, filename: string, transcript: string) => void;
   /** Full URL for the recruiter's question video — shown above controls if present */
-  questionVideoUrl?: string;
+  questionVideoUrl?: string | undefined;
   /** Max recording duration in seconds (default 120) */
   maxDurationSeconds?: number;
   /** Candidate ID — included in R2 path (candidate-submissions/{candidateId}/...) */

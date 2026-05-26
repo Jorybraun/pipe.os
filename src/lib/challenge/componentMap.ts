@@ -164,6 +164,13 @@ export function normalizeDiffJson(raw: unknown): import('../../components/Assess
   const empty: import('../../components/Assessment/DiffPanel').DiffJson = {
     files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 },
   };
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return empty;
+    }
+  }
   if (typeof raw !== 'object' || raw === null || !('files' in (raw as Record<string, unknown>))) return empty;
 
   const rawObj = raw as Record<string, unknown>;

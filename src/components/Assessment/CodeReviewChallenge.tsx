@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   GitBranch,
   ChevronRight,
@@ -101,6 +101,12 @@ export function CodeReviewChallenge({
 }: CodeReviewChallengeProps): JSX.Element {
   const [verdict, setVerdict] = useState<string | null>(submission.verdict);
   const [summary, setSummary] = useState(submission.summary);
+
+  // Sync local state when parent submission changes (e.g., external restore or reset)
+  useEffect(() => {
+    setVerdict(submission.verdict);
+    setSummary(submission.summary);
+  }, [submission.verdict, submission.summary]);
 
   // Call parent synchronously so canAdvance updates in the same render cycle.
   // Using useEffect caused a stale-closure / async-hop problem where the parent

@@ -31,7 +31,7 @@ const DB_PATH =
 
 const PIPELINE_ID = 'a7a87cf57351ce107adbbbba58bc62a3';
 const CANDIDATE_ID = 'd0cc9595-5a14-4492-bcd0-75af6ab8d514';
-const OWNER_ID = 'user_3BabJ4z5erBfxIMzV4eVYGCsfl6';
+const OWNER_ID = process.env['DEV_BYPASS_USER_ID'] ?? 'user_3BabJ4z5erBfxIMzV4eVYGCsfl6';
 
 // Real repos to approve (already have repo_engineering_signals rows)
 const REPOS = [

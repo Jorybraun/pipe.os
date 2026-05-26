@@ -73,10 +73,10 @@ const RED_FLAG_MAX_CHARS = 200;
 const SENIORITY_JUSTIFICATION_MIN_WORDS = 15;
 const SENIORITY_JUSTIFICATION_MAX_WORDS = 120;
 
-const NARRATIVE_WORDS_MIN = 200;
-const NARRATIVE_WORDS_MAX = 400;
-const PROFILE_WORDS_MIN = 400;
-const PROFILE_WORDS_MAX = 600;
+const NARRATIVE_WORDS_MIN = 150;
+const NARRATIVE_WORDS_MAX = 600;
+const PROFILE_WORDS_MIN = 120;
+const PROFILE_WORDS_MAX = 800;
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[_\-\s]/g, '');

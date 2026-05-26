@@ -31,6 +31,10 @@ export interface Env {
   CLERK_SECRET_KEY: string;
   /** Session token secret for candidate JWT signing/verification. */
   SESSION_TOKEN_SECRET: string;
+  /** When 'true', bypasses Clerk JWT verification in local dev. Never set in production. */
+  DEV_AUTH_BYPASS?: string;
+  /** User ID to use when DEV_AUTH_BYPASS is enabled. */
+  DEV_BYPASS_USER_ID?: string;
   /**
    * GitHub personal access token for the PR fetch proxy.
    * Set via .dev.vars in dev, Worker secret in production.
@@ -730,7 +734,7 @@ export type IssueDisqualifiedReason =
 
 /**
  * AI-scored challenge suitability signals for an issue.
- * Scored by Gemma 4 26B in the issue scorer cron worker.
+ * Scored by Gemma 4 26B.
  */
 export interface IssueChallengeSignalsRow {
   id: number;

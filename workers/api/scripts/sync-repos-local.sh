@@ -21,6 +21,7 @@ DB="pipe-db"
 TMP=$(mktemp -d)
 
 echo "→ Clearing local repo tables (ignoring missing tables)..."
+$WRANGLER d1 execute "$DB" --local --command "DELETE FROM repo_nodes;"              2>/dev/null || true
 $WRANGLER d1 execute "$DB" --local --command "DELETE FROM repo_engineering_signals;" 2>/dev/null || true
 $WRANGLER d1 execute "$DB" --local --command "DELETE FROM repo_sample_prs;"          2>/dev/null || true
 $WRANGLER d1 execute "$DB" --local --command "DELETE FROM repo_constructs;"          2>/dev/null || true
@@ -31,12 +32,14 @@ $WRANGLER d1 export "$DB" --remote --no-schema --output="$TMP/repos.sql"      --
 $WRANGLER d1 export "$DB" --remote --no-schema --output="$TMP/constructs.sql" --table=repo_constructs
 $WRANGLER d1 export "$DB" --remote --no-schema --output="$TMP/prs.sql"        --table=repo_sample_prs
 $WRANGLER d1 export "$DB" --remote --no-schema --output="$TMP/signals.sql"    --table=repo_engineering_signals
+$WRANGLER d1 export "$DB" --remote --no-schema --output="$TMP/nodes.sql"      --table=repo_nodes
 
 echo "→ Importing into local D1..."
 $WRANGLER d1 execute "$DB" --local --file="$TMP/repos.sql"
 $WRANGLER d1 execute "$DB" --local --file="$TMP/constructs.sql"
 $WRANGLER d1 execute "$DB" --local --file="$TMP/prs.sql"
 $WRANGLER d1 execute "$DB" --local --file="$TMP/signals.sql"
+$WRANGLER d1 execute "$DB" --local --file="$TMP/nodes.sql"
 
 rm -rf "$TMP"
 

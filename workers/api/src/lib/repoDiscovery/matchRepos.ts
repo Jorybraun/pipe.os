@@ -192,7 +192,15 @@ export async function matchRepos(
     .bind(...params)
     .all<ScoredRow>();
 
-  if (!scoredRows || scoredRows.length === 0) return [];
+  if (!scoredRows || scoredRows.length === 0) {
+    // Fallback: repo_skills may be empty (fresh DB or after reset).
+    // Return top repos by PR quality + low contamination instead of failing.
+    console.warn(
+      `[matchRepos] No repos matched must-haves [${mustSlugs.join(', ')}] — ` +
+      `repo_skills may be empty. Falling back to top repos.`
+    );
+    return fallbackTopRepos(db, req, limit);
+  }
 
   // 4. Second query: fetch matched skill + construct slugs per repo
   const repoIds = scoredRows.map((r) => r.id);

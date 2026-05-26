@@ -316,7 +316,7 @@ export async function matchReposForCandidateNeo4j(
       evidence AS evidence,
       match_count AS match_count
     ORDER BY repo_score DESC
-    LIMIT $top_k
+    LIMIT toInteger($top_k)
     `,
     { candidate_id: candidateId, min_similarity: minSimilarity, top_k: topK },
     (record) => ({

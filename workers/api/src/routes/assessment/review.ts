@@ -40,6 +40,7 @@ import type { RepoKnowledgeInput } from '../../lib/explainerPrompts';
 import { loadRcdForAssessment } from '../../lib/rcd';
 import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
 import { scoreAndPropagate } from '../../lib/review/scoreAndPropagate';
+import { recordSessionEvent } from '../../lib/telemetry/sessionEvents';
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -584,6 +585,14 @@ review.post('/session/init', async (c) => {
     .bind(sessionId, challengeId, assessment.id, candidateId, persona, maxRounds, JSON.stringify(transcript), now)
     .run();
 
+  await recordSessionEvent(c.env.DB, {
+    sessionId,
+    sessionType: 'code_review',
+    candidateId,
+    eventType: 'started',
+    payload: { challengeId, assessmentId: assessment.id, maxRounds, persona },
+  });
+
   const pr = await buildPrContext(c.env.DB, ch, c.env);
 
   return c.json({
@@ -673,6 +682,14 @@ review.post('/session/:id/message', async (c) => {
       c.env.DB, c.env, { ...session, status: 'in_progress' }, newComments, summary as string, nextId,
     );
 
+    await recordSessionEvent(c.env.DB, {
+      sessionId,
+      sessionType: 'code_review',
+      candidateId,
+      eventType: 'question_asked',
+      payload: { round: result.round, commentCount: newComments.length },
+    });
+
     return c.json({
       round: result.round,
       agentResponse: result.agentResponse,
@@ -731,6 +748,14 @@ review.post('/session/:id/message', async (c) => {
   }
 
   const result = await executeReviewRound(c.env.DB, c.env, session, newComments, undefined, nextId);
+
+  await recordSessionEvent(c.env.DB, {
+    sessionId,
+    sessionType: 'code_review',
+    candidateId,
+    eventType: 'question_asked',
+    payload: { round: result.round, commentCount: newComments.length },
+  });
 
   return c.json({
     round: result.round,
@@ -801,7 +826,24 @@ review.post('/session/:id/complete', async (c) => {
     );
   }
 
+  await recordSessionEvent(c.env.DB, {
+    sessionId,
+    sessionType: 'code_review',
+    candidateId,
+    eventType: 'scoring_started',
+    payload: { verdict, roundCount: (parseJsonColumn<StoredTranscript>(session.transcript)?.rounds ?? []).length },
+  });
+
   const result = await finalizeReviewSession(c, session, verdict as string, summary as string);
+
+  await recordSessionEvent(c.env.DB, {
+    sessionId,
+    sessionType: 'code_review',
+    candidateId,
+    eventType: 'scoring_complete',
+    payload: { verdict, status: result.status },
+  });
+
   return c.json(result);
 });
 

@@ -164,7 +164,7 @@ function deriveDomainFromRcd(rcd: RoleContextDocument): string {
   return bestDomain;
 }
 
-function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
+export function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
   const persona = parsePersona(roleContext);
   const mustHaveSkills = resolveMustHaveSkills(roleContext);
 
@@ -294,8 +294,8 @@ export async function pickImplementationIssue(
   repoId: number,
   seniority: 'junior' | 'mid' | 'senior' | 'staff',
 ): Promise<{ issueNumber: number; issueTitle: string } | null> {
-  // issue_challenge_signals.difficulty_band only carries 'junior' | 'mid' | 'senior'
-  // (per issueScorer.ts). 'staff' rolls up to 'senior'.
+  // issue_challenge_signals.difficulty_band only carries 'junior' | 'mid' | 'senior'.
+  // 'staff' rolls up to 'senior'.
   const band = seniority === 'staff' ? 'senior' : seniority;
 
   const row = await db
