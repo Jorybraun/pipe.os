@@ -146,8 +146,14 @@ export async function writeCandidateGraph(
 
   const config = buildNeo4jConfig(env);
   if (!config) {
+    console.warn('[writeCandidateGraph] skipped — missing Neo4j config (NEO4J_URI or NEO4J_PASSWORD)');
     throw new Error('[writeCandidateGraph] missing Neo4j config (NEO4J_URI or NEO4J_PASSWORD)');
   }
+
+  const writeStart = Date.now();
+  console.log(
+    `[writeCandidateGraph] starting | candidate=${candidateId.slice(0, 8)}… | nodes=${nodes.length} | profileState=${profileState}`,
+  );
 
   const driver = getNeo4jDriver(config);
   const now = nowEpoch();
@@ -378,6 +384,7 @@ export async function writeCandidateGraph(
     totalResult.relationshipsCreated += result.relationshipsCreated;
   }
 
+  const writeMs = Date.now() - writeStart;
   console.log(
     JSON.stringify({
       event: 'neo4j.candidateWrite',
@@ -390,7 +397,12 @@ export async function writeCandidateGraph(
       others: others.length,
       nodesCreated: totalResult.nodesCreated,
       relationshipsCreated: totalResult.relationshipsCreated,
+      durationMs: writeMs,
     }),
+  );
+
+  console.log(
+    `[writeCandidateGraph] complete | candidate=${candidateId.slice(0, 8)}… | created=${totalResult.nodesCreated} nodes, ${totalResult.relationshipsCreated} rels | ${writeMs}ms`,
   );
 
   return totalResult;

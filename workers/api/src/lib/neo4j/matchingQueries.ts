@@ -60,6 +60,9 @@ export async function matchCandidatesForRole(
   driver: Driver,
   roleContextId: string,
 ): Promise<MatchResult[]> {
+  const matchStart = Date.now();
+  console.log(`[matchingQueries] matchCandidatesForRole starting | roleContextId=${roleContextId.slice(0, 8)}…`);
+
   const results = await runReadQuery(
     driver,
     `
@@ -141,6 +144,11 @@ export async function matchCandidatesForRole(
         weight: m.weight,
       })),
     }),
+  );
+
+  const matchMs = Date.now() - matchStart;
+  console.log(
+    `[matchingQueries] matchCandidatesForRole complete | roleContextId=${roleContextId.slice(0, 8)}… | results=${results.length} candidates | ${matchMs}ms`,
   );
 
   return results;

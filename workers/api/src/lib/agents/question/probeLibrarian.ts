@@ -11,6 +11,7 @@
  */
 
 import type { ParticipantRole, Domain } from '../../../types';
+import type { GeneratedQuestion } from '../interview/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -484,4 +485,70 @@ export function buildRemainingSoulProbeSummary(soulProbesDelivered: number): str
   return remaining
     .map((p, i) => `${soulProbesDelivered + i + 1}. ${p.id} → ${p.targetDomains.join('+')}`)
     .join('\n');
+}
+
+// ─── Domain-Oriented Probe Lookup ────────────────────────────────────────────
+
+/**
+ * Convert a Probe to the GeneratedQuestion shape used by the domain orchestrator.
+ */
+function probeToGeneratedQuestion(
+  probe: Probe,
+  participantRole: ParticipantRole | null,
+): GeneratedQuestion {
+  const adaptedText =
+    participantRole && probe.roleVariants[participantRole]
+      ? probe.roleVariants[participantRole]!
+      : probe.text;
+
+  return {
+    id: probe.id,
+    text: adaptedText,
+    intent: probe.intent,
+    drillingHints: probe.drillingHints.length > 0 ? probe.drillingHints : undefined,
+    ladderingTarget: probe.ladderingTarget,
+  };
+}
+
+/**
+ * Return calibrated signal probes for a domain, excluding already-delivered ones.
+ *
+ * Probes are returned in their canonical order (1–8). A probe is included if
+ * the domain appears anywhere in its `targetDomains` list. Probes whose IDs
+ * appear in `deliveredProbeIds` are excluded to prevent cross-domain duplication.
+ *
+ * Adapted to the participant's role for contextual phrasing.
+ */
+export function getProbesForDomain(
+  domain: Domain,
+  participantRole: ParticipantRole | null,
+  deliveredProbeIds: string[],
+): GeneratedQuestion[] {
+  const delivered = new Set(deliveredProbeIds);
+  const matching = SIGNAL_PROBES.filter(
+    (p) => p.targetDomains.includes(domain) && !delivered.has(p.id),
+  );
+
+  console.log(
+    `[probeLibrarian] domain=${domain} | matching=${matching.length} | delivered=${deliveredProbeIds.length} | ids=${matching.map((p) => p.id).join(',')}`,
+  );
+
+  return matching.map((p) => probeToGeneratedQuestion(p, participantRole));
+}
+
+/**
+ * Return calibrated soul probes for a domain, excluding already-delivered ones.
+ * Same semantics as getProbesForDomain but queries the soul probe library.
+ */
+export function getSoulProbesForDomain(
+  domain: Domain,
+  participantRole: ParticipantRole | null,
+  deliveredProbeIds: string[],
+): GeneratedQuestion[] {
+  const delivered = new Set(deliveredProbeIds);
+  const matching = SOUL_PROBES.filter(
+    (p) => p.targetDomains.includes(domain) && !delivered.has(p.id),
+  );
+
+  return matching.map((p) => probeToGeneratedQuestion(p, participantRole));
 }
