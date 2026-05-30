@@ -99,14 +99,17 @@ function buildAcknowledgment(state: InterviewState, domain: Domain): string {
 /** Collect all probe IDs that have been delivered across all domains. */
 function collectDeliveredProbeIds(state: InterviewState): string[] {
   const ids: string[] = [];
-  for (const domain of DOMAIN_COLUMN_ORDER) {
-    const questions = state.domainQuestions[domain] ?? [];
-    const delivered = state.domainQuestionsDelivered[domain] ?? 0;
-    for (let i = 0; i < delivered && i < questions.length; i++) {
-      ids.push(questions[i]!.id);
+
+  // Primary source: exchange history persists even after domain caches are
+  // cleared on completion, so it is the only reliable record of probes that
+  // were already asked in earlier domains.
+  for (const ex of state.exchanges) {
+    if (ex.questionId && !ids.includes(ex.questionId)) {
+      ids.push(ex.questionId);
     }
   }
-  // Also include IDs from questions cached but not yet delivered in other domains
+
+  // Secondary: include IDs from questions still cached in pending domains
   // (they were assigned to that domain and will be served there)
   for (const domain of DOMAIN_COLUMN_ORDER) {
     const questions = state.domainQuestions[domain] ?? [];
