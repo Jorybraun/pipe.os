@@ -1,0 +1,127 @@
+/*
+ * Pipe Design System — CSS Custom Properties
+ *
+ * These tokens are the CSS-variable layer of the design system.
+ * They integrate with the existing --pipe-* variables from ThemeContext
+ * and add new semantic tokens for the Tailwind-based components.
+ *
+ * Dark/light mode is driven by the data-theme attribute on <html>,
+ * which is already managed by ThemeContext.tsx.
+ */
+
+/* ── Base / Dark Mode (default) ───────────────────────────────────────────── */
+:root {
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Space Mono', 'Courier New', monospace;
+
+  /* Semantic color aliases (resolve to --pipe-* from ThemeContext) */
+  --color-bg: var(--pipe-bg, #15151b);
+  --color-text: var(--pipe-text, #ffffff);
+  --color-text-muted: var(--pipe-text-muted, rgba(255,255,255,0.65));
+  --color-text-dim: var(--pipe-text-dim, rgba(255,255,255,0.45));
+  --color-border: var(--pipe-border, rgba(255,255,255,0.08));
+  --color-border-light: var(--pipe-border-light, rgba(255,255,255,0.04));
+  --color-surface: var(--pipe-surface, rgba(255,255,255,0.04));
+  --color-surface-hover: var(--pipe-surface-hover, rgba(255,255,255,0.08));
+  --color-surface-solid: var(--pipe-surface-solid, #1e1e25);
+  --color-surface-elevated: var(--pipe-surface-elevated, #1e1e25);
+  --color-overlay: var(--pipe-overlay, rgba(21,21,27,0.93));
+  --color-shadow: var(--pipe-shadow, rgba(0,0,0,0.3));
+  --color-accent: var(--pipe-accent, #ffffff);
+  --color-accent-surface: var(--pipe-accent-surface, rgba(255,255,255,0.08));
+  --color-accent-border: var(--pipe-accent-border, rgba(255,255,255,0.2));
+
+  /* Status colors */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #6366f1;
+
+  /* Spacing scale (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 9999px;
+
+  /* Shadows */
+  --shadow-subtle: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-medium: 0 4px 6px rgba(0,0,0,0.1);
+  --shadow-large: 0 10px 15px rgba(0,0,0,0.1);
+
+  /* Transitions */
+  --transition-fast: 200ms;
+  --transition-normal: 300ms;
+  --transition-smooth: 400ms;
+  --transition-slow: 600ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Light mode overrides ─────────────────────────────────────────────────── */
+html[data-theme="light"] {
+  --color-bg: var(--pipe-bg, #f5f5f7);
+  --color-text: var(--pipe-text, #1a1a1a);
+  --color-text-muted: var(--pipe-text-muted, rgba(0,0,0,0.60));
+  --color-text-dim: var(--pipe-text-dim, rgba(0,0,0,0.40));
+  --color-border: var(--pipe-border, rgba(0,0,0,0.10));
+  --color-border-light: var(--pipe-border-light, rgba(0,0,0,0.06));
+  --color-surface: var(--pipe-surface, rgba(0,0,0,0.03));
+  --color-surface-hover: var(--pipe-surface-hover, rgba(0,0,0,0.07));
+  --color-surface-solid: var(--pipe-surface-solid, #ffffff);
+  --color-surface-elevated: var(--pipe-surface-elevated, #ffffff);
+  --color-overlay: var(--pipe-overlay, rgba(245,245,247,0.88));
+  --color-shadow: var(--pipe-shadow, rgba(0,0,0,0.06));
+  --color-accent: var(--pipe-accent, #1a1a1a);
+  --color-accent-surface: var(--pipe-accent-surface, rgba(0,0,0,0.06));
+  --color-accent-border: var(--pipe-accent-border, rgba(0,0,0,0.15));
+}
+
+/* ── Anatomy mode overrides ───────────────────────────────────────────────── */
+html[data-theme="anatomy"] {
+  --color-bg: var(--pipe-bg, #f5f5f7);
+  --color-text: var(--pipe-text, #2a1f0e);
+  --color-text-muted: var(--pipe-text-muted, rgba(42,31,14,0.65));
+  --color-text-dim: var(--pipe-text-dim, rgba(42,31,14,0.50));
+  --color-border: var(--pipe-border, rgba(42,31,14,0.12));
+  --color-border-light: var(--pipe-border-light, rgba(42,31,14,0.07));
+  --color-surface: var(--pipe-surface, rgba(42,31,14,0.04));
+  --color-surface-hover: var(--pipe-surface-hover, rgba(42,31,14,0.09));
+  --color-surface-solid: var(--pipe-surface-solid, #ffffff);
+  --color-surface-elevated: var(--pipe-surface-elevated, #ffffff);
+  --color-overlay: var(--pipe-overlay, rgba(245,245,247,0.93));
+  --color-shadow: var(--pipe-shadow, rgba(42,31,14,0.10));
+  --color-accent: var(--pipe-accent, #c17d3c);
+  --color-accent-surface: var(--pipe-accent-surface, rgba(193,125,60,0.12));
+  --color-accent-border: var(--pipe-accent-border, rgba(193,125,60,0.35));
+}
+
+html[data-theme="anatomy-dark"] {
+  --color-bg: var(--pipe-bg, #1a1208);
+  --color-text: var(--pipe-text, #f3ead5);
+  --color-text-muted: var(--pipe-text-muted, rgba(243,234,213,0.70));
+  --color-text-dim: var(--pipe-text-dim, rgba(243,234,213,0.50));
+  --color-border: var(--pipe-border, rgba(243,234,213,0.10));
+  --color-border-light: var(--pipe-border-light, rgba(243,234,213,0.05));
+  --color-surface: var(--pipe-surface, rgba(243,234,213,0.04));
+  --color-surface-hover: var(--pipe-surface-hover, rgba(243,234,213,0.08));
+  --color-surface-solid: var(--pipe-surface-solid, #231810);
+  --color-surface-elevated: var(--pipe-surface-elevated, #2a1f15);
+  --color-overlay: var(--pipe-overlay, rgba(26,18,8,0.93));
+  --color-shadow: var(--pipe-shadow, rgba(0,0,0,0.45));
+  --color-accent: var(--pipe-accent, #d4953a);
+  --color-accent-surface: var(--pipe-accent-surface, rgba(212,149,58,0.12));
+  --color-accent-border: var(--pipe-accent-border, rgba(212,149,58,0.35));
+}
