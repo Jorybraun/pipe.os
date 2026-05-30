@@ -934,6 +934,7 @@ export interface RoleContextParticipantRow {
   exchanges: string | null;
   questions_asked: number;
   question_budget: number;
+  domain_state: string | null;
   status: ParticipantStatus;
   created_at: string;
   updated_at: string;

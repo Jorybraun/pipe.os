@@ -234,3 +234,38 @@ export function validateInterviewState(
 
   return results;
 }
+
+/**
+ * Validate a batch of domain questions (after generation).
+ * Calls validateQuestion for each and returns all results.
+ */
+export function validateDomainQuestionBatch(
+  questions: Array<{ id: string; text: string }>,
+  state: InterviewState,
+  domain: Domain,
+): ValidationResult[] {
+  return questions.map((q) => validateQuestion(q.id, q.text, domain, state));
+}
+
+/**
+ * Log validation results to console (dev mode only).
+ * Call this in the domain orchestrator after generation.
+ */
+export function logValidationResults(results: ValidationResult[]): void {
+  const failures = results.filter((r) => !r.passed);
+  const warnings = results.flatMap((r) => r.issues.filter((i) => i.severity === 'warning'));
+
+  if (failures.length > 0) {
+    console.warn(
+      `[qaValidator] ${failures.length}/${results.length} questions FAILED validation:`,
+      failures.map((f) => ({ id: f.questionId, issues: f.issues })),
+    );
+  }
+
+  if (warnings.length > 0) {
+    console.info(
+      `[qaValidator] ${warnings.length} warning(s) across ${results.length} questions:`,
+      warnings.map((w) => ({ code: w.code, msg: w.message })),
+    );
+  }
+}

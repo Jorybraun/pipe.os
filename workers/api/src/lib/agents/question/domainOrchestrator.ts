@@ -20,7 +20,7 @@ import { DOMAIN_COLUMN_ORDER } from '../interview/types';
 import { generateDomainQuestions } from './domainGenerator';
 import { evaluateLatestAnswer, buildWarmFollowUp } from './answerEvaluator';
 import { getProbesForDomain, getSoulProbesForDomain } from './probeLibrarian';
-import { validateQuestion } from './qaValidator';
+import { validateQuestion, validateDomainQuestionBatch, logValidationResults } from './qaValidator';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -234,6 +234,10 @@ export async function getNextDomainDrivenQuestion(
         count: questionsPerDomain,
         style,
       });
+
+      // QA validation (dev mode): validate generated questions for context + continuity
+      const validationResults = validateDomainQuestionBatch(generated, state, currentDomain);
+      logValidationResults(validationResults);
 
       cached = generated;
       domainQuestions[currentDomain] = generated;
