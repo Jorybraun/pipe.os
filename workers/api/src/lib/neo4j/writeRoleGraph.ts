@@ -117,8 +117,14 @@ export async function writeRoleGraph(
 
   const config = buildNeo4jConfig(env);
   if (!config) {
+    console.warn('[writeRoleGraph] skipped — missing Neo4j config (NEO4J_URI or NEO4J_PASSWORD)');
     throw new Error('[writeRoleGraph] missing Neo4j config (NEO4J_URI or NEO4J_PASSWORD)');
   }
+
+  const writeStart = Date.now();
+  console.log(
+    `[writeRoleGraph] starting | roleContextId=${roleContextId.slice(0, 8)}… | nodes=${nodes.length}`,
+  );
 
   const driver = getNeo4jDriver(config);
   const now = nowEpoch();
@@ -287,6 +293,7 @@ export async function writeRoleGraph(
     totalResult.relationshipsCreated += result.relationshipsCreated;
   }
 
+  const writeMs = Date.now() - writeStart;
   console.log(
     JSON.stringify({
       event: 'neo4j.roleWrite',
@@ -297,7 +304,12 @@ export async function writeRoleGraph(
       others: otherParams.length,
       nodesCreated: totalResult.nodesCreated,
       relationshipsCreated: totalResult.relationshipsCreated,
+      durationMs: writeMs,
     }),
+  );
+
+  console.log(
+    `[writeRoleGraph] complete | roleContextId=${roleContextId.slice(0, 8)}… | created=${totalResult.nodesCreated} nodes, ${totalResult.relationshipsCreated} rels | ${writeMs}ms`,
   );
 
   return totalResult;

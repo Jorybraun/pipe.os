@@ -45,8 +45,14 @@ export async function writeRepoGraph(
 
   const config = buildNeo4jConfig(env);
   if (!config) {
+    console.warn('[writeRepoGraph] skipped — missing Neo4j config (NEO4J_URI or NEO4J_PASSWORD)');
     throw new Error('[writeRepoGraph] missing Neo4j config (NEO4J_URI or NEO4J_PASSWORD)');
   }
+
+  const writeStart = Date.now();
+  console.log(
+    `[writeRepoGraph] starting | repoId=${repoId} | fullName=${fullName} | subElements=${subElements.length}`,
+  );
 
   const driver = getNeo4jDriver(config);
   const now = nowEpoch();
@@ -203,6 +209,7 @@ export async function writeRepoGraph(
     totalResult.relationshipsCreated += result.relationshipsCreated;
   }
 
+  const writeMs = Date.now() - writeStart;
   console.log(
     JSON.stringify({
       event: 'neo4j.repoWrite',
@@ -214,7 +221,12 @@ export async function writeRepoGraph(
       others: others.length,
       nodesCreated: totalResult.nodesCreated,
       relationshipsCreated: totalResult.relationshipsCreated,
+      durationMs: writeMs,
     }),
+  );
+
+  console.log(
+    `[writeRepoGraph] complete | repoId=${repoId} | created=${totalResult.nodesCreated} nodes, ${totalResult.relationshipsCreated} rels | ${writeMs}ms`,
   );
 
   return totalResult;

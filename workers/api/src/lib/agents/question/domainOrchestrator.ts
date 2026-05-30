@@ -19,6 +19,8 @@ import type { InterviewState, DomainCompletionStatus } from '../interview/types'
 import { DOMAIN_COLUMN_ORDER } from '../interview/types';
 import { generateDomainQuestions } from './domainGenerator';
 import { evaluateLatestAnswer, buildWarmFollowUp } from './answerEvaluator';
+import { getProbesForDomain, getSoulProbesForDomain } from './probeLibrarian';
+import { validateQuestion } from './qaValidator';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,6 +94,32 @@ function buildAcknowledgment(state: InterviewState, domain: Domain): string {
     "Appreciate that. Let's dig into the next one.",
   ];
   return acks[delivered % acks.length]!;
+}
+
+/** Collect all probe IDs that have been delivered across all domains. */
+function collectDeliveredProbeIds(state: InterviewState): string[] {
+  const ids: string[] = [];
+
+  // Primary source: exchange history persists even after domain caches are
+  // cleared on completion, so it is the only reliable record of probes that
+  // were already asked in earlier domains.
+  for (const ex of state.exchanges) {
+    if (ex.questionId && !ids.includes(ex.questionId)) {
+      ids.push(ex.questionId);
+    }
+  }
+
+  // Secondary: include IDs from questions still cached in pending domains
+  // (they were assigned to that domain and will be served there)
+  for (const domain of DOMAIN_COLUMN_ORDER) {
+    const questions = state.domainQuestions[domain] ?? [];
+    for (const q of questions) {
+      if (!ids.includes(q.id)) {
+        ids.push(q.id);
+      }
+    }
+  }
+  return ids;
 }
 
 /** Wrap a lightweight domain question into the legacy GeneratedQuestion shape. */
@@ -173,21 +201,44 @@ export async function getNextDomainDrivenQuestion(
   let cached = getCachedQuestions(state, currentDomain);
   const delivered = getDeliveredCount(state, currentDomain);
 
-  // If we haven't generated questions for this domain yet, do it now
+  // If we haven't generated questions for this domain yet, do it now.
+  // Prefer calibrated probes from probeLibrarian (deterministic) over
+  // LLM-generated questions. Fall back to LLM only when no probes exist.
   if (cached.length === 0 && delivered === 0) {
-    if (!provider) {
-      throw new Error('No AI provider is configured.');
+    const deliveredProbeIds = collectDeliveredProbeIds(state);
+    const useSoul = opts.enableSoulTrack && currentDomain === 'team';
+
+    const calibratedProbes = useSoul
+      ? getSoulProbesForDomain(currentDomain, state.participantRole, deliveredProbeIds)
+      : getProbesForDomain(currentDomain, state.participantRole, deliveredProbeIds);
+
+    if (calibratedProbes.length > 0) {
+      console.log(
+        `[domainOrchestrator] using ${calibratedProbes.length} calibrated probes for domain=${currentDomain} | ids=${calibratedProbes.map((p) => p.id).join(',')}`,
+      );
+      cached = calibratedProbes;
+      domainQuestions[currentDomain] = calibratedProbes;
+      domainCompletion[currentDomain] = 'asking';
+    } else {
+      // No calibrated probes for this domain — fall back to LLM generation
+      if (!provider) {
+        throw new Error('No AI provider is configured.');
+      }
+
+      console.log(
+        `[domainOrchestrator] no calibrated probes for domain=${currentDomain} — falling back to LLM generation`,
+      );
+
+      const style = useSoul ? 'soul' : undefined;
+      const generated = await generateDomainQuestions(currentDomain, state, provider, {
+        count: questionsPerDomain,
+        style,
+      });
+
+      cached = generated;
+      domainQuestions[currentDomain] = generated;
+      domainCompletion[currentDomain] = 'asking';
     }
-
-    const style = opts.enableSoulTrack && currentDomain === 'team' ? 'soul' : undefined;
-    const generated = await generateDomainQuestions(currentDomain, state, provider, {
-      count: questionsPerDomain,
-      style,
-    });
-
-    cached = generated;
-    domainQuestions[currentDomain] = generated;
-    domainCompletion[currentDomain] = 'asking';
   }
 
   // ── Evaluate the most recent answer (if any) ──
@@ -223,6 +274,14 @@ export async function getNextDomainDrivenQuestion(
   if (delivered < cached.length) {
     const nextQuestion = cached[delivered]!;
     domainQuestionsDelivered[currentDomain] = delivered + 1;
+
+    console.log(
+      `[domainOrchestrator] serving question ${delivered + 1}/${cached.length} for domain=${currentDomain} | id=${nextQuestion.id} | text="${nextQuestion.text.slice(0, 60)}..."`,
+    );
+
+    // QA validation (dev-mode logging — does not block delivery)
+    validateQuestion(nextQuestion.id, nextQuestion.text, currentDomain, state);
+
     return {
       type: 'question',
       result: wrapAsLegacy(nextQuestion, state, currentDomain),
@@ -239,6 +298,9 @@ export async function getNextDomainDrivenQuestion(
 
   // ── Cache exhausted (all main + any needed follow-ups asked) ──
   // Mark domain complete and recurse to the next domain
+  console.log(
+    `[domainOrchestrator] domain=${currentDomain} complete | delivered=${delivered} questions`,
+  );
   domainCompletion[currentDomain] = 'complete';
   domainQuestions[currentDomain] = [];
   domainQuestionsDelivered[currentDomain] = 0;
