@@ -1,3 +1,115 @@
+@import "tailwindcss";
+
+@import './styles/tokens.css';
+
+/* ── Google Fonts: Inter ──────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ── Tailwind v4 theme customization ─────────────────────────────────────── */
+@theme {
+  /* Primary / Indigo */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-primary-950: #1e1b4b;
+
+  /* Success / Green */
+  --color-success-50: #dcfce7;
+  --color-success-100: #bbf7d0;
+  --color-success-200: #86efac;
+  --color-success-300: #4ade80;
+  --color-success-400: #22c55e;
+  --color-success-500: #16a34a;
+  --color-success-600: #15803d;
+  --color-success-700: #166534;
+  --color-success-800: #14532d;
+  --color-success-900: #052e16;
+
+  /* Warning / Amber */
+  --color-warning-50: #fef3c7;
+  --color-warning-100: #fde68a;
+  --color-warning-200: #fcd34d;
+  --color-warning-300: #fbbf24;
+  --color-warning-400: #f59e0b;
+  --color-warning-500: #d97706;
+  --color-warning-600: #b45309;
+  --color-warning-700: #92400e;
+  --color-warning-800: #78350f;
+  --color-warning-900: #451a03;
+
+  /* Error / Red */
+  --color-error-50: #fee2e2;
+  --color-error-100: #fecaca;
+  --color-error-200: #fca5a5;
+  --color-error-300: #f87171;
+  --color-error-400: #ef4444;
+  --color-error-500: #dc2626;
+  --color-error-600: #b91c1c;
+  --color-error-700: #991b1b;
+  --color-error-800: #7f1d1d;
+  --color-error-900: #450a0a;
+
+  /* Font families */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Space Mono', 'Courier New', monospace;
+
+  /* Custom font sizes */
+  --text-micro: 7px;
+  --text-micro--line-height: 1.2;
+  --text-tiny: 8px;
+  --text-tiny--line-height: 1.2;
+  --text-caption: 9px;
+  --text-caption--line-height: 1.3;
+  --text-sm: 11px;
+  --text-sm--line-height: 1.5;
+  --text-body: 13px;
+  --text-body--line-height: 1.5;
+  --text-h3: 18px;
+  --text-h3--line-height: 1.3;
+  --text-h2: 24px;
+  --text-h2--line-height: 1.2;
+  --text-h1: 28px;
+  --text-h1--line-height: 1.2;
+
+  /* Shadows */
+  --shadow-subtle: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-medium: 0 4px 6px rgba(0,0,0,0.1);
+  --shadow-large: 0 10px 15px rgba(0,0,0,0.1);
+  --shadow-glass: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+
+  /* Backdrop blur */
+  --blur-glass: 40px;
+
+  /* Custom transitions */
+  --transition-duration-fast: 200ms;
+  --transition-duration-normal: 300ms;
+  --transition-duration-smooth: 400ms;
+  --transition-duration-slow: 600ms;
+
+  /* Animations */
+  --animate-shimmer: shimmer 2s cubic-bezier(0.4,0,0.6,1) infinite;
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-pulse: pulse 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fade-in {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Base resets ──────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -20,25 +132,24 @@ html[data-theme="anatomy"] {
 
 body {
   margin: 0;
-  font-family: 'Space Mono', monospace;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--pipe-bg, #0c0c0e);
   color: var(--pipe-text, #e0e0e0);
 }
 
+/* Code blocks and technical labels keep Space Mono */
+code, pre, kbd, samp,
+.font-mono {
+  font-family: 'Space Mono', 'Courier New', monospace;
+}
+
 #root {
   min-height: 100vh;
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
+/* ── Legacy animations ────────────────────────────────────────────────────── */
 
 .skeleton {
   background: linear-gradient(
@@ -98,7 +209,7 @@ body {
   line-height: 1.75;
   color: var(--pipe-text-muted);
   margin-bottom: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .jd-markdown ul {
@@ -111,7 +222,7 @@ body {
   line-height: 1.75;
   color: var(--pipe-text-muted);
   margin-bottom: 6px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .jd-markdown li::marker {
